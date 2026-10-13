@@ -162,6 +162,7 @@ bool Immediate(const std::string &m, const json &p, json *result, std::string *e
     }
     if (m == "modules") { *result = Modules(); return true; }
     if (m == "where") { *result = Where(); return true; }
+    if (m == "tap") { *result = tap::Command(p.is_object() ? p.value("cmd", "") : ""); return true; }
     return false;
 }
 
@@ -267,10 +268,18 @@ uint64_t Frames() { return g_frames.load(); }
 void BridgeStart() {
     QueryPerformanceFrequency(&g_freq);
     QueryPerformanceCounter(&g_start);
+    tap::Init();
     {
+        // <game>\mml\config.json: {"bridge_port": 47100, "taps": ["5409D0 n=4 ptr=1:32 log", ...]}
         std::ifstream f(MmlDir() + "config.json");
         if (f) {
-            try { g_port = json::parse(f, nullptr, true, true).value("bridge_port", g_port); } catch (...) {}
+            try {
+                json cfg = json::parse(f, nullptr, true, true);
+                g_port = cfg.value("bridge_port", g_port);
+                if (cfg.contains("taps") && cfg["taps"].is_array())
+                    for (auto &t : cfg["taps"])
+                        if (t.is_string()) HLOG("config tap %s: %s", t.get<std::string>().c_str(), tap::Command(t.get<std::string>()).c_str());
+            } catch (const std::exception &ex) { HWARN("mml\\config.json: %s", ex.what()); }
         }
     }
     std::random_device rd;

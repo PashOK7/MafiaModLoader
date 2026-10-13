@@ -66,7 +66,7 @@ def main():
     check('initialize: the server tells agents how to use it', 'game_status' in (c.info.get('instructions') or ''), c.info)
     tools = {t['name'] for t in c.request('tools/list')['tools']}
     want = {'game_status', 'call', 'commands_list', 'mem_read', 'mem_write', 'log_tail', 'mods_list', 'mod_reload',
-            'where', 'game_launch', 'game_close', 'crash_list', 'crash_inspect', 'deploy', 'kb_search', 'kb_function'}
+            'where', 'game_launch', 'game_close', 'crash_list', 'crash_inspect', 'deploy', 'kb_search', 'kb_function', 'tap'}
     check('tools/list has every tool', want <= tools, want - tools)
 
     ok, text = c.tool('kb_search', {'query': 'scene.i3d', 'module': 'game.exe'})

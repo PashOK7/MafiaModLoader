@@ -46,13 +46,21 @@ except the intro videos), on the game thread, where `LoadLibrary` is safe.
   a minidump with the heaps and every region's state (`mml\crash\`). The game's own filter is chained, and ours is put
   back in front every frame.
 
+- **The start** (`start.cpp`): `<game>\mml\start.json` (`{"skip_logos", "profile", "go": "menu"|"freeride"}`,
+  written by `game_launch` or `tools/start.py`, deleted when read) takes the game to a profile and the freeride by
+  its own menus: the logo videos answered "played" (PlayVideo), then in each menu's frame the command a click
+  would send (the menu's vtable `+0x24`). `menu.state` / `menu.command` drive any menu the same way.
+- **Tap** (`tap.cpp`, from mafia-ragdoll): a link of the hook chain (owner: the host) whose thunk books every call
+  of a function (callers, registers, arguments, memory, the result) into fixed tables; `tap` on the bridge, startup
+  taps from `<game>\mml\config.json`.
+
 ## The MCP server (`mcp/`)
 
 A separate 64-bit process, so it outlives the game: it launches and closes the game, reads the loader's log file
 when the game is gone, opens crash dumps (`minidump`, Mozilla's), and deploys builds. It talks to the host through
 the bridge only. Tools: `game_status`, `game_launch`, `game_close`, `call` (any method), `commands_list`, `mem_read`,
-`mem_write`, `log_tail`, `mods_list`, `mod_reload`, `where`, `crash_list`, `crash_inspect`, `deploy`, `kb_search`,
-`kb_function`.
+`mem_write`, `log_tail`, `mods_list`, `mod_reload`, `where`, `tap`, `crash_list`, `crash_inspect`, `deploy`,
+`kb_search`, `kb_function`. `game_launch` takes `go` and `profile` (the start) and returns once the player exists.
 
 The knowledge base (`kb.rs`, `knowledge/README.md`) is loaded once from `knowledge/<module>/*.csv`: functions sorted
 by address (an address finds the function holding it), the call graph both ways, our names; the decompiled code is
@@ -64,7 +72,8 @@ their text through it, so `Game.exe+0x...` and `LS3DF.dll+0x...` get the functio
 ```
 <game>\MafiaModLoader.asi           the host
 <game>\dinput8.dll                  Ultimate ASI Loader (pinned, tools/deps.py)
-<game>\mml\config.json              optional: {"bridge_port": 47100}
+<game>\mml\config.json              optional: {"bridge_port": 47100, "taps": [...]}
+<game>\mml\start.json               a start asked for (one launch; deleted when read)
 <game>\mml\bridge.json              written once the bridge listens: port (47100 or the next free), token (new every run), pid
 <game>\mml\mods\<id>\mod.json, ...  the mods
 <game>\mml\live\                    the loaded copies of the mods' DLLs

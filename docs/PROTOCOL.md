@@ -26,6 +26,10 @@ Addresses: `"0x5762A0"`, `"5762A0"`, `"game+0x1762A0"`, `"ls3d+1AAE0"`, `"<modul
 | `addr.describe` | `addr` | module+offset |
 | `modules` | | every loaded module: name, base, size, path |
 | `where` | | the main thread sampled 5 times, then its stack's code addresses |
+| `tap` | `cmd`: `"<at> [n=4] [ret\|fret] [ptr=<src>[+off][:len],...] [from=<ret>] [log] [max=N]"`, `"show <id> [k]"`, `"list"`, `"clear <id>"`, `"off <id>\|all"` | text: watch any function's calls (callers, ECX, stack arguments, memory behind them, strings as text, the result) |
+
+Taps can also start with the game, before its first frame: `"taps": ["5409D0 n=4 ptr=1:32 log", ...]` in
+`<game>\mml\config.json`.
 
 ## Methods for the game thread (answered at its next frame; `timeout_ms`, default 5000)
 
@@ -36,6 +40,9 @@ Addresses: `"0x5762A0"`, `"5762A0"`, `"game+0x1762A0"`, `"ls3d+1AAE0"`, `"<modul
 | `mod.reload` / `mod.load` / `mod.unload` | `id` (`"*"`: every loaded mod, for reload) | the mod |
 | `commands.list` | | every method, the mods' with their help |
 | `hooks.list` | | every hooked function and its chain |
+| `menu.state` | | the open menus (the active one first: vtable, kind, command handler) and the profiles the game has read |
+| `menu.command` | `command` | the command sent to the active menu as a click sends it (its vtable's `+0x24`); the new `menu.state` |
+| `start.state` | | the start asked by `<game>\mml\start.json`: `waiting`, `profile`, `main`, `done`, `failed` (+ `error`) |
 | `<command>` | the command's | a mod's command: the core mod's without a prefix (`player`), others' as `<mod>.<name>` |
 
 The core mod's commands: `game`, `player`, `humans` (`radius`), `actors`, `frame` (`addr`), `frames.find`

@@ -99,13 +99,14 @@ bool HookAdd(MmlMod *owner, uintptr_t target, void *detour, void **original, std
     return true;
 }
 
-bool HookRemove(MmlMod *owner, uintptr_t target) {
+namespace {
+bool RemoveLinks(MmlMod *owner, uintptr_t target, void *detour) {
     std::lock_guard<std::recursive_mutex> lk(g_mx);
     Chain *c = Find(target);
     if (!c) return false;
     bool removed = false;
     for (size_t i = 0; i < c->links.size();) {
-        if (c->links[i].owner == owner) { c->links.erase(c->links.begin() + i); removed = true; }
+        if (c->links[i].owner == owner && (!detour || c->links[i].detour == detour)) { c->links.erase(c->links.begin() + i); removed = true; }
         else i++;
     }
     Relink(c);
@@ -118,6 +119,10 @@ bool HookRemove(MmlMod *owner, uintptr_t target) {
     }
     return removed;
 }
+} // namespace
+
+bool HookRemove(MmlMod *owner, uintptr_t target) { return RemoveLinks(owner, target, nullptr); }
+bool HookRemoveLink(MmlMod *owner, uintptr_t target, void *detour) { return detour && RemoveLinks(owner, target, detour); }
 
 void HookRemoveAll(MmlMod *owner) {
     std::lock_guard<std::recursive_mutex> lk(g_mx);

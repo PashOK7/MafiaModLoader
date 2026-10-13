@@ -48,6 +48,7 @@ DWORD MainThread();
 // ---- hook chains (hooks.cpp): several owners may hook one function; owner null: the host
 bool HookAdd(MmlMod *owner, uintptr_t target, void *detour, void **original, std::string *err);
 bool HookRemove(MmlMod *owner, uintptr_t target);
+bool HookRemoveLink(MmlMod *owner, uintptr_t target, void *detour);   // one link only (the host's taps)
 void HookRemoveAll(MmlMod *owner);
 std::string HookList();        // JSON array
 
@@ -65,6 +66,17 @@ std::string CommandsList();               // JSON
 bool GameHooksInstall();                  // false: not a known Mafia build (the loader runs without game events)
 void Frame();                             // one loader frame (game thread): from the game's frame limiter, or a pump
 const char *GameBuild();                  // "1.2", "1.0", "unknown"
+
+// ---- tap (tap.cpp): watch calls to any function, without a mod; the bridge method `tap` {cmd}
+namespace tap {
+void Init();
+std::string Command(const std::string &line);   // "5409D0 n=4 ptr=1:32 log", "show 0", "list", "off all"...
+}
+
+// ---- the start and the menus (start.cpp): <game>\mml\start.json; menu.state, menu.command, start.state
+void StartInit();                         // after the game's hooks (the build known): reads and deletes start.json
+void StartFrame();                        // every frame (game thread): the next step of the start
+bool StartMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 
 // ---- bridge (bridge.cpp)
 void BridgeStart();

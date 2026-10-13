@@ -403,6 +403,8 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     try { params = paramsJson.empty() ? json() : json::parse(paramsJson); }
     catch (const std::exception &ex) { *reply = std::string("params: ") + ex.what(); return false; }
     auto idParam = [&]() -> std::string { return params.is_object() ? params.value("id", "") : std::string(); };
+    bool ok;
+    if (StartMethod(method, paramsJson, reply, &ok)) return ok;
     if (method == "mods.list") { *reply = ModsList(); return true; }
     if (method == "commands.list") { *reply = CommandsList(); return true; }
     if (method == "hooks.list") { *reply = HookList(); return true; }
@@ -460,7 +462,8 @@ std::string ModsList() {
 
 std::string CommandsList() {
     json out = json::array();
-    for (const char *m : {"mods.list", "mods.rescan", "mod.reload", "mod.load", "mod.unload", "commands.list", "hooks.list"})
+    for (const char *m : {"mods.list", "mods.rescan", "mod.reload", "mod.load", "mod.unload", "commands.list", "hooks.list",
+                          "menu.state", "menu.command", "start.state"})
         out.push_back({{"name", m}, {"owner", "host"}});
     for (auto &kv : g_commands) out.push_back({{"name", kv.first}, {"owner", Who(kv.second.mod)}, {"help", kv.second.help}});
     return out.dump();

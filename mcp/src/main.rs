@@ -86,9 +86,19 @@ struct IdArgs {
 
 #[derive(Deserialize, JsonSchema)]
 struct LaunchArgs {
-    /// Seconds to wait for the loader's bridge to answer (default 60).
+    /// Seconds to wait for the loader's bridge to answer (default 60), and for the start to finish.
     #[serde(default)]
     wait_s: Option<u64>,
+    /// Where to take the game by its own menus: "menu" (the main menu) or "freeride" (the default freeride,
+    /// missions\freeitaly). Omitted (and no profile): the game's usual start, the player at the keyboard.
+    #[serde(default)]
+    go: Option<String>,
+    /// The profile to take in the profile menu: its number (savegame\mafiaNNN.sav) or its name.
+    #[serde(default)]
+    profile: Option<Value>,
+    /// Skip the three logo videos before the profile menu (default true when go or profile is given).
+    #[serde(default)]
+    skip_logos: Option<bool>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -140,6 +150,14 @@ struct KbFunctionArgs {
     /// At most this many lines of code (default 400).
     #[serde(default)]
     max_lines: Option<usize>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct TapArgs {
+    /// "<at> [n=4] [ret|fret] [ptr=<src>[+off][:len],...] [from=<ret addr>] [log] [max=N]" starts watching a function
+    /// (at: "5409D0", "ls3d+1AAE0", "game+0x1409D0"; ptr src: 1..8 an argument, c ECX, d EDX, r the result; a
+    /// snapshot that starts with text shows the string); "show <id> [k]", "list", "clear <id>", "off <id>|all".
+    cmd: String,
 }
 
 #[derive(Clone)]
@@ -239,26 +257,58 @@ impl Server {
         self.bridge.call("where", json!({}), 5000).await.map(|v| kb::annotate(&v.as_str().map(String::from).unwrap_or_else(|| pretty(&v))))
     }
 
-    /// Start the game (Game.exe in the game's folder) and wait for the loader's bridge.
+    /// Start the game (Game.exe in the game's folder) and wait for the loader's bridge. With `go` (and `profile`),
+    /// the loader takes it there by the game's own menus, the logo videos skipped: e.g. {"profile": 4, "go":
+    /// "freeride"} returns once the player is in the freeride (a few seconds).
     #[tool]
     async fn game_launch(&self, Parameters(a): Parameters<LaunchArgs>) -> Out {
         if self.bridge.call("ping", json!({}), 1500).await.is_ok() {
             return Err("the game is already running (game_close first)".into());
         }
+        let asked = a.go.is_some() || a.profile.is_some() || a.skip_logos == Some(true);
+        if asked {
+            // read (and deleted) by the loader at the game's start: host/start.cpp
+            let mut req = json!({"skip_logos": a.skip_logos.unwrap_or(true), "go": a.go.clone().unwrap_or_default()});
+            if let Some(p) = &a.profile { req["profile"] = p.clone(); }
+            let path = game::game_dir()?.join("mml").join("start.json");
+            std::fs::write(&path, req.to_string()).map_err(|e| format!("{}: {e}", path.display()))?;
+        }
         let pid = game::launch()?;
         self.bridge.reset().await;
         let wait = a.wait_s.unwrap_or(60);
         let start = std::time::Instant::now();
+        let mut ping = None;
         while start.elapsed().as_secs() < wait {
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             if let Ok(p) = self.bridge.call("ping", json!({}), 1500).await {
-                if p.get("pid").and_then(|v| v.as_u64()) == Some(pid as u64) {
-                    return Ok(pretty(&json!({"started": pid, "ping": p})));
-                }
+                if p.get("pid").and_then(|v| v.as_u64()) == Some(pid as u64) { ping = Some(p); break; }
             }
             if !game::alive(pid) { return Err(format!("Game.exe (pid {pid}) exited; log_tail shows why")); }
         }
-        Err(format!("Game.exe started (pid {pid}) but the bridge did not answer in {wait} s: is MafiaModLoader.asi installed and Ultimate ASI Loader present?"))
+        let Some(ping) = ping else {
+            return Err(format!("Game.exe started (pid {pid}) but the bridge did not answer in {wait} s: is MafiaModLoader.asi installed and Ultimate ASI Loader present?"));
+        };
+        if !asked || a.go.as_deref().unwrap_or("").is_empty() {
+            return Ok(pretty(&json!({"started": pid, "ping": ping})));
+        }
+        // the start's steps run in the menus' frames; then (freeride) the mission loads until the player exists
+        while start.elapsed().as_secs() < wait {
+            if let Ok(s) = self.call_value("start.state", Value::Null, Some(2000)).await {
+                match s["state"].as_str() {
+                    Some("failed") => return Err(format!("the start failed: {}; the menus are left as they are", s["error"])),
+                    Some("done") => {
+                        if a.go.as_deref() != Some("freeride") { return Ok(pretty(&json!({"started": pid, "start": s}))); }
+                        if let Ok(p) = self.call_value("player", Value::Null, Some(2000)).await {
+                            if p.get("actor").is_some() { return Ok(pretty(&json!({"started": pid, "start": s, "player": p}))); }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if !game::alive(pid) { return Err(format!("Game.exe (pid {pid}) exited during the start; log_tail shows why")); }
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
+        Err(format!("Game.exe (pid {pid}) runs but the start did not finish in {wait} s (call start.state, menu.state)"))
     }
 
     /// Close the game: its window asked to close, killed (by its exact pid) if it does not within 10 s.
@@ -282,6 +332,16 @@ impl Server {
     #[tool(annotations(read_only_hint = true))]
     async fn crash_inspect(&self, Parameters(a): Parameters<CrashArgs>) -> Out {
         crash::inspect(a.file).map(|v| kb::annotate(&pretty(&v)))
+    }
+
+    /// Watch any function of the running game without writing a hook: who calls it, with what arguments (ECX, the
+    /// stack), what memory behind them holds (strings shown as text), what it returns. Start a tap, let the game (or
+    /// the owner) do the thing, then "show <id>". Works before the first frame too (during the intro videos).
+    #[tool]
+    async fn tap(&self, Parameters(a): Parameters<TapArgs>) -> Out {
+        let v = self.bridge.call("tap", json!({"cmd": a.cmd}), 5000).await?;
+        let text = v.as_str().map(String::from).unwrap_or_else(|| pretty(&v));
+        if text.starts_with("error") { Err(text) } else { Ok(kb::annotate_tap(&text)) }
     }
 
     /// Search the game's knowledge base (every function of Game.exe and LS3DF.dll 1.2 from the full decompiles:

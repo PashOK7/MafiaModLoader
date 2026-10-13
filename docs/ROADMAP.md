@@ -16,14 +16,15 @@ Next, in order:
    and write memory, describe the game's structures and call its functions; a `lua.eval` command for agents.
 2. **Rust mods**: a crate `mml` over `mml.h` (types, a safe wrapper, a `#[mml_mod]` entry macro), an example, built for
    `i686-pc-windows-msvc`.
-3. **Driving the game from inside**: input injected into the game's own DirectInput reads (keys, mouse, held for N
-   frames), screenshots of the game's back buffer (the bridge returns PNG for MCP image content), saves and missions
-   loaded by the game's own functions, the intro videos skipped.
+3. **Driving the game from inside**: begun (the start: logos skipped, a profile, the freeride, by the menus' own
+   commands). Next: missions and saves through the load menu, the other freerides (their kind and spawn menus),
+   input injected into the game's own DirectInput reads (keys, mouse, held for N frames), screenshots of the game's
+   back buffer (the bridge returns PNG for MCP image content).
 4. **The 64-bit sidecar**: `mml-sidecar64.exe`, started by the host, loads 64-bit mods (heavy logic past the 32-bit
    address space); shared-memory channels (lock-free rings, bulk blocks for poses and meshes) between the game and it;
    services that cross the process boundary.
-5. **More knowledge tools for agents**: the Ghidra query server (ghq, from mafia-ragdoll) and runtime `tap` (watch
-   any function's calls) behind MCP tools; the knowledge base grown with every finding.
+5. **More knowledge tools for agents**: the Ghidra query server (ghq, from mafia-ragdoll) behind MCP tools (`tap` is
+   done); the knowledge base grown with every finding.
 6. **mafia-ragdoll on the loader**: its host's duties taken by the loader, the ragdoll a mod; the physics published as
    a service (for the VR mod).
 7. **1.0**: everything checked on the 1.0 lab copy; addresses for both builds in `game_build.h`.

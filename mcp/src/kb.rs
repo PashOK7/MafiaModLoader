@@ -108,8 +108,9 @@ impl Module {
         let i = self.funcs.partition_point(|f| f.addr <= addr);
         if i == 0 { return None; }
         let f = &self.funcs[i - 1];
-        // without sizes: a function is taken to end where the next one starts
-        if i < self.funcs.len() && addr >= self.funcs[i].addr { return None; }
+        // without sizes: a function is taken to end where the next one starts; past the last one, data or another
+        // module (the image's code ends within 64 KiB of its last function's start)
+        if i == self.funcs.len() && addr - f.addr > 0x10000 { return None; }
         Some(f)
     }
     pub fn at(&self, addr: u32) -> Option<&Func> {
@@ -267,6 +268,31 @@ pub fn function(key: &str, with_code: bool, max_lines: usize) -> Result<Value, S
         }
     }
     Ok(v)
+}
+
+/// tap's output: the addresses of code it prints (Game.exe absolute "5409D0", LS3DF "ls3d+5AC2E") after "on ",
+/// "from " and in the callers' line get the function's name.
+pub fn annotate_tap(text: &str) -> String {
+    let Ok(kb) = get() else { return text.to_string() };
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| Regex::new(r"(on |from |callers: |, )(ls3d\+)?([0-9A-F]{5,8})\b").unwrap());
+    text.lines().map(|line| {
+        let callers = line.trim_start().starts_with("callers:");
+        re.replace_all(line, |c: &regex::Captures| {
+            let lead = &c[1];
+            if (lead == ", " || lead == "callers: ") && !callers { return c[0].to_string(); }
+            let raw = u32::from_str_radix(&c[3], 16).unwrap_or(0);
+            let (m, a) = if c.get(2).is_some() {
+                (kb.modules.iter().find(|m| m.name == "ls3df.dll"), 0x10000000 + raw)
+            } else {
+                (kb.modules.iter().find(|m| m.name == "game.exe"), raw)
+            };
+            let note = m.and_then(|m| {
+                m.containing(a).and_then(|f| m.best_name(f).map(|n| format!(" ({}+0x{:X})", n, a - f.addr)))
+            });
+            format!("{}{}", &c[0], note.unwrap_or_default())
+        }).into_owned()
+    }).collect::<Vec<_>>().join("\n")
 }
 
 /// "Game.exe+0x7AD00" and "LS3DF.dll+0x5AC2E" in a text get the function's name after them, when known.

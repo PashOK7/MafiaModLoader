@@ -140,6 +140,17 @@ def main(a):
         d = disps(gls, gls.base + w['morph'], 0x100)
         check(ls['vbStride'] // 4 * 4 == ls['vbStride'] and (ls['vbD3d'] in d) and (ls['vbStride'] in d or
               ls['vbStride'] // 4 in d), f'{name} LS3DF vertex buffer stride/D3D in the morph update')
+    # The start (host/start.cpp; 1.2 only so far): the menus' vtables hold their command handlers at +0x24 (read in
+    # the decompile: the profile menu's takes 100 + i, the main menu's 990105, the freeride menu's 201), PlayVideo
+    # starts with its frame.
+    for name, (exe, ls, gexe, gls) in builds.items():
+        if not exe['menuTop']:
+            continue
+        for f, handler in (('menuProfileVt', 0x5E88D0), ('menuMainVt', 0x5E06E0), ('menuFreerideVt', 0x5E1B40)):
+            got = int.from_bytes(gexe.at(exe[f] + 0x24 - 0x400000, 4), 'little')
+            check(got == handler, f'{name} {f}+0x24 is {got:#x}, not the command handler {handler:#x}')
+        i = gexe.insn(exe['playVideo'] - 0x400000)
+        check(i and f'{i.mnemonic} {i.op_str}' == 'sub esp, 0x214', f'{name} playVideo starts "{i.mnemonic} {i.op_str}"')
     print('ALL PASSED' if not fails else f'{fails} FAILED')
     return 1 if fails else 0
 

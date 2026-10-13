@@ -105,6 +105,7 @@ void Frame() {
     }
     BridgeFrame();
     RunPosted();
+    StartFrame();
     MmlEvent ev = Event(MML_EVENT_FRAME);
     ev.dt = dt;
     Dispatch(ev);

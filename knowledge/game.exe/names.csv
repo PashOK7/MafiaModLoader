@@ -33,6 +33,8 @@ address,kind,name,source,note
 0052D12A,label,save1eNone,mafia-ragdoll,
 005405E0,function,missionClose,mafia-ragdoll,
 005407E0,function,missionTick,mafia-ragdoll,
+0055D460,function,PlayVideo,mml,"thiscall(name in ECX, float w, float h) -> bool, ret 8; InitSystem plays logo1, logo3, logo2"
+0055D460,function,playVideo,game_build.h,
 0056EFD0,function,humanCtor,mafia-ragdoll,
 00571B90,function,humanPlatform,game_build.h,
 00572B80,function,humanTick,mafia-ragdoll,
@@ -57,13 +59,24 @@ address,kind,name,source,note
 005C8440,function,collRayTest,mafia-ragdoll,
 005D5940,function,sphereSweep,mafia-ragdoll,
 005D6FE0,function,humanBoneRayTest,mafia-ragdoll,
+005E06E0,function,GM_MainMenu::OnCommand,mml,"vtable 0x625EB8 +0x24; 990105 opens the freeride menu, 990106 extreme (27), 990103 new game (18), 990102 (17), 990104 the load menu"
+005E1B40,function,GM_FreeRide::OnCommand,mml,"vtable 0x62736C +0x24; 100 the kind menu, 101 the car menu, 201 start (kind +0x30; 28 closes with 28)"
+005E88D0,function,GM_ProfileMenu::OnCommand,mml,"vtable 0x6279DC +0x24; 100+i takes the i-th profile (sub_605570), 0xCB quits (15)"
+005EAD50,function,GM_Menu::Push,mml,"stdcall(menu, id): menu+4 = the active one, the menu becomes the active one (0x6BD890), Create"
 006234BC,label,EndShare,mafia-ragdoll,
 00623EF8,label,pedSystemVtable,mafia-ragdoll,
 00623FA0,label,pedManagerVtable,mafia-ragdoll,
 006256F8,label,C_human_vtable,mafia-ragdoll,
+00625EB8,label,menuMainVt,game_build.h,
+0062736C,label,menuFreerideVt,game_build.h,
+006279DC,label,menuProfileVt,game_build.h,
 0062E488,label,animTable,mafia-ragdoll,
 0063788C,label,missionPtr,mafia-ragdoll,
 0063D768,label,pedElements,mafia-ragdoll,
 0063D8A4,label,EmitterTable,mafia-ragdoll,
 00647F48,label,collision,mafia-ragdoll,
+006BD890,data,g_activeMenu,mml,GM_Menu*: the active menu; +4 the one under it
+006BD890,label,menuTop,game_build.h,
+006BD8A8,data,g_menuResult,mml,"ExecuteMenu loops until it is set (MenuCloseAll sets it), then returns it"
+006D4628,label,loadSave,game_build.h,
 006D4C1C,label,ParticleDefs,mafia-ragdoll,

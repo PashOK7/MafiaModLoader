@@ -110,6 +110,24 @@ def main():
         r = b.call('mem.read', {'addr': '0x10', 'size': 4})
         check('mem.read of an unmapped address: an error, no crash', not r['ok'], r)
 
+        # tap: a link of the same chain, outermost
+        r = b.call('tap', {'cmd': 'mml_harness.exe+0 n=2 ret'})
+        check('tap: refuses what is not code', r['ok'] and r['result'].startswith('error'), r)
+        r = b.call('tap', {'cmd': 'harness_add n=2 ret'})
+        check('tap: refuses a name it cannot resolve', r['ok'] and r['result'].startswith('error'), r)
+        r = b.call('hooks.list')
+        target = r['result'][0]['target']
+        before = add().get('result')
+        r = b.call('tap', {'cmd': target + ' n=2 ret ptr=c:4'})
+        check('tap on the chained function', r['ok'] and r['result'].startswith('tap 0 on'), r)
+        check('the chain under the tap gives what it gave', add().get('result') == before, before)
+        r = b.call('tap', {'cmd': 'show 0'})
+        text = r.get('result', '')
+        check('tap show: the call, its arguments 2 and 3, the result',
+              '1 calls' in text and 'a1: 2 x1' in text and 'a2: 3 x1' in text and 'eax: %X x1' % before in text, text)
+        r = b.call('tap', {'cmd': 'off all'})
+        check('tap off: the chain without it the same', r['ok'] and add().get('result') == before, r)
+
         # a mod that faults
         r = b.call('hook_b.crash')
         check('a fault inside a mod\'s command: an error reply', not r['ok'], r)

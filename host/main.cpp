@@ -23,7 +23,10 @@ void Init() {
     SetMainThread(GetCurrentThreadId());
     HLOG("MafiaModLoader (API %u) loaded into %s", MML_API_VERSION, path);
     EnsureCrashFilter();
-    if (GameHooksInstall()) HLOG("game: Mafia %s", GameBuild());
+    if (GameHooksInstall()) {
+        HLOG("game: Mafia %s", GameBuild());
+        StartInit();
+    }
     BridgeStart();
 }
 } // namespace host

@@ -9,3 +9,4 @@ build_configure.log
 # never commit game files, dumps or decompiles
 *.dmp
 /re/
+__pycache__/

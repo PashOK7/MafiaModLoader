@@ -22,3 +22,18 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - The bridge took a fixed port: a test harness started while the game ran could not listen and the MCP server read
   the harness's token against the game's bridge ("bad token"). Now the bridge takes the next free port and writes
   `bridge.json` only once it listens (a stale one is deleted at start).
+
+## 2026-10-13: tap, and the start
+
+- `tap` (from mafia-ragdoll's host) moved into the loader's host as a link of the hook chain: the bridge method
+  `tap`, the MCP tool `tap` (callers named from the knowledge base), startup taps from `mml\config.json`. Snapshots
+  that start with text show it as a string.
+- Recorded the way into the freeride: 14 startup taps (menus, profiles, saves, missions) while the owner launched
+  the game, took a profile and clicked Freeride. Then read in the decompile: the menus loop in
+  `GM_Menu::ExecuteMenu` until `MenuCloseAll` sets the result; a click calls the menu's command handler (vtable
+  `+0x24`). Details: `knowledge/notes/game.md`.
+- The start (`host/start.cpp`): `mml\start.json` asks for it once; the logo videos are answered "played", then in
+  each menu's frame the loader sends the command a click would (the profile's 100 + i, the main menu's 990105, the
+  freeride menu's 201). First try in the lab: from the launch to the freeride in 2.6 s; through MCP
+  (`game_launch {"profile": 4, "go": "freeride"}`) 5.9 s until the player exists. The game's default freeride is
+  `freeitaly` (code 28); the decompile's case labels for 28..31 were guesses.

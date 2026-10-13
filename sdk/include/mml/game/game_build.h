@@ -72,6 +72,15 @@ struct ExeBuild {
     // position and facing into its space, the model given to it) or out (into the world, the model to the primary
     // sector; the player's camera out of first person). tramCarOf: thiscall(tram, float pos[3]) -> int, the car nearest.
     uintptr_t humanPlatform, tramCarOf;
+    // Starting the game (the loader's start, host/start.cpp; 0: not known for this build). playVideo:
+    // thiscall(const char *name, float w, float h) -> bool, ret 8; InitSystem plays logo1, logo3 and logo2 with it
+    // before the profile menu. The menus (GM_Menu): menuTop, the active one (each menu's +4: the one under it); a
+    // menu's command handler, what a click calls, is its vtable's +0x24, thiscall(menu, int command). The profile
+    // menu (menuProfileVt): command 100 + i takes the i-th profile of the list loadSave (G_LoadSaveClass) has read
+    // (+4 begin, +8 end; records of 0x54 bytes, +8 the profile's number, +0x10 its name). The main menu (menuMainVt):
+    // 990105 opens the freeride menu (menuFreerideVt), whose 201 starts the freeride chosen (its +0x30; 28, the
+    // default, is missions\freeitaly).
+    uintptr_t playVideo, menuTop, loadSave, menuProfileVt, menuMainVt, menuFreerideVt;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -116,6 +125,7 @@ inline const ExeBuild kExe12 = {
     0x459450, 0x5C36C0, 0x23C, 0x2A0, 0x40C,
     0x5C3AC0,
     0x571B90, 0x492D60,
+    0x55D460, 0x6BD890, 0x6D4628, 0x6279DC, 0x625EB8, 0x62736C,
 };
 
 inline const ExeBuild kExe10 = {
@@ -136,6 +146,7 @@ inline const ExeBuild kExe10 = {
     0, 0, 0, 0, 0,   // getting up: not looked for in 1.0 yet
     0,
     0, 0,            // trams: not looked for in 1.0 yet
+    0, 0, 0, 0, 0, 0,   // the start: not looked for in 1.0 yet
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,

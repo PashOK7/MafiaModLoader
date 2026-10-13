@@ -36,6 +36,12 @@ Then, through MCP (`.mcp.json` registers the server as `mafia`): `game_launch` �
 `log_tail`. The loader itself (`MafiaModLoader.asi`) changes only with the game closed (`game_close`, `deploy`,
 `game_launch`).
 
+**Into the game in seconds**: `game_launch {"profile": 4, "go": "freeride"}` (or `"go": "menu"`) skips the logos and
+takes the game through its own menus; it returns once the player exists. The owner's shortcut:
+`python tools/start.py freeride --profile 4`. Other menus: `call menu.state`, `call menu.command {command}`.
+**Watch any function** with `tap` (`"5409D0 n=4 ptr=1:32"`, let the game do the thing, `"show 0"`): the fastest way
+to learn what the game does.
+
 ## Knowing the game
 
 **Ask the knowledge base first** (`knowledge/README.md`): `kb_search` finds functions of Game.exe and LS3DF.dll
@@ -49,7 +55,7 @@ running game (`mem_read`, `call`), and write what you learned back: `knowledge/<
 
 | Path | What |
 |---|---|
-| `host/` | `MafiaModLoader.asi`: the never-unloaded host: game hooks → events, hook chains, mods, bridge, crash dumps |
+| `host/` | `MafiaModLoader.asi`: the never-unloaded host: game hooks → events, hook chains, mods, bridge, crash dumps, `tap`, the start (`start.cpp`: logos, profile, menus) |
 | `sdk/include/mml/mml.h` | **the C ABI** every native mod uses (C, C++, Rust, Zig...): read it whole |
 | `sdk/include/mml/game/` | what code uses: `game_build.h` (every address, per build, `game::Detect`), `game.h` (layouts, calls), `mathx.h` |
 | `knowledge/` | the knowledge base: every function of the 1.2 game (from MafiaReverse), our names, notes (`tools/kb_import.py`) |
@@ -57,7 +63,7 @@ running game (`mem_read`, `call`), and write what you learned back: `knowledge/<
 | `mods/examples/` | `hello_c` (plain C); more languages to come (see `docs/ROADMAP.md`) |
 | `mcp/` | the MCP server (Rust, `rmcp`): bridge client, game process, crash dumps, deploy, the knowledge base (`kb.rs`) |
 | `tests/` | `harness/` (the stand-in game), `mods/` (test mods), `run_tests.py`, `mcp_smoke.py` |
-| `tools/` | `lab.py` (the lab's modes, install), `deps.py` (pinned downloads), `check_builds.py` (the address tables against the game's files), `kb_import.py` (the knowledge base from MafiaReverse), `replace.py` (exact text edits) |
+| `tools/` | `lab.py` (the lab's modes, install), `deps.py` (pinned downloads), `check_builds.py` (the address tables against the game's files), `kb_import.py` (the knowledge base from MafiaReverse), `start.py` (launch into a profile and the freeride), `replace.py` (exact text edits) |
 | `third_party/` | MinHook, nlohmann/json (vendored); `_deps/` (downloaded: Ultimate ASI Loader, LuaJIT) |
 
 ## Facts that cost time to find
