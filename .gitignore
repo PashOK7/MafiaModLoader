@@ -1,0 +1,11 @@
+# builds
+/build/
+/mcp/target/
+build_configure.log
+# pinned downloads (tools/deps.py)
+/third_party/_deps/
+# this machine's game folder
+/mml.config.json
+# never commit game files, dumps or decompiles
+*.dmp
+/re/

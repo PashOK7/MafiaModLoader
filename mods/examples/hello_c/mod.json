@@ -1,0 +1,10 @@
+{
+  "id": "hello_c",
+  "name": "Hello (C): the smallest complete native mod",
+  "version": "0.1.0",
+  "type": "native",
+  "entry": "hello_c.dll",
+  "enabled": true,
+  "load_order": 100,
+  "depends": ["core"]
+}

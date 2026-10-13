@@ -1,0 +1,40 @@
+# The bridge protocol
+
+TCP on `127.0.0.1` only, port 47100 (or `bridge_port` in `<game>\mml\config.json`). One JSON object per line, both
+ways. Every connection starts with `hello` and the token from `<game>\mml\bridge.json` (a new token every run):
+
+```json
+-> {"id": 1, "method": "hello", "params": {"token": "8f3c..."}}
+<- {"id": 1, "result": {"pid": 25736, "build": "1.2", "api": 1}}
+-> {"id": 2, "method": "mem.read", "params": {"addr": "game+0x2479F8", "size": 4, "as": "ptr"}}
+<- {"id": 2, "result": {"addr": "Game.exe+0x2479F8", "abs": 6584824, "size": 4, "hex": "f87d6400", "value": ["Game.exe+0x247DF8"]}}
+<- {"id": 3, "error": {"message": "..."}}
+```
+
+Addresses: `"0x5762A0"`, `"5762A0"`, `"game+0x1762A0"`, `"ls3d+1AAE0"`, `"<module>+<hex>"`, or a number.
+
+## Methods answered at once (the bridge's thread)
+
+| Method | Params | Result |
+|---|---|---|
+| `ping` | | pid, build, frames, api, uptime, game_dir |
+| `log.tail` | `lines` | the last lines of the loader's log |
+| `mem.read` | `addr`, `size` (≤ 1 MiB), `as` (u8 i8 u16 i16 u32 i32 f32 f64 ptr str) | hex (and the values) |
+| `mem.write` | `addr`, `hex` or `as` + `values` | bytes written (code pages unprotected for it) |
+| `addr.describe` | `addr` | module+offset |
+| `modules` | | every loaded module: name, base, size, path |
+| `where` | | the main thread sampled 5 times, then its stack's code addresses |
+
+## Methods for the game thread (answered at its next frame; `timeout_ms`, default 5000)
+
+| Method | Params | Result |
+|---|---|---|
+| `mods.list` | | every mod: id, version, loaded, generation, error |
+| `mods.rescan` | | new mods in `mml\mods` loaded |
+| `mod.reload` / `mod.load` / `mod.unload` | `id` (`"*"`: every loaded mod, for reload) | the mod |
+| `commands.list` | | every method, the mods' with their help |
+| `hooks.list` | | every hooked function and its chain |
+| `<command>` | the command's | a mod's command: the core mod's without a prefix (`player`), others' as `<mod>.<name>` |
+
+The core mod's commands: `game`, `player`, `humans` (`radius`), `actors`, `frame` (`addr`), `frames.find`
+(`name`, `limit`).

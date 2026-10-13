@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "mafia": {
+      "type": "stdio",
+      "command": "./mcp/target/release/mml-mcp.exe"
+    }
+  }
+}

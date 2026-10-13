@@ -1,0 +1,1 @@
+{ "id": "hook_a", "name": "test: hook a", "version": "1", "entry": "hook_a.dll", "load_order": 10 }
