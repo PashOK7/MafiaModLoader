@@ -1,0 +1,1 @@
+{ "id": "kit", "name": "test: the mod author's kit", "version": "1", "entry": "kit.dll", "load_order": 30 }

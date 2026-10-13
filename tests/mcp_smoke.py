@@ -66,7 +66,8 @@ def main():
     check('initialize: the server tells agents how to use it', 'game_status' in (c.info.get('instructions') or ''), c.info)
     tools = {t['name'] for t in c.request('tools/list')['tools']}
     want = {'game_status', 'call', 'commands_list', 'mem_read', 'mem_write', 'log_tail', 'mods_list', 'mod_reload',
-            'where', 'game_launch', 'game_close', 'crash_list', 'crash_inspect', 'deploy', 'kb_search', 'kb_function', 'tap'}
+            'where', 'game_launch', 'game_close', 'crash_list', 'crash_inspect', 'deploy', 'kb_search', 'kb_function', 'tap',
+            'screenshot', 'input'}
     check('tools/list has every tool', want <= tools, want - tools)
 
     ok, text = c.tool('kb_search', {'query': 'scene.i3d', 'module': 'game.exe'})
@@ -98,8 +99,24 @@ def main():
         check('log_tail (live)', ok and 'hello_c' in text, text)
         ok, text = c.tool('call', {'method': 'no.such.method'})
         check('an unknown method is an error result', not ok, text)
+        ok, text = c.tool('screenshot')
+        check('screenshot with no Direct3D device: an error result that says so', not ok and 'device' in text, text)
+        ok, text = c.tool('input', {'steps': [{'turn': 90}, {'action': 'Forwards', 'ms': 200}]})
+        check('input with no game: an error result that says so', not ok and 'not known' in text, text)
+        ok, text = c.tool('input', {'steps': [{'action': 'Fire', 'key': 'Esc'}]})
+        check('input: a step with both an action and a key is refused', not ok and 'not both' in text, text)
         ok, text = c.tool('where')
         check('where samples the main thread', ok and 'sample 4' in text, text)
+        # the mod kit through `call`: drawing held for a frame's 2D pass, a mod's settings, the car with no game
+        ok, text = c.tool('call', {'method': 'draw.text', 'params': {'x': 10, 'y': 10, 'text': 'smoke', 'ms': 500}})
+        check('call draw.text: held (and no game to draw it in)', ok and '"held": 1' in text and 'note' in text, text)
+        ok, text = c.tool('call', {'method': 'config.set', 'params': {'mod': 'kit', 'key': 'smoke.n', 'value': 3}})
+        check('call config.set: a mod\'s setting changed', ok and '"value": 3' in text, text)
+        ok, text = c.tool('call', {'method': 'config.set', 'params': {'mod': 'kit', 'key': 'smoke', 'value': None}})
+        check('call config.set null: the setting gone again', ok and '"known": false' in text, text)
+        ok, text = c.tool('call', {'method': 'car'})
+        check('call car with no game: an error result that says so', not ok and 'not known' in text, text)
+        check('the instructions tell of the kit', all(w in c.info.get('instructions', '') for w in ('draw.text', 'config.set', 'new_mod.py')))
     finally:
         open(os.path.join(HARNESS, 'quit'), 'w').close()
         harness.wait(timeout=10)

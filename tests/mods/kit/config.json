@@ -1,0 +1,7 @@
+{
+  // the defaults (the test changes them through the host and by hand)
+  "speed": 12.5,
+  "name": "kit",
+  "hotkey": "F7",
+  "overlay": { "x": 10, "on": true }
+}

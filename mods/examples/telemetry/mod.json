@@ -1,0 +1,10 @@
+{
+  "id": "telemetry",
+  "name": "Telemetry: a speed and lap-time overlay (the mod kit's complete example)",
+  "version": "0.1.0",
+  "type": "native",
+  "entry": "telemetry.dll",
+  "enabled": true,
+  "load_order": 100,
+  "depends": ["core"]
+}

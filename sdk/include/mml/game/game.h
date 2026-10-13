@@ -153,6 +153,77 @@ inline const uint8_t *TestLinePrimitive(const V3 &from, const V3 &to, V3 *hit, V
     return static_cast<const uint8_t *>(r);
 }
 
+// ---- the mission
+// The open mission's folder name under missions\ ("freeitaly", "mise01", "00menu" the main menu); "" when none.
+inline const char *MissionName() {
+    void *m = Mission();
+    const char *name = m && Exe().missionName ? at<const char *>(m, Exe().missionName) : nullptr;
+    return name ? name : "";
+}
+
+// ---- the car. A C_car is an actor of type 4; its rigid body, a C_Vehicle, is inside it (C_car + Exe().vehicle).
+// The fields' offsets differ between the builds: they come from game_build.h (each read in the game's code and
+// seen in the running 1.2 game). Positions are metres, the world's; +y is up.
+constexpr int kActorTypeCar = 4;
+constexpr int kHumanVehicle = 0x98;   // C_human: the vehicle he is in (a car, a tram), or null
+
+// The car the player sits in now; null on foot (or in a tram).
+inline void *PlayerCar() {
+    void *p = Player();
+    void *v = p ? at<void *>(p, kHumanVehicle) : nullptr;
+    return v && at<int>(v, kActorType) == kActorTypeCar ? v : nullptr;
+}
+// The car the player drives or drove last (the one the HUD's speedometer is for); null before the first one.
+inline void *LastCar() { return Exe().hudCar ? at<void *>(reinterpret_cast<void *>(Exe().hud), Exe().hudCar) : nullptr; }
+
+struct Car {
+    void *car;
+    explicit Car(void *c) : car(c) {}
+    explicit operator bool() const { return car != nullptr; }
+    template <class T> T &v(int off) const { return at<T>(car, Exe().vehicle + off); }
+
+    V3 Position() const { return v<V3>(Exe().vehPos); }
+    V3 Velocity() const { return v<V3>(Exe().vehVelocity); }           // m/s, the world's axes
+    float Speed() const { return v<float>(Exe().vehSpeed); }           // m/s (the speedometer shows it in mph)
+    float SpeedKmh() const { return Speed() * 3.6f; }
+    float SteerAngle() const { return v<float>(Exe().vehSteer); }      // the wheels now: radians, left negative
+    float SteerWanted() const { return v<float>(Exe().vehSteerWanted); }   // what the driver asks for
+    float SteerMax() const { return v<float>(Exe().vehSteerMax); }     // the limit at this speed
+    float Steering() const { float m = SteerMax(); return m > 1e-4f ? SteerAngle() / m : 0.0f; }   // -1 left .. 1 right
+    int Gear() const { return v<int>(Exe().vehGear); }                 // -1 reverse, 0 neutral, 1...
+    int GearMax() const { return v<int>(Exe().vehGearMax); }
+    float Rpm() const { return EngineOn() ? v<float>(Exe().vehRps) * 60.0f : 0.0f; }   // as C_Vehicle::GetRotations
+    float Fuel() const { return v<float>(Exe().vehFuel); }             // litres
+    float FuelTank() const { return v<float>(Exe().vehFuelTank); }
+    bool EngineOn() const { return v<uint8_t>(Exe().vehEngineOn) != 0; }
+    // The engine's health, 1 whole .. 0 dead (crashes and bullets lower it; the engine stops at 0).
+    float EngineHealth() const { float m = v<float>(Exe().vehEngineHealthMax); return m > 1e-4f ? v<float>(Exe().vehEngineHealth) / m : 0.0f; }
+    float Damage() const { return 1.0f - EngineHealth(); }
+    void *Frame() const { return at<void *>(car, kActorFrame); }       // its model: WorldMatrix(Frame()) for its axes
+};
+
+// A car's state (position, rotation, speeds, engine, gear, fuel, damage and dents, wheels, lights, doors) saved and
+// put back with the game's own functions, the ones its saved games use for every car. A state goes back only into
+// the car it was taken from, or one of the same model (the size tells: it holds the body's dents); false otherwise.
+// Game thread only. The player may sit in the car.
+inline size_t CarStateSize(void *car) {
+    using Fn = int(__thiscall *)(void *);
+    return car && Exe().vehStateSize ? static_cast<size_t>(reinterpret_cast<Fn>(Exe().vehStateSize)(&at<uint8_t>(car, Exe().vehicle))) : 0;
+}
+inline bool CarStateSave(void *car, std::vector<uint8_t> *out) {
+    using Fn = char(__thiscall *)(void *, void *);
+    size_t n = CarStateSize(car);
+    if (n < 8 || n > (16u << 20)) return false;
+    out->assign(n, 0);
+    return reinterpret_cast<Fn>(Exe().vehStateSave)(&at<uint8_t>(car, Exe().vehicle), out->data()) != 0;
+}
+inline bool CarStateLoad(void *car, const std::vector<uint8_t> &state) {
+    using Fn = char(__thiscall *)(void *, const void *);
+    if (state.size() < 8 || *reinterpret_cast<const uint32_t *>(state.data()) != 9) return false;
+    if (CarStateSize(car) != state.size() || *reinterpret_cast<const uint32_t *>(state.data() + 4) != state.size()) return false;
+    return reinterpret_cast<Fn>(Exe().vehStateLoad)(&at<uint8_t>(car, Exe().vehicle), state.data()) != 0;
+}
+
 inline void SetLocalRotation(void *frame, const Q &q) {
     float *r = &at<float>(frame, kFrameRot);
     r[0] = q.w; r[1] = q.x; r[2] = q.y; r[3] = q.z;

@@ -20,8 +20,21 @@ address,kind,name,source,note
 1005B940,function,ibFree,game_build.h,
 100603E0,function,modelOpen,mafia-ragdoll,
 10062030,function,render,mafia-ragdoll,
+10064C26,site,renderCallback1,mml,Render calls the scene callback with stage 1 (returns here)
+10065521,site,renderCallback2,mml,"Render calls the scene callback with stage 2, the 3D frame drawn: the game 2D pass (returns here)"
 10065560,function,QueueVisual,mafia-ragdoll,
+1006C7C0,function,IGraph::SetTexture,mml,"vtable slot 3: stdcall(igraph, tex): the device SetTexture(0, tex+8 or 0)"
+1006CD40,function,IGraph::SetState,mml,"slot 17: stdcall(igraph, id, value); 0 blending (0 off, 1 alpha + alpha test, 3 alpha test), 1 the blend functions"
+1006D350,function,IGraph::GetState,mml,"slot 18: stdcall(igraph, id) -> value"
+1006D4C0,function,IGraph::Present,mml,slot 15 (the game loops call it last)
+1006D640,function,IGraph::DrawPrimitive,mml,"slot 22: stdcall(igraph, type, count, vertices, format): DrawPrimitiveUP; type 1 line list, 2 line strip, 3 triangle list, 4 fan, 5 strip; format 1: 32-byte XYZRHW|DIFFUSE|SPECULAR|TEX1"
+1006D750,function,IGraph::DrawIndexedPrimitive,mml,slot 23: the same with indices (the text glyphs)
 100701A0,function,drvClose,game_build.h,
+100717F0,function,keyboardUpdate,game_build.h,
+10071960,function,IGraph::ReadKey,mml,"slot 39: the first key newly pressed in the keyboard state (modifiers skipped), its character latched at 0x101C546C"
+10071A10,function,IGraph::GetChar,mml,"slot 40: the latched character, cleared"
+10071E20,function,IGraph::ReadMouse,mml,"slot 55 (1.2): GetDeviceState(16) into the DIMOUSESTATE at 0x101C56F0 (lX, lY, lZ, buttons[4]); the loader injects the menus' mouse after it"
+10071E20,function,mouseUpdate,game_build.h,
 10072100,function,frameLimit,mafia-ragdoll,
 1009C538,label,emitorVtable,mafia-ragdoll,
 1009C8F8,label,SceneVtable,mafia-ragdoll,
@@ -29,4 +42,8 @@ address,kind,name,source,note
 100A93F0,label,camRecompute,game_build.h,
 101B50F8,label,ibManager,game_build.h,
 101B5124,label,ibNil,game_build.h,
+101C5300,label,keyboardState,game_build.h,
+101C56F0,data,g_mouseState,mml,"DIMOUSESTATE: lX, lY, lZ, 4 button bytes"
+101C56F0,label,mouseState,game_build.h,
 101C597C,label,Device,mafia-ragdoll,
+101C597C,label,d3dDevice,game_build.h,

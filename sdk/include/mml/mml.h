@@ -54,8 +54,84 @@ typedef enum MmlEventType {
     MML_EVENT_HUMAN_HIT = 6,         /* a C_human took a hit (after the game's Hit): actor, hit */
     MML_EVENT_SERVICES_CHANGED = 7,  /* a service was published or went away (its mod unloaded): name */
     MML_EVENT_MOD_LOADED = 8,        /* a mod was loaded or reloaded: name (its id) */
+    MML_EVENT_MISSION_OPEN = 9,      /* a mission is being opened, its loading begins: name (its folder under
+                                        missions\: "freeitaly", "mise01", "00menu" the main menu). The world of the
+                                        mission before it has closed (MISSION_CLOSE came first) */
+    MML_EVENT_MISSION_LOADED = 10,   /* the loading is done: the mission's world ticks for the first time: name */
+    MML_EVENT_GAME_PAUSED = 11,      /* a menu stopped the mission's world (the pause menu): no MISSION_TICK until */
+    MML_EVENT_GAME_RESUMED = 12,     /* ... the world runs again */
+    MML_EVENT_CONFIG_CHANGED = 13,   /* this mod's settings changed (its config.json edited, or config.set): name
+                                        (the mod's id). Only the mod itself gets it */
     MML_EVENT_COUNT_
 } MmlEventType;
+
+typedef enum MmlMissionState {
+    MML_MISSION_NONE = 0,            /* no mission is open */
+    MML_MISSION_LOADING = 1,         /* opened, not ticked yet */
+    MML_MISSION_RUNNING = 2,
+    MML_MISSION_PAUSED = 3           /* a menu stopped its world */
+} MmlMissionState;
+
+/* Drawing (MmlHost draw_*): what a mod queues is drawn by the game's own 2D drawing at the end of the frame's 2D
+ * pass, over the HUD and the menus, and is in the frame `screenshot` returns. Coordinates are the menus' virtual
+ * units, whatever the resolution: the screen is 800 wide and 600 high, (0, 0) its top left corner. Colours are
+ * 0xAARRGGBB. A text's size is its line height in the same units (the HUD's money is 40, a menu's button 30). */
+typedef enum MmlFont {
+    MML_FONT_SMALL = 0,              /* the plain font of the HUD's messages and the subtitles */
+    MML_FONT_BIG = 1,                /* the bold font of the HUD's numbers and the menus' buttons */
+    MML_FONT_TITLE = 2,              /* the handwritten font of the menus' titles */
+    MML_FONT_COUNT_
+} MmlFont;
+#define MML_DRAW_LEFT 0              /* x is the text's left edge */
+#define MML_DRAW_CENTER 2            /* x is its centre */
+#define MML_DRAW_RIGHT 4             /* x is its right edge */
+
+typedef void (*MmlHotkeyFn)(void *user);
+
+/* The game's own menus (MmlHost menu_*). Not an overlay: the items and pages are the game's own controls, made by
+ * the game's own code, in its fonts and paper, clicked with its mouse and keys and sounds.
+ * A page is described as the game's menu files (tables\menu\*.mnu) describe theirs (`menu.def {name}` on the bridge
+ * shows any of the game's own, `menu.state` any open menu). The first control is the page's window ("wind": its
+ * text the title); the others are inside it. A container ("wins", "wind", "winc") holds the controls that follow it
+ * until "end" (which returns to the page's window: containers do not nest). x, y, w, h: 800x600 units, from the
+ * paper's (or the container's) top left corner. The kinds (all read in the game's code and seen in a page):
+ *   stxt  a text                        item  a row that is clicked (the pause menu's)    butt  a button
+ *   line  a line (w its length)         pbar  a progress bar (the loading screen's), 0..1
+ *   slid  a slider, 0..1 (dragged, clicked, its arrows)
+ *   chck  a check box, 0 or 1           bslb  a switch between two texts: text "Off|On", 0 or 1
+ *   bsel  a selector: text "Easy|Normal|Hard", the option's index (a click steps to the next)
+ *   iten  a number in its text: text "Laps: %u", menu_set_range, the value (a click steps it)
+ *   edit  a text field (typed into; menu_text reads it; at most 63 characters)
+ *   rctt  a picture: text an image file (.bmp, .tga) the engine loads as a texture (a full path: in the mod's data
+ *         folder; or relative to the game's folder)
+ *   wins  a scrolled list: its controls may reach past its height; the game draws its scroll bar (value 0..1 the
+ *         scroll); it clips what is drawn after it, so the loader puts it last in the page (the keyboard's order
+ *         is by id, not by place)
+ *   and the game's other kinds (edin, sldi, rari, orez, rect, ...: their values are not offered yet).
+ * A control that changes (a click, Enter, a drag, a step) calls the page's function with its id; menu_value reads
+ * what it is now. flags 0: the kind's usual ones, as the game's own pages have them (a centred button in the bold
+ * font, a grey text in the plain one); else MML_MENU_* (shown and enabled are added). The colours are each kind's
+ * own (read in their drawing code): a text "stxt" is grey, MML_MENU_TEXT_* other; a button "butt" is black (grey
+ * while a menu over it is active), MML_MENU_BUTTON_* other; a row "item" is black, MML_MENU_ITEM_RED red. */
+#define MML_MENU_FONT_SMALL 0x0      /* the font, as MmlFont (the low four bits) */
+#define MML_MENU_FONT_BIG 0x1
+#define MML_MENU_FONT_TITLE 0x2
+#define MML_MENU_RIGHT 0x40          /* the text at the right edge of the control */
+#define MML_MENU_CENTER 0x80         /* ... in its middle */
+#define MML_MENU_TEXT_WHITE 0x100    /* "stxt" */
+#define MML_MENU_TEXT_YELLOW 0x200
+#define MML_MENU_TEXT_BLACK 0x300
+#define MML_MENU_BUTTON_RED 0x100    /* "butt" */
+#define MML_MENU_BUTTON_WHITE 0x200
+#define MML_MENU_ITEM_RED 0x400      /* "item" */
+typedef struct MmlMenuControl {
+    int id;                 /* what a click on it sends (unique in the page; the keyboard walks the page by rising id) */
+    const char *kind;       /* "wind", "stxt", "item", "butt", "slid", "chck", "bsel", "wins"... (above), or "end" */
+    float x, y, w, h;
+    const char *text;       /* or NULL; options "A|B|C" (bslb, bsel), a format (iten), a file (rctt) */
+    uint32_t flags;
+} MmlMenuControl;
+typedef void (*MmlMenuFn)(int id, void *user);   /* a control was clicked, changed (or Enter on it): its id */
 
 typedef struct MmlHumanHit {
     int type;               /* the game's hit type (0 bullet, 2 tram/plane, 3 explosion, 5 car, 6 fall, 8 car...) */
@@ -71,7 +147,7 @@ typedef struct MmlEvent {
     float dt;               /* FRAME, MISSION_TICK: seconds */
     void *actor;            /* ACTOR_DESTROYED, HUMAN_CREATED, HUMAN_HIT */
     const MmlHumanHit *hit; /* HUMAN_HIT */
-    const char *name;       /* SERVICES_CHANGED, MOD_LOADED */
+    const char *name;       /* SERVICES_CHANGED, MOD_LOADED, MISSION_OPEN, MISSION_LOADED, CONFIG_CHANGED */
 } MmlEvent;
 
 typedef void (*MmlEventFn)(const MmlEvent *ev, void *user);
@@ -123,6 +199,80 @@ typedef struct MmlHost {
 
     /* ---- run fn(user) on the game thread at the next frame (callable from any thread) */
     void (*post)(MmlMod *mod, void (*fn)(void *user), void *user);
+
+    /* ---- drawing in the game's frame (see MmlFont above). Call these every frame the thing is to be seen (from
+     * MML_EVENT_FRAME: every frame, the menus and the pause too; or MML_EVENT_MISSION_TICK): what is queued is
+     * drawn once, in the frame being made, and dropped. A text is in the game's own encoding (ASCII is safe) and
+     * at most about 100 characters a call. A fault while a mod's items are drawn turns that mod's drawing off
+     * until it is reloaded (the log tells); the game goes on. */
+    void (*draw_text)(MmlMod *mod, float x, float y, float size, uint32_t argb, int font, int align, const char *text);
+    float (*draw_text_width)(int font, float size, const char *text);   /* in the same units; 0 with no game */
+    void (*draw_line)(MmlMod *mod, float x0, float y0, float x1, float y1, uint32_t argb);
+    void (*draw_rect)(MmlMod *mod, float x, float y, float w, float h, uint32_t argb, int filled);
+
+    /* ---- keys and actions, as the game got them at its last read (the keys and actions the loader injects for
+     * agents, `input`, are seen the same way as real ones). A key is a DirectInput code (key_code("F5"), "Ctrl",
+     * "Space", "A"...; -1: no such name). key_pressed is true for the one frame the key went down: ask in one
+     * handler (FRAME or MISSION_TICK), each frame. An action is one of the game's binding slots (action_slot(
+     * "Accelerate"), "Fire", "Action"...; -1: no such name; `input.actions` lists them): its value is 0..1 for a
+     * button and the axis' value for the mouse; action_pressed is nonzero in the frame it was pressed. */
+    int (*key_code)(const char *name);
+    int (*key_down)(int key);
+    int (*key_pressed)(int key);
+    int (*action_slot)(const char *name);
+    float (*action_held)(int slot);
+    float (*action_pressed)(int slot);
+    /* A hotkey: fn(user) is called (game thread, before MML_EVENT_FRAME) when the combination goes down:
+     * "F5", "Ctrl+F5", "Ctrl+Shift+R" (modifiers: Ctrl, Shift, Alt, either side; exactly those held). The same
+     * fn and user again: the combination replaced (a setting changed). 0: the combination is not understood. */
+    int (*hotkey)(MmlMod *mod, const char *combo, MmlHotkeyFn fn, void *user);
+
+    /* ---- the mission (MML_EVENT_MISSION_OPEN, _LOADED, _CLOSE, MML_EVENT_GAME_PAUSED, _RESUMED tell the changes) */
+    const char *(*mission_name)(void);   /* the open mission's folder name ("freeitaly"); "" when none */
+    int (*mission_state)(void);          /* MmlMissionState */
+
+    /* ---- a mod's own files and settings.
+     * mod_data_dir: <game>\mml\data\<id>\ (trailing backslash; made when first asked for): what the mod writes
+     * (records, logs, saved state). The mod's own folder is replaced by every deploy: write nothing there.
+     * Settings: config.json in the mod's folder holds the defaults (shipped with the mod); config.json in its data
+     * folder holds what was changed (by config_set, by the bridge's `config.set`, by hand). The mod reads the two
+     * merged. When either file changes, they are read again and the mod gets MML_EVENT_CONFIG_CHANGED. A key may
+     * be a path ("overlay.x"). What config_string and config_json return stays valid until the settings change.
+     * config_json: the value at the key as JSON text ("" or NULL key: the whole config); NULL when there is none.
+     * config_set: value_json is JSON text ("12.5", "\"F5\"", "[1, 2, 3]", "null" removes the key); 0: not JSON,
+     * or the file could not be written. */
+    const char *(*mod_data_dir)(MmlMod *mod);
+    double (*config_number)(MmlMod *mod, const char *key, double def);   /* a number, or a boolean as 0 / 1 */
+    const char *(*config_string)(MmlMod *mod, const char *key, const char *def);
+    const char *(*config_json)(MmlMod *mod, const char *key);
+    int (*config_set)(MmlMod *mod, const char *key, const char *value_json);
+
+    /* ---- the game's own menus (see MmlMenuControl above; 1.2 only: 0 elsewhere).
+     * menu_item: an item added to one of the game's menus, the way the game itself adds rows to its lists (its
+     * PridejComponentPod): whenever that menu is made, a copy of the control `after_id` is put right under it with
+     * this text, the window grows by its height and what is below moves down. The copy looks, sounds and is
+     * walked by the keyboard as its neighbours. menu: the menu's definition name ("gamemenu": the pause menu, its
+     * rows 102 Exit Game, 103 Load Game, 108 Options, 111 Resume Game; `menu.state` on the bridge shows the name
+     * and the controls of any open menu). A click calls fn(id, user). Returns a handle, 0 on failure. The same
+     * mod, menu, fn and user again: the text and the place replaced. The item is in the menu from its next opening.
+     * menu_open: a page of the mod's own put over the open menu, as the game's Options is put over the pause menu
+     * (from an item's fn, usually); with no menu open the pause menu is opened first. The game builds the page
+     * from `controls` as it builds its own from a .mnu file. A click calls fn(id, user); Esc closes the page.
+     * name: letters, digits, _ (other mods add items to "<mod id>_<name>"). One page a mod at a time. 0: refused.
+     * menu_close: the mod's page closed (from its fn: a Back button). menu_set_text: a control's text on the
+     * mod's page (a picture's file). menu_set_value: a control's value by its own setter (slid, pbar, wins: 0..1;
+     * chck, bslb: 0 or 1; bsel: the option's index; iten: the number); menu_value reads it (what the player made
+     * it). menu_set_range: a number's ("iten") range. menu_text: a text field's ("edit") text, or any control's.
+     * All of them may be called right after menu_open: what is set before the game has made the page is applied
+     * when it is made. 1: done, 0: no such control on the mod's page, or a kind without it. */
+    int (*menu_item)(MmlMod *mod, const char *menu, int after_id, const char *text, MmlMenuFn fn, void *user);
+    int (*menu_open)(MmlMod *mod, const char *name, const MmlMenuControl *controls, int count, MmlMenuFn fn, void *user);
+    void (*menu_close)(MmlMod *mod);
+    int (*menu_set_text)(MmlMod *mod, int id, const char *text);
+    int (*menu_set_value)(MmlMod *mod, int id, float value);
+    int (*menu_value)(MmlMod *mod, int id, float *value);
+    int (*menu_set_range)(MmlMod *mod, int id, int min, int max);
+    int (*menu_text)(MmlMod *mod, int id, char *buf, int size);
 } MmlHost;
 
 typedef int (*MmlModLoadFn)(const MmlHost *host, MmlMod *mod);

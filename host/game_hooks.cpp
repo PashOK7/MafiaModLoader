@@ -18,6 +18,17 @@ using MissionCloseFn = int(__fastcall *)(void *, void *);
 using ActorDtorFn = void(__fastcall *)(void *, void *);
 using HumanCtorFn = void *(__fastcall *)(void *, void *);
 using HumanHitFn = int(__fastcall *)(void *, void *, int, MmlVec3 *, MmlVec3 *, MmlVec3 *, float, void *, unsigned, void *);
+using MissionOpenFn = int(__fastcall *)(void *, void *, const char *, int, unsigned, int);   // thiscall, ret 0x10
+MissionOpenFn oMissionOpen;
+
+// The mission, as mods are told of it (mml.h MML_EVENT_MISSION_OPEN, _LOADED, MML_EVENT_GAME_PAUSED, _RESUMED).
+// C_mission::Open closes the open mission first (MISSION_CLOSE), then loads the new one: MISSION_OPEN is sent
+// between the two, from the close's hook, so mods see the old world go before the new one's name. The loading is
+// done when the mission ticks for the first time. A pause: a menu is open and the game's loop has stopped calling
+// the mission's tick (the pause menu's loop does not; the main menu's does: its mission, 00menu, runs under it).
+std::string g_missionName, g_openName;
+bool g_inOpen, g_openSent, g_missionLoaded, g_paused;
+unsigned g_ticks, g_ticksSeen;
 FrameLimitFn oFrameLimit;
 MissionTickFn oMissionTick;
 MissionCloseFn oMissionClose;
@@ -38,16 +49,58 @@ int __stdcall hkFrameLimit(void *driver, int a, int b) {
     Frame();
     return r;
 }
+void SendNamed(MmlEventType type) {
+    std::string name = g_missionName;   // (a handler may open a mission)
+    MmlEvent ev = Event(type);
+    ev.name = name.c_str();
+    Dispatch(ev);
+}
+void SendOpen() {
+    g_openSent = true;
+    g_missionName = g_openName;
+    g_missionLoaded = false;
+    HLOG("mission '%s' opens", g_missionName.c_str());
+    SendNamed(MML_EVENT_MISSION_OPEN);
+}
+void SetPaused(bool paused) {
+    if (paused == g_paused) return;
+    g_paused = paused;
+    Dispatch(Event(paused ? MML_EVENT_GAME_PAUSED : MML_EVENT_GAME_RESUMED));
+}
+
+int __fastcall hkMissionOpen(void *self, void *edx, const char *name, int a, unsigned b, int c) {
+    char safe[128] = {};
+    if (name) MemRead(reinterpret_cast<uintptr_t>(name), safe, sizeof safe - 1);
+    g_openName = safe;
+    g_inOpen = true;
+    g_openSent = false;
+    int r = oMissionOpen(self, edx, name, a, b, c);
+    if (!g_openSent) SendOpen();   // (Open did not close anything first)
+    g_inOpen = false;
+    return r;
+}
 int __fastcall hkMissionTick(void *self, void *edx, int ms) {
     int r = oMissionTick(self, edx, ms);
+    g_ticks++;
+    if (!g_missionLoaded && !g_missionName.empty()) {
+        g_missionLoaded = true;
+        HLOG("mission '%s' loaded", g_missionName.c_str());
+        SendNamed(MML_EVENT_MISSION_LOADED);
+    }
+    SetPaused(false);
     MmlEvent ev = Event(MML_EVENT_MISSION_TICK);
     ev.dt = ms > 0 && ms < 200 ? ms / 1000.0f : 1.0f / 60.0f;
     Dispatch(ev);
     return r;
 }
 int __fastcall hkMissionClose(void *self, void *edx) {
+    SetPaused(false);
     Dispatch(Event(MML_EVENT_MISSION_CLOSE));
-    return oMissionClose(self, edx);
+    g_missionLoaded = false;
+    g_missionName.clear();
+    int r = oMissionClose(self, edx);
+    if (g_inOpen && !g_openSent) SendOpen();
+    return r;
 }
 void __fastcall hkActorDtor(void *self, void *edx) {
     MmlEvent ev = Event(MML_EVENT_ACTOR_DESTROYED);
@@ -103,15 +156,33 @@ void Frame() {
         g_modsStarted = true;
         ModsInit();
     }
+    DrawFrame();
     BridgeFrame();
     RunPosted();
     StartFrame();
+    MenusFrame();
+    InputFrame();     // (before the settings' events: a handler that binds its hotkey again must not lose a press)
+    ConfigFrame();
+    // a pause: a frame went by without the mission's tick while a menu is open over a loaded mission
+    bool ticked = g_ticks != g_ticksSeen;
+    g_ticksSeen = g_ticks;
+    if (g_missionLoaded && !ticked && game::g_exe && game::Exe().menuTop) {
+        uintptr_t menu = 0;
+        MemRead(game::Exe().menuTop, &menu, sizeof menu);
+        if (menu) SetPaused(true);
+    }
     MmlEvent ev = Event(MML_EVENT_FRAME);
     ev.dt = dt;
     Dispatch(ev);
 }
 
 const char *GameBuild() { return g_build; }
+const char *MissionName() { return g_missionName.c_str(); }
+int MissionState() {
+    if (g_missionName.empty()) return MML_MISSION_NONE;
+    if (!g_missionLoaded) return MML_MISSION_LOADING;
+    return g_paused ? MML_MISSION_PAUSED : MML_MISSION_RUNNING;
+}
 
 bool GameHooksInstall() {
     QueryPerformanceFrequency(&g_freq);
@@ -126,6 +197,7 @@ bool GameHooksInstall() {
     Hook(ls3d + game::Ls3d().frameLimit, (void *)hkFrameLimit, (void **)&oFrameLimit, "FrameLimit");
     Hook(x.missionTick, (void *)hkMissionTick, (void **)&oMissionTick, "MissionTick");
     Hook(x.missionClose, (void *)hkMissionClose, (void **)&oMissionClose, "MissionClose");
+    if (x.missionOpen) Hook(x.missionOpen, (void *)hkMissionOpen, (void **)&oMissionOpen, "MissionOpen");
     Hook(x.actorDtor, (void *)hkActorDtor, (void **)&oActorDtor, "ActorDtor");
     Hook(x.humanCtor, (void *)hkHumanCtor, (void **)&oHumanCtor, "HumanCtor");
     Hook(x.humanHit, (void *)hkHumanHit, (void **)&oHumanHit, "HumanHit");

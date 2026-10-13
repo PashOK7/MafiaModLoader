@@ -18,6 +18,12 @@ missing) and the end of `docs/JOURNAL.md`. Keep the roadmap and the journal curr
 - **Never commit game files, extracted assets, dumps or decompiles.** `re/` and `*.dmp` are ignored.
 - **Correct over quick**: use the engine's own functions and hook points, verify every address in the disassembly,
   say plainly what is a compromise.
+- **Doubt the tools.** When a tool here answers something the game contradicts (an input that "did not work", a
+  value that cannot be), do not work around it and do not blame the game: read the code that is involved
+  (`kb_function`, `tap`, the disassembly) until the reason is known, and write it down (`knowledge/notes/`, the
+  journal). If the tool is at fault, say so to the owner and, with their go-ahead, fix the tool in this repository
+  (a test with it); what is not fixed now goes to `docs/ROADMAP.md` "Known gaps" (and, once the repository is on
+  GitHub, an issue; a fix from another repository's work comes as a pull request).
 - **Language**: everything in the repository is English. Talk to the owner in the language they use.
 - **Ask the owner before**: pushing, publishing, opening PRs, anything outside the game folder and this repository.
 
@@ -37,11 +43,27 @@ Then, through MCP (`.mcp.json` registers the server as `mafia`): `game_launch` �
 `log_tail`. The loader itself (`MafiaModLoader.asi`) changes only with the game closed (`game_close`, `deploy`,
 `game_launch`).
 
-**Into the game in seconds**: `game_launch {"profile": 4, "go": "freeride"}` (or `"go": "menu"`) skips the logos and
-takes the game through its own menus; it returns once the player exists. The owner's shortcut:
-`python tools/start.py freeride --profile 4`. Other menus: `call menu.state`, `call menu.command {command}`.
+**Into the game in seconds**: `game_launch {"profile": 4, "go": "freeride", "police": 0}` (or `"go": "menu"`) skips
+the logos and takes the game through its own menus; it returns once the player exists. `"police": 0` is the freeride
+menu's slider: a city without patrols (the player starts with a Thompson in his hands, and patrols shoot at that).
+The owner's shortcut: `python tools/start.py freeride --profile 4 --police 0`. Other menus: `call menu.state`,
+`call menu.command {command}`, `call menu.value {id, value}`.
+**Eyes and hands**: `screenshot` returns the game's own frame as a picture (the window may be hidden or behind
+others); `input` plays a timed sequence inside the game: the game's actions by name, whatever they are bound to
+(`{"action": "Forwards", "ms": 2000}`, `"Accelerate"`, `"Fire"`, `"Action"`), an exact turn on foot
+(`{"turn": 90}`), keys for the menus (`{"key": "Esc"}`), the menus' mouse (`{"click": [x, y]}`, `{"wheel": -3}`);
+`"screenshot": true` shows the result. `call menu.click {"id": 102}` clicks a menu's control by its id (safer than
+coordinates), `call input.text {"text": "Tommy"}` types. It returns the
+player's state when the last step has ended. `call input.actions` lists every action and its binding.
 **Watch any function** with `tap` (`"5409D0 n=4 ptr=1:32"`, let the game do the thing, `"show 0"`): the fastest way
 to learn what the game does.
+**Writing a mod**: `python tools/new_mod.py <id>`, then `docs/MODDING.md` (the whole way; `mods/examples/telemetry`
+is a complete one). The host gives a mod the frame's drawing (text, lines, rectangles in the game's fonts), the
+keys and the game's actions, hotkeys, the car by name, the mission as events, a data folder and settings, and the
+game's own menus extended (an item in the pause menu, a page of its own made of the game's real controls): a mod
+needs no thread, window or Windows hook of its own. Try things without a mod: `call draw.text {"x": 400, "y": 100,
+"text": "hello", "size": 30, "ms": 10000}`, `call car`, `call config.set {"mod", "key", "value"}`,
+`call menu.item {"menu": "gamemenu", "after": 108, "text": "Hello"}` (then `Esc` and `call menu.state`).
 
 ## Knowing the game
 
@@ -56,15 +78,15 @@ running game (`mem_read`, `call`), and write what you learned back: `knowledge/<
 
 | Path | What |
 |---|---|
-| `host/` | `MafiaModLoader.asi`: the never-unloaded host: game hooks → events, hook chains, mods, bridge, crash dumps, `tap`, the start (`start.cpp`: logos, profile, menus) |
+| `host/` | `MafiaModLoader.asi`: the never-unloaded host: game hooks → events (the mission's too), hook chains, mods, bridge, crash dumps, `tap`, the start (`start.cpp`: logos, profile, menus), input (`input.cpp`: actions, keys, the mods' keys and hotkeys), screenshots (`screenshot.cpp`), drawing (`draw.cpp`: the game's own 2D drawing for mods and `draw.*`), the game's menus extended (`menus.cpp`: items and pages for mods, `menu.item`, `menu.page`), a mod's data folder and settings (`config.cpp`) |
 | `sdk/include/mml/mml.h` | **the C ABI** every native mod uses (C, C++, Rust, Zig...): read it whole |
-| `sdk/include/mml/game/` | what code uses: `game_build.h` (every address, per build, `game::Detect`), `game.h` (layouts, calls), `mathx.h` |
+| `sdk/include/mml/game/` | what code uses: `game_build.h` (every address, per build, `game::Detect`), `game.h` (layouts, calls: actors, frames, the player's car `game::Car`, a car's state, the mission's name), `mathx.h` |
 | `knowledge/` | the knowledge base: every function of the 1.2 game (from MafiaReverse), our names, notes (`tools/kb_import.py`) |
-| `mods/core/` | the core mod: the game's live state as commands (`game`, `player`, `humans`, `actors`, `frame`, `frames.find`) |
-| `mods/examples/` | `hello_c` (plain C); more languages to come (see `docs/ROADMAP.md`) |
-| `mcp/` | the MCP server (Rust, `rmcp`): bridge client, game process, crash dumps, deploy, the knowledge base (`kb.rs`) |
-| `tests/` | `harness/` (the stand-in game), `mods/` (test mods), `run_tests.py`, `mcp_smoke.py` |
-| `tools/` | `lab.py` (the lab's modes, install), `deps.py` (pinned downloads), `check_builds.py` (the address tables against the game's files), `kb_import.py` (the knowledge base from MafiaReverse), `start.py` (launch into a profile and the freeride), `replace.py` (exact text edits) |
+| `mods/core/` | the core mod: the game's live state as commands (`game`, `player`, `car`, `car.save`, `car.restore`, `humans`, `actors`, `frame`, `frames.find`) |
+| `mods/examples/` | `telemetry` (C++: the mod kit's complete example: an overlay, a hotkey, the car, saved files, settings), `hello_c` (plain C, the smallest); more languages to come (see `docs/ROADMAP.md`) |
+| `mcp/` | the MCP server (Rust, `rmcp`): bridge client, game process, crash dumps, deploy, the knowledge base (`kb.rs`), screenshots (`shot.rs`) |
+| `tests/` | `harness/` (the stand-in game), `mods/` (test mods: `hook_a`, `hook_b`, `kit`), `run_tests.py`, `mcp_smoke.py` |
+| `tools/` | `lab.py` (the lab's modes, install), `deps.py` (pinned downloads), `check_builds.py` (the address tables against the game's files), `kb_import.py` (the knowledge base from MafiaReverse), `start.py` (launch into a profile and the freeride), `new_mod.py` (a new mod: its folder, manifest, settings, CMake line), `replace.py` (exact text edits) |
 | `third_party/` | MinHook, nlohmann/json (vendored); `_deps/` (downloaded: Ultimate ASI Loader, LuaJIT) |
 
 ## Facts that cost time to find
@@ -80,3 +102,40 @@ running game (`mem_read`, `call`), and write what you learned back: `knowledge/<
   (backslashes get eaten: `\n` in C strings, `\\` in Windows paths). `replace.py` resolves paths from its own
   repository's root: run this repository's copy.
 - A mod's callback that faults is unloaded at the next frame; the game goes on (`log_tail` tells which and where).
+- **The game's 2D things are drawn in one callback** (0x5BD8D0, LS3D's render calls it with stage 2: the HUD, the
+  open menu, the console), in pixels through `IGraph`; the HUD and the menus are laid out in 800x600 units times
+  the scale at `hud + 0x40C0`. The loader's drawing for mods hangs there (`host/draw.cpp`,
+  `knowledge/notes/interface.md`).
+- **The game's menus are objects built from definitions** (`tables\menu\<name>.mnu`, 32-byte records, one factory
+  a control kind: 38 kinds, `wind`, `stxt`, `butt`, `item`, `slid`, `pbar`, `chck`, `edit`, `wins`...); a click or
+  Enter sends the control's id to the menu's vtable slot 9. `call menu.def {"name": "optionsa"}` shows any of the
+  game's own definitions. A control's colour bits (0x100..0x400 of its flags) mean something else in each kind (a
+  text's 0x100 is white, a button's red): read the kind's Draw before trusting a flag. In a definition `"end"`
+  returns to the topmost window, not one level up; a scrolled list (`wins`) leaves its clip set for what is drawn
+  after it (`knowledge/notes/interface.md`).
+- **`menu.state`'s `x`, `y` are inside the parent; `screen` is where the control is.** A click at the parent-relative
+  place once landed on another button and started a mission: click by id (`menu.click`).
+- **A car's speed is `C_Vehicle + 0x59C`, metres a second** (the HUD's number at 0x6C3AF4 is the same in km/h; the
+  dial shows mph). TrackMafia's "speed" offset (`car + 0x594`) holds the engine's idle turns in 1.2, not a speed:
+  an older tool's offsets are leads, checked before use (`knowledge/notes/game.md`, "Cars").
+- **The pause menu does not tick the mission; the main menu does** (its mission `00menu` runs under it): "paused"
+  is a frame without the mission's tick while a menu is open.
+- **`Action` in a car is three things** (0x594FA0): nothing while the car moves (speed 0.5 and more), the engine
+  stopped when it runs, and only then the player gets out. Getting out of a car that was driven: wait for it to
+  stop, `Action`, `Action`.
+- **The freeride's player holds a Thompson** (two long weapons: `Hide Weapon` has nowhere to put it); a patrol that
+  sees it shoots. Start with `"police": 0`.
+- **A mouse axis is not in counts**: `Aim X` 1.0 for a frame is 400 counts, several turns of the player. Use
+  `turn` (degrees), or values around 0.01 (docs/PROTOCOL.md).
+- **Tool calls sent in one message may run at the same time**: a `screenshot` or a `call` beside an `input` is not
+  after it (it cost two false "the hotkey did not fire" here). To see what a step did, let one tool do both
+  (`input` with `"screenshot": true`; `no_wait` and then `screenshot` with `count` and `every_ms` for a key that
+  is still held), or send the second call in the next message.
+- **A here-document in the agent's shell eats backslashes even when it is quoted** (measured 2026-10-13 with
+  `od -c`: a doubled backslash arrives single, except before a double quote): the rule above about the editor's
+  tool holds for scripts fed to `python -` or written with `cat <<'EOF'` too.
+- **`tools/replace.py` takes one OLD/NEW pair per `=== FILE` block**: a second `--- OLD` in the same block is taken
+  as text of the first NEW.
+- **The MCP server's own binary is locked while your session runs it**: to build a new one, rename
+  `mcp/target/release/mml-mcp.exe` first (Windows allows that), build, and test the new one with a client of your
+  own (`tests/mcp_smoke.py` shows how); the session gets it at its next start.

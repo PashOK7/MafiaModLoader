@@ -88,8 +88,82 @@ int CmdGame(const char *, MmlReply *r, void *) {
         j["mission"] = Hex(mission);
         j["scene"] = Hex(R<uintptr_t>(mission + game::kMissionScene));
         j["player"] = Hex(Player());
+        j["mission_name"] = Str(R<uintptr_t>(mission + game::Exe().missionName));
+    }
+    if (MML_HAS(H, mission_state)) {
+        static const char *kState[] = {"none", "loading", "running", "paused"};
+        int st = H->mission_state();
+        j["mission_state"] = st >= 0 && st < 4 ? kState[st] : "?";
     }
     return Reply(r, j);
+}
+
+// ---- the car (game.h `Car`: the same fields, read here through mem_read so a stale pointer is an error, not a fault)
+std::vector<uint8_t> g_carState;   // `car.save`'s
+uintptr_t g_carStateOf;
+
+// The car asked for: {"car": "0x..."} or the one the player drives now, else the one he drove last (the HUD's).
+uintptr_t CarOf(const json &p, const char **which) {
+    std::string a = p.value("car", "");
+    if (!a.empty()) { *which = "given"; return strtoul(a.c_str(), nullptr, 16); }
+    uintptr_t player = Player(), v = R<uintptr_t>(player + game::kHumanVehicle);
+    if (v && R<int>(v + game::kActorType) == game::kActorTypeCar) { *which = "driven"; return v; }
+    *which = "last";
+    return game::Exe().hudCar ? R<uintptr_t>(game::Exe().hud + game::Exe().hudCar) : 0;
+}
+
+int CmdCar(const char *args, MmlReply *r, void *) {
+    if (!Known() || !game::Exe().vehPos) return Fail(r, "the car is not known for this build");
+    const game::ExeBuild &e = game::Exe();
+    const char *which = "";
+    uintptr_t car = CarOf(Params(args), &which);
+    if (!car) return Fail(r, "no car (the player has not driven one in this mission)");
+    uintptr_t v = car + e.vehicle;
+    float pos[3], vel[3];
+    if (R<int>(car + game::kActorType, -1) != game::kActorTypeCar || !H->mem_read(v + e.vehPos, pos, sizeof pos) ||
+        !H->mem_read(v + e.vehVelocity, vel, sizeof vel))
+        return Fail(r, "not a car (the address is not an actor of type 4, or cannot be read)");
+    float speed = R<float>(v + e.vehSpeed), steerMax = R<float>(v + e.vehSteerMax), steer = R<float>(v + e.vehSteer);
+    float health = R<float>(v + e.vehEngineHealth), healthMax = R<float>(v + e.vehEngineHealthMax);
+    bool engine = R<uint8_t>(v + e.vehEngineOn) != 0;
+    uintptr_t frame = R<uintptr_t>(car + game::kActorFrame);
+    json j = {{"car", Hex(car)}, {"which", which}, {"model", Str(R<uintptr_t>(frame + game::kFrameName))}, {"pos", Vec(pos)},
+              {"velocity", Vec(vel)}, {"speed", speed}, {"speed_kmh", speed * 3.6f}, {"speed_mph", speed * 2.2369363f},
+              {"steering", steerMax > 1e-4f ? steer / steerMax : 0.0f}, {"steer_angle", steer},
+              {"steer_wanted", R<float>(v + e.vehSteerWanted)}, {"steer_max", steerMax},
+              {"gear", R<int>(v + e.vehGear)}, {"gear_max", R<int>(v + e.vehGearMax)},
+              {"rpm", engine ? R<float>(v + e.vehRps) * 60.0f : 0.0f}, {"engine_on", engine},
+              {"fuel", R<float>(v + e.vehFuel)}, {"fuel_tank", R<float>(v + e.vehFuelTank)},
+              {"engine_health", healthMax > 1e-4f ? health / healthMax : 0.0f},
+              {"damage", healthMax > 1e-4f ? 1.0f - health / healthMax : 1.0f}};
+    float w[16];
+    if (frame && H->mem_read(frame + game::kFrameWorld, w, sizeof w)) j["axes"] = {Vec(w), Vec(w + 4), Vec(w + 8)};
+    return Reply(r, j);
+}
+
+bool SafeCarSave(void *car, std::vector<uint8_t> *out) {
+    __try { return game::CarStateSave(car, out); } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
+bool SafeCarLoad(void *car, const std::vector<uint8_t> *state) {
+    __try { return game::CarStateLoad(car, *state); } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
+int CmdCarSave(const char *args, MmlReply *r, void *) {
+    if (!Known() || !game::Exe().vehStateSave) return Fail(r, "a car's state is not known for this build");
+    const char *which = "";
+    uintptr_t car = CarOf(Params(args), &which);
+    if (!car || R<int>(car + game::kActorType, -1) != game::kActorTypeCar) return Fail(r, "no car");
+    if (!SafeCarSave(reinterpret_cast<void *>(car), &g_carState)) { g_carState.clear(); return Fail(r, "the game's SaveVehicleState failed"); }
+    g_carStateOf = car;
+    return Reply(r, json{{"car", Hex(car)}, {"which", which}, {"bytes", g_carState.size()}});
+}
+int CmdCarRestore(const char *args, MmlReply *r, void *) {
+    if (g_carState.empty()) return Fail(r, "nothing saved (car.save first)");
+    const char *which = "";
+    uintptr_t car = CarOf(Params(args), &which);
+    if (!car || R<int>(car + game::kActorType, -1) != game::kActorTypeCar) return Fail(r, "no car");
+    if (!SafeCarLoad(reinterpret_cast<void *>(car), &g_carState))
+        return Fail(r, "not put back: the state is another model's (its size differs), or the game's LoadVehicleState failed");
+    return Reply(r, json{{"car", Hex(car)}, {"which", which}, {"bytes", g_carState.size()}, {"saved_from", Hex(g_carStateOf)}});
 }
 
 int CmdPlayer(const char *, MmlReply *r, void *) {
@@ -181,6 +255,7 @@ int CmdFramesFind(const char *args, MmlReply *r, void *) {
 void OnEvent(const MmlEvent *ev, void *) {
     if (ev->type == MML_EVENT_HUMAN_CREATED) g_humans.insert(reinterpret_cast<uintptr_t>(ev->actor));
     else if (ev->type == MML_EVENT_ACTOR_DESTROYED) g_humans.erase(reinterpret_cast<uintptr_t>(ev->actor));
+    else if (ev->type == MML_EVENT_MISSION_CLOSE) { g_carState.clear(); g_carStateOf = 0; }   // its car is going
 }
 } // namespace
 
@@ -199,8 +274,12 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     }
     host->subscribe(mod, MML_EVENT_HUMAN_CREATED, OnEvent, nullptr);
     host->subscribe(mod, MML_EVENT_ACTOR_DESTROYED, OnEvent, nullptr);
-    host->command(mod, "game", "the build, module bases, the mission, the scene and the player", CmdGame, nullptr);
+    host->subscribe(mod, MML_EVENT_MISSION_CLOSE, OnEvent, nullptr);
+    host->command(mod, "game", "the build, module bases, the mission (its name and state), the scene and the player", CmdGame, nullptr);
     host->command(mod, "player", "the player: position, facing, health, alive, the vehicle he is in", CmdPlayer, nullptr);
+    host->command(mod, "car", "the player's car (driven now, else driven last; params: car, an address): position, speed, steering, gear, rpm, fuel, damage", CmdCar, nullptr);
+    host->command(mod, "car.save", "the car's whole state kept in memory, by the game's own SaveVehicleState (params: car)", CmdCarSave, nullptr);
+    host->command(mod, "car.restore", "the kept state put back into the car (the same car or the same model), by LoadVehicleState", CmdCarRestore, nullptr);
     host->command(mod, "humans", "every C_human alive in memory (params: radius m round the player)", CmdHumans, nullptr);
     host->command(mod, "actors", "the mission's actor lists: type, model, position", CmdActors, nullptr);
     host->command(mod, "frame", "an LS3D frame: name, type, world position and axes, parent (params: addr)", CmdFrame, nullptr);

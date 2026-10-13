@@ -166,6 +166,43 @@ void H_Post(MmlMod *m, void (*fn)(void *), void *user) {
     std::lock_guard<std::mutex> lk(g_postMx);
     g_posted.push_back(Posted{m, fn, user});
 }
+// (the kit: drawing, keys and actions, the mission, files and settings: draw.cpp, input.cpp, game_hooks.cpp, config.cpp)
+void H_DrawText(MmlMod *m, float x, float y, float size, uint32_t argb, int font, int align, const char *text) {
+    if (Alive(m)) DrawText(m, x, y, size, argb, font, align, text);
+}
+float H_DrawTextWidth(int font, float size, const char *text) { return DrawTextWidth(font, size, text); }
+void H_DrawLine(MmlMod *m, float x0, float y0, float x1, float y1, uint32_t argb) { if (Alive(m)) DrawLine(m, x0, y0, x1, y1, argb); }
+void H_DrawRect(MmlMod *m, float x, float y, float w, float h, uint32_t argb, int filled) { if (Alive(m)) DrawRect(m, x, y, w, h, argb, filled); }
+int H_KeyCode(const char *name) { return KeyCodeOf(name); }
+int H_KeyDown(int key) { return KeyDown(key) ? 1 : 0; }
+int H_KeyPressed(int key) { return KeyPressed(key) ? 1 : 0; }
+int H_ActionSlot(const char *name) { return ActionSlotOf(name); }
+float H_ActionHeld(int slot) { return ActionValue(slot, false); }
+float H_ActionPressed(int slot) { return ActionValue(slot, true); }
+int H_Hotkey(MmlMod *m, const char *combo, MmlHotkeyFn fn, void *user) {
+    if (HotkeyAdd(m, combo, fn, user)) return 1;
+    Log(MML_LOG_WARN, Who(m), "hotkey '%s' is not understood (\"F5\", \"Ctrl+F5\", \"Ctrl+Shift+R\")", combo ? combo : "");
+    return 0;
+}
+const char *H_MissionName() { return MissionName(); }
+int H_MissionState() { return MissionState(); }
+const char *H_ModDataDir(MmlMod *m) { return Alive(m) ? ModDataDir(m) : ""; }
+double H_ConfigNumber(MmlMod *m, const char *key, double def) { return ConfigNumber(m, key, def); }
+const char *H_ConfigString(MmlMod *m, const char *key, const char *def) { return ConfigString(m, key, def); }
+const char *H_ConfigJson(MmlMod *m, const char *key) { return ConfigJson(m, key); }
+int H_ConfigSet(MmlMod *m, const char *key, const char *value) { return ConfigSet(m, key, value) ? 1 : 0; }
+int H_MenuItem(MmlMod *m, const char *menu, int after, const char *text, MmlMenuFn fn, void *user) {
+    return Alive(m) ? MenuItemAdd(m, menu, after, text, fn, user) : 0;
+}
+int H_MenuOpen(MmlMod *m, const char *name, const MmlMenuControl *controls, int count, MmlMenuFn fn, void *user) {
+    return Alive(m) ? MenuPageOpen(m, name, controls, count, fn, user) : 0;
+}
+void H_MenuClose(MmlMod *m) { if (Alive(m)) MenuPageClose(m); }
+int H_MenuSetText(MmlMod *m, int id, const char *text) { return Alive(m) ? MenuPageText(m, id, text) : 0; }
+int H_MenuSetValue(MmlMod *m, int id, float value) { return Alive(m) ? MenuPageValue(m, id, value) : 0; }
+int H_MenuValue(MmlMod *m, int id, float *value) { return Alive(m) ? MenuPageGetValue(m, id, value) : 0; }
+int H_MenuSetRange(MmlMod *m, int id, int lo, int hi) { return Alive(m) ? MenuPageRange(m, id, lo, hi) : 0; }
+int H_MenuText(MmlMod *m, int id, char *buf, int size) { return Alive(m) ? MenuPageGetText(m, id, buf, size) : 0; }
 
 // ---- manifests
 bool ReadManifest(const std::string &dir, const std::string &folder, ModEntry *e, std::string *err) {
@@ -251,6 +288,10 @@ bool UnloadMod(ModEntry *e, const char *why) {
     }
     m->alive = false;
     HookRemoveAll(m);
+    HotkeysRemove(m);
+    MenusRemove(m);
+    DrawRemove(m);
+    ConfigForget(m);
     g_subs.erase(std::remove_if(g_subs.begin(), g_subs.end(), [&](const Sub &s) { return s.mod == m; }), g_subs.end());
     for (auto it = g_commands.begin(); it != g_commands.end();) it = it->second.mod == m ? g_commands.erase(it) : std::next(it);
     std::vector<std::string> gone;
@@ -342,6 +383,28 @@ std::string ModJson(const ModEntry &e) {
 } // namespace
 
 const char *ModIdOf(const MmlMod *mod) { return mod ? mod->entry->id.c_str() : "host"; }
+bool ModAlive(const MmlMod *mod) { return Alive(mod); }
+MmlMod *ModById(const std::string &id) {
+    ModEntry *e = ById(id);
+    return e ? e->current : nullptr;
+}
+bool ModDirById(const std::string &id, std::string *dir) {
+    ModEntry *e = ById(id);
+    if (!e) { Scan(); e = ById(id); }
+    if (!e) return false;
+    *dir = e->dir;
+    return true;
+}
+std::vector<MmlMod *> ModsLoaded() {
+    std::vector<MmlMod *> out;
+    for (auto &e : g_mods) if (e->current && !e->faulted) out.push_back(e->current);
+    return out;
+}
+bool ModCall(MmlMod *mod, void (*fn)(void *), void *user, const char *where) {
+    if (!Alive(mod) || mod->entry->faulted) return false;
+    if (DWORD ex = SafePosted(fn, user)) { Faulted(mod, where, ex); return false; }
+    return true;
+}
 
 void ModsInit() {
     g_host = MmlHost{};
@@ -366,6 +429,32 @@ void ModsInit() {
     g_host.service_publish = H_ServicePublish;
     g_host.service_find = H_ServiceFind;
     g_host.post = H_Post;
+    g_host.draw_text = H_DrawText;
+    g_host.draw_text_width = H_DrawTextWidth;
+    g_host.draw_line = H_DrawLine;
+    g_host.draw_rect = H_DrawRect;
+    g_host.key_code = H_KeyCode;
+    g_host.key_down = H_KeyDown;
+    g_host.key_pressed = H_KeyPressed;
+    g_host.action_slot = H_ActionSlot;
+    g_host.action_held = H_ActionHeld;
+    g_host.action_pressed = H_ActionPressed;
+    g_host.hotkey = H_Hotkey;
+    g_host.mission_name = H_MissionName;
+    g_host.mission_state = H_MissionState;
+    g_host.mod_data_dir = H_ModDataDir;
+    g_host.config_number = H_ConfigNumber;
+    g_host.config_string = H_ConfigString;
+    g_host.config_json = H_ConfigJson;
+    g_host.config_set = H_ConfigSet;
+    g_host.menu_item = H_MenuItem;
+    g_host.menu_open = H_MenuOpen;
+    g_host.menu_close = H_MenuClose;
+    g_host.menu_set_text = H_MenuSetText;
+    g_host.menu_set_value = H_MenuSetValue;
+    g_host.menu_value = H_MenuValue;
+    g_host.menu_set_range = H_MenuSetRange;
+    g_host.menu_text = H_MenuText;
     CleanLive();
     Scan();
     LoadEnabled();
@@ -380,6 +469,14 @@ void Dispatch(const MmlEvent &ev) {
     std::vector<Sub> subs = g_subs;   // a handler may subscribe; a faulted mod is unloaded only at the next frame
     for (const Sub &s : subs) {
         if (s.type != ev.type || !Alive(s.mod) || s.mod->entry->faulted) continue;
+        if (DWORD ex = SafeEvent(s.fn, &ev, s.user)) Faulted(s.mod, "an event handler", ex);
+    }
+}
+
+void DispatchTo(MmlMod *mod, const MmlEvent &ev) {
+    std::vector<Sub> subs = g_subs;
+    for (const Sub &s : subs) {
+        if (s.mod != mod || s.type != ev.type || !Alive(s.mod) || s.mod->entry->faulted) continue;
         if (DWORD ex = SafeEvent(s.fn, &ev, s.user)) Faulted(s.mod, "an event handler", ex);
     }
 }
@@ -405,6 +502,11 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     auto idParam = [&]() -> std::string { return params.is_object() ? params.value("id", "") : std::string(); };
     bool ok;
     if (StartMethod(method, paramsJson, reply, &ok)) return ok;
+    if (InputMethod(method, paramsJson, reply, &ok)) return ok;
+    if (ScreenshotMethod(method, paramsJson, reply, &ok)) return ok;
+    if (DrawMethod(method, paramsJson, reply, &ok)) return ok;
+    if (ConfigMethod(method, paramsJson, reply, &ok)) return ok;
+    if (MenusMethod(method, paramsJson, reply, &ok)) return ok;
     if (method == "mods.list") { *reply = ModsList(); return true; }
     if (method == "commands.list") { *reply = CommandsList(); return true; }
     if (method == "hooks.list") { *reply = HookList(); return true; }
@@ -463,7 +565,10 @@ std::string ModsList() {
 std::string CommandsList() {
     json out = json::array();
     for (const char *m : {"mods.list", "mods.rescan", "mod.reload", "mod.load", "mod.unload", "commands.list", "hooks.list",
-                          "menu.state", "menu.command", "start.state"})
+                          "menu.state", "menu.command", "menu.value", "start.state", "input.actions", "input.act", "input.key",
+                          "input.seq", "input.release", "input.state", "text.get", "text.find", "screenshot", "screenshot.state",
+                          "draw.text", "draw.rect", "draw.line", "draw.clear", "draw.state", "config.get", "config.set",
+                          "menu.item", "menu.items", "menu.item.remove", "menu.page", "menu.page.set", "menu.page.close", "menu.def", "menu.click", "input.mouse", "input.text"})
         out.push_back({{"name", m}, {"owner", "host"}});
     for (auto &kv : g_commands) out.push_back({{"name", kv.first}, {"owner", Who(kv.second.mod)}, {"help", kv.second.help}});
     return out.dump();

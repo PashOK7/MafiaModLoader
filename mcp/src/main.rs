@@ -10,11 +10,13 @@ mod bridge;
 mod crash;
 mod game;
 mod kb;
+mod shot;
 
+use base64::Engine;
 use rmcp::{
     ServerHandler, ServiceExt,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
-    model::{ServerCapabilities, ServerConfig},
+    model::{CallToolResult, ContentBlock, ServerCapabilities, ServerConfig},
     tool, tool_handler, tool_router,
 };
 use schemars::JsonSchema;
@@ -99,6 +101,16 @@ struct LaunchArgs {
     /// Skip the three logo videos before the profile menu (default true when go or profile is given).
     #[serde(default)]
     skip_logos: Option<bool>,
+    /// The freeride's police patrols, 0..1 (the freeride menu's slider; default: the menu's own, 1). 0: no police,
+    /// so nobody minds the weapon in the player's hands.
+    #[serde(default)]
+    police: Option<f64>,
+    /// The freeride's traffic density, 0..1 (default: the menu's own, 1).
+    #[serde(default)]
+    traffic: Option<f64>,
+    /// The freeride's pedestrian density, 0..1 (default: the menu's own, 1).
+    #[serde(default)]
+    pedestrians: Option<f64>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -160,6 +172,78 @@ struct TapArgs {
     cmd: String,
 }
 
+#[derive(Deserialize, JsonSchema)]
+struct ShotArgs {
+    /// How many frames (default 1, at most 8): several show motion.
+    #[serde(default)]
+    count: Option<u32>,
+    /// The time between them (ms, default 250).
+    #[serde(default)]
+    every_ms: Option<u64>,
+    /// The widest picture returned (default 1280): a wider frame is shrunk by a whole factor. 0: as it is.
+    #[serde(default)]
+    max_width: Option<u32>,
+    /// JPEG quality, 1..100 (default 85).
+    #[serde(default)]
+    quality: Option<u8>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct InputStep {
+    /// An action of the game, whatever it is bound to (even to nothing): its name ("Forwards", "Left", "Fire",
+    /// "Action", "Jump", "Aim X", "Accelerate", "Steer Left"...: `call input.actions` lists them all with their
+    /// bindings) or its slot number.
+    #[serde(default)]
+    action: Option<Value>,
+    /// Or a key, for what is not an action (menus, cheats): "Esc", "Enter", "F1", "W", "Up"... or a DirectInput
+    /// code. LS3D sees it pressed; the real keyboard is not touched.
+    #[serde(default)]
+    key: Option<Value>,
+    /// How long it is held (ms, default 100: a tap).
+    #[serde(default)]
+    ms: Option<u64>,
+    /// The action's value (default 1: pressed). The mouse axes "Aim X" / "Aim Y" (right / down positive) take
+    /// small values every frame (0.01 is about 1.4 degrees a frame on foot): use `turn` for an angle.
+    #[serde(default)]
+    value: Option<f64>,
+    /// Instead of an action or a key: turn the player on foot by this many degrees (to the right when positive),
+    /// exactly, whatever the mouse sensitivity is. Takes `ms` (default 300), longer for a wide turn.
+    #[serde(default)]
+    turn: Option<f64>,
+    /// When it starts, in ms from the start of the sequence. Default: when the step before it ends (the same
+    /// `at_ms` on two steps holds them together).
+    #[serde(default)]
+    at_ms: Option<u64>,
+    /// Instead of an action or a key: nothing for this long before the next step.
+    #[serde(default)]
+    wait_ms: Option<u64>,
+    /// The menus' mouse: the cursor moved to [x, y] in the menus' 800x600 units (exactly; the control under it
+    /// gets the focus, as under a real mouse). Only while a menu is open (it waits up to 2 s for one).
+    #[serde(default)]
+    mouse: Option<[f64; 2]>,
+    /// The cursor moved to [x, y], then the left button pressed there for `ms` (default 100): a click.
+    #[serde(default)]
+    click: Option<[f64; 2]>,
+    /// A mouse button held for `ms`: "left", "right" or "middle" (where the cursor is).
+    #[serde(default)]
+    button: Option<String>,
+    /// The mouse wheel turned by this many notches (up / away positive): lists scroll.
+    #[serde(default)]
+    wheel: Option<f64>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct InputArgs {
+    /// What to do, in order.
+    steps: Vec<InputStep>,
+    /// Return at once, not when the last step has ended (default false).
+    #[serde(default)]
+    no_wait: Option<bool>,
+    /// A screenshot when the steps have ended (default false).
+    #[serde(default)]
+    screenshot: Option<bool>,
+}
+
 #[derive(Clone)]
 struct Server {
     bridge: Arc<bridge::Bridge>,
@@ -178,6 +262,142 @@ impl Server {
             obj.insert("timeout_ms".into(), json!(t));
         }
         self.bridge.call(method, params, timeout_ms.unwrap_or(5000) + 2000).await
+    }
+
+    /// The next frame the game presents, as a JPEG in `<game>\mml\shots` (the loader writes it raw).
+    async fn take_shot(&self, max_width: u32, quality: u8) -> Result<shot::Shot, String> {
+        let asked = self.call_value("screenshot", Value::Null, Some(3000)).await?;
+        let id = asked["id"].as_u64().ok_or("screenshot: no id")?;
+        let start = std::time::Instant::now();
+        loop {
+            let s = self.call_value("screenshot.state", json!({"id": id}), Some(3000)).await?;
+            if s["done"].as_bool() == Some(true) {
+                if s["ok"].as_bool() != Some(true) {
+                    return Err(format!("screenshot: {}", s["error"].as_str().unwrap_or("failed")));
+                }
+                let path = std::path::PathBuf::from(s["path"].as_str().ok_or("screenshot: no path")?);
+                return tokio::task::spawn_blocking(move || shot::convert(&path, max_width, quality)).await.map_err(|e| e.to_string())?;
+            }
+            if start.elapsed().as_millis() > 3000 {
+                return Err("screenshot: the game presented no frame in 3 s (minimised? loading? `where` tells)".into());
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    }
+
+    fn shot_content(s: &shot::Shot) -> (Value, ContentBlock) {
+        let info = json!({"file": s.path, "width": s.width, "height": s.height, "frame": [s.frame.0, s.frame.1]});
+        (info, ContentBlock::image(base64::engine::general_purpose::STANDARD.encode(&s.jpeg), "image/jpeg"))
+    }
+
+    /// See the game: its own frame (the back buffer as the game drew it, before it is shown), whether or not the
+    /// window is visible or focused. Returns the picture(s) and the file(s) (`<game>\mml\shots\<n>.jpg`).
+    #[tool(annotations(read_only_hint = true))]
+    async fn screenshot(&self, Parameters(a): Parameters<ShotArgs>) -> Result<CallToolResult, String> {
+        let count = a.count.unwrap_or(1).clamp(1, 8);
+        let every = a.every_ms.unwrap_or(250).min(10_000);
+        let mut infos = vec![];
+        let mut content = vec![];
+        for i in 0..count {
+            if i > 0 { tokio::time::sleep(std::time::Duration::from_millis(every)).await; }
+            let s = self.take_shot(a.max_width.unwrap_or(1280), a.quality.unwrap_or(85)).await?;
+            let (info, image) = Self::shot_content(&s);
+            infos.push(info);
+            content.push(image);
+        }
+        content.insert(0, ContentBlock::text(pretty(&json!(infos))));
+        Ok(CallToolResult::success(content))
+    }
+
+    /// Act in the game: a sequence of the game's own actions (and keys), timed by the game's frames, injected
+    /// inside the game (the real keyboard and mouse are not touched, the window needs no focus). Returns when the
+    /// last step has ended, with the player's state (and a screenshot when asked). E.g. turn right, walk 2 s,
+    /// jump: [{"turn": 90}, {"action": "Forwards", "ms": 2000}, {"action": "Jump"}]. In a car "Action" does
+    /// nothing while it moves, stops the engine when it runs, and only then gets out. Menus by the mouse: {"click":
+    /// [x, y]} in 800x600 units (`call menu.state` gives the controls' places), {"wheel": -3} scrolls. Stop
+    /// everything: `call input.release`.
+    #[tool]
+    async fn input(&self, Parameters(a): Parameters<InputArgs>) -> Result<CallToolResult, String> {
+        let mut steps = vec![];
+        let (mut cursor, mut total) = (0u64, 0u64);
+        for (i, s) in a.steps.iter().enumerate() {
+            let at = s.at_ms.unwrap_or(cursor);
+            let mouse_kinds = [s.mouse.is_some(), s.click.is_some(), s.button.is_some(), s.wheel.is_some()].iter().filter(|b| **b).count();
+            if mouse_kinds > 0 {
+                if mouse_kinds > 1 || s.action.is_some() || s.key.is_some() || s.turn.is_some() {
+                    return Err(format!("step {i}: one of action, key, turn, mouse, click, button, wheel"));
+                }
+                // a move and a wheel turn are made at the next read of the mouse; 40 ms is allowed for it here
+                if let Some(p) = s.mouse.or(s.click) {
+                    steps.push(json!({"mouse": p, "after_ms": at}));
+                    cursor = at + 40;
+                }
+                if let Some(n) = s.wheel {
+                    steps.push(json!({"wheel": n, "after_ms": at}));
+                    cursor = at + 40;
+                }
+                let button = if s.click.is_some() { Some("left".to_string()) } else { s.button.clone() };
+                if let Some(b) = button {
+                    let start = if s.click.is_some() { at + 60 } else { at };
+                    let ms = s.ms.unwrap_or(100).max(1);
+                    steps.push(json!({"button": b, "ms": ms, "after_ms": start}));
+                    cursor = start + ms;
+                }
+                total = total.max(cursor);
+                continue;
+            }
+            if let Some(deg) = s.turn {
+                if s.action.is_some() || s.key.is_some() { return Err(format!("step {i}: a turn, an action or a key: one of them")); }
+                // the loader turns in frames (at most 5 degrees each); 20 ms is allowed for a frame here
+                let frames = (s.ms.unwrap_or(300) / 20).max((deg.abs() / 5.0) as u64 + 1);
+                steps.push(json!({"turn": deg, "frames": frames, "after_ms": at}));
+                cursor = at + frames * 20;
+                total = total.max(cursor);
+                continue;
+            }
+            if s.action.is_none() && s.key.is_none() {
+                cursor += s.wait_ms.ok_or(format!("step {i}: action, key, turn or wait_ms"))?;
+                total = total.max(cursor);
+                continue;
+            }
+            let ms = s.ms.unwrap_or(100).max(1);
+            let mut step = json!({"ms": ms, "after_ms": at});
+            match (&s.action, &s.key) {
+                (Some(_), Some(_)) => return Err(format!("step {i}: an action or a key, not both")),
+                (Some(x), _) => {
+                    step["action"] = x.clone();
+                    if let Some(v) = s.value { step["value"] = json!(v); }
+                }
+                (_, Some(k)) => step["key"] = k.clone(),
+                _ => unreachable!(),
+            }
+            steps.push(step);
+            cursor = at + ms;
+            total = total.max(cursor);
+        }
+        let mut out = json!({"total_ms": total});
+        if !steps.is_empty() {
+            out["steps"] = self.call_value("input.seq", json!({"steps": steps}), None).await?;
+        }
+        if a.no_wait.unwrap_or(false) {
+            return Ok(CallToolResult::success(vec![ContentBlock::text(pretty(&out))]));
+        }
+        // a frame or two more: the game's code reads what the last step let go
+        tokio::time::sleep(std::time::Duration::from_millis(total + 100)).await;
+        if let Ok(p) = self.call_value("player", Value::Null, Some(2000)).await { out["player"] = p; }
+        let mut content = vec![];
+        if a.screenshot.unwrap_or(false) {
+            match self.take_shot(1280, 85).await {
+                Ok(s) => {
+                    let (info, image) = Self::shot_content(&s);
+                    out["screenshot"] = info;
+                    content.push(image);
+                }
+                Err(e) => out["screenshot"] = json!({"error": e}),
+            }
+        }
+        content.insert(0, ContentBlock::text(pretty(&out)));
+        Ok(CallToolResult::success(content))
     }
 
     /// Is the game running with the loader, and what state is it in: pid, build (1.2/1.0), frames, the mods.
@@ -259,7 +479,8 @@ impl Server {
 
     /// Start the game (Game.exe in the game's folder) and wait for the loader's bridge. With `go` (and `profile`),
     /// the loader takes it there by the game's own menus, the logo videos skipped: e.g. {"profile": 4, "go":
-    /// "freeride"} returns once the player is in the freeride (a few seconds).
+    /// "freeride", "police": 0} returns once the player is in the freeride (a few seconds), in a city without
+    /// police patrols.
     #[tool]
     async fn game_launch(&self, Parameters(a): Parameters<LaunchArgs>) -> Out {
         if self.bridge.call("ping", json!({}), 1500).await.is_ok() {
@@ -270,6 +491,9 @@ impl Server {
             // read (and deleted) by the loader at the game's start: host/start.cpp
             let mut req = json!({"skip_logos": a.skip_logos.unwrap_or(true), "go": a.go.clone().unwrap_or_default()});
             if let Some(p) = &a.profile { req["profile"] = p.clone(); }
+            for (name, v) in [("traffic", a.traffic), ("pedestrians", a.pedestrians), ("police", a.police)] {
+                if let Some(v) = v { req[name] = json!(v); }
+            }
             let path = game::game_dir()?.join("mml").join("start.json");
             std::fs::write(&path, req.to_string()).map_err(|e| format!("{}: {e}", path.display()))?;
         }
@@ -384,8 +608,18 @@ impl Server {
 const INSTRUCTIONS: &str = "MafiaModLoader: the live Mafia (2002) game, from the inside. \
 game_status first (is it running?); game_launch / game_close start and stop it. \
 `call` reaches every bridge method and mod command (commands_list lists them): the core mod answers \
-`game`, `player`, `humans`, `actors`, `frame`, `frames.find`. mem_read / mem_write read and write any address \
-(\"game+0x1762A0\", \"ls3d+1AAE0\"). The loop for a mod: edit -> build (cmake --build --preset x86-release) -> \
+`game`, `player`, `car` (the player's car: speed, gear, fuel...; `car.save` / `car.restore` its whole state), \
+`humans`, `actors`, `frame`, `frames.find`. mem_read / mem_write read and write any address \
+(\"game+0x1762A0\", \"ls3d+1AAE0\"). Eyes and hands: `screenshot` returns the game's frame as a picture; `input` \
+plays a timed sequence of the game's own actions (walk, drive, shoot, aim) and keys inside the game. \
+Draw into the game's frame without a mod: `call draw.text {x, y, text, size, color, ms}` (800x600 units; \
+draw.rect, draw.line, draw.clear). A mod's settings: `call config.get {mod}`, `config.set {mod, key, value}` \
+(the mod is told at once). \
+The game's own menus, extended (real controls, not an overlay): `call menu.state` shows the open menus' controls; \
+`menu.item {menu, after, text}` adds an item to one of them (\"gamemenu\": the pause menu); `menu.page {name, \
+controls}` opens a page made by the game from control descriptions; a mod does the same with menu_item, menu_open. \
+A new mod: python tools/new_mod.py <id>, then docs/MODDING.md (mods/examples/telemetry is a complete one). \
+The loop for a mod: edit -> build (cmake --build --preset x86-release) -> \
 deploy -> call its commands -> log_tail. After a crash: crash_list, crash_inspect, log_tail with previous. \
 What a game function does, where a thing lives: kb_search, then kb_function (facts, calls, decompiled code); \
 knowledge/notes/ holds the hand-written findings.";

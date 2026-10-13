@@ -6,6 +6,7 @@ address,kind,name,source,note
 00422EE0,function,carReset,mafia-ragdoll,
 0042658A,label,carIn,mafia-ragdoll,
 00426766,label,carInPast,mafia-ragdoll,
+00429450,function,C_car::GetEnergy,mml,"gearbox, engine or fuel tank health over its maximum (what the HUD shows)"
 0044C6A0,function,pedCarSweep,mafia-ragdoll,
 0044CA50,function,pedCarHit,mafia-ragdoll,
 0044CCF0,function,pedBulletHit,mafia-ragdoll,
@@ -18,13 +19,38 @@ address,kind,name,source,note
 004588D0,function,pedHit,mafia-ragdoll,
 00459450,function,pedAnimStart,mafia-ragdoll,
 00460980,function,frameSetPos,mafia-ragdoll,
+00461C70,function,C_program::ParseArgs,pet1kk,opcode -> payload (after DecodeInstruction); hooked to add script commands
+0046D3FE,site,scriptDispatch,pet1kk,the interpreter's dispatch by opcode; its bound check at 0x46D406
+00479996,site,scriptDefault,pet1kk,the dispatch's default case
+0047999F,site,scriptStay,pet1kk,the end of an instruction without advancing: a command that waits
+0047A070,function,HUD::SetFlags,pet1kk,[hud+0x40A4] = v
+0047A080,function,HUD::OrFlags,pet1kk,[hud+0x40A4] |= v
+0047A0E0,function,HUD::PushFlags,pet1kk,saves the HUD's visibility flags
+0047A2A0,function,HUD::PopFlags,pet1kk,restores them
 0047ACD0,function,frameWorldMatrix,mafia-ragdoll,
 0047ADF0,function,sceneMoved,mafia-ragdoll,
 0047AF50,function,actorSetPos,mafia-ragdoll,
 00492D60,function,tramCarOf,game_build.h,
 004C31E0,function,vehicleDeactivate,mafia-ragdoll,
+004CB070,function,C_Vehicle::SetGear,mml,"gear +0x560 (-1 reverse), the highest +0x568"
+004CB4D0,function,C_Vehicle::SetSteer,mml,the angle asked for +0x624 = input * the limit +0x610 (linearity +0x198); the wheels angle +0x628 follows
+004CB6E0,function,C_Vehicle::SetFuel,mml,"fuel +0xC30, the tank +0x1FA0 (litres)"
 004CBBD0,function,vehicleExternalForce,mafia-ragdoll,
+004CD590,function,C_Vehicle::GetRotations,mml,rpm: turns a second +0x548 times 60 when the engine is on (+0xC2C)
+004CDE90,function,C_Vehicle::CalcSpeed,mml,"position +0x320 from the car frame +0x34C, speed +0x59C = |velocity +0x1F90| (m/s)"
+004CEB30,function,C_Vehicle::GetVehicleStateSize,mml,thiscall -> bytes of a saved state (1525 for the freeride taxi)
+004CEB30,function,vehStateSize,game_build.h,
+004CEE00,function,C_Vehicle::SaveVehicleState,mml,"thiscall(vehicle, buffer) ret 4; {u32 9, u32 size, position, rotation, velocities, ...}; tried in the lab"
+004CEE00,function,vehStateSave,game_build.h,
+004CFAB0,function,C_Vehicle::LoadVehicleState,mml,"thiscall(vehicle, buffer) -> bool, ret 4; puts a saved state back (the car returned to the last digit)"
+004CFAB0,function,vehStateLoad,game_build.h,
+004D6720,function,C_Vehicle::DamageEngine,mml,"lowers the engine health +0x1B4 (of +0x1B8), then the gearbox +0x1EC; at 0 the engine stops"
 004DEE90,function,VehicleExhaust,mafia-ragdoll,
+004EFDB0,function,C_controls::SetMouseRange,mml,"thiscall(controls, x, y, z): 400 each at the start; a mouse axis' value is its counts / range"
+004F01A0,function,C_controls::GetArray,mml,"thiscall(controls, float **out, char which) -> count: 0 held, 1 pressed this frame"
+004F0240,function,C_controls::GetValue,mml,"thiscall(controls, slot, char which) -> float (the cameras read slots 18, 19: the mouse axes)"
+004F0620,function,controlsUpdate,game_build.h,
+004F1830,function,controlsKeyName,game_build.h,
 0052CFCE,label,save1d,mafia-ragdoll,
 0052CFD6,label,save1dGo,mafia-ragdoll,
 0052CFE1,label,save1dNone,mafia-ragdoll,
@@ -33,6 +59,7 @@ address,kind,name,source,note
 0052D12A,label,save1eNone,mafia-ragdoll,
 005405E0,function,missionClose,mafia-ragdoll,
 005407E0,function,missionTick,mafia-ragdoll,
+005409D0,function,missionOpen,game_build.h,
 0055D460,function,PlayVideo,mml,"thiscall(name in ECX, float w, float h) -> bool, ret 8; InitSystem plays logo1, logo3, logo2"
 0055D460,function,playVideo,game_build.h,
 0056EFD0,function,humanCtor,mafia-ragdoll,
@@ -48,10 +75,14 @@ address,kind,name,source,note
 0057BAB1,label,waterWalkPast,mafia-ragdoll,
 0057C2C2,label,waterFall,mafia-ragdoll,
 0057C465,label,waterFallPast,mafia-ragdoll,
+0058F4B0,function,C_player::InputOnFoot,mml,from C_player::AI with the held and pressed arrays; turns by mouseSensitivity * 5 * held[18]
+005917F0,function,C_player::InputDriving,mml,"slots 33..57 in pairs: accelerate, brake, steer left/right, handbrake, limiter, gears, horn, look, clutch; 57 gearbox"
+00594FA0,function,C_player::ActionInCar,mml,nothing while the car moves (speed >= 0.5); stops the engine when it runs; else gets out
 005A84A0,function,Shot,mafia-ragdoll,
 005A8E70,function,bulletsTick,mafia-ragdoll,
 005A935C,label,bulletRay,mafia-ragdoll,
 005BBE30,function,shotQueuePush,mafia-ragdoll,
+005BD8D0,function,draw2d,game_build.h,
 005C36C0,function,collGridAdd,mafia-ragdoll,
 005C38B0,function,collGridRemove,mafia-ragdoll,
 005C3AC0,function,collGridMove,game_build.h,
@@ -59,24 +90,101 @@ address,kind,name,source,note
 005C8440,function,collRayTest,mafia-ragdoll,
 005D5940,function,sphereSweep,mafia-ragdoll,
 005D6FE0,function,humanBoneRayTest,mafia-ragdoll,
+005D9AB0,function,GM_ScrollWindow::SetScroll,mml,"wins slot 19: the scroll in pixels, clamped to 0..+0x40, at +0x44"
+005D9AF0,function,GM_ScrollWindow::SetRange,mml,"wins slot 27, thiscall(w, 0, float pixels) ret 8: how far it scrolls (+0x40)"
+005DA090,function,GM_Text::Draw,mml,"stxt (vtable 0x626280) slot 5: colour grey, 0x100 white, 0x200 yellow, 0x300 black; 0x80 centred, 0x40 right; font = flags & 0xF"
+005DAA70,function,GM_Picture::SetString,mml,"rctt slot 17 (file): IGraph CreateTexture(file, 0, 2, &+0x40); drawn by 0x5DAAA0"
+005DAC70,function,GM_ProgressBar::Draw,mml,"pbar (vtable 0x626680) slot 5: the loading bar's grey segments, red for the value at +0x40"
+005DADC0,function,GM_Item::Draw,pet1kk,list item control (vtable 0x626700) slot 5
+005DB0F0,function,GM_NumberItem::SetValue,mml,"iten slot 21: clamped into +0x48, printed into +0x4C with its text as the format; 0x5DB0B0 SetRange slot 29"
+005DB7B0,function,GM_Button::Draw,pet1kk,button control (vtable 0x626900) slot 5
+005DBA50,function,GM_Slider::SetValue,mml,"slid (vtable 0x626A00) slot 19: the float at +0x40, then its slot 13; GetValue 0x5DBA60 reads it"
+005DC8B0,function,GM_Edit::SetMaxLength,mml,"edit slot 21 (at most 63); 0x5DC8A0 GetText slot 18 (+0x40), 0x5DC860 SetText slot 16, 0x5DC8F0 its keys"
+005DCCC0,function,GM_Check::SetCheck,mml,"chck slot 23 (bool, +0x40); 0x5DCCD0 GetCheck"
+005DCE30,function,GM_Selector::SetRange,mml,"bsel slot 29 (first text id, last): its option is its own text id, stepped by a click, Enter, Space"
+005DCFD0,function,GM_Switch::SetTexts,mml,"bslb slot 29 (text id off, text id on); 0x5DD000 SetState slot 23, 0x5DD030 GetState"
+005DF350,function,GM_ProgressBar::SetValue,mml,pbar slot 19: the float kept at +0x40 (its GetValue is the base's: 0)
 005E06E0,function,GM_MainMenu::OnCommand,mml,"vtable 0x625EB8 +0x24; 990105 opens the freeride menu, 990106 extreme (27), 990103 new game (18), 990102 (17), 990104 the load menu"
+005E1920,function,GM_FreeRide::OnCreate,mml,"sliders 21 traffic, 22 pedestrians, 23 police set to 1 (hidden when loadSave+0x1F0 < 3); kind 28, car 23"
 005E1B40,function,GM_FreeRide::OnCommand,mml,"vtable 0x62736C +0x24; 100 the kind menu, 101 the car menu, 201 start (kind +0x30; 28 closes with 28)"
+005E3D40,function,MenuSceneRender,pet1kk,also draws the loading screens (no menu open)
 005E88D0,function,GM_ProfileMenu::OnCommand,mml,"vtable 0x6279DC +0x24; 100+i takes the i-th profile (sub_605570), 0xCB quits (15)"
+005E8E00,function,GUI_Rect,mml,"Rectangle: thiscall(ECX argb, float x, y, w, h) ret 0x10: an outline, IGraph SetTexture(0) + a line strip of 5"
+005E8F60,function,GUI_FillRect,pet1kk,"RectangleFilled: fastcall(ECX argb, EDX texture or 0, float x, y, w, h) ret 0x10, pixels; IGraph SetTexture + a triangle strip (arguments read in the code by mml 2026-10-13)"
+005E9BE0,function,GM_Control::GM_Control,mml,"thiscall(control, record, parent): id, flags, x/y/w/h scaled to pixels, the text from the text id, put under the parent"
+005E9D60,function,GM_Control::DrawTree,mml,"thiscall(control, flags): draws it (vtable slot 5) with (flags | 0xFF000000) & the parent's, then its children; only when shown (0x10)"
+005E9DA0,function,GM_Control::Layout,pet1kk,"thiscall(root, flags), recursive (vtable slot 6)"
+005E9DE0,function,GM_Control::FindUnder,mml,"thiscall(control, x, y): the deepest shown, enabled control with 0x8000 under the point (the menus' hover focus)"
+005EA1F0,function,GM_Menu::GM_Menu,mml,thiscall(menu) on operator new(0x30): the base vtable 0x627834
+005EA1F0,function,menuCtor,game_build.h,
+005EA2E0,function,GM_Menu::Create,mml,"thiscall(menu): the definition read (GM_Menu::LoadMnu) and its controls made by the factories (0x6BD8B0), then OnCreate (vtable slot 1)"
+005EA2E0,function,menuCreate,game_build.h,
+005EA370,function,GM_Menu::LoadMnu,pet1kk,"tables\menu\<name>_<lang>.mnu, else <name>.mnu"
+005EA690,function,GM_Menu::Delete,mml,thiscall(menu): its controls and itself freed (the game deletes closed menus)
+005EA690,function,menuDestroy,game_build.h,
+005EA8C0,function,GM_Menu::InputTick,pet1kk,"thiscall(menu, rx, ry, rz, buttons, key, shift, ms) ret 0x1C; called at 0x5EBD22 in ExecuteMenu"
 005EAD50,function,GM_Menu::Push,mml,"stdcall(menu, id): menu+4 = the active one, the menu becomes the active one (0x6BD890), Create"
+005EAD50,function,menuPush,game_build.h,
+005EAE10,function,GM_Menu::MenuClose,mml,"thiscall(menu, int result) ret 4"
+005EAE10,function,menuClose,game_build.h,
+005EB070,function,menuSetValue,game_build.h,
+005EB090,function,menuGetValue,game_build.h,
+005EB2F0,function,GM_Menu::FindComponentByID,mml,"thiscall(menu, id) -> component; its vtable: +0x4C set value (float), +0x50 get value, +0x60 get check"
+005EB2F0,function,menuFind,game_build.h,
+005EB7D0,function,GM_Menu::PridejComponentPod,mml,"thiscall(menu, id, newId, growId, move1, move2, move3) ret 0x18: a clone of control id put under it as newId; growId grows, the three move down (how the profile and save lists grow; the loader adds mods' items with it)"
+005EB7D0,function,menuAddUnder,game_build.h,
+005EBC1E,site,menuLoopMissionTick,mml,"ExecuteMenu calls C_mission::Tick here, only when its caller asked (the main menu; not the pause menu)"
+005ED4C0,function,pausedTick,mml,what the menus loop calls on C_game+0x4C instead of C_mission::Tick when the world is paused
+005F70D0,function,GetLanguage,mml,"the language's two letters (u16 at 0x6C42C4), the .mnu suffix"
+005FA050,function,HUD::LetterBoxSize,pet1kk,builds the bars' geometry
+005FA300,function,HUD::LetterBox,pet1kk,"(bool show, int ms)"
+006036D0,function,hudTextSize,game_build.h,
+00603880,function,GUI_DrawText,pet1kk,"G_IndicatorsClass::OutText: thiscall(hud 0x6BF980, text, float x, y, width, height, argb, flags, font, end) ret 0x24, float in ST0, pixels; seen with tap (mml 2026-10-13); the loader draws mods texts with it"
+00603880,function,hudOutText,game_build.h,
+00605570,function,G_LoadSaveClass::ProfileSelect,pet1kk,"thiscall(manager, index)"
+006055C0,function,G_LoadSaveClass::ProfileCreate,pet1kk,"thiscall(manager, name) -> 1: created and selected"
+0060E5C0,function,G_IndicatorsClass::OutTextUnits,mml,"OutText with x, y, width, height in 800x600 units: times hud+0x40C0 / +0x40C4, x plus [0x6C4500]"
+0060E920,function,G_LoadSaveClass::FreerideStoreA,mml,"stdcall(car, flags, traffic, pedestrians, police): what the freeride menu's start stores"
+0060FB40,function,textGet,game_build.h,
+0060FBA0,function,textGetOrNull,game_build.h,
+006106FC,label,gameNew,game_build.h,
+006106FC,function,operator new,mml,"cdecl(size): the game's allocator (menus, controls)"
 006234BC,label,EndShare,mafia-ragdoll,
 00623EF8,label,pedSystemVtable,mafia-ragdoll,
 00623FA0,label,pedManagerVtable,mafia-ragdoll,
 006256F8,label,C_human_vtable,mafia-ragdoll,
+00625E58,data,GM_PauseMenu_vtable,mml,the pause menu the game loop makes on Esc; its loop does not tick the mission
 00625EB8,label,menuMainVt,game_build.h,
 0062736C,label,menuFreerideVt,game_build.h,
+00627834,data,GM_Menu_vtable,mml,"12 slots: 0 the definition's name, 1 OnCreate, 2 OnClose, 7 OnKey (Esc closes), 9 OnCommand(id), 10 Tick"
+00627834,label,menuBaseVt,game_build.h,
 006279DC,label,menuProfileVt,game_build.h,
 0062E488,label,animTable,mafia-ragdoll,
 0063788C,label,missionPtr,mafia-ragdoll,
 0063D768,label,pedElements,mafia-ragdoll,
 0063D8A4,label,EmitterTable,mafia-ragdoll,
+00647C30,label,controls,game_build.h,
+00647ED8,data,g_pI3DDriver,mml,"I3D_driver*; vtable +0x14 SetState(id, value), +0x18 GetState(id); state 3 is 0 while the game draws 2D"
+00647ED8,label,i3dDriver,game_build.h,
+00647EE0,data,g_pIGraph,pet1kk,"IGraph*; its vtable ls3d+0x9D500: +0x0C SetTexture, +0x3C Present, +0x44 SetState, +0x48 GetState, +0x58 DrawPrimitive (read in LS3DF by mml)"
+00647EE0,label,igraph,game_build.h,
 00647F48,label,collision,mafia-ragdoll,
+006BD888,label,menuScale,game_build.h,
 006BD890,data,g_activeMenu,mml,GM_Menu*: the active menu; +4 the one under it
 006BD890,label,menuTop,game_build.h,
+006BD8A0,data,g_menuCursorX,pet1kk,pixels; +4 the y
+006BD8A0,label,menuCursor,game_build.h,
 006BD8A8,data,g_menuResult,mml,"ExecuteMenu loops until it is set (MenuCloseAll sets it), then returns it"
+006BD8B0,data,g_menuFactories,mml,"the control factories: a list of {create fastcall(record, parent), clone, tag ('wind', 'stxt', 'butt', 'item', 'slid', 'pbar'...), next}"
+006BD8B0,label,menuFactories,game_build.h,
+006BF980,label,hud,game_build.h,
+006C3A40,data,hudScaleX,mml,float: pixels in an 800x600 unit (hud+0x40C0); +4 the y; 0x6C3A38 the screen size
+006C3AF4,data,hudCarSpeedKmh,mml,float: the HUD car speed in km/h (hud+0x4174)
+006C3E28,data,hudCar,mml,C_car*: the car the player drives or drove last (hud+0x44A8; RadarSetPlayerCar 0x5FA500 sets it)
+006C4078,data,g_Chars,mml,"the fonts character maps: one pointer a font (0 plain, 1 bold, 2 the menus handwriting)"
+006C42C4,data,menuLang,mml,
+006C4500,data,hudXOffset,mml,float added to every HUD x in 1.2 (0 at 4:3)
 006D4628,label,loadSave,game_build.h,
+006D4B00,label,mouseSensitivity,game_build.h,
 006D4C1C,label,ParticleDefs,mafia-ragdoll,
+006D8714,label,textDb,game_build.h,

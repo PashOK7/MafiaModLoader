@@ -4,6 +4,7 @@
     python tools/start.py freeride --profile "Name"   # or by its name
     python tools/start.py menu --profile 4            # stop in the main menu
     python tools/start.py freeride --logos            # keep the logo videos
+    python tools/start.py freeride --profile 4 --police 0   # a city without police patrols (also --traffic, --pedestrians)
 
 It writes <game>\\mml\\start.json (the loader reads and deletes it at the game's start: host/start.cpp) and starts
 Game.exe from the game folder of mml.config.json. Without a profile the profile menu is left to the player. The MCP
@@ -23,6 +24,8 @@ def main():
     ap.add_argument('go', choices=['freeride', 'menu'])
     ap.add_argument('--profile', help='the profile: its number or its name')
     ap.add_argument('--logos', action='store_true', help='play the logo videos')
+    for name, what in (('police', 'police patrols'), ('traffic', 'traffic'), ('pedestrians', 'pedestrians')):
+        ap.add_argument('--' + name, type=float, metavar='0..1', help='the freeride\'s %s density (the menu\'s slider)' % what)
     a = ap.parse_args()
     game = os.environ.get('MML_GAME_DIR') or json.load(open(os.path.join(ROOT, 'mml.config.json')))['game_dir']
     tasks = subprocess.run(['tasklist', '/FO', 'CSV', '/NH'], capture_output=True, text=True).stdout
@@ -31,6 +34,9 @@ def main():
     req = {'skip_logos': not a.logos, 'go': a.go}
     if a.profile is not None:
         req['profile'] = int(a.profile) if a.profile.isdigit() else a.profile
+    for name in ('police', 'traffic', 'pedestrians'):
+        if getattr(a, name) is not None:
+            req[name] = getattr(a, name)
     os.makedirs(os.path.join(game, 'mml'), exist_ok=True)
     with open(os.path.join(game, 'mml', 'start.json'), 'w') as f:
         json.dump(req, f)

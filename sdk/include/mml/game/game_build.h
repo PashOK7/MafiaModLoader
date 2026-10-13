@@ -81,6 +81,98 @@ struct ExeBuild {
     // 990105 opens the freeride menu (menuFreerideVt), whose 201 starts the freeride chosen (its +0x30; 28, the
     // default, is missions\freeitaly).
     uintptr_t playVideo, menuTop, loadSave, menuProfileVt, menuMainVt, menuFreerideVt;
+    // The controls (host/input.cpp; 0: not known). controls: the object the game reads its actions from: +0xB4/+0xB8
+    // the bindings (one 12-byte slot per action and binding: {u16 dir, u16 0, u16 device (1 key, 2 mouse, 3 joystick,
+    // 0 none), u16 code, u32 joystick}), +0xC4/+0xD4 two float arrays parallel to them: held, and pressed this frame.
+    // controlsUpdate: thiscall(controls, char) ret 4, fills the arrays from the devices once a frame (the game loop,
+    // before C_mission::Tick; some menus). controlsKeyName: thiscall(controls, slot*) -> char*, a binding's name.
+    // textDb, textGetOrNull: G_TextDatabase and its GetTextOrNULL, thiscall(db, id) -> char* (the localised texts).
+    uintptr_t controls, controlsUpdate, controlsKeyName, textDb, textGetOrNull;
+    // textGet: G_TextDatabase::GetText, thiscall(db, id) ret 4 -> char* (a placeholder string when the id is unknown);
+    // the loader answers a range of ids of its own through it (host/menus.cpp: options of switches and selectors).
+    uintptr_t textGet;
+    // A menu's components by their id (host/start.cpp; 0: not known): menuSetValue thiscall(menu, id, float) ret 8
+    // and menuGetValue thiscall(menu, id) -> float, ret 4: the component found (GM_Menu::FindComponentByID) and its
+    // own setter / getter called (its vtable's +0x4C / +0x50): a slider's position, 0..1. The freeride menu's
+    // sliders: 21 traffic, 22 pedestrians, 23 police patrols (its OnCreate 0x5E1920 sets them to 1 with this
+    // setter; its start, command 201, reads them with this getter). They count only when the profile has opened
+    // the freeride's settings (loadSave +0x1F0 >= 3).
+    uintptr_t menuSetValue, menuGetValue;
+    // The mouse sensitivity of the options (a float; host/input.cpp; 0: not known). On foot the player's code
+    // (0x58F4B0) turns by mouseSensitivity * 5 * held["Aim X"] radians an update; a mouse axis' held value is its
+    // counts / 400 (the ranges set at 0x4EFDB0). Measured in the lab: 141.3 degrees for a sum of 1 at 0.4932.
+    uintptr_t mouseSensitivity;
+    // The frame's 2D pass and the game's own 2D drawing (host/draw.cpp; 0: not known). draw2d: the callback the
+    // game gives its scene, stdcall(int stage, ?, ?) ret 0xC: LS3D's render calls it with stage 1, and with stage 2
+    // once the 3D frame is drawn: the game then draws the HUD (hud: G_IndicatorsClass, a static object, its
+    // DrawAll), the open menu and the console. hudOutText: G_IndicatorsClass::OutText, thiscall(hud, text, float x,
+    // y, width, height, uint argb, int flags, int font, const char *end) ret 0x24, in pixels: flags 2 centres the
+    // text in the width, 4 ends it at x + width; the fonts are records of hudFontSize bytes from hud + hudFonts
+    // (+8, a float: the font's size factor). hudTextSize: its TextSize, thiscall(hud, text, float height * the
+    // font's factor, int font, const char *end) -> float width, ret 0x10. hudScale: hud + this, two floats: the
+    // pixels in a unit of the 800x600 space the HUD and the menus are laid out in (x, y); hudXOffset: a float 1.2
+    // adds to every x (0 at 4:3; 1.0 has none: 0 here). igraph, i3dDriver: where the game keeps its IGraph* and
+    // I3D_driver* (LS3D). IGraph's
+    // vtable: +0x0C SetTexture(tex), +0x44 SetState(id, value), +0x48 GetState(id), +0x58 DrawPrimitive(type,
+    // count, vertices, 1) with 32-byte vertices {x, y, z, rhw, diffuse, specular, u, v} (type 1 a line list, 2 a
+    // line strip, 5 a triangle strip). The driver's: +0x14 SetState(id, value), +0x18 GetState(id); the game sets
+    // its state 3 to 0 for its 2D drawing.
+    uintptr_t draw2d, hud, hudOutText, hudTextSize, hudXOffset, igraph, i3dDriver;
+    int hudScale, hudFonts, hudFontSize;
+    // The mission (host/game_hooks.cpp; 0: not known). missionOpen: C_mission::Open, thiscall(mission, const char
+    // *name, bool, uint, bool) ret 0x10: it closes the open mission, then loads missions\<name>. missionName:
+    // C_mission's own copy of that name (a char*).
+    uintptr_t missionOpen;
+    int missionName;
+    // The car by name (game.h `Car`; 0: not known). hudCar: hud + this, the C_car the player drives or drove last
+    // (what G_IndicatorsClass::RadarSetPlayerCar sets; the speedometer's car). Fields of C_Vehicle (C_car +
+    // vehicle), each read in the code named: vehPos, the world position (C_Vehicle::CalcSpeed copies the car
+    // frame's there); vehSpeed, |velocity| in m/s (CalcSpeed; what C_player's Action compares with 0.5);
+    // vehSteerWanted, the steering angle asked for, radians, left negative (C_Vehicle::SetSteer writes it, input
+    // times vehSteerMax, the limit, which shrinks with speed); vehSteer, the angle the wheels have now (it follows;
+    // SaveVehicleState saves it); vehGear (-1 reverse, 0 neutral, 1...) and vehGearMax (SetGear); vehRps, the
+    // engine's turns a second (C_Vehicle::GetRotations returns it times 60); vehFuel and vehFuelTank, litres
+    // (SetFuel); vehEngineOn, a byte (GetRotations, SetEngineOn); vehEngineHealth and vehEngineHealthMax (the
+    // engine's damage, 0x4D6720 in 1.2, lowers the first; the engine stops at 0).
+    // A car's state saved and put back, the game's own way (its saved games do it for every car): vehStateSize,
+    // thiscall(C_Vehicle*) -> bytes; vehStateSave, thiscall(C_Vehicle*, void *buffer) ret 4; vehStateLoad,
+    // thiscall(C_Vehicle*, const void *buffer) -> bool, ret 4 (the buffer starts {u32 9, u32 size}).
+    int hudCar;
+    int vehPos, vehSpeed, vehSteerWanted, vehSteer, vehSteerMax, vehGear, vehGearMax, vehRps, vehFuel, vehFuelTank;
+    int vehEngineOn, vehEngineHealth, vehEngineHealthMax;
+    uintptr_t vehStateSize, vehStateSave, vehStateLoad;
+    // The menus as objects (host/menus.cpp; 0: not known). A menu is a GM_Menu: +4 the menu under it, +8 its root
+    // control, +0xC the focused one, +0x14/+0x18 its controls (a vector of pointers, in the order they were made),
+    // +0x20 a byte "closing", +0x2C flags (0x10000: the menu under it is drawn too). Its vtable has 12 slots:
+    // 0 its definition's name (tables\menu\<name>.mnu), 1 OnCreate(), 2 OnClose(), 7 OnKey(char key, shift) (the
+    // base's closes the menu on Esc), 9 OnCommand(int id): what a click or Enter on a control sends, 10 Tick(ms).
+    // menuBaseVt: GM_Menu's own vtable. menuCtor: thiscall(menu) on gameNew(0x30) (the game's operator new, cdecl;
+    // the game deletes its menus itself). menuCreate: GM_Menu::Create, thiscall(menu): the controls made from the
+    // definition by the factories of menuFactories (a list of {create fastcall(record, parent), clone
+    // thiscall(control), tag, next}), then OnCreate. menuPush: stdcall(menu, arg) ret 8: the menu put over the
+    // active one and created. menuClose: GM_Menu::MenuClose, thiscall(menu, int result) ret 4. menuDestroy:
+    // thiscall(menu): its controls and itself deleted. menuFind: GM_Menu::FindComponentByID, thiscall(menu, id).
+    // menuAddUnder: GM_Menu::PridejComponentPod, thiscall(menu, int id, int newId, int growId, int move1, move2,
+    // move3) ret 0x18: a copy of control `id` made by its kind's clone and put right under it with the id newId;
+    // the control growId grows by its height, the three others move down by it (how the game's own lists grow).
+    // A control: +0 vtable (2 its kind's tag, 5 Draw(flags), 6 Layout, 16 SetText(const char *): the pointer kept,
+    // 19 SetValue(float), 20 GetValue), +4 id, +8 flags (low 4 bits the font, 0x10 shown, 0x20 enabled (both handed
+    // down to the children when drawn), 0x40 right, 0x80 centred, 0x100..0x400 the colour, each kind its own (read
+    // in their Draw: a text 0x5DA090 grey, 0x100 white, 0x200 yellow, 0x300 black; a button 0x5DB7B0 black, 0x100
+    // red, 0x200 white; a row 0x5DADC0 black, 0x400 red), 0x8000 it takes the focus, bit 31 focused), +0xC text id,
+    // +0x10 text, +0x14 x, y, w, h on the screen (pixels), +0x24 x, y in its parent (pixels), +0x2C parent,
+    // +0x34/+0x38 children; a slider's ("slid", SetValue 0x5DBA50) and a progress bar's ("pbar", 0x5DF350; its
+    // GetValue is the base's, 0) value 0..1 at +0x40.
+    uintptr_t menuCreate, menuDestroy, menuCtor, menuPush, menuClose, menuAddUnder, menuFind, menuBaseVt, menuFactories, gameNew;
+    // The menus' mouse (host/input.cpp; 0: not known). menuCursor: the cursor, two ints in pixels; the menus' input
+    // tick (0x5EA8C0 in 1.2) adds the mouse's lX, lY to it, focuses the control under it once it has moved more than
+    // 10 pixels, and gives the buttons to the focused control (its vtable +0x24 hit test, +0x2C the click).
+    // menuScale: two floats, the pixels in one of the menus' 800x600 units (x, y), set by the menus' loop; a
+    // control's screen place is its definition's times these (GM_Control's constructor 0x5E9BE0).
+    uintptr_t menuCursor, menuScale;
+    // menuLang: the language's two letters (a u16), the suffix the definitions' loader (0x5EA370) tries first:
+    // tables\menu\<name>_<ll>.mnu, then tables\menu\<name>.mnu.
+    uintptr_t menuLang;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -107,6 +199,14 @@ struct Ls3dBuild {
     // The scene's camera put somewhere else for a frame (scene_camera): camRecompute, a byte Render reads as "the
     // camera moved" (its lights, sectors worked out once); frameUpdateWMatrix: I3D_frame::UpdateWMatrixProc, thiscall.
     uintptr_t camRecompute, frameUpdateWMatrix;
+    // Input and the frame (host/input.cpp, host/screenshot.cpp; 0: not known). keyboardUpdate: stdcall(IGraph*)
+    // ret 4, the keyboard read once a frame (GetDeviceState into keyboardState, 256 bytes, 0x80 a key held; the
+    // previous frame's 0x188 bytes further). d3dDevice: the IDirect3DDevice8* the driver renders with.
+    uintptr_t keyboardUpdate, keyboardState, d3dDevice;
+    // mouseUpdate: stdcall(IGraph*) ret 4, the mouse read once a frame (IGraph slot 55 in 1.2; the menus' loop and
+    // the game's call it): GetDeviceState(16, mouseState), a DIMOUSESTATE {lX, lY, lZ (the wheel, 120 a notch),
+    // buttons[4] (0x80 held)}, moves since the read before, in counts.
+    uintptr_t mouseUpdate, mouseState;
 };
 
 inline const ExeBuild kExe12 = {
@@ -126,6 +226,20 @@ inline const ExeBuild kExe12 = {
     0x5C3AC0,
     0x571B90, 0x492D60,
     0x55D460, 0x6BD890, 0x6D4628, 0x6279DC, 0x625EB8, 0x62736C,
+    0x647C30, 0x4F0620, 0x4F1830, 0x6D8714, 0x60FBA0,
+    0x60FB40,
+    0x5EB070, 0x5EB090,
+    0x6D4B00,
+    0x5BD8D0, 0x6BF980, 0x603880, 0x6036D0, 0x6C4500, 0x647EE0, 0x647ED8,
+    0x40C0, 0, 0x101C,
+    0x5409D0,
+    0x68,
+    0x44A8,
+    0x320, 0x59C, 0x624, 0x628, 0x610, 0x560, 0x568, 0x548, 0xC30, 0x1FA0,
+    0xC2C, 0x1B4, 0x1B8,
+    0x4CEB30, 0x4CEE00, 0x4CFAB0,
+    0x5EA2E0, 0x5EA690, 0x5EA1F0, 0x5EAD50, 0x5EAE10, 0x5EB7D0, 0x5EB2F0, 0x627834, 0x6BD8B0, 0x6106FC,
+    0x6BD8A0, 0x6BD888, 0x6C42C4,
 };
 
 inline const ExeBuild kExe10 = {
@@ -146,18 +260,38 @@ inline const ExeBuild kExe10 = {
     0, 0, 0, 0, 0,   // getting up: not looked for in 1.0 yet
     0,
     0, 0,            // trams: not looked for in 1.0 yet
-    0, 0, 0, 0, 0, 0,   // the start: not looked for in 1.0 yet
+    0, 0x67A4D8, 0, 0, 0, 0,   // the start: not looked for in 1.0 yet (menuTop: for the pause, see below)
+    0, 0, 0, 0, 0,      // the controls, the texts: not looked for in 1.0 yet
+    0,
+    0, 0,               // the menus' components: not looked for in 1.0 yet
+    0,                  // the mouse sensitivity: not looked for in 1.0 yet
+    // The kit (drawing, the mission, the car): each address is the 1.0 twin of the 1.2 function, found by its code
+    // and checked against the 1.0 files (tools/check_builds.py); none of it has been run in a 1.0 game yet.
+    0x5F86C0, 0x658330, 0x5551A0, 0x554FD0, 0, 0x6F9528, 0x6F9520,
+    0x90C0, 0x5000, 0x101C,
+    0x5FFF30,
+    0x68,
+    0x94A0,
+    0x39C, 0x618, 0x6A0, 0x6A4, 0x68C, 0x5DC, 0x5E4, 0x5C4, 0xCAC, 0x1F1C,
+    0xCA8, 0x234, 0x238,
+    0x51AAC0, 0x51AD90, 0x51BA40,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   // the menus as objects: 1.0's menu code is built differently, not looked for yet
+    0, 0, 0,                        // the menus' mouse, the language: not looked for in 1.0 yet
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,
                                   0x1B040, 0x1BFD0, 0x1C2A0, 0x2C000, 0x08, 0x18, 0x1C,
                                   0x5B6C0, 0x5B940, 0x1B50F8, 0x1B5124, 0x701A0,
-                                  0xA93F0, 0x1C7D0};
+                                  0xA93F0, 0x1C7D0,
+                                  0x717F0, 0x1C5300, 0x1C597C,
+                                  0x71E20, 0x1C56F0};
 // LS3D 3.84.5 (31.7.2002): the vertex buffer has no flags word, everything after +0x04 sits 4 bytes lower.
 inline const Ls3dBuild kLs3d10 = {"1.0", 0x5ED80, 0x1A8A0, 0x305B0, 0x5D070, 0x1C350, 0x6E580, 0, 0,
                                   0x1AE00, 0x1BD60, 0x1C030, 0x2B540, 0x04, 0x14, 0x18,
                                   0, 0, 0, 0, 0,
-                                  0, 0};   // the scene camera: not looked for in 1.0 yet
+                                  0, 0,    // the scene camera: not looked for in 1.0 yet
+                                  0x6DD40, 0x1C12A0, 0x1C167C,    // (twins by code; not run in a 1.0 game yet)
+                                  0x6E2A0, 0x1C160C};
 
 // The builds found (null until Detect succeeds).
 inline const ExeBuild *g_exe;

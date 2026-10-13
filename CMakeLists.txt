@@ -27,13 +27,14 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     # ---- the loader
     add_library(MafiaModLoader SHARED
         host/main.cpp host/log.cpp host/memory.cpp host/crash.cpp host/hooks.cpp host/mods.cpp host/game_hooks.cpp
-        host/bridge.cpp host/tap.cpp host/start.cpp)
+        host/bridge.cpp host/tap.cpp host/start.cpp host/input.cpp host/screenshot.cpp host/draw.cpp host/config.cpp host/menus.cpp)
     # ($<0:> keeps Visual Studio from adding a per-configuration folder)
     set_target_properties(MafiaModLoader PROPERTIES SUFFIX ".asi" RUNTIME_OUTPUT_DIRECTORY ${MML_OUT}/$<0:>)
     target_include_directories(MafiaModLoader PRIVATE third_party/json host)
     target_link_libraries(MafiaModLoader PRIVATE minhook mml_sdk ws2_32 psapi user32)
 
-    # mml_add_mod(<id> <sources...>): a native mod: <out>/mml/mods/<id>/<id>.dll and its mod.json (next to the sources)
+    # mml_add_mod(<id> <dir> <sources...>): a native mod: <out>/mml/mods/<id>/<id>.dll, its mod.json and, when it
+    # has one, its config.json (the defaults of its settings), both from <dir>
     function(mml_add_mod id dir)
         add_library(mod_${id} SHARED ${ARGN})
         set(dest ${MML_OUT}/mml/mods/${id})
@@ -41,11 +42,17 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
         target_link_libraries(mod_${id} PRIVATE mml_sdk)
         add_custom_command(TARGET mod_${id} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different ${dir}/mod.json ${dest}/mod.json)
+        if(EXISTS ${dir}/config.json)
+            add_custom_command(TARGET mod_${id} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different ${dir}/config.json ${dest}/config.json)
+        endif()
     endfunction()
 
     mml_add_mod(core ${CMAKE_SOURCE_DIR}/mods/core mods/core/core.cpp)
     target_include_directories(mod_core PRIVATE third_party/json)
     mml_add_mod(hello_c ${CMAKE_SOURCE_DIR}/mods/examples/hello_c mods/examples/hello_c/hello.c)
+    mml_add_mod(telemetry ${CMAKE_SOURCE_DIR}/mods/examples/telemetry mods/examples/telemetry/telemetry.cpp)
+    # (tools/new_mod.py adds a mod's line above this one)
 
     # ---- offline tests: a stand-in game that loads the loader and pumps its frames (tests/run_tests.py)
     add_executable(mml_harness tests/harness/harness.cpp)
@@ -60,9 +67,14 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
         target_link_libraries(testmod_${id} PRIVATE mml_sdk)
         add_custom_command(TARGET testmod_${id} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/tests/mods/${id}/mod.json ${dest}/mod.json)
+        if(EXISTS ${CMAKE_SOURCE_DIR}/tests/mods/${id}/config.json)
+            add_custom_command(TARGET testmod_${id} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/tests/mods/${id}/config.json ${dest}/config.json)
+        endif()
     endfunction()
     mml_add_test_mod(hook_a)
     mml_add_test_mod(hook_b)
+    mml_add_test_mod(kit)
 else()
     message(STATUS "64-bit configure: the sidecar only")
 endif()

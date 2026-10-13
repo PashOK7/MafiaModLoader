@@ -26,6 +26,9 @@ void Init() {
     if (GameHooksInstall()) {
         HLOG("game: Mafia %s", GameBuild());
         StartInit();
+        InputInit();
+        DrawInit();
+        MenusInit();
     }
     BridgeStart();
 }
