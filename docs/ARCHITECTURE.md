@@ -9,7 +9,9 @@
       │  game process: launch, close (exact pid)               ├─ game hooks → events
       │  log on disk, crash dumps (minidump)                   ├─ hook chains (MinHook once per function)
       │  deploy (build → game folder → mod.reload)             ├─ bridge (NDJSON, token)
-      │                                                         ├─ crash filter (full dumps), `where`
+      │  knowledge base (knowledge/, MafiaReverse)              │
+      │                                                         ├─ crash filter (full dumps), `where`, `tap`
+      │                                                         ├─ the start (logos, profile, menus)
       │                                                         └─ mods: mml\mods\<id>\ (each hot-reloadable)
       │                                                              ├─ core   (the game's live state)
       │                                                              ├─ hello_c, your mods (C, C++, Rust...)

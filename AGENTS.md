@@ -3,7 +3,8 @@
 A mod loader for **Mafia: The City of Lost Heaven** (2002; builds 1.2 and 1.0) made for agents first: an MCP server
 gives you the live game (its memory, its objects, the loader's log, its crashes), every mod hot-reloads, and the
 game can be started, queried and closed without a human at the keyboard. Read this file, then
-`docs/ARCHITECTURE.md`, `docs/PROTOCOL.md`, `docs/MODDING.md`, and the end of `docs/JOURNAL.md`.
+`docs/ARCHITECTURE.md`, `docs/PROTOCOL.md`, `docs/MODDING.md`, `docs/ROADMAP.md` (what is next, what is known to be
+missing) and the end of `docs/JOURNAL.md`. Keep the roadmap and the journal current as you work.
 
 ## Rules
 
