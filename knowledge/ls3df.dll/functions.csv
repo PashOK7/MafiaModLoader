@@ -1,0 +1,1600 @@
+address,name,class,signature,topics,strings,src_start,src_end
+10001010,,,"void __fastcall sub_10001010(int a1, float *a2, char a3, int a4, int a5, float a6)",math_geometry,,3501,3532
+100010C0,,,int sub_100010C0(),,,3533,3554
+100010F0,,,"char __fastcall sub_100010F0(int ArgList, int a2)",diagnostics_errors,,3555,3631
+10001340,,,"int __stdcall sub_10001340(int a1, int a2, int a3, int (__thiscall *a4)(int))",,,3632,3652
+10001370,,,int sub_10001370(),,,3653,3678
+100013C0,,,void sub_100013C0(),,,3679,3689
+100013E0,,,"int __fastcall sub_100013E0(unsigned __int16 *a1, int a2)",,,3690,4576
+10002530,,,"char __fastcall sub_10002530(__int16 *a1, int a2)",,,4577,5670
+10003B40,,,"char __fastcall sub_10003B40(float *a1, int a2, _DWORD *a3, int a4, int a5, float *a6)",math_geometry,,5671,5838
+10003DC0,,,char __thiscall sub_10003DC0(_DWORD *this),diagnostics_errors,,5839,6034
+10004110,,,"char __fastcall sub_10004110(float *a1, int a2, _DWORD *a3, int a4, int a5)",math_geometry,,6035,6207
+10004370,,,"char __fastcall sub_10004370(float *a1, int a2, _DWORD *a3, int a4, int a5, float *a6)",math_geometry,,6208,6375
+100045F0,,,"char __fastcall sub_100045F0(float *a1, int a2, _DWORD *a3, int a4, int a5)",math_geometry,,6376,6548
+10004850,,,void sub_10004850(),,,6549,6559
+10004870,,,void sub_10004870(),,,6560,6570
+10004890,,,_DWORD *__thiscall sub_10004890(_DWORD *this),,,6571,6584
+10004900,,,int __stdcall sub_10004900(,,,6585,6672
+10004A00,,,unsigned __int16 *__stdcall sub_10004A00(int a1),,,6673,6683
+10004A20,,,int __stdcall sub_10004A20(int a1),,,6684,6694
+10004A40,,,"unsigned __int16 *__stdcall sub_10004A40(int a1, int a2)",,,6695,6710
+10004A70,,,int __thiscall sub_10004A70(_DWORD *this),,,6711,6721
+10004A80,,,"int __stdcall sub_10004A80(int a1, const char *a2)",,,6722,6746
+10004AF0,,,"int __stdcall sub_10004AF0(int ArgList, unsigned int a2)",diagnostics_errors,,6747,6770
+10004B30,,,"int __stdcall sub_10004B30(int ArgList, unsigned int a2, unsigned int a3, _DWORD *a4, _DWORD *a5)",diagnostics_errors,,6771,6820
+10004BF0,,,"int __stdcall sub_10004BF0(int ArgList, unsigned int a2)",diagnostics_errors,,6821,6853
+10004C50,,,"int __stdcall sub_10004C50(int ArgList, unsigned int a2, unsigned int a3, _DWORD *a4, _DWORD *a5)",diagnostics_errors,,6854,6912
+10004D30,,,"int __stdcall sub_10004D30(int ArgList, unsigned int a2)",diagnostics_errors,,6913,6952
+10004DB0,,,"int __stdcall sub_10004DB0(int ArgList, unsigned int a2, unsigned int a3, _DWORD *a4, _DWORD *a5)",diagnostics_errors,,6953,7018
+10004EA0,,,"int __stdcall sub_10004EA0(int ArgList, unsigned int a2, int *a3)",diagnostics_errors,,7019,7067
+10004F50,,,"int __stdcall sub_10004F50(int ArgList, unsigned int a2, unsigned int a3, _DWORD *a4, _WORD *a5)",diagnostics_errors,,7068,7134
+10005050,,,"int __stdcall sub_10005050(int ArgList, unsigned int a2, unsigned int a3, _DWORD *a4, _DWORD *a5)",diagnostics_errors,,7135,7205
+10005160,,,void sub_10005160(),,,7206,7216
+10005180,,,void sub_10005180(),,,7217,7227
+100051A0,,,_DWORD *__thiscall sub_100051A0(_DWORD *this),,,7228,7256
+10005250,,,"int __stdcall sub_10005250(int a1, unsigned int a2)",,,7257,7274
+10005280,,,int __stdcall sub_10005280(int a1),,,7275,7280
+10005290,,,"void *__thiscall sub_10005290(void *this, char a2)",,,7281,7289
+100052B0,,,void __thiscall sub_100052B0(int ArgList),,,7290,7393
+10005440,,,"int __thiscall sub_10005440(_DWORD *this, int a2)",,,7394,7447
+10005550,,,"int __stdcall sub_10005550(I3D_frame *a1, I3D_frame *a2, char a3)",frames_visuals_scene,,7448,7479
+100055D0,,,int __thiscall sub_100055D0(I3D_frame *this),frames_visuals_scene;math_geometry,,7480,7618
+10005820,,,"int __stdcall sub_10005820(int a1, _DWORD *a2)",,,7619,7637
+10005880,,,"int __stdcall sub_10005880(int a1, _DWORD *a2, int a3, const void *a4, int a5, int a6)",diagnostics_errors,,7638,7690
+100059D0,,,"char __stdcall sub_100059D0(int a1, float *a2)",,,7691,7712
+10005A30,,,"int __stdcall sub_10005A30(int a1, int a2)",,,7713,7790
+10005B90,,,"int __stdcall sub_10005B90(_DWORD *a1, int a2)",,,7791,7893
+10005CA0,,,int __thiscall sub_10005CA0(_DWORD *this),io_assets;diagnostics_errors,,7894,7909
+10005CE0,,,int __thiscall sub_10005CE0(_DWORD *this),textures_materials;io_assets;diagnostics_errors,,7910,7925
+10005D20,,,"char __thiscall sub_10005D20(_DWORD *this, _DWORD *a2)",,,7926,7986
+10005DB0,,,_DWORD *__thiscall sub_10005DB0(_DWORD *this),,,7987,8001
+10005DF0,,,"_DWORD *__thiscall sub_10005DF0(_DWORD *this, char a2)",,,8002,8010
+10005E10,,,void __thiscall sub_10005E10(_DWORD *this),,,8011,8020
+10005E40,,,void __stdcall sub_10005E40(int a1),,,8021,8086
+10005F40,,,"int __stdcall sub_10005F40(_DWORD *a1, int (__stdcall ***a2)(_DWORD), char a3)",,,8087,8093
+10005F60,,,"int __stdcall sub_10005F60(I3D_visual *a1, I3D_visual *a2)",frames_visuals_scene,,8094,8153
+10006090,,,"float *__thiscall sub_10006090(I3D_frame *this, float *a2, float *a3)",frames_visuals_scene;math_geometry,,8154,9007
+100073C0,,,void __thiscall sub_100073C0(I3D_frame *this),frames_visuals_scene,,9008,9793
+10008390,,,void sub_10008390(),,,9794,9804
+100083B0,,,"unsigned int __thiscall sub_100083B0(_DWORD *this, _DWORD *a2)",d3d8_device;diagnostics_errors,,9805,10510
+100094D0,,,int __thiscall sub_100094D0(_DWORD *this),,,10511,10529
+10009520,,,_DWORD *__thiscall sub_10009520(_DWORD *this),,,10530,10565
+10009610,,,"void *__thiscall sub_10009610(void *this, char a2)",,,10566,10574
+10009630,,,void __thiscall sub_10009630(int this),,,10575,10604
+100096E0,,,"int __stdcall sub_100096E0(int a1, I3D_visual *a2)",frames_visuals_scene,,10605,10675
+10009890,,,"void __stdcall sub_10009890(I3D_frame *a1, char a2)",frames_visuals_scene,,10676,11381
+1000AA30,,,int __thiscall sub_1000AA30(void *this),,,11382,11423
+1000AB40,,,int __thiscall sub_1000AB40(void *this),,,11424,11462
+1000AC30,,,int __thiscall sub_1000AC30(void *this),,,11463,11481
+1000AC60,,,int __thiscall sub_1000AC60(void *this),,,11482,11500
+1000AC90,,,int __thiscall sub_1000AC90(int this),textures_materials;io_assets;diagnostics_errors,,11501,11587
+1000AE50,,,int __thiscall sub_1000AE50(void *this),,,11588,11630
+1000AF20,,,"void __thiscall sub_1000AF20(int this, int a2)",,,11631,11658
+1000AF80,,,"int __thiscall sub_1000AF80(int *this, int a2, int a3)",,,11659,11700
+1000B060,,,void __thiscall sub_1000B060(_DWORD **this),,,11701,11719
+1000B0C0,,,int __thiscall sub_1000B0C0(int this),math_geometry,,11720,11767
+1000B250,,,"void *__thiscall sub_1000B250(void *this, char a2)",,,11768,11776
+1000B270,,,void __thiscall sub_1000B270(int ArgList),,,11777,11789
+1000B290,,,"int __stdcall sub_1000B290(int a1, int a2)",math_geometry,,11790,11830
+1000B400,,,int __thiscall sub_1000B400(int this),,,11831,11934
+1000B690,,,"char __stdcall sub_1000B690(int a1, float a2)",lights_camera;diagnostics_errors,,11935,11959
+1000B720,,,"char __stdcall sub_1000B720(int a1, float a2)",lights_camera;diagnostics_errors,,11960,11984
+1000B7B0,,,"int __stdcall sub_1000B7B0(int a1, float a2, float a3)",lights_camera;diagnostics_errors,,11985,12004
+1000B840,,,"int __stdcall sub_1000B840(int a1, float a2, float a3)",lights_camera;diagnostics_errors,,12005,12024
+1000B8D0,,,"char __stdcall sub_1000B8D0(int a1, float a2)",lights_camera;diagnostics_errors,,12025,12044
+1000B930,,,"int __stdcall sub_1000B930(int a1, char a2)",,,12045,12051
+1000B950,,,"char __stdcall sub_1000B950(int a1, float a2)",lights_camera;diagnostics_errors,,12052,12074
+1000B9D0,,,void __thiscall sub_1000B9D0(I3D_frame *this),frames_visuals_scene,,12075,12097
+1000BA30,,,int __thiscall sub_1000BA30(I3D_frame *this),frames_visuals_scene,,12098,13497
+1000DD60,,,"_DWORD *__thiscall sub_1000DD60(_DWORD *this, int a2, int a3, int a4)",,,13498,13509
+1000DD80,,,"float *__thiscall sub_1000DD80(float *this, float *a2, float *a3)",,,13510,13525
+1000DDB0,,,"double __thiscall sub_1000DDB0(float *this, float *a2)",,,13526,13531
+1000DDD0,,,"float *__thiscall sub_1000DDD0(float *this, float *a2, float *a3, float *a4)",,,13532,13555
+1000DE50,,,void sub_1000DE50(),,,13556,13566
+1000DEA0,,,void sub_1000DEA0(),,,13567,13577
+1000DEC0,,,I3D_frame *__stdcall sub_1000DEC0(,frames_visuals_scene;math_geometry,,13578,13801
+1000E370,,,void __thiscall sub_1000E370(int this),frames_visuals_scene,,13802,13945
+1000E780,,,void __thiscall sub_1000E780(I3D_frame *this),frames_visuals_scene,,13946,15459
+100112A0,,,"float *__thiscall sub_100112A0(float *this, float *a2, float *a3)",,,15460,15475
+100112D0,,,"float *__thiscall sub_100112D0(float *this, float *a2, float *a3)",,,15476,15491
+10011300,,,"int __stdcall sub_10011300(int a1, int a2, int a3, int a4, int a5)",,,15492,15535
+10011430,,,I3D_frame *__stdcall sub_10011430(,frames_visuals_scene;math_geometry,,15536,15756
+100118E0,,,I3D_frame *__stdcall sub_100118E0(,frames_visuals_scene;math_geometry,,15757,15959
+10011D60,,,I3D_frame *__stdcall sub_10011D60(,frames_visuals_scene,,15960,16126
+10012140,,,void __thiscall sub_10012140(int this),frames_visuals_scene,,16127,16260
+10012500,,,double __thiscall sub_10012500(float *this),,,16261,16266
+10012520,,,void __thiscall sub_10012520(I3D_frame *this),frames_visuals_scene,,16267,17509
+10014970,,,"void __thiscall sub_10014970(float *this, float *a2)",,,17510,17563
+10014AA0,,,I3D_frame *__stdcall sub_10014AA0(,frames_visuals_scene,,17564,17734
+10014DD0,,,"void __thiscall sub_10014DD0(float *this, float *a2)",,,17735,17751
+10014E50,,,"I3D_frame *__stdcall sub_10014E50(int a1, int *a2, int *a3, float a4, I3D_visual *a5, int a6, _DWORD *a7)",frames_visuals_scene,,17752,17937
+100152A0,,,bool __thiscall sub_100152A0(float *this),,,17938,17970
+100153B0,,,"double __stdcall sub_100153B0(int a1, float a2, float *a3, float *a4, float a5, float *a6, float *a7)",,,17971,18023
+10015530,,,int sub_10015530(),,,18024,18037
+10015560,,,void __cdecl sub_10015560(),,,18038,18049
+10015580,,,int sub_10015580(),,,18050,18063
+100155B0,,,void __cdecl sub_100155B0(),,,18064,18075
+100155D0,,,int sub_100155D0(),,,18076,18089
+10015600,,,void __cdecl sub_10015600(),,,18090,18101
+10015620,,,_DWORD *__thiscall sub_10015620(_DWORD *this),,,18102,18133
+10015670,,,void __thiscall sub_10015670(LPVOID *this),diagnostics_errors,,18134,18164
+10015730,,,"int __stdcall sub_10015730(int a1, int a2)",,,18165,18175
+10015750,,,int __stdcall sub_10015750(int a1),,,18176,18182
+10015760,,,"int __stdcall sub_10015760(_DWORD *a1, int a2)",,,18183,18282
+10015930,,,int __stdcall sub_10015930(int a1),,,18283,18323
+100159B0,,,"int __stdcall sub_100159B0(int a1, int ArgList, void *a3)",diagnostics_errors,,18324,18352
+10015A20,,,"int __stdcall sub_10015A20(int a1, int ArgList, int a3)",,,18353,18520
+10015E50,,,"int __stdcall sub_10015E50(int a1, int ArgList)",diagnostics_errors,,18521,18530
+10015E80,,,"int __stdcall sub_10015E80(int a1, unsigned __int16 *a2, int a3, int a4, int a5)",,,18531,18738
+100160D0,,,"int __stdcall sub_100160D0(int a1, unsigned __int16 *a2, int a3)",,,18739,18940
+10016310,,,"int __stdcall sub_10016310(float *a1, int a2, unsigned __int16 *a3, int a4, _WORD *a5, float *a6)",,,18941,19084
+100165E0,,,void __cdecl sub_100165E0(),,,19085,19096
+10016600,,,"_DWORD *__thiscall sub_10016600(void *this, const CHAR *lpName)",io_assets;diagnostics_errors,,19097,19146
+100166C0,,,"int __stdcall sub_100166C0(int a1, int *a2, float *a3, unsigned __int8 a4)",,,19147,19226
+100168F0,,,"int __stdcall sub_100168F0(int a1, int a2, int a3, float *a4, unsigned __int8 a5)",,,19227,19306
+10016B20,,,"int __stdcall sub_10016B20(int a1, int *a2, int *a3, float *a4, unsigned __int8 a5)",,,19307,19401
+10016D70,,,"int __stdcall sub_10016D70(int a1, int a2, int a3, int a4, unsigned int a5, float *a6, int a7, unsigned __int8 a8)",,,19402,19504
+10016FD0,,,void sub_10016FD0(),,,19505,19515
+10016FF0,,,"int __stdcall sub_10016FF0(int a1, int a2, int a3, int a4, unsigned int a5, float *a6, int a7, __int16 a8, _DWORD *a9)",,,19516,19819
+10017580,,,"int __stdcall sub_10017580(int a1, float *a2, float a3, float *a4, int a5, unsigned __int8 a6)",math_geometry,,19820,19942
+10017890,,,"int __stdcall sub_10017890(int a1, int *a2, const char *a3, unsigned __int8 a4, float a5)",frames_visuals_scene,,19943,20155
+10017D40,,,"int __stdcall sub_10017D40(int a1, int a2, int a3, const char *a4, unsigned __int8 a5, float a6)",,,20156,20418
+100182F0,,,int __userpurge sub_100182F0@<eax>(,frames_visuals_scene,,20419,20605
+100186A0,,,"void __stdcall sub_100186A0(int a1, float *a2, int a3, int a4, unsigned __int16 a5)",,,20606,20721
+100188A0,,,_DWORD *sub_100188A0(),,,20722,20838
+10018CC0,,,"void __stdcall sub_10018CC0(int a1, float *a2, int a3, int a4, unsigned __int16 a5)",math_geometry,,20839,20875
+10018D80,,,"_DWORD *__stdcall sub_10018D80(int a1, int ArgList)",frames_visuals_scene;diagnostics_errors,,20876,21035
+10019090,,,_DWORD *__stdcall sub_10019090(int a1),,,21036,21051
+10019100,,,char *__stdcall sub_10019100(int a1),,,21052,21067
+10019180,,,"void *__stdcall sub_10019180(int a1, int a2)",,,21068,21073
+100191A0,,,_DWORD *__stdcall sub_100191A0(int a1),,,21074,21085
+10019200,,,_DWORD *__stdcall sub_10019200(int a1),,,21086,21097
+10019260,,,_DWORD *__stdcall sub_10019260(int a1),,,21098,21109
+100192C0,,,_DWORD *__stdcall sub_100192C0(int a1),,,21110,21121
+10019320,,,_DWORD *__stdcall sub_10019320(int a1),,,21122,21133
+10019380,,,_DWORD *__stdcall sub_10019380(int a1),,,21134,21145
+100193E0,,,"int __stdcall sub_100193E0(int a1, int ArgList)",frames_visuals_scene;diagnostics_errors,,21146,21331
+10019880,,,"int __stdcall sub_10019880(int a1, void (__stdcall *a2)(int, char *), char a3)",frames_visuals_scene,,21332,21354
+10019930,,,char *__thiscall sub_10019930(void *this),frames_visuals_scene;lights_camera,,21355,21420
+10019A10,,,"char *__stdcall sub_10019A10(int a1, void *a2)",,,21421,21426
+10019A20,,,"char *__stdcall sub_10019A20(int a1, int a2)",frames_visuals_scene,,21427,21484
+10019B10,,,"_DWORD *__stdcall sub_10019B10(int a1, int a2, const char *a3)",,,21485,21542
+10019C10,,,"_DWORD *__stdcall sub_10019C10(const char *a1, _DWORD *a2)",,,21543,21596
+10019D30,,,void __stdcall sub_10019D30(int a1),diagnostics_errors,,21597,21619
+10019DC0,,,"void __stdcall sub_10019DC0(_DWORD *a1, int a2, int a3)",,,21620,21727
+10019FD0,,,"unsigned int __stdcall sub_10019FD0(int a1, int (__stdcall *a2)(int, int), int a3)",,,21728,21754
+1001A050,,,"int __stdcall sub_1001A050(int (__stdcall *a1)(int, int), int a2, int a3)",,,21755,21776
+1001A0A0,,,"void __stdcall sub_1001A0A0(int a1, int a2)",,,21777,21791
+1001A0E0,,,"int __stdcall sub_1001A0E0(int a1, void *a2)",,,21792,21797
+1001A0F0,,,"void __stdcall sub_1001A0F0(int a1, void *a2)",,,21798,21803
+1001A100,,,"void __thiscall sub_1001A100(int this, int a2)",,,21804,21837
+1001A170,,,"void __thiscall sub_1001A170(int this, int a2)",,,21838,21871
+1001A1E0,,,_DWORD *__thiscall sub_1001A1E0(_DWORD *this),,,21872,21888
+1001A240,,,"std::locale::_Locimp *__thiscall sub_1001A240(std::locale::_Locimp *this, char a2)",,,21889,21897
+1001A2E0,,,"int __stdcall sub_1001A2E0(int a1, int a2)",,,21898,21907
+1001A330,,,void __thiscall sub_1001A330(_DWORD *this),,,21908,21914
+1001A350,,,"int __stdcall sub_1001A350(int a1, int a2)",math_geometry,,21915,22044
+1001A6A0,,,int __thiscall sub_1001A6A0(_DWORD *this),,,22045,22053
+1001A6C0,,,void sub_1001A6C0(),,,22054,22064
+1001A6E0,,,void __thiscall sub_1001A6E0(int this),math_geometry,,22065,22104
+1001A7F0,,,_DWORD *__thiscall sub_1001A7F0(_DWORD *this),math_geometry,,22105,22161
+1001A980,,,"void *__thiscall sub_1001A980(void *this, char a2)",,,22162,22170
+1001A9A0,,,void __fastcall sub_1001A9A0(int ArgList),frames_visuals_scene;diagnostics_errors,,22171,22247
+1001AB00,,,_DWORD *__thiscall sub_1001AB00(_DWORD *this),frames_visuals_scene;diagnostics_errors,,22248,22282
+1001AB50,,,"int __stdcall sub_1001AB50(int a1, float *a2, float a3)",math_geometry,,22283,22508
+1001B040,,,"void __stdcall sub_1001B040(int a1, struct S_vector *a2, int a3)",frames_visuals_scene;math_geometry,,22509,22543
+1001B160,,,"char __stdcall sub_1001B160(int a1, int a2)",frames_visuals_scene;math_geometry,,22544,22584
+1001B230,,,"char __stdcall sub_1001B230(int a1, _DWORD *a2, struct S_vector *a3, int a4)",frames_visuals_scene;math_geometry,,22585,22645
+1001B3C0,,,"int __stdcall sub_1001B3C0(int a1, int a2, __int16 a3)",,,22646,22664
+1001B400,,,"int __stdcall sub_1001B400(int a1, char a2)",,,22665,22679
+1001B430,,,int __thiscall sub_1001B430(_DWORD *this),frames_visuals_scene;diagnostics_errors,,22680,22735
+1001B500,,,int __thiscall sub_1001B500(int this),,,22736,22791
+1001B600,,,int __thiscall sub_1001B600(_DWORD *this),,,22792,22828
+1001B680,,,int __thiscall sub_1001B680(_DWORD *this),,,22829,22847
+1001B6B0,,,int __thiscall sub_1001B6B0(_DWORD *this),,,22848,22866
+1001B6F0,,,"int __stdcall sub_1001B6F0(int a1, const char *a2)",diagnostics_errors,,22867,22903
+1001B800,,,"int __thiscall sub_1001B800(int this, const char *a2)",diagnostics_errors,,22904,22932
+1001B8F0,,,int __thiscall sub_1001B8F0(int this),diagnostics_errors,,22933,22969
+1001B9D0,,,"int __userpurge sub_1001B9D0@<eax>(int a1@<edi>, int a2@<esi>, I3D_frame *a3, I3D_frame *a4, char a5)",frames_visuals_scene;math_geometry,,22970,23202
+1001BE40,,,"int __stdcall sub_1001BE40(_DWORD *a1, int a2)",,,23203,23209
+1001BE60,,,"int __stdcall sub_1001BE60(_DWORD *a1, int a2)",,,23210,23216
+1001BE80,,,"int __stdcall sub_1001BE80(_DWORD *a1, int a2)",,,23217,23223
+1001BEA0,,,"_DWORD *__thiscall sub_1001BEA0(_DWORD *this, _DWORD *a2)",,,23224,23252
+1001BF20,,,"_DWORD *__thiscall sub_1001BF20(_DWORD *this, _DWORD *a2)",,,23253,23299
+1001BFD0,,,"int __stdcall sub_1001BFD0(int a1, int a2)",frames_visuals_scene;diagnostics_errors,,23300,23324
+1001C020,,,"int __thiscall sub_1001C020(int this, int (__stdcall *a2)(int, int), int a3, int a4, char *String1)",,,23325,23497
+1001C280,,,void sub_1001C280(),,,23498,23508
+1001C2A0,,,"int __stdcall sub_1001C2A0(int a1, int (__stdcall *a2)(int, int), int a3, int a4, char *String1)",,,23509,23533
+1001C310,,,"int __stdcall sub_1001C310(int a1, _DWORD *a2)",,,23534,23540
+1001C330,,,"int __thiscall sub_1001C330(void *this, int *a2, int a3, int a4)",,,23541,23558
+1001C360,,,"int __thiscall sub_1001C360(int this, char *String1, int a3)",,,23559,23738
+1001C5B0,,,"int __stdcall sub_1001C5B0(int a1, int a2)",diagnostics_errors,,23739,23790
+1001C700,,,"int __stdcall sub_1001C700(int a1, const char *a2)",,,23791,23829
+1001C780,,,int sub_1001C780(),,,23830,23843
+1001C7B0,,,void __cdecl sub_1001C7B0(),,,23844,23855
+1001C7D0,I3D_frame::UpdateWMatrixProc,I3D_frame,void __thiscall I3D_frame::UpdateWMatrixProc(I3D_frame *this),frames_visuals_scene;math_geometry,,23856,23928
+1001C9A0,,,void __thiscall sub_1001C9A0(_DWORD *this),,,23929,23964
+1001CA60,,,int __stdcall sub_1001CA60(_DWORD *a1),frames_visuals_scene,,23965,24051
+1001CC00,,,_DWORD *__thiscall sub_1001CC00(_DWORD *this),,,24052,24074
+1001CC50,I3D_frame::UpdateHRBoundVol,I3D_frame,void __stdcall I3D_frame::UpdateHRBoundVol(I3D_frame *this),frames_visuals_scene;math_geometry,,24075,24179
+1001CE80,,,"unsigned int __thiscall sub_1001CE80(float *this, float *a2)",,,24180,24223
+1001CF90,I3D_frame::UpdateHRBoundVolW,I3D_frame,void __stdcall I3D_frame::UpdateHRBoundVolW(I3D_frame *this),frames_visuals_scene;math_geometry,,24224,24308
+1001D1C0,,,void __thiscall sub_1001D1C0(_DWORD *this),diagnostics_errors,,24309,24356
+1001D2F0,,,"int __stdcall sub_1001D2F0(int a1, float a2)",,,24357,24366
+1001D300,,,"int __stdcall sub_1001D300(int a1, int a2)",,,24367,24373
+1001D320,,,int __fastcall sub_1001D320(int a1),,,24374,25252
+1001E230,int,,"int (__stdcall ***__stdcall sub_1001E230(int a1, int a2))(_DWORD)",,,25253,25278
+1001E280,,,void __thiscall sub_1001E280(int this),,,25279,25288
+1001E2E0,,,int __thiscall sub_1001E2E0(_DWORD *this),,,25289,25338
+1001E360,,,"char __thiscall sub_1001E360(int this, int a2)",,,25339,25452
+1001E470,,,"char __thiscall sub_1001E470(int this, int a2)",,,25453,25566
+1001E580,,,"int __thiscall sub_1001E580(_DWORD *this, _DWORD *a2, int a3, float a4, int a5)",,,25567,25740
+1001E7E0,,,"int __thiscall sub_1001E7E0(_BYTE *this, int a2, int a3)",,,25741,25753
+1001E810,,,"int __thiscall sub_1001E810(int this, const char *a2, int a3)",,,25754,25766
+1001E840,,,void sub_1001E840(),,,25767,25777
+1001E860,,,"int __thiscall sub_1001E860(int this, int a2)",,,25778,25811
+1001E8C0,,,"int __thiscall sub_1001E8C0(int this, int a2)",,,25812,25828
+1001E900,,,"int __thiscall sub_1001E900(int this, int a2, int a3)",,,25829,25858
+1001E960,,,double __thiscall sub_1001E960(_DWORD *this),,,25859,25880
+1001E9A0,,,int __thiscall sub_1001E9A0(int this),,,25881,25906
+1001E9E0,,,void __thiscall sub_1001E9E0(_DWORD *this),,,25907,25950
+1001EA60,,,"_DWORD *__thiscall sub_1001EA60(int this, int a2)",,,25951,26014
+1001EBA0,,,"int __thiscall sub_1001EBA0(_DWORD *this, const char *a2)",,,26015,26088
+1001ED30,,,_DWORD *__thiscall sub_1001ED30(_DWORD *this),math_geometry,,26089,26106
+1001EDC0,,,"void *__thiscall sub_1001EDC0(void *this, char a2)",,,26107,26115
+1001EDE0,,,void __thiscall sub_1001EDE0(int ArgList),,,26116,26141
+1001EE30,,,unsigned int __thiscall sub_1001EE30(_DWORD *this),,,26142,26170
+1001EEB0,,,"int __stdcall sub_1001EEB0(_DWORD *a1, _DWORD *a2)",,,26171,26184
+1001EF10,,,int __thiscall sub_1001EF10(_DWORD *this),,,26185,26197
+1001EF40,,,void sub_1001EF40(),,,26198,26208
+1001EF70,,,void __thiscall sub_1001EF70(_DWORD *this),,,26209,26219
+1001EFA0,,,"void *__thiscall sub_1001EFA0(void *this, char a2)",,,26220,26228
+1001EFC0,,,void __thiscall sub_1001EFC0(int ArgList),,,26229,26238
+1001EFE0,,,"_DWORD *__thiscall sub_1001EFE0(void *this, _DWORD *a2)",,,26239,26344
+1001F140,,,"int __thiscall sub_1001F140(void *this, int *a2, int a3, int a4, int a5, int a6, int a7, int a8, int a9)",,,26345,26384
+1001F1E0,,,"int __thiscall sub_1001F1E0(_DWORD *this, _DWORD *a2, int a3, int a4, int a5, int a6, int a7, int a8)",,,26385,26467
+1001F570,,,unsigned __int8 __thiscall sub_1001F570(,,,26468,26536
+1001F690,,,"unsigned int __thiscall sub_1001F690(int this, int a2, int a3, int a4, int a5, int a6)",,,26537,26645
+1001F8E0,,,_DWORD *__thiscall sub_1001F8E0(_DWORD *this),,,26646,26663
+1001F920,,,int __thiscall sub_1001F920(char *this),,,26664,26700
+1001F9B0,,,int __thiscall sub_1001F9B0(I3D_visual *this),frames_visuals_scene,,26701,26752
+1001FAC0,,,int __thiscall sub_1001FAC0(I3D_frame *this),frames_visuals_scene;diagnostics_errors,,26753,26806
+1001FBB0,,,_DWORD *__thiscall sub_1001FBB0(_DWORD *this),,,26807,26862
+1001FCA0,,,"void *__thiscall sub_1001FCA0(void *this, char a2)",,,26863,26871
+1001FCC0,,,void __fastcall sub_1001FCC0(int ArgList),,,26872,26925
+1001FD90,,,"int __userpurge sub_1001FD90@<eax>(int a1@<ebp>, int a2@<esi>, int a3, _BYTE *a4, int a5)",textures_materials;io_assets;diagnostics_errors,,26926,27022
+1001FF30,,,int __thiscall sub_1001FF30(_DWORD *this),frames_visuals_scene,,27023,27083
+10020010,,,int __thiscall sub_10020010(_DWORD *this),,,27084,27105
+10020040,,,int __thiscall sub_10020040(_DWORD *this),,,27106,27169
+100201B0,,,void sub_100201B0(),,,27170,27180
+100201D0,,,"char __stdcall sub_100201D0(int a1, int a2, int a3)",,,27181,27186
+100201F0,,,I3D_frame *__thiscall sub_100201F0(I3D_frame *this),frames_visuals_scene;math_geometry,,27187,27397
+10020740,,,"void *__thiscall sub_10020740(void *this, char a2)",,,27398,27406
+10020760,,,void __fastcall sub_10020760(int ArgList),,,27407,27427
+10020800,,,"int __stdcall sub_10020800(int a1, int a2)",,,27428,27475
+10020930,,,"int __stdcall sub_10020930(int a1, _DWORD *a2)",,,27476,27503
+100209E0,,,"float *__stdcall sub_100209E0(int a1, int a2, int a3, int a4)",,,27504,27531
+10020A90,,,"float *__stdcall sub_10020A90(int a1, int a2)",,,27532,27557
+10020B20,,,"int __stdcall sub_10020B20(int a1, float a2, float a3)",,,27558,27602
+10020C30,,,"int __stdcall sub_10020C30(int a1, float a2, float a3)",,,27603,27636
+10020D10,,,int __thiscall sub_10020D10(I3D_frame *this),frames_visuals_scene,,27637,27951
+10021400,,,"int __stdcall sub_10021400(_DWORD *a1, char a2)",,,27952,27973
+10021440,,,"int __stdcall sub_10021440(_DWORD *a1, int a2)",,,27974,27990
+10021490,,,"int __stdcall sub_10021490(int *a1, _DWORD *a2)",,,27991,28015
+10021530,,,int __thiscall sub_10021530(_DWORD *this),,,28016,28024
+10021550,,,void sub_10021550(),,,28025,28035
+10021570,,,_DWORD *__thiscall sub_10021570(_DWORD *this),,,28036,28066
+100215E0,,,"_DWORD *__thiscall sub_100215E0(_DWORD *this, char a2)",,,28067,28075
+10021600,,,void __thiscall sub_10021600(_DWORD *this),,,28076,28108
+100216A0,,,"int __stdcall sub_100216A0(int a1, int a2)",,,28109,28149
+10021740,,,int __stdcall sub_10021740(int a1),,,28150,28182
+10021790,,,"int __stdcall sub_10021790(int a1, int a2)",,,28183,28205
+100217D0,,,"int __stdcall sub_100217D0(int a1, int a2, int a3)",,,28206,28216
+10021800,,,"int __stdcall sub_10021800(int a1, int a2, int a3)",,,28217,28227
+10021830,,,"int __stdcall sub_10021830(int a1, char *a2, int a3)",diagnostics_errors,,28228,28381
+10021AD0,,,"int __stdcall sub_10021AD0(int a1, int a2, int a3, int a4)",,,28382,28427
+10021BB0,,,int __stdcall sub_10021BB0(,textures_materials;frames_visuals_scene;lights_camera;diagnostics_errors,,28428,31701
+100268B0,,,int __thiscall sub_100268B0(void *this),,,31702,31707
+100268C0,,,double __thiscall sub_100268C0(float *this),,,31708,31713
+100268E0,,,"double __thiscall sub_100268E0(float *this, float *a2)",,,31714,31719
+10026900,,,void sub_10026900(),,,31720,31730
+10026930,,,"int __stdcall sub_10026930(int a1, int a2)",,,31731,31750
+10026980,,,"int __stdcall sub_10026980(_DWORD *ArgList, int a2)",frames_visuals_scene;io_assets;diagnostics_errors,,31751,32381
+10027570,,,char *__thiscall sub_10027570(_DWORD *this),,,32382,32392
+10027580,,,"int __stdcall sub_10027580(int a1, int a2)",diagnostics_errors,,32393,32399
+100275A0,,,"int __stdcall sub_100275A0(_DWORD *a1, int a2)",,,32400,32407
+100275D0,,,"int __stdcall sub_100275D0(I3D_visual *a1, I3D_visual *a2)",frames_visuals_scene,,32408,32481
+10027760,,,"void __stdcall sub_10027760(int a1, int a2, char a3)",,,32482,32519
+10027830,,,int __stdcall sub_10027830(int a1),,,32520,32558
+10027880,,,void __thiscall sub_10027880(I3D_visual *this),frames_visuals_scene;math_geometry;diagnostics_errors,,32559,33606
+10028D20,,,void __cdecl sub_10028D20(),,,33607,33618
+10028D40,,,"int __thiscall sub_10028D40(int this, _DWORD *a2)",frames_visuals_scene,,33619,34398
+10029EF0,,,int __thiscall sub_10029EF0(void *this),,,34399,34417
+10029F30,,,int __thiscall sub_10029F30(void *this),,,34418,34432
+1002A0E0,,,"char __thiscall sub_1002A0E0(int this, int a2, int a3, char a4)",,,34433,34841
+1002A790,,,"char __thiscall sub_1002A790(_DWORD *ArgList, _DWORD *a2, char a3)",lights_camera;math_geometry;io_assets;diagnostics_errors,,34842,35110
+1002ACC0,,,char *__thiscall sub_1002ACC0(char *this),,,35111,35116
+1002ACD0,,,char *__thiscall sub_1002ACD0(char *this),,,35117,35122
+1002ACF0,,,char *__thiscall sub_1002ACF0(char *this),,,35123,35128
+1002AD00,,,char *__thiscall sub_1002AD00(I3D_frame *this),frames_visuals_scene,,35129,35138
+1002AD30,,,void __thiscall sub_1002AD30(_DWORD *this),,,35139,35147
+1002AD50,,,"int __thiscall sub_1002AD50(int this, const void *a2)",,,35148,35184
+1002ADD0,,,"int __thiscall sub_1002ADD0(_DWORD *this, int a2)",,,35185,35190
+1002ADE0,,,_DWORD *__thiscall sub_1002ADE0(_DWORD *this),,,35191,35216
+1002AE80,,,"_DWORD *__thiscall sub_1002AE80(_DWORD *this, char a2)",,,35217,35235
+1002AF20,,,"int __stdcall sub_1002AF20(_DWORD *a1, _DWORD *a2)",,,35236,35244
+1002AF40,,,"int __stdcall sub_1002AF40(_DWORD *a1, _DWORD *a2)",,,35245,35253
+1002AF60,,,"int __stdcall sub_1002AF60(_DWORD *a1, _DWORD *a2)",,,35254,35262
+1002AF80,,,"int __stdcall sub_1002AF80(int a1, float a2)",,,35263,35269
+1002AF90,,,"int __stdcall sub_1002AF90(int a1, int a2)",,,35270,35309
+1002B000,,,"int __stdcall sub_1002B000(int a1, int a2)",,,35310,35331
+1002B040,,,"int __stdcall sub_1002B040(_DWORD *a1, int a2, int a3, int a4, int a5)",,,35332,35353
+1002B0B0,,,"int __stdcall sub_1002B0B0(_DWORD *a1, _DWORD *a2)",,,35354,35374
+1002B120,,,int __stdcall sub_1002B120(int a1),,,35375,35381
+1002B130,,,"int __stdcall sub_1002B130(int a1, int a2)",,,35382,35388
+1002B150,,,"int __stdcall sub_1002B150(int a1, int a2)",,,35389,35395
+1002B170,,,"int __stdcall sub_1002B170(int a1, int a2)",,,35396,35402
+1002B190,,,char *__thiscall sub_1002B190(char *this),,,35403,35517
+1002B430,,,"char *__thiscall sub_1002B430(char *this, char a2)",,,35518,35526
+1002B450,int,,int (__stdcall ***__thiscall sub_1002B450(char *this))(_DWORD),,,35527,35589
+1002B580,,,void __stdcall sub_1002B580(_DWORD *a1),,,35590,35687
+1002B6D0,,,void __stdcall sub_1002B6D0(_DWORD *a1),,,35688,35785
+1002B830,,,"int __stdcall sub_1002B830(unsigned int k, int a2)",,,35786,35983
+1002BC50,,,"char __stdcall sub_1002BC50(_DWORD *a1, int a2)",,,35984,36031
+1002BCD0,,,"char __stdcall sub_1002BCD0(_DWORD *a1, int a2)",,,36032,36070
+1002BD50,,,int __thiscall sub_1002BD50(_DWORD *this),textures_materials;diagnostics_errors,,36071,36210
+1002C000,,,int __thiscall sub_1002C000(_DWORD *this),textures_materials;diagnostics_errors,,36211,36625
+1002C8A0,,,void sub_1002C8A0(),,,36626,36636
+1002C8E0,,,int __thiscall sub_1002C8E0(_DWORD *this),,,36637,36648
+1002C900,,,"int __thiscall sub_1002C900(int this, int *a2, int *a3)",,,36649,36733
+1002CAA0,,,"_DWORD *__thiscall sub_1002CAA0(_DWORD *this, _DWORD *a2, _DWORD *a3)",,,36734,36755
+1002CAD0,,,"_DWORD *__thiscall sub_1002CAD0(int this, _DWORD *a2, unsigned int a3, _DWORD *a4)",,,36756,36910
+1002CCF0,,,"_DWORD *__stdcall sub_1002CCF0(_DWORD *a1, _DWORD *a2, _DWORD *a3)",,,36911,36926
+1002CD20,,,"_DWORD *__stdcall sub_1002CD20(_DWORD *a1, _DWORD *a2, _DWORD *a3)",,,36927,36949
+1002CD50,,,"_DWORD *__fastcall sub_1002CD50(_DWORD *a1, _DWORD *a2, _DWORD *a3)",,,36950,36959
+1002CD80,,,int __stdcall sub_1002CD80(int a1),,,36960,36965
+1002CD90,,,int __stdcall sub_1002CD90(int a1),,,36966,36971
+1002CDA0,RandFloat,,double RandFloat(),,,36972,36977
+1002CDC0,RotateXMatrix,,"float *__stdcall RotateXMatrix(float *a1, float a2)",math_geometry,,36978,36996
+1002CE10,RotateYMatrix,,"float *__stdcall RotateYMatrix(float *a1, float a2)",math_geometry,,36997,37015
+1002CE60,RotateZMatrix,,"float *__stdcall RotateZMatrix(float *a1, float a2)",math_geometry,,37016,37034
+1002CEB0,S_vector2::AngleTo,S_vector2,"long double __stdcall S_vector2::AngleTo(S_vector2 *this, const struct S_vector2 *a2)",math_geometry,,37035,37049
+1002CF20,S_matrix::Identity,S_matrix,void __stdcall S_matrix::Identity(S_matrix *this),math_geometry,,37050,37056
+1002CF40,S_matrix::RotateByMatrix,S_matrix,"float *__stdcall S_matrix::RotateByMatrix(float *a1, float *a2, float *a3)",math_geometry,,37057,37092
+1002D0B0,S_matrix::Inverse,S_matrix,"bool __stdcall S_matrix::Inverse(S_matrix *this, const struct S_matrix *a2)",math_geometry,,37093,37159
+1002D220,S_matrix::operator*=,,"float *__stdcall S_matrix::operator*=(float *a1, float *a2)",math_geometry,,37160,37195
+1002D3A0,S_matrix::operator*,,"float *__stdcall S_matrix::operator*(float *a1, float *a2, float *a3)",math_geometry,,37196,37231
+1002D520,S_matrix::Mult4X4,S_matrix,"float *__stdcall S_matrix::Mult4X4(float *a1, float *a2, float *a3)",math_geometry,,37232,37259
+1002D780,,,"float *__thiscall sub_1002D780(float *this, float *a2, float *a3)",,,37260,37281
+1002D9D0,S_matrix::SetDir,S_matrix,"void __stdcall S_matrix::SetDir(S_matrix *this, const struct S_vector *a2)",math_geometry,,37282,37428
+1002DCF0,S_matrix::SetDir3,S_matrix,"void __stdcall S_matrix::SetDir3(S_matrix *this, const struct S_vector *a2, const struct S_vector *a3)",math_geometry,,37429,37560
+1002E030,S_matrix::SetDir,S_matrix,"void __stdcall S_matrix::SetDir(S_matrix *this, const struct S_vector *a2, const struct S_vector *a3)",math_geometry,,37561,37573
+1002E070,S_matrix::SetRot3,S_matrix,"void __stdcall S_matrix::SetRot3(S_matrix *this, const struct S_quat *a2)",math_geometry,,37574,37628
+1002E1C0,S_matrix::SetRot,S_matrix,"void __stdcall S_matrix::SetRot(S_matrix *this, const struct S_quat *a2)",math_geometry,,37629,37641
+1002E1F0,S_matrix::SetRot,S_matrix,"void __stdcall S_matrix::SetRot(S_matrix *this, const struct S_matrix *a2)",math_geometry,,37642,37699
+1002E360,,,"float *__thiscall sub_1002E360(float *this, float *a2, float *a3)",,,37700,37715
+1002E3A0,S_matrix::GetScale,S_matrix,"float *__stdcall S_matrix::GetScale(float *a1, float *a2)",math_geometry,,37716,37769
+1002E510,S_matrix::GetScale2,S_matrix,"float *__stdcall S_matrix::GetScale2(float *a1, float *a2)",math_geometry,,37770,37785
+1002E580,S_matrix::GetUScale,S_matrix,double __stdcall S_matrix::GetUScale(S_matrix *this),math_geometry,,37786,37832
+1002E710,S_vector::CosAngleTo,S_vector,"long double __stdcall S_vector::CosAngleTo(S_vector *this, const struct S_vector *a2)",math_geometry,,37833,37849
+1002E7A0,S_vector::AngleTo,S_vector,"long double __stdcall S_vector::AngleTo(S_vector *this, const struct S_vector *a2)",math_geometry,,37850,37899
+1002E920,S_vector::operator*=,,"float *__stdcall S_vector::operator*=(float *a1, float *a2)",math_geometry,,37900,37915
+1002E980,S_vector::operator*,,"float *__stdcall S_vector::operator*(float *a1, float *a2, float *a3)",math_geometry,,37916,37933
+1002EA10,S_vector::RotateByMatrix,S_vector,"float *__stdcall S_vector::RotateByMatrix(float *a1, float *a2, float *a3)",math_geometry,,37934,37951
+1002EA90,,,void sub_1002EA90(),,,37952,37962
+1002EAB0,S_vector::RotateByNormMatrix,S_vector,"float *__stdcall S_vector::RotateByNormMatrix(float *a1, float *a2, float *a3)",math_geometry,,37963,37992
+1002EC00,S_quat::RotationMatrix,S_quat,"float *__stdcall S_quat::RotationMatrix(float *a1, float *a2)",math_geometry,,37993,38054
+1002ED60,S_quat::GetDir,S_quat,"float *__stdcall S_quat::GetDir(float *a1, float *a2)",math_geometry,,38055,38089
+1002EE00,S_quat::Make,S_quat,"void __stdcall S_quat::Make(S_quat *this, const struct S_vector *a2, float a3)",math_geometry,,38090,38141
+1002EEF0,S_quat::Make,S_quat,"void __stdcall S_quat::Make(S_quat *this, const struct S_matrix *a2)",math_geometry,,38142,38539
+1002F9F0,,,double __thiscall sub_1002F9F0(float *this),,,38540,38552
+1002FA70,,,"float *__thiscall sub_1002FA70(float *this, float *a2, float *a3)",,,38553,38583
+1002FB50,S_quat::SetDir,S_quat,"void __stdcall S_quat::SetDir(S_quat *this, const struct S_vector *a2, float a3)",math_geometry,,38584,38625
+1002FD70,S_quat::Inverse,S_quat,"void __stdcall S_quat::Inverse(S_quat *this, struct S_vector *a2, float *a3)",math_geometry,,38626,38691
+1002FEE0,S_quat::Slerp,S_quat,"float *__stdcall S_quat::Slerp(float *a1, float *a2, float *a3, float a4, int a5)",math_geometry,,38692,38753
+10030040,S_quat::RotateByMatrix,S_quat,"float *__stdcall S_quat::RotateByMatrix(float *a1, float *a2, struct S_matrix *a3)",math_geometry,,38754,38791
+10030140,S_quat::Normalize,S_quat,void __stdcall S_quat::Normalize(S_quat *this),math_geometry,,38792,38850
+10030290,S_plane::IntersectionLine,S_plane,bool __stdcall S_plane::IntersectionLine(,math_geometry,,38851,38934
+10030440,LineLineIntersect,,bool __stdcall LineLineIntersect(,math_geometry,,38935,38973
+10030560,,,_DWORD *__thiscall sub_10030560(_DWORD *this),,,38974,38990
+10030580,int,,"int (__stdcall ***__stdcall sub_10030580(int a1, int a2))(_DWORD)",,,38991,39007
+100305B0,,,"void *__stdcall sub_100305B0(int *a1, const void *a2, int a3)",,,39008,39030
+10030610,,,"int __stdcall sub_10030610(int *a1, int ArgList)",diagnostics_errors,,39031,39055
+10030690,,,int __stdcall sub_10030690(_DWORD *a1),,,39056,39100
+10030780,,,int __stdcall sub_10030780(int a1),,,39101,39133
+10030800,,,"int __stdcall sub_10030800(_DWORD *a1, _DWORD *a2)",,,39134,39147
+10030860,,,int __stdcall sub_10030860(int a1),diagnostics_errors,,39148,39183
+10030900,,,_DWORD *__thiscall sub_10030900(_DWORD *this),,,39184,39212
+10030960,,,"int *__thiscall sub_10030960(int *this, char a2)",,,39213,39230
+10030A50,,,void __stdcall sub_10030A50(float *a1),,,39231,39283
+10030B40,,,"int __stdcall sub_10030B40(char **a1, const void *a2, char *a3)",diagnostics_errors,,39284,39363
+10030D00,,,"int __stdcall sub_10030D00(_DWORD *a1, _DWORD *a2)",diagnostics_errors,,39364,39441
+10030E80,,,"int __stdcall sub_10030E80(unsigned int a1, char a2)",,,39442,39495
+10030F90,,,int __stdcall sub_10030F90(int a1),,,39496,39521
+10031000,,,"int __stdcall sub_10031000(_DWORD *a1, _DWORD *a2)",,,39522,39626
+10031180,,,"int __stdcall sub_10031180(int a1, int ArgList)",diagnostics_errors,,39627,39654
+100311C0,,,int __stdcall sub_100311C0(int a1),,,39655,39670
+100311E0,,,"int __stdcall sub_100311E0(_DWORD *a1, _DWORD *a2)",,,39671,39684
+10031220,,,"void __stdcall sub_10031220(int a1, int a2, char a3)",,,39685,39741
+10031320,,,_DWORD *__thiscall sub_10031320(_DWORD *this),,,39742,39766
+100313F0,,,"int __stdcall sub_100313F0(int a1, int a2)",,,39767,39772
+10031400,,,int __stdcall sub_10031400(int a1),,,39773,39839
+10031550,,,"int __stdcall sub_10031550(_DWORD *a1, int a2, int ArgList)",frames_visuals_scene;diagnostics_errors,,39840,39883
+100315E0,,,"int __stdcall sub_100315E0(_DWORD *a1, _DWORD *a2)",diagnostics_errors,,39884,39950
+10031700,,,int __stdcall sub_10031700(int a1),,,39951,39982
+10031750,,,"char __stdcall sub_10031750(int a1, int a2)",,,39983,40015
+100317A0,,,"int __stdcall sub_100317A0(int a1, _DWORD *a2)",,,40016,40049
+10031800,,,void sub_10031800(),,,40050,40060
+10031820,,,_DWORD *__thiscall sub_10031820(_DWORD *this),math_geometry,,40061,40088
+100318F0,,,"std::strstreambuf *__thiscall sub_100318F0(std::strstreambuf *this, char a2)",,,40089,40097
+100319F0,,,"void __stdcall sub_100319F0(float *a1, float *a2)",,,40098,40135
+10031AB0,,,"int __stdcall sub_10031AB0(int a1, int a2)",,,40136,40193
+10031C70,,,"int __thiscall sub_10031C70(I3D_frame *this, float *a2, __int16 a3)",frames_visuals_scene,,40194,40345
+10032000,,,"int __stdcall sub_10032000(I3D_frame *ArgList, I3D_frame *a2, char a3)",frames_visuals_scene,,40346,40369
+10032060,,,void __thiscall sub_10032060(_DWORD *this),,,40370,40403
+100320F0,,,"int __stdcall sub_100320F0(int a1, int a2)",,,40404,40474
+100321B0,,,void __thiscall sub_100321B0(I3D_frame *this),frames_visuals_scene;math_geometry,,40475,40575
+100324B0,,,int sub_100324B0(),,,40576,40589
+100324E0,,,void __cdecl sub_100324E0(),,,40590,40601
+10032500,,,void __thiscall sub_10032500(int this),frames_visuals_scene;math_geometry,,40602,40690
+10032730,,,int __thiscall sub_10032730(I3D_frame *this),frames_visuals_scene;math_geometry,,40691,41132
+100331B0,,,"int __stdcall sub_100331B0(int a1, float *a2, const void *a3)",math_geometry,,41133,41175
+100332E0,,,int __thiscall sub_100332E0(_DWORD *this),,,41176,41200
+100333B0,,,void sub_100333B0(),,,41201,41211
+100333D0,,,int __thiscall sub_100333D0(void *this),,,41212,41229
+10033410,,,_DWORD *__thiscall sub_10033410(_DWORD *this),,,41230,41245
+10033460,,,"void *__thiscall sub_10033460(void *this, char a2)",,,41246,41254
+10033480,,,void __fastcall sub_10033480(int ArgList),,,41255,41267
+10033500,,,_DWORD *__stdcall sub_10033500(_DWORD *a1),,,41268,41305
+100335A0,,,int __stdcall sub_100335A0(,,,41306,41368
+10033680,,,"int __stdcall sub_10033680(int a1, _DWORD *a2)",,,41369,41394
+10033720,,,"int __stdcall sub_10033720(int a1, int a2)",,,41395,41447
+100337B0,,,"int __stdcall sub_100337B0(int a1, _DWORD *a2, int a3, float a4, int a5)",,,41448,41477
+10033860,,,"int __stdcall sub_10033860(int a1, unsigned int a2)",,,41478,41491
+10033890,,,"int __stdcall sub_10033890(int a1, unsigned int a2)",,,41492,41510
+100338C0,,,"int __stdcall sub_100338C0(int a1, unsigned int a2)",,,41511,41529
+100338F0,,,"int __stdcall sub_100338F0(int a1, unsigned int a2, float a3)",,,41530,41559
+10033970,,,"double __stdcall sub_10033970(int a1, unsigned int a2)",,,41560,41573
+100339B0,,,"int __stdcall sub_100339B0(int a1, unsigned int a2, int a3)",,,41574,41591
+100339F0,,,"int __stdcall sub_100339F0(int a1, unsigned int a2)",,,41592,41605
+10033A20,,,"int __stdcall sub_10033A20(int a1, unsigned int a2, int a3)",,,41606,41619
+10033A60,,,"int __stdcall sub_10033A60(int a1, unsigned int a2)",,,41620,41633
+10033A90,,,"char __stdcall sub_10033A90(int a1, unsigned int a2)",,,41634,41647
+10033AC0,,,int __thiscall sub_10033AC0(_DWORD *this),,,41648,41693
+10033B30,,,"int __stdcall sub_10033B30(_DWORD *a1, const char *a2)",,,41694,41704
+10033B50,,,int sub_10033B50(),,,41705,41718
+10033B80,,,void __cdecl sub_10033B80(),,,41719,41730
+10033BA0,,,int sub_10033BA0(),,,41731,41744
+10033BD0,,,void __cdecl sub_10033BD0(),,,41745,41756
+10033BF0,,,"int __fastcall sub_10033BF0(_DWORD *a1, int a2)",,,41757,41854
+10033E10,,,"int __stdcall sub_10033E10(_DWORD *a1, int a2)",,,41855,41968
+10033FD0,,,"int __stdcall sub_10033FD0(int a1, int a2)",,,41969,41981
+10034010,,,"int __stdcall sub_10034010(_DWORD *a1, int a2)",,,41982,42000
+10034040,,,"int __stdcall sub_10034040(_DWORD *a1, int a2)",,,42001,42015
+10034070,,,int __stdcall sub_10034070(int a1),,,42016,42028
+10034090,,,int __stdcall sub_10034090(int a1),,,42029,42039
+100340B0,,,int __stdcall sub_100340B0(int a1),,,42040,42050
+100340D0,,,"int __stdcall sub_100340D0(int a1, int a2)",,,42051,42080
+10034170,,,"int __stdcall sub_10034170(int a1, int a2, int a3)",,,42081,42110
+10034210,,,"int __stdcall sub_10034210(int a1, const char *a2, int a3)",,,42111,42140
+100342B0,,,"int __stdcall sub_100342B0(int a1, int a2)",,,42141,42152
+100342E0,,,"int __stdcall sub_100342E0(int a1, int a2, int a3)",,,42153,42164
+10034310,,,double __stdcall sub_10034310(int a1),,,42165,42176
+10034330,,,void sub_10034330(),,,42177,42187
+10034350,,,void __thiscall sub_10034350(LPVOID *this),,,42188,42196
+10034370,,,_DWORD *__thiscall sub_10034370(_DWORD *this),,,42197,42212
+10034390,,,void __thiscall sub_10034390(unsigned int *this),diagnostics_errors,,42213,42282
+10034460,,,"int __thiscall sub_10034460(_DWORD *this, int a2, int a3, float a4)",,,42283,42290
+10034490,,,"double __thiscall sub_10034490(_DWORD *this, int a2, int a3)",,,42291,42296
+100344B0,,,int __thiscall sub_100344B0(_DWORD *this),,,42297,42367
+10034570,,,"int __thiscall sub_10034570(int *this, int a2, int a3)",,,42368,42529
+10034810,,,"int __thiscall sub_10034810(int *this, int a2, int a3, int a4, int a5)",,,42530,42701
+10034AD0,,,"int __thiscall sub_10034AD0(_DWORD *this, int a2)",diagnostics_errors,,42702,42768
+10034BD0,,,int __thiscall sub_10034BD0(_DWORD *this),diagnostics_errors,,42769,42898
+10034E30,,,_DWORD *__thiscall sub_10034E30(_DWORD *this),,,42899,42917
+10034E90,,,"_DWORD *__thiscall sub_10034E90(_DWORD *this, char a2)",,,42918,42926
+10034EB0,,,void __thiscall sub_10034EB0(_DWORD *this),diagnostics_errors,,42927,43000
+10034FE0,,,int __stdcall sub_10034FE0(int a1),,,43001,43006
+10034FF0,,,int __stdcall sub_10034FF0(int a1),,,43007,43012
+10035000,,,"int __stdcall sub_10035000(_DWORD *a1, int a2, int a3, float a4)",diagnostics_errors,,43013,43042
+100350B0,,,"double __stdcall sub_100350B0(_DWORD *a1, int a2, int a3)",diagnostics_errors,,43043,43068
+10035130,,,"int __stdcall sub_10035130(_DWORD *a1, int (__stdcall ***a2)(_DWORD), char a3)",,,43069,43087
+10035180,,,"int __stdcall sub_10035180(I3D_visual *a1, I3D_visual *a2)",frames_visuals_scene;diagnostics_errors,,43088,43290
+100354F0,,,_DWORD *__thiscall sub_100354F0(I3D_visual *this),frames_visuals_scene;math_geometry;diagnostics_errors,,43291,44153
+10036520,,,void sub_10036520(),,,44154,44164
+10036540,int,,int (__stdcall ***__thiscall sub_10036540(_DWORD *this))(_DWORD),,,44165,44193
+10036580,,,"int *__thiscall sub_10036580(int *this, int a2, int a3)",diagnostics_errors,,44194,44256
+100366B0,,,int __fastcall sub_100366B0(_DWORD *ArgList),diagnostics_errors,,44257,44288
+10036720,,,void __thiscall sub_10036720(LPVOID *this),,,44289,44299
+10036750,,,int __thiscall sub_10036750(_DWORD *this),,,44300,44322
+100367B0,,,_DWORD *__thiscall sub_100367B0(_DWORD *this),,,44323,44341
+10036820,,,"_DWORD *__thiscall sub_10036820(_DWORD *this, char a2)",,,44342,44350
+10036840,,,void __thiscall sub_10036840(_DWORD *this),,,44351,44380
+100368E0,int,,"int (__stdcall ***__stdcall sub_100368E0(_DWORD *a1, int (__stdcall ***a2)(_DWORD), char a3))(_DWORD)",,,44381,44458
+10036A20,,,int __stdcall sub_10036A20(int a1),,,44459,44479
+10036A50,,,"int __stdcall sub_10036A50(int a1, int a2)",,,44480,44490
+10036A70,,,int __stdcall sub_10036A70(int a1),diagnostics_errors,,44491,44521
+10036B10,,,"int __stdcall sub_10036B10(I3D_visual *a1, I3D_visual *a2)",frames_visuals_scene,,44522,44594
+10036C70,,,_DWORD *__thiscall sub_10036C70(_DWORD *this),,,44595,44618
+10036CE0,,,char __thiscall sub_10036CE0(_DWORD *this),,,44619,44626
+10036D00,,,"int __thiscall sub_10036D00(int this, int *a2, int a3, float *a4, int a5, float a6, float a7)",,,44627,44883
+10037030,,,char __thiscall sub_10037030(,diagnostics_errors,,44884,45446
+100378B0,,,"int __stdcall sub_100378B0(I3D_frame *a1, char a2)",frames_visuals_scene;math_geometry,,45447,45702
+10037D50,,,"int __stdcall sub_10037D50(int a1, float a2)",,,45703,45745
+10037DD0,,,"int __stdcall sub_10037DD0(int a1, float a2)",,,45746,45789
+10037E60,,,_DWORD *__stdcall sub_10037E60(int a1),,,45790,45821
+10037EA0,,,"int __thiscall sub_10037EA0(int this, float a2)",,,45822,45865
+10037F30,,,"int __stdcall sub_10037F30(int a1, int a2, int a3)",,,45866,45917
+10038020,,,void __thiscall sub_10038020(I3D_visual *this),frames_visuals_scene;math_geometry,,45918,46941
+10039260,,,void sub_10039260(),,,46942,46952
+10039280,,,"unsigned int __thiscall sub_10039280(I3D_frame *this, _DWORD *a2)",d3d8_device;frames_visuals_scene;diagnostics_errors,,46953,47687
+1003A400,,,int __thiscall sub_1003A400(_DWORD *this),,,47688,47701
+1003A430,,,_DWORD *__thiscall sub_1003A430(_DWORD *this),,,47702,47743
+1003A500,,,"stdiobuf *__thiscall sub_1003A500(stdiobuf *this, char a2)",,,47744,47752
+1003A650,,,"int __thiscall sub_1003A650(_DWORD *this, int a2)",,,47753,47807
+1003A770,,,"int __userpurge sub_1003A770@<eax>(int a1@<edi>, int a2, I3D_frame *a3, char a4)",frames_visuals_scene,,47808,47838
+1003A800,,,int __thiscall sub_1003A800(int this),frames_visuals_scene;math_geometry,,47839,48029
+1003AC00,,,"int __stdcall sub_1003AC00(int a1, _DWORD *a2)",,,48030,48048
+1003AC60,,,"int __stdcall sub_1003AC60(int a1, _DWORD *a2, int a3, const void *a4, int a5, int a6)",diagnostics_errors,,48049,48103
+1003AD90,,,int __thiscall sub_1003AD90(int this),diagnostics_errors,,48104,48297
+1003B130,,,int __fastcall sub_1003B130(int ArgList),frames_visuals_scene,,48298,48928
+1003BEC0,,,void __thiscall sub_1003BEC0(_DWORD *this),,,48929,48955
+1003BF30,,,void __thiscall sub_1003BF30(int this),,,48956,49024
+1003C050,,,void sub_1003C050(),,,49025,49035
+1003C070,,,void __thiscall sub_1003C070(_DWORD *this),frames_visuals_scene,,49036,49184
+1003C2E0,,,int __thiscall sub_1003C2E0(_DWORD *this),,,49185,49347
+1003C480,,,void __thiscall sub_1003C480(I3D_frame *this),frames_visuals_scene,,49348,49445
+1003C610,,,int __thiscall sub_1003C610(_DWORD *this),frames_visuals_scene,,49446,49662
+1003C9B0,,,int __thiscall sub_1003C9B0(_DWORD *this),textures_materials;io_assets;diagnostics_errors,,49663,49713
+1003CAF0,,,"unsigned int *__thiscall sub_1003CAF0(_DWORD *this, unsigned int *a2)",,,49714,49768
+1003CBB0,,,int sub_1003CBB0(),,,49769,49806
+1003CC70,,,int sub_1003CC70(),,,49807,49818
+1003CC80,,,"int *__thiscall sub_1003CC80(int *this, char a2)",,,49819,49827
+1003CCA0,,,void __thiscall sub_1003CCA0(int *this),,,49828,49841
+1003CD40,,,void __thiscall sub_1003CD40(void *this),,,49842,50021
+1003D0E0,,,"char __thiscall sub_1003D0E0(int this, int a2)",frames_visuals_scene,,50022,50742
+1003DE50,,,int __thiscall sub_1003DE50(int this),,,50743,50768
+1003DF00,,,"std::ios_base *__thiscall sub_1003DF00(std::ios_base *this, char a2)",,,50769,50777
+1003DFC0,int,,"int (__stdcall ***__stdcall sub_1003DFC0(int a1, int a2))(_DWORD)",,,50778,50794
+1003DFF0,,,"int __stdcall sub_1003DFF0(int *a1, int ArgList, int *a3)",diagnostics_errors,,50795,51003
+1003E660,,,"int __stdcall sub_1003E660(int a1, int ArgList)",diagnostics_errors,,51004,51124
+1003E930,,,int __stdcall sub_1003E930(int a1),,,51125,51170
+1003EAA0,,,void sub_1003EAA0(),,,51171,51181
+1003EAC0,,,"_DWORD *__stdcall sub_1003EAC0(_DWORD *a1, char a2)",,,51182,51204
+1003EB10,,,void __thiscall sub_1003EB10(_DWORD *this),,,51205,51211
+1003EB30,,,"void __stdcall sub_1003EB30(I3D_frame *a1, int a2)",frames_visuals_scene;math_geometry,,51212,51645
+1003F6B0,,,"int __stdcall sub_1003F6B0(int a1, int a2)",,,51646,51731
+1003F910,,,int __stdcall sub_1003F910(int a1),,,51732,51750
+1003F960,,,"int __stdcall sub_1003F960(int a1, int a2)",,,51751,51780
+1003F9B0,,,"int __stdcall sub_1003F9B0(int a1, int a2)",,,51781,51797
+1003F9F0,,,int __thiscall sub_1003F9F0(_DWORD *this),,,51798,51811
+1003FA20,,,int __thiscall sub_1003FA20(int this),,,51812,51868
+1003FBE0,,,"_DWORD *__thiscall sub_1003FBE0(_DWORD *this, char a2)",,,51869,51877
+1003FC00,,,void __thiscall sub_1003FC00(_DWORD *this),,,51878,51934
+1003FCA0,,,"int __stdcall sub_1003FCA0(_DWORD *a1, I3D_visual *a2)",frames_visuals_scene,,51935,51983
+1003FE40,,,"void __stdcall sub_1003FE40(float *a1, int a2)",,,51984,52407
+100406C0,,,int __thiscall sub_100406C0(int this),,,52408,52428
+10040740,,,"_DWORD *__thiscall sub_10040740(_DWORD *this, char a2)",,,52429,52437
+10040770,,,"int __stdcall sub_10040770(int a1, I3D_visual *a2)",frames_visuals_scene,,52438,52468
+10040820,,,void __thiscall sub_10040820(I3D_frame *this),frames_visuals_scene;diagnostics_errors,,52469,53026
+10041320,,,"int __thiscall sub_10041320(I3D_frame *this, int a2)",frames_visuals_scene,,53027,53227
+10041700,,,"int __thiscall sub_10041700(int this, int *a2)",,,53228,53252
+10041770,,,"char __thiscall sub_10041770(int this, int a2)",,,53253,53269
+100417D0,,,"int __stdcall sub_100417D0(int a1, int a2)",,,53270,53279
+100417F0,,,int __stdcall sub_100417F0(int a1),,,53280,53285
+10041800,,,_DWORD *__thiscall sub_10041800(_DWORD *this),,,53286,53308
+10041850,,,int __thiscall sub_10041850(int this),,,53309,53327
+10041890,,,"_DWORD *__thiscall sub_10041890(_DWORD *this, _DWORD *a2)",,,53328,53382
+100419D0,,,bool __stdcall sub_100419D0(int a1),,,53383,53388
+100419E0,,,_DWORD *__thiscall sub_100419E0(int this),frames_visuals_scene;math_geometry,,53389,53576
+10041DF0,,,void __thiscall sub_10041DF0(_DWORD *this),frames_visuals_scene,,53577,54343
+10043000,,,void __thiscall sub_10043000(_DWORD *this),frames_visuals_scene,,54344,54740
+100437D0,,,void sub_100437D0(),,,54741,54751
+100437F0,,,"void __fastcall sub_100437F0(_DWORD *a1, float *a2, int a3)",frames_visuals_scene,,54752,55261
+10044600,,,"void __fastcall sub_10044600(int a1, int a2, char a3)",math_geometry;diagnostics_errors,,55262,55606
+10044DA0,,,"void __fastcall sub_10044DA0(int a1, int a2)",frames_visuals_scene,,55607,55770
+100450A0,,,float *__thiscall sub_100450A0(float *this),,,55771,56069
+10045700,,,void __thiscall sub_10045700(float *this),diagnostics_errors,,56070,56177
+100458F0,,,int __thiscall sub_100458F0(_DWORD *this),,,56178,56190
+10045930,,,_DWORD *__thiscall sub_10045930(_DWORD *this),,,56191,56214
+10045980,,,int __stdcall sub_10045980(_DWORD *ArgList),diagnostics_errors,,56215,56242
+100459D0,,,int __stdcall sub_100459D0(int a1),,,56243,56252
+100459E0,,,"_DWORD *__stdcall sub_100459E0(_DWORD *a1, _DWORD *a2)",,,56253,56274
+10045A30,,,"_DWORD *__stdcall sub_10045A30(_DWORD *a1, _DWORD *a2)",,,56275,56296
+10045A80,,,"unsigned int __stdcall sub_10045A80(int a1, struct S_vector *a2, float a3)",math_geometry,,56297,56315
+10045AC0,,,"void __stdcall sub_10045AC0(int a1, struct S_vector *a2, float a3)",math_geometry,,56316,56322
+10045AE0,,,"unsigned int __stdcall sub_10045AE0(int a1, struct S_vector *a2, float a3)",math_geometry,,56323,56333
+10045B10,,,"_DWORD *__stdcall sub_10045B10(_DWORD *a1, _DWORD *a2)",,,56334,56354
+10045B50,,,"_DWORD *__stdcall sub_10045B50(_DWORD *a1, _DWORD *a2)",,,56355,56375
+10045B90,,,_DWORD *__thiscall sub_10045B90(_DWORD *this),,,56376,56391
+10045BC0,,,void __thiscall sub_10045BC0(void *this),,,56392,56417
+10045C80,,,"char *__stdcall sub_10045C80(int a1, int a2)",,,56418,56430
+10045CB0,,,"int __stdcall sub_10045CB0(int a1, int a2, const char *a3)",diagnostics_errors,,56431,56467
+10045D80,,,"int __stdcall sub_10045D80(int a1, void (__stdcall ***a2)(_DWORD))",,,56468,56519
+10045E10,,,void sub_10045E10(),,,56520,56530
+10045E30,,,int __thiscall sub_10045E30(int this),,,56531,56586
+10045FE0,,,"void *__thiscall sub_10045FE0(void *this, char a2)",,,56587,56595
+10046000,,,void __thiscall sub_10046000(int this),,,56596,56619
+100460C0,,,"int __stdcall sub_100460C0(int a1, int a2)",,,56620,56685
+10046240,int,,"int (__stdcall ***__stdcall sub_10046240(int a1, int a2))(_DWORD)",,,56686,56702
+10046270,int,,"int (__stdcall ***__stdcall sub_10046270(int a1, int a2))(_DWORD)",,,56703,56719
+100462A0,,,"int __stdcall sub_100462A0(int a1, char a2)",,,56720,56731
+100462C0,,,"void __stdcall sub_100462C0(float *a1, float *a2)",,,56732,56773
+100463A0,,,"int __stdcall sub_100463A0(int a1, float a2)",,,56774,56787
+100463F0,,,"int __stdcall sub_100463F0(int a1, float a2)",,,56788,56811
+10046460,,,"_DWORD *__stdcall sub_10046460(_DWORD *a1, int a2)",,,56812,56823
+10046480,,,"_DWORD *__stdcall sub_10046480(_DWORD *a1, int a2)",,,56824,56835
+100464A0,,,int __thiscall sub_100464A0(_DWORD *this),,,56836,56850
+100464D0,,,int __thiscall sub_100464D0(int this),,,56851,56961
+10046730,,,int sub_10046730(),,,56962,56975
+10046760,,,void __cdecl sub_10046760(),,,56976,56987
+10046780,,,void __thiscall sub_10046780(I3D_frame *this),frames_visuals_scene,,56988,57067
+10046930,,,void sub_10046930(),frames_visuals_scene,,57068,57081
+10046960,,,int __thiscall sub_10046960(I3D_frame *this),frames_visuals_scene;math_geometry;diagnostics_errors,,57082,58054
+10048040,,,void sub_10048040(),,,58055,58065
+10048060,,,void __thiscall sub_10048060(I3D_frame *this),frames_visuals_scene;diagnostics_errors,,58066,58180
+100482C0,,,"int __stdcall sub_100482C0(I3D_visual *a1, int a2, int a3)",frames_visuals_scene,,58181,58246
+100483E0,,,void __thiscall sub_100483E0(int this),frames_visuals_scene;diagnostics_errors,,58247,58329
+100485F0,,,"int __userpurge sub_100485F0@<eax>(int a1@<ecx>, int a2@<ebx>, int a3@<edi>, int a4, int a5, int a6)",frames_visuals_scene,,58330,58497
+10048960,,,int __thiscall sub_10048960(_DWORD *this),textures_materials;io_assets;diagnostics_errors,,58498,58531
+10048A00,,,int sub_10048A00(),,,58532,58545
+10048A30,,,void __cdecl sub_10048A30(),,,58546,58557
+10048A50,,,int sub_10048A50(),,,58558,58571
+10048A80,,,void __cdecl sub_10048A80(),,,58572,58583
+10048AB0,,,int __thiscall sub_10048AB0(int this),textures_materials,,58584,58717
+10048EB0,,,"void *__thiscall sub_10048EB0(void *this, char a2)",,,58718,58726
+10048ED0,,,void __fastcall sub_10048ED0(int ArgList),,,58727,58858
+10049120,,,"int __stdcall sub_10049120(int a1, int a2, int a3)",,,58859,58878
+10049160,,,int __stdcall sub_10049160(int a1),,,58879,58885
+10049180,,,"int __stdcall sub_10049180(_DWORD **a1, int a2, int a3, int a4, int a5)",,,58886,58909
+10049210,,,"int __stdcall sub_10049210(int *a1, char *String1, int a3)",,,58910,58928
+10049290,,,"void __stdcall sub_10049290(int a1, _DWORD *a2)",,,58929,58996
+10049400,,,"int __stdcall sub_10049400(int a1, int a2)",,,58997,59094
+10049520,,,"int __stdcall sub_10049520(int a1, int a2)",,,59095,59109
+10049560,,,"double __stdcall sub_10049560(int a1, float *a2, int a3, char a4, int a5)",,,59110,59295
+100499A0,,,"int __stdcall sub_100499A0(I3D_frame **a1, I3D_frame *a2)",frames_visuals_scene,,59296,59325
+10049A30,,,"int __stdcall sub_10049A30(int a1, int a2, int a3, _DWORD *a4, float *a5)",frames_visuals_scene;math_geometry,,59326,59496
+10049E60,,,"int __stdcall sub_10049E60(int a1, float *a2, float *a3, int a4)",math_geometry,,59497,59549
+10049F90,,,"int __stdcall sub_10049F90(int a1, int a2)",,,59550,59595
+1004A050,,,"int __stdcall sub_1004A050(int a1, int a2)",,,59596,59649
+1004A0E0,,,"char __stdcall sub_1004A0E0(_DWORD *a1, int a2)",,,59650,59679
+1004A140,,,_DWORD *__stdcall sub_1004A140(int a1),,,59680,59696
+1004A1D0,,,"_DWORD *__stdcall sub_1004A1D0(_DWORD *a1, int a2, _DWORD *a3)",,,59697,59723
+1004A240,,,"int __stdcall sub_1004A240(int a1, int a2, int a3, int a4)",,,59724,59743
+1004A280,,,"int __stdcall sub_1004A280(int a1, _DWORD *a2, int a3)",,,59744,59772
+1004A300,,,int __stdcall sub_1004A300(,frames_visuals_scene,,59773,59814
+1004A390,,,int *__stdcall sub_1004A390(int a1),,,59815,59908
+1004A5A0,,,"void __thiscall sub_1004A5A0(int this, int a2)",,,59909,59934
+1004A640,,,"int __thiscall sub_1004A640(int this, int ArgList)",frames_visuals_scene;diagnostics_errors,,59935,59990
+1004A6F0,,,"void __thiscall sub_1004A6F0(int this, int a2)",,,59991,60016
+1004A790,,,"int __thiscall sub_1004A790(int this, int ArgList)",frames_visuals_scene;diagnostics_errors,,60017,60072
+1004A840,,,"int __stdcall sub_1004A840(int a1, float a2, int a3)",,,60073,60083
+1004A860,,,void sub_1004A860(),,,60084,60094
+1004A880,,,_DWORD *__thiscall sub_1004A880(_DWORD *this),frames_visuals_scene,,60095,60123
+1004A8C0,,,"int __userpurge sub_1004A8C0@<eax>(int a1@<ebp>, I3D_frame *a2, int a3)",frames_visuals_scene,,60124,60130
+1004A8D0,,,"void __stdcall sub_1004A8D0(int a1, int a2)",,,60131,60153
+1004A950,,,void __thiscall sub_1004A950(_DWORD *this),,,60154,60173
+1004A9C0,,,"int __stdcall sub_1004A9C0(int a1, int a2, int a3, int a4, int a5)",,,60174,60192
+1004AA50,,,"int __thiscall sub_1004AA50(int this, void *a2)",,,60193,60217
+1004AAA0,,,"int __thiscall sub_1004AAA0(_DWORD *this, int a2, int a3, float a4)",,,60218,60535
+1004B0F0,,,"int __stdcall sub_1004B0F0(int a1, _DWORD *a2, unsigned int a3, float a4, int a5)",diagnostics_errors,,60536,60567
+1004B1B0,,,"int __stdcall sub_1004B1B0(int a1, unsigned int a2)",,,60568,60581
+1004B1E0,,,"int __stdcall sub_1004B1E0(int a1, unsigned int a2)",,,60582,60600
+1004B210,,,"int __stdcall sub_1004B210(int a1, unsigned int a2, float a3)",,,60601,60630
+1004B290,,,"double __stdcall sub_1004B290(int a1, unsigned int a2)",,,60631,60644
+1004B2D0,,,"int __stdcall sub_1004B2D0(int a1, unsigned int a2, int a3)",,,60645,60662
+1004B310,,,"int __stdcall sub_1004B310(int a1, unsigned int a2)",,,60663,60676
+1004B340,,,"char __stdcall sub_1004B340(int a1, unsigned int a2)",,,60677,60690
+1004B370,,,int __stdcall sub_1004B370(int a1),,,60691,60701
+1004B390,,,int __stdcall sub_1004B390(int a1),,,60702,60712
+1004B3B0,,,void __stdcall sub_1004B3B0(int a1),math_geometry,,60713,60768
+1004B510,,,"void __fastcall sub_1004B510(int a1, int a2)",frames_visuals_scene;math_geometry,,60769,61056
+1004BBC0,,,"int __stdcall sub_1004BBC0(int a1, int a2)",,,61057,61093
+1004BC30,,,"int __stdcall sub_1004BC30(int a1, int a2)",,,61094,61132
+1004BCC0,,,int __stdcall sub_1004BCC0(int a1),,,61133,61138
+1004BCD0,,,int __stdcall sub_1004BCD0(int a1),,,61139,61144
+1004BCE0,,,"int __stdcall sub_1004BCE0(int a1, _DWORD *a2, float a3)",math_geometry,,61145,61509
+1004C4D0,,,"int __stdcall sub_1004C4D0(int a1, int a2)",,,61510,61580
+1004C660,,,char __thiscall sub_1004C660(int this),frames_visuals_scene,,61581,62618
+1004DDD0,,,char __thiscall sub_1004DDD0(int this),,,62619,62851
+1004E390,,,"void __fastcall sub_1004E390(int a1, int a2, float a3, float a4, int a5)",,,62852,62964
+1004E550,,,"char __stdcall sub_1004E550(int a1, I3D_frame *a2, float *a3)",frames_visuals_scene,,62965,63003
+1004E6E0,,,"void __thiscall sub_1004E6E0(int this, int a2)",,,63004,63060
+1004E7A0,,,"int __thiscall sub_1004E7A0(int this, const void *a2)",,,63061,63122
+1004E880,,,"int __thiscall sub_1004E880(int this, const void *a2)",,,63123,63182
+1004E990,,,"int __stdcall sub_1004E990(int a1, int a2)",,,63183,63188
+1004E9A0,,,"int __stdcall sub_1004E9A0(int a1, int a2, int a3)",,,63189,63194
+1004E9B0,,,int __thiscall sub_1004E9B0(_DWORD *this),,,63195,63230
+1004EA50,,,"__int64 __thiscall sub_1004EA50(float *this, int a2, int a3, float a4, char a5)",,,63231,63296
+1004ED30,,,_DWORD *__thiscall sub_1004ED30(_DWORD *this),,,63297,63350
+1004EE60,,,"void *__thiscall sub_1004EE60(void *this, char a2)",,,63351,63359
+1004EE80,,,void __fastcall sub_1004EE80(int ArgList),,,63360,63585
+1004F230,,,"int __stdcall sub_1004F230(int a1, char *Source)",,,63586,63594
+1004F260,,,"int __thiscall sub_1004F260(_DWORD *this, int a2)",,,63595,63671
+1004F3D0,,,"int __stdcall sub_1004F3D0(int a1, int a2)",,,63672,63757
+1004F550,,,"int __stdcall sub_1004F550(_DWORD *a1, int a2)",,,63758,63896
+1004F6D0,,,_DWORD *__thiscall sub_1004F6D0(I3D_frame *this),frames_visuals_scene,,63897,63919
+1004F710,,,void __thiscall sub_1004F710(I3D_frame *this),frames_visuals_scene;math_geometry,,63920,64167
+1004FB40,,,"int __usercall sub_1004FB40@<eax>(I3D_frame *this@<ecx>, int a2@<ebp>)",frames_visuals_scene;math_geometry;io_assets;diagnostics_errors,,64168,64254
+1004FCC0,,,"char __stdcall sub_1004FCC0(float **a1, float *a2)",frames_visuals_scene,,64255,64287
+1004FDB0,,,"int __stdcall sub_1004FDB0(int a1, float a2, int a3)",,,64288,64462
+10050140,,,"int __stdcall sub_10050140(int a1, int a2)",,,64463,64472
+10050180,,,"void __stdcall sub_10050180(int a1, int a2)",,,64473,64552
+100502F0,,,"int __stdcall sub_100502F0(_DWORD *a1, int a2)",,,64553,64669
+10050430,,,"int __stdcall sub_10050430(int a1, int a2)",diagnostics_errors,,64670,64750
+100505C0,,,int __thiscall sub_100505C0(int this),textures_materials;io_assets;diagnostics_errors,,64751,64857
+10050890,,,void sub_10050890(),,,64858,64868
+100508B0,,,"int __stdcall sub_100508B0(int a1, int a2)",,,64869,64879
+100508D0,,,"char __thiscall sub_100508D0(_DWORD *this, _DWORD *a2)",,,64880,64901
+10050900,,,int sub_10050900(),,,64902,64915
+10050930,,,void __cdecl sub_10050930(),,,64916,64927
+10050950,,,int __thiscall sub_10050950(int this),math_geometry;diagnostics_errors,,64928,65005
+10050B70,,,"_DWORD *__thiscall sub_10050B70(_DWORD *this, char a2)",,,65006,65014
+10050B90,,,void __fastcall sub_10050B90(_DWORD *ArgList),,,65015,65065
+10050C60,,,"int __stdcall sub_10050C60(int a1, int a2)",,,65066,65096
+10050D30,,,int sub_10050D30(),,,65097,65110
+10050D60,,,void __cdecl sub_10050D60(),,,65111,65122
+10050D80,,,"void __thiscall sub_10050D80(int ArgList, int a2)",,,65123,65356
+10051260,,,void __thiscall sub_10051260(_DWORD *this),,,65357,65428
+100513D0,,,"int __stdcall sub_100513D0(I3D_frame *a1, I3D_frame *a2, char a3)",frames_visuals_scene,,65429,65435
+10051400,,,"_DWORD *__stdcall sub_10051400(_DWORD *a1, int a2)",,,65436,65447
+10051430,,,void __thiscall sub_10051430(_DWORD *this),,,65448,65467
+10051480,,,int __thiscall sub_10051480(void *this),,,65468,65514
+100514E0,,,int __stdcall sub_100514E0(int a1),diagnostics_errors,,65515,65586
+100515E0,,,int __stdcall sub_100515E0(,,,65587,65721
+10051800,,,"int __stdcall sub_10051800(int a1, float a2)",,,65722,65736
+10051840,,,"int __stdcall sub_10051840(int a1, float a2)",,,65737,65750
+100518B0,,,"void __stdcall sub_100518B0(float *a1, float *a2)",,,65751,65790
+10051980,,,"void __stdcall sub_10051980(int a1, float a2)",,,65791,65807
+100519E0,,,"int __stdcall sub_100519E0(int a1, char a2)",,,65808,65822
+10051A20,,,"int __stdcall sub_10051A20(_DWORD *a1, int a2, int a3)",,,65823,65858
+10051AB0,,,char __fastcall sub_10051AB0(_DWORD *a1),frames_visuals_scene;math_geometry,,65859,65955
+10051C00,,,char __thiscall sub_10051C00(I3D_frame *this),frames_visuals_scene,,65956,66537
+100529A0,,,void sub_100529A0(),,,66538,66548
+100529C0,,,char __thiscall sub_100529C0(int this),,,66549,66593
+10052A90,,,int __thiscall sub_10052A90(I3D_frame *this),frames_visuals_scene,,66594,66671
+10052C70,,,void __thiscall sub_10052C70(int this),,,66672,66703
+10052CE0,,,int __thiscall sub_10052CE0(int this),,,66704,66755
+10052E70,,,"void *__thiscall sub_10052E70(void *this, char a2)",,,66756,66764
+10052E90,,,void __thiscall sub_10052E90(int this),,,66765,66778
+10052F30,,,int sub_10052F30(),,,66779,66792
+10052F60,,,void __cdecl sub_10052F60(),,,66793,66804
+10052F80,,,int __thiscall sub_10052F80(_DWORD *this),,,66805,66849
+10053060,,,int __thiscall sub_10053060(_DWORD *this),,,66850,66937
+10053250,,,void sub_10053250(),frames_visuals_scene,,66938,66951
+10053280,,,void __thiscall sub_10053280(I3D_visual *this),frames_visuals_scene;diagnostics_errors,,66952,67533
+10053EE0,,,"int __thiscall sub_10053EE0(I3D_frame *this, int a2)",frames_visuals_scene,,67534,67669
+10054240,,,_DWORD *__thiscall sub_10054240(_DWORD *this),,,67670,67685
+10054290,,,"void *__thiscall sub_10054290(void *this, char a2)",,,67686,67694
+100542B0,,,void __thiscall sub_100542B0(int this),,,67695,67735
+10054370,,,int __stdcall sub_10054370(int a1),,,67736,67745
+10054390,,,"int __stdcall sub_10054390(int a1, int a2)",,,67746,67755
+100543B0,,,"int __stdcall sub_100543B0(int a1, int a2)",,,67756,67779
+10054400,,,"int __thiscall sub_10054400(char *this, int a2)",,,67780,67829
+100544D0,,,"int __stdcall sub_100544D0(int *a1, I3D_visual *a2)",frames_visuals_scene,,67830,67967
+100547E0,,,unsigned int __stdcall sub_100547E0(_DWORD *a1),,,67968,67979
+10054810,,,unsigned int __thiscall sub_10054810(_DWORD *this),math_geometry,,67980,68191
+10054C20,,,char __thiscall sub_10054C20(_DWORD *this),,,68192,68289
+10054D80,,,void __thiscall sub_10054D80(_DWORD *this),,,68290,68311
+10054DD0,,,"int __stdcall sub_10054DD0(int a1, int a2, int a3)",,,68312,68345
+10054E30,,,"int __stdcall sub_10054E30(_DWORD *a1, int a2)",,,68346,68407
+10054F60,,,"void __thiscall sub_10054F60(_DWORD *this, int a2)",,,68408,68786
+10055640,,,"_DWORD *__thiscall sub_10055640(_DWORD *this, int a2, int a3, int a4)",,,68787,68883
+100557C0,,,"_DWORD *__thiscall sub_100557C0(_DWORD *this, _DWORD *a2, int a3, int a4)",,,68884,68975
+10055930,,,void __thiscall sub_10055930(I3D_visual *this),frames_visuals_scene;math_geometry,,68976,69801
+10056840,,,void sub_10056840(),,,69802,69812
+10056860,,,void __thiscall sub_10056860(_DWORD *this),textures_materials;frames_visuals_scene;io_assets;diagnostics_errors,,69813,69965
+10056AF0,,,char __thiscall sub_10056AF0(_DWORD *this),,,69966,70002
+10056BA0,,,int __thiscall sub_10056BA0(int this),math_geometry,,70003,70112
+10056E60,,,"float *__thiscall sub_10056E60(float *this, float *a2)",,,70113,70124
+10056E80,,,_DWORD *__thiscall sub_10056E80(_DWORD *this),,,70125,70137
+10056EF0,,,"std::ios_base *__thiscall sub_10056EF0(std::ios_base *this, char a2)",,,70138,70146
+10056F70,,,int __stdcall sub_10056F70(int a1),,,70147,70152
+10056F80,,,int __stdcall sub_10056F80(int a1),,,70153,70158
+10056F90,,,"int __stdcall sub_10056F90(_DWORD *a1, int a2, int a3, float a4)",diagnostics_errors,,70159,70187
+10057030,,,"double __stdcall sub_10057030(_DWORD *a1, int a2, int a3)",diagnostics_errors,,70188,70208
+100570B0,,,"int __stdcall sub_100570B0(_DWORD *a1, int (__stdcall ***a2)(_DWORD), char a3)",,,70209,70227
+10057100,,,"int __stdcall sub_10057100(int a1, I3D_visual *a2)",frames_visuals_scene,,70228,70426
+10057590,,,"void __thiscall sub_10057590(_DWORD *this, int a2)",,,70427,70442
+100575D0,,,int __thiscall sub_100575D0(_DWORD *this),,,70443,70470
+10057630,,,void sub_10057630(),,,70471,70481
+10057650,,,int __thiscall sub_10057650(int this),,,70482,70537
+100577C0,,,"void *__thiscall sub_100577C0(void *this, char a2)",,,70538,70546
+100577E0,,,void __fastcall sub_100577E0(int ArgList),frames_visuals_scene,,70547,70630
+10057940,,,"int __stdcall sub_10057940(_DWORD *a1, char *String1, int a3, int a4, int a5)",diagnostics_errors,,70631,70760
+10057C40,,,"char __stdcall sub_10057C40(int a1, char a2)",,,70761,70793
+10057D30,,,"int __stdcall sub_10057D30(_DWORD *a1, int a2)",diagnostics_errors,,70794,70840
+10057DD0,,,"int __stdcall sub_10057DD0(int a1, float a2, float a3, float a4, float a5)",,,70841,70872
+10057EB0,,,"int __stdcall sub_10057EB0(int a1, float a2, float a3)",,,70873,70902
+10057F90,,,"int __stdcall sub_10057F90(int a1, float a2)",,,70903,70921
+10057FD0,,,"int __stdcall sub_10057FD0(int a1, float a2)",,,70922,70940
+10058010,,,"int __stdcall sub_10058010(int a1, char a2)",,,70941,70960
+10058060,,,"unsigned int __stdcall sub_10058060(int a1, int a2)",,,70961,70983
+100580E0,,,"int __stdcall sub_100580E0(int a1, float a2)",,,70984,71002
+10058120,,,"int __stdcall sub_10058120(int a1, int a2)",,,71003,71031
+100581D0,,,"int __stdcall sub_100581D0(_DWORD *a1, _DWORD *a2, _DWORD *a3, _DWORD *a4, _DWORD *a5)",,,71032,71044
+10058210,,,"int __stdcall sub_10058210(int a1, _DWORD *a2, _DWORD *a3)",,,71045,71055
+10058230,,,int __stdcall sub_10058230(int a1),,,71056,71066
+10058250,,,int __stdcall sub_10058250(int a1),,,71067,71075
+10058280,,,"void __stdcall sub_10058280(I3D_frame *a1, char a2, char a3)",frames_visuals_scene,,71076,71233
+10058530,,,void __stdcall sub_10058530(I3D_frame *a1),frames_visuals_scene,,71234,71239
+10058540,,,void __thiscall sub_10058540(I3D_frame *this),frames_visuals_scene,,71240,71792
+10059230,,,void sub_10059230(),,,71793,71803
+10059250,,,"int __stdcall sub_10059250(int a1, int a2)",,,71804,71844
+10059360,,,"char __thiscall sub_10059360(_BYTE *this, char a2)",,,71845,71854
+10059370,,,int __thiscall sub_10059370(int *this),,,71855,71913
+10059420,,,"int __stdcall sub_10059420(int a1, int a2)",,,71914,71919
+10059440,,,int sub_10059440(),,,71920,71933
+10059470,,,void __cdecl sub_10059470(),,,71934,71945
+10059490,,,_DWORD *__thiscall sub_10059490(_DWORD *this),,,71946,71979
+10059590,,,"void *__thiscall sub_10059590(void *this, char a2)",,,71980,71988
+100595B0,,,void __fastcall sub_100595B0(int ArgList),,,71989,72053
+10059680,,,"int __stdcall sub_10059680(int a1, int a2)",,,72054,72064
+100596D0,,,"int __stdcall sub_100596D0(I3D_frame *a1, int a2)",frames_visuals_scene,,72065,72071
+100596F0,,,"void __stdcall sub_100596F0(int a1, int a2)",,,72072,72134
+100597F0,,,"int __stdcall sub_100597F0(int a1, int a2)",,,72135,72184
+10059880,,,int __thiscall sub_10059880(void *this),,,72185,72221
+100598D0,,,void __thiscall sub_100598D0(void *this),,,72222,72260
+10059920,,,void __thiscall sub_10059920(_DWORD *this),,,72261,72289
+100599B0,,,int __thiscall sub_100599B0(I3D_frame *this),frames_visuals_scene;math_geometry,,72290,72543
+10059F10,,,int __thiscall sub_10059F10(int this),,,72544,72631
+1005A120,,,void sub_1005A120(),,,72632,72642
+1005A140,,,_DWORD *__thiscall sub_1005A140(_DWORD *this),,,72643,72653
+1005A170,,,"void *__thiscall sub_1005A170(void *this, char a2)",,,72654,72662
+1005A190,,,void __thiscall sub_1005A190(int ArgList),,,72663,72670
+1005A1A0,,,"int __stdcall sub_1005A1A0(int a1, int a2)",,,72671,72680
+1005A1E0,,,void sub_1005A1E0(),,,72681,72691
+1005A200,,,_DWORD *__thiscall sub_1005A200(_DWORD *this),math_geometry,,72692,72727
+1005A350,,,"void *__thiscall sub_1005A350(void *this, char a2)",,,72728,72736
+1005A370,,,void __thiscall sub_1005A370(int ArgList),,,72737,72746
+1005A390,,,int __thiscall sub_1005A390(_DWORD *this),,,72747,72760
+1005A3C0,,,"char __stdcall sub_1005A3C0(int a1, char a2)",frames_visuals_scene;diagnostics_errors,,72761,72789
+1005A410,,,"int __stdcall sub_1005A410(int a1, int a2)",,,72790,72819
+1005A460,,,int __stdcall sub_1005A460(int a1),,,72820,72831
+1005A480,,,"int __stdcall sub_1005A480(int a1, int a2)",,,72832,72861
+1005A4D0,,,int __stdcall sub_1005A4D0(int a1),,,72862,72873
+1005A4F0,,,int __stdcall sub_1005A4F0(int a1),,,72874,72883
+1005A510,I3D_visual::UpdateWBoundProc,I3D_visual,void __stdcall I3D_visual::UpdateWBoundProc(I3D_visual *this),frames_visuals_scene;math_geometry,,72884,72968
+1005A730,,,"int __thiscall sub_1005A730(_DWORD *this, const void *a2)",,,72969,72983
+1005A760,,,"int __stdcall sub_1005A760(int a1, int a2, int a3, int a4)",,,72984,72989
+1005A770,,,"double __stdcall sub_1005A770(int a1, int a2, int a3)",,,72990,72995
+1005A780,,,void sub_1005A780(),,,72996,73006
+1005A7A0,,,_DWORD *__thiscall sub_1005A7A0(_DWORD *this),,,73007,73029
+1005A820,,,"void *__thiscall sub_1005A820(void *this, char a2)",,,73030,73038
+1005A840,,,void __thiscall sub_1005A840(int ArgList),,,73039,73046
+1005A850,,,int __stdcall sub_1005A850(int a1),,,73047,73052
+1005A860,,,int __thiscall sub_1005A860(I3D_frame *this),frames_visuals_scene;math_geometry,,73053,73138
+1005AAB0,,,void sub_1005AAB0(),,,73139,73149
+1005AAD0,,,int sub_1005AAD0(),,,73150,73157
+1005AB00,,,void __thiscall sub_1005AB00(int this),,,73158,73223
+1005ABF0,,,void __thiscall sub_1005ABF0(char *this),,,73224,73365
+1005AE00,,,"char __thiscall sub_1005AE00(_DWORD *this, _DWORD *a2, unsigned int a3)",io_assets;diagnostics_errors,,73366,73472
+1005AFF0,,,"int __thiscall sub_1005AFF0(int this, _DWORD *a2, _DWORD *a3)",,,73473,73594
+1005B1B0,,,"char __thiscall sub_1005B1B0(int this, int a2)",,,73595,73741
+1005B390,,,int __thiscall sub_1005B390(int this),,,73742,73808
+1005B4D0,,,void __thiscall sub_1005B4D0(int this),,,73809,73874
+1005B5C0,,,void __thiscall sub_1005B5C0(int this),,,73875,73935
+1005B6C0,,,"char __thiscall sub_1005B6C0(_DWORD *this, _DWORD *a2, _DWORD *a3, _DWORD *a4)",,,73936,74104
+1005B940,,,char __stdcall sub_1005B940(int *a1),,,74105,74115
+1005B960,,,int *__thiscall sub_1005B960(int **this),,,74116,74151
+1005B9D0,,,int __thiscall sub_1005B9D0(int this),,,74152,74182
+1005BA30,,,_DWORD *__thiscall sub_1005BA30(_DWORD *this),diagnostics_errors,,74183,74217
+1005BAA0,,,_DWORD *__thiscall sub_1005BAA0(_DWORD *this),,,74218,74260
+1005BB20,,,"void __thiscall sub_1005BB20(int this, int a2)",,,74261,74283
+1005BB80,,,"_DWORD *__thiscall sub_1005BB80(_DWORD **this, _DWORD *a2)",,,74284,74293
+1005BB90,,,"_DWORD *__thiscall sub_1005BB90(_DWORD *this, _DWORD *a2, _DWORD *a3)",,,74294,74661
+1005BFA0,,,"_DWORD *__thiscall sub_1005BFA0(_DWORD *this, _DWORD *a2, _DWORD *a3, _DWORD *a4)",,,74662,74729
+1005C070,,,_DWORD *__thiscall sub_1005C070(void *this),,,74730,74753
+1005C0C0,,,"int __thiscall sub_1005C0C0(int this, char *a2, char a3, _BYTE *a4)",,,74754,74766
+1005C0F0,,,"int __thiscall sub_1005C0F0(int this, int a2, int *a3)",,,74767,74922
+1005C330,,,"_DWORD *__thiscall sub_1005C330(_DWORD *this, _DWORD *a2, _DWORD *a3)",,,74923,75290
+1005C740,,,void sub_1005C740(),,,75291,75301
+1005C760,,,_DWORD *__thiscall sub_1005C760(void *this),,,75302,75325
+1005C7B0,,,int __stdcall sub_1005C7B0(void *a1),,,75326,75351
+1005C7F0,,,"_DWORD *__thiscall sub_1005C7F0(_DWORD *this, _DWORD *a2, int a3, _DWORD *a4, int *a5)",,,75352,75544
+1005CA60,,,_DWORD *__thiscall sub_1005CA60(_DWORD *this),,,75545,75557
+1005CA80,,,int __stdcall sub_1005CA80(void *a1),,,75558,75583
+1005CAC0,,,_DWORD *__thiscall sub_1005CAC0(_DWORD *this),,,75584,75622
+1005CB50,,,"_DWORD *__thiscall sub_1005CB50(_DWORD *this, _DWORD *a2, int a3, _DWORD *a4, int *a5)",,,75623,75815
+1005CDC0,,,"_DWORD *__thiscall sub_1005CDC0(_DWORD *this, int a2)",,,75816,75848
+1005CE20,,,_DWORD *__thiscall sub_1005CE20(_DWORD *this),,,75849,75861
+1005CE40,,,"int __thiscall sub_1005CE40(_DWORD *this, _DWORD *a2)",,,75862,75896
+1005CEA0,,,"_DWORD *__thiscall sub_1005CEA0(int *this, _DWORD *a2, int a3)",,,75897,75928
+1005CF00,,,"_BYTE *__thiscall sub_1005CF00(_BYTE *this, _DWORD *a2, _BYTE *a3)",,,75929,75939
+1005CF20,,,"_DWORD *__stdcall sub_1005CF20(int a1, int a2)",,,75940,75950
+1005CF40,,,_DWORD *__thiscall sub_1005CF40(void *this),,,75951,75983
+1005CFA0,,,_DWORD *__thiscall sub_1005CFA0(void *this),,,75984,76016
+1005D000,,,"int __fastcall sub_1005D000(int *a1, int *a2)",,,76017,76029
+1005D010,,,int sub_1005D010(),,,76030,76042
+1005D040,,,void __cdecl sub_1005D040(),,,76043,76064
+1005D090,,,"char __stdcall sub_1005D090(__int16 a1, float a2, unsigned __int8 *a3, _DWORD *a4)",,,76065,76261
+1005D520,,,_DWORD *__thiscall sub_1005D520(_DWORD *this),,,76262,76280
+1005D550,,,void __thiscall sub_1005D550(_DWORD *this),,,76281,76641
+1005DA50,,,void __thiscall sub_1005DA50(_DWORD *this),,,76642,76650
+1005DA70,,,void __thiscall sub_1005DA70(LPVOID *this),,,76651,76659
+1005DA90,,,"char __stdcall sub_1005DA90(_DWORD *a1, RECT *lprcSrc)",,,76660,76744
+1005DBB0,,,"char __stdcall sub_1005DBB0(_DWORD *a1, int *a2)",,,76745,76816
+1005DCA0,,,"char __stdcall sub_1005DCA0(int a1, int a2)",,,76817,76856
+1005DD40,,,"int __stdcall sub_1005DD40(__int16 *a1, int a2)",,,76857,77244
+1005E330,,,"void __stdcall sub_1005E330(char **a1, int a2, int a3, int a4)",,,77245,77269
+1005E380,,,void sub_1005E380(),,,77270,77280
+1005E3A0,,,"char __stdcall sub_1005E3A0(__int16 *a1, int a2, int a3, int a4)",,,77281,77299
+1005E3F0,,,"char __thiscall sub_1005E3F0(int *this, int a2, int a3, int a4, _DWORD *a5)",,,77300,78773
+1005FCD0,,,"void __thiscall sub_1005FCD0(char **this, int a2)",,,78774,78944
+1005FF70,,,"char *__thiscall sub_1005FF70(char *this, char a2)",,,78945,78963
+1005FFD0,,,"void *__thiscall sub_1005FFD0(void *this, int a2)",,,78964,79030
+100600D0,,,"int __thiscall sub_100600D0(int this, _DWORD *a2)",,,79031,79093
+10060190,,,char *__thiscall sub_10060190(_DWORD *this),,,79094,79229
+10060390,,,void __stdcall sub_10060390(int a1),,,79230,79245
+100603E0,,,int __fastcall sub_100603E0(,io_assets;diagnostics_errors,,79246,79476
+10060840,,,int __fastcall sub_10060840(,io_assets;diagnostics_errors,,79477,79604
+10060A50,,,int __fastcall sub_10060A50(,io_assets;diagnostics_errors,,79605,79706
+10060C00,,,void sub_10060C00(),,,79707,79717
+10060C20,,,void sub_10060C20(),,,79718,79728
+10060C40,,,void sub_10060C40(),,,79729,79739
+10060C60,,,int sub_10060C60(),,,79740,79753
+10060C90,,,void __cdecl sub_10060C90(),,,79754,79765
+10060CB0,,,int __thiscall sub_10060CB0(const char *this),textures_materials;frames_visuals_scene;io_assets;diagnostics_errors,,79766,79997
+10061120,,,int sub_10061120(),textures_materials;frames_visuals_scene;io_assets;diagnostics_errors,,79998,80138
+10061450,,,"int __fastcall sub_10061450(int a1, _BYTE *a2, FILETIME *lpFileTime1)",io_assets;diagnostics_errors,,80139,80291
+10061790,,,"void __thiscall sub_10061790(int this, int a2)",,,80292,80331
+10061800,,,"int __fastcall sub_10061800(const char *ArgList, _DWORD *a2, FILETIME *lpFileTime1)",io_assets;diagnostics_errors,,80332,80400
+10061970,,,void sub_10061970(),,,80401,80411
+10061990,,,void sub_10061990(),,,80412,80422
+100619B0,,,"void __fastcall sub_100619B0(_DWORD *a1, int a2)",,,80423,80693
+10061CD0,,,int sub_10061CD0(),,,80694,80707
+10061D00,,,void __cdecl sub_10061D00(),,,80708,80719
+10061D20,,,int sub_10061D20(),,,80720,80733
+10061D50,,,void __cdecl sub_10061D50(),,,80734,80745
+10061D70,,,int sub_10061D70(),,,80746,80753
+10061D90,,,void __cdecl sub_10061D90(),,,80754,80767
+10061DD0,,,int sub_10061DD0(),,,80768,80775
+10061DF0,,,void __cdecl sub_10061DF0(),,,80776,80789
+10061E30,,,"int __fastcall sub_10061E30(int a1, float *a2)",,,80790,80915
+10062010,,,int sub_10062010(),,,80916,80923
+10062030,,,"int __userpurge sub_10062030@<eax>(__int16 a1@<fpstat>, int a2, int a3)",d3d8_device;frames_visuals_scene,,80924,83194
+10065560,,,DWORD __thiscall sub_10065560(float *this),,,83195,83303
+10065770,,,void __thiscall sub_10065770(I3D_visual *this),frames_visuals_scene,,83304,83368
+100658D0,,,void sub_100658D0(),,,83369,83379
+100658F0,,,"int __stdcall sub_100658F0(int a1, _DWORD *a2)",frames_visuals_scene,,83380,83413
+100659A0,,,_DWORD *__thiscall sub_100659A0(_DWORD *this),,,83414,83430
+100659D0,,,_DWORD *__thiscall sub_100659D0(_DWORD *this),,,83431,83446
+100659F0,,,int __thiscall sub_100659F0(void *this),,,83447,83461
+10065A10,,,_DWORD *sub_10065A10(),,,83462,83481
+10065A60,,,void __thiscall sub_10065A60(void *this),,,83482,83488
+10065A70,,,char __fastcall sub_10065A70(,frames_visuals_scene;math_geometry,,83489,84423
+10066B50,,,"void __fastcall sub_10066B50(int a1, int a2, int a3, int a4, int a5)",,,84424,84461
+10066BE0,,,"int __stdcall sub_10066BE0(int a1, int a2, int a3, float *a4, int a5)",,,84462,84590
+10066E90,,,void __fastcall sub_10066E90(,,,84591,85174
+10067D00,,,void sub_10067D00(),,,85175,85185
+10067D20,,,Iostream_init *__fastcall sub_10067D20(,math_geometry,,85186,85472
+10068360,,,"float *__fastcall sub_10068360(float *a1, float *a2, int a3, float *a4, float *a5)",,,85473,85496
+10068430,,,"float *__fastcall sub_10068430(float *a1, float *a2, int a3, float *a4, float *a5, float *a6, float *a7, float *a8)",,,85497,85550
+100685D0,,,"int __fastcall sub_100685D0(_BYTE *a1, int a2, int a3, int a4, int a5, int a6)",,,85551,85682
+10068760,,,"int __fastcall sub_10068760(int a1, int a2, int a3, unsigned __int16 *a4, int a5, int a6)",,,85683,85747
+10068840,,,int __thiscall sub_10068840(int this),frames_visuals_scene;math_geometry,,85748,85763
+10068880,,,int sub_10068880(),,,85764,85771
+100688B0,,,char *__thiscall sub_100688B0(char *this),,,85772,85846
+10068A00,,,void __thiscall sub_10068A00(int this),,,85847,85912
+10068AF0,,,void __thiscall sub_10068AF0(char *this),,,85913,86044
+10068CF0,,,"char __thiscall sub_10068CF0(_DWORD *this, _DWORD *a2, int a3, unsigned int a4, unsigned int a5, int a6)",io_assets;diagnostics_errors,,86045,86160
+10068F10,,,"int __thiscall sub_10068F10(int this, _DWORD *a2, _DWORD *a3)",,,86161,86282
+100690D0,,,"char __thiscall sub_100690D0(_DWORD *this, int a2)",,,86283,86431
+100692B0,,,int __thiscall sub_100692B0(int this),,,86432,86498
+100693F0,,,void __thiscall sub_100693F0(int this),,,86499,86564
+100694E0,,,void __thiscall sub_100694E0(int this),,,86565,86625
+100695E0,,,"char __thiscall sub_100695E0(_DWORD *this, char *a2, int a3, unsigned int a4, _DWORD *a5, char **a6, int a7, char *a8)",,,86626,86758
+100697C0,,,char __stdcall sub_100697C0(int a1),,,86759,86769
+100697E0,,,int __thiscall sub_100697E0(int **this),,,86770,86788
+10069820,,,"void __thiscall sub_10069820(_DWORD *this, int a2)",,,86789,86848
+100698E0,,,_DWORD *__thiscall sub_100698E0(_DWORD *this),diagnostics_errors,,86849,86883
+10069950,,,_DWORD *__thiscall sub_10069950(_DWORD *this),,,86884,86926
+100699D0,,,"_DWORD *__thiscall sub_100699D0(_DWORD *this, _DWORD *a2, _DWORD *a3)",,,86927,87294
+10069DE0,,,void sub_10069DE0(),,,87295,87305
+10069E00,,,"_DWORD *__thiscall sub_10069E00(_DWORD *this, _DWORD *a2, _DWORD *a3, _DWORD *a4)",,,87306,87373
+10069ED0,,,_DWORD *__thiscall sub_10069ED0(void *this),,,87374,87397
+10069F20,,,"int __thiscall sub_10069F20(int this, int a2, int *a3)",,,87398,87553
+1006A160,,,"_DWORD *__thiscall sub_1006A160(_DWORD *this, _DWORD *a2, _DWORD *a3)",,,87554,87921
+1006A570,,,_DWORD *__thiscall sub_1006A570(void *this),,,87922,87945
+1006A5C0,,,int __stdcall sub_1006A5C0(void *a1),,,87946,87971
+1006A600,,,"_DWORD *__thiscall sub_1006A600(_DWORD *this, _DWORD *a2, int a3, _DWORD *a4, int *a5)",,,87972,88164
+1006A870,,,_DWORD *__thiscall sub_1006A870(_DWORD *this),,,88165,88177
+1006A890,,,int __stdcall sub_1006A890(void *a1),,,88178,88203
+1006A8D0,,,"_DWORD *__thiscall sub_1006A8D0(_DWORD *this, _DWORD *a2, int a3, _DWORD *a4, int *a5)",,,88204,88396
+1006AB40,,,"_DWORD *__thiscall sub_1006AB40(_DWORD *this, int a2)",,,88397,88429
+1006ABA0,,,_DWORD *__thiscall sub_1006ABA0(_DWORD *this),,,88430,88442
+1006ABC0,,,"int __thiscall sub_1006ABC0(_DWORD *this, _DWORD *a2)",,,88443,88477
+1006AC20,,,"_DWORD *__thiscall sub_1006AC20(int *this, _DWORD *a2, int a3)",,,88478,88509
+1006AC80,,,_DWORD *__thiscall sub_1006AC80(void *this),,,88510,88542
+1006ACE0,,,_DWORD *__thiscall sub_1006ACE0(void *this),,,88543,88575
+1006AD40,,,int sub_1006AD40(),,,88576,88585
+1006ADC0,,,"char __fastcall sub_1006ADC0(int a1, int a2, char *Str2, char *a4)",,,88586,88771
+1006B2A0,,,int __thiscall sub_1006B2A0(char *Str2),,,88772,88837
+1006B3B0,,,unsigned int sub_1006B3B0(),,,88838,88862
+1006B430,,,int sub_1006B430(),,,88863,88869
+1006B450,,,void *__thiscall sub_1006B450(void *this),io_assets;diagnostics_errors,,88870,88963
+1006B660,,,void __cdecl sub_1006B660(),,,88964,88996
+1006B6D0,GetEngineVersion,,int GetEngineVersion(),,,88997,89002
+1006B6E0,TEV,,"char __cdecl TEV(LPCSTR lpCaption, int a2)",,,89003,89014
+1006B740,GetIGraph,,int GetIGraph(),video_show,,89015,89021
+1006B750,ISndGetDriver,,int ISndGetDriver(),,,89022,89028
+1006B760,I3DGetDriver,,int I3DGetDriver(),,,89029,89035
+1006B770,I3DGetResultMessage,,char *__cdecl I3DGetResultMessage(int a1),textures_materials;io_assets;diagnostics_errors,,89036,89124
+1006B890,dbgPrintf,,"int dbgPrintf(char *Format, ...)",io_assets;diagnostics_errors,,89125,89176
+1006B980,dbgPrintf1,,"int dbgPrintf1(char *Format, ...)",io_assets;diagnostics_errors,,89177,89227
+1006BA70,,,char __thiscall sub_1006BA70(unsigned __int16 *this),io_assets,,89228,89293
+1006BB80,,,int sub_1006BB80(),,,89294,89308
+1006BC00,,,void *__thiscall sub_1006BC00(float *this),,,89309,89360
+1006BCA0,,,void sub_1006BCA0(),,,89361,89368
+1006BCC0,,,void sub_1006BCC0(),,,89369,89376
+1006BCE0,,,"void __fastcall sub_1006BCE0(int a1, int a2, char *a3)",,,89377,89393
+1006BD20,,,void sub_1006BD20(),,,89394,89401
+1006BD40,,,int sub_1006BD40(),,,89402,89415
+1006BD70,,,void __cdecl sub_1006BD70(),,,89416,89427
+1006BD90,,,int sub_1006BD90(),,,89428,89437
+1006BDB0,,,void __cdecl sub_1006BDB0(),,,89438,89462
+1006BDE0,,,int sub_1006BDE0(),,,89463,89474
+1006BE10,,,void __cdecl sub_1006BE10(),,,89475,89484
+1006BE30,,,int sub_1006BE30(),,,89485,89498
+1006BE60,,,void __cdecl sub_1006BE60(),,,89499,89510
+1006BE80,,,int sub_1006BE80(),,,89511,89524
+1006BEB0,,,void __cdecl sub_1006BEB0(),,,89525,89536
+1006BED0,,,int sub_1006BED0(),,,89537,89550
+1006BF00,,,void __cdecl sub_1006BF00(),,,89551,89562
+1006BF20,,,int sub_1006BF20(),,,89563,89576
+1006BF50,,,void __cdecl sub_1006BF50(),,,89577,89588
+1006BF70,,,DWORD sub_1006BF70(),,,89589,89599
+1006BF80,,,_DWORD *__thiscall sub_1006BF80(_DWORD *this),,,89600,89711
+1006C1A0,,,void __thiscall sub_1006C1A0(_DWORD *this),video_show;diagnostics_errors,,89712,89723
+1006C1D0,,,int __stdcall sub_1006C1D0(int a1),,,89724,89738
+1006C230,,,_DWORD *__stdcall sub_1006C230(int a1),,,89739,89757
+1006C2C0,,,"int __stdcall sub_1006C2C0(_DWORD *a1, char *String2, char *Str, int a4, _DWORD *a5)",,,89758,90043
+1006C7C0,,,"bool __stdcall sub_1006C7C0(int a1, int a2)",,,90044,90056
+1006C800,,,HWND __stdcall sub_1006C800(int a1),,,90057,90062
+1006C810,,,HWND __stdcall sub_1006C810(int a1),,,90063,90068
+1006C820,,,"int __stdcall sub_1006C820(int a1, const char *a2)",,,90069,90093
+1006C8B0,,,"int sub_1006C8B0(int a1, char *Format, ...)",,,90094,90104
+1006C8F0,,,int *__stdcall sub_1006C8F0(int a1),,,90105,90114
+1006C910,,,"char __stdcall sub_1006C910(int a1, int a2)",,,90115,90141
+1006C9A0,,,"char __stdcall sub_1006C9A0(int a1, int a2)",,,90142,90193
+1006CA40,,,BOOL __stdcall sub_1006CA40(int a1),,,90194,90309
+1006CC50,,,"int __stdcall sub_1006CC50(int a1, int a2, int a3, char a4)",,,90310,90331
+1006CCA0,,,int __stdcall sub_1006CCA0(int a1),,,90332,90381
+1006CD40,,,"int __stdcall sub_1006CD40(int a1, int a2, int a3)",,,90382,90621
+1006D350,,,"int __stdcall sub_1006D350(int a1, int a2)",,,90622,90697
+1006D450,,,"int __stdcall sub_1006D450(int a1, int a2)",,,90698,90704
+1006D470,,,char __stdcall sub_1006D470(int a1),,,90705,90720
+1006D4A0,,,int __cdecl sub_1006D4A0(int a1),,,90721,90729
+1006D4C0,,,int __stdcall sub_1006D4C0(int a1),d3d8_device;diagnostics_errors,,90730,90807
+1006D640,,,"unsigned int __stdcall sub_1006D640(int a1, int a2, int a3, int a4, int a5)",,,90808,90879
+1006D750,,,unsigned int __userpurge sub_1006D750@<eax>(,io_assets,,90880,91064
+1006DA60,,,"LRESULT __stdcall sub_1006DA60(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)",,,91065,91289
+1006DEB0,,,void sub_1006DEB0(),,,91290,91300
+1006DED0,,,"char *__stdcall sub_1006DED0(int a1, int a2)",d3d8_device;textures_materials,,91301,91471
+1006E1A0,,,int __fastcall sub_1006E1A0(char a1),io_assets;diagnostics_errors,,91472,91631
+1006E740,,,"unsigned int __stdcall sub_1006E740(int a1, const void *a2)",,,91632,91641
+1006E780,,,RECT *__stdcall sub_1006E780(int a1),,,91642,91647
+1006E790,,,"int __stdcall sub_1006E790(int *a1, const void *a2)",d3d8_device;video_show;io_assets;diagnostics_errors,,91648,92785
+1006FDC0,CompareFunction,,"int __cdecl CompareFunction(_DWORD *a1, _DWORD *a2)",,,92786,92811
+1006FE20,,,"_DWORD *__thiscall sub_1006FE20(_DWORD *this, const void *a2, unsigned int a3)",,,92812,92824
+1006FE60,,,"_DWORD *__thiscall sub_1006FE60(_DWORD *this, const void *a2, const void *a3, unsigned int a4, unsigned int a5)",,,92825,92838
+1006FEC0,,,void __thiscall sub_1006FEC0(_DWORD *this),,,92839,92845
+1006FF00,,,"const char **__thiscall sub_1006FF00(const char **this, const char *a2)",,,92846,92881
+1006FF80,,,"_DWORD *__thiscall sub_1006FF80(int *this, _DWORD *a2, const char *a3)",,,92882,92947
+10070100,,,"int __thiscall sub_10070100(void *this, int a2)",,,92948,92981
+10070180,,,char __stdcall sub_10070180(int a1),,,92982,92988
+10070190,,,HINSTANCE *__stdcall sub_10070190(int a1),,,92989,92994
+100701A0,,,"void __userpurge sub_100701A0(int a1@<edi>, int a2@<esi>, int a3)",io_assets;diagnostics_errors,,92995,93165
+100704E0,,,LONG __stdcall sub_100704E0(int a1),,,93166,93177
+10070500,,,LONG __stdcall sub_10070500(int a1),,,93178,93189
+10070520,,,int __stdcall sub_10070520(int a1),,,93190,93196
+10070530,,,int __stdcall sub_10070530(int a1),,,93197,93203
+10070540,,,"int __stdcall sub_10070540(int a1, char *Str, _WORD *a3, _WORD *a4, _BYTE *a5, char a6, int *a7)",,,93204,93275
+100706D0,,,"__int16 __fastcall sub_100706D0(_DWORD *a1, _BYTE *a2, int a3, unsigned int a4, char a5)",,,93276,93390
+10070890,,,"char __stdcall sub_10070890(int *a1, char *Str, int a3, int a4, char *a5)",textures_materials;video_show;io_assets;diagnostics_errors,,93391,94056
+100716A0,,,"int __stdcall sub_100716A0(int a1, int a2)",io_assets;diagnostics_errors,,94057,94112
+100717B0,,,char __stdcall sub_100717B0(int a1),,,94113,94119
+100717C0,,,int __stdcall sub_100717C0(int a1),,,94120,94137
+100717F0,,,int __stdcall sub_100717F0(int a1),,,94138,94186
+10071910,,,int __stdcall sub_10071910(int a1),,,94187,94199
+10071940,,,int __stdcall sub_10071940(int a1),,,94200,94210
+10071960,,,int __stdcall sub_10071960(int *a1),,,94211,94254
+10071A10,,,int __stdcall sub_10071A10(int a1),,,94255,94265
+10071A30,,,"char __stdcall sub_10071A30(int a1, unsigned __int8 a2)",,,94266,94271
+10071A50,,,"int __stdcall sub_10071A50(int a1, const void *a2, unsigned int a3)",,,94272,94282
+10071AA0,,,int __stdcall sub_10071AA0(int a1),,,94283,94304
+10071AF0,,,bool __stdcall sub_10071AF0(int a1),,,94305,94312
+10071B10,,,bool __stdcall sub_10071B10(int a1),,,94313,94320
+10071B30,,,bool __stdcall sub_10071B30(int a1),,,94321,94328
+10071B50,,,"int __stdcall sub_10071B50(int a1, char a2)",,,94329,94369
+10071C00,,,"char __stdcall sub_10071C00(int a1, char a2, char a3)",,,94370,94393
+10071C40,,,"void *__stdcall sub_10071C40(int a1, int a2)",,,94394,94418
+10071CA0,,,"int __stdcall sub_10071CA0(int a1, int a2)",io_assets;diagnostics_errors,,94419,94484
+10071DC0,,,char __stdcall sub_10071DC0(int a1),,,94485,94491
+10071DD0,,,int __stdcall sub_10071DD0(int a1),,,94492,94519
+10071E20,,,int __stdcall sub_10071E20(int yBottom),,,94520,94594
+10071F90,,,int __stdcall sub_10071F90(int a1),,,94595,94601
+10071FA0,,,int __stdcall sub_10071FA0(int a1),,,94602,94608
+10071FB0,,,int __stdcall sub_10071FB0(int a1),,,94609,94615
+10071FC0,,,"int __stdcall sub_10071FC0(int a1, int a2, int a3)",,,94616,94657
+100720A0,,,int __stdcall sub_100720A0(int a1),,,94658,94663
+100720B0,,,int __stdcall sub_100720B0(int a1),,,94664,94669
+100720C0,,,int __stdcall sub_100720C0(int a1),,,94670,94683
+100720F0,,,DWORD __stdcall sub_100720F0(int a1),,,94684,94694
+10072100,,,"unsigned int __stdcall sub_10072100(int a1, unsigned int a2, unsigned int a3)",,,94695,94723
+10072150,,,"_DWORD *__fastcall sub_10072150(_DWORD *a1, _DWORD *a2, char *Str)",io_assets,,94724,94851
+100723E0,,,"int __fastcall sub_100723E0(int a1, char *a2, char a3)",io_assets;diagnostics_errors,,94852,94954
+100725F0,,,"int __stdcall sub_100725F0(int a1, char *a2, char a3)",,,94955,94961
+10072610,,,"int __stdcall sub_10072610(int a1, char *SubStr)",,,94962,94983
+10072670,,,void __stdcall sub_10072670(int a1),,,94984,95003
+100726D0,,,int __stdcall sub_100726D0(int a1),,,95004,95010
+100726E0,,,int __stdcall sub_100726E0(int a1),,,95011,95017
+100726F0,,,int __stdcall sub_100726F0(int a1),,,95018,95024
+10072700,,,int __stdcall sub_10072700(int a1),,,95025,95031
+10072710,,,"char __stdcall sub_10072710(int a1, int a2, int a3)",,,95032,95042
+10072750,,,"char __stdcall sub_10072750(int a1, int a2)",,,95043,95077
+100727D0,,,char __stdcall sub_100727D0(,video_show;diagnostics_errors,,95078,95521
+100733A0,,,int __thiscall sub_100733A0(int this),,,95522,95593
+100734C0,,,void __thiscall sub_100734C0(int this),,,95594,95627
+10073580,,,int __stdcall sub_10073580(_DWORD *ArgList),video_show;diagnostics_errors,,95628,95652
+100735D0,,,"int __thiscall sub_100735D0(int this, char a2)",,,95653,95851
+100738A0,,,"void __usercall sub_100738A0(int a1@<ebx>, int a2@<edi>, int a3@<esi>, _DWORD *a4, int a5)",textures_materials;frames_visuals_scene;io_assets;diagnostics_errors,,95852,95923
+100739B0,,,"int __cdecl sub_100739B0(int a1, int a2, int a3)",,,95924,96046
+10073BA0,,,"int __stdcall sub_10073BA0(char *lpParameter, char *Str, int a3)",video_show;diagnostics_errors,,96047,96194
+10073FE0,,,void __stdcall __noreturn sub_10073FE0(const HANDLE *lpThreadParameter),,,96195,96222
+10074060,,,"int __cdecl sub_10074060(int a1, int a2, int a3, _DWORD *a4)",,,96223,96229
+100740B0,,,int __cdecl sub_100740B0(_DWORD *a1),,,96230,96236
+100740C0,,,int __cdecl sub_100740C0(_DWORD *a1),,,96237,96243
+100740E0,,,char __stdcall sub_100740E0(int a1),,,96244,96249
+100740F0,,,void __stdcall sub_100740F0(int a1),,,96250,96305
+100741C0,,,int __stdcall sub_100741C0(int a1),,,96306,96348
+10074270,,,int __stdcall sub_10074270(int a1),,,96349,96382
+10074300,,,int __stdcall sub_10074300(int a1),,,96383,96418
+10074380,,,int __thiscall sub_10074380(_DWORD *this),,,96419,96499
+100745A0,,,"int __stdcall sub_100745A0(int a1, LONG *a2)",,,96500,96535
+10074640,,,"int __stdcall sub_10074640(int a1, _DWORD *a2)",,,96536,96547
+10074680,,,"int __stdcall sub_10074680(int a1, _DWORD *a2)",,,96548,96582
+10074700,,,int __stdcall sub_10074700(int a1),,,96583,96632
+10074800,,,"int __stdcall sub_10074800(int a1, unsigned int a2)",,,96633,96696
+10074960,,,"int __stdcall sub_10074960(int a1, _DWORD *a2)",,,96697,96726
+10074A30,,,"int __stdcall sub_10074A30(int a1, float a2)",,,96727,96759
+10074AE0,,,int __stdcall sub_10074AE0(int a1),,,96760,96765
+10074AF0,,,int __stdcall sub_10074AF0(int a1),,,96766,96772
+10074B10,,,"int __userpurge sub_10074B10@<eax>(int a1@<ebx>, int a2@<edi>, int a3)",frames_visuals_scene,,96773,96799
+10074B70,,,"int __userpurge sub_10074B70@<eax>(int a1@<ebx>, int a2@<ebp>, int a3@<esi>, int a4)",frames_visuals_scene;io_assets,,96800,96904
+10074D70,,,"int __userpurge sub_10074D70@<eax>(int a1@<ebp>, int a2@<edi>, int a3)",io_assets,,96905,97000
+10074F40,,,"int __thiscall sub_10074F40(void *this, int a2)",d3d8_device;textures_materials;video_show;diagnostics_errors,,97001,97236
+100753E0,,,"std::strstreambuf *__thiscall sub_100753E0(std::strstreambuf *this, char a2)",,,97237,97245
+10075400,,,void __thiscall sub_10075400(std::strstreambuf *this),,,97246,97266
+10075480,,,"int __thiscall sub_10075480(_DWORD *this, int a2)",,,97267,97300
+10075530,,,"int __thiscall sub_10075530(_DWORD *this, int a2)",,,97301,97328
+100755C0,,,"int __userpurge sub_100755C0@<eax>(_DWORD *a1@<ecx>, int a2@<ebx>, int a3@<edi>, int a4)",d3d8_device;textures_materials;video_show;io_assets;diagnostics_errors,,97329,97435
+10075800,,,void sub_10075800(),,,97436,97446
+10075820,,,double __stdcall sub_10075820(int a1),,,97447,97452
+10075830,,,int __stdcall sub_10075830(int a1),,,97453,97458
+10075840,,,BOOL __stdcall sub_10075840(int a1),,,97459,97464
+10075890,,,int sub_10075890(),,,97465,97478
+100758C0,,,void __cdecl sub_100758C0(),,,97479,97490
+100758E0,,,"int __stdcall sub_100758E0(int a1, int a2)",,,97491,97511
+10075920,,,"int __stdcall sub_10075920(_BYTE *a1, int a2, int a3)",,,97512,97574
+10075A20,,,int __stdcall sub_10075A20(int a1),,,97575,97633
+10075AD0,,,"int __stdcall sub_10075AD0(int a1, unsigned __int8 a2)",,,97634,97650
+10075B30,,,unsigned int __stdcall sub_10075B30(int a1),,,97651,97659
+10075B60,,,int __stdcall sub_10075B60(int a1),,,97660,97669
+10075B90,,,"unsigned int __stdcall sub_10075B90(int a1, int a2)",,,97670,97681
+10075BC0,,,"unsigned int __stdcall sub_10075BC0(int a1, int a2)",,,97682,97693
+10075BF0,,,void sub_10075BF0(),,,97694,97704
+10075C10,,,_DWORD *__thiscall sub_10075C10(_DWORD *this),,,97705,97727
+10075C50,,,void __thiscall sub_10075C50(_DWORD *this),,,97728,97753
+10075D10,,,"int __stdcall sub_10075D10(int *a1, int a2)",,,97754,97871
+10075F30,,,int __stdcall sub_10075F30(int a1),textures_materials;io_assets;diagnostics_errors,,97872,97878
+10075F50,,,int __stdcall sub_10075F50(,textures_materials;io_assets;diagnostics_errors,,97879,99520
+10078170,,,void sub_10078170(),,,99521,99531
+10078190,,,"char __thiscall sub_10078190(int this, char *Source, char *a3, int a4, int a5, int a6)",,,99532,99631
+10078430,,,"char __thiscall sub_10078430(int this, char *Source, int a3)",,,99632,99725
+10078670,,,char __stdcall sub_10078670(int a1),,,99726,99731
+10078680,,,int __stdcall sub_10078680(int a1),,,99732,99834
+100787C0,,,"int __stdcall sub_100787C0(int a1, int a2, _DWORD *a3, unsigned __int16 a4)",,,99835,99847
+10078820,,,int __stdcall sub_10078820(int a1),,,99848,99862
+10078850,,,int __cdecl sub_10078850(int a1),,,99863,99868
+10078860,,,int __stdcall sub_10078860(int a1),,,99869,99916
+10078940,,,"char __stdcall sub_10078940(int a1, _DWORD *a2, unsigned int a3, int a4)",,,99917,100091
+10078B70,,,"char __stdcall sub_10078B70(int a1, LONG a2, LONG a3)",,,100092,100148
+10078CF0,,,"char __stdcall sub_10078CF0(int a1, RECT rcSrc1, int a3, int a4, int a5, int a6)",,,100149,100203
+10078E40,,,"char __stdcall sub_10078E40(int a1, const char *ArgList)",textures_materials;io_assets;diagnostics_errors,,100204,100362
+10079150,,,char __fastcall sub_10079150(,textures_materials;io_assets;diagnostics_errors,,100363,100686
+100798C0,,,"char __fastcall sub_100798C0(int a1, int a2, unsigned __int8 *a3, int a4, unsigned int a5, signed int a6, int a7)",,,100687,101273
+1007A380,,,"char __fastcall sub_1007A380(int a1, int a2, int *a3, int a4)",,,101274,101349
+1007A570,,,int sub_1007A570(),,,101350,101363
+1007A5A0,,,void __cdecl sub_1007A5A0(),,,101364,101375
+1007A5C0,,,int sub_1007A5C0(),,,101376,101388
+1007A5F0,,,void __cdecl sub_1007A5F0(),,,101389,101395
+1007A610,,,int *sub_1007A610(),,,101396,101487
+1007A710,,,void __fastcall sub_1007A710(int a1),,,101488,101616
+1007A910,,,char __stdcall sub_1007A910(int a1),,,101617,101653
+1007A9B0,StartAddress,,DWORD __stdcall StartAddress(LPVOID lpThreadParameter),,,101654,101867
+1007AD20,,,"char __fastcall sub_1007AD20(int a1, const char *a2, __int16 a3)",textures_materials;diagnostics_errors,,101868,101939
+1007AEE0,,,char __thiscall sub_1007AEE0(_DWORD *this),,,101940,102016
+1007AFE0,,,void sub_1007AFE0(),,,102017,102055
+1007B040,,,void __thiscall sub_1007B040(_DWORD *this),,,102056,102064
+1007B060,,,_DWORD *__thiscall sub_1007B060(_DWORD *this),,,102065,102078
+1007B0A0,,,void __thiscall sub_1007B0A0(_DWORD *this),,,102079,102085
+1007B0C0,,,int __stdcall sub_1007B0C0(_DWORD *ArgList),diagnostics_errors,,102086,102110
+1007B100,,,"int __stdcall sub_1007B100(_DWORD *a1, _DWORD *a2)",,,102111,102119
+1007B120,,,"int __stdcall sub_1007B120(_DWORD *a1, _DWORD *a2, _DWORD *a3)",,,102120,102131
+1007B160,,,"int __stdcall sub_1007B160(_DWORD *a1, _DWORD *a2)",,,102132,102140
+1007B180,,,"int __stdcall sub_1007B180(int a1, float a2)",,,102141,102147
+1007B190,,,"int __stdcall sub_1007B190(int a1, float a2)",,,102148,102154
+1007B1A0,,,"int __stdcall sub_1007B1A0(int a1, float a2)",,,102155,102161
+1007B1B0,,,unsigned int __stdcall sub_1007B1B0(int a1),,,102162,102173
+1007B1E0,,,"int __stdcall sub_1007B1E0(int a1, int a2, int a3)",,,102174,102236
+1007B280,,,"int __stdcall sub_1007B280(int a1, int a2, int a3, int a4)",,,102237,102256
+1007B2D0,,,"int __stdcall sub_1007B2D0(int a1, int a2, int a3, int a4, int a5)",,,102257,102277
+1007B320,,,unsigned int __stdcall sub_1007B320(int a1),,,102278,102286
+1007B350,,,void sub_1007B350(),,,102287,102297
+1007B370,,,int __thiscall sub_1007B370(int this),,,102298,102308
+1007B390,,,"void *__thiscall sub_1007B390(void *this, char a2)",,,102309,102317
+1007B3B0,int,,int (__stdcall ***__thiscall sub_1007B3B0(int this))(_DWORD),,,102318,102335
+1007B420,,,char __stdcall sub_1007B420(int a1),,,102336,102341
+1007B430,,,"int __stdcall sub_1007B430(int a1, _DWORD *a2)",,,102342,102358
+1007B470,,,"int __stdcall sub_1007B470(int a1, _DWORD *a2)",,,102359,102375
+1007B4B0,,,"int __stdcall sub_1007B4B0(int a1, _DWORD *a2)",,,102376,102392
+1007B4F0,,,"int __stdcall sub_1007B4F0(int a1, int a2, int a3)",,,102393,102408
+1007B540,,,"int __stdcall sub_1007B540(int a1, float a2, float a3)",,,102409,102429
+1007B590,,,"int __stdcall sub_1007B590(int a1, float a2)",,,102430,102446
+1007B5D0,,,"int __stdcall sub_1007B5D0(int a1, int a2, int a3)",,,102447,102469
+1007B630,,,int __stdcall sub_1007B630(int a1),,,102470,102485
+1007B660,,,void sub_1007B660(),,,102486,102496
+1007B680,,,int __stdcall sub_1007B680(int a1),,,102497,102502
+1007B690,,,_DWORD *__thiscall sub_1007B690(_DWORD *this),,,102503,102531
+1007B6E0,,,void __thiscall sub_1007B6E0(LPVOID *this),diagnostics_errors,,102532,102545
+1007B730,,,char __stdcall sub_1007B730(int a1),,,102546,102552
+1007B740,,,int __stdcall sub_1007B740(int a1),diagnostics_errors,,102553,102619
+1007B810,,,"unsigned int __stdcall sub_1007B810(int a1, int a2, __int16 a3, unsigned __int16 a4)",,,102620,102642
+1007B8A0,,,"int __stdcall sub_1007B8A0(int a1, float a2)",,,102643,102675
+1007B950,,,"int __stdcall sub_1007B950(int a1, int a2)",,,102676,102681
+1007B960,,,_DWORD *__stdcall sub_1007B960(int a1),,,102682,102693
+1007B9C0,,,"unsigned int __stdcall sub_1007B9C0(int a1, int *a2)",,,102694,102705
+1007BA00,,,_DWORD *__stdcall sub_1007BA00(int a1),,,102706,102717
+1007BA60,,,"unsigned int __stdcall sub_1007BA60(int a1, int *a2)",,,102718,102729
+1007BAA0,,,int __stdcall sub_1007BAA0(int a1),,,102730,102741
+1007BB00,,,"unsigned int __stdcall sub_1007BB00(int a1, int *a2)",,,102742,102753
+1007BB40,,,_DWORD *__stdcall sub_1007BB40(int a1),,,102754,102773
+1007BBD0,,,"unsigned int __stdcall sub_1007BBD0(int a1, int *a2)",,,102774,102785
+1007BC10,,,int __thiscall sub_1007BC10(int this),diagnostics_errors,,102786,102870
+1007BE20,,,"char __thiscall sub_1007BE20(char *this, HWND a2, int a3, int a4, int a5, int a6)",diagnostics_errors,,102871,103014
+1007C1F0,,,"int __stdcall sub_1007C1F0(int a1, HWND a2, int a3, int a4, int a5, int a6)",,,103015,103026
+1007C280,,,void sub_1007C280(),,,103027,103037
+1007C2A0,,,int sub_1007C2A0(),,,103038,103051
+1007C2D0,,,void __cdecl sub_1007C2D0(),,,103052,103063
+1007C2F0,,,int sub_1007C2F0(),,,103064,103077
+1007C320,,,void __cdecl sub_1007C320(),,,103078,103089
+1007C340,,,void sub_1007C340(),,,103090,103312
+1007C6D0,,,int __fastcall sub_1007C6D0(int a1),diagnostics_errors,,103313,103390
+1007C8E0,,,_DWORD *__thiscall sub_1007C8E0(_DWORD *this),,,103391,103406
+1007C910,,,"_DWORD *__thiscall sub_1007C910(_DWORD *this, char a2)",,,103407,103432
+1007C960,int,,int (__stdcall ***__thiscall sub_1007C960(_DWORD *this))(_DWORD),,,103433,103456
+1007C9D0,,,"int __stdcall sub_1007C9D0(_DWORD *a1, int a2, int a3)",,,103457,103485
+1007CA30,,,int __stdcall sub_1007CA30(_DWORD *a1),,,103486,103507
+1007CA70,,,"int __stdcall sub_1007CA70(int a1, int a2, int a3)",,,103508,103518
+1007CAA0,,,"int __stdcall sub_1007CAA0(int a1, __int16 a2, unsigned int a3)",,,103519,103797
+1007CF50,,,int __stdcall sub_1007CF50(int a1),,,103798,103870
+1007D040,,,int __stdcall sub_1007D040(unsigned int a1),,,103871,103886
+1007D090,,,"int __stdcall sub_1007D090(int a1, unsigned int a2)",,,103887,103938
+1007D160,,,"int __stdcall sub_1007D160(int a1, float a2)",,,103939,103970
+1007D1F0,,,"int __stdcall sub_1007D1F0(int a1, float a2)",,,103971,103990
+1007D240,,,"int __stdcall sub_1007D240(int a1, int a2)",,,103991,104017
+1007D2B0,,,"int __stdcall sub_1007D2B0(int a1, float a2)",,,104018,104041
+1007D340,,,"int __stdcall sub_1007D340(int a1, float a2)",,,104042,104073
+1007D3E0,,,char __stdcall sub_1007D3E0(int a1),,,104074,104085
+1007D410,,,void sub_1007D410(),,,104086,104096
+1007D430,,,_DWORD *__thiscall sub_1007D430(_DWORD *this),,,104097,104115
+1007D480,,,void __thiscall sub_1007D480(_DWORD *this),,,104116,104184
+1007D590,,,"int __stdcall sub_1007D590(int a1, const char *ArgList, int a3)",io_assets;diagnostics_errors,,104185,104327
+1007D890,,,_DWORD *__stdcall sub_1007D890(_DWORD *a1),,,104328,104348
+1007D8C0,,,bool __stdcall sub_1007D8C0(int a1),,,104349,104354
+1007D8D0,,,int __stdcall sub_1007D8D0(int a1),,,104355,104365
+1007D910,,,"int __stdcall sub_1007D910(_DWORD *a1, _DWORD *a2)",,,104366,104375
+1007D940,,,"int __stdcall sub_1007D940(int a1, _DWORD *a2)",,,104376,104392
+1007D980,,,unsigned int __stdcall sub_1007D980(int a1),,,104393,104405
+1007D9B0,,,void sub_1007D9B0(),,,104406,104416
+1007D9D6,,,const char *__stdcall sub_1007D9D6(int a1),d3d8_device;io_assets;diagnostics_errors,,104417,106577
+100813E0,,,"int __cdecl sub_100813E0(_DWORD *a1, int a2, _DWORD *a3, _BYTE *a4, int a5, float *a6)",,,106578,106583
+10081410,,,int __cdecl sub_10081410(,,,106584,107450
+100820E0,,,void __cdecl sub_100820E0(signed int *a1),,,107451,107986
+10082A20,,,"int __cdecl sub_10082A20(int a1, int a2, int a3)",,,107987,108152
+10082E30,,,"double *__cdecl sub_10082E30(int a1, int a2, double *a3)",,,108153,108214
+10082F40,,,"int __cdecl sub_10082F40(signed int a1, int a2, double *a3, int *a4, int a5)",,,108215,108347
+100830C0,,,"BOOL __cdecl sub_100830C0(int a1, _DWORD *a2, _DWORD *a3)",,,108348,108382
+10083130,,,"double __cdecl sub_10083130(int *a1, int a2, int a3, int a4, int *a5, int a6, int a7)",,,108383,108694
+10083820,,,"double __cdecl sub_10083820(int *a1, int a2, int a3, int a4, int *a5, int a6, int a7, int a8)",,,108695,109093
+10084250,,,"double __cdecl sub_10084250(_DWORD *a1, signed int a2, double *a3, int a4, int a5, void *a6)",,,109094,109448
+100847A0,,,"double __cdecl sub_100847A0(_DWORD *a1, int a2, int a3, double *a4, double *a5, double *a6, int a7, void *a8, int *a9)",,,109449,109549
+10084980,,,"double __cdecl sub_10084980(int a1, int a2, double *a3, double *a4, double *a5, int a6, int a7, int *a8)",,,109550,110403
+10085C50,,,int __cdecl sub_10085C50(_DWORD *a1),,,110404,110618
+10085F90,,,"double __cdecl sub_10085F90(int a1, int a2, double *a3, _DWORD *a4, int *a5)",,,110619,111095
+10086A20,,,"int __thiscall sub_10086A20(int this, _DWORD *a2, int a3, _DWORD *a4, int a5)",,,111096,111134
+10086B20,,,"std::strstreambuf *__thiscall sub_10086B20(std::strstreambuf *this, char a2)",,,111135,111143
+10086C20,,,"int __fastcall sub_10086C20(int a1, int a2, int a3, int a4)",,,111144,111206
+10086D50,,,"int __stdcall sub_10086D50(int a1, const void *a2, _DWORD *a3)",,,111207,111215
+10086DB0,,,"int __thiscall sub_10086DB0(HANDLE *this, int a2)",,,111216,111225
+10086DE0,,,int __thiscall sub_10086DE0(HANDLE *this),,,111226,111248
+10086E50,,,DWORD __thiscall sub_10086E50(_DWORD *this),,,111249,111269
+10086EC0,,,int __thiscall sub_10086EC0(_DWORD *this),,,111270,111275
+10086ED0,,,"int __stdcall sub_10086ED0(int a1, DWORD dwMilliseconds, _DWORD *a3)",,,111276,111295
+10086F20,,,"int __thiscall sub_10086F20(HANDLE *this, int a2)",,,111296,111312
+10086F90,,,int __stdcall sub_10086F90(int a1),,,111313,111346
+10087080,,,int __stdcall sub_10087080(int a1),,,111347,111397
+10087170,,,"int __stdcall sub_10087170(LPCRITICAL_SECTION lpCriticalSection, int a2, struct _RTL_CRITICAL_SECTION_DEBUG *a3)",,,111398,111457
+10087280,,,int sub_10087280(),,,111458,111463
+10087290,,,"int __thiscall sub_10087290(int this, int a2)",,,111464,111507
+100873A0,,,"int __stdcall sub_100873A0(int a1, unsigned __int16 *a2, int *a3)",,,111508,111539
+10087410,,,int __thiscall sub_10087410(void *this),,,111540,111558
+10087450,,,int __thiscall sub_10087450(_DWORD *this),,,111559,111570
+10087490,,,int __thiscall sub_10087490(_DWORD *this),,,111571,111582
+100874B0,,,"int __thiscall sub_100874B0(_DWORD *this, int a2)",,,111583,111605
+100874F0,,,int sub_100874F0(),,,111606,111611
+10087500,,,int __thiscall sub_10087500(_DWORD *this),,,111612,111623
+10087520,,,int __stdcall sub_10087520(int a1),,,111624,111629
+10087530,,,int __thiscall sub_10087530(_DWORD *this),,,111630,111657
+100875B0,,,"int __thiscall sub_100875B0(_DWORD *this, int a2, _QWORD *a3, _QWORD *a4)",,,111658,111670
+10087620,,,void __thiscall sub_10087620(_DWORD *this),,,111671,111676
+10087630,,,BOOL __thiscall sub_10087630(int this),,,111677,111693
+10087660,,,"BOOL __thiscall sub_10087660(void *this, BOOL a2)",,,111694,111733
+100876F0,,,"int __thiscall sub_100876F0(_DWORD *this, int a2)",,,111734,111746
+10087740,,,BOOL __thiscall sub_10087740(int this),,,111747,111759
+10087770,,,int __thiscall sub_10087770(int this),,,111760,111776
+100877D0,,,"int __thiscall sub_100877D0(char *this, int *a2)",,,111777,111848
+10087960,,,"int __thiscall sub_10087960(char *this, LPCRITICAL_SECTION a2)",,,111849,111894
+10087AC0,,,int __thiscall sub_10087AC0(int this),,,111895,111912
+10087B30,fptc,,"void __stdcall fptc(UINT uTimerID, UINT uMsg, char *dwUser, DWORD_PTR dw1, DWORD_PTR dw2)",,,111913,111918
+10087B40,,,void __thiscall sub_10087B40(char *this),,,111919,111933
+10087BA0,,,int __thiscall sub_10087BA0(DWORD_PTR dwUser),,,111934,111961
+10087C60,,,int __thiscall sub_10087C60(int this),,,111962,111993
+10087D10,,,int __thiscall sub_10087D10(int this),,,111994,112006
+10087D50,,,MMRESULT __thiscall sub_10087D50(UINT *this),,,112007,112020
+10087D70,,,int __thiscall sub_10087D70(char *this),,,112021,112048
+10087E20,,,int __thiscall sub_10087E20(char *this),,,112049,112068
+10087E90,,,"void __thiscall sub_10087E90(int this, int a2)",,,112069,112079
+10087ED0,,,"_DWORD *__thiscall sub_10087ED0(_DWORD *this, int a2, int a3, _WORD *a4)",,,112080,112095
+10087F40,,,"void *__thiscall sub_10087F40(void *this, char a2)",,,112096,112105
+10087F70,,,int __stdcall sub_10087F70(int a1),,,112106,112128
+10088010,,,int __stdcall sub_10088010(int a1),,,112129,112147
+100880B0,,,int __stdcall sub_100880B0(int a1),,,112148,112166
+10088150,,,"int __stdcall sub_10088150(int a1, int a2, int a3)",,,112167,112172
+10088160,,,"int __stdcall sub_10088160(int a1, int a2)",,,112173,112209
+10088240,,,int __thiscall sub_10088240(int this),,,112210,112220
+10088260,,,"int __thiscall sub_10088260(_DWORD **this, int a2)",,,112221,112231
+100882B0,,,"int __stdcall sub_100882B0(int a1, __int16 **a2)",,,112232,112247
+100882F0,,,"int __thiscall sub_100882F0(_DWORD **this, int a2)",,,112248,112253
+10088310,,,int __thiscall sub_10088310(_DWORD **this),,,112254,112259
+10088320,,,int __thiscall sub_10088320(int this),,,112260,112266
+10088330,,,"int __thiscall sub_10088330(int this, int a2)",,,112267,112277
+10088360,,,"_DWORD *__thiscall sub_10088360(_DWORD *this, _DWORD *a2, int a3, _DWORD *a4, int a5)",,,112278,112300
+10088400,,,"std::strstreambuf *__thiscall sub_10088400(std::strstreambuf *this, char a2)",,,112301,112309
+10088420,,,void __thiscall sub_10088420(std::strstreambuf *this),,,112310,112325
+10088450,,,int __thiscall sub_10088450(_DWORD *this),,,112326,112361
+10088510,,,int __thiscall sub_10088510(void *this),,,112362,112368
+10088520,,,int __thiscall sub_10088520(_DWORD *this),,,112369,112375
+10088550,,,"int __thiscall sub_10088550(_DWORD *this, int a2, int a3)",,,112376,112386
+10088570,,,"unsigned int __thiscall sub_10088570(int this, int a2, int a3)",,,112387,112441
+10088690,,,void __thiscall sub_10088690(_DWORD *this),,,112442,112453
+100886C0,,,"void __thiscall sub_100886C0(int *this, int a2)",,,112454,112469
+10088700,,,"DWORD __thiscall sub_10088700(_DWORD *this, int a2)",,,112470,112480
+10088730,,,"void __thiscall sub_10088730(_DWORD *this, int a2)",,,112481,112496
+10088790,,,"int __stdcall sub_10088790(int a1, int a2)",,,112497,112503
+100887A0,,,"int __stdcall sub_100887A0(int a1, int a2, int a3, int a4, int a5, int a6, int a7, int a8)",,,112504,112513
+100887E0,,,"int __thiscall sub_100887E0(_DWORD *this, __int64 a2, int a3, int a4)",,,112514,112584
+10088960,,,int sub_10088960(),,,112585,112590
+10088980,,,"int __thiscall sub_10088980(int this, int a2, _DWORD *a3, _DWORD *a4)",,,112591,112811
+10088DE0,,,"int __thiscall sub_10088DE0(_DWORD *this, BOOL a2)",,,112812,112820
+10088E10,,,"int __stdcall sub_10088E10(int a1, _DWORD *a2)",,,112821,112831
+10088E50,,,"int __stdcall sub_10088E50(int a1, _DWORD *a2)",,,112832,112842
+10088E90,,,"int __stdcall sub_10088E90(int a1, int *a2)",,,112843,112862
+10088F10,,,"int __stdcall sub_10088F10(int a1, _DWORD *a2)",,,112863,112890
+10088FA0,,,int __cdecl sub_10088FA0(int a1),,,112891,112917
+10089000,,,"int __thiscall sub_10089000(int this, int a2, int *a3, __int64 a4, __int64 a5)",,,112918,112948
+100890D0,,,"int __stdcall sub_100890D0(int a1, int *a2)",,,112949,112954
+10089100,,,"int __stdcall sub_10089100(int a1, int *a2)",,,112955,112960
+100891C0,,,"int __stdcall sub_100891C0(int a1, int a2, _WORD *a3)",,,112961,112975
+10089270,,,HRESULT __stdcall sub_10089270(LPVOID *ppv),,,112976,112981
+10089290,,,"int __stdcall sub_10089290(int a1, const void *a2, _DWORD *a3)",,,112982,112999
+10089340,,,"_DWORD *__thiscall sub_10089340(_DWORD *this, int a2, _DWORD *a3, int a4, _DWORD *a5)",,,113000,113022
+100893A0,,,HMODULE __thiscall sub_100893A0(int this),,,113023,113037
+10089410,,,"int __stdcall sub_10089410(_DWORD *a1, _DWORD *a2)",,,113038,113049
+10089450,,,"int __stdcall sub_10089450(int a1, int a2)",,,113050,113067
+100894C0,,,"int __stdcall sub_100894C0(int a1, _DWORD *a2)",,,113068,113085
+10089560,,,int __stdcall sub_10089560(int a1),,,113086,113123
+10089610,,,int __stdcall sub_10089610(int a1),,,113124,113163
+100896C0,,,"int __stdcall sub_100896C0(LPCRITICAL_SECTION lpCriticalSection, int a2, struct _RTL_CRITICAL_SECTION_DEBUG *a3)",,,113164,113220
+100897B0,,,"int __thiscall sub_100897B0(_DWORD *this, unsigned int *a2)",,,113221,113243
+100897F0,,,"int __stdcall sub_100897F0(int a1, _DWORD *a2)",,,113244,113260
+10089880,,,"int __stdcall sub_10089880(int a1, int a2)",,,113261,113280
+100898D0,,,"int __stdcall sub_100898D0(int a1, int (__stdcall ***a2)(_DWORD, void *, int), _WORD *a3)",,,113281,113319
+100899B0,,,"int __thiscall sub_100899B0(_DWORD *this, int a2, int a3, int a4)",,,113320,113334
+10089A10,,,int __thiscall sub_10089A10(_DWORD *this),,,113335,113340
+10089A20,,,int __stdcall sub_10089A20(char *ppv),,,113341,113359
+10089A90,,,HRESULT __stdcall sub_10089A90(char *ppv),,,113360,113380
+10089B10,,,"_DWORD *__thiscall sub_10089B10(_DWORD *this, int a2, _DWORD *a3)",,,113381,113415
+10089BD0,,,"std::strstreambuf *__thiscall sub_10089BD0(std::strstreambuf *this, char a2)",,,113416,113424
+10089CC0,,,LONG __stdcall sub_10089CC0(int a1),,,113425,113430
+10089CE0,,,LONG __stdcall sub_10089CE0(volatile LONG *a1),,,113431,113441
+10089D10,,,"int __stdcall sub_10089D10(_DWORD *a1, _DWORD *a2)",,,113442,113470
+10089DC0,,,"int __stdcall sub_10089DC0(int a1, unsigned int a2, _DWORD *a3, _DWORD *a4)",,,113471,113527
+10089ED0,,,"int __stdcall sub_10089ED0(int a1, unsigned int a2)",,,113528,113541
+10089F10,,,int __stdcall sub_10089F10(int a1),,,113542,113556
+10089F40,,,int __stdcall sub_10089F40(int a1),,,113557,113570
+10089F70,,,"_DWORD *__thiscall sub_10089F70(_DWORD *this, int a2, int a3)",,,113571,113591
+10089FD0,,,"_DWORD *__thiscall sub_10089FD0(_DWORD *this, char a2)",,,113592,113600
+10089FF0,,,int __thiscall sub_10089FF0(_DWORD *this),,,113601,113608
+1008A070,,,LONG __stdcall sub_1008A070(int a1),,,113609,113614
+1008A090,,,LONG __stdcall sub_1008A090(volatile LONG *a1),,,113615,113625
+1008A0C0,,,"int __stdcall sub_1008A0C0(int a1, _DWORD *a2)",,,113626,113654
+1008A170,,,"int __stdcall sub_1008A170(int a1, unsigned int a2, _DWORD *a3, _DWORD *a4)",,,113655,113718
+1008A2F0,,,"int __stdcall sub_1008A2F0(int a1, int a2)",,,113719,113747
+1008A3C0,,,int __stdcall sub_1008A3C0(_DWORD *a1),,,113748,113758
+1008A3E0,,,"int __thiscall sub_1008A3E0(int this, int a2, int a3, int a4, int a5, _WORD *a6, int a7)",,,113759,113793
+1008A4D0,,,HMODULE __thiscall sub_1008A4D0(LPVOID *this),,,113794,113801
+1008A540,,,"int __stdcall sub_1008A540(int a1, const void *a2, _DWORD *a3)",,,113802,113817
+1008A5D0,,,int __stdcall sub_1008A5D0(int a1),,,113818,113823
+1008A5F0,,,int __stdcall sub_1008A5F0(int a1),,,113824,113829
+1008A610,,,"int __stdcall sub_1008A610(int a1, int a2, char *a3)",,,113830,113866
+1008A720,,,"int __thiscall sub_1008A720(_DWORD *this, int a2, int a3)",,,113867,113916
+1008A7E0,,,"int __thiscall sub_1008A7E0(_DWORD *this, int a2, int a3, int *pv)",,,113917,113965
+1008A8C0,,,"int __thiscall sub_1008A8C0(int this, int a2, char *a3)",,,113966,114002
+1008A9A0,,,"int __thiscall sub_1008A9A0(_DWORD *this, int a2)",,,114003,114011
+1008A9C0,,,"unsigned int __thiscall sub_1008A9C0(_DWORD *this, int a2)",,,114012,114018
+1008A9F0,,,"int __stdcall sub_1008A9F0(int a1, LPCRITICAL_SECTION lpCriticalSection, int a3)",,,114019,114080
+1008AB50,,,int __stdcall sub_1008AB50(int a1),,,114081,114101
+1008ABE0,,,int __stdcall sub_1008ABE0(_DWORD *a1),,,114102,114118
+1008AC20,,,"int __stdcall sub_1008AC20(int a1, _DWORD *a2)",,,114119,114133
+1008AC50,,,"int __stdcall sub_1008AC50(int a1, _DWORD *a2)",,,114134,114156
+1008AD00,,,"int __stdcall sub_1008AD00(_DWORD *a1, int a2)",,,114157,114184
+1008AD70,,,"int __stdcall sub_1008AD70(int a1, _DWORD *a2)",,,114185,114193
+1008AD90,,,"int __stdcall sub_1008AD90(int a1, int a2)",,,114194,114206
+1008ADC0,,,"int __stdcall sub_1008ADC0(int a1, _DWORD *a2)",,,114207,114223
+1008AE50,,,"int __stdcall sub_1008AE50(int a1, int a2)",,,114224,114229
+1008AE60,,,int __thiscall sub_1008AE60(_DWORD *this),,,114230,114235
+1008AE70,,,"int __stdcall sub_1008AE70(int a1, int a2)",,,114236,114247
+1008AEA0,,,"int __stdcall sub_1008AEA0(_DWORD *a1, int a2, int a3, int a4, int a5, int a6, int a7)",,,114248,114259
+1008AEE0,,,"int __thiscall sub_1008AEE0(int this, int a2, int a3, int a4, int a5, _WORD *a6)",,,114260,114270
+1008AF40,,,HMODULE __thiscall sub_1008AF40(int this),,,114271,114284
+1008B000,,,"int __stdcall sub_1008B000(int a1, LPVOID *a2)",,,114285,114310
+1008B090,,,"int __stdcall sub_1008B090(int a1, int a2, char a3)",,,114311,114330
+1008B110,,,int __thiscall sub_1008B110(_DWORD *this),,,114331,114348
+1008B150,,,"int __stdcall sub_1008B150(_DWORD *a1, int a2)",,,114349,114427
+1008B2B0,,,"int __stdcall sub_1008B2B0(int a1, int a2, int a3, _DWORD *a4)",,,114428,114454
+1008B300,,,int __stdcall sub_1008B300(int a1),,,114455,114498
+1008B3C0,,,int __stdcall sub_1008B3C0(int a1),,,114499,114510
+1008B3F0,,,int __stdcall sub_1008B3F0(int a1),,,114511,114523
+1008B420,,,"int __stdcall sub_1008B420(int a1, int a2, int a3, int a4, int a5, int a6, int a7, int a8)",,,114524,114529
+1008B440,,,"int __stdcall sub_1008B440(int a1, int a2)",,,114530,114535
+1008B450,,,unsigned int __thiscall sub_1008B450(int this),,,114536,114545
+1008B480,,,"int __stdcall sub_1008B480(_DWORD **a1, int *a2, int a3)",,,114546,114657
+1008B660,,,"void *__thiscall sub_1008B660(void *this, int a2)",,,114658,114664
+1008B680,,,HMODULE sub_1008B680(),,,114665,114682
+1008B6B0,,,HMODULE sub_1008B6B0(),io_assets,,114683,114696
+1008B6D0,,,"_DWORD *__thiscall sub_1008B6D0(_DWORD *this, int a2, _DWORD *a3)",,,114697,114714
+1008B710,,,"int __stdcall sub_1008B710(int a1, const void *a2, _DWORD *a3)",,,114715,114731
+1008B760,,,unsigned int __stdcall sub_1008B760(int a1),,,114732,114743
+1008B780,,,int __stdcall sub_1008B780(volatile LONG *a1),,,114744,114766
+1008B7C0,,,"int __stdcall sub_1008B7C0(int a1, _DWORD *a2)",,,114767,114776
+1008B7F0,,,int __thiscall sub_1008B7F0(void *this),,,114777,114782
+1008B800,,,_DWORD *__thiscall sub_1008B800(_DWORD *this),,,114783,114789
+1008B810,,,"int __thiscall sub_1008B810(_DWORD *this, int a2)",,,114790,114795
+1008B820,,,"int __thiscall sub_1008B820(_DWORD *this, int a2)",,,114796,114807
+1008B850,,,int __thiscall sub_1008B850(_DWORD *this),,,114808,114819
+1008B870,,,int __thiscall sub_1008B870(char *this),,,114820,114834
+1008B8B0,,,"int __thiscall sub_1008B8B0(int this, int a2)",,,114835,114862
+1008B980,,,void __stdcall sub_1008B980(LPVOID pv),,,114863,114872
+1008B9A0,,,"int __stdcall sub_1008B9A0(_DWORD *a1, int a2)",,,114873,114896
+1008BA10,,,int __stdcall sub_1008BA10(int a1),,,114897,114916
+1008BA50,,,"HANDLE *__thiscall sub_1008BA50(HANDLE *this, BOOL bManualReset)",,,114917,114923
+1008BA80,,,"__int16 *__stdcall sub_1008BA80(__int16 *a1, __int16 *a2)",,,114924,114949
+1008BAC0,,,"_WORD *__stdcall sub_1008BAC0(_WORD *a1, __int16 *a2, int a3)",,,114950,114983
+1008BB10,,,"int __stdcall sub_1008BB10(unsigned __int16 *a1, unsigned __int16 *a2)",,,114984,115013
+1008BB60,,,int __stdcall sub_1008BB60(_WORD *a1),,,115014,115025
+1008BB80,,,"int __stdcall sub_1008BB80(__int64 a1, __int64 a2, __int64 a3, __int64 a4)",,,115026,115201
+1008BF10,,,"DWORD __stdcall sub_1008BF10(void *a1, DWORD dwMilliseconds, HWND hWnd, UINT wMsgFilterMin, DWORD nCount)",,,115202,115320
+1008C140,,,"MMRESULT __cdecl sub_1008C140(UINT uDelay, UINT uResolution, LPTIMECALLBACK fptc, DWORD_PTR dwUser, UINT fuEvent)",,,115321,115326
+1008C160,,,int __thiscall sub_1008C160(int *this),,,115327,115337
+1008C170,,,"int __stdcall sub_1008C170(int a1, _DWORD *a2)",,,115338,115346
+1008C190,,,"int __stdcall sub_1008C190(_DWORD *a1, int a2, int a3, LCID a4, _DWORD *a5)",io_assets;diagnostics_errors,,115347,115399
+1008C2A0,,,"int __stdcall sub_1008C2A0(_DWORD *a1, int a2, int a3, int a4, LCID a5, int a6)",,,115400,115415
+1008C2F0,,,"_DWORD *__thiscall sub_1008C2F0(_DWORD *this, int a2, _DWORD *a3)",,,115416,115423
+1008C320,,,"int __stdcall sub_1008C320(int a1, const void *a2, _DWORD *a3)",,,115424,115432
+1008C370,,,"int __stdcall sub_1008C370(int a1, _DWORD *a2)",,,115433,115438
+1008C390,,,"int __stdcall sub_1008C390(int a1, int a2, LCID a3, _DWORD *a4)",,,115439,115444
+1008C3C0,,,"int __stdcall sub_1008C3C0(int a1, int a2, int a3, int a4, LCID a5, int a6)",,,115445,115450
+1008C3F0,,,"int __stdcall sub_1008C3F0(int a1, int a2, const void *a3, int a4, int a5, int a6, int a7, int a8, int a9)",,,115451,115476
+1008C470,,,"_DWORD *__thiscall sub_1008C470(_DWORD *this, int a2, _DWORD *a3, _DWORD *a4, int a5)",,,115477,115495
+1008C4C0,,,"char *__thiscall sub_1008C4C0(char *this, char a2)",,,115496,115510
+1008C4F0,,,HMODULE __thiscall sub_1008C4F0(char *this),,,115511,115523
+1008C5C0,,,"int __thiscall sub_1008C5C0(_DWORD **this, _DWORD *a2)",,,115524,115544
+1008C630,,,"int __thiscall sub_1008C630(_DWORD **this, _DWORD *a2)",,,115545,115565
+1008C6A0,,,"int __stdcall sub_1008C6A0(_DWORD **a1, int a2)",,,115566,115581
+1008C6E0,,,"int __stdcall sub_1008C6E0(_DWORD **a1, int a2)",,,115582,115597
+1008C720,,,"int __stdcall sub_1008C720(_DWORD **a1, int a2)",,,115598,115613
+1008C760,,,"int __stdcall sub_1008C760(_DWORD **a1, int a2)",,,115614,115629
+1008C7A0,,,"int __stdcall sub_1008C7A0(_DWORD **a1, int a2)",,,115630,115645
+1008C7E0,,,"int __stdcall sub_1008C7E0(_DWORD **a1, int a2)",,,115646,115661
+1008C820,,,"int __stdcall sub_1008C820(_DWORD **a1, int a2)",,,115662,115677
+1008C860,,,"int __stdcall sub_1008C860(_DWORD **a1, int a2, int a3, int a4, int a5, int a6)",,,115678,115693
+1008C8B0,,,"int __stdcall sub_1008C8B0(_DWORD **a1, int a2, int a3, int a4, int a5)",,,115694,115709
+1008C900,,,"int __stdcall sub_1008C900(_DWORD **a1, int a2, int a3)",,,115710,115725
+1008C940,,,"int __thiscall sub_1008C940(_DWORD **this, int (__stdcall *a2)(_DWORD **, int), int a3)",,,115726,115743
+1008C980,,,"int __stdcall sub_1008C980(_DWORD **a1, int a2)",,,115744,115752
+1008C9C0,,,"int __stdcall sub_1008C9C0(_DWORD **a1, int a2)",,,115753,115758
+1008C9E0,,,"int __stdcall sub_1008C9E0(_DWORD **a1, int a2)",,,115759,115764
+1008CA00,,,"int __stdcall sub_1008CA00(_DWORD **a1, int a2)",,,115765,115770
+1008CA20,,,"int __stdcall sub_1008CA20(_DWORD **a1, int a2, int a3)",,,115771,115786
+1008CA60,,,"int __stdcall sub_1008CA60(_DWORD **a1, int a2)",,,115787,115802
+1008CAA0,,,"int __stdcall sub_1008CAA0(_DWORD **a1, double a2)",,,115803,115820
+1008CB00,,,"int __stdcall sub_1008CB00(int a1, int a2)",,,115821,115836
+1008CB40,,,"int __stdcall sub_1008CB40(int a1, int a2)",,,115837,115852
+1008CB80,,,"int __stdcall sub_1008CB80(int a1, int a2, int a3)",,,115853,115868
+1008CBC0,,,"int __stdcall sub_1008CBC0(int a1, int a2)",,,115869,115884
+1008CC00,,,"int __stdcall sub_1008CC00(int a1, int a2, int a3)",,,115885,115900
+1008CC40,,,"int __stdcall sub_1008CC40(int a1, int a2)",,,115901,115916
+1008CC80,,,"int __stdcall sub_1008CC80(int a1, int a2, int a3)",,,115917,115932
+1008CCC0,,,"int __stdcall sub_1008CCC0(int a1, int a2)",,,115933,115948
+1008CD00,,,"int __stdcall sub_1008CD00(int a1, double a2)",,,115949,115966
+1008CD60,,,"int __stdcall sub_1008CD60(int a1, int a2)",,,115967,115982
+1008CDA0,,,"int __stdcall sub_1008CDA0(int a1, int a2)",,,115983,115998
+1008CE10,,,"int __thiscall sub_1008CE10(int this, int a2, _DWORD *a3, _DWORD *a4, int a5)",,,115999,116017
+1008CE80,,,"int __stdcall sub_1008CE80(int a1, int a2)",,,116018,116023
+1008CE90,,,"char *__thiscall sub_1008CE90(char *this, char a2)",,,116024,116038
+1008CEC0,,,HMODULE __thiscall sub_1008CEC0(int this),,,116039,116052
+1008CF40,,,"int __thiscall sub_1008CF40(int this, int *a2)",,,116053,116089
+1008CFF0,,,"int __thiscall sub_1008CFF0(_DWORD *this, int a2, int a3)",,,116090,116127
+1008D0B0,,,int __thiscall sub_1008D0B0(int this),,,116128,116143
+1008D0E0,,,int __thiscall sub_1008D0E0(char *this),,,116144,116171
+1008D140,,,int __cdecl sub_1008D140(int a1),,,116172,116177
+1008D150,,,int __cdecl sub_1008D150(int a1),,,116178,116183
+1008D160,,,int __cdecl sub_1008D160(int a1),,,116184,116189
+1008D170,,,int __cdecl sub_1008D170(int a1),,,116190,116195
+1008D1B0,,,"_DWORD *__thiscall sub_1008D1B0(_DWORD *this, int a2)",,,116196,116210
+1008D1D0,,,void __thiscall sub_1008D1D0(_DWORD *this),,,116211,116226
+1008D230,,,void __thiscall sub_1008D230(_DWORD *this),,,116227,116248
+1008D270,,,int __thiscall sub_1008D270(void *this),,,116249,116254
+1008D280,,,int __stdcall sub_1008D280(int *a1),,,116255,116268
+1008D2A0,,,int __stdcall sub_1008D2A0(int a1),,,116269,116279
+1008D2C0,,,"int __thiscall sub_1008D2C0(void *this, int a2)",,,116280,116297
+1008D300,,,"_DWORD *__thiscall sub_1008D300(_DWORD *this, int a2)",,,116298,116335
+1008D370,,,"int __thiscall sub_1008D370(_DWORD *this, void *a2)",,,116336,116354
+1008D404,,,void __cdecl sub_1008D404(LPVOID lpMem),,,116355,116360
+1008D4C0,,,int sub_1008D4C0(),,,116361,116376
+1008DB5D,failed,,"#error ""1008DC04: call analysis failed (funcsize=68)""",diagnostics_errors,,116377,116379
+1008DEDE,,,"int __cdecl sub_1008DEDE(int a1, unsigned int a2)",,,116380,116404
+1008DF26,,,void __cdecl sub_1008DF26(int a1),,,116405,116417
+1008EE43,,,"size_t __cdecl sub_1008EE43(void *Buffer, size_t ElementSize, size_t ElementCount, FILE *Stream)",io_assets,,116418,116428
+1008F56E,,,void __noreturn sub_1008F56E(),,,116429,116435
+1008F634,,,void __cdecl sub_1008F634(LPVOID lpMem),,,116436,116489
+1008FBFA,,,LPVOID __cdecl sub_1008FBFA(unsigned int a1),,,116490,116543
+10090739,,,"void __usercall __noreturn sub_10090739(EXCEPTION_POINTERS *a1@<ecx>, int a2@<ebx>, int a3@<edi>, int a4@<esi>)",,,116544,116577
+10091B4B,,,"void *__cdecl sub_10091B4B(LPVOID lpMem, SIZE_T dwBytes)",,,116578,116775
+10091E24,,,int sub_10091E24(),,,116776,116782
+10091E7A,,,SIZE_T __cdecl sub_10091E7A(_DWORD *lpMem),,,116783,116843
+1009330A,,,int sub_1009330A(),,,116844,116850
+100944CB,,,char __cdecl sub_100944CB(int a1),,,116851,116872
+100944F8,,,int sub_100944F8(),io_assets,,116873,116944
+10094640,,,int __cdecl sub_10094640(int a1),,,116945,116975
+1009469D,,,BOOL sub_1009469D(),,,116976,117019
+100951EE,,,"_DWORD *__cdecl sub_100951EE(_DWORD *a1, int a2)",,,117020,117203
+10095CC2,,,void **sub_10095CC2(),,,117204,117278
+10095E06,,,void **__cdecl sub_10095E06(void **lpMem),,,117279,117305
+10095E5C,,,void __cdecl sub_10095E5C(int a1),,,117306,117359
+10095F1E,,,"unsigned int __cdecl sub_10095F1E(unsigned int a1, void ***a2, unsigned int *a3)",,,117360,117381
+10095F75,,,"void __cdecl sub_10095F75(int a1, int a2, _BYTE *a3)",,,117382,117397
+10095FBA,,,int __cdecl sub_10095FBA(unsigned int a1),,,117398,117559
+100961C2,,,"int __cdecl sub_100961C2(int a1, unsigned int a2, unsigned int a3)",,,117560,117689
+100962E6,,,"int __cdecl sub_100962E6(int a1, _DWORD *a2, _BYTE *a3, unsigned int a4)",,,117690,117757
+10096995,,,"int __cdecl sub_10096995(int a1, int a2)",,,117758,117764
+100969AB,,,"int __cdecl sub_100969AB(int a1, int a2)",,,117765,117771
+100969C1,,,"int __cdecl sub_100969C1(int a1, int a2)",,,117772,117781
+100969EE,,,"int __cdecl sub_100969EE(int a1, int a2)",,,117782,117791
+10096D62,LONG,,LONG (__stdcall *sub_10096D62())(struct _EXCEPTION_POINTERS *ExceptionInfo),,,117792,117801
+10096D73,,,LPTOP_LEVEL_EXCEPTION_FILTER sub_10096D73(),,,117802,117807
+10096E54,,,"int __cdecl sub_10096E54(int a1, int a2)",,,117808,117873
+10097CDC,,,int sub_10097CDC(),diagnostics_errors,,117874,117881

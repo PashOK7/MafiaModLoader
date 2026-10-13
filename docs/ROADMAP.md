@@ -6,6 +6,8 @@ Agreed with the owner on 2026-10-13. Done:
   mods with hot reload, fault isolation, services, state across reloads, the bridge, crash dumps. The core mod (the
   game's live state). The MCP server (Rust): status, launch/close, any call, memory, log, mods, `where`, crash dumps,
   deploy. Offline tests (a stand-in game) and an MCP smoke test. The lab's modes (shared with mafia-ragdoll).
+- **The knowledge base** (`knowledge/`): every function of the 1.2 game from MafiaReverse, our names, notes;
+  `kb_search`, `kb_function`, named addresses in crash reports and `where`.
 
 Next, in order:
 
@@ -20,8 +22,8 @@ Next, in order:
 4. **The 64-bit sidecar**: `mml-sidecar64.exe`, started by the host, loads 64-bit mods (heavy logic past the 32-bit
    address space); shared-memory channels (lock-free rings, bulk blocks for poses and meshes) between the game and it;
    services that cross the process boundary.
-5. **Knowledge tools for agents**: the Ghidra query server (ghq, from mafia-ragdoll) and runtime `tap` (watch any
-   function's calls) behind MCP tools; the game knowledge base (`game_build.h`) grown with every finding.
+5. **More knowledge tools for agents**: the Ghidra query server (ghq, from mafia-ragdoll) and runtime `tap` (watch
+   any function's calls) behind MCP tools; the knowledge base grown with every finding.
 6. **mafia-ragdoll on the loader**: its host's duties taken by the loader, the ragdoll a mod; the physics published as
    a service (for the VR mod).
 7. **1.0**: everything checked on the 1.0 lab copy; addresses for both builds in `game_build.h`.

@@ -1,7 +1,9 @@
 # The bridge protocol
 
-TCP on `127.0.0.1` only, port 47100 (or `bridge_port` in `<game>\mml\config.json`). One JSON object per line, both
-ways. Every connection starts with `hello` and the token from `<game>\mml\bridge.json` (a new token every run):
+TCP on `127.0.0.1` only, port 47100 (or `bridge_port` in `<game>\mml\config.json`; when another process holds it,
+the next free one of the 32 after it). The port in use, the pid and the token (new every run) are in
+`<game>\mml\bridge.json`, written once the bridge listens. One JSON object per line, both ways. Every connection
+starts with `hello` and that token:
 
 ```json
 -> {"id": 1, "method": "hello", "params": {"token": "8f3c..."}}

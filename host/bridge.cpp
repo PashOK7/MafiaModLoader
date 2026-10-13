@@ -1,6 +1,7 @@
 // The bridge: what the MCP server (and any tool) talks to (see docs/PROTOCOL.md).
 //
-// TCP on 127.0.0.1 only (port 47100, or <game>\mml\config.json "bridge_port"), one JSON object per line both ways:
+// TCP on 127.0.0.1 only (port 47100, or <game>\mml\config.json "bridge_port"; the next free one when that is taken),
+// one JSON object per line both ways:
 //   -> {"id": 1, "method": "hello", "params": {"token": "..."}}       first, on every connection
 //   -> {"id": 2, "method": "mem.read", "params": {"addr": "game+0x2479C0", "size": 16}}
 //   <- {"id": 2, "result": {...}}   or   {"id": 2, "error": {"message": "..."}}
@@ -218,18 +219,38 @@ void Serve(SOCKET s) {
     closesocket(s);
 }
 
+// The first free port from the configured one on (another game with the loader, or a test harness, may hold it).
+SOCKET Listen() {
+    for (int port = g_port; port < g_port + 32; port++) {
+        SOCKET ls = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (ls == INVALID_SOCKET) return ls;
+        BOOL excl = TRUE;
+        setsockopt(ls, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, reinterpret_cast<const char *>(&excl), sizeof excl);
+        sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(static_cast<u_short>(port));
+        inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+        if (!bind(ls, reinterpret_cast<sockaddr *>(&addr), sizeof addr) && !listen(ls, 4)) {
+            if (port != g_port) HWARN("bridge: port %d is taken, using %d", g_port, port);
+            g_port = port;
+            return ls;
+        }
+        closesocket(ls);
+    }
+    return INVALID_SOCKET;
+}
+
 DWORD WINAPI ServerThread(void *) {
     WSADATA wsa;
     WSAStartup(MAKEWORD(2, 2), &wsa);
-    SOCKET ls = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(static_cast<u_short>(g_port));
-    inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
-    if (bind(ls, reinterpret_cast<sockaddr *>(&addr), sizeof addr) || listen(ls, 4)) {
-        HWARN("bridge: cannot listen on 127.0.0.1:%d (%d): is another game with the loader running?", g_port, WSAGetLastError());
+    SOCKET ls = Listen();
+    if (ls == INVALID_SOCKET) {
+        HWARN("bridge: cannot listen on 127.0.0.1:%d..%d (%d)", g_port, g_port + 31, WSAGetLastError());
         return 0;
     }
+    // written once the port is known: clients read the port and the token from it
+    json info = {{"port", g_port}, {"token", g_token}, {"pid", GetCurrentProcessId()}, {"game_dir", GameDir()}, {"api", MML_API_VERSION}};
+    std::ofstream(MmlDir() + "bridge.json") << info.dump(2);
     HLOG("bridge: listening on 127.0.0.1:%d", g_port);
     for (;;) {
         SOCKET s = accept(ls, nullptr, nullptr);
@@ -256,8 +277,7 @@ void BridgeStart() {
     char tok[33];
     snprintf(tok, sizeof tok, "%08x%08x%08x%08x", rd(), rd(), rd(), rd());
     g_token = tok;
-    json info = {{"port", g_port}, {"token", g_token}, {"pid", GetCurrentProcessId()}, {"game_dir", GameDir()}, {"api", MML_API_VERSION}};
-    std::ofstream(MmlDir() + "bridge.json") << info.dump(2);
+    DeleteFileA((MmlDir() + "bridge.json").c_str());   // a stale one would send clients to the last run's port
     CreateThread(nullptr, 0, ServerThread, nullptr, 0, nullptr);
 }
 

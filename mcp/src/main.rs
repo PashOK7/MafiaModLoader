@@ -9,6 +9,7 @@
 mod bridge;
 mod crash;
 mod game;
+mod kb;
 
 use rmcp::{
     ServerHandler, ServiceExt,
@@ -115,6 +116,32 @@ struct DeployArgs {
     reload: Option<bool>,
 }
 
+#[derive(Deserialize, JsonSchema)]
+struct KbSearchArgs {
+    /// Text to find (case-insensitive) in a function's name, class, signature, topics or the strings it uses:
+    /// "C_mission", "scene.i3d", "savegame", "Hit", or an address fragment.
+    query: String,
+    /// "game.exe" or "ls3df.dll" (default both).
+    #[serde(default)]
+    module: Option<String>,
+    /// At most this many (default 40).
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct KbFunctionArgs {
+    /// An address of the 1.2 image ("5409D0", "0x100AC2E", "game+0x1409D0", "ls3d+5AC2E": any address inside the
+    /// function) or a name ("C_mission::Open").
+    key: String,
+    /// Include the decompiled code (read from the reverse folder; default true).
+    #[serde(default)]
+    code: Option<bool>,
+    /// At most this many lines of code (default 400).
+    #[serde(default)]
+    max_lines: Option<usize>,
+}
+
 #[derive(Clone)]
 struct Server {
     bridge: Arc<bridge::Bridge>,
@@ -209,7 +236,7 @@ impl Server {
     /// What the game's main thread is doing now (sampled 5 times): for a hang, a loading screen, a pause.
     #[tool(name = "where", annotations(read_only_hint = true))]
     async fn main_thread_where(&self) -> Out {
-        self.bridge.call("where", json!({}), 5000).await.map(|v| v.as_str().map(String::from).unwrap_or_else(|| pretty(&v)))
+        self.bridge.call("where", json!({}), 5000).await.map(|v| kb::annotate(&v.as_str().map(String::from).unwrap_or_else(|| pretty(&v))))
     }
 
     /// Start the game (Game.exe in the game's folder) and wait for the loader's bridge.
@@ -254,7 +281,25 @@ impl Server {
     /// region (freed? decommitted?), the code addresses on the crashing thread's stack.
     #[tool(annotations(read_only_hint = true))]
     async fn crash_inspect(&self, Parameters(a): Parameters<CrashArgs>) -> Out {
-        crash::inspect(a.file).map(|v| pretty(&v))
+        crash::inspect(a.file).map(|v| kb::annotate(&pretty(&v)))
+    }
+
+    /// Search the game's knowledge base (every function of Game.exe and LS3DF.dll 1.2 from the full decompiles:
+    /// names, classes, signatures, topics, the strings each uses; our own names from knowledge/<module>/names.csv;
+    /// the matching lines of the notes in knowledge/notes). Start here for any question about the game.
+    #[tool(annotations(read_only_hint = true))]
+    async fn kb_search(&self, Parameters(a): Parameters<KbSearchArgs>) -> Out {
+        kb::search(&a.query, a.module.as_deref(), a.limit.unwrap_or(40)).map(|v| pretty(&v))
+    }
+
+    /// One function of the game: its facts, callers and callees (named where known), and its decompiled code.
+    #[tool(annotations(read_only_hint = true))]
+    async fn kb_function(&self, Parameters(a): Parameters<KbFunctionArgs>) -> Out {
+        let v = kb::function(&a.key, a.code.unwrap_or(true), a.max_lines.unwrap_or(400))?;
+        let code = v.get("code").and_then(|c| c.as_str()).map(String::from);
+        let mut head = v.clone();
+        if let Some(o) = head.as_object_mut() { o.remove("code"); }
+        Ok(match code { Some(c) => format!("{}\n\n{}", pretty(&head), c), None => pretty(&head) })
     }
 
     /// Copy the build (build/x86/out: the loader and the mods) into the game's folder, and reload the mods in the
@@ -281,7 +326,9 @@ game_status first (is it running?); game_launch / game_close start and stop it. 
 `call` reaches every bridge method and mod command (commands_list lists them): the core mod answers \
 `game`, `player`, `humans`, `actors`, `frame`, `frames.find`. mem_read / mem_write read and write any address \
 (\"game+0x1762A0\", \"ls3d+1AAE0\"). The loop for a mod: edit -> build (cmake --build --preset x86-release) -> \
-deploy -> call its commands -> log_tail. After a crash: crash_list, crash_inspect, log_tail with previous.";
+deploy -> call its commands -> log_tail. After a crash: crash_list, crash_inspect, log_tail with previous. \
+What a game function does, where a thing lives: kb_search, then kb_function (facts, calls, decompiled code); \
+knowledge/notes/ holds the hand-written findings.";
 
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for Server {

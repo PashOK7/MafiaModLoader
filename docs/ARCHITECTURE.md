@@ -51,7 +51,13 @@ except the intro videos), on the game thread, where `LoadLibrary` is safe.
 A separate 64-bit process, so it outlives the game: it launches and closes the game, reads the loader's log file
 when the game is gone, opens crash dumps (`minidump`, Mozilla's), and deploys builds. It talks to the host through
 the bridge only. Tools: `game_status`, `game_launch`, `game_close`, `call` (any method), `commands_list`, `mem_read`,
-`mem_write`, `log_tail`, `mods_list`, `mod_reload`, `where`, `crash_list`, `crash_inspect`, `deploy`.
+`mem_write`, `log_tail`, `mods_list`, `mod_reload`, `where`, `crash_list`, `crash_inspect`, `deploy`, `kb_search`,
+`kb_function`.
+
+The knowledge base (`kb.rs`, `knowledge/README.md`) is loaded once from `knowledge/<module>/*.csv`: functions sorted
+by address (an address finds the function holding it), the call graph both ways, our names; the decompiled code is
+read on demand from `reverse_dir` (`mml.config.json`) by the function's line range. `crash_inspect` and `where` pass
+their text through it, so `Game.exe+0x...` and `LS3DF.dll+0x...` get the function's name.
 
 ## Files in the game folder
 
@@ -59,7 +65,7 @@ the bridge only. Tools: `game_status`, `game_launch`, `game_close`, `call` (any 
 <game>\MafiaModLoader.asi           the host
 <game>\dinput8.dll                  Ultimate ASI Loader (pinned, tools/deps.py)
 <game>\mml\config.json              optional: {"bridge_port": 47100}
-<game>\mml\bridge.json              written at start: port, token (new every run), pid
+<game>\mml\bridge.json              written once the bridge listens: port (47100 or the next free), token (new every run), pid
 <game>\mml\mods\<id>\mod.json, ...  the mods
 <game>\mml\live\                    the loaded copies of the mods' DLLs
 <game>\mml\logs\mml.log             this run's log (mml.prev.log: the previous run's)

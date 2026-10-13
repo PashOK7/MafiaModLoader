@@ -66,8 +66,21 @@ def main():
     check('initialize: the server tells agents how to use it', 'game_status' in (c.info.get('instructions') or ''), c.info)
     tools = {t['name'] for t in c.request('tools/list')['tools']}
     want = {'game_status', 'call', 'commands_list', 'mem_read', 'mem_write', 'log_tail', 'mods_list', 'mod_reload',
-            'where', 'game_launch', 'game_close', 'crash_list', 'crash_inspect', 'deploy'}
+            'where', 'game_launch', 'game_close', 'crash_list', 'crash_inspect', 'deploy', 'kb_search', 'kb_function'}
     check('tools/list has every tool', want <= tools, want - tools)
+
+    ok, text = c.tool('kb_search', {'query': 'scene.i3d', 'module': 'game.exe'})
+    check('kb_search: by a string the function uses', ok and 'C_mission::Open' in text, text)
+    ok, text = c.tool('kb_search', {'query': 'pedCarHit'})
+    check('kb_search: our own names (names.csv)', ok and '0044CA50' in text, text)
+    ok, text = c.tool('kb_search', {'query': 'ISD0'})
+    check('kb_search: the notes', ok and 'notes/rw_data.md' in text, text)
+    ok, text = c.tool('kb_function', {'key': 'game+0x1409D0', 'max_lines': 30})
+    check('kb_function: by an address inside, with callers', ok and 'C_mission::Open' in text and '"callers"' in text, text)
+    if 'code_unavailable' not in text:
+        check('kb_function: the decompiled code from the reverse folder', 'missions' in text, text[-400:])
+    ok, text = c.tool('kb_function', {'key': 'C_human::Hit', 'code': False})
+    check('kb_function: by name', ok and '005762A0' in text, text)
 
     harness = subprocess.Popen([os.path.join(HARNESS, 'mml_harness.exe'), '--seconds', '60'], cwd=HARNESS,
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
