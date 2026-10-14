@@ -21,8 +21,9 @@ What is done, what comes next and later, and what is known to be missing or wron
 - The loader is measured by how easily another agent writes a mod with it (2026-10-13). Older mods
   (TrackMafia: lap telemetry, a ghost car, an overlay; `knowledge/notes/game.md`, "Cars") are not ported here: they
   show what every such mod had to build for itself, and so what the loader must give instead.
-- The toolkit is built for a ragdoll, shader water, realistic smoke and a VR mod written by another agent
-  (2026-10-14). Those mods are not written here; mafia-ragdoll is not ported (its code is the reference).
+- The toolkit is built for whatever mod a user can think of, written by another agent (2026-10-14); its measuring
+  cases: a ragdoll, shader water, realistic smoke, VR, fishing, skateboarding, a working airplane, achievements.
+  Those mods are not written here; mafia-ragdoll is not ported (its code is the reference).
 
 ## Done
 
@@ -132,23 +133,30 @@ What is done, what comes next and later, and what is known to be missing or wron
 
 ## Next, by importance
 
-**The goal** (the owner, 2026-10-14): the toolkit that lets another agent write **a ragdoll, shader water, realistic
-smoke and a VR mod** on the loader. Those mods are not written here, and mafia-ragdoll is not ported: it already has a
-ragdoll (Jolt), water and smoke (a Direct3D 11 bridge, PhysX 2.8.4, NVIDIA Flow) on a host of its own, and its code
-is the reference for what each service below must do (`W:\github\mafia-ragdoll\src`, read only). Every service lands
-with an example mod (`mods/examples`), a section in `docs/MODDING.md` and its offline test, is seen working in the
-1.2 lab, and in the 1.0 lab once its addresses are found there (1.2 first, as the builds' decision says). Each item
-names who needs it (R ragdoll, W water, S smoke, V VR, A the agents themselves) and its reference.
+**The goal** (the owner, 2026-10-14): a toolkit strong enough for whatever mod a user can think of, written by another
+agent. The measuring cases span the range: engine-deep mods (**a ragdoll, shader water, realistic smoke, VR**) and
+gameplay mods (**fishing, skateboarding, a working airplane, achievements**). None of them is written here, and
+mafia-ragdoll is not ported: it already has a ragdoll (Jolt), water and smoke (a Direct3D 11 bridge, PhysX 2.8.4,
+NVIDIA Flow) on a host of its own, and its code is the reference for what several services below must do
+(`W:\github\mafia-ragdoll\src`, read only). Every service lands with an example mod (`mods/examples`), a section in
+`docs/MODDING.md` and its offline test, is seen working in the 1.2 lab, and in the 1.0 lab once its addresses are
+found there (1.2 first, as the builds' decision says). Each item names who needs it (R ragdoll, W water, S smoke,
+V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselves) and its reference.
 
-### Tier 1: what blocks the four mods
+### Tier 1: foundations every large mod stands on
 
-1. **A heavy mod's lifecycle** (R W S V; small). A mod's own DLLs (PhysX, Flow, FleX, OpenVR, Jolt as a DLL) found
-   in its folder: the loader loads a copy from `mml\live\`, so today they are searched next to the copy and not
-   found; the mod's folder goes into the DLL search path. A clean unload: what a mod made (Direct3D 11 objects,
-   physics worlds, threads) released before its DLL goes, the address space each reload leaks measured and logged
-   (mafia-ragdoll lost its Direct3D 11 device after about 20 reloads). Third-party libraries for mods pinned by
-   `tools/deps.py` (Jolt first) and shaders compiled in a mod's build (fxc or dxc in CMake, bytecode beside the DLL).
-2. **Render events and the graphics bridge** (W S V; R for posing). Events around the scene's drawing: before and
+1. **A heavy mod's lifecycle** (all; small). A mod's own DLLs (PhysX, Flow, FleX, OpenVR, Jolt as a DLL) found in
+   its folder: the loader loads a copy from `mml\live\`, so today they are searched next to the copy and not found;
+   the mod's folder goes into the DLL search path. A clean unload: what a mod made (Direct3D 11 objects, physics
+   worlds, threads, the game's objects) released before its DLL goes, the address space each reload leaks measured
+   and logged (mafia-ragdoll lost its Direct3D 11 device after about 20 reloads). Third-party libraries for mods
+   pinned by `tools/deps.py` (Jolt first) and shaders compiled in a mod's build (fxc or dxc in CMake).
+2. **A mod's own files in the game** (F K P C S W, any mod with new content). Models (`.4ds`), textures, animations
+   (`.5ds`), sounds, tables and menu definitions shipped in the mod's folder and opened by the game by name, as if
+   they were in its archives (the archives' open in `rw_data.dll`, `dtaOpen`, answered from the mods' folders first);
+   a mod replacing one of the game's files (a texture, a table) while it is loaded; the order when two mods ship the
+   same name; a file changed on disk seen again where the engine allows (or said where it does not).
+3. **Render events and the graphics bridge** (W S V; R for posing). Events around the scene's drawing: before and
    after `I3D_driver::Render` (LS3DF `0x62030`; a ragdoll writes its bones right before it: the game re-poses in
    between), at stage 1 (the 3D world drawn, the HUD not yet), at Present. The game's Direct3D 9Ex device (dxwrapper);
    one Direct3D 11 device beside it on the same adapter, shared by every mod: the frame's colour and depth (the depth
@@ -157,47 +165,76 @@ names who needs it (R ragdoll, W water, S smoke, V VR, A the agents themselves) 
    effects target, composited over the frame; GPU timers per pass; the 2D pass (HUD, menus) drawn into a target of a
    mod's when it asks (a VR mod shows it on a panel). One owner for the depth swap and the composite: two mods doing
    them each would break each other, so it is the loader's. Reference: mafia-ragdoll `gfx.cpp`, `shaders/frame.hlsli`.
-3. **The scene drawn from another camera** (W V). The mission's scene drawn a second time into a target, with a
+4. **The scene drawn from another camera** (W V). The mission's scene drawn a second time into a target, with a
    camera and projection of the mod's (a mirrored camera and a clip plane for a reflection, two eyes with asymmetric
    projections for VR), everything the drawing touches put back after (the camera's sector held, the sound listener
    detached, lens flares kept out, the camera's bytes restored). The game's own geometry hidden or replaced around
    Render (the water's face groups; materials found by their textures' names). Reference: `reflection.cpp`,
    `scene_camera.cpp`, `game_water.cpp` (hiding).
-4. **Measuring the frame** (W S V R; from Later). Each mod's time in each event and pass (CPU), the GPU timers of
-   item 2, the game thread's sampling profiler, on the bridge and MCP: water and VR live within a frame's budget
+5. **Measuring the frame** (W S V R P; from Later). Each mod's time in each event and pass (CPU), the GPU timers of
+   item 3, the game thread's sampling profiler, on the bridge and MCP: water and VR live within a frame's budget
    (11 ms at 90 Hz). Reference: `prof.h`, `gpu_timer.h`, `sampler.cpp`.
 
-### Tier 2: the game's world as data for mods
+### Tier 2: the game's world as data, read and changed
 
-5. **People and their skeletons** (R; S W as pushers). Every `C_human`, the traffic system's pooled ones too, as a
-   list (the constructor's hook already sends `HUMAN_CREATED`; no list is kept); traffic pedestrians' elements and
-   their own Hit (`0x4588D0`) as events (they do not go through `C_human::Hit`); the bones by name, a pose read in
-   one call (the 18 joints, the model root), written back before Render (item 2); handing a body back to the game
-   (getting up). 1.0's fields for bullets, getting up and trams (zeros today). Reference: the host's `listHumans`,
-   `ragdoll.cpp` (`PoseSnap`), `getup.cpp`, `hits.cpp`.
-6. **Shots, impacts, explosions as events** (R W S). A bullet's path and what it struck (the game's shot queue,
-   `NewShoot` 0x5A84A0), explosions (place, radius, force), a car striking a person or a thing, falls: today only a
-   hit on a `C_human` is told. Reference: `hits.cpp`, `knock.cpp`, core.cpp's shot hook.
-7. **The world's geometry** (R S W). The file each loaded model came from (hooked from the process's start: only the
-   loader is there that early); the triangles of what the game draws around a point (the visuals, cached, fed a few
-   pieces a tick), the game's collision grids (static primitives, dynamic objects with their owners), cars' meshes
-   posed with their parts, an index of every `.4ds` in the archives and its parser; one scan shared by every mod.
-   Reference: `scenery.cpp`, `visual_meshes.cpp`, `collision.cpp`, `game_collision.cpp`, `model_index.cpp`,
-   `model4ds.cpp`, `car_meshes.cpp`.
-8. **The camera** (V R; W S read it). The game's camera read and set (position, orientation, field of view,
-   near/far), its projection replaced after the camera's own update (VR's per-eye frusta), the view decoupled from
-   the aim (a head turns, the gun does not), a free camera for looking at things. Reference: `freecam.cpp`,
-   `ragcam.cpp`, `scene_camera.cpp`.
-9. **The game's effects as data** (S W). Particle emitters and the car exhaust (`0x4DEE90`) read, moved or replaced;
-   `tables\particles.def`'s records; the weather's parameters; the scene's lights. Reference: `smoke_game.cpp`,
-   `effects.cpp`, `frame_life.cpp`, `scene_light.cpp`.
-10. **A tuning panel** (W S R V). A mod's settings shown and changed live in the game: a page made from its
-    `config.json` (sliders, check boxes, selectors from the menus' constructor), so dozens of parameters (the water's
-    layers) need no page written by hand.
+6. **People, skeletons, animations** (R K F; S W as pushers). Every `C_human`, the traffic system's pooled ones too,
+   as a list (the constructor's hook already sends `HUMAN_CREATED`; no list is kept); traffic pedestrians' elements
+   and their own Hit (`0x4588D0`) as events; the bones by name, a pose read in one call (the 18 joints, the model
+   root), written back before Render (item 3); handing a body back to the game (getting up); the game's animations
+   and a mod's own (item 2) played on a person or a model, blended, stopped, their state read. 1.0's fields for
+   bullets, getting up and trams (zeros today). Reference: the host's `listHumans`, `ragdoll.cpp` (`PoseSnap`),
+   `getup.cpp`, `hits.cpp`; the scripts' `human_playanim`, `model_playanim`.
+7. **What happens, as events** (R W S C). A bullet's path and what it struck (the game's shot queue, `NewShoot`
+   0x5A84A0), explosions (place, radius, force), a car striking a person or a thing, falls, deaths with who killed
+   whom, a car entered, left or stolen, an item picked up, money changed, a mission's objective done, the mission
+   won or failed: today only a hit on a `C_human` and the missions' opening and closing are told. Reference:
+   `hits.cpp`, `knock.cpp`, core.cpp's shot hook.
+8. **The world's geometry and questions about it** (R S W K P F). The file each loaded model came from (hooked from
+   the process's start: only the loader is there that early); the triangles of what the game draws around a point
+   (cached, fed a few pieces a tick), the collision grids (static primitives, dynamic objects with their owners),
+   cars' meshes posed with their parts, an index of every `.4ds` in the archives and its parser; one scan shared by
+   every mod. Questions in `mml.h` (not only C++'s `game.h`): a ray, a sweep, what overlaps a box or sphere, the
+   ground's and the water's height under a point, the actors near a point. Reference: `scenery.cpp`,
+   `visual_meshes.cpp`, `collision.cpp`, `game_collision.cpp`, `model_index.cpp`, `model4ds.cpp`, `car_meshes.cpp`.
+9. **The camera** (V R K P). The game's camera read and set (position, orientation, field of view, near/far), its
+   projection replaced after the camera's own update (VR's per-eye frusta), the view decoupled from the aim, a camera
+   of a mod's own following its own rules (a skateboard's, a plane's chase camera), a free camera; a world point to
+   the screen and a screen point to a ray (markers, aiming). Reference: `freecam.cpp`, `ragcam.cpp`,
+   `scene_camera.cpp`.
+10. **The game's state and progress** (C F P). Money, health, the inventory and ammo (read and changed), the
+    mission's objectives and its outcome, the game's statistics (kills, cars stolen, distance), the profile's
+    progress (chapters, freeride unlocks); a mod's own items in the items' table (a fishing rod, a fish).
+11. **The game's effects as data** (S W P). Particle emitters and the car exhaust (`0x4DEE90`) read, moved or
+    replaced; `tables\particles.def`'s records; the weather's parameters; the scene's lights. Reference:
+    `smoke_game.cpp`, `effects.cpp`, `frame_life.cpp`, `scene_light.cpp`.
 
-### Tier 3: what only exists for 64 bits
+### Tier 3: building blocks for new things in the game
 
-11. **The 64-bit sidecar** (the owner's decision; S R with PhysX 5, V if a runtime needs it): `mml-sidecar64.exe`,
+12. **Props** (F K P R). Models placed in the world without being actors (a rod, a fish, a board), moved every frame,
+    attached to a bone or a car's part and detached, shown, hidden, removed; with a collision shape when asked
+    (the scripts' `model_create` and `create_physicalobject` are partial cases).
+13. **Sound** (F K P C S W). The game's sounds and a mod's own (item 2) played in 2D or in 3D at a point or attached
+    to a frame, looped, their volume and pitch changed live (an engine's note follows its revolutions), stopped;
+    the music.
+14. **Control** (K P F V). A mod's keys and buttons taken so the game does not also act on them; actions of a mod's
+    own, bindable in the game's controls menu like its own; the player's movement handed to a mod (a skateboard
+    moves him, the game's walking stands aside) and given back; a vehicle's physics replaced by a mod's (a plane's
+    flight on a car's or an airplane actor's body: `C_airplane` exists); entering, leaving and seats of a mod's
+    vehicle (the game's using-objects).
+15. **Interaction** (F P C). Use-points with the game's own prompt ("Fish" at the water's edge), zones with enter and
+    leave events, timers of the game's clock (they stop with the pause).
+16. **The HUD** (C F P V). Pictures and textures in the 2D layer (an achievement's icon, a plane's instruments:
+    drawing has text, lines and rectangles only), notifications in the game's style (its console, `console_addtext`,
+    with a mod's own texts), markers at world positions, the compass's and the map's target.
+17. **A mod's state in the game's saves** (C F). A mod's data written with each save slot and read back when that
+    slot loads (and per profile), so its state follows the player's game, not only its data folder.
+18. **A tuning panel** (all). A mod's settings shown and changed live in the game: a page made from its
+    `config.json` (sliders, check boxes, selectors from the menus' constructor), so dozens of parameters need no page
+    written by hand.
+
+### Tier 4: what only exists for 64 bits
+
+19. **The 64-bit sidecar** (the owner's decision; S R with PhysX 5, V if a runtime needs it): `mml-sidecar64.exe`,
     started and watched by the host, loads 64-bit mods (the same kind of manifest, built for x64), their faults
     isolated and their reloads hot as 32-bit mods'. Shared memory between the processes: channels a frame (the
     game's state out: actors, bones, car bodies; results back: poses, forces) and calls both ways for what is rare;
@@ -206,22 +243,22 @@ names who needs it (R ragdoll, W water, S smoke, V VR, A the agents themselves) 
     is fixed against that measurement, not before. Whether the VR runtimes (OpenXR, OpenVR) take a 32-bit process
     is to be checked: OpenVR ships a 32-bit library; if OpenXR's runtimes do not, VR is the sidecar's second user.
 
-### Tier 4: the agent's own tools (to write and debug those mods)
+### Tier 5: the agent's own tools (to write and debug those mods)
 
-12. **Waiting for what happens** (A). The bridge keeps the last events (missions opened, loaded, closed; actors
-    destroyed; people hit and killed; shots; programs ended; mods faulted) with a sequence number; `events.since
-    {seq}`, `events.wait {type, filter, timeout_ms}`, MCP `wait` ("until the mission is loaded", "until he dies").
-13. **`native.call`** (A). Any game function called from the bridge by its address and convention (thiscall,
+20. **Waiting for what happens** (A). The bridge keeps the last events (item 7's, missions, actors destroyed,
+    programs ended, mods faulted) with a sequence number; `events.since {seq}`, `events.wait {type, filter,
+    timeout_ms}`, MCP `wait` ("until the mission is loaded", "until he dies").
+21. **`native.call`** (A). Any game function called from the bridge by its address and convention (thiscall,
     stdcall, cdecl, fastcall; integer, float, pointer and string arguments; a fault guarded): a hypothesis in one call.
-14. **Hardware watchpoints** (A; from Later). Who writes or reads a field, on the bridge and MCP; the handler never
+22. **Hardware watchpoints** (A; from Later). Who writes or reads a field, on the bridge and MCP; the handler never
     reads the watched address (a recursion crashed the game once). Reference: `hwwatch.cpp`.
-15. **Tests in the real game, as scripts of steps** (A). Python over the bridge (`tests/game/`): start, spawn,
-    teleport, input, wait for an event, check a value, screenshot; pass or fail. First cases the four mods need: a
-    car hits a person, a body falls into the river, a car's exhaust in a tunnel, a camera turned.
-16. **Structures by name** (A). `inspect <addr> as C_human` (and other classes): fields named and typed from
+23. **Tests in the real game, as scripts of steps** (A). Python over the bridge (`tests/game/`): start, spawn,
+    teleport, input, wait for an event, check a value, screenshot; pass or fail. First cases from the measuring mods:
+    a car hits a person, a body falls into the river, an exhaust in a tunnel, a camera turned, a prop held in a hand.
+24. **Structures by name** (A). `inspect <addr> as C_human` (and other classes): fields named and typed from
     `game.h` and the decompile's layouts, kept in `knowledge/` as tables of offsets.
-17. **Crash triage in one call** (A; from Later): the named stack, the log's last lines and the last taps' calls.
-18. **Orders for the people made** (A, for test scenes). Walk or drive to a place, follow, attack, flee: the AI's own
+25. **Crash triage in one call** (A; from Later): the named stack, the log's last lines and the last taps' calls.
+26. **Orders for the people made** (A, for test scenes). Walk or drive to a place, follow, attack, flee: the AI's own
     jobs and the mission commands that give them, as `world.*`; the scripts' events (`setplayerfireevent`...) to a
     program of the loader's; people's models listed.
 
@@ -246,28 +283,34 @@ names who needs it (R ragdoll, W water, S smoke, V VR, A the agents themselves) 
   `freeridenoc`; a mission's own); `GAME_NIGHTMISSION` / `C_game::SetNightMission` (0x47B590, `C_game + 0x2D44`)
   only switch what lights do at night (cars' lamps), not the sky (MafiaOnline's notes agree). Night is the night
   freeride: the start takes it (done, 2026-10-14).
-- **"A knock-down that always works"**: a ragdoll mod's own work, on items 5 and 6.
+- **"A knock-down that always works"**: a ragdoll mod's own work, on items 6 and 7.
 - **"Scenarios run by the loader"** (a file of steps the loader plays): a second scripting engine inside the game for
-  what a script outside does with the bridge; what was missing is waiting for an event (item 12). Now item 15, in
+  what a script outside does with the bridge; what was missing is waiting for an event (item 20). Now item 23, in
   Python.
 - **"LuaJIT script mods"** and **"`lua.eval` for agents"**: argued as "a hypothesis tried in five lines without
   building a DLL", which `mem_read` / `mem_write`, `tap`, the script machine and hot reload now cover; the one thing
-  missing, calling any game function by its address, is item 13. Parked until someone wants mods written in Lua
+  missing, calling any game function by its address, is item 21. Parked until someone wants mods written in Lua
   (`tools/deps.py` still pins LuaJIT): to be confirmed with the owner.
 - **"The 64-bit sidecar"** was taken out as having no user, and put back the same day by the owner: modern libraries
-  (the latest PhysX first) exist only for 64 bits; item 11.
+  (the latest PhysX first) exist only for 64 bits; item 19.
 
 2026-10-14, the second (the owner: the toolkit for a ragdoll, water, smoke and VR mod; old tasks kept, duplicates
 merged, sorted by importance):
 
 - **"mafia-ragdoll on the loader"** (Later): taken out. The ragdoll is not ported; what its host and core do for
-  themselves became items 1 to 9 as services for any mod, mafia-ragdoll's code their reference.
-- **"Events to MCP as they happen"** and the events for mods: the mods' events are items 5, 6 (people, shots); the
-  agents' stream is item 12, which carries them too.
-- **"Profiling"**, **"Hardware watchpoints"**, **"Crash triage"** moved up from Later (items 4, 14, 17): water and VR
+  themselves became items 1, 3 to 9 and 11 as services for any mod, mafia-ragdoll's code their reference.
+- **"Events to MCP as they happen"** and the events for mods: the mods' events are items 6, 7 (people, what happens);
+  the agents' stream is item 20, which carries them too.
+- **"Profiling"**, **"Hardware watchpoints"**, **"Crash triage"** moved up from Later (items 5, 22, 25): water and VR
   need the frame's budget measured; watchpoints and triage are how engine work is debugged.
-- **"Orders for the people made"** moved down to the agents' tools (item 18): none of the four mods needs it, test
+- **"Orders for the people made"** moved down to the agents' tools (item 26): none of the four mods needs it, test
   scenes do.
+
+- **The goal widened** (the owner: "something silly too: fishing, skateboarding, a working airplane, achievements;
+  the toolkit must be strong enough for anything a user thinks of"): what such mods need and the four engine-deep
+  ones did not became items 2 (a mod's own files in the game), 10 (the game's state and progress) and Tier 3 (props,
+  sound, control, interaction, the HUD, a mod's state in the saves); animations joined item 6, queries item 8,
+  the game's events item 7, a mod's own camera and world-to-screen item 9.
 
 ## Known gaps
 
