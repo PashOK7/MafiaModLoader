@@ -262,10 +262,22 @@ autosplitter; kept outside it, not ported). Checked against the above:
   frame to `1 - (1 - a)^(ms/16)`. The camera frame both builds' menus move: the scene's `+0x17C` (`GameCamera`).
   Measured in the 1.0 lab by that frame (its sway included, so the 90 % mark is noise): 10 / 50 % of one flight at
   0.74 / 2.66 s at 62.5 fps, 0.04 / 0.16 s at 1315 fps, 0.76 / 2.79 s fixed at 1284 fps.
-- **code** Functions with decay-like constants on lines without the time (a scan of the decompile, leads to check in
-  the game, not faults): 0x568540 (0.92), 0x58EAD0 (0.93), `C_Vehicle::Tick` 0x4DF9A0, `C_human::MovementIntern`
-  0x57B660, `C_player::AI` 0x5937B0, `C_fire::Tick` 0x55DA80, `C_Vehicle::UpdateWheelParticles` 0x4DE500 and
-  others (30 in all; `G_Camera::Tick` among them was read: timed).
+- **code** A scan of the decompile for what is done once a call instead of by the time (decay `x *= c`, smoothing
+  `x += (y - x) * c`, a fixed step `x += c`, in functions that get the frame's time), each hit read (2026-10-14):
+  - `bendable_plant_ai` 0x58EAD0 (st0rm94's name; the bushes and trees that bend): the force is integrated by the
+    time (`* ms * 0.001`) but the bend's velocity is damped `* 0.93` once a call: above 62.5 fps the plants stop
+    swinging many times sooner. Not seen in the game yet.
+  - `C_player::AI_walk` 0x58F4B0: the turn on foot is `mouseSensitivity * 5 * held[18]` a frame (0.05 of it in the
+    sniper view). A mouse's value is its counts since the last read, so its sum does not depend on the rate; an
+    analogue axis (a gamepad's stick through IJoy) held at a value would turn faster with the frame rate. Not checked
+    how IJoy hands the axis over.
+  - Read and not a fault: `G_Camera::Tick` (timed, cut to 83 ms), `C_human::TickWeaponEffect` and `C_player::AI`'s
+    timers (timed), the pedestrians' tick 0x452CD0 (its 0.8 / 0.75 are one-off weights, its `+0.8` a probe's height),
+    `C_Break_plain_glass::Tick` 0x5611B0 (`+0.05` once on a collision), and the rest of the hits: units (degrees to
+    radians 0.01745, rpm to turns a second 0.01667, per cent 0.01), random scatter, thresholds, angles wrapped by 2 pi
+    or 360, one-off events (a hit, a shot, the init).
+  - Not scanned: random events rolled once a tick (`rand() % n` in a tick happens more often at a higher rate), and
+    counters of frames.
 
 ## The exit crash (seen in mafia-ragdoll, not solved)
 
