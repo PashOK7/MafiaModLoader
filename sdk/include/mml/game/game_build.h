@@ -248,6 +248,12 @@ struct ExeBuild {
     // carRepair: C_car::RepairPosition, thiscall(C_car*, bool reset), what the scripts' CAR_REPAIR calls with true: the
     // car set on its wheels on the ground and reset (C_car::Reset: its body undented, its engine whole).
     uintptr_t carRepair;
+    // 1.0's main menu camera, inlined into its menu loop (gui_menu_execute_modal 0x56CCC0): each frame a loop of 10
+    // substeps (`mov eax, 10` at menuCamLoop, its `jne` back before menuCamLoopEnd) moves the look point and the eye
+    // toward a middle point each (`* 0.001`, six `fmul dword [const]`, D8 0D <addr>) and the middle points toward
+    // their targets (`* 0.002`, six more), with no time in it: the camera is 16 times as fast at 1000 fps. (1.2: 0;
+    // its camera is menuCamTick's spring.)
+    uintptr_t menuCamLoop, menuCamLoopEnd;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -335,6 +341,7 @@ inline const ExeBuild kExe12 = {
     // the menu's camera (2026-10-14: read in ExecuteMenu 0x5EBA40 and 0x5EC8A0)
     0x5EC8A0, 0x6BD83C,
     0x41E690,   // (CAR_REPAIR, case 0x178 of C_program::Process)
+    0, 0,
 };
 
 inline const ExeBuild kExe10 = {
@@ -394,6 +401,7 @@ inline const ExeBuild kExe10 = {
     164,
     0, 0,   // the menu's camera: inlined into gui_menu_execute_modal 0x56CCC0, not looked for yet
     0x465760,   // (st0rm94's car_repair_position_on_ground)
+    0x56D858, 0x56DABC,   // (2026-10-14: read in st0rm94's annotated decompile and the disassembly)
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,

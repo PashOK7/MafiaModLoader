@@ -30,6 +30,7 @@
 #include <string>
 #include "mml/mml.h"
 #include "mml/game/game_build.h"
+#include "mml/game/game.h"
 
 #ifndef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
 #define CREATE_WAITABLE_TIMER_HIGH_RESOLUTION 0x00000002
@@ -129,11 +130,6 @@ LARGE_INTEGER g_freq;   // (QueryPerformanceFrequency)
 using CamTickFn = int(__fastcall *)(unsigned);
 CamTickFn g_camOriginal;
 bool g_camHooked;
-struct CamSample { float t, eye[3], look[3]; };
-CamSample g_trace[600];
-int g_traceN;
-LARGE_INTEGER g_traceStart, g_traceLast;
-
 int __fastcall CamTick(unsigned ms) {
     float *cam = reinterpret_cast<float *>(game::Exe().menuCam);   // (game thread: the game's own globals, read in place)
     float v0[6];
@@ -146,15 +142,97 @@ int __fastcall CamTick(unsigned ms) {
             cam[3 + i] = v0[3 + i] * keep + (cam[9 + i] - cam[15 + i]) * k;    // the eye's
         }
     }
-    LARGE_INTEGER now;   // the camera's path, every 20 ms at most (fps_unlock.camera)
-    QueryPerformanceCounter(&now);
-    if (g_traceStart.QuadPart && g_traceN < static_cast<int>(sizeof g_trace / sizeof *g_trace) &&
-        now.QuadPart - g_traceLast.QuadPart >= g_freq.QuadPart / 50) {
-        g_trace[g_traceN++] = {static_cast<float>((now.QuadPart - g_traceStart.QuadPart) / static_cast<double>(g_freq.QuadPart)),
-                               {cam[15], cam[16], cam[17]}, {cam[12], cam[13], cam[14]}};
-        g_traceLast = now;
-    }
     return r;
+}
+
+// The camera's path, for measuring (fps_unlock.camera): the scene's camera frame (`GameCamera`, the mission's scene
+// + 0x17C: 1.0's menu loop moves it there, 1.2's TickCamera too) sampled every 20 ms at most, in both builds alike.
+struct CamSample { float t, pos[3]; };
+CamSample g_trace[600];
+int g_traceN;
+LARGE_INTEGER g_traceStart, g_traceLast;
+
+void TraceCamera() {
+    LARGE_INTEGER now;
+    QueryPerformanceCounter(&now);
+    if (!g_traceStart.QuadPart || g_traceN >= static_cast<int>(sizeof g_trace / sizeof *g_trace) ||
+        now.QuadPart - g_traceLast.QuadPart < g_freq.QuadPart / 50 || !game::g_exe)
+        return;
+    uintptr_t mission = 0, scene = 0, camera = 0;
+    float pos[3];
+    if (!H->mem_read(game::Exe().missionPtr, &mission, 4) || !H->mem_read(mission + game::kMissionScene, &scene, 4) ||
+        !H->mem_read(scene + 0x17C, &camera, 4) || !H->mem_read(camera + game::kFrameWorld + 0x30, pos, sizeof pos))
+        return;
+    g_trace[g_traceN++] = {static_cast<float>((now.QuadPart - g_traceStart.QuadPart) / static_cast<double>(g_freq.QuadPart)),
+                           {pos[0], pos[1], pos[2]}};
+    g_traceLast = now;
+}
+
+// ---- 1.0's main menu camera: substeps counted in frames, made to count the time
+// 1.0 has no TickCamera to hook: the camera is inlined into its menu loop, its state the loop's own locals
+// (game_build.h menuCamLoop). Each frame, 10 substeps move the look point and the eye toward a middle point each
+// (* 0.001) and the middle points toward their targets (* 0.002), with no time at all. Those constants are shared with
+// the rest of the game (0.001 is used 218 times), so they are left alone: the loop's 12 `fmul dword [const]` operands
+// are pointed at two floats of the mod's instead, set every frame from the game's step: a' = 1 - (1 - a)^(ms / 16),
+// the game's own at 16 ms, the same motion in seconds at any rate. The operands are put back at the unload. The two
+// floats live in the process's heap, not in this DLL: a mod that faults is unloaded without its mml_mod_unload, and
+// the game's code would then read freed memory; the block is handed on to the next load (state_put) and reused.
+float *g_k10;
+struct Operand { uintptr_t at; uint32_t original; int slot; };
+Operand g_ops10[12];
+int g_ops10N;
+bool g_cam10;            // the operands point at g_k10
+unsigned g_step = 16;    // the game's last step, ms (Measure)
+
+bool FindCam10() {
+    // an earlier load's list (kept at once: a load that faulted could not put it back): each operand must still be
+    // the game's constant or this block
+    size_t n = H->state_get(M, "ops10", g_ops10, sizeof g_ops10);
+    if (n == sizeof g_ops10) {
+        g_ops10N = 12;
+        for (const Operand &o : g_ops10) {
+            uint32_t now = 0;
+            H->mem_read(o.at, &now, 4);
+            if (now != o.original && now != static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&g_k10[o.slot]))) g_ops10N = 0;
+            else if (now != o.original) g_cam10 = true;   // (left pointing at the block by a load that faulted)
+        }
+        if (g_ops10N) return true;
+    }
+    const uintptr_t lo = game::Exe().menuCamLoop, hi = game::Exe().menuCamLoopEnd;
+    uint8_t code[0x300];
+    if (!lo || hi <= lo || hi - lo > sizeof code || !H->mem_read(lo, code, hi - lo)) return false;
+    int count[2] = {0, 0};
+    g_ops10N = 0;
+    for (uintptr_t i = 0; i + 6 <= hi - lo && g_ops10N < 12; i++) {
+        if (code[i] != 0xD8 || code[i + 1] != 0x0D) continue;   // fmul dword ptr [abs32]
+        uint32_t c;
+        float v;
+        memcpy(&c, code + i + 2, 4);
+        if (!H->mem_read(c, &v, 4)) continue;
+        int slot = fabsf(v - 0.001f) < 1e-7f ? 0 : fabsf(v - 0.002f) < 1e-7f ? 1 : -1;
+        if (slot < 0) continue;
+        g_ops10[g_ops10N++] = {lo + i + 2, c, slot};
+        count[slot]++;
+    }
+    if (g_ops10N != 12 || count[0] != 6 || count[1] != 6) return false;   // (tools/check_builds.py checks the same)
+    H->state_put(M, "ops10", g_ops10, sizeof g_ops10);
+    return true;
+}
+
+void Cam10(bool on) {
+    if (on == g_cam10 || !g_ops10N) return;
+    for (int i = 0; i < g_ops10N; i++) {
+        uint32_t want = on ? static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&g_k10[g_ops10[i].slot])) : g_ops10[i].original;
+        H->mem_write(g_ops10[i].at, &want, 4);   // (game thread: the menu loop is not running this code now)
+    }
+    g_cam10 = on;
+}
+
+void StepCam10() {
+    if (!g_cam10) return;
+    const float ms = static_cast<float>(g_step < 249 ? g_step : 249);   // (the menu loop's own maximum)
+    g_k10[0] = 1.0f - powf(1.0f - 0.001f, ms / 16.0f);
+    g_k10[1] = 1.0f - powf(1.0f - 0.002f, ms / 16.0f);
 }
 
 // ---- pacing (a cap of the mod's own: the game's time stays real, the frames are only spaced)
@@ -201,6 +279,7 @@ void Measure() {
             if (dt < g_win.dtMin) g_win.dtMin = dt;
             if (dt > g_win.dtMax) g_win.dtMax = dt;
             if (!dt) g_win.dtZero++;
+            g_step = dt;
         }
         g_prevClock = clock;
     }
@@ -215,6 +294,8 @@ void Measure() {
 void OnFrame(const MmlEvent *, void *) {
     Pace();
     Measure();
+    StepCam10();   // (this frame's step: the menu loop runs its camera after this event)
+    TraceCamera();
     if (!S.show) return;
     char line[160];
     double avg = g_last.frames ? g_last.sumMs / g_last.frames : 0;
@@ -237,6 +318,7 @@ void ReadSettings() {
     H->hotkey(M, S.hotkey.c_str(), OnKey, nullptr);
     if (S.enabled) Apply();
     else Restore();
+    Cam10(S.enabled && S.fixCamera);
 }
 
 void OnConfig(const MmlEvent *, void *) { ReadSettings(); }
@@ -246,57 +328,45 @@ int Status(const char *, MmlReply *r, void *) {
     double avg = g_last.frames ? g_last.sumMs / g_last.frames : 0;
     snprintf(out, sizeof out,
              "{\"build\":\"%s\",\"known\":%s,\"enabled\":%s,\"unlocked\":\"%s\",\"why\":\"%s\",\"max_fps\":%d,"
-             "\"fps\":%d,\"frame_ms\":%.2f,\"frame_ms_max\":%.2f,\"game_step_ms\":[%u,%u],\"game_steps_zero\":%u}",
+             "\"fps\":%d,\"frame_ms\":%.2f,\"frame_ms_max\":%.2f,\"game_step_ms\":[%u,%u],\"game_steps_zero\":%u,"
+             "\"menu_camera\":\"%s\"}",
              H->game_build(), g_known ? "true" : "false", S.enabled ? "true" : "false",
              g_owner == Owner::us ? "by this mod" : g_owner == Owner::other ? "by another tool" : "no", g_why, S.maxFps,
-             g_last.frames, avg, g_last.maxMs, g_last.dtMin == ~0u ? 0 : g_last.dtMin, g_last.dtMax, g_last.dtZero);
+             g_last.frames, avg, g_last.maxMs, g_last.dtMin == ~0u ? 0 : g_last.dtMin, g_last.dtMax, g_last.dtZero,
+             g_camHooked ? (S.enabled && S.fixCamera ? "fixed: TickCamera hooked" : "TickCamera hooked, fix off")
+             : g_cam10 ? "fixed: the loop's operands on the mod's coefficients"
+             : g_ops10N ? "found, fix off" : "not known for this build");
     H->reply_append(r, out, static_cast<size_t>(-1));
     return 0;
 }
-// fps_unlock.camera {"start": true}: the menu camera's eye recorded from now on; without it: [seconds, x, y, z] so far.
+// fps_unlock.camera {"start": true}: the scene camera's path recorded from now on; without it: how the path went.
+// The way is from the first sample to the last (the camera has come to rest there when the recording is long enough;
+// the menu camera's slow sway is in both), and the times are from the start, when the camera was told where to go.
 int Camera(const char *args, MmlReply *r, void *) {
     if (args && strstr(args, "\"start\":true")) {
         g_traceN = 0;
         g_traceLast.QuadPart = 0;
         QueryPerformanceCounter(&g_traceStart);
-        H->reply_append(r, g_camHooked ? "{\"recording\":true}" : "{\"recording\":false,\"why\":\"the menu's camera is not known for this build\"}",
-                        static_cast<size_t>(-1));
+        H->reply_append(r, "{\"recording\":true}", static_cast<size_t>(-1));
         return 0;
     }
-    if (!g_camHooked) {
-        H->reply_append(r, "{\"hooked\":false}", static_cast<size_t>(-1));
-        return 0;
-    }
-    // the way to the targets (the eye's and the look point's, added): when the camera began to move, and when it had
-    // gone 10, 50 and 90 % of the way
-    const float *cam = reinterpret_cast<const float *>(game::Exe().menuCam);
     auto dist = [](const float *a, const float *b) {
         float d[3] = {a[0] - b[0], a[1] - b[1], a[2] - b[2]};
         return sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
     };
-    auto left = [&](const CamSample &s) { return dist(cam + 9, s.eye) + dist(cam + 6, s.look); };
-    int moved = -1;
-    for (int i = 1; i < g_traceN && moved < 0; i++)
-        if (memcmp(g_trace[i].eye, g_trace[0].eye, sizeof g_trace[0].eye) || memcmp(g_trace[i].look, g_trace[0].look, sizeof g_trace[0].look))
-            moved = i - 1;
     double at[3] = {-1, -1, -1};
     const float marks[3] = {0.1f, 0.5f, 0.9f};
-    if (moved >= 0) {
-        float way = left(g_trace[moved]);
-        for (int i = moved; i < g_traceN; i++)
-            for (int m = 0; m < 3; m++)
-                if (at[m] < 0 && way > 1e-4f && 1.0f - left(g_trace[i]) / way >= marks[m]) at[m] = g_trace[i].t - g_trace[moved].t;
-    }
+    float way = g_traceN > 1 ? dist(g_trace[0].pos, g_trace[g_traceN - 1].pos) : 0.0f;
+    for (int i = 0; i < g_traceN && way > 1e-4f; i++)
+        for (int m = 0; m < 3; m++)
+            if (at[m] < 0 && 1.0f - dist(g_trace[i].pos, g_trace[g_traceN - 1].pos) / way >= marks[m]) at[m] = g_trace[i].t;
     char head[320];
-    snprintf(head, sizeof head, "{\"hooked\":%s,\"fix\":%s,\"samples\":%d,\"began_s\":%.3f,\"way\":%.3f,\"s_to_10\":%.3f,\"s_to_50\":%.3f,"
-             "\"s_to_90\":%.3f,\"path\":[", g_camHooked ? "true" : "false", S.enabled && S.fixCamera ? "true" : "false", g_traceN,
-             moved >= 0 ? g_trace[moved].t : -1.0, moved >= 0 ? left(g_trace[moved]) : 0.0f, at[0], at[1], at[2]);
+    snprintf(head, sizeof head, "{\"fix\":%s,\"samples\":%d,\"way\":%.3f,\"s_to_10\":%.3f,\"s_to_50\":%.3f,\"s_to_90\":%.3f,\"path\":[",
+             S.enabled && S.fixCamera ? "true" : "false", g_traceN, way, at[0], at[1], at[2]);
     std::string out = head;
-    for (int i = 0, n = 0; i < g_traceN; i += 25, n++) {   // every 25th sample: about 2 a second, [s, eye, look]
-        const CamSample &c = g_trace[i];
-        char s[160];
-        snprintf(s, sizeof s, "%s[%.2f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f]", n ? "," : "", c.t, c.eye[0], c.eye[1], c.eye[2], c.look[0],
-                 c.look[1], c.look[2]);
+    for (int i = 0, n = 0; i < g_traceN; i += 25, n++) {   // every 25th sample: about 2 a second, [s, x, y, z]
+        char s[96];
+        snprintf(s, sizeof s, "%s[%.2f,%.3f,%.3f,%.3f]", n ? "," : "", g_trace[i].t, g_trace[i].pos[0], g_trace[i].pos[1], g_trace[i].pos[2]);
         out += s;
     }
     out += "]}";
@@ -315,6 +385,16 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     g_timer = CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
     if (!g_timer) g_timer = CreateWaitableTimerW(nullptr, TRUE, nullptr);   // (Windows before 10 1803: coarser)
     g_known = Find();
+    host->state_get(mod, "k10", &g_k10, sizeof g_k10);   // 1.0's camera floats: the process's heap, one block for every load
+    if (!g_k10) {
+        g_k10 = static_cast<float *>(HeapAlloc(GetProcessHeap(), 0, 2 * sizeof(float)));
+        if (g_k10) g_k10[0] = 0.001f, g_k10[1] = 0.002f;
+        host->state_put(mod, "k10", &g_k10, sizeof g_k10);
+    }
+    if (g_known && g_k10 && game::Exe().menuCamLoop && !FindCam10()) {
+        g_ops10N = 0;
+        host->log(mod, MML_LOG_WARN, "1.0's menu camera: its loop is not as expected; left as it is");
+    }
     if (!g_known) host->log(mod, MML_LOG_WARN, "%s: the game's pacing is left as it is", g_why);
     ReadSettings();
     if (game::g_exe && game::Exe().menuCamTick)
@@ -328,6 +408,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
 }
 
 MML_EXPORT void mml_mod_unload(MmlMod *) {
+    Cam10(false);   // (before the DLL goes: the game's code points into it)
     Restore();   // the game as it was: a reload patches again, a mod switched off leaves the game's own pacing
     if (g_timer) CloseHandle(g_timer);
     g_timer = nullptr;

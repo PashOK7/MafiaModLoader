@@ -12,6 +12,7 @@ on any failure.
 """
 import os
 import re
+import struct
 import sys
 
 import capstone
@@ -146,6 +147,25 @@ def main(a):
               f'{name} menuCamTick: the spring 0.02 / 0.98 twice')
         check(all(exe['menuCam'] + o in refs for o in (0x00, 0x0C, 0x18, 0x24, 0x30, 0x3C)),
               f'{name} menuCamTick: uses each vector of menuCam')
+    # 1.0's inlined menu camera: `mov eax, 10`, the loop's `jne` back right before the end, six `fmul [0.001]` and six
+    # `fmul [0.002]` between (fps_unlock points those operands at floats of its own)
+    for name, (exe, ls, gexe, gls) in builds.items():
+        lo, hi = exe['menuCamLoop'], exe['menuCamLoopEnd']
+        if not lo:
+            continue
+        md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_32)
+        ins = list(md.disasm(gexe.at(lo - 0x400000, hi - lo), lo))
+        consts = {}
+        for i in ins:
+            b = bytes(i.bytes)
+            if b[:2] == b'\xd8\x0d':
+                c = int.from_bytes(b[2:6], 'little')
+                v = struct.unpack('<f', gexe.at(c - 0x400000, 4))[0]
+                consts.setdefault(round(v, 6), []).append(i.address)
+        check(ins[0].mnemonic == 'mov' and ins[0].op_str == 'eax, 0xa', f'{name} menuCamLoop: mov eax, 10')
+        check(ins[-1].mnemonic == 'jne' and int(ins[-1].op_str, 16) == lo + 5, f'{name} menuCamLoopEnd: the loop jumps back')
+        check(len(consts.get(0.001, [])) == 6 and len(consts.get(0.002, [])) == 6 and len(consts) == 2,
+              f'{name} menuCamLoop: six fmul [0.001], six fmul [0.002]')
     # The frame rate's sites (fps_unlock): the limiter's minimum jump inside frameLimit, after `cmp eax, edi` and
     # before its Sleep; Present's yield: `mov reg, [Sleep]` then `push 0; call reg`.
     for name, (exe, ls, gexe, gls) in builds.items():

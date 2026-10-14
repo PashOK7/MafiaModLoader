@@ -504,3 +504,18 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - A first model test compared the frames' names, and refused another taxi of the same model: every car's frame has a
   name of its own (`taxi00_mml2`). Measured in the 1.2 lab as written in the roadmap's Done; `car.save` now
   survives the core's reload (`state_put`), and `car` tells `state_bytes`.
+
+## 2026-10-14: the main menu camera in 1.0
+
+- **The owner**: "then the camera in 1.0". 1.0 has no TickCamera: st0rm94's decompile marks it inlined into the
+  menu loop (0x56CCC0), and it is another camera, not 1.2's spring: 10 substeps a frame of two lags (`* 0.001`,
+  `* 0.002`) with no time in them, its state the loop's locals. So unlocked it ran 17 times as fast (1315 fps).
+- The fix points the loop's 12 `fmul dword [const]` operands (found by the disassembly, checked by
+  `check_builds.py`: six of each constant between the loop's counter and its jump back) at two floats of the mod's,
+  set each frame from the game's step; the constants themselves are shared (0.001 has 218 uses). The floats live in
+  the process's heap and the operand list is kept with `state_put` at once: a faulted mod's unload is not called, so
+  the game's code must never be left pointing into a freed DLL.
+- Measured through the scene camera's frame (`+0x17C`, `GameCamera` in both builds), as the menu camera's state is on
+  the stack in 1.0: the method was first run on 1.2 (1.1 / 3.8 / 9.4 s there, not comparable with the eye's own
+  numbers: the frame carries the sway). The 1.0 lab driven through `MML_GAME_DIR` (a scratch bridge client), the
+  user's config untouched; the mod's settings put back to their defaults and the 1.0 game closed by its pid after.

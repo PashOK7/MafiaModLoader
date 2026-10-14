@@ -253,8 +253,15 @@ autosplitter; kept outside it, not ported). Checked against the above:
   Free Ride, then Credits): 10 / 50 / 90 % of the way at 0.86 / 2.78 / 6.53 s locked, 0.43 / 2.36 / 7.67 s at about
   1000 fps (a first-order approach at 0.3/s, as the model says); stepped by the time (`k = 1 - 0.98^(ms/16)`,
   fps_unlock's fix) 0.88 / 2.77 / 6.54 s at about 1000 fps. Each item of the main menu has its own place for the
-  camera (ids 9901xx); a submenu's items do not move it (only its slow sway, already timed). In 1.0 the tick is
-  inlined into `gui_menu_execute_modal` (0x56CCC0; st0rm94's `g_menu_camera_*`).
+  camera (ids 9901xx); a submenu's items do not move it (only its slow sway, already timed).
+- **game** **1.0's menu camera is another one**, inlined into `gui_menu_execute_modal` (0x56CCC0), its state the
+  loop's own locals: each frame 10 substeps (`mov eax, 10` at 0x56D858, the `jne` back at 0x56DAB6) move the look
+  point and the eye toward a middle point each (`* 0.001`) and the middle points toward their targets (`* 0.002`),
+  with no time at all (only the sway uses it). The constants are shared (0x63B348, 0.001, 218 uses; 0x63CFBC,
+  0.002, 20): fps_unlock points the loop's 12 `fmul dword [const]` operands at floats of its own instead, set each
+  frame to `1 - (1 - a)^(ms/16)`. The camera frame both builds' menus move: the scene's `+0x17C` (`GameCamera`).
+  Measured in the 1.0 lab by that frame (its sway included, so the 90 % mark is noise): 10 / 50 % of one flight at
+  0.74 / 2.66 s at 62.5 fps, 0.04 / 0.16 s at 1315 fps, 0.76 / 2.79 s fixed at 1284 fps.
 - **code** Functions with decay-like constants on lines without the time (a scan of the decompile, leads to check in
   the game, not faults): 0x568540 (0.92), 0x58EAD0 (0.93), `C_Vehicle::Tick` 0x4DF9A0, `C_human::MovementIntern`
   0x57B660, `C_player::AI` 0x5937B0, `C_fire::Tick` 0x55DA80, `C_Vehicle::UpdateWheelParticles` 0x4DE500 and

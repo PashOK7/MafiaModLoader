@@ -26,6 +26,7 @@ Everything the loader offers on 1.2 runs on 1.0; where 1.0's code differs, the l
 | The menus' commands and values (`menu.state`, `menu.command`, `menu.value`, `menu.def`, `menu.click`) | yes | every screen's controls with their places; the main menu's 990105 opened the freeride screen, its police slider set to 0, OK clicked by the mouse |
 | The menus extended (`menu_item`, `menu_open`, the mouse in menus, `input.text`) | yes | the example's item in the pause menu (the window grown), its page (texts, the bar, the check box and the selector told to the mod, Back), the mod reloaded with its item shown (taken over), two items in the main menu, a page with every kind, a page with no menu open |
 | In the background (`game_launch`'s `background`) | yes | the game launched, driven by keys and the menus' mouse and shot while another program was in front |
+| The frame rate freed (`mods/examples/fps_unlock`) | yes | the limiter's jump at `+0x6E5A2` and Present's yield at `+0x69DC2` (`call edi`); 440..1315 fps; 1.0's own menu camera (inlined in the menu loop, counted in frames) fixed through the loop's operands, its flight measured equal to 62.5 fps |
 
 ## Where 1.0 differs (each read in both builds' code)
 

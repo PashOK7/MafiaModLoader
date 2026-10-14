@@ -148,6 +148,12 @@ What is done, what comes next and later, and what is known to be missing or wron
   the spring by the time, measured equal to 62.5 fps within 15 ms on one flight at about 1000 fps. The taxi's
   acceleration and running measured the same unlocked (1.2 lab; `knowledge/notes/game.md`, "The frame rate").
 
+- **fps_unlock in 1.0** (2026-10-14): its two LS3D places run in the 1.0 lab (440..1315 fps); 1.0's menu camera,
+  inlined into its menu loop and counted in frames (10 substeps a frame, no time), fixed by pointing the loop's 12
+  `fmul` operands at the mod's own coefficients (the constants are shared with the rest of the game), measured equal
+  to 62.5 fps at 1284 fps. The coefficients live in the process's heap, so a mod that faults leaves no pointer into
+  its freed DLL; `fps_unlock.camera` records the scene camera's frame in both builds.
+
 - **`car.restore` with dents** (2026-10-14): a car's state grows with its body's dents, and the restore refused a
   state of the same taxi taken before a crash (its size was the test of the model). `CarStateLoad` now repairs the
   car first (the scripts' `car_repair`: the game's load writes only the vertices a state lists) and checks the model
@@ -341,8 +347,7 @@ merged, sorted by importance):
 - **fps_unlock** (mods/examples/fps_unlock): only the main menu's camera is fixed; the other systems that may do once
   a frame what they should do by the time are leads from a scan of the decompile (`knowledge/notes/game.md`, "The
   frame rate"), not checked in the game; the owner remembers more breakages above 62.5 fps that are not found yet.
-  Frames of 0 ms (above 1000 fps) reach every system. 1.0: the two patch places are found and checked offline, not
-  run in the 1.0 lab; its menu camera is inlined into the menu loop (0x56CCC0) and not fixed.
+  Frames of 0 ms (above 1000 fps) reach every system (532 a second in 1.2's main menu at 1520 fps).
 
 - **A mod's unload** (host/lifecycle.cpp): a thread is found in a load's code by its EIP, the chain of saved EBPs and
   where it began; a thread inside a library compiled to use EBP as a plain register, between it and the mod's frame,
