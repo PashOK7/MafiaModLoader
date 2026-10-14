@@ -92,10 +92,24 @@ struct LaunchArgs {
     /// Seconds to wait for the loader's bridge to answer (default 60), and for the start to finish.
     #[serde(default)]
     wait_s: Option<u64>,
-    /// Where to take the game by its own menus: "menu" (the main menu) or "freeride" (the default freeride,
-    /// missions\freeitaly). Omitted (and no profile): the game's usual start, the player at the keyboard.
+    /// Where to take the game by its own menus: "menu" (the main menu), "freeride" (with `kind`, `place`), "load" (a
+    /// save, with `save`: a chapter of the story), "new" (a new game: the intro, then the first mission), "extreme"
+    /// (the freeride extreme). Omitted (and no profile): the game's usual start, the player at the keyboard.
     #[serde(default)]
     go: Option<String>,
+    /// The freeride's kind: "city-small" (the default, missions\freeitaly), "city-night" (freeridenoc),
+    /// "countryside-night" (freekrajinanoc), "city" (freeride: the whole city by day), "countryside" (freekrajina).
+    /// The game has no time of day: night is these kinds.
+    #[serde(default)]
+    kind: Option<String>,
+    /// Where a freeride other than city-small starts: the spawn menu's row (1..; default 1) or a part of its text
+    /// ("Down Town", "Hoboken").
+    #[serde(default)]
+    place: Option<Value>,
+    /// The save "load" takes: its number (savegame\mafiaNNN.<number>, of the profile) or a part of its name as the
+    /// load menu shows it ("Old Prison", "20-05"). Unknown or several: the error lists them.
+    #[serde(default)]
+    save: Option<Value>,
     /// The profile to take in the profile menu: its number (savegame\mafiaNNN.sav) or its name.
     #[serde(default)]
     profile: Option<Value>,
@@ -601,7 +615,9 @@ impl Server {
     /// Start the game (Game.exe in the game's folder) and wait for the loader's bridge. With `go` (and `profile`),
     /// the loader takes it there by the game's own menus, the logo videos skipped: e.g. {"profile": 4, "go":
     /// "freeride", "police": 0} returns once the player is in the freeride (a few seconds), in a city without
-    /// police patrols.
+    /// police patrols; {"profile": 4, "go": "freeride", "kind": "city-night", "place": "Down Town"} the night city;
+    /// {"profile": 4, "go": "load", "save": "Old Prison"} a chapter from the profile's saves (it returns once the
+    /// player exists: a mission's opening cutscene may run before that; `wait_s` for long loads).
     #[tool]
     async fn game_launch(&self, Parameters(a): Parameters<LaunchArgs>) -> Out {
         if self.bridge.call("ping", json!({}), 1500).await.is_ok() {
@@ -614,6 +630,9 @@ impl Server {
             let skip = if asked { a.skip_logos.unwrap_or(true) } else { false };
             let mut req = json!({"skip_logos": skip, "go": a.go.clone().unwrap_or_default(), "background": background});
             if let Some(p) = &a.profile { req["profile"] = p.clone(); }
+            if let Some(k) = &a.kind { req["kind"] = json!(k); }
+            if let Some(p) = &a.place { req["place"] = p.clone(); }
+            if let Some(s) = &a.save { req["save"] = s.clone(); }
             for (name, v) in [("traffic", a.traffic), ("pedestrians", a.pedestrians), ("police", a.police)] {
                 if let Some(v) = v { req[name] = json!(v); }
             }
@@ -645,7 +664,7 @@ impl Server {
                 match s["state"].as_str() {
                     Some("failed") => return Err(format!("the start failed: {}; the menus are left as they are", s["error"])),
                     Some("done") => {
-                        if a.go.as_deref() != Some("freeride") { return Ok(pretty(&json!({"started": pid, "start": s, "in_front": front()}))); }
+                        if a.go.as_deref() == Some("menu") { return Ok(pretty(&json!({"started": pid, "start": s, "in_front": front()}))); }
                         if let Ok(p) = self.call_value("player", Value::Null, Some(2000)).await {
                             if p.get("actor").is_some() { return Ok(pretty(&json!({"started": pid, "start": s, "player": p, "in_front": front()}))); }
                         }

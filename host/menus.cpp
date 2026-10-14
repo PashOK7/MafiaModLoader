@@ -151,21 +151,19 @@ std::string Lower(std::string s) {
     return s;
 }
 
-// The game's strings are in code page 1250 (its text database's, tables\textdb_<lang>.def; its fonts map those bytes),
-// whatever the system's ANSI code page is (code page 1251 turned a French "é" into "й"); the bridge speaks
-// UTF-8.
-constexpr UINT kGameCodePage = 1250;
+// The game's strings are in its language's code page (GameCodePage), whatever the system's ANSI code page is (code page
+// 1251 turned a French "é" into "й"); the bridge speaks UTF-8.
 std::string Utf8(const char *ansi) {
     wchar_t w[512];
     char out[1536];
-    if (MultiByteToWideChar(kGameCodePage, 0, ansi, -1, w, 512) <= 0) return "";
+    if (MultiByteToWideChar(GameCodePage(), 0, ansi, -1, w, 512) <= 0) return "";
     return WideCharToMultiByte(CP_UTF8, 0, w, -1, out, sizeof out, nullptr, nullptr) > 0 ? std::string(out) : std::string();
 }
 std::string Ansi(const std::string &utf8) {
     wchar_t w[512];
     char out[1024];
     if (MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, w, 512) <= 0) return utf8;
-    return WideCharToMultiByte(kGameCodePage, 0, w, -1, out, sizeof out, nullptr, nullptr) > 0 ? std::string(out) : utf8;
+    return WideCharToMultiByte(GameCodePage(), 0, w, -1, out, sizeof out, nullptr, nullptr) > 0 ? std::string(out) : utf8;
 }
 std::string GameString(uintptr_t p) {
     char buf[256] = {};
@@ -1054,6 +1052,20 @@ bool MenuControlValue(uintptr_t menu, int id, float *value) {
 }
 
 std::string MenuDefName(uintptr_t menu) { return m10::Known() ? m10::Name(menu) : DefNameOf(menu); }
+
+// The game's texts are bytes its fonts map through its language's table (tables\lang_<ll>.def, read into a record of
+// 0x238 bytes whose +4 is the language's two letters: menuLang). The text database of that language
+// (tables\textdb_<ll>.def) is written in that language's Windows code page: Czech in 1250 (the game's own), the
+// western ones in 1252 (seen in the French 1.0 lab: 0xE8 is the "è" of "Piège", which 1250 read as "č").
+unsigned GameCodePage() {
+    uint16_t lang = 0;
+    if (game::g_exe && game::Exe().menuLang) MemRead(game::Exe().menuLang, &lang, 2);
+    char ll[3] = {static_cast<char>(lang & 0xFF), static_cast<char>(lang >> 8), 0};
+    for (char &c : ll) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+    if (!strcmp(ll, "cz") || !strcmp(ll, "cs") || !strcmp(ll, "pl") || !strcmp(ll, "hu") || !strcmp(ll, "sk")) return 1250;
+    if (!strcmp(ll, "ru")) return 1251;
+    return 1252;
+}
 
 uintptr_t MenuClassOf(uintptr_t menu) {
     uintptr_t vptr = R32(menu);

@@ -63,7 +63,7 @@ Taps can also start with the game, before its first frame: `"taps": ["5409D0 n=4
 | `world.cars` | `query` (a part of a name or a model) | the game's car list: `id`, `name`, `model` |
 | `world.items` | `query` | the items of `tables\predmety.def`: `id` (what `human_addweapon` takes), `name`, `kind` (`firearm`, `throwable`, `melee`, `item`), `model`, `magazine`, `reserve`, `flags` |
 | `world.spawned` | | `known`, the actors `world.spawn` and mods made that are still there: actor, by (the mod, or `bridge`), model, pos |
-| `start.state` | | the start asked by `<game>\mml\start.json`: `waiting`, `profile`, `main`, `done`, `failed` (+ `error`) |
+| `start.state` | | the start asked by `<game>\mml\start.json`: `waiting`, `profile`, `main`, `freeride`, `place`, `done`, `failed` (+ `error`; `kind`; `note`: a kind the profile had not opened) |
 | `input.actions` | | every action slot: its name, primary or secondary binding, the device and key it is bound to, its values now |
 | `input.act` | `action` (a name or a slot number), `ms` or `frames` (default 1 frame), `value` (default 1), `after_ms` or `after_frames`; or `turn` (degrees, to the right when positive), `frames` | the action held: pressed whatever it is bound to. A mouse axis (`"Aim X"`, `"Aim Y"`) takes small values (see below); `turn` turns the player on foot by exactly that angle |
 | `input.key` | `key` (`"Esc"`, `"W"`, `"F1"`, `"Up"`... or a DirectInput code), `ms` or `frames`, `after_ms` or `after_frames` | the key held in LS3D's keyboard state: for menus, for mods' keys and hotkeys, and whatever is not an action |
@@ -112,5 +112,7 @@ counts / 400: right and down are positive. On foot the player turns by `sensitiv
 camera has its own code, not measured yet.
 
 `<game>\mml\start.json` (a start, read once at the game's launch): `{"skip_logos": true, "profile": 4 | "name",
-"go": "menu" | "freeride", "traffic": 0..1, "pedestrians": 0..1, "police": 0..1, "background": true}`
+"go": "menu" | "freeride" | "load" | "new" | "extreme", "kind": "city-small" | "city-night" | "countryside-night" |
+"city" | "countryside", "place": 1.. | "Hoboken", "save": 465 | "Old Prison", "traffic": 0..1, "pedestrians": 0..1,
+"police": 0..1, "background": true}`
 (`background`: the game never activates its own window; `game_launch` asks for it by default).

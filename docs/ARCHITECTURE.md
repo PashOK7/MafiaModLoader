@@ -52,9 +52,11 @@ except the intro videos), on the game thread, where `LoadLibrary` is safe.
   a minidump with the heaps and every region's state (`mml\crash\`). The game's own filter is chained, and ours is put
   back in front every frame.
 
-- **The start** (`start.cpp`): `<game>\mml\start.json` (`{"skip_logos", "profile", "go": "menu"|"freeride",
-  "traffic", "pedestrians", "police", "background"}`, written by `game_launch` or `tools/start.py`, deleted when
-  read) takes the game to a profile and the freeride by its own menus: the logo videos answered "played"
+- **The start** (`start.cpp`): `<game>\mml\start.json` (`{"skip_logos", "profile", "go":
+  "menu"|"freeride"|"load"|"new"|"extreme", "kind", "place", "save", "traffic", "pedestrians", "police",
+  "background"}`, written by `game_launch` or `tools/start.py`, deleted when read) takes the game to a profile and a
+  freeride of any kind, a save or a new game by its own menus (the later screens found by their definitions'
+  names, so both builds' screens alike): the logo videos answered "played"
   (PlayVideo; 1.0's AVI logos "not found" by `cd_find_game_file`), then in each menu's frame the command a click
   would send (1.2: the menu's vtable `+0x24`; 1.0: the screen's next tick's answer, `menus10.cpp`); the freeride
   menu's density sliders are set first, by the setter the menu sets them with. `menu.state` / `menu.command` /

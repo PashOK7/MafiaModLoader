@@ -297,10 +297,11 @@ const char *TextOrNull(unsigned id) {
     __except (EXCEPTION_EXECUTE_HANDLER) { return nullptr; }
 }
 
-// The game's strings are in the system's ANSI code page; the bridge speaks UTF-8.
+// The game's strings are in its language's code page (GameCodePage, not the system's: 1251 here); the bridge speaks
+// UTF-8.
 std::string Utf8(const char *ansi) {
     wchar_t w[512];
-    int n = MultiByteToWideChar(CP_ACP, 0, ansi, -1, w, 512);
+    int n = MultiByteToWideChar(GameCodePage(), 0, ansi, -1, w, 512);
     if (n <= 0) return "";
     char out[1536];
     int m = WideCharToMultiByte(CP_UTF8, 0, w, -1, out, sizeof out, nullptr, nullptr);

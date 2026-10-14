@@ -391,6 +391,15 @@ def main(a):
     for f in ('modelOpen', 'missionCreateActor', 'gameAddTemp', 'gameRemoveTemp', 'vehicleCalm'):
         a, b = norm(g12.insn(e12[f] - 0x400000)), norm(g10.insn(e10[f] - 0x400000))
         check(a == b, f'{f}: 1.2 "{a}" vs 1.0 "{b}"')
+    # The language (both builds): the loader of tables\lang_<ll>.def reads its 0x238-byte record to menuLang - 4
+    # (the letters at +4; host GameCodePage and the definitions' loader read them).
+    lang_loaders = {'1.2': 0x5F7000, '1.0': 0x549060}
+    for name, (exe, ls, gexe, gls) in builds.items():
+        if not exe['menuLang']:
+            continue
+        body = gexe.at(lang_loaders[name] - 0x400000, 0xC0)
+        check(b'\x68\x38\x02\x00\x00\x68' + (exe['menuLang'] - 4).to_bytes(4, 'little') in body,
+              f'{name} menuLang {exe["menuLang"]:#x}: the language file read to it - 4')
     # LS3D's mouse read (both builds): GetDeviceState(16, mouseState) in it, ret 4
     for name, (exe, ls, gexe, gls) in builds.items():
         if not ls['mouseUpdate']:

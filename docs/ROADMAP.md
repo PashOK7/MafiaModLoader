@@ -121,38 +121,39 @@ What is done, what comes next and later, and what is known to be missing or wron
   player's car and riding in it; Sam armed; removals (the model gone too); refusals (a car's model as a person, no
   such file, a car someone sits in).
 
+- **The start, completed** (2026-10-14): `game_launch` and `tools/start.py` take the game, by its own menus, into any
+  freeride (`kind`: city-small, city-night, countryside-night, city, countryside; `place`: the spawn menu's row or
+  its text), a chapter of the profile's saves (`"go": "load"`, `save`: its number or a part of its name; several or
+  none: the error lists them), a new game, the freeride extreme. Seen in both labs: the night city at Hoboken (1.0),
+  the countryside by day at its second place and the city at Hoboken (1.2), the 17th chapter's save by name (1.2) and
+  number (1.0). The texts' code page is now the game's language's (the French 1.0's "Piège" was read as "Pičge").
+
 ## Next, in order
 
 (Reviewed 2026-10-14 at the owner's word that this roadmap was written by agents and may hold absurd items: see
 "Taken out or changed" below.)
 
-1. **The start, completed.** Missions and saves through the load menu (the main menu's 990104, then the chapter or
-   save chosen: `SaveGameSelect` / `SaveGameLoad`); the other freerides (`freeride`, `freeridenoc` the night one,
-   `freekrajina`, `extreme`: the freeride menu's kind menu (command 100) and the spawn menu its start opens for
-   kinds other than 28); a new game (990103). pet1kk's reverse of the game's interface is in
-   `knowledge/notes/interface.md` (the menus' input tick and cursor, the controls by vtable, the profiles'
-   functions).
-2. **Waiting for what happens.** The bridge keeps the last events (missions opened, loaded, closed; actors
+1. **Waiting for what happens.** The bridge keeps the last events (missions opened, loaded, closed; actors
    destroyed; people hit and killed; programs ended; mods faulted) with a sequence number; `events.since {seq}` and
    `events.wait {type, filter, timeout_ms}`, MCP `wait` ("until the mission is loaded", "until he dies"): what an
    agent's script of steps needs between its steps.
-3. **The 64-bit sidecar** (the owner's decision): `mml-sidecar64.exe`, started and watched by the host, loads
+2. **The 64-bit sidecar** (the owner's decision): `mml-sidecar64.exe`, started and watched by the host, loads
    64-bit mods (a DLL with the same kind of manifest, built for x64), their faults isolated as the host isolates
    32-bit mods' and their reloads as hot. The two processes share memory: channels a frame (the game's state out:
    actors' positions, bones, car bodies; results back: poses, forces) and calls both ways for what is rare. The
    first user, and the test that it is worth it: PhysX 5 (64-bit only) stepping a body the game shows (a box, then a
    person's bones as mafia-ragdoll does with its own physics), with the time a frame's round trip costs measured.
    The design is decided against that measurement, not before it.
-4. **Orders for the people made.** Walk or drive to a place, follow, attack, flee: the AI's own jobs
+3. **Orders for the people made.** Walk or drive to a place, follow, attack, flee: the AI's own jobs
    (`ai_action_manager`) and the mission commands that give them, named as `world.*`; the scripts' events
    (`setplayerfireevent`...) to a program of the loader's. People's models listed (the models' archives' index).
-5. **`native.call`**: any function of the game called from the bridge by its address and convention (thiscall,
+4. **`native.call`**: any function of the game called from the bridge by its address and convention (thiscall,
    stdcall, cdecl, fastcall; integer, float, pointer and string arguments; a fault guarded): a hypothesis tried in one
    call, without a mod.
-6. **Tests in the real game, as scripts of steps.** Python over the bridge (`tests/game/`): start, spawn, teleport,
+5. **Tests in the real game, as scripts of steps.** Python over the bridge (`tests/game/`): start, spawn, teleport,
    input, wait for an event, check a value, screenshot; pass or fail. First user: mafia-ragdoll's cases (a car hits
    a person getting up, a body thrown into a tram).
-7. **Structures by name.** `inspect <addr> as C_human` (and other classes): fields named and typed from `game.h`
+6. **Structures by name.** `inspect <addr> as C_human` (and other classes): fields named and typed from `game.h`
    and the decompile's layouts, kept in `knowledge/` as tables of offsets.
 
 ## Later
@@ -179,18 +180,18 @@ What is done, what comes next and later, and what is known to be missing or wron
 - **"The time of day"**: the game has no clock. Day and night are separate scenes (the freeride's `freeitaly` and
   `freeridenoc`; a mission's own); `GAME_NIGHTMISSION` / `C_game::SetNightMission` (0x47B590, `C_game + 0x2D44`)
   only switch what lights do at night (cars' lamps), not the sky (MafiaOnline's notes agree). Night is the night
-  freeride: part of "The start, completed".
+  freeride: the start takes it (done, 2026-10-14).
 - **"A knock-down that always works"**: a ragdoll's need (mafia-ragdoll's), not the loader's.
 - **"Scenarios run by the loader"** (a file of steps the loader plays): a second scripting engine inside the game for
-  what a script outside does with the bridge; what was missing is waiting for an event (item 2). Now item 6, in
+  what a script outside does with the bridge; what was missing is waiting for an event (item 1). Now item 5, in
   Python.
 - **"LuaJIT script mods"** and **"`lua.eval` for agents"**: argued as "a hypothesis tried in five lines without
   building a DLL", which `mem_read` / `mem_write`, `tap`, the script machine and hot reload now cover; the one thing
-  missing, calling any game function by its address, is item 5. Parked until someone wants mods written in Lua
+  missing, calling any game function by its address, is item 4. Parked until someone wants mods written in Lua
   (`tools/deps.py` still pins LuaJIT): to be confirmed with the owner.
 - **"The 64-bit sidecar"** was taken out here as having no user, and put back the same day by the owner: modern
-  libraries (the latest PhysX first) exist only for 64 bits; it is item 3 of "Next".
-- **"Events to MCP as they happen"** moved up from Later (item 2): the scripts of steps need it.
+  libraries (the latest PhysX first) exist only for 64 bits; it is item 2 of "Next".
+- **"Events to MCP as they happen"** moved up from Later (item 1): the scripts of steps need it.
 
 ## Known gaps
 
@@ -216,10 +217,16 @@ What is done, what comes next and later, and what is known to be missing or wron
   refused with no game); `actor_teleport`, `actor_seat`, `give_item` from a mod only there (they are the bridge's
   `world.*`, which ran in both labs).
 
-- **The start covers the default freeride and the main menu only** (see Next, 4). Without `profile` the profile
-  menu waits for the player. The freeride's densities count only for a profile that has opened the freeride's
-  settings (the log warns). On 1.0 a step's command is the screen's next tick's answer, so the start is a frame
-  longer a step (3.0 s from the launch to the freeride in the 1.0 lab).
+- **The start**: without `profile` the profile menu waits for the player. The freeride's densities count only for a
+  profile that has opened the freeride's settings (the log warns). A freeride kind the profile has not opened is
+  started all the same (start.state notes it). `"load"` takes a save the profile has (no save file, no chapter):
+  playing on from it writes the profile's checkpoint saves as the game does. `"new"` and `"extreme"` were not run
+  in the lab (the main menu's commands, read in its handler); `"new"` plays the intro mission first, and the
+  launch waits for a player until `wait_s`. On 1.0 a step's command is the screen's next tick's answer, so the start
+  is a frame longer a step (3.0 s from the launch to the freeride in the 1.0 lab). Racing and the tutorial are not
+  offered.
+- **The texts' code page** is the language's (Czech, Polish, Hungarian, Slovak 1250; Russian 1251; the rest
+  1252): only English and French were seen; another language's code page is a guess.
 - **Input**: the menus' mouse is driven only while a menu is open (outside one, the mouse is the player's
   aim: use `turn` and `Aim X`).
   `turn` is exact on foot only: the car's and the free look's cameras have their own code, and `Aim Y`'s scale is

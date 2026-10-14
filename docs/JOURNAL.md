@@ -389,3 +389,34 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - `check_builds.py` checks the recipe's calls and the tables' places in both builds (ALL PASSED; a wrong driver slot
   put in by hand failed it). A Python here-document ate backslashes again while editing it (AGENTS.md's trap): the
   edit was redone with the editor's tool.
+
+## 2026-10-14: the roadmap reviewed; the start completed; a guard against the shell's backslashes
+
+- **The owner**: "the roadmap was not mine but yours, written long ago: there may be absurd items, I hope you notice
+  them". Each item was weighed by whether a real user exists for it, checked in the game where it could be: the
+  time of day has no clock to set (night is a separate scene, `GAME_NIGHTMISSION` only switches lamps); the
+  knock-down was the ragdoll's need; scenarios run by the loader would be a second scripting engine in the game;
+  LuaJIT was argued for with a need the tools now cover. The 64-bit sidecar was taken out as having no user too,
+  and **the owner put it back**: the latest PhysX, and modern libraries like it, exist only for 64 bits; a 32-bit
+  game reaches them only through a 64-bit process beside it. It is item 2 of "Next", with PhysX 5 as its first user
+  and a measured round trip before its design is fixed. A memory note keeps the lesson: a library the game cannot
+  load is a user.
+- **The backslashes** (the owner: "maybe fix this trap for good?"): measured again with `od -c`, the agent's Bash
+  tool turns every doubled backslash into one, in here-documents, single quotes and echo alike, not only
+  here-documents as AGENTS.md said. It cannot be fixed in the tool, so a PreToolUse hook (`.claude/settings.json`,
+  `tools/bash_guard.py`) refuses any Bash command with a doubled backslash and says what to do instead. It fired in
+  this session's own next command that had one.
+- **The start, completed**: the main menu's handler, the freeride menu's, its kind menu's and spawn menu's and the
+  load menu's were read in 1.2's code (the kinds' missions from `MafiaEntryPoint`'s jump table, not from the
+  decompile's case labels), then driven by commands by hand before the code was written: the kind menu's choice
+  lands in the freeride menu's `+0x30`, its OK opens the spawn menu. The steps find the screens by their
+  definitions' names, so the same code drove 1.0's screens (other classes) unchanged.
+- **A fault of the loader's, seen on the way**: a French save's name came out "Pičge": the texts were read as code
+  page 1250 everywhere, and `input.cpp` even used the system's (1251 here). The language is `+4` of
+  `tables\lang_<ll>.def`'s record (1.2 had it as `menuLang`; 1.0's found at 0x661C6C); its code page is used now.
+  English and French were seen; the others are a table of Windows' code pages.
+- **Not run**: `"go": "new"` and `"extreme"`: a new game writes the profile's first saves over the owner's, and that
+  is not this session's to do. A freeride start writes `mafiaNNN.570` and `.sav`, as every freeride start did before.
+- A doubt about a tool was settled on the way: `player` said Tommy sat in a car while the screenshot showed him on
+  foot; read again, he was on foot: the first reading was taken in the chapter's opening scene, where he arrives by
+  car.

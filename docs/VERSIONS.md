@@ -76,7 +76,13 @@ Everything the loader offers on 1.2 runs on 1.0; where 1.0's code differs, the l
 - **IGraph**: the same interface, but 1.0's vtable has its slots elsewhere from the keyboard on (its keyboard read
   is slot 37, 1.2's 38; its mouse read 51, 1.2's 55): addresses are taken from the code, not by slot number.
 - **The text database**: the same code (`GetText` 1.0 `0x57D850`, `GetTextOrNULL` `0x57D8B0`), its object
-  `0x67A57C`; 1.0's lab is French (the texts the bridge reads are the game's language, code page 1250).
+  `0x67A57C`; 1.0's lab is French. The texts are in the language's code page, 1252 for French (2026-10-14: read as
+  1250 before, "Piège" came out "Pičge"); the language is `+4` of `tables\lang_<ll>.def`'s record, `0x661C6C` in
+  1.0 (`menuLang`), `0x6C42C4` in 1.2.
+- **The start's other ways** (2026-10-14): the freeride's kind menu, its spawn menu and the load menu are the same
+  ids and the same names in 1.0 (`freeridetrack` 401..405, `freeridestart` 101.., `loadgame` 100.. newest first, the
+  saves' records at the profile manager's `+0x14`): the night city with Hoboken and the 17th chapter's save were
+  started in the 1.0 lab by the same code as in 1.2.
 - **The freeride's densities**: the same ids (21, 22, 23), set and read by `gui_menu_set_component_float` /
   `get` (`0x56F1F0`, `0x56F1C0`); the start stores them in `0x671EDC..` and the mission uses them only when the
   profile manager's `+0x1F0` is 3 or more, as in 1.2. The freeride's kind is the screen's `+0x48` (1.2's `+0x30`).

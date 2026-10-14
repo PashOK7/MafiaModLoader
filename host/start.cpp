@@ -12,7 +12,16 @@
 // - profile: in the profile menu, the profile with this number (savegame\mafiaNNN.sav) or name is taken, by the
 //   command a click on it sends (100 + its place in the list the game has read);
 // - go: "freeride" sends the main menu's freeride command, then the freeride menu's start: the game's default
-//   freeride with the menu's own default settings (missions\freeitaly). "menu" stops in the main menu;
+//   freeride with the menu's own default settings (missions\freeitaly). "menu" stops in the main menu; "load" opens
+//   the load menu and takes a save; "new" starts a new game (the intro mission, then mise01); "extreme" the
+//   freeride extreme (missions\extreme);
+// - kind ("freeride"): city-small (the default, freeitaly), city-night (freeridenoc), countryside-night
+//   (freekrajinanoc), city (freeride), countryside (freekrajina): the kind menu's row (command 100 of the freeride
+//   menu opens it); for a kind other than city-small the start opens the spawn menu, where place (1..: its row, or a
+//   part of its text: "Down Town") is taken (default 1). A kind the profile has not opened (the menu hides it) is
+//   started all the same, and start.state says so;
+// - save ("load"): the save's number (savegame\mafiaNNN.<number>, the profile's) or a part of its name ("Old
+//   Prison"); several names matched or none: the start fails and lists them;
 // - traffic, pedestrians, police (0..1; each optional): the freeride menu's three density sliders, set before its
 //   start by the setter the menu itself sets them with ("police": 0 is a city without patrols). The game uses
 //   them only for a profile that has opened the freeride's settings; the log says when it has not.
@@ -40,14 +49,31 @@ using json = nlohmann::json;
 namespace host {
 namespace {
 
+// The freeride's kinds, as its kind menu ("freeridetrack") offers them: the command a click sends, the result it
+// closes with (what MafiaEntryPoint opens: 28 freeitaly ... 32 freekrajinanoc), the mission, and the level of the
+// profile's freeride progress (loadSave + 0x1F0) from which the menu shows the row (0: always; 1: 402, 403; 2: all).
+struct Kind { const char *name, *alias, *mission; int command, result, unlock; };
+const Kind kKinds[] = {
+    {"city-small", "small", "freeitaly", 401, 28, 0},
+    {"city-night", "night", "freeridenoc", 402, 30, 1},
+    {"countryside-night", "", "freekrajinanoc", 403, 32, 1},
+    {"city", "city-day", "freeride", 404, 29, 2},
+    {"countryside", "countryside-day", "freekrajina", 405, 31, 2},
+};
+
 struct Request {
     bool active = false, skipLogos = false;
     int profileNumber = -1;        // -1: by name, or none
     std::string profileName;       // empty: by number, or none
-    std::string go;                // "", "menu", "freeride"
+    std::string go;                // "", "menu", "freeride", "load", "new", "extreme"
     float density[3] = {-1, -1, -1};   // the freeride's traffic, pedestrians, police (below 0: the menu's own)
-    bool profileDone = false, mainDone = false, freerideDone = false, done = false;
-    std::string state = "none", error;
+    const Kind *kind = nullptr;    // the freeride's kind (null: the menu's default, city-small)
+    int placeNumber = 0;           // the spawn menu's row: 1.. (0: by name, or the first)
+    std::string placeName;
+    int saveNumber = -1;           // the save to load: its number (savegame\mafiaNNN.<number>), or by name
+    std::string saveName;
+    bool profileDone = false, mainDone = false, freerideDone = false, kindAsked = false, kindChosen = false, done = false;
+    std::string state = "none", error, note;
     DWORD started = 0;
 };
 Request g_req;
@@ -202,6 +228,60 @@ void Fail(const std::string &why) {
     HWARN("start: %s; the menus are left to the player", why.c_str());
 }
 
+void Done(const char *what) {
+    g_req.state = "done";
+    g_req.done = true;
+    g_req.active = false;
+    HLOG("start: %s (%.1f s after the launch)", what, (GetTickCount() - g_req.started) / 1000.0);
+}
+
+std::string Lower(std::string s) {
+    for (char &c : s) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+    return s;
+}
+
+// A menu's rows (their id and text, UTF-8), from the description menu.state shows.
+std::vector<std::pair<int, std::string>> Rows(uintptr_t menu) {
+    std::vector<std::pair<int, std::string>> out;
+    try {
+        json d = json::parse(MenuDescribe(menu));
+        for (auto &c : d["controls"])
+            if (c.value("kind", "") == "item" || c.value("kind", "") == "butt") out.push_back({c.value("id", 0), c.value("text", "")});
+    } catch (...) {}
+    return out;
+}
+
+// The saves the load menu lists: G_LoadSaveClass + 0x14 / + 0x18, records of 24 bytes ({?, 16, number, ?, ?, text
+// id}: SaveGameEnumFiles 0x605B20 reads them from savegame\mafiaNNN.<number>); the menu shows them newest first,
+// the k-th record as the row 100 + (count - 1 - k) (its command handler 0x5E2840 selects count + 99 - row).
+const char *TextOrNull(unsigned id) {
+    using GetFn = const char *(__fastcall *)(uintptr_t db, void *edx, unsigned id);
+    const game::ExeBuild &e = game::Exe();
+    __try { return reinterpret_cast<GetFn>(e.textGetOrNull)(e.textDb, nullptr, id); }
+    __except (EXCEPTION_EXECUTE_HANDLER) { return nullptr; }
+}
+
+struct Save { int number; std::string name; };
+std::vector<Save> Saves() {
+    std::vector<Save> out;
+    uintptr_t ls = game::Exe().loadSave;
+    uint32_t b = Rd(ls + 0x14), e = Rd(ls + 0x18);
+    if (!b || e < b || (e - b) % 24 || (e - b) / 24 > 1000) return out;
+    for (uint32_t r = b; r < e; r += 24) {
+        const char *t = game::Exe().textGetOrNull ? TextOrNull(Rd(r + 0x14)) : nullptr;
+        char buf[128] = {};
+        if (t) MemRead(reinterpret_cast<uintptr_t>(t), buf, sizeof buf - 1);
+        out.push_back({static_cast<int>(Rd(r + 8)), MenuUtf8(buf)});
+    }
+    return out;
+}
+
+std::string SaveList(const std::vector<Save> &saves, size_t max) {
+    std::string s;
+    for (size_t i = saves.size(); i-- > 0 && saves.size() - i <= max;) s += (s.empty() ? "" : ", ") + std::to_string(saves[i].number) + " \"" + saves[i].name + "\"";
+    return s;
+}
+
 void Step() {
     uintptr_t top = TopMenu();
     if (!top) return;
@@ -222,20 +302,29 @@ void Step() {
         return;
     }
     if (vt == e.menuMainVt && !g_req.mainDone) {
+        // the main menu's commands (its handler 0x5E06E0): 990105 the freeride menu, 990104 the load menu, 990103 a
+        // new game (MafiaEntryPoint plays the intro mission, then mise01), 990106 the freeride extreme (27)
+        static const struct { const char *go; int command; } kMain[] = {{"freeride", 990105}, {"load", 990104}, {"new", 990103}, {"extreme", 990106}};
         g_req.mainDone = true;
-        if (g_req.go == "freeride") {
-            HLOG("start: main menu -> freeride");
+        for (auto &m : kMain) {
+            if (g_req.go != m.go) continue;
+            HLOG("start: main menu -> %s", m.go);
             g_req.state = "main";
-            if (!SafeCommand(top, 990105)) Fail("the main menu's command faulted");
-        } else {
-            g_req.state = "done";
-            g_req.done = true;
-            g_req.active = false;
-            HLOG("start: in the main menu (%.1f s after the launch)", (GetTickCount() - g_req.started) / 1000.0);
+            if (!SafeCommand(top, m.command)) return Fail("the main menu's command faulted");
+            if (g_req.go == "new" || g_req.go == "extreme") Done(g_req.go == "new" ? "a new game started" : "the freeride extreme started");
+            return;
         }
-        return;
+        return Done("in the main menu");
     }
     if (vt == e.menuFreerideVt && g_req.go == "freeride" && !g_req.freerideDone) {
+        if (g_req.kind && !g_req.kindAsked) {   // the kind menu first (the freeride menu's command 100)
+            g_req.kindAsked = true;
+            g_req.state = "freeride";
+            HLOG("start: freeride menu -> its kind menu");
+            if (!SafeCommand(top, 100)) Fail("the freeride menu's command faulted");
+            return;
+        }
+        if (g_req.kind && !g_req.kindChosen) return;   // (the kind menu is still to be seen)
         g_req.freerideDone = true;
         static const char *kDensity[3] = {"traffic", "pedestrians", "police"};
         for (int i = 0; i < 3; i++) {
@@ -245,12 +334,73 @@ void Step() {
             if (Rd(e.loadSave + 0x1F0) < 3)
                 HWARN("start: this profile has not opened the freeride's settings: the game will not use the %s density", kDensity[i]);
         }
-        HLOG("start: freeride menu -> start (kind %u)", Rd(top + e.freerideKind));
+        uint32_t kind = Rd(top + e.freerideKind);
+        if (g_req.kind && kind != static_cast<uint32_t>(g_req.kind->result))
+            return Fail("the freeride menu's kind is " + std::to_string(kind) + " after the kind menu, not " + std::to_string(g_req.kind->result));
+        HLOG("start: freeride menu -> start (kind %u)", kind);
         if (!SafeCommand(top, 201)) return Fail("the freeride menu's command faulted");
-        g_req.state = "done";
-        g_req.done = true;
-        g_req.active = false;
-        HLOG("start: freeride started (%.1f s after the launch)", (GetTickCount() - g_req.started) / 1000.0);
+        if (kind == 28) return Done("freeride started");   // (other kinds open the spawn menu: "freeridestart")
+        g_req.state = "place";
+        return;
+    }
+    std::string name = MenuDefName(top);
+    if (name == "freeridetrack" && g_req.kindAsked && !g_req.kindChosen) {
+        // the kind menu (OnCreate 0x5E1DD0 hides the rows the profile's progress has not opened; a command reaches its
+        // handler all the same: said in the log and in start.state)
+        g_req.kindChosen = true;
+        uint32_t level = Rd(e.loadSave + 0x1F0);
+        if (static_cast<int>(level) < g_req.kind->unlock) {
+            g_req.note = std::string("the profile has not opened the freeride '") + g_req.kind->name + "' (its menu hides the row): started all the same";
+            HWARN("start: %s", g_req.note.c_str());
+        }
+        HLOG("start: kind menu -> %s (%s)", g_req.kind->name, g_req.kind->mission);
+        if (!SafeCommand(top, g_req.kind->command)) Fail("the kind menu's command faulted");
+        return;
+    }
+    if (name == "freeridestart" && g_req.go == "freeride" && g_req.freerideDone && !g_req.done) {
+        // the spawn menu (its handler 0x5E1F90: rows 101.. a place, stored by FreerideStoreB, then the freeride)
+        std::vector<std::pair<int, std::string>> rows = Rows(top), places;
+        for (auto &r : rows) if (r.first > 100 && r.first < 108) places.push_back(r);
+        int id = 0;
+        if (!g_req.placeName.empty()) {
+            for (auto &p : places) if (Lower(p.second).find(Lower(g_req.placeName)) != std::string::npos) { id = p.first; break; }
+        } else {
+            id = 100 + (g_req.placeNumber ? g_req.placeNumber : 1);
+            bool listed = false;
+            for (auto &p : places) listed |= p.first == id;
+            if (!listed) id = 0;
+        }
+        if (!id) {
+            std::string list;
+            for (auto &p : places) list += (list.empty() ? "" : ", ") + std::to_string(p.first - 100) + " \"" + p.second + "\"";
+            return Fail("no place " + (g_req.placeName.empty() ? std::to_string(g_req.placeNumber) : "\"" + g_req.placeName + "\"") + " in the spawn menu (" + list + ")");
+        }
+        HLOG("start: spawn menu -> place %d", id - 100);
+        if (!SafeCommand(top, id)) return Fail("the spawn menu's command faulted");
+        return Done("freeride started");
+    }
+    if (name == "loadgame" && g_req.go == "load" && !g_req.done) {
+        std::vector<Save> saves = Saves();
+        int k = -1;
+        if (g_req.saveNumber >= 0) {
+            for (size_t i = 0; i < saves.size(); i++) if (saves[i].number == g_req.saveNumber) k = static_cast<int>(i);
+        } else {
+            std::vector<int> hits;
+            for (size_t i = 0; i < saves.size(); i++) if (Lower(saves[i].name).find(Lower(g_req.saveName)) != std::string::npos) hits.push_back(static_cast<int>(i));
+            if (hits.size() > 1) {
+                std::string list;
+                for (int h : hits) list += (list.empty() ? "" : ", ") + std::to_string(saves[h].number) + " \"" + saves[h].name + "\"";
+                return Fail("\"" + g_req.saveName + "\" names several saves: " + list);
+            }
+            if (hits.size() == 1) k = hits[0];
+        }
+        if (k < 0)
+            return Fail("no save " + (g_req.saveName.empty() ? std::to_string(g_req.saveNumber) : "\"" + g_req.saveName + "\"") + " of this profile (" +
+                        std::to_string(saves.size()) + " saves; the newest: " + SaveList(saves, 8) + ")");
+        int row = 100 + (static_cast<int>(saves.size()) - 1 - k);
+        HLOG("start: load menu -> save %d \"%s\" (row %d)", saves[k].number, saves[k].name.c_str(), row);
+        if (!SafeCommand(top, row)) return Fail("the load menu's command faulted");
+        return Done("the save is loading");
     }
 }
 
@@ -304,6 +454,23 @@ void StartInit() {
     }
     g_req.go = r.value("go", "");
     if (r.value("background", false)) KeepInBackground();
+    if (r.contains("kind") && r["kind"].is_string()) {
+        std::string k = Lower(r["kind"].get<std::string>());
+        for (const Kind &kd : kKinds) if (k == kd.name || k == kd.alias || k == kd.mission) g_req.kind = &kd;
+        if (!g_req.kind) Fail("kind \"" + k + "\": city-small, city-night, countryside-night, city, countryside (or the missions' names)");
+        else if (g_req.kind->result == 28) g_req.kind = nullptr;   // (the menu's own)
+    }
+    if (r.contains("place")) {
+        if (r["place"].is_number_integer()) g_req.placeNumber = r["place"].get<int>();
+        else if (r["place"].is_string()) g_req.placeName = r["place"].get<std::string>();
+    }
+    if (r.contains("save")) {
+        if (r["save"].is_number_integer()) g_req.saveNumber = r["save"].get<int>();
+        else if (r["save"].is_string()) g_req.saveName = r["save"].get<std::string>();
+    }
+    if (g_req.go == "load" && g_req.saveNumber < 0 && g_req.saveName.empty()) Fail("go \"load\": save, a save's number or a part of its name");
+    if (!g_req.go.empty() && g_req.go != "menu" && g_req.go != "freeride" && g_req.go != "load" && g_req.go != "new" && g_req.go != "extreme")
+        Fail("go \"" + g_req.go + "\": menu, freeride, load, new, extreme");
     static const char *kDensity[3] = {"traffic", "pedestrians", "police"};
     for (int i = 0; i < 3; i++)
         if (r.contains(kDensity[i]) && r[kDensity[i]].is_number()) {
@@ -333,7 +500,10 @@ bool StartMethod(const std::string &method, const std::string &paramsJson, std::
     if (method != "menu.state" && method != "menu.command" && method != "menu.value" && method != "start.state") return false;
     *ok = true;
     if (method == "start.state") {
-        *reply = json{{"state", g_req.state}, {"error", g_req.error}, {"active", g_req.active}, {"go", g_req.go}}.dump(-1, ' ', false, json::error_handler_t::replace);
+        json s = {{"state", g_req.state}, {"error", g_req.error}, {"active", g_req.active}, {"go", g_req.go}};
+        if (!g_req.note.empty()) s["note"] = g_req.note;
+        if (g_req.kind) s["kind"] = g_req.kind->name;
+        *reply = s.dump(-1, ' ', false, json::error_handler_t::replace);
         return true;
     }
     if (!g_menuOk) { *ok = false; *reply = "the menus are not known for this build"; return true; }

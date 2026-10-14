@@ -171,7 +171,9 @@ struct ExeBuild {
     // control's screen place is its definition's times these (GM_Control's constructor 0x5E9BE0).
     uintptr_t menuCursor, menuScale;
     // menuLang: the language's two letters (a u16), the suffix the definitions' loader (0x5EA370) tries first:
-    // tables\menu\<name>_<ll>.mnu, then tables\menu\<name>.mnu.
+    // tables\menu\<name>_<ll>.mnu, then tables\menu\<name>.mnu. It is +4 of the record (0x238 bytes, "Lang", the
+    // letters, the language's name, its fonts' map) the game reads from tables\lang_<ll>.def (1.2 0x5F7000, 1.0
+    // 0x549060); the language also says the texts' code page (host GameCodePage).
     uintptr_t menuLang;
     // The controls' arrays in the controls object (host/input.cpp): controlsBind its binding slots' begin (the end
     // 4 further; 12 bytes a slot), controlsHeld and controlsPressed the float arrays "held" and "pressed this
@@ -357,7 +359,8 @@ inline const ExeBuild kExe10 = {
     0xCA8, 0x234, 0x238,
     0x51AAC0, 0x51AD90, 0x51BA40,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0x624934,   // the menus as 1.2's objects: none (1.0's are below); the game's operator new
-    0, 0x67A4C0, 0,                 // the menus' cursor (floats in 1.0: m10Cursor), their scale (g_gui_scale_x, y), the language
+    0, 0x67A4C0, 0x661C6C,          // the menus' cursor (floats in 1.0: m10Cursor), their scale (g_gui_scale_x, y), the language
+                                    // (+4 of tables\lang_<ll>.def's record, read at 0x661C68 by 0x549060)
     0xB0, 0xC0, 0xD0,               // the controls' arrays
     // the 1.0 menus (2026-10-14; st0rm94's 1.0 reverse, each function read in 1.0's code)
     0x56EA70, 0x56AE50, 0x56AF10, 0x56E500, 0x672630, 0x56F390, 0x56C1D0, 0x63D584, 0x672618, 0x623FC0,

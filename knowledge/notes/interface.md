@@ -41,7 +41,11 @@ known here: **pet1kk** (his notes only), **game** (also checked in our running 1
 - **pet1kk** `.MNU` files: `tables\menu\<name>_<lang>.mnu`, else `tables\menu\<name>.mnu` (the loader `0x5EA370`):
   a header, then controls with a type tag, x/y/w/h in 800x600 units, a text id, flags, children.
 - **pet1kk** The texts' file: `tables\textdb_<lang>.def`: u32 count, u32 0, count times (u32 id, u32 offset), then
-  the strings, 0-terminated, cp1250. (Ours: the database in memory `0x6D8714`, `GetTextOrNULL` `0x60FBA0`.)
+  the strings, 0-terminated, in the language's code page (Czech 1250, French and English 1252: measured on "Piège"
+  in the French 1.0, 2026-10-14). (Ours: the database in memory `0x6D8714`, `GetTextOrNULL` `0x60FBA0`.)
+- **code** The language: `tables\lang_<ll>.def` (`lang_cz.def`, `lang_en.def` the fallbacks), a record of 0x238
+  bytes read by 0x5F7000 (1.0 0x549060) to 0x6C42C0 (1.0 0x661C68): "Lang", the two letters at `+4`, the language's
+  name at `+8` ("English", "French"), its fonts' suffix at `+0x28` ("_lat"), then the fonts' map of the bytes.
 - **pet1kk** Profiles: `0x605570` `thiscall(manager, index)` selects one, `0x6055C0` `thiscall(manager, name)`
   creates and selects one (1: done). The profile menu runs at the start (the call at `0x604FAF`) and from "change
   profile" (`0x6050DF`). The file name formats are pushed at `0x6052D4`, `0x605693`, `0x60576E`, `0x60583B`,

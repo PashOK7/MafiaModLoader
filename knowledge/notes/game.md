@@ -168,6 +168,27 @@ autosplitter; kept outside it, not ported). Checked against the above:
   (constant at 0x624058); a pedestrian hit (type 5) knocks down fully above strength 16 (0x624078). Falling and
   landing damage is hit type 6 (from 0x57B660).
 
+## The start's other ways (host/start.cpp; read 2026-10-14, run in both labs)
+
+- **code** `MafiaEntryPoint`'s switch on the main menu's result (the jump table at 0x5BF4C4, result − 17) opens:
+  17 `tutorial`, 18 `intro` then `mise01` (a new game), 19 the save selected (`SaveGameLoad`), 27 `extreme`,
+  28 `freeitaly`, 29 `freeride`, 30 `freeridenoc`, 31 `freekrajina`, 32 `freekrajinanoc` (read: each case's
+  `C_mission::Open` argument). The notes' earlier "guesses" were right for 27..31; 32 is the countryside at night.
+- **game** The freeride menu's command 100 opens its kind menu (`freeridetrack`, vtable 0x6274C4): rows 401 City -
+  Small (28), 402 City - Night (30), 403 Countryside - Night (32), 404 City - Daytime (29), 405 Countryside - Daytime
+  (31); its handler (0x5E1EC0) closes it with that number, which the freeride menu keeps at `+0x30`. Its OnCreate
+  hides 402..405 when the profile manager's `+0x1F0` is 0, 404 and 405 when it is 1. The start (201) of a kind other
+  than 28 opens the spawn menu (`freeridestart`, vtable 0x627464): rows 101.. (City: Little Italy, Central Island,
+  Down Town, Hoboken; the countryside kinds other texts, 0xFAA..), whose handler stores the row − 100
+  (`FreerideStoreB`) and closes everything with the kind.
+- **game** The load menu (`loadgame`, vtable 0x62739C): its OnCreate (0x5E2400) enumerates the profile's saves
+  (`SaveGameEnumFiles` 0x605B20: `savegame\mafiaNNN.<n>` for each n < 600 with a text 5000 + n) into the profile
+  manager's `+0x14/+0x18`, 24 bytes a save (`+8` its number, `+0x14` its text id: "17-03 Election Campaign - Old
+  Prison" is 465); rows 100.. are the newest first; a row's command selects count + 99 − row (`SaveGameSelect`
+  0x605E40) and closes with 19.
+- **game** Starting a freeride writes the profile's `mafiaNNN.570` and `mafiaNNN.sav` (seen after every freeride
+  start, both labs); loading a chapter wrote nothing until it was played.
+
 ## Actors made new, taken out (host/world.cpp; read 2026-10-14 in both builds, run in both labs)
 
 - **code** The scripts' `ACTOR_DUPLICATE` (0x474A14; 1.0 0x5C2804): `driver->CreateFrame(9)` (the I3D driver's vtable
@@ -189,7 +210,7 @@ autosplitter; kept outside it, not ported). Checked against the above:
   `+0x00` the model's prefix (the file `<prefix><colour %02d>.i3d`, GetCarModel 0x60A6A0), `+0x20` its wreck,
   `+0x40` its shadow, `+0x60` its name. Record 0 is "-". 83 records in 1.2.
 - **data** The items (`tables\predmety.def`): `g_pItems` 0x6D4C14 and its count after it (1.0 0x6EFB94), 188 bytes a
-  record in both builds: `+0x00` the name ("Thompson 1928"; 31 is a sword whose name is not ASCII), `+0x20` flags,
+  record in both builds: `+0x00` the name ("Thompson 1928"; 31, a sword, is named by the one byte 0x85, "…"), `+0x20` flags,
   `+0x24` the model ("2tommy.I3D"), `+0x60` the rounds in a magazine, `+0x64` in reserve (Colt 1911 7 and 35,
   Thompson 50 and 200: what the gun shop and `human_addweapon` callers use).
 

@@ -129,6 +129,7 @@ int MenuPageGetText(MmlMod *mod, int id, char *buf, int size);
 void MenusRemove(MmlMod *mod);
 bool MenuControlValue(uintptr_t menu, int id, float *value);   // a slider's or progress bar's value
 std::string MenuDefName(uintptr_t menu);  // its definition's name (tables\menu\<name>.mnu), lower case
+unsigned GameCodePage();                  // the code page of the game's texts: its language's (1250 Czech, 1252 western)
 uintptr_t MenuClassOf(uintptr_t menu);    // the menu's own vtable (the loader may have put its copy in its place)
 std::string MenuDescribe(uintptr_t menu); // JSON: its definition's name and its controls
 bool MenusMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);

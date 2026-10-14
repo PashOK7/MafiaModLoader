@@ -50,6 +50,8 @@ Then, through MCP (`.mcp.json` registers the server as `mafia`): `game_launch` â
 user keeps working in front): `game_launch {"profile": 4, "go": "freeride", "police": 0}` (or `"go": "menu"`) skips
 the logos and takes the game through its own menus; it returns once the player exists. `"police": 0` is the freeride
 menu's slider: a city without patrols (the player starts with a Thompson in his hands, and patrols shoot at that).
+The other freerides (`"kind": "city-night"`, `"countryside"`... with `"place": "Hoboken"`: the game has no time of day,
+night is a kind), a chapter of the story (`"go": "load", "save": "Old Prison"` or its number), `"new"`, `"extreme"`.
 The same from a terminal: `python tools/start.py freeride --profile 4 --police 0`. Other menus: `call menu.state`,
 `call menu.command {command}`, `call menu.value {id, value}`.
 **Eyes and hands**: `screenshot` returns the game's own frame as a picture (the window may be hidden or behind
