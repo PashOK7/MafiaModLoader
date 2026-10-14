@@ -72,7 +72,11 @@ needs no thread, window or Windows hook of its own. Try things without a mod: `c
 facts, callers, callees and its decompiled code (read from the MafiaReverse folder, `reverse_dir` in
 `mml.config.json`; never committed). `crash_inspect` and `where` name the functions they show. Then check in the
 running game (`mem_read`, `call`), and write what you learned back: `knowledge/<module>/names.csv`,
-`knowledge/notes/`, addresses code uses in `game_build.h`.
+`knowledge/notes/`, addresses code uses in `game_build.h`. **Others have reversed much of the game** (multiplayer
+mods for 1.2, a 1.0 reverse with 114 class documents, LS3D's interfaces): their names are in the knowledge base
+(`external.csv`, source named), the scripts' commands in `knowledge/game.exe/script_commands.csv`, and
+`knowledge/notes/external.md` says where to read what, by topic (`re/ext/<project>/...`): read there before
+reversing a system anew.
 
 ## Map
 
@@ -86,7 +90,7 @@ running game (`mem_read`, `call`), and write what you learned back: `knowledge/<
 | `mods/examples/` | `telemetry` (C++: the mod kit's complete example: an overlay, a hotkey, the car, saved files, settings), `hello_c` (plain C, the smallest); more languages to come (see `docs/ROADMAP.md`) |
 | `mcp/` | the MCP server (Rust, `rmcp`): bridge client, game process, crash dumps, deploy, the knowledge base (`kb.rs`), screenshots (`shot.rs`) |
 | `tests/` | `harness/` (the stand-in game), `mods/` (test mods: `hook_a`, `hook_b`, `kit`), `run_tests.py`, `mcp_smoke.py` |
-| `tools/` | `lab.py` (the lab's modes, install), `deps.py` (pinned downloads), `check_builds.py` (the address tables against the game's files), `kb_import.py` (the knowledge base from MafiaReverse), `start.py` (launch into a profile and the freeride), `new_mod.py` (a new mod: its folder, manifest, settings, CMake line), `replace.py` (exact text edits) |
+| `tools/` | `lab.py` (the lab's modes, install), `deps.py` (pinned downloads), `check_builds.py` (the address tables against the game's files), `kb_import.py` (the knowledge base from MafiaReverse), `kb_external.py` (other projects' names, checked), `start.py` (launch into a profile and the freeride), `new_mod.py` (a new mod: its folder, manifest, settings, CMake line), `replace.py` (exact text edits) |
 | `third_party/` | MinHook, nlohmann/json (vendored); `_deps/` (downloaded: Ultimate ASI Loader, LuaJIT) |
 
 ## Facts that cost time to find

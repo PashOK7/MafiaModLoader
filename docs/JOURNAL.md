@@ -221,3 +221,33 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   A bitmap in the data folder loaded by full path and by a path from the game's folder: icons for achievements.
 - The owner clicked about on the test page by hand while it was being checked (and said so): the slider's and the
   number's extra changes in that first check were his, not the tools'.
+
+## 2026-10-14: other projects' knowledge
+
+- **The owner's direction**: find open-source work on Mafia and take the most from it, so as not to reverse
+  everything anew. Searched GitHub (repositories and code, by the game's class names): MafiaHub's MafiaOnline (a
+  live multiplayer for exactly our 1.2 `Game.exe`: its SHA-256 is our `re/Game.exe`'s) and Oakwood (1.2), reM and
+  Marvisak's byte-exact mafia-re (1.2), st0rm94's reverse-engineering export (1.0, 5098 named functions, 114 class
+  documents, the script machine), mEdit's LS3D headers, OpenMF's format parsers, Insanity3D (LS3D's ancestor, its
+  SDK documentation). Cloned into `re/ext/` (ignored); `knowledge/notes/external.md` says what each holds, on
+  what terms, and where to read by topic. Only facts come in, each with its source.
+- `tools/kb_external.py`: every address checked against our files before it is kept (a function's must start
+  one; MafiaOnline's contract rows only where their original bytes are ours: one was not). 3146 Game.exe names,
+  1141 LS3DF names; the MCP server reads them beside ours (`external.csv`).
+- **1.0 names to 1.2**: st0rm94's `Game.exe` 1.0 is the same code as our `re/v10/Game.exe` (its dispatcher at the
+  same address), though not byte for byte the same file. The functions of the two builds are paired by their code: exact code with
+  the image's addresses taken out, the strings a function uses, then the call graph from every pair (the calls
+  aligned in order, the callers chosen by the likeness of their instructions), seeded with `game_build.h`'s pairs.
+  The first matcher (exact code and same-length call lists) paired 1587 and missed 7 of 17 known pairs (a
+  vehicle's fields sit 0x7C apart between the builds, so its functions' code differs); the second pairs 2726, all
+  17 right, and agrees with the decompile's class on 886 of 889 named functions.
+- **The script commands, read from the binaries**: the keyword table is built on DecodeInstruction's stack (1.0
+  from immediates, 1.2 from copies of data), so it was taken by running that function in an emulator (unicorn) on
+  an unknown word and reading the stack; the handlers from the dispatcher's jump table. 1.2 has 396 commands, 1.0
+  389: seven new ones (inverse trigonometry, 2D vector rotation, `GRABER_SETFOCUS`, `FRM_SETON1`) shift 1.2's
+  opcodes, so 1.0's table cannot be used for 1.2 as it is. The 1.0 handlers read here equal st0rm94's.
+- **IGraph's interface** (mEdit's header) names the slots this project had found by reading LS3D's code: all of
+  them agree (CreateITexture 1, Present 15, SetState 17, DrawPrimitiveList 22, UpdateKeyboardData 38, ReadKey 39,
+  ReadChar 40, UpdateMouseData 55, Mouse_rx/ry/rz 56-58, GetMouseButtons 62).
+- A here-document turned `\b` into a backspace character in the tool once (AGENTS.md's trap again); the sources
+  touched were scanned for control characters afterwards.

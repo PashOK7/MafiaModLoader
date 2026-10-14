@@ -76,8 +76,10 @@ fn load_module(dir: &PathBuf, name: &'static str, base: u32, source: &'static st
             }
         }
     }
+    // ours (names.csv), then other projects' (external.csv: tools/kb_external.py, each checked against the files)
     let mut names = vec![];
-    if let Ok(mut rd) = csv::Reader::from_path(d.join("names.csv")) {
+    for file in ["names.csv", "external.csv"] {
+        let Ok(mut rd) = csv::Reader::from_path(d.join(file)) else { continue };
         for r in rd.records().flatten() {
             let Some(addr) = hex(&r[0]) else { continue };
             names.push(Name { addr, kind: r[1].into(), name: r[2].into(), source: r[3].into(), note: r[4].into() });

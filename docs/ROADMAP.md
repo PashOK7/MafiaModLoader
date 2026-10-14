@@ -76,10 +76,19 @@ What is done, what comes next and later, and what is known to be missing or wron
   with the mouse; the freeride started, a slider dragged and a dialog answered by mouse alone; the telemetry
   example's check box and switch.
 
+- **Other projects' knowledge** (2026-10-14; the owner: "take the most from what others have reversed"): eight
+  open projects on Mafia found and cloned into `re/ext/` (MafiaHub's MafiaOnline and Oakwood, reM and mafia-re for
+  1.2; st0rm94's 1.0 reverse; mEdit, OpenMF, Insanity3D); `tools/kb_external.py` brings 3146 Game.exe names and
+  1141 LS3DF names into the knowledge base, each address checked against our files (st0rm94's 1.0 names carried
+  to 1.2 by pairing 2726 functions by their code), and the scripts' 396 commands with their 1.2 handlers.
+  `knowledge/notes/external.md`: where to read what, by topic.
+
 ## Next, in order
 
 1. **The engine's own commands from MCP.** The mission scripts' interpreter (`C_program::DecodeInstruction`
-   0x463960, `C_program::Process` 0x46D3B0) knows hundreds of commands (`HUMAN_*`, `PLAYER_*`, `CAR_*`,
+   0x463960, `C_program::Process` 0x46D3B0) knows 396 commands (each one's handler in 1.2:
+   `knowledge/game.exe/script_commands.csv`; what each does: st0rm94's `opcode-table.md`, `opcodes-verified.md`;
+   spawning people and cars as MafiaOnline does it: `knowledge/notes/external.md`) (`HUMAN_*`, `PLAYER_*`, `CAR_*`,
    `ACTOR_SETPOS`, weather, time). Run one at a time from the bridge (a small program given to the interpreter, or
    the command handlers called directly): teleport, spawn a car or a person, give a weapon, kill or knock someone
    down, set the time of day. A developer console built on the game's own mechanisms.
@@ -154,6 +163,10 @@ What is done, what comes next and later, and what is known to be missing or wron
   `knowledge/notes/game.md`, "Cars").
 - **The mission's events**: a pause is told only when a menu stops the world (cutscenes and the map are not
   events); `MISSION_LOADED` is the first tick, not a flag of the game's.
+- **Other projects' names** (`external.csv`): 2726 of st0rm94's 5098 1.0 functions are paired with 1.2's; the
+  rest differ too much or are too small to tell apart. A name from another project names what that project
+  understood; 3 of 889 checked differ in class from the decompile's. MafiaOnline's contract rows count only where
+  their bytes are ours. Field layouts (st0rm94's are 1.0's) are not imported: read in place.
 - **Settings**: no schema (a mod checks its own values); the files are polled twice a second.
 - **The game's menus, extended**: 1.2 only (1.0's menu code is built differently; its addresses are zeros; LS3D's
   mouse read is known in 1.0 too, by code). The pause menu and the main menu were extended in the lab; items in
