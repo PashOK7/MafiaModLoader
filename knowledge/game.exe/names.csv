@@ -1,6 +1,7 @@
 address,kind,name,source,note
 004020B0,function,CacheTick,mafia-ragdoll,
 00405D90,function,actorDtor,mafia-ragdoll,
+004087E0,function,modelOpen,game_build.h,
 004123F0,function,PhysStep,mafia-ragdoll,
 004216D8,label,carWater,mafia-ragdoll,
 00422EE0,function,carReset,mafia-ragdoll,
@@ -19,7 +20,13 @@ address,kind,name,source,note
 004588D0,function,pedHit,mafia-ragdoll,
 00459450,function,pedAnimStart,mafia-ragdoll,
 00460980,function,frameSetPos,mafia-ragdoll,
+00460AD0,function,progCtor,game_build.h,
+00461530,function,progSetSource,game_build.h,
+004616A0,function,progDone,game_build.h,
 00461C70,function,C_program::ParseArgs,pet1kk,opcode -> payload (after DecodeInstruction); hooked to add script commands
+0046C770,function,progCompile,game_build.h,
+0046CCB0,function,progCallProcess,game_build.h,
+0046CEC0,function,progInvalidateActor,game_build.h,
 0046D3FE,site,scriptDispatch,pet1kk,the interpreter's dispatch by opcode; its bound check at 0x46D406
 00479996,site,scriptDefault,pet1kk,the dispatch's default case
 0047999F,site,scriptStay,pet1kk,the end of an instruction without advancing: a command that waits
@@ -38,6 +45,7 @@ address,kind,name,source,note
 004CBBD0,function,vehicleExternalForce,mafia-ragdoll,
 004CD590,function,C_Vehicle::GetRotations,mml,rpm: turns a second +0x548 times 60 when the engine is on (+0xC2C)
 004CDE90,function,C_Vehicle::CalcSpeed,mml,"position +0x320 from the car frame +0x34C, speed +0x59C = |velocity +0x1F90| (m/s)"
+004CE960,function,vehicleCalm,game_build.h,
 004CEB30,function,C_Vehicle::GetVehicleStateSize,mml,thiscall -> bytes of a saved state (1525 for the freeride taxi)
 004CEB30,function,vehStateSize,game_build.h,
 004CEE00,function,C_Vehicle::SaveVehicleState,mml,"thiscall(vehicle, buffer) ret 4; {u32 9, u32 size, position, rotation, velocities, ...}; tried in the lab"
@@ -57,6 +65,7 @@ address,kind,name,source,note
 0052D117,label,save1e,mafia-ragdoll,
 0052D11F,label,save1eGo,mafia-ragdoll,
 0052D12A,label,save1eNone,mafia-ragdoll,
+0053F7D0,function,missionCreateActor,game_build.h,
 005405E0,function,missionClose,mafia-ragdoll,
 005407E0,function,missionTick,mafia-ragdoll,
 005409D0,function,missionOpen,game_build.h,
@@ -78,6 +87,8 @@ address,kind,name,source,note
 0058F4B0,function,C_player::InputOnFoot,mml,from C_player::AI with the held and pressed arrays; turns by mouseSensitivity * 5 * held[18]
 005917F0,function,C_player::InputDriving,mml,"slots 33..57 in pairs: accelerate, brake, steer left/right, handbrake, limiter, gears, horn, look, clutch; 57 gearbox"
 00594FA0,function,C_player::ActionInCar,mml,nothing while the car moves (speed >= 0.5); stops the engine when it runs; else gets out
+005A77C0,function,gameAddTemp,game_build.h,
+005A79A0,function,gameRemoveTemp,game_build.h,
 005A84A0,function,Shot,mafia-ragdoll,
 005A8E70,function,bulletsTick,mafia-ragdoll,
 005A935C,label,bulletRay,mafia-ragdoll,
@@ -152,6 +163,7 @@ address,kind,name,source,note
 006234BC,label,EndShare,mafia-ragdoll,
 00623EF8,label,pedSystemVtable,mafia-ragdoll,
 00623FA0,label,pedManagerVtable,mafia-ragdoll,
+00624858,label,progVt,game_build.h,
 006256F8,label,C_human_vtable,mafia-ragdoll,
 00625E58,data,GM_PauseMenu_vtable,mml,the pause menu the game loop makes on Esc; its loop does not tick the mission
 00625EB8,label,menuMainVt,game_build.h,
@@ -164,6 +176,7 @@ address,kind,name,source,note
 0063D768,label,pedElements,mafia-ragdoll,
 0063D8A4,label,EmitterTable,mafia-ragdoll,
 00647C30,label,controls,game_build.h,
+00647DD0,label,modelCache,game_build.h,
 00647ED8,data,g_pI3DDriver,mml,"I3D_driver*; vtable +0x14 SetState(id, value), +0x18 GetState(id); state 3 is 0 while the game draws 2D"
 00647ED8,label,i3dDriver,game_build.h,
 00647EE0,data,g_pIGraph,pet1kk,"IGraph*; its vtable ls3d+0x9D500: +0x0C SetTexture, +0x3C Present, +0x44 SetState, +0x48 GetState, +0x58 DrawPrimitive (read in LS3DF by mml)"
@@ -184,7 +197,9 @@ address,kind,name,source,note
 006C4078,data,g_Chars,mml,"the fonts character maps: one pointer a font (0 plain, 1 bold, 2 the menus handwriting)"
 006C42C4,data,menuLang,mml,
 006C4500,data,hudXOffset,mml,float added to every HUD x in 1.2 (0 at 4:3)
+006D4560,label,carDb,game_build.h,
 006D4628,label,loadSave,game_build.h,
 006D4B00,label,mouseSensitivity,game_build.h,
+006D4C14,label,items,game_build.h,
 006D4C1C,label,ParticleDefs,mafia-ragdoll,
 006D8714,label,textDb,game_build.h,

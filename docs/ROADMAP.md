@@ -107,13 +107,23 @@ What is done, what comes next and later, and what is known to be missing or wron
   cloned beside the player, rain, the traffic hidden, an explosion at an actor, a weapon given, a compile error
   named by its line.
 
+- **The world without a program** (2026-10-14; the roadmap's "more hands", its first part; docs/SCRIPTS.md "The world
+  without a program"): a car or a person of any model made new by the game's own functions (the scripts'
+  `ACTOR_DUPLICATE` recipe with the caller's model file; the game's car list by name), taken out again (its model
+  with it), moved and turned, seated in a car, armed by an item's name (`tables\predmety.def` read in memory). MCP
+  `spawn`, `teleport`, `give`; the bridge's `world.*`; mods' `actor_spawn`, `actor_remove`, `actor_teleport`,
+  `actor_seat`, `item_id`, `give_item` (the telemetry example's F6). `ScriptExec`: a program run at once, in the same
+  frame. Seen in both labs: a Bolt-Thrower spawned, entered and driven; Paulie spawned with a Thompson, put into the
+  player's car and riding in it; Sam armed; removals (the model gone too); refusals (a car's model as a person, no
+  such file, a car someone sits in).
+
 ## Next, in order
 
-1. **More hands, past the script machine.** What the missions' commands do not offer: a person or a car of any
-   model made new (not a copy: MafiaOnline's human factory and car catalog, `knowledge/notes/external.md`), the time
-   of day (no command found yet), a knock-down that always works (`human_forcefall` only nudges), the weapons' ids
-   by name (`tables\predmety.def`), named helpers for the common recipes (teleport to coordinates, spawn here) so an
-   agent need not write the program; scripts' events (`setplayerfireevent`...) to a program of the loader's.
+1. **More hands, the rest.** Orders for the people made (walk or drive to a place, follow, attack: the AI's own
+   jobs, `ai_action_manager`, and the commands that give them), the time of day (no command found yet), a
+   knock-down that always works (`human_forcefall` only nudges), scripts' events (`setplayerfireevent`...) to a
+   program of the loader's; a person's models listed (`world.cars` has the cars; people's models are files: the
+   models' archives' index).
 2. **LuaJIT script mods** (`type: "lua"`): a runtime mod embedding LuaJIT (pinned by `tools/deps.py`), one Lua state
    per script mod, hot reload on change; the C API through LuaJIT's FFI (`ffi.cdef` of `mml.h`), so scripts read and
    write memory, describe the game's structures and call its functions; `lua.eval` for agents (a hypothesis tested
@@ -166,6 +176,18 @@ What is done, what comes next and later, and what is known to be missing or wron
   argument parsing is lenient (a bad number is 0): only an unknown command or unparsable arguments fail the
   compile. A program's `dim_*` larger than the loader's 256 / 64 / 64 makes new, zeroed registers. A command that
   faults stops its program; the game's state the command had changed by then is left as it is.
+
+- **The world** (host/world.cpp): only cars (type 4) and people (27, the NPC kind, with no script and no AI order:
+  they stand) are made; dogs, boxes and other actor kinds are not offered. A person's model is checked for the
+  bones the shot code reads; any other model the game opens is taken for a car without a check of its own (a car's
+  `Init` refused nothing seen so far). People's models are not listed (they are files: `call humans` shows those in
+  use). Spawned actors are kept out of saved games (as the cheat car); whether a saved game made with one around
+  loads cleanly was not tried. `teleport` moves a person in a tram in the tram's space (frm_setpos). `world.remove`
+  takes out only what `world.spawn` and mods made, and nothing a person sits in or that sits in a car.
+  `ScriptExec` cannot run a command that waits for frames (an error names its line). Mods' world functions were
+  run in the 1.2 lab through the telemetry example (actor_spawn, actor_remove) and in the offline harness (every one
+  refused with no game); `actor_teleport`, `actor_seat`, `give_item` from a mod only there (they are the bridge's
+  `world.*`, which ran in both labs).
 
 - **The start covers the default freeride and the main menu only** (see Next, 4). Without `profile` the profile
   menu waits for the player. The freeride's densities count only for a profile that has opened the freeride's

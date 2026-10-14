@@ -21,7 +21,7 @@ use rmcp::{
     tool, tool_handler, tool_router,
 };
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
@@ -171,6 +171,81 @@ struct ScriptArgs {
     /// Return at once with the program's id (default false: wait until it ends); `call script.state {id}` then.
     #[serde(default)]
     no_wait: Option<bool>,
+}
+
+#[derive(Deserialize, Serialize, JsonSchema)]
+struct SpawnArgs {
+    /// A car: its name in the game's car list ("Bolt-Thrower", "bolt ace tudor": a part of the name will do when only
+    /// one car has it) or its number; `call world.cars {query}` lists them.
+    #[serde(default)]
+    car: Option<Value>,
+    /// The car's colour: which of its model files (<prefix>00.i3d, 01...; default 0).
+    #[serde(default)]
+    color: Option<u32>,
+    /// A person: his model ("Paulie", "Sam", "Tommy": the game's models\<name>.i3d; `call humans` shows models in
+    /// use). He stands, armed with nothing, until told (give, script).
+    #[serde(default)]
+    human: Option<String>,
+    /// Where: [x, y, z] (the world's metres, +y up), or an actor ("player" the default, "car", "0x...") with
+    /// `ahead` metres in front of it (the car for a player who sits in one).
+    #[serde(default)]
+    at: Option<Value>,
+    /// Metres in front of the `at` actor (default 8 for a car, 2.5 for a person).
+    #[serde(default)]
+    ahead: Option<f64>,
+    /// The direction it faces, [x, y, z] (default: a car as the `at` actor, a person facing it; +z at coordinates).
+    #[serde(default)]
+    dir: Option<Value>,
+    /// Put on the ground under the place (default true).
+    #[serde(default)]
+    ground: Option<bool>,
+    /// A person put at once into this car's seat ("car": the player's, or an address).
+    #[serde(rename = "in", default)]
+    in_car: Option<String>,
+    /// That seat: 0 the driver's, 1 beside him (default), 2 and 3 behind.
+    #[serde(default)]
+    seat: Option<u32>,
+}
+
+#[derive(Deserialize, Serialize, JsonSchema)]
+struct TeleportArgs {
+    /// Who: "player" (default; a player in a car moves the car), "car", an actor's address.
+    #[serde(default)]
+    actor: Option<String>,
+    /// Where: [x, y, z], or an actor ("car", "0x...") with `ahead` metres in front of it.
+    to: Value,
+    /// Metres in front of the `to` actor (default 3).
+    #[serde(default)]
+    ahead: Option<f64>,
+    /// Turned to face [x, y, z] (default: as it was).
+    #[serde(default)]
+    dir: Option<Value>,
+    /// A car: stopped, set on its wheels and repaired (the scripts' car_repair; default true).
+    #[serde(default)]
+    repair: Option<bool>,
+}
+
+#[derive(Deserialize, Serialize, JsonSchema)]
+struct GiveArgs {
+    /// Who: "player" (default) or a character's address.
+    #[serde(default)]
+    actor: Option<String>,
+    /// The item: its name ("Thompson 1928", "colt 1911", "grenade", "bat") or its number; `call world.items` lists
+    /// them.
+    item: Value,
+    /// Rounds loaded (default: a full magazine).
+    #[serde(default)]
+    loaded: Option<i32>,
+    /// Rounds in reserve (default: the item's usual).
+    #[serde(default)]
+    reserve: Option<i32>,
+}
+
+/// The JSON object of a tool's arguments, as the bridge method takes them (absent fields left out).
+fn params_of<T: Serialize>(a: &T) -> Value {
+    let mut v = serde_json::to_value(a).unwrap_or(Value::Null);
+    if let Some(o) = v.as_object_mut() { o.retain(|_, x| !x.is_null()); }
+    v
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -646,6 +721,30 @@ impl Server {
         }
     }
 
+    /// Make a new car of any model, or a person of any model, in the world, by the game's own functions (as its
+    /// scripts' actor_duplicate makes a copy): a real actor, driven, hit, entered like the mission's own. E.g.
+    /// {"car": "Bolt-Thrower"} in front of the player, {"human": "Paulie", "in": "car"} beside him in his car.
+    /// Returns the actor (its address for `teleport`, `give`, `script`; `call world.remove {actor}` takes it out).
+    #[tool]
+    async fn spawn(&self, Parameters(a): Parameters<SpawnArgs>) -> Out {
+        self.call_value("world.spawn", params_of(&a), None).await.map(|v| pretty(&v))
+    }
+
+    /// Move an actor (the player on foot or in his car, a car, a character) to a place or in front of another
+    /// actor, turned when asked: the scripts' actor_setpos, run at once (a car is also stopped, set on its wheels
+    /// and repaired unless `repair` is false). Returns where it is now.
+    #[tool]
+    async fn teleport(&self, Parameters(a): Parameters<TeleportArgs>) -> Out {
+        self.call_value("world.teleport", params_of(&a), None).await.map(|v| pretty(&v))
+    }
+
+    /// Give a weapon or an item by its name to the player (into his inventory) or a character (in his hands at
+    /// once): the scripts' human_addweapon, with a full magazine and the usual reserve unless told otherwise.
+    #[tool]
+    async fn give(&self, Parameters(a): Parameters<GiveArgs>) -> Out {
+        self.call_value("world.give", params_of(&a), None).await.map(|v| pretty(&v))
+    }
+
     /// The mission scripts' commands (the language of `script`): each one's opcode and handler in 1.2 and 1.0
     /// ("runs": false where the standalone program has no case for it), with its arguments and what it does where
     /// st0rm94's annotated 1.0 reverse is cloned (re/ext/mafia-reverse-engineering-export; a lead, read in place).
@@ -707,6 +806,9 @@ controls}` opens a page made by the game from control descriptions; a mod does t
 A new mod: python tools/new_mod.py <id>, then docs/MODDING.md (mods/examples/telemetry is a complete one). \
 The loop for a mod: edit -> build (cmake --build --preset x86-release) -> \
 deploy -> call its commands -> log_tail. After a crash: crash_list, crash_inspect, log_tail with previous. \
+The world without a program: `spawn {car | human, at, in}` makes a car or a person of any model (the game's car list: \
+`call world.cars`), `teleport {actor, to}` moves one, `give {actor, item}` arms by name (`call world.items`), \
+`call world.seat {actor, car, seat}`, `world.remove {actor}`; mods: actor_spawn, actor_teleport, give_item, actor_seat. \
 The game's own script machine: `script {code, act, flt}` runs a program in the missions' language (teleport, spawn, weapons, kill, cars, weather, camera: every command the missions have), `script_commands {query}` tells the commands' arguments, docs/SCRIPTS.md has recipes; a mod does the same with script_run. What a game function does, where a thing lives: kb_search, then kb_function (facts, calls, decompiled code); \
 knowledge/notes/ holds the hand-written findings.";
 

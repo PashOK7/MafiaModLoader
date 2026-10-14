@@ -355,6 +355,42 @@ def main(a):
     for f in ('progSetSource', 'progCallProcess', 'progInvalidateActor'):
         a, b = norm(g12.insn(e12[f] - 0x400000)), norm(g10.insn(e10[f] - 0x400000))
         check(a == b, f'{f}: 1.2 "{a}" vs 1.0 "{b}"')
+    # Actors made new and the game's tables (host/world.cpp; both builds): the scripts' ACTOR_DUPLICATE case makes its
+    # copy with the driver's CreateFrame slot, the model cache's Open, frameSetPos, C_mission::CreateActor and
+    # C_game::AddTemporaryActor; DAN_INTERNAL_1 (the cheat car) links its frame with sceneMoved, sets the car's
+    # particles byte (through a setter that writes carParticles) and calls CalmVehicle; ACTOR_DELETE's tail calls
+    # RemoveTemporaryActor; the model cache's Open returns with ret 0x18; the car list is ECX of GetCarName's calls; the
+    # items' table and count are written by the tables' loader.
+    world = {'1.2': {'dup': (0x474A14, 0x1B0), 'cheat': (0x47863E, 0x140), 'delete': 0x478CF4, 'carName': 0x60A510, 'tables': 0x60F5C0},
+             '1.0': {'dup': (0x5C2804, 0x1D0), 'cheat': (0x5C62E5, 0x140), 'delete': 0x5C6ADA, 'carName': 0x55C540, 'tables': 0x592080}}
+    for name, (exe, ls, gexe, gls) in builds.items():
+        if not exe['modelCache']:
+            continue
+        w = world[name]
+        calls = lambda va, n: {int(i.op_str, 16) for i in gexe.md.disasm(gexe.at(va - 0x400000, n), va)
+                               if i.mnemonic == 'call' and i.op_str.startswith('0x')}
+        dup = calls(*w['dup'])
+        for f in ('modelOpen', 'frameSetPos', 'missionCreateActor', 'gameAddTemp'):
+            check(exe[f] in dup, f'{name} ACTOR_DUPLICATE calls {f} {exe[f]:#x}')
+        dupOps = operands(gexe, *w['dup'])
+        check(exe['modelCache'] in dupOps and exe['drvCreateFrame'] in dupOps and exe['i3dDriver'] in dupOps,
+              f'{name} ACTOR_DUPLICATE: modelCache, the driver and its slot {exe["drvCreateFrame"]:#x}')
+        cheat = calls(*w['cheat'])
+        check(exe['sceneMoved'] in cheat and exe['vehicleCalm'] in cheat, f'{name} the cheat car calls sceneMoved and vehicleCalm')
+        check(any(exe['carParticles'] in operands(gexe, c, 0x10) for c in cheat), f'{name} the cheat car sets carParticles {exe["carParticles"]:#x}')
+        check(exe['gameRemoveTemp'] in calls(w['delete'], 0x12), f'{name} ACTOR_DELETE calls gameRemoveTemp')
+        check(b'\xc2\x18\x00' in gexe.at(exe['modelOpen'] - 0x400000, 0x480), f'{name} modelOpen returns with ret 0x18')
+        code, n = bytes(gexe.mem), 0
+        at = code.find(b'\xb9' + exe['carDb'].to_bytes(4, 'little'))
+        while at >= 0 and n < 2:
+            n += any(i.mnemonic == 'call' and i.op_str == hex(w['carName']) for i in gexe.md.disasm(code[at:at + 16], 0x400000 + at))
+            at = code.find(b'\xb9' + exe['carDb'].to_bytes(4, 'little'), at + 1)
+        check(n >= 1, f'{name} carDb {exe["carDb"]:#x} is ECX of GetCarName')
+        d = operands(gexe, w['tables'], 0x90)
+        check(exe['items'] in d and exe['items'] + 4 in d, f'{name} items {exe["items"]:#x} and its count written by the tables\' loader')
+    for f in ('modelOpen', 'missionCreateActor', 'gameAddTemp', 'gameRemoveTemp', 'vehicleCalm'):
+        a, b = norm(g12.insn(e12[f] - 0x400000)), norm(g10.insn(e10[f] - 0x400000))
+        check(a == b, f'{f}: 1.2 "{a}" vs 1.0 "{b}"')
     # LS3D's mouse read (both builds): GetDeviceState(16, mouseState) in it, ret 4
     for name, (exe, ls, gexe, gls) in builds.items():
         if not ls['mouseUpdate']:

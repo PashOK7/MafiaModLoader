@@ -168,6 +168,31 @@ autosplitter; kept outside it, not ported). Checked against the above:
   (constant at 0x624058); a pedestrian hit (type 5) knocks down fully above strength 16 (0x624078). Falling and
   landing damage is hit type 6 (from 0x57B660).
 
+## Actors made new, taken out (host/world.cpp; read 2026-10-14 in both builds, run in both labs)
+
+- **code** The scripts' `ACTOR_DUPLICATE` (0x474A14; 1.0 0x5C2804): `driver->CreateFrame(9)` (the I3D driver's vtable
+  `+0x50`, 1.0 `+0x4C`), the model cache's `Open(frame, file, 0, 0, 0, 0)` (0x4087E0 on 0x647DD0; 0 is success, ret
+  0x18), the frame's `SetName` (`+0x28`; LS3D copies the string), `LinkTo` (`+0x2C`) to the source's parent,
+  `SetPos` 0x460980, `SetRot`, `Update` (`+0x18`), `C_mission::CreateActor(type)` 0x53F7D0, the actor's
+  `Init(frame)` (vtable `+0x48`; `+0x44` releases it when Init fails), the byte `actor + 0x6C` = 1 (the actor's
+  destructor then releases its frame: `C_actor::~C_actor` 0x405D90), `C_game::AddTemporaryActor` 0x5A77C0 (it calls
+  the actor's `+0x64`, GameInit). The frame is not released by the case: the actor owns it.
+- **code** `DAN_INTERNAL_1` (0x47863E; 1.0 0x5C62E5) makes a Bolt-Thrower named "cheat_car" at a fixed place: the
+  frame linked with `I3D_scene::SetFrameSectorPos` (0x47ADF0 on the mission's scene `+0x10`: the sector at its
+  position), `C_car + 0x220C` (1.0 `+0x214C`) = 1 (its particles), `InternTempActAdd`, `CalmVehicle(100)` on the
+  vehicle (`car + 0x70`), `actor + 0x65` = 1 (out of saved games), the frame released.
+- **game** A removed temporary actor's model stays in the scene: after `RemoveTemporaryActor` (what `ACTOR_DELETE`
+  calls) and the actor's destruction, its frame was still the primary sector's child and drawn where the person
+  stood. The sector keeps a reference; `LinkTo(frame, null)` takes it out (the loader does it in the destructor's
+  hook).
+- **data** The car list: G_CarDatabase 0x6D4560 (1.0 0x671EF0), `{count, records}`, 168 bytes a record (1.0 164):
+  `+0x00` the model's prefix (the file `<prefix><colour %02d>.i3d`, GetCarModel 0x60A6A0), `+0x20` its wreck,
+  `+0x40` its shadow, `+0x60` its name. Record 0 is "-". 83 records in 1.2.
+- **data** The items (`tables\predmety.def`): `g_pItems` 0x6D4C14 and its count after it (1.0 0x6EFB94), 188 bytes a
+  record in both builds: `+0x00` the name ("Thompson 1928"; 31 is a sword whose name is not ASCII), `+0x20` flags,
+  `+0x24` the model ("2tommy.I3D"), `+0x60` the rounds in a magazine, `+0x64` in reserve (Colt 1911 7 and 35,
+  Thompson 50 and 200: what the gun shop and `human_addweapon` callers use).
+
 ## Rendering (LS3DF.dll)
 
 - **code** `I3D_frame::SetVisibleRecMainPass` (0x10041DF0): the main visibility pass, a recursive walk with frustum

@@ -15,6 +15,7 @@
 //   files, settings    ReadSettings, LoadBest, SaveBest   config_*, mod_data_dir, MML_EVENT_CONFIG_CHANGED
 //   the game's menus   OnMenuItem, OpenPage, OnPage   an item in the pause menu, a page of the mod's own (menu_*)
 //   the script machine OnRepairKey       the game's own `car_repair` on the car, run by the game's interpreter (script_run)
+//   the world          OnRivalKey        a car of any model made new in front of the player (actor_spawn, actor_remove)
 //   commands           telemetry.status, telemetry.lap, telemetry.checkpoint   (for agents, over MCP)
 #include <windows.h>
 #include <algorithm>
@@ -77,12 +78,35 @@ void OnRepairKey(void *) {
     H->script_run(M, "car_repair 0", nullptr, acts, 1, nullptr, 0, 2000, OnRepaired, nullptr);
 }
 
+// The third hotkey: a rival, a car of the settings' model (a name of the game's car list, `world.cars`) made new 8 m in
+// front of the player, facing his way, by the game's own functions (actor_spawn); the one made before is taken out
+// (actor_remove: refused while someone sits in it).
+void *g_rival;
+void OnRivalKey(void *) {
+    void *p = game::Player();
+    if (H->mission_state() != MML_MISSION_RUNNING || !p || !MML_HAS(H, actor_spawn)) return;
+    void *at = game::PlayerCar() ? game::PlayerCar() : p;
+    void *frame = game::at<void *>(at, game::kActorFrame);
+    const float *w = frame ? game::WorldMatrix(frame) : nullptr;
+    V3 fwd = w ? Norm(V3{w[8], 0, w[10]}, V3{0, 0, 1}) : V3{0, 0, 1};
+    V3 pos = game::ActorWorldPos(at) + fwd * 8.0f + V3{0, 0.5f, 0};
+    if (g_rival && H->actor_remove(M, g_rival)) g_rival = nullptr;
+    const MmlVec3 mp{pos.x, pos.y, pos.z}, md{fwd.x, fwd.y, fwd.z};
+    const char *model = H->config_string(M, "rival_car", "Bolt-Thrower");
+    if (void *car = H->actor_spawn(M, MML_ACTOR_CAR, model, &mp, &md)) {
+        g_rival = car;
+        H->log(M, MML_LOG_INFO, "a %s in front", model);
+    }
+}
+
 // (Called again when the settings change: the same function and user replace the combination.)
 void Bind() {
     const char *combo = H->config_string(M, "hotkey_lap", "F9");
     if (!H->hotkey(M, combo, OnLapKey, nullptr)) H->log(M, MML_LOG_WARN, "hotkey_lap '%s' is not a key combination", combo);
     combo = H->config_string(M, "hotkey_repair", "F7");
     if (!H->hotkey(M, combo, OnRepairKey, nullptr)) H->log(M, MML_LOG_WARN, "hotkey_repair '%s' is not a key combination", combo);
+    combo = H->config_string(M, "hotkey_rival", "F6");
+    if (!H->hotkey(M, combo, OnRivalKey, nullptr)) H->log(M, MML_LOG_WARN, "hotkey_rival '%s' is not a key combination", combo);
 }
 
 void ReadSettings() {
@@ -231,6 +255,7 @@ void OnMission(const MmlEvent *ev, void *) {
     case MML_EVENT_MISSION_OPEN:      // a new mission loads (ev->name): the old lap means nothing there
         LapReset();
         g_last = 0;
+        g_rival = nullptr;            // (the old world's actors are gone with it)
         break;
     case MML_EVENT_MISSION_LOADED:    // its world runs: the player and the cars exist from here on
         g_mission = ev->name;

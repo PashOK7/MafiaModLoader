@@ -67,7 +67,7 @@ def main():
     tools = {t['name'] for t in c.request('tools/list')['tools']}
     want = {'game_status', 'call', 'commands_list', 'mem_read', 'mem_write', 'log_tail', 'mods_list', 'mod_reload',
             'where', 'game_launch', 'game_close', 'crash_list', 'crash_inspect', 'deploy', 'kb_search', 'kb_function', 'tap',
-            'screenshot', 'input'}
+            'screenshot', 'input', 'script', 'script_commands', 'spawn', 'teleport', 'give'}
     check('tools/list has every tool', want <= tools, want - tools)
 
     ok, text = c.tool('kb_search', {'query': 'scene.i3d', 'module': 'game.exe'})

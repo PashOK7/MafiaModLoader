@@ -208,6 +208,29 @@ H->script_run(M, "car_repair 0", NULL, acts, 1, NULL, 0, 2000, OnDone, NULL);   
   `script_stop`, `script_state`. Stopped when the mod unloads, the mission closes, or its time is out.
 - The telemetry example's F7 (`OnRepairKey`) is a complete use.
 
+### The world: actors made new, moved, armed
+
+```c
+MmlVec3 at = {-1985.0f, -4.4f, 15.0f}, dir = {0, 0, -1};
+void *car = H->actor_spawn(M, MML_ACTOR_CAR, "Bolt-Thrower", &at, &dir);   /* a name of the car list, or a file */
+at.x += 3;
+void *paulie = H->actor_spawn(M, MML_ACTOR_HUMAN, "Paulie", &at, NULL);
+H->give_item(M, paulie, H->item_id("Thompson 1928"), -1, -1);   /* a full magazine, the usual reserve */
+H->actor_seat(M, paulie, car, 0);                               /* at the wheel */
+H->actor_teleport(M, game::Player(), &at, NULL);                /* the scripts' actor_setpos */
+```
+
+- A car or a person of any of the game's models, made by the game's own functions (as its scripts'
+  `actor_duplicate` makes a copy): a real actor of the game, ticked, hit, entered and driven like the mission's own.
+  A person is the game's NPC kind with no script of his own: he stands until a program (`script_run`) tells him
+  more. Null: the log says why (no such model, not a person's model, no mission).
+- `actor_remove` takes out what `actor_spawn` made (yours or anyone's): not while a person sits in a car. Spawned
+  actors stay when the mod unloads; the mission's close takes them all (forget your pointers at MISSION_OPEN).
+- `actor_teleport`, `give_item`, `actor_seat` are the scripts' `actor_setpos`, `human_addweapon`,
+  `human_force_settocar`, run by the game's interpreter at once (not in a later tick, as `script_run` does).
+- The names: `call world.cars` and `call world.items` on the bridge list the game's cars and items.
+- The telemetry example's F6 (`OnRivalKey`) is a complete use.
+
 ### Keys, actions, hotkeys
 
 ```c

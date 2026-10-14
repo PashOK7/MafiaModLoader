@@ -96,6 +96,7 @@ int __fastcall hkMissionTick(void *self, void *edx, int ms) {
 }
 int __fastcall hkMissionClose(void *self, void *edx) {
     ScriptMissionClose();   // (their actors go with the mission)
+    WorldMissionClose();
     SetPaused(false);
     Dispatch(Event(MML_EVENT_MISSION_CLOSE));
     g_missionLoaded = false;
@@ -109,6 +110,7 @@ void __fastcall hkActorDtor(void *self, void *edx) {
     ev.actor = self;
     Dispatch(ev);
     ScriptActorGone(self);
+    WorldActorGone(self);
     oActorDtor(self, edx);
 }
 void *__fastcall hkHumanCtor(void *self, void *edx) {

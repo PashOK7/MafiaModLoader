@@ -7,6 +7,8 @@
   // the profile: there F5 is the speed limiter and Tab the city map).
   "hotkey_lap": "F9",          // starts a lap here and now (modifiers: "Ctrl+F9", "Ctrl+Shift+L")
   "hotkey_repair": "F7",       // repairs the car and puts it on its wheels (the game's own car_repair)
+  "hotkey_rival": "F6",        // a car made new 8 m in front (the one made before taken out)
+  "rival_car": "Bolt-Thrower", // its model: a name of the game's car list (`call world.cars`) or a file ("fordttud00.i3d")
   "key_details": "F8",         // held: fuel, damage, the position
   "units": "kmh",              // "kmh" or "mph"
 

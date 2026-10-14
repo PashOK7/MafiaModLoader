@@ -213,6 +213,45 @@ int H_ScriptRun(MmlMod *m, const char *code, void *owner, void *const *acts, int
 }
 void H_ScriptStop(MmlMod *m, int handle) { if (Alive(m)) ScriptStop(m, handle); }
 int H_ScriptState(MmlMod *m, int handle) { return Alive(m) ? ScriptState(m, handle) : -1; }
+void *H_ActorSpawn(MmlMod *m, int kind, const char *model, const MmlVec3 *pos, const MmlVec3 *dir) {
+    if (!Alive(m)) return nullptr;
+    std::string err;
+    void *a = WorldSpawn(m, kind, model, pos, dir, &err);
+    if (!a) Log(MML_LOG_WARN, Who(m), "actor_spawn: %s", err.c_str());
+    return a;
+}
+int H_ActorRemove(MmlMod *m, void *actor) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    if (WorldRemove(actor, &err)) return 1;
+    Log(MML_LOG_WARN, Who(m), "actor_remove: %s", err.c_str());
+    return 0;
+}
+int H_ActorTeleport(MmlMod *m, void *actor, const MmlVec3 *pos, const MmlVec3 *dir) {
+    if (!Alive(m) || !pos) return 0;
+    std::string err;
+    if (WorldTeleport(actor, *pos, dir, true, &err)) return 1;
+    Log(MML_LOG_WARN, Who(m), "actor_teleport: %s", err.c_str());
+    return 0;
+}
+int H_ItemId(const char *name) {
+    std::string err;
+    return WorldItemId(name, &err);
+}
+int H_GiveItem(MmlMod *m, void *human, int item, int loaded, int reserve) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    if (WorldGive(human, item, loaded, reserve, &err)) return 1;
+    Log(MML_LOG_WARN, Who(m), "give_item: %s", err.c_str());
+    return 0;
+}
+int H_ActorSeat(MmlMod *m, void *human, void *car, int seat) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    if (WorldSeat(human, car, seat, &err)) return 1;
+    Log(MML_LOG_WARN, Who(m), "actor_seat: %s", err.c_str());
+    return 0;
+}
 
 // ---- manifests
 bool ReadManifest(const std::string &dir, const std::string &folder, ModEntry *e, std::string *err) {
@@ -469,6 +508,12 @@ void ModsInit() {
     g_host.script_run = H_ScriptRun;
     g_host.script_stop = H_ScriptStop;
     g_host.script_state = H_ScriptState;
+    g_host.actor_spawn = H_ActorSpawn;
+    g_host.actor_remove = H_ActorRemove;
+    g_host.actor_teleport = H_ActorTeleport;
+    g_host.item_id = H_ItemId;
+    g_host.give_item = H_GiveItem;
+    g_host.actor_seat = H_ActorSeat;
     CleanLive();
     Scan();
     LoadEnabled();
@@ -522,6 +567,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (ConfigMethod(method, paramsJson, reply, &ok)) return ok;
     if (MenusMethod(method, paramsJson, reply, &ok)) return ok;
     if (ScriptMethod(method, paramsJson, reply, &ok)) return ok;
+    if (WorldMethod(method, paramsJson, reply, &ok)) return ok;
     if (method == "mods.list") { *reply = ModsList(); return true; }
     if (method == "commands.list") { *reply = CommandsList(); return true; }
     if (method == "hooks.list") { *reply = HookList(); return true; }

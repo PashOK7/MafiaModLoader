@@ -357,3 +357,35 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   `re/ext`, never copied). The tap tool's text still said "the owner": now "the user".
 - The tests drove the 1.0 lab through `MML_GAME_DIR` (the MCP server's and the bridge client's override), so the
   user's `mml.config.json` was not touched. `check_builds.py` checks the machine's addresses in both builds.
+
+## 2026-10-14: the world without a program
+
+- **The owner's direction**: "continue the work": the roadmap's next item, more hands past the script machine.
+  Done here: actors of any model made new, moved, seated, armed by name, taken out; the rest (orders for the people
+  made, the time of day, a knock-down that always works, the scripts' events) stays next.
+- **The way chosen**: no mission command makes an actor from a model file, but two cases of the interpreter do it
+  for their own ends: `ACTOR_DUPLICATE` (a copy of an actor's model) and `DAN_INTERNAL_1` (a developer's command
+  making a "cheat_car", a Bolt-Thrower, at a fixed place). Both were read in both builds' disassembly; the loader does
+  what they do with a model file of the caller's (MafiaOnline's human factory and car code do the same, and gave the
+  list of bones a person's model must have). Moving, seating and arming are the missions' own commands, run by the
+  game's interpreter at once (`ScriptExec`: compiled and stepped until it stands on its end, in the same frame),
+  not by hand-made copies of their handlers (`ACTOR_SETPOS` alone ends in a light-sampling tail and a car's reset).
+- **Learned in the lab** (1.2): the spawned Bolt-Thrower was a car of the game's in every way ("Get in the car as
+  the driver", driven 14 m, its speedometer shown); a spawned Paulie held a given Thompson; `human_force_settocar`
+  put him beside Tommy and he rode along. The table of items: 188 bytes a record, the magazine at `+0x60` and the
+  reserve at `+0x64` (read against the Colt's 7 and the Thompson's 50); the car list's names and the models' prefixes.
+- **A fault of mine, seen by the owner** ("Paulie still stands there"): a removed Paulie's model stayed in the scene.
+  The actor was gone, its frame still the primary sector's child: the sector holds the frame. The loader now
+  unlinks a removed actor's frame from the scene in the destructor's hook (`LinkTo(null)`), and frames.find shows
+  nothing left. Also refused now: removing a car someone sits in or a person sitting in a car (the car's frame is
+  his parent; MafiaOnline notes the game's removal does not get them out).
+- **1.0** (through `MML_GAME_DIR`, the user's config untouched): the same tables at their 1.0 places (the car list
+  164 bytes a record; the driver's CreateFrame one slot lower, +0x4C), spawned a car, Paulie into the player's car,
+  Sam with a Colt, teleported the car, removed Sam (his model gone), refused Paulie. The 1.0 profile's camera is the
+  bumper's: a car spawned 6 m in front was right before the lens; the default distance for a car is 8 m now.
+- **For mods**: the telemetry example's F6 makes a car of its settings' model in front of the player and takes out
+  the one it made before (seen in the 1.2 lab). The items' names are code page 1250 text (a sword's is not ASCII):
+  read as UTF-8 for the bridge.
+- `check_builds.py` checks the recipe's calls and the tables' places in both builds (ALL PASSED; a wrong driver slot
+  put in by hand failed it). A Python here-document ate backslashes again while editing it (AGENTS.md's trap): the
+  edit was redone with the editor's tool.

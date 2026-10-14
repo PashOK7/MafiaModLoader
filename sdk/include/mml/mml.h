@@ -315,7 +315,39 @@ typedef struct MmlHost {
                       int flt_count, uint32_t timeout_ms, MmlScriptFn fn, void *user);
     void (*script_stop)(MmlMod *mod, int handle);
     int (*script_state)(MmlMod *mod, int handle);
+
+    /* ---- the world: actors made new, moved, armed, by the game's own functions (both builds; while a mission is
+     * open; game thread). Positions are the world's, metres, +y up; a direction is where the actor faces (its
+     * length does not matter; y is ignored for a person).
+     * actor_spawn: a new actor of `kind` (MML_ACTOR_CAR, MML_ACTOR_HUMAN) made as the scripts' actor_duplicate
+     * makes its copy: the model file opened by the game's model cache, the actor made by the mission, initialised
+     * and added to the game's temporary actors (ticked, hit, driven like the mission's own). model: a file of the
+     * game's models ("fordtud00.i3d", "Paulie.i3d"; ".i3d" is added when missing) or, for a car, its name in the
+     * game's car list ("Bolt Ace Tudor"; `world.cars` lists them). A car is set on its wheels; a person stands
+     * (the game's NPC kind, with no script: he does nothing until told, by script_run). dir null: +z. Returns the
+     * actor, or null (the log tells why: no such model, not a person's model, no mission).
+     * actor_remove: an actor made by actor_spawn (any mod's, or the bridge's) taken out of the world (the game
+     * deletes it at its next tick); 0: not one of those, or the player sits in it. Spawned actors stay when their
+     * mod unloads; a mission's close takes them all.
+     * actor_teleport: an actor moved (the scripts' actor_setpos: a car stopped; a person in a car moves the car),
+     * turned to `dir` when not null; a car is also set on its wheels and repaired (car_repair). 1: done.
+     * item_id: an item of tables\predmety.def by its name ("Thompson", "colt 1911": the case is ignored, a part of
+     * the name will do when only one item has it) or its number as text ("10"); -1: none.
+     * give_item: a weapon or an item given (human_addweapon): a person holds it at once, the player gets it in his
+     * inventory; loaded, reserve: the rounds (-1: a full magazine, the item's usual reserve). 1: done.
+     * actor_seat: a person put into a car's seat at once, with no walk and no door (human_force_settocar, how the
+     * missions' passengers appear): 0 the driver's, 1 beside him, 2 and 3 behind. 1: done. */
+    void *(*actor_spawn)(MmlMod *mod, int kind, const char *model, const MmlVec3 *pos, const MmlVec3 *dir);
+    int (*actor_remove)(MmlMod *mod, void *actor);
+    int (*actor_teleport)(MmlMod *mod, void *actor, const MmlVec3 *pos, const MmlVec3 *dir);
+    int (*item_id)(const char *name);
+    int (*give_item)(MmlMod *mod, void *human, int item, int loaded, int reserve);
+    int (*actor_seat)(MmlMod *mod, void *human, void *car, int seat);
 } MmlHost;
+
+/* actor_spawn's kinds: the game's actor types (C_actor +0x10) */
+#define MML_ACTOR_CAR 4
+#define MML_ACTOR_HUMAN 27
 
 typedef int (*MmlModLoadFn)(const MmlHost *host, MmlMod *mod);
 typedef void (*MmlModUnloadFn)(MmlMod *mod);

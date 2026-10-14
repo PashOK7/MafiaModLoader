@@ -57,7 +57,10 @@ others); `input` plays a timed sequence inside the game: the game's actions by n
 (`{"action": "Forwards", "ms": 2000}`, `"Accelerate"`, `"Fire"`, `"Action"`), an exact turn on foot
 (`{"turn": 90}`), keys for the menus (`{"key": "Esc"}`), the menus' mouse (`{"click": [x, y]}`, `{"wheel": -3}`);
 `"screenshot": true` shows the result. `call menu.click {"id": 102}` clicks a menu's control by its id (safer than
-coordinates), `call input.text {"text": "Tommy"}` types. **In the world**: `script {code, act, flt, owner}` runs a
+coordinates), `call input.text {"text": "Tommy"}` types. **In the world**: `spawn {"car": "Bolt-Thrower"}` or
+`{"human": "Paulie", "in": "car"}` makes a car or a person of any model (the game's own functions), `teleport {actor,
+to}` moves one, `give {actor, item: "Thompson 1928"}` arms by name (`call world.cars`, `world.items` list the names;
+`world.seat`, `world.remove`). `script {code, act, flt, owner}` runs a
 program on the game's own script machine (the missions' language: teleport, spawn copies, weapons, deaths, cars,
 weather, traffic, camera; docs/SCRIPTS.md has the recipes), `script_commands {query}` tells a command's arguments. It returns the
 player's state when the last step has ended. `call input.actions` lists every action and its binding.
@@ -88,7 +91,7 @@ reversing a system anew.
 
 | Path | What |
 |---|---|
-| `host/` | `MafiaModLoader.asi`: the never-unloaded host: game hooks → events (the mission's too), hook chains, mods, bridge, crash dumps, `tap`, the start (`start.cpp`: logos, profile, menus), input (`input.cpp`: actions, keys, the mods' keys and hotkeys), screenshots (`screenshot.cpp`), drawing (`draw.cpp`: the game's own 2D drawing for mods and `draw.*`), the game's menus extended (`menus.cpp`: items and pages for mods, `menu.item`, `menu.page`; 1.0's screens: `menus10.cpp`), a mod's data folder and settings (`config.cpp`), the game's script machine for agents and mods (`script.cpp`: `script.run`, `script_run`) |
+| `host/` | `MafiaModLoader.asi`: the never-unloaded host: game hooks → events (the mission's too), hook chains, mods, bridge, crash dumps, `tap`, the start (`start.cpp`: logos, profile, menus), input (`input.cpp`: actions, keys, the mods' keys and hotkeys), screenshots (`screenshot.cpp`), drawing (`draw.cpp`: the game's own 2D drawing for mods and `draw.*`), the game's menus extended (`menus.cpp`: items and pages for mods, `menu.item`, `menu.page`; 1.0's screens: `menus10.cpp`), a mod's data folder and settings (`config.cpp`), the game's script machine for agents and mods (`script.cpp`: `script.run`, `script_run`), the world (`world.cpp`: actors made new, moved, seated, armed; the car list and the items) |
 | `sdk/include/mml/mml.h` | **the C ABI** every native mod uses (C, C++, Rust, Zig...): read it whole |
 | `sdk/include/mml/game/` | what code uses: `game_build.h` (every address, per build, `game::Detect`), `game.h` (layouts, calls: actors, frames, the player's car `game::Car`, a car's state, the mission's name), `mathx.h` |
 | `knowledge/` | the knowledge base: every function of the 1.2 game (from MafiaReverse), our names, notes (`tools/kb_import.py`) |

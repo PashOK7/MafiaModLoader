@@ -91,7 +91,12 @@ except the intro videos), on the game thread, where `LoadLibrary` is safe.
   `Compile` (the first line it does not take fails the program, named), its registers given before it starts, then
   stepped by the game's `CallProcess` once a mission tick, after the mission's own. Stopped at `END`, by a fault in a
   command (the guard), by its time, its mod's unload or the mission's close; actors deleted are taken out of its
-  `act[]` by the game's `InvalidateActorReg`.
+  `act[]` by the game's `InvalidateActorReg`. `ScriptExec` runs a program at once instead (stepped until it stands on
+  its end, in the same frame): what the world's named actions use.
+- **The world** (`world.cpp`, docs/SCRIPTS.md "The world without a program"): actors made new from any model by the
+  game's own functions (the scripts' `ACTOR_DUPLICATE` recipe with a model file of the caller's), kept in a list of
+  their own (only those are taken out again, with their frame unlinked when their destructor runs); moving, seating
+  and arming as the scripts' commands run by `ScriptExec`; the game's car list and items read for names.
 - **The game's own menus, extended** (`menus.cpp`; 1.0's screens, other classes: `menus10.cpp`, the same services
   through the tick every screen calls, `docs/VERSIONS.md`): items and pages for mods (`menu_*`) and agents (`menu.item`,
   `menu.page`), made of the game's controls by the game's code; nothing drawn by the loader. The game's menus are

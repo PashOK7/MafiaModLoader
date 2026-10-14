@@ -214,6 +214,29 @@ struct ExeBuild {
     // own actor, +0x48/+0x4C flt[] (floats, count), +0x50/+0x54 frm[], +0x58/+0x5C act[], +0x64 in a command block.
     // END (opcode 6) ends a program: it stays on it.
     uintptr_t progCtor, progSetSource, progCompile, progCallProcess, progDone, progInvalidateActor, progVt;
+    // Actors made new (host/world.cpp; 0: not known), the way the scripts' ACTOR_DUPLICATE makes its copy and
+    // DAN_INTERNAL_1 its car (each read in both builds' code): a model frame from the I3D driver (its vtable's
+    // drvCreateFrame, stdcall(driver, 9)), the model file opened into it by the model cache (modelOpen,
+    // thiscall(modelCache, frame, const char *file, 0, 0, 0, 0) -> 0 when done, ret 0x18), the frame placed (its
+    // vtable: +0x0C SetDir(frame, const float *dir, float roll), +0x18 Update(frame), +0x28 SetName(frame, name),
+    // frameSetPos) and linked into the sector at its place (sceneMoved, on the mission's scene); then
+    // missionCreateActor (C_mission::CreateActor, thiscall(mission, int type) -> actor, ret 4), the actor's vtable
+    // +0x48 Init(frame) -> bool (+0x44 its Release when Init fails), and gameAddTemp (C_game::AddTemporaryActor,
+    // thiscall(game, actor), ret 4: GameInit called, the actor ticked from then on). gameRemoveTemp
+    // (RemoveTemporaryActor, ret 4) takes it out again (what ACTOR_DELETE calls; deleted in the game's next tick).
+    // A car is then settled on its wheels: vehicleCalm (C_Vehicle::CalmVehicle, thiscall(vehicle, int), ret 4) with
+    // 100, after its particles byte (C_car + carParticles) is set, as the cheat car does.
+    uintptr_t modelCache, modelOpen, missionCreateActor, gameAddTemp, gameRemoveTemp, vehicleCalm;
+    int drvCreateFrame, carParticles;
+    // The game's tables (host/world.cpp; 0: not known). carDb: G_CarDatabase, {u32 count, records*}, carDbStride
+    // bytes a record: +0x00 the model's prefix (the file is <prefix><colour, two digits>.i3d, as GetCarModel makes
+    // it), +0x20 its wreck, +0x40 its shadow, +0x60 the name the menus show ("Bolt Ace Tudor"). items: the items of
+    // tables\predmety.def (g_pItems, the count after it), 188 bytes a record in both builds: +0x00 the name,
+    // +0x20 flags (0x04 a melee weapon, 0x20 a firearm or a throwable, 0x80 a throwable), +0x24 the model, +0x60
+    // the rounds in a magazine, +0x64 the rounds in reserve (seen in the 1.2 game: Colt 1911 7 and 35, Thompson
+    // 50 and 200); an item's id is its index (what HUMAN_ADDWEAPON takes).
+    uintptr_t carDb, items;
+    int carDbStride;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -286,6 +309,12 @@ inline const ExeBuild kExe12 = {
     0x30,
     // the scripts' machine (2026-10-14: the decompile's C_program, st0rm94's 1.0 names carried over)
     0x460AD0, 0x461530, 0x46C770, 0x46CCB0, 0x4616A0, 0x46CEC0, 0x624858,
+    // actors made new, the tables (2026-10-14: read in ACTOR_DUPLICATE 0x474A14, DAN_INTERNAL_1 0x47863E, ACTOR_DELETE
+    // 0x474BDD, G_CarDatabase::GetCarName 0x60A510, LoadMaterialsFromBin 0x60F5C0)
+    0x647DD0, 0x4087E0, 0x53F7D0, 0x5A77C0, 0x5A79A0, 0x4CE960,
+    0x50, 0x220C,
+    0x6D4560, 0x6D4C14,
+    168,
 };
 
 inline const ExeBuild kExe10 = {
@@ -335,6 +364,13 @@ inline const ExeBuild kExe10 = {
     0x48,
     // the scripts' machine (st0rm94's program_*, each read in 1.0's code)
     0x5AF2F0, 0x5AF730, 0x5BA6A0, 0x5BABD0, 0x5AF8A0, 0x5BADE0, 0x63EAB0,
+    // actors made new, the tables (1.0's ACTOR_DUPLICATE 0x5C2804 and DAN_INTERNAL_1 0x5C62E5: the driver's
+    // CreateFrame is its slot +0x4C here; car_database_get_car_name 0x55C540: 164 bytes a record; data_load_def_tables
+    // 0x592080: the items, 188 bytes a record)
+    0x6F9418, 0x448940, 0x5FED70, 0x5E3220, 0x5E3400, 0x51A920,
+    0x4C, 0x214C,
+    0x671EF0, 0x6EFB94,
+    164,
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,

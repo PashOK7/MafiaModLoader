@@ -20,6 +20,40 @@ can.
 A mission must be running: programs step in the mission's tick, so they wait while the pause menu is open. Both
 builds (seen in the 1.2 and the 1.0 labs, 2026-10-14).
 
+The common things need no program: see "The world without a program" below (`spawn`, `teleport`, `give`).
+
+## The world without a program
+
+What agents and mods do most is named (host/world.cpp; MCP `spawn`, `teleport`, `give`; the bridge's `world.*`,
+docs/PROTOCOL.md; mods' `actor_spawn`, `actor_remove`, `actor_teleport`, `actor_seat`, `give_item`, `item_id`,
+docs/MODDING.md). Seen in both labs (2026-10-14).
+
+- **A car or a person of any model, made new** (`spawn {"car": "Bolt-Thrower"}`, `{"human": "Paulie", "in":
+  "car"}`): no command of the missions makes an actor from a model file (`actor_duplicate` copies one, `model_create`
+  makes a bare frame), so the loader does what the game's own `ACTOR_DUPLICATE` case does with a source and
+  `DAN_INTERNAL_1` (a developer's command that makes a "cheat_car", a Bolt-Thrower) does with a fixed model: a model
+  frame from the I3D driver, the file opened by the model cache, the frame named (`<model>_mml<n>`), placed, turned
+  and linked into the sector at its place, then `C_mission::CreateActor` (4 a car, 27 a person: the game's NPC
+  kind), the actor's `Init` on the frame, and `C_game::AddTemporaryActor`. The actor owns its frame (the
+  duplicate's flag) and stays out of saved games (the cheat car's); a car's particles are on and it is settled on its
+  wheels (`CalmVehicle`, as the cheat car). A model a person is made from must have a person's bones (the frames the
+  shot code reads without checking; MafiaOnline's list): another model is refused. The spawned car was entered
+  ("Get in the car as the driver"), driven and its HUD shown; a spawned person held a Thompson given to him; one put
+  into the player's car rode in it.
+- **The names**: `world.cars` reads the game's car list (G_CarDatabase: the names the menus show, the models'
+  prefixes; a car's file is `<prefix><colour>.i3d`); `world.items` the items of `tables\predmety.def` (the name, the
+  kind from its flags, the model, the rounds in a magazine and in reserve). Names are matched without case, a part
+  of one when only one item has it.
+- **Moving, seating, arming** are the missions' own commands, run by the game's interpreter at once, in the same
+  frame (a program compiled and stepped until it stands on its end; a command that waits for frames cannot be run
+  so): `teleport` is `actor_setpos` (a car also `car_repair`, unless `repair` is false; a turn first, as
+  `ACTOR_SETDIR` does it: the actor's facing, its frame's SetDir), `world.seat` is `human_force_settocar`, `give` is
+  `human_addweapon` with the item's own magazine and reserve.
+- **Taking out**: `world.remove` (`actor_remove`) is `C_game::RemoveTemporaryActor` (what `actor_delete` calls); the
+  game deletes the actor at its next tick. Its model would stay in the scene (the sector holds the frame: seen, a
+  removed Paulie's model stood where he was), so the loader takes the frame out of the scene when the actor's
+  destructor runs. Refused while a person sits in a car, him or the car: the car's frame is his parent.
+
 ## The language
 
 - One command a line; `//` starts a comment; empty lines are skipped (the loader strips them, and leading blanks,

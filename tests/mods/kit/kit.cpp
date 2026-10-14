@@ -93,6 +93,19 @@ int Script(const char *, MmlReply *r, void *) {
     return 0;
 }
 
+// The world with no game: nothing made, moved, given or seated; no item known.
+int World(const char *, MmlReply *r, void *) {
+    if (!MML_HAS(H, actor_seat)) { H->reply_error(r, "the loader has no world functions"); return 1; }
+    const MmlVec3 p{1, 2, 3};
+    void *a = H->actor_spawn(M, MML_ACTOR_CAR, "fordttud00.i3d", &p, nullptr);
+    char out[160];
+    snprintf(out, sizeof out, "{\"spawn\":%d,\"remove\":%d,\"teleport\":%d,\"item\":%d,\"give\":%d,\"seat\":%d}", a ? 1 : 0,
+             H->actor_remove(M, &out), H->actor_teleport(M, nullptr, &p, nullptr), H->item_id("Thompson"),
+             H->give_item(M, nullptr, 10, -1, -1), H->actor_seat(M, nullptr, nullptr, 1));
+    H->reply_append(r, out, static_cast<size_t>(-1));
+    return 0;
+}
+
 int Write(const char *, MmlReply *r, void *) {
     std::string path = std::string(H->mod_data_dir(M)) + "note.txt";
     FILE *f = fopen(path.c_str(), "w");
@@ -126,6 +139,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->command(mod, "menu", "tries to open a page of its own; what menu_open, menu_set_value, menu_value, menu_set_text gave", Menu, nullptr);
     host->command(mod, "write", "writes note.txt into the mod's data folder; its path", Write, nullptr);
     host->command(mod, "script", "tries script_run (no game: refused) and script_state", Script, nullptr);
+    host->command(mod, "world", "tries actor_spawn, actor_remove, actor_teleport, item_id, give_item, actor_seat (no game: refused)", World, nullptr);
     return 0;
 }
 

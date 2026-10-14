@@ -148,6 +148,10 @@ bool ConfigMethod(const std::string &method, const std::string &paramsJson, std:
 // script.run, script.state, script.stop, script.list
 int ScriptRun(MmlMod *mod, const char *code, void *owner, void *const *acts, int nacts, const float *flts, int nflts,
               uint32_t timeoutMs, MmlScriptFn fn, void *user, std::string *err);   // a handle, 0: refused (err)
+// A program run at once, to its end, in this frame (game thread; no command in it may wait for frames): false with
+// err when it does not compile, faults or waits. The registers as it ended in fltOut, actOut (either may be null).
+bool ScriptExec(const char *code, void *owner, void *const *acts, int nacts, const float *flts, int nflts,
+                std::vector<float> *fltOut, std::vector<void *> *actOut, std::string *err);
 void ScriptStop(MmlMod *mod, int handle);
 int ScriptState(MmlMod *mod, int handle);
 void ScriptsRemove(MmlMod *mod);          // its mod unloads: stopped, not told
@@ -155,6 +159,21 @@ void ScriptTick(int ms);                  // after the mission's tick (game thre
 void ScriptMissionClose();                // every program stopped
 void ScriptActorGone(void *actor);        // out of every program's act[]
 bool ScriptMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+// An actor named as the bridge names them: "player", "car" (the car the player sits in, else the one he drove
+// last), an address ("0x0F892E70": an object with a vtable of the game's).
+bool ParseActor(const std::string &text, void **out, std::string *err);
+
+// ---- the world (world.cpp): actors made new by the game's own functions, moved, armed; the game's car list and
+// items; world.spawn, world.remove, world.teleport, world.give, world.cars, world.items
+void *WorldSpawn(MmlMod *mod, int kind, const char *model, const MmlVec3 *pos, const MmlVec3 *dir, std::string *err);
+bool WorldRemove(void *actor, std::string *err);
+bool WorldTeleport(void *actor, const MmlVec3 &pos, const MmlVec3 *dir, bool repair, std::string *err);
+int WorldItemId(const char *name, std::string *err);      // -1: none (err tells why, with the candidates)
+bool WorldGive(void *human, int item, int loaded, int reserve, std::string *err);   // loaded/reserve < 0: the item's own
+bool WorldSeat(void *human, void *car, int seat, std::string *err);                 // human_force_settocar
+void WorldActorGone(void *actor);         // (game_hooks.cpp) out of the spawned list
+void WorldMissionClose();
+bool WorldMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 
 // ---- screenshots (screenshot.cpp): the back buffer at Present; screenshot, screenshot.state
 bool ScreenshotMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);

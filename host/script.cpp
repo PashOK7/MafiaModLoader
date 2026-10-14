@@ -221,17 +221,15 @@ bool GiveRegisters(uintptr_t prog, void *const *acts, int nacts, const float *fl
     return true;
 }
 
-} // namespace
-
-int ScriptRun(MmlMod *mod, const char *code, void *owner, void *const *acts, int nacts, const float *flts, int nflts, uint32_t timeout,
-              MmlScriptFn fn, void *user, std::string *err) {
-    if (!Known()) { *err = "the script machine is not known for this build"; return 0; }
-    if (!code || !*code) { *err = "code: the program's text"; return 0; }
-    if (nacts < 0 || nacts > 4096 || nflts < 0 || nflts > 4096) { *err = "acts, flts: at most 4096"; return 0; }
-    if (MissionState() == MML_MISSION_NONE || !game::Mission()) { *err = "no mission: programs run in the mission's tick"; return 0; }
+// A program compiled and given its registers (s->prog, s->lines, s->id set); false: refused (err, logged for a mod).
+bool Build(Script *s, MmlMod *mod, const char *code, void *owner, void *const *acts, int nacts, const float *flts, int nflts,
+           std::string *err) {
+    if (!Known()) { *err = "the script machine is not known for this build"; return false; }
+    if (!code || !*code) { *err = "code: the program's text"; return false; }
+    if (nacts < 0 || nacts > 4096 || nflts < 0 || nflts > 4096) { *err = "acts, flts: at most 4096"; return false; }
+    if (MissionState() == MML_MISSION_NONE || !game::Mission()) { *err = "no mission: programs run in the mission's tick"; return false; }
     // The text as the game's compiler wants it: one command a line, no empty lines (it takes them as errors), no
     // leading blanks or tabs; each kept line's number remembered.
-    auto s = std::make_unique<Script>();
     std::string text;
     int number = 0;
     const char *p = code;
@@ -250,11 +248,11 @@ int ScriptRun(MmlMod *mod, const char *code, void *owner, void *const *acts, int
         if (*e == '\r' && e[1] == '\n') e++;
         p = *e ? e + 1 : e;
     }
-    if (s->lines.empty()) { *err = "code: no command in it"; return 0; }
+    if (s->lines.empty()) { *err = "code: no command in it"; return false; }
     if (!text.empty()) text.pop_back();
     const game::ExeBuild &x = E();
     uintptr_t prog = reinterpret_cast<uintptr_t>(GameNew(kProgSize));
-    if (!prog) { *err = "the game's new failed"; return 0; }
+    if (!prog) { *err = "the game's new failed"; return false; }
     int errors = 0, at = -1, len = 0;
     std::vector<char> buf(text.begin(), text.end());
     buf.push_back(0);
@@ -267,7 +265,8 @@ int ScriptRun(MmlMod *mod, const char *code, void *owner, void *const *acts, int
     s->prog = prog;
     if (DWORD ex = Guarded(make)) {
         *err = "compiling faulted (" + Hex(ex) + " at " + DescribeAddress(g_faultAt) + ")";
-        return 0;   // (the half-made program is left as it is)
+        s->prog = 0;   // (the half-made program is left as it is)
+        return false;
     }
     if (errors) {
         // the line the compiler stopped at: by its offset in the text it was given
@@ -279,14 +278,23 @@ int ScriptRun(MmlMod *mod, const char *code, void *owner, void *const *acts, int
         Guarded(decode);
         int src = index < static_cast<int>(s->lines.size()) ? s->lines[static_cast<size_t>(index)] : 0;
         *err = "line " + std::to_string(src) + ": \"" + bad + "\": " + (known < 0 ? "not a command of the game's" : "its arguments are not understood");
-        Free(s.get());
-        if (mod) Log(MML_LOG_WARN, ModIdOf(mod), "script_run: %s", err->c_str());
-        return 0;
+        Free(s);
+        return false;
     }
     W32(prog + kLineBefore, 0xFFFFFFFF);   // (what Init sets)
     W32(prog + kOwner, reinterpret_cast<uintptr_t>(owner));
-    if (!GiveRegisters(prog, acts, nacts, flts, nflts)) { Free(s.get()); *err = "the game's new failed for the registers"; return 0; }
+    if (!GiveRegisters(prog, acts, nacts, flts, nflts)) { Free(s); *err = "the game's new failed for the registers"; return false; }
     s->mod = mod;
+    return true;
+}
+
+} // namespace
+
+int ScriptRun(MmlMod *mod, const char *code, void *owner, void *const *acts, int nacts, const float *flts, int nflts, uint32_t timeout,
+              MmlScriptFn fn, void *user, std::string *err) {
+    auto s = std::make_unique<Script>();
+    if (!Build(s.get(), mod, code, owner, acts, nacts, flts, nflts, err)) return 0;
+    uintptr_t prog = s->prog;
     s->fn = fn;
     s->user = user;
     s->started = GetTickCount();
@@ -296,6 +304,37 @@ int ScriptRun(MmlMod *mod, const char *code, void *owner, void *const *acts, int
     g_scripts.push_back(std::move(s));
     Trim();
     return id;
+}
+
+// A program run at once, to its end, in this frame: the game's interpreter steps it until it stands on its END or
+// past its last line (CallProcess returns at an instruction that gives the frame back: END, a wait). A command that
+// waits for the game's frames (wait, human_waittoready...) cannot end here: the program is stopped there, an error.
+bool ScriptExec(const char *code, void *owner, void *const *acts, int nacts, const float *flts, int nflts, std::vector<float> *fltOut,
+                std::vector<void *> *actOut, std::string *err) {
+    Script s;
+    if (!Build(&s, nullptr, code, owner, acts, nacts, flts, nflts, err)) return false;
+    uintptr_t prog = s.prog;
+    bool done = false;
+    for (int i = 0; i < 8 && !done; i++) {
+        unsigned pc = R32(prog + kPc);
+        auto step = [&] { reinterpret_cast<ProcessFn>(E().progCallProcess)(prog, nullptr, 0); };
+        if (DWORD ex = Guarded(step)) {
+            *err = "line " + std::to_string(pc < s.lines.size() ? s.lines[pc] : 0) + " faulted (" + Hex(ex) + " at " + DescribeAddress(g_faultAt) + ")";
+            Free(&s);
+            return false;
+        }
+        unsigned n = Instructions(prog);
+        pc = R32(prog + kPc);
+        done = pc >= n || (R32(R32(prog + kInstrBegin) + 8 * pc) == kOpEnd && !R32(prog + kCallHead));
+        if (!done && i == 7) *err = "line " + std::to_string(pc < s.lines.size() ? s.lines[pc] : 0) + " waits for the game's frames: run it with script_run";
+    }
+    if (done) {
+        uint32_t nf = std::min<uint32_t>(R32(prog + kFltCount), 4096), na = std::min<uint32_t>(R32(prog + kActCount), 4096);
+        if (fltOut) { fltOut->assign(nf, 0.0f); if (nf) MemRead(R32(prog + kFlt), fltOut->data(), nf * 4); }
+        if (actOut) { actOut->assign(na, nullptr); if (na) MemRead(R32(prog + kAct), actOut->data(), na * 4); }
+    }
+    Free(&s);
+    return done;
 }
 
 // Each mission tick (after the mission's own): every running program one step, as the game's entities run theirs.
@@ -352,31 +391,31 @@ void ScriptsRemove(MmlMod *mod) {
         if (Script *s = Find(id); s && s->mod == mod) End(s, MML_SCRIPT_STOPPED, "its mod unloaded", false);
 }
 
+bool ParseActor(const std::string &s, void **out, std::string *err) {
+    if (!game::g_exe) { *err = "not a known build of the game: no actors"; return false; }
+    if (s == "player") { *out = game::Player(); if (!*out) { *err = "no player"; return false; } return true; }
+    if (s == "car") {
+        *out = game::PlayerCar();
+        if (!*out) *out = game::LastCar();
+        if (!*out) { *err = "no car: the player has not driven one"; return false; }
+        return true;
+    }
+    uintptr_t a = ParseAddress(s);
+    if (!a) { *err = "an actor: \"player\", \"car\" or an address (\"0x...\"), not \"" + s + "\""; return false; }
+    *out = reinterpret_cast<void *>(a);
+    // an actor is an object whose vtable is in Game.exe's .rdata
+    uint32_t vt = R32(a);
+    if (!game::InExeSection(".rdata", vt)) { *err = Hex(a) + " is not an actor (no vtable of the game's)"; return false; }
+    return true;
+}
+
 namespace {
 // An actor named by the bridge: "player", "car" (the car the player sits in, else the one driven last), an address.
 bool ActorOf(const json &v, void **out, std::string *err) {
-    if (v.is_string()) {
-        std::string s = v.get<std::string>();
-        if (s == "player") { *out = game::Player(); if (!*out) { *err = "no player"; return false; } return true; }
-        if (s == "car") {
-            *out = game::PlayerCar();
-            if (!*out) *out = game::LastCar();
-            if (!*out) { *err = "no car: the player has not driven one"; return false; }
-            return true;
-        }
-        uintptr_t a = ParseAddress(s);
-        if (!a) { *err = "an actor: \"player\", \"car\" or an address (\"0x...\"), not \"" + s + "\""; return false; }
-        *out = reinterpret_cast<void *>(a);
-    } else if (v.is_number_unsigned() || v.is_number_integer()) {
-        *out = reinterpret_cast<void *>(static_cast<uintptr_t>(v.get<uint64_t>()));
-    } else {
-        *err = "an actor: \"player\", \"car\" or an address";
-        return false;
-    }
-    // an actor is an object whose vtable is in Game.exe's .rdata
-    uint32_t vt = R32(reinterpret_cast<uintptr_t>(*out));
-    if (!game::InExeSection(".rdata", vt)) { *err = Hex(reinterpret_cast<uintptr_t>(*out)) + " is not an actor (no vtable of the game's)"; return false; }
-    return true;
+    if (v.is_string()) return ParseActor(v.get<std::string>(), out, err);
+    if (v.is_number_unsigned() || v.is_number_integer()) return ParseActor(Hex(static_cast<uintptr_t>(v.get<uint64_t>())), out, err);
+    *err = "an actor: \"player\", \"car\" or an address";
+    return false;
 }
 
 json StateOf(Script *s) {
