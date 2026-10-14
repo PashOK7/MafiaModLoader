@@ -98,7 +98,7 @@ reversing a system anew.
 | `sdk/include/mml/game/` | what code uses: `game_build.h` (every address, per build, `game::Detect`), `game.h` (layouts, calls: actors, frames, the player's car `game::Car`, a car's state, the mission's name), `mathx.h` |
 | `knowledge/` | the knowledge base: every function of the 1.2 game (from MafiaReverse), our names, notes (`tools/kb_import.py`) |
 | `mods/core/` | the core mod: the game's live state as commands (`game`, `player`, `car`, `car.save`, `car.restore`, `humans`, `actors`, `frame`, `frames.find`) |
-| `mods/examples/` | `telemetry` (C++: the mod kit's complete example: an overlay, a hotkey, the car, saved files, settings), `hello_c` (plain C, the smallest); more languages to come (see `docs/ROADMAP.md`) |
+| `mods/examples/` | `telemetry` (C++: the mod kit's complete example: an overlay, a hotkey, the car, saved files, settings), `hello_c` (plain C, the smallest), `fps_unlock` (code patched and put back, a game function fixed by a hook: the frame rate freed); more languages to come (see `docs/ROADMAP.md`) |
 | `mcp/` | the MCP server (Rust, `rmcp`): bridge client, game process, crash dumps, deploy, the knowledge base (`kb.rs`), screenshots (`shot.rs`) |
 | `tests/` | `harness/` (the stand-in game), `mods/` (test mods: `hook_a`, `hook_b`, `kit`), `run_tests.py`, `mcp_smoke.py` |
 | `docs/SCRIPTS.md` | the game's script machine: the language, the registers, tested recipes |

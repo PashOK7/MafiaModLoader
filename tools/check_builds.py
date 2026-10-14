@@ -129,6 +129,32 @@ def main(a):
     for f in ('render', 'frameRelease', 'meshRelease', 'modelOpen', 'frameDup', 'frameLimit'):
         a, b = norm(s12.insn(l12[f])), norm(s10.insn(l10[f]))
         check(a == b, f'LS3DF {f}: 1.2 "{a}" vs 1.0 "{b}"')
+    # The menu's camera (fps_unlock): the tick uses the spring's 0.02 and 0.98 and every vector of the state.
+    for name, (exe, ls, gexe, gls) in builds.items():
+        if not exe['menuCamTick']:
+            continue
+        body = gexe.at(exe['menuCamTick'] - 0x400000, 0x650)
+        refs = operands(gexe, exe['menuCamTick'], 0x650)
+        check(body.count(bytes.fromhex('0ad7a33c')) == 2 and body.count(bytes.fromhex('48e17a3f')) == 2,
+              f'{name} menuCamTick: the spring 0.02 / 0.98 twice')
+        check(all(exe['menuCam'] + o in refs for o in (0x00, 0x0C, 0x18, 0x24, 0x30, 0x3C)),
+              f'{name} menuCamTick: uses each vector of menuCam')
+    # The frame rate's sites (fps_unlock): the limiter's minimum jump inside frameLimit, after `cmp eax, edi` and
+    # before its Sleep; Present's yield: `mov reg, [Sleep]` then `push 0; call reg`.
+    for name, (exe, ls, gexe, gls) in builds.items():
+        j = ls['limiterMinJump']
+        check(ls['frameLimit'] < j < ls['frameLimit'] + 0x40 and gls.at(j - 2, 4) == b'\x3b\xc7\x73\x18',
+              f'{name} limiterMinJump: cmp eax, edi; jae +0x18 inside frameLimit')
+        sleep = gls.at(j + 9, 4)   # the limiter's own `call [Sleep]` (FF 15 <IAT>) after `mov esi, edi; sub esi, eax; push esi`
+        check(gls.at(j + 7, 2) == b'\xff\x15', f'{name} limiterMinJump: the limiter calls Sleep after it')
+        # the clock fps_unlock reads: `mov eax, [clock]` 13 bytes before the jump, the clock the limiter loads first
+        check(gls.at(j - 0x0D, 1) == b'\xa1' and gls.at(j - 0x0C, 4) == gls.at(ls['frameLimit'] + 9, 4),
+              f'{name} limiterMinJump: mov eax, [clock] before it')
+        y = ls['presentYield']
+        mov = gls.at(y - 6, 6)
+        reg = {0x1D: 0xD3, 0x3D: 0xD7}.get(mov[1]) if len(mov) == 6 else None
+        check(mov[:1] == b'\x8b' and mov[2:] == sleep and reg is not None and gls.at(y, 4) == bytes([0x6A, 0x00, 0xFF, reg]),
+              f'{name} presentYield: mov reg, [Sleep]; push 0; call reg')
     # Layouts: each offset must be in the code that uses it (the witnesses: C_Vehicle::GetRVelMassJ and ExternalForce,
     # the car's water check before carIn, LS3D's morph update that locks a LOD's vertex buffer).
     witness = {'1.2': {'getRVelMassJ': 0x4CC4B0, 'morph': 0x34570}, '1.0': {'getRVelMassJ': 0x518500, 'morph': 0x33810}}

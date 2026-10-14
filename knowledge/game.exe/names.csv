@@ -145,6 +145,8 @@ address,kind,name,source,note
 005EB7D0,function,GM_Menu::PridejComponentPod,mml,"thiscall(menu, id, newId, growId, move1, move2, move3) ret 0x18: a clone of control id put under it as newId; growId grows, the three move down (how the profile and save lists grow; the loader adds mods' items with it)"
 005EB7D0,function,menuAddUnder,game_build.h,
 005EBC1E,site,menuLoopMissionTick,mml,"ExecuteMenu calls C_mission::Tick here, only when its caller asked (the main menu; not the pause menu)"
+005EC8A0,function,GM_Menu::TickCamera,mml,"fastcall(ms): the main menu camera; moves eye and look point by velocity * ms * 0.0003, springs the velocities once a call (0.98 / 0.02): too fast above 62.5 fps (mods/examples/fps_unlock)"
+005EC8A0,function,menuCamTick,game_build.h,
 005ED4C0,function,pausedTick,mml,what the menus loop calls on C_game+0x4C instead of C_mission::Tick when the world is paused
 005F70D0,function,GetLanguage,mml,"the language's two letters (u16 at 0x6C42C4), the .mnu suffix"
 005FA050,function,HUD::LetterBoxSize,pet1kk,builds the bars' geometry
@@ -182,6 +184,7 @@ address,kind,name,source,note
 00647EE0,data,g_pIGraph,pet1kk,"IGraph*; its vtable ls3d+0x9D500: +0x0C SetTexture, +0x3C Present, +0x44 SetState, +0x48 GetState, +0x58 DrawPrimitive (read in LS3DF by mml)"
 00647EE0,label,igraph,game_build.h,
 00647F48,label,collision,mafia-ragdoll,
+006BD83C,label,menuCam,game_build.h,
 006BD888,label,menuScale,game_build.h,
 006BD890,data,g_activeMenu,mml,GM_Menu*: the active menu; +4 the one under it
 006BD890,label,menuTop,game_build.h,

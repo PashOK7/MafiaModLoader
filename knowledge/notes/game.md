@@ -222,6 +222,36 @@ autosplitter; kept outside it, not ported). Checked against the above:
 - **game** The frame limiter (`frameLimit`, `ls3d+0x72100`) is called once per frame by the main loop: the loader's
   frame event hangs on it.
 
+## The frame rate (mods/examples/fps_unlock; read and measured 2026-10-14, 1.2 lab)
+
+- **game** The limiter is the game's only clock: stdcall(IGraph, min, max) -> ms; it reads LS3D's millisecond clock
+  (`ls3d+0x1C52B8` in 1.2, `0x1C1258` in 1.0), and when the frame was shorter than `min` it Sleeps the rest, moves
+  the clock on by it and returns `min`; a longer one is cut to `max`. `GameLoopSingle1` (0x5BE750) asks (16, 83)
+  and hands the answer to `C_mission::Tick`, the recordings, the cache, the map and the cutscenes; `ExecuteMenu`
+  (0x5EBA40) asks (16, 249) and hands it to the mission's tick and the menu's camera. So the game never runs above
+  62.5 fps. Present also yields (`Sleep(0)`) before the device's Present.
+- **code** MafiaD3D11's A132 (a local checkout, `src/bridge/MafiaVR_AsiBridge.cpp`): the limiter's
+  `cmp eax, edi; jae +0x18` (`limiterMinJump`, 1.2 `+0x72122`, 1.0 `+0x6E5A2`) made `jmp`, and Present's
+  `push 0; call <reg = Sleep>` (`presentYield`, 1.2 `+0x6D592` with `call ebx`, 1.0 `+0x69DC2` with `call edi`)
+  jumped over. The game's step is then the frame's real time in whole milliseconds: 4..6 ms at 200 fps, 0..3 ms in
+  the main menu at 800..1100 fps (frames of 0 ms happen).
+- **game** Measured unlocked against 62.5 fps, the same within a few per cent: the taxi's acceleration (21.4 m in 4 s
+  at 224 fps; 21.5 and 21.7 m locked), Tommy running (14.90 m in 3 s at about 210 fps, 14.88 m locked). The gameplay
+  camera (`G_Camera::Tick` 0x5ED4C0) scales its steps by the frame's time (cut to 83 ms).
+- **game** **The main menu's camera is not**: `GM_Menu::TickCamera` (0x5EC8A0, fastcall(ms); `menuCam` 0x6BD83C:
+  the look point's and the eye's velocities, targets and positions) moves the points by velocity * ms * 0.0003 but
+  springs the velocities once a call: `v = 0.98 v + 0.02 (target - point)`. At 62.5 fps the velocity builds up over
+  about 0.8 s; at 1000 fps the spring is gone and the camera starts at full speed. Measured on one flight (hovering
+  Free Ride, then Credits): 10 / 50 / 90 % of the way at 0.86 / 2.78 / 6.53 s locked, 0.43 / 2.36 / 7.67 s at about
+  1000 fps (a first-order approach at 0.3/s, as the model says); stepped by the time (`k = 1 - 0.98^(ms/16)`,
+  fps_unlock's fix) 0.88 / 2.77 / 6.54 s at about 1000 fps. Each item of the main menu has its own place for the
+  camera (ids 9901xx); a submenu's items do not move it (only its slow sway, already timed). In 1.0 the tick is
+  inlined into `gui_menu_execute_modal` (0x56CCC0; st0rm94's `g_menu_camera_*`).
+- **code** Functions with decay-like constants on lines without the time (a scan of the decompile, leads to check in
+  the game, not faults): 0x568540 (0.92), 0x58EAD0 (0.93), `C_Vehicle::Tick` 0x4DF9A0, `C_human::MovementIntern`
+  0x57B660, `C_player::AI` 0x5937B0, `C_fire::Tick` 0x55DA80, `C_Vehicle::UpdateWheelParticles` 0x4DE500 and
+  others (30 in all; `G_Camera::Tick` among them was read: timed).
+
 ## The exit crash (seen in mafia-ragdoll, not solved)
 
 - **game** At exit the first fault is in `Game.exe+0x7AD00`, a name comparator (0x46D954's code) reading an object

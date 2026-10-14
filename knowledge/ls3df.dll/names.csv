@@ -27,6 +27,7 @@ address,kind,name,source,note
 1006CD40,function,IGraph::SetState,mml,"slot 17: stdcall(igraph, id, value); 0 blending (0 off, 1 alpha + alpha test, 3 alpha test), 1 the blend functions"
 1006D350,function,IGraph::GetState,mml,"slot 18: stdcall(igraph, id) -> value"
 1006D4C0,function,IGraph::Present,mml,slot 15 (the game loops call it last)
+1006D592,label,presentYield,game_build.h,
 1006D640,function,IGraph::DrawPrimitive,mml,"slot 22: stdcall(igraph, type, count, vertices, format): DrawPrimitiveUP; type 1 line list, 2 line strip, 3 triangle list, 4 fan, 5 strip; format 1: 32-byte XYZRHW|DIFFUSE|SPECULAR|TEX1"
 1006D750,function,IGraph::DrawIndexedPrimitive,mml,slot 23: the same with indices (the text glyphs)
 100701A0,function,drvClose,game_build.h,
@@ -36,6 +37,7 @@ address,kind,name,source,note
 10071E20,function,IGraph::ReadMouse,mml,"slot 55 (1.2): GetDeviceState(16) into the DIMOUSESTATE at 0x101C56F0 (lX, lY, lZ, buttons[4]); the loader injects the menus' mouse after it"
 10071E20,function,mouseUpdate,game_build.h,
 10072100,function,frameLimit,mafia-ragdoll,
+10072122,label,limiterMinJump,game_build.h,
 1009C538,label,emitorVtable,mafia-ragdoll,
 1009C8F8,label,SceneVtable,mafia-ragdoll,
 100A93F0,label,Recompute,mafia-ragdoll,

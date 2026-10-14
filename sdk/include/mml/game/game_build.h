@@ -239,6 +239,12 @@ struct ExeBuild {
     // 50 and 200); an item's id is its index (what HUMAN_ADDWEAPON takes).
     uintptr_t carDb, items;
     int carDbStride;
+    // The main menu's flying camera (mods/examples/fps_unlock). menuCamTick: GM_Menu's TickCamera, fastcall(ms),
+    // called by ExecuteMenu after the mission's tick while the menu's camera runs (1.0: inlined into its menu loop
+    // 0x56CCC0, so 0). menuCam: its state, floats: +0x00 the look point's velocity, +0x0C the eye's velocity, +0x18
+    // the look point's target, +0x24 the eye's target, +0x30 the look point, +0x3C the eye. Each tick moves the two
+    // points by velocity * ms * 0.0003, then springs the velocities once a call: v = 0.98 v + 0.02 (target - point).
+    uintptr_t menuCamTick, menuCam;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -273,6 +279,12 @@ struct Ls3dBuild {
     // the game's call it): GetDeviceState(16, mouseState), a DIMOUSESTATE {lX, lY, lZ (the wheel, 120 a notch),
     // buttons[4] (0x80 held)}, moves since the read before, in counts.
     uintptr_t mouseUpdate, mouseState;
+    // The frame rate (mods/examples/fps_unlock; MafiaD3D11's A132). limiterMinJump: in frameLimit, the `jae +0x18`
+    // (73 18) that skips the wait when the frame took the minimum (the main loop asks 16 ms, 83 ms the most);
+    // `jmp` there (EB) never waits and returns the frame's real time, the maximum still applied. presentYield: in
+    // IGraph::Present, `push 0; call <reg = Sleep>` (6A 00 FF D3 in 1.2, FF D7 in 1.0) before the device's Present;
+    // `jmp +2` (EB 02) skips it.
+    uintptr_t limiterMinJump, presentYield;
 };
 
 inline const ExeBuild kExe12 = {
@@ -317,6 +329,8 @@ inline const ExeBuild kExe12 = {
     0x50, 0x220C,
     0x6D4560, 0x6D4C14,
     168,
+    // the menu's camera (2026-10-14: read in ExecuteMenu 0x5EBA40 and 0x5EC8A0)
+    0x5EC8A0, 0x6BD83C,
 };
 
 inline const ExeBuild kExe10 = {
@@ -374,6 +388,7 @@ inline const ExeBuild kExe10 = {
     0x4C, 0x214C,
     0x671EF0, 0x6EFB94,
     164,
+    0, 0,   // the menu's camera: inlined into gui_menu_execute_modal 0x56CCC0, not looked for yet
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,
@@ -381,14 +396,16 @@ inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1
                                   0x5B6C0, 0x5B940, 0x1B50F8, 0x1B5124, 0x701A0,
                                   0xA93F0, 0x1C7D0,
                                   0x717F0, 0x1C5300, 0x1C597C,
-                                  0x71E20, 0x1C56F0};
+                                  0x71E20, 0x1C56F0,
+                                  0x72122, 0x6D592};
 // LS3D 3.84.5 (31.7.2002): the vertex buffer has no flags word, everything after +0x04 sits 4 bytes lower.
 inline const Ls3dBuild kLs3d10 = {"1.0", 0x5ED80, 0x1A8A0, 0x305B0, 0x5D070, 0x1C350, 0x6E580, 0, 0,
                                   0x1AE00, 0x1BD60, 0x1C030, 0x2B540, 0x04, 0x14, 0x18,
                                   0, 0, 0, 0, 0,
                                   0, 0,    // the scene camera: not looked for in 1.0 yet
                                   0x6DD40, 0x1C12A0, 0x1C167C,    // (twins by code; not run in a 1.0 game yet)
-                                  0x6E2A0, 0x1C160C};
+                                  0x6E2A0, 0x1C160C,
+                                  0x6E5A2, 0x69DC2};
 
 // The builds found (null until Detect succeeds).
 inline const ExeBuild *g_exe;

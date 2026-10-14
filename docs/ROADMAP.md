@@ -140,6 +140,14 @@ What is done, what comes next and later, and what is known to be missing or wron
   loaded by name, a thread left, a pool work item, leaks); in the 1.2 lab core and telemetry reloaded 20 times each:
   0 MB, 0 handles, 0 threads lost a reload, nothing kept by mistake.
 
+- **The frame rate freed: the example mod `fps_unlock`** (2026-10-14; the owner's request, MafiaD3D11's A132 as
+  the base): the limiter's minimum and Present's yield patched (both builds' places in `game_build.h`, checked by
+  `check_builds.py`; bytes checked before, put back at the unload), a cap of its own on a high-resolution timer, the
+  frame rate and the game's clock step shown, `F11` / `enabled` to compare at once. Above 62.5 fps the main menu's
+  camera started at full speed (its spring stepped once a call): fixed by a hook on `GM_Menu::TickCamera` that does
+  the spring by the time, measured equal to 62.5 fps within 15 ms on one flight at about 1000 fps. The taxi's
+  acceleration and running measured the same unlocked (1.2 lab; `knowledge/notes/game.md`, "The frame rate").
+
 ## Next, by importance
 
 **The goal** (the owner, 2026-10-14): a toolkit strong enough for whatever mod a user can think of, written by another
@@ -321,6 +329,16 @@ merged, sorted by importance):
   the game's events item 7, a mod's own camera and world-to-screen item 9.
 
 ## Known gaps
+
+- **fps_unlock** (mods/examples/fps_unlock): only the main menu's camera is fixed; the other systems that may do once
+  a frame what they should do by the time are leads from a scan of the decompile (`knowledge/notes/game.md`, "The
+  frame rate"), not checked in the game; the owner remembers more breakages above 62.5 fps that are not found yet.
+  Frames of 0 ms (above 1000 fps) reach every system. 1.0: the two patch places are found and checked offline, not
+  run in the 1.0 lab; its menu camera is inlined into the menu loop (0x56CCC0) and not fixed.
+- **`car.restore`** (the core mod) refuses a state whose size differs from the car's now, taking a different size for
+  another model. But the size counts the body's dented vertices (`C_Vehicle::GetVehicleStateSize` 0x4CEB30): the
+  same taxi saved at 1237 bytes was 1613 after a short drive, and the restore was refused. Whether
+  `LoadVehicleState` takes a state with another count of dents is to be read before the check is changed.
 
 - **A mod's unload** (host/lifecycle.cpp): a thread is found in a load's code by its EIP, the chain of saved EBPs and
   where it began; a thread inside a library compiled to use EBP as a plain register, between it and the mod's frame,

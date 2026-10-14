@@ -336,6 +336,14 @@ where. In the freeride it works as it is:
 `input {"steps": [{"action": "Accelerate", "ms": 5000}], "screenshot": true}` drives the taxi through its two
 default checkpoints.
 
+`mods/examples/fps_unlock/fps_unlock.cpp`: a mod that changes the game itself. It takes the game's 62.5 fps limit
+away (MafiaD3D11's A132: two places in LS3D, the addresses from `game_build.h`, the bytes checked before they are
+written and put back at the unload, so a hot reload or the mod switched off leaves the game as it was), fixes a
+system that did once a frame what it should do by the time (the main menu's camera: a hook that calls the game's
+function and corrects its spring), caps the frame rate on a high-resolution timer if asked, and shows the frame
+rate and the game's clock step. `call fps_unlock.status`; `config.set {"mod": "fps_unlock", "key": "enabled",
+"value": false}` (or F11) compares with the game's own pacing at once.
+
 ## Rules
 
 - Everything runs on the game thread unless said otherwise; do not block it (no sleeping, no waiting on a file).

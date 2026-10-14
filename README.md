@@ -21,7 +21,7 @@ missing.
 | Part | What it is |
 |---|---|
 | `MafiaModLoader.asi` (`host/`) | A 32-bit DLL loaded into the game by [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader). It is never unloaded: it turns the game's functions into events, keeps the hook chains mods share, loads the mods, isolates their faults, writes crash dumps, runs the bridge (TCP on 127.0.0.1) and the start. |
-| Mods (`mml\mods\<id>\`) | DLLs with a `mod.json`, written against one C header (`sdk/include/mml/mml.h`): C, C++, Rust, anything with a C ABI. Each is rebuilt and reloaded while the game runs. `core` gives the game's live state (player, car, people, actors, frames); `mods/examples/telemetry` (a speed and lap-time overlay) is the complete example of a mod. |
+| Mods (`mml\mods\<id>\`) | DLLs with a `mod.json`, written against one C header (`sdk/include/mml/mml.h`): C, C++, Rust, anything with a C ABI. Each is rebuilt and reloaded while the game runs. `core` gives the game's live state (player, car, people, actors, frames); `mods/examples/telemetry` (a speed and lap-time overlay) is the complete example of a mod; `mods/examples/fps_unlock` frees the frame rate (the game's 62.5 fps limit taken away, what breaks above it fixed). |
 | `mml-mcp.exe` (`mcp/`) | The MCP server (Rust, 64-bit), outside the game: it launches and closes the game, talks to the bridge, reads the log and the crash dumps, deploys builds, and answers questions about the game's code from the knowledge base. |
 | `knowledge/` | What is known about the game's code: every function of the 1.2 `Game.exe` and `LS3DF.dll` (names, classes, signatures, calls), our own names, notes. Imported from the MafiaReverse decompiles (facts only; the code itself is never committed). |
 

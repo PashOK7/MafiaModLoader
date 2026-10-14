@@ -463,3 +463,33 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   by mistake among the game's 18 threads; telemetry's overlay drawn after the 40 reloads.
 - `tests/run_tests.py`'s `check` could not print a tuple as its detail (a latent fault: it raised instead of
   failing); fixed.
+
+## 2026-10-14: the frame rate freed, the example mod fps_unlock
+
+- **The owner**: a correct FPS unlock with the game's functions freed from the frame rate, done on the loader and
+  kept as an example. They remembered it in MafiaReverse; it was not there (decompiles and indexes only), nor in
+  mafia-ragdoll; it was MafiaD3D11's A132 (a local checkout, read only), and A132 is the last version
+  of its timing in every copy of it (the newest, `-lf-thr2d2-patchcheck`, changed only its log). The owner: "look at
+  the pure A132". The fixes of what breaks above 62.5 fps that the owner remembers were found in no copy of that
+  project (its runtime touches only d3d8's vtables and those two LS3D places), so they were looked for anew.
+- **A132, read in the game's code**: the limiter (stdcall(IGraph, min, max)) Sleeps a short frame up to `min` and
+  returns it; the main loop asks (16, 83), the menu loop (16, 249), and the answer is every system's time. Two bytes:
+  the `jae` before the Sleep made `jmp`, Present's `push 0; call Sleep` jumped over. 1.0's places found by the same
+  code (the limiter byte for byte, Present's call through `edi`), the shapes checked by `check_builds.py` (a wrong
+  address put in by hand failed it).
+- **The mod**: patches only bytes it finds as the game's (another tool's patch is left to it), puts them back at the
+  unload, a cap of its own (a high-resolution waitable timer and half a millisecond spun), the frame rate and the
+  game's clock step drawn and in `fps_unlock.status`. Seen: 194..224 fps in the freeride, 700..1100 in the main menu
+  with steps of 0..3 ms; `enabled` false gives 63 fps and steps of 16 back at once.
+- **Measured unlocked against locked**: the taxi's 4 s of throttle (21.4 m against 21.5 and 21.7), 3 s of running
+  (14.90 against 14.88 m). The owner then named the clearest breakage: the main menu's camera flies too fast. Its
+  tick (0x5EC8A0, inlined in 1.0) moves by the time but springs the velocities once a call (0.98 / 0.02). A trace of
+  the camera in the mod (`fps_unlock.camera`) measured one flight: 10 / 50 / 90 % of the way at 0.86 / 2.78 / 6.53 s
+  locked, 0.43 / 2.36 / 7.67 s unlocked (the model's first-order 0.3/s), 0.88 / 2.77 / 6.54 s with the spring stepped
+  by the time (`k = 1 - 0.98^(ms/16)`, a hook that corrects the velocities after the game's tick).
+- **Doubts of the tools, settled on the way**: `input`'s `ms` is wall time (`GetTickCount`), not frames, so its
+  measurements hold at any rate. `car.restore` refused a state saved from the same taxi: the size counts the dents,
+  and the taxi had touched the curb (Known gaps; not changed without reading `LoadVehicleState`). `frames.find` has
+  no scene root in the main menu. A first test hovered a submenu's items: those do not move the camera (only the main
+  menu's do), so nothing moved; the next ones hovered the main menu.
+- `game_build.h` grew (the two LS3D places, the menu camera): mafia-ragdoll's copy is not changed from here.

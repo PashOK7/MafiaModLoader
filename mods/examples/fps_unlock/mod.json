@@ -1,0 +1,10 @@
+{
+  "id": "fps_unlock",
+  "name": "FPS unlock: the frame rate freed, the game's time real (MafiaD3D11's A132)",
+  "version": "0.1.0",
+  "type": "native",
+  "entry": "fps_unlock.dll",
+  "enabled": true,
+  "load_order": 100,
+  "depends": []
+}

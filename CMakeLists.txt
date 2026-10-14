@@ -52,6 +52,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     target_include_directories(mod_core PRIVATE third_party/json)
     mml_add_mod(hello_c ${CMAKE_SOURCE_DIR}/mods/examples/hello_c mods/examples/hello_c/hello.c)
     mml_add_mod(telemetry ${CMAKE_SOURCE_DIR}/mods/examples/telemetry mods/examples/telemetry/telemetry.cpp)
+    mml_add_mod(fps_unlock ${CMAKE_SOURCE_DIR}/mods/examples/fps_unlock mods/examples/fps_unlock/fps_unlock.cpp)
     # (tools/new_mod.py adds a mod's line above this one)
 
     # ---- offline tests: a stand-in game that loads the loader and pumps its frames (tests/run_tests.py)
