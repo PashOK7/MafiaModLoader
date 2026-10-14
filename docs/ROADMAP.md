@@ -8,7 +8,11 @@ What is done, what comes next and later, and what is known to be missing or wron
 - The host is a `.asi` loaded by Ultimate ASI Loader (`dinput8.dll`); it never unloads. Mods hot-reload.
 - The MCP server is a separate process (Rust), talking to the game over the bridge; it outlives the game.
 - Builds: 1.2 first, 1.0 too (per-build tables in `game_build.h`).
-- Mods in any native language through one C ABI, plus LuaJIT scripts; heavy logic may go to a 64-bit sidecar.
+- Mods in any native language through one C ABI. (LuaJIT scripts were listed here too; the owner says the roadmap
+  was the agents' work, so they are parked until the owner confirms them: "Taken out or changed".)
+- A 64-bit sidecar for what only exists for 64 bits (the owner, 2026-10-14: "what if a user wants a modern
+  technology such as the latest PhysX, which runs only on 64 bits?"): the game stays 32-bit, a 64-bit process beside
+  it hosts such libraries (PhysX 5, and the like: GPU and ML runtimes), connected to the game by shared memory.
 - Agents have full access, and may launch, drive and close the game themselves, from inside (never the owner's
   real mouse or keyboard).
 - The repository is English; it is a private GitHub repository (2026-10-13). Pushing,
@@ -119,51 +123,74 @@ What is done, what comes next and later, and what is known to be missing or wron
 
 ## Next, in order
 
-1. **More hands, the rest.** Orders for the people made (walk or drive to a place, follow, attack: the AI's own
-   jobs, `ai_action_manager`, and the commands that give them), the time of day (no command found yet), a
-   knock-down that always works (`human_forcefall` only nudges), scripts' events (`setplayerfireevent`...) to a
-   program of the loader's; a person's models listed (`world.cars` has the cars; people's models are files: the
-   models' archives' index).
-2. **LuaJIT script mods** (`type: "lua"`): a runtime mod embedding LuaJIT (pinned by `tools/deps.py`), one Lua state
-   per script mod, hot reload on change; the C API through LuaJIT's FFI (`ffi.cdef` of `mml.h`), so scripts read and
-   write memory, describe the game's structures and call its functions; `lua.eval` for agents (a hypothesis tested
-   in five lines, without building a DLL).
-3. **Scenarios: tests in the real game.** A file of steps (start, teleport, spawn, input, wait, check a value or an
-   event, screenshot) run by the loader; a pass/fail report through MCP. First user: mafia-ragdoll's cases (a car
-   hits a person getting up, a body thrown into a tram).
-4. **The start, completed.** Missions and saves through the load menu (the main menu's 990104, then the chapter or
-   save chosen: `SaveGameSelect` / `SaveGameLoad`); the other freerides (`freeride`, `freeridenoc`, `freekrajina`,
-   `extreme`: the freeride menu's kind menu (command 100) and the spawn menu its start opens for kinds other than
-   28); a new game (990103). pet1kk's reverse of the game's interface is in
+(Reviewed 2026-10-14 at the owner's word that this roadmap was written by agents and may hold absurd items: see
+"Taken out or changed" below.)
+
+1. **The start, completed.** Missions and saves through the load menu (the main menu's 990104, then the chapter or
+   save chosen: `SaveGameSelect` / `SaveGameLoad`); the other freerides (`freeride`, `freeridenoc` the night one,
+   `freekrajina`, `extreme`: the freeride menu's kind menu (command 100) and the spawn menu its start opens for
+   kinds other than 28); a new game (990103). pet1kk's reverse of the game's interface is in
    `knowledge/notes/interface.md` (the menus' input tick and cursor, the controls by vtable, the profiles'
    functions).
-5. **Structures by name.** `inspect <addr> as C_human` (and other classes): fields named and typed from `game.h`
+2. **Waiting for what happens.** The bridge keeps the last events (missions opened, loaded, closed; actors
+   destroyed; people hit and killed; programs ended; mods faulted) with a sequence number; `events.since {seq}` and
+   `events.wait {type, filter, timeout_ms}`, MCP `wait` ("until the mission is loaded", "until he dies"): what an
+   agent's script of steps needs between its steps.
+3. **The 64-bit sidecar** (the owner's decision): `mml-sidecar64.exe`, started and watched by the host, loads
+   64-bit mods (a DLL with the same kind of manifest, built for x64), their faults isolated as the host isolates
+   32-bit mods' and their reloads as hot. The two processes share memory: channels a frame (the game's state out:
+   actors' positions, bones, car bodies; results back: poses, forces) and calls both ways for what is rare. The
+   first user, and the test that it is worth it: PhysX 5 (64-bit only) stepping a body the game shows (a box, then a
+   person's bones as mafia-ragdoll does with its own physics), with the time a frame's round trip costs measured.
+   The design is decided against that measurement, not before it.
+4. **Orders for the people made.** Walk or drive to a place, follow, attack, flee: the AI's own jobs
+   (`ai_action_manager`) and the mission commands that give them, named as `world.*`; the scripts' events
+   (`setplayerfireevent`...) to a program of the loader's. People's models listed (the models' archives' index).
+5. **`native.call`**: any function of the game called from the bridge by its address and convention (thiscall,
+   stdcall, cdecl, fastcall; integer, float, pointer and string arguments; a fault guarded): a hypothesis tried in one
+   call, without a mod.
+6. **Tests in the real game, as scripts of steps.** Python over the bridge (`tests/game/`): start, spawn, teleport,
+   input, wait for an event, check a value, screenshot; pass or fail. First user: mafia-ragdoll's cases (a car hits
+   a person getting up, a body thrown into a tram).
+7. **Structures by name.** `inspect <addr> as C_human` (and other classes): fields named and typed from `game.h`
    and the decompile's layouts, kept in `knowledge/` as tables of offsets.
 
 ## Later
 
-- **Events to MCP as they happen**: deaths, hits, missions opened and closed, mods faulting, as a stream an agent
-  can wait on ("wait until a person dies", "wait until the mission is loaded").
 - **Hardware watchpoints** (`hwwatch` from mafia-ragdoll): who writes or reads a field, on the bridge and MCP. Its
   handler must never read the watched address (a recursion crashed the game once).
-- **Ghidra behind MCP**: the query server `ghq` (mafia-ragdoll's `tools/ghq.py`) as MCP tools: decompile, xrefs,
-  rename and comment (findings written into the project), against the Ghidra projects of both builds.
 - **State snapshots for experiments** (a car's state is there: `car.save` / `car.restore`, `game::CarStateSave`):
-  the game's own save and load used as a restore point, to repeat an
-  experiment from the same moment.
+  the game's own save and load used as a restore point, to repeat an experiment from the same moment.
 - **Crash triage in one call**: the named stack, the log's last lines and the last taps' calls together.
 - **Profiling**: the game thread's sampling profiler and per-part timings (mafia-ragdoll's `sample`, `prof`).
 - **Rust mods**: a crate `mml` over `mml.h` (types, a safe wrapper, a `#[mml_mod]` entry macro), an example, built
   for `i686-pc-windows-msvc`.
-- **The 64-bit sidecar**: `mml-sidecar64.exe`, started by the host, loads 64-bit mods (heavy logic past the 32-bit
-  address space); shared-memory channels (lock-free rings, bulk blocks for poses and meshes); services that cross
-  the process boundary.
-- **mafia-ragdoll on the loader**: its host's duties taken by the loader, the ragdoll a mod; the physics published
-  as a service (for a VR mod: one SDK, two mods, shared services).
+- **mafia-ragdoll on the loader**: its host's duties taken by the loader, the ragdoll a mod (another repository:
+  the owner's go-ahead first).
 - **The knowledge base for 1.0**: only 1.2's decompile is imported; 1.0 addresses are named through their 1.2 twins,
   and 1.0's menus (which have no twins) are read in st0rm94's annotated decompile (`re/ext/...`): import its names
   for 1.0 (`kb_search` on a 1.0 address).
-- **Publishing**: CI for the offline tests (the private repository exists since 2026-10-13).
+- **Ghidra behind MCP** (mafia-ragdoll's `ghq`): xrefs, renames, comments written into the project; `kb_function`
+  already gives the decompile, so only when cross-references by hand become the slow part.
+- **Publishing**: CI for the offline tests.
+
+## Taken out or changed (2026-10-14 review)
+
+- **"The time of day"**: the game has no clock. Day and night are separate scenes (the freeride's `freeitaly` and
+  `freeridenoc`; a mission's own); `GAME_NIGHTMISSION` / `C_game::SetNightMission` (0x47B590, `C_game + 0x2D44`)
+  only switch what lights do at night (cars' lamps), not the sky (MafiaOnline's notes agree). Night is the night
+  freeride: part of "The start, completed".
+- **"A knock-down that always works"**: a ragdoll's need (mafia-ragdoll's), not the loader's.
+- **"Scenarios run by the loader"** (a file of steps the loader plays): a second scripting engine inside the game for
+  what a script outside does with the bridge; what was missing is waiting for an event (item 2). Now item 6, in
+  Python.
+- **"LuaJIT script mods"** and **"`lua.eval` for agents"**: argued as "a hypothesis tried in five lines without
+  building a DLL", which `mem_read` / `mem_write`, `tap`, the script machine and hot reload now cover; the one thing
+  missing, calling any game function by its address, is item 5. Parked until someone wants mods written in Lua
+  (`tools/deps.py` still pins LuaJIT): to be confirmed with the owner.
+- **"The 64-bit sidecar"** was taken out here as having no user, and put back the same day by the owner: modern
+  libraries (the latest PhysX first) exist only for 64 bits; it is item 3 of "Next".
+- **"Events to MCP as they happen"** moved up from Later (item 2): the scripts of steps need it.
 
 ## Known gaps
 
