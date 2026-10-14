@@ -301,6 +301,31 @@ H->config_set(M, "finish", "{\"x\": 1.5, \"z\": -2}");           /* any JSON val
 - `H->service_publish` / `service_find`: a versioned table of functions other mods call; find it again after
   `MML_EVENT_SERVICES_CHANGED`. `H->post`: run something on the game thread from another thread.
 
+### A heavy mod: its own libraries, its threads, a clean unload
+
+- **Libraries beside the DLL.** Put every DLL your mod needs (PhysX, Jolt, OpenVR, a runtime) in the mod's folder,
+  next to its own DLL. Each load runs from a folder of its own, `<game>\mml\live\<id>_<pid>_<n>\`: your DLL
+  (named `mod_<id>_<pid>_<n>.dll` there) and a copy of every other `*.dll` of your folder. So the libraries your DLL
+  imports are found, and the mod's folder is never locked: a build or a deploy replaces any file while the game runs.
+- **Loading a library yourself.** In `mml_mod_load` a bare name works (`LoadLibraryA("PhysXCooking.dll")`: the load's
+  folder is the DLL directory while it runs). Later, load by the full path, from the folder your own DLL is in
+  (`GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, ...)`, then `GetModuleFileNameA`). Never from
+  `H->mod_dir(M)`: that would lock the mod's folder.
+- **Unload what you made, in `mml_mod_unload`**: stop and join your threads (and your libraries' worker threads: shut
+  their SDK down), release Direct3D objects and physics worlds, free the libraries you loaded, delete the game's
+  objects you made. The loader takes back what you registered with it, not what you made yourself.
+- **What the loader checks when you unload.** A thread still in your code (running in it, returning to it through
+  its frames, or begun in it) would crash the game when the DLL went: the loader waits up to a second, then keeps
+  that load's DLLs mapped (logged as an error, `kept_generations` in `mods.list`) and frees them once no thread is
+  in them. A library still loaded after your DLL is freed is named (`stays_loaded`), and the next load is warned
+  when one of its libraries is that old copy (Windows reuses a loaded DLL of the same name). Each unload logs what
+  the whole process did not get back since the load (address space, its largest free block, handles, threads):
+  `last_unload` in `mods.list`.
+- **Measure your reloads**: `call mod.reload {"id": "<id>", "times": 20}` reloads it 20 times and returns the process
+  after each load and the loss `per_reload`. A clean mod loses nothing (core and telemetry: 0 MB, 0 handles in the
+  1.2 lab). A 32-bit game has 2 to 4 GB of address space: a mod that leaks a few MB a reload ends the game's life
+  after some dozens of reloads.
+
 ## 4. A complete example
 
 `mods/examples/telemetry/telemetry.cpp`: a speed, gear and lap-time overlay between two checkpoints, a hotkey that

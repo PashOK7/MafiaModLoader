@@ -131,6 +131,15 @@ What is done, what comes next and later, and what is known to be missing or wron
   the countryside by day at its second place and the city at Hoboken (1.2), the 17th chapter's save by name (1.2) and
   number (1.0). The texts' code page is now the game's language's (the French 1.0's "Piège" was read as "Pičge").
 
+- **A heavy mod's lifecycle, the loader's part** (2026-10-14; "Next" item 1): each load runs from its own folder in
+  `mml\live\` with copies of every DLL of the mod's folder (its libraries are found, the mod's folder is never
+  locked; a bare-name `LoadLibrary` in `mml_mod_load` finds them too). At an unload every other thread is looked at
+  (EIP, the saved-EBP chain, its start): a thread still in the load's code keeps it mapped until it leaves, instead
+  of a crash. A library left loaded is named, a reused old copy warned about, and each unload measures the process
+  against the load; `mod.reload {times}` measures a reload loop. Offline test mod `heavy` (a library imported, one
+  loaded by name, a thread left, a pool work item, leaks); in the 1.2 lab core and telemetry reloaded 20 times each:
+  0 MB, 0 handles, 0 threads lost a reload, nothing kept by mistake.
+
 ## Next, by importance
 
 **The goal** (the owner, 2026-10-14): a toolkit strong enough for whatever mod a user can think of, written by another
@@ -145,12 +154,11 @@ V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselv
 
 ### Tier 1: foundations every large mod stands on
 
-1. **A heavy mod's lifecycle** (all; small). A mod's own DLLs (PhysX, Flow, FleX, OpenVR, Jolt as a DLL) found in
-   its folder: the loader loads a copy from `mml\live\`, so today they are searched next to the copy and not found;
-   the mod's folder goes into the DLL search path. A clean unload: what a mod made (Direct3D 11 objects, physics
-   worlds, threads, the game's objects) released before its DLL goes, the address space each reload leaks measured
-   and logged (mafia-ragdoll lost its Direct3D 11 device after about 20 reloads). Third-party libraries for mods
-   pinned by `tools/deps.py` (Jolt first) and shaders compiled in a mod's build (fxc or dxc in CMake).
+1. **A heavy mod's lifecycle, the build's part** (all; small). The loader's part is done (a mod's libraries, threads
+   left in its code, leaks measured: "Done"). Left: third-party libraries for mods pinned by `tools/deps.py` (Jolt
+   first, built for x86) and shaders compiled in a mod's build (fxc or dxc in CMake, a `mml_add_mod` option); then
+   the first heavy example mod using both, reloaded 20 times in the lab (mafia-ragdoll lost its Direct3D 11 device
+   after about 20 reloads: measure whether a mod's device survives).
 2. **A mod's own files in the game** (F K P C S W, any mod with new content). Models (`.4ds`), textures, animations
    (`.5ds`), sounds, tables and menu definitions shipped in the mod's folder and opened by the game by name, as if
    they were in its archives (the archives' open in `rw_data.dll`, `dtaOpen`, answered from the mods' folders first);
@@ -313,6 +321,13 @@ merged, sorted by importance):
   the game's events item 7, a mod's own camera and world-to-screen item 9.
 
 ## Known gaps
+
+- **A mod's unload** (host/lifecycle.cpp): a thread is found in a load's code by its EIP, the chain of saved EBPs and
+  where it began; a thread inside a library compiled to use EBP as a plain register, between it and the mod's frame,
+  is not seen (its DLL is freed, as before 2026-10-14). Only the top level of a mod's folder is copied (`*.dll`); a
+  library a mod loads later by a bare name is not searched in its load's folder (load by the full path). Objects of
+  the game that point into a mod's code (a callback it gave the game without the loader) are not found. The
+  `since_load` numbers are the whole process's over the load's life: the game's own changes are in them.
 
 - **The script machine** (docs/SCRIPTS.md): programs step only in the mission's tick (not in the menus, not while
   paused). Of the ~390 commands a handful were run (`let`, `if`, `goto`, `wait`, `findactor`, `findnearactor`,

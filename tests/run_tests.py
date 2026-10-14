@@ -1,11 +1,12 @@
 """run_tests.py: the loader's offline tests, through the real bridge (Python standard library only).
 
 Starts build/x86/harness/mml_harness.exe (a stand-in game that loads MafiaModLoader.asi and pumps its frames), with
-the test mods (hook_a, hook_b, kit) and the shipped ones (core, hello_c) in its mml/mods, and checks over the bridge:
+the test mods (hook_a, hook_b, kit, heavy) and the shipped ones (core, hello_c) in its mml/mods, and checks over the bridge:
 hello and the token, ping, the mods' list, hook chains in every load and unload order, services, memory read and
 write (a write-protected page), a mod faulting in a command (unloaded, the game goes on), state kept across a hot
-reload, the core mod with no game, the log; and the mod author's kit (kit_tests: the drawing queue, keys and
-hotkeys through injected keys, a mod's settings changed by the host, by the bridge and on disk, its data folder).
+reload, the core mod with no game, the log; the mod author's kit (kit_tests: the drawing queue, keys and
+hotkeys through injected keys, a mod's settings changed by the host, by the bridge and on disk, its data folder);
+and a heavy mod's lifecycle (heavy_tests: its libraries in each load's folder, threads left in its code, leaks).
 Exit code 0: all passed.
 
     cmake --build --preset x86-release && python tests/run_tests.py
@@ -46,7 +47,7 @@ failures = []
 
 
 def check(name, cond, detail=''):
-    print(('  ok    ' if cond else '  FAIL  ') + name + ('' if cond else '  -- %s' % detail))
+    print(('  ok    ' if cond else '  FAIL  ') + name + ('' if cond else '  -- %s' % (detail,)))
     if not cond:
         failures.append(name)
 
@@ -206,6 +207,98 @@ def kit_tests(b):
                                                    'config.get', 'config.set'} <= names, names)
 
 
+def heavy_tests(b):
+    """A heavy mod's lifecycle (host/lifecycle.cpp): its libraries found in each load's own folder, its folder never
+    locked, threads still in its code after the unload, what the process did not get back."""
+    live = os.path.normcase(os.path.join(HARNESS, 'mml', 'live'))
+    norm = lambda p: os.path.normcase(os.path.normpath(p))
+    mod_dir = os.path.join(HARNESS, 'mml', 'mods', 'heavy')
+    info = lambda: next(m for m in b.call('mods.list')['result'] if m['id'] == 'heavy')
+
+    s = b.call('heavy.status')['result']
+    load_dir = norm(info()['live_dir'])
+    check('heavy: the library it imports is found and runs (4242)', s['lib'] == 4242, s)
+    check('heavy: its DLL and both libraries run from the load\'s own folder in mml\\live',
+          load_dir.startswith(live) and all(norm(os.path.dirname(s[k])) == load_dir for k in ('self', 'lib_path', 'rt_path'))
+          and os.path.basename(s['self']).startswith('mod_heavy_'), (s, load_dir))
+    check('heavy: the library loaded by its bare name in mml_mod_load runs (77)', s['rt'] == 77, s)
+    try:
+        with open(os.path.join(mod_dir, 'heavylib.dll'), 'r+b'):
+            unlocked = True
+    except OSError:
+        unlocked = False
+    check('heavy: the mod\'s own folder is not locked (a build can replace its libraries)', unlocked)
+
+    r = b.call('mod.reload', {'id': 'heavy'})
+    u = r['result'].get('last_unload', {}) if r['ok'] else {}
+    check('heavy: a clean reload: nothing kept, nothing left loaded, the old folder deleted',
+          r['ok'] and 'kept' not in u and 'stays_loaded' not in u and not os.path.exists(load_dir), (r, load_dir))
+
+    b.call('heavy.leak', {'mb': 16, 'handles': 5})
+    r = b.call('mod.reload', {'id': 'heavy'})
+    since = r['result']['last_unload']['since_load'] if r['ok'] else {}
+    check('heavy: 16 MB and 5 handles never given back are measured at the unload',
+          since.get('free_mb', 0) <= -15.5 and since.get('handles', 0) >= 5, r)
+
+    r = b.call('mod.reload', {'id': 'heavy', 'times': 5})
+    res = r.get('result', {})
+    check('mod.reload times 5: five rounds measured, a clean mod loses no address space per reload',
+          r['ok'] and len(res['rounds']) == 5 and abs(res['per_reload']['free_mb']) < 1, r)
+    check('mod.reload times out of range: refused', not b.call('mod.reload', {'id': 'heavy', 'times': 0})['ok'])
+
+    # a thread the mod stopped in mml_mod_unload: freed at once
+    b.call('heavy.thread', {'ms': 60000})
+    r = b.call('mod.reload', {'id': 'heavy'})
+    check('heavy: its thread stopped in mml_mod_unload: freed, nothing kept',
+          r['ok'] and 'kept' not in r['result']['last_unload'] and 'kept_generations' not in r['result'], r)
+
+    # a thread left running in its code: the DLL is kept until the thread leaves it
+    gen = info()['generation']
+    b.call('heavy.thread', {'ms': 2500, 'leave': True})
+    r = b.call('mod.reload', {'id': 'heavy'})
+    u = r['result']['last_unload'] if r['ok'] else {}
+    check('heavy: a thread still in its code: the old DLL kept, the thread named in it',
+          u.get('kept') is True and u['threads'] and u['threads'][0]['where'].startswith('mod_heavy_')
+          and r['result'].get('kept_generations') == [gen], r)
+    check('heavy: ... the game goes on, the new load answers', b.call('heavy.status').get('result', {}).get('lib') == 4242)
+    time.sleep(3.5)
+    check('heavy: once the thread has ended, the kept DLL is freed', 'kept_generations' not in info(), info())
+    tail = '\n'.join(b.call('log.tail', {'lines': 200})['result'])
+    check('heavy: the log tells of the kept load and its freeing', 'still in its code' in tail and 'freed now' in tail)
+
+    # a thread of the system's pool in its code: begun elsewhere, seen through the frames it will return through
+    gen = info()['generation']
+    b.call('heavy.pool', {'ms': 2500})
+    time.sleep(0.1)
+    r = b.call('mod.reload', {'id': 'heavy'})
+    u = r['result']['last_unload'] if r['ok'] else {}
+    check('heavy: a pool thread sleeping in its code: found by its frames ("returns to"), the old DLL kept',
+          u.get('kept') is True and any(t['how'] == 'returns to' for t in u['threads'])
+          and r['result'].get('kept_generations') == [gen], r)
+    time.sleep(3.5)
+    check('heavy: ... freed once the work item has returned', 'kept_generations' not in info(), info())
+
+    # a library it loaded and never freed: said at the unload, and the next load is told it uses the old copy
+    b.call('heavy.leak_rt')
+    r = b.call('mod.reload', {'id': 'heavy'})
+    check('heavy: a library it never freed is named at the unload',
+          r['ok'] and r['result']['last_unload'].get('stays_loaded') == ['heavyrt.dll'], r)
+    tail = '\n'.join(b.call('log.tail', {'lines': 50})['result'])
+    check('heavy: the next load is warned that heavyrt.dll is not its own copy', 'its library heavyrt.dll is' in tail, tail[-600:])
+
+    # a library it imports missing from its folder: the load fails, saying why
+    b.call('mod.unload', {'id': 'heavy'})
+    os.replace(os.path.join(mod_dir, 'heavylib.dll'), os.path.join(mod_dir, 'heavylib.off'))
+    try:
+        r = b.call('mod.load', {'id': 'heavy'})
+        check('heavy: an imported library missing: the load fails and says a DLL was not found',
+              not r['ok'] and 'neither in its folder' in r['error'], r)
+    finally:
+        os.replace(os.path.join(mod_dir, 'heavylib.off'), os.path.join(mod_dir, 'heavylib.dll'))
+    r = b.call('mod.load', {'id': 'heavy'})
+    check('heavy: the library back: it loads', r['ok'] and b.call('heavy.status')['result']['lib'] == 4242, r)
+
+
 def main():
     # the harness's game folder: the loader, the test mods and the shipped ones
     mods = os.path.join(HARNESS, 'mml', 'mods')
@@ -233,8 +326,8 @@ def main():
         time.sleep(0.2)
         r = b.call('mods.list')
         loaded = {m['id']: m['loaded'] for m in r['result']}
-        check('mods loaded: core, hello_c, hook_a, hook_b, kit',
-              all(loaded.get(m) for m in ('core', 'hello_c', 'hook_a', 'hook_b', 'kit')), loaded)
+        check('mods loaded: core, hello_c, hook_a, hook_b, kit, heavy',
+              all(loaded.get(m) for m in ('core', 'hello_c', 'hook_a', 'hook_b', 'kit', 'heavy')), loaded)
 
         add = lambda: b.call('hook_a.call', {'a': 2, 'b': 3})
         r = add()
@@ -324,6 +417,7 @@ def main():
         r = b.call('menu.value', {'id': 21})
         check('menu.value: says plainly the menus are not known', not r['ok'] and 'not known' in str(r), r)
         kit_tests(b)
+        heavy_tests(b)
         r = b.call('nonexistent.method')
         check('an unknown method: an error', not r['ok'])
         tail = '\n'.join(b.call('log.tail', {'lines': 400})['result'])

@@ -3,11 +3,14 @@
 // A mod lives in <game>\mml\mods\<id>\ with a mod.json manifest:
 //   { "id": "core", "name": "...", "version": "0.1.0", "type": "native", "entry": "core.dll",
 //     "enabled": true, "load_order": 0, "depends": [] }
-// A native mod's DLL is copied to <game>\mml\live\<id>_<pid>_<n>.dll and loaded from there, so the original can be
-// rebuilt while the game runs; `mod.reload` unloads it (everything it registered goes with it) and loads the new
-// copy. A mod that faults inside one of its callbacks is unloaded at the next frame and logged; the game goes on.
+// Each load of a native mod runs from a folder of its own, <game>\mml\live\<id>_<pid>_<n>\ (its DLL and copies of
+// the other DLLs in its folder: lifecycle.cpp), so the originals can be rebuilt while the game runs; `mod.reload`
+// unloads it (everything it registered goes with it) and loads the new copy. A mod that faults inside one of its
+// callbacks is unloaded at the next frame and logged; the game goes on. A load whose code a thread still runs after
+// its unload is not freed (that would crash the game) until the thread has left it.
 #include "host.h"
 #include <algorithm>
+#include <cmath>
 #include <cstdarg>
 #include <cstdio>
 #include <deque>
@@ -36,8 +39,10 @@ struct ModEntry {
     MmlModUnloadFn unload = nullptr;
     MmlMod *current = nullptr;        // the live load, or null
     unsigned generation = 0;
-    std::string livePath;
-    bool faulted = false;             // a callback faulted: unloaded at the next frame
+    std::string liveDir;              // this load's folder (lifecycle.cpp)
+    host::ProcessMeasure atLoad{};    // the process before this load
+    json lastUnload;                  // what the last unload found (mods.list)
+    bool faulted = false;            // a callback faulted: unloaded at the next frame
     std::map<std::string, std::vector<uint8_t>> state;
 };
 
@@ -54,6 +59,8 @@ struct Posted { MmlMod *mod; void (*fn)(void *); void *user; };
 std::mutex g_postMx;
 std::vector<Posted> g_posted;
 MmlHost g_host;
+struct Kept { std::string id; unsigned generation; HMODULE dll; std::string liveDir; };
+std::vector<Kept> g_kept;   // loads unloaded but not freed: a thread was still in their code
 
 ModEntry *ById(const std::string &id) {
     for (auto &m : g_mods) if (m->id == id) return m.get();
@@ -286,22 +293,29 @@ bool LoadMod(ModEntry *e, std::string *err) {
         if (!dep || !dep->current) { *err = "depends on " + d + ", which is not loaded"; return false; }
     }
     if (e->type != "native") { *err = "type " + e->type + " has no runtime yet"; return false; }
-    std::string src = e->dir + e->entry;
-    std::string live = MmlDir() + "live\\";
-    CreateDirectoryA(live.c_str(), nullptr);
-    char name[128];
-    snprintf(name, sizeof name, "mod_%s_%u_%u.dll", e->id.c_str(), static_cast<unsigned>(GetCurrentProcessId()), ++e->generation);
-    std::string path = live + name;
-    if (!CopyFileA(src.c_str(), path.c_str(), FALSE)) { *err = "cannot copy " + src; return false; }
-    HMODULE dll = LoadLibraryA(path.c_str());
-    if (!dll) { *err = "LoadLibrary failed (" + std::to_string(GetLastError()) + ")"; DeleteFileA(path.c_str()); return false; }
+    char tag[128];
+    snprintf(tag, sizeof tag, "%s_%u_%u", e->id.c_str(), static_cast<unsigned>(GetCurrentProcessId()), ++e->generation);
+    std::string liveDir = MmlDir() + "live\\" + tag + "\\";
+    std::string path = liveDir + "mod_" + tag + ".dll";
+    e->atLoad = MeasureProcess();
+    std::vector<std::string> libs;
+    if (!LiveCopy(e->dir, e->entry, liveDir, path, &libs, err)) { LiveRemove(liveDir); return false; }
+    DllDirScope dllDir(liveDir);   // (a library loaded by a bare name in mml_mod_load is found in the load's folder)
+    HMODULE dll = LoadLibraryExA(path.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+    if (!dll) {
+        DWORD code = GetLastError();
+        *err = "LoadLibrary failed (" + std::to_string(code) + ")";
+        if (code == ERROR_MOD_NOT_FOUND) *err += ": a DLL it imports is neither in its folder nor the game's nor the system's";
+        LiveRemove(liveDir);
+        return false;
+    }
     auto load = reinterpret_cast<MmlModLoadFn>(GetProcAddress(dll, "mml_mod_load"));
     auto unload = reinterpret_cast<MmlModUnloadFn>(GetProcAddress(dll, "mml_mod_unload"));
     auto api = reinterpret_cast<MmlModApiFn>(GetProcAddress(dll, "mml_mod_api"));
     uint32_t want = api ? api() : MML_API_VERSION;
     if (!load || want > MML_API_VERSION) {
         FreeLibrary(dll);
-        DeleteFileA(path.c_str());
+        LiveRemove(liveDir);
         *err = !load ? "no mml_mod_load export" : "made for a newer loader (API " + std::to_string(want) + ")";
         return false;
     }
@@ -309,7 +323,7 @@ bool LoadMod(ModEntry *e, std::string *err) {
     e->dll = dll;
     e->unload = unload;
     e->current = m;
-    e->livePath = path;
+    e->liveDir = liveDir;
     e->faulted = false;
     int rc = 0;
     DWORD ex = SafeLoad(load, &g_host, m, &rc);
@@ -319,7 +333,11 @@ bool LoadMod(ModEntry *e, std::string *err) {
         UnloadMod(e, "its load failed");
         return false;
     }
-    Log(MML_LOG_INFO, "host", "mod %s %s loaded (generation %u)", e->id.c_str(), e->version.c_str(), e->generation);
+    for (const std::string &s : LibsElsewhere(liveDir, libs))
+        Log(MML_LOG_WARN, "host", "mod %s: its library %s, not its own copy (a load of it not freed, or another mod's "
+            "or the game's of the same name)", e->id.c_str(), s.c_str());
+    Log(MML_LOG_INFO, "host", "mod %s %s loaded (generation %u%s)", e->id.c_str(), e->version.c_str(), e->generation,
+        libs.empty() ? "" : (", " + std::to_string(libs.size()) + " libraries beside it").c_str());
     MmlEvent ev{};
     ev.size = sizeof ev;
     ev.type = MML_EVENT_MOD_LOADED;
@@ -353,12 +371,49 @@ bool UnloadMod(ModEntry *e, const char *why) {
         std::lock_guard<std::mutex> lk(g_postMx);
         g_posted.erase(std::remove_if(g_posted.begin(), g_posted.end(), [&](const Posted &p) { return p.mod == m; }), g_posted.end());
     }
-    FreeLibrary(e->dll);
-    DeleteFileA(e->livePath.c_str());
+    // A thread still in the load's code (one the mod started and did not stop, or a library's worker): freeing the
+    // DLL would crash the game at that thread's next instruction. A little time for threads that are ending.
+    std::vector<BusyThread> busy = ThreadsInDir(e->liveDir);
+    for (ULONGLONG until = GetTickCount64() + 1000; !busy.empty() && GetTickCount64() < until;) {
+        Sleep(25);
+        busy = ThreadsInDir(e->liveDir);
+    }
+    json report = {{"generation", e->generation}, {"why", why}};
+    if (!busy.empty()) {
+        json threads = json::array();
+        for (const BusyThread &t : busy) {
+            Log(MML_LOG_ERROR, "host", "mod %s: thread %lu is still in its code (%s %s) after its unload: its DLL is kept "
+                "loaded, not freed, until the thread leaves it (a mod stops its threads in mml_mod_unload)", e->id.c_str(),
+                t.tid, t.how, t.where.c_str());
+            threads.push_back({{"tid", t.tid}, {"how", t.how}, {"where", t.where}});
+        }
+        report["kept"] = true;
+        report["threads"] = threads;
+        g_kept.push_back(Kept{e->id, e->generation, e->dll, e->liveDir});
+    } else {
+        FreeLibrary(e->dll);
+        std::vector<std::string> stays = ModulesInDir(e->liveDir);   // loaded by the mod and not freed, or held
+        if (!stays.empty()) {
+            std::string list;
+            for (const std::string &s : stays) list += (list.empty() ? "" : ", ") + s;
+            Log(MML_LOG_WARN, "host", "mod %s: still loaded after its unload: %s (loaded by the mod and never freed, or "
+                "held by something it made)", e->id.c_str(), list.c_str());
+            report["stays_loaded"] = stays;
+        }
+        LiveRemove(e->liveDir);
+    }
+    ProcessMeasure now = MeasureProcess();
+    double freeMb = now.freeMb - e->atLoad.freeMb, largestMb = now.largestFreeMb - e->atLoad.largestFreeMb;
+    int handles = now.handles - e->atLoad.handles, threads = now.threads - e->atLoad.threads;
+    report["since_load"] = {{"free_mb", std::round(freeMb * 10) / 10}, {"largest_free_mb", std::round(largestMb * 10) / 10},
+                            {"handles", handles}, {"threads", threads}};
+    e->lastUnload = report;
     e->dll = nullptr;
     e->unload = nullptr;
     e->current = nullptr;
-    Log(MML_LOG_INFO, "host", "mod %s unloaded (%s)", e->id.c_str(), why);
+    // (the whole process's numbers over the load's life: the game's own changes are in them too)
+    Log(MML_LOG_INFO, "host", "mod %s unloaded (%s); since its load: address space free %+.1f MB (largest block %+.1f MB), "
+        "handles %+d, threads %+d", e->id.c_str(), why, freeMb, largestMb, handles, threads);
     for (const std::string &s : gone) ServicesChanged(s);
     return true;
 }
@@ -412,24 +467,30 @@ void LoadEnabled() {
         if (e->enabled && !e->current) Log(MML_LOG_WARN, "host", "mod %s not loaded: %s", e->id.c_str(), e->error.c_str());
 }
 
-void CleanLive() {
-    // copies left by earlier runs (this run's are deleted as they unload)
-    std::string dir = MmlDir() + "live\\";
-    WIN32_FIND_DATAA fd;
-    HANDLE h = FindFirstFileA((dir + "*.dll").c_str(), &fd);
-    if (h == INVALID_HANDLE_VALUE) return;
-    do DeleteFileA((dir + fd.cFileName).c_str());
-    while (FindNextFileA(h, &fd));
-    FindClose(h);
+// Loads kept after their unload: freed once no thread is in their code any more (checked now and then).
+void FreeKept() {
+    for (auto it = g_kept.begin(); it != g_kept.end();) {
+        if (!ThreadsInDir(it->liveDir).empty()) { ++it; continue; }
+        FreeLibrary(it->dll);
+        LiveRemove(it->liveDir);
+        Log(MML_LOG_INFO, "host", "mod %s generation %u: no thread in its code any more, its DLL freed now", it->id.c_str(), it->generation);
+        it = g_kept.erase(it);
+    }
 }
 
-std::string ModJson(const ModEntry &e) {
+json ModValue(const ModEntry &e) {
     json j = {{"id", e.id}, {"name", e.name}, {"version", e.version}, {"type", e.type}, {"enabled", e.enabled},
               {"loaded", e.current != nullptr}, {"generation", e.generation}, {"load_order", e.order}, {"dir", e.dir},
               {"depends", e.depends}};
+    if (e.current) j["live_dir"] = e.liveDir;
     if (!e.error.empty()) j["error"] = e.error;
-    return j.dump();
+    if (!e.lastUnload.is_null()) j["last_unload"] = e.lastUnload;
+    json kept = json::array();
+    for (const Kept &k : g_kept) if (k.id == e.id) kept.push_back(k.generation);
+    if (!kept.empty()) j["kept_generations"] = kept;
+    return j;
 }
+std::string ModJson(const ModEntry &e) { return ModValue(e).dump(); }
 } // namespace
 
 const char *ModIdOf(const MmlMod *mod) { return mod ? mod->entry->id.c_str() : "host"; }
@@ -514,7 +575,7 @@ void ModsInit() {
     g_host.item_id = H_ItemId;
     g_host.give_item = H_GiveItem;
     g_host.actor_seat = H_ActorSeat;
-    CleanLive();
+    LiveCleanAll();
     Scan();
     LoadEnabled();
 }
@@ -552,6 +613,8 @@ void RunPosted() {
     }
     for (auto &e : g_mods)
         if (e->current && e->faulted) UnloadMod(e.get(), "it faulted");
+    static unsigned tick = 0;
+    if (!g_kept.empty() && ++tick % 30 == 0) FreeKept();
 }
 
 bool ExecCommand(const std::string &method, const std::string &paramsJson, std::string *reply) {
@@ -591,6 +654,37 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
         ModEntry *e = ById(id);
         if (!e) { Scan(); e = ById(id); }
         if (!e) { *reply = "no mod '" + id + "' (mods.list)"; return false; }
+        int times = params.is_object() && params.contains("times") && params["times"].is_number_integer() ? params["times"].get<int>() : 1;
+        if (method == "mod.reload" && times != 1) {
+            // reloaded again and again, the process measured after each load: what one reload does not give back
+            if (times < 1 || times > 200) { *reply = "times: 1 to 200"; return false; }
+            if (!e->current) { *reply = "mod " + id + " is not loaded"; return false; }
+            auto r1 = [](double v) { return std::round(v * 10) / 10; };
+            ProcessMeasure first = MeasureProcess(), last = first;
+            json rounds = json::array();
+            for (int i = 0; i < times; i++) {
+                UnloadMod(e, "reload");
+                Scan();
+                std::string err;
+                if (!LoadMod(e, &err)) {
+                    e->error = err;
+                    *reply = "mod " + id + ", reload " + std::to_string(i + 1) + " of " + std::to_string(times) + ": " + err;
+                    return false;
+                }
+                last = MeasureProcess();
+                rounds.push_back({{"generation", e->generation}, {"free_mb", r1(last.freeMb)}, {"largest_free_mb", r1(last.largestFreeMb)},
+                                  {"handles", last.handles}, {"threads", last.threads}});
+            }
+            e->error.clear();
+            json out = ModValue(*e);
+            out["rounds"] = rounds;
+            out["per_reload"] = {{"free_mb", std::round((last.freeMb - first.freeMb) / times * 100) / 100},
+                                 {"largest_free_mb", std::round((last.largestFreeMb - first.largestFreeMb) / times * 100) / 100},
+                                 {"handles", static_cast<double>(last.handles - first.handles) / times},
+                                 {"threads", static_cast<double>(last.threads - first.threads) / times}};
+            *reply = out.dump();
+            return true;
+        }
         if (method != "mod.load") UnloadMod(e, method == "mod.reload" ? "reload" : "mod.unload");
         if (method != "mod.unload") {
             Scan();   // its manifest read again

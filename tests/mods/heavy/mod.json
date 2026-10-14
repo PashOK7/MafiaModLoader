@@ -1,0 +1,1 @@
+{ "id": "heavy", "name": "test: a heavy mod's lifecycle", "version": "1", "entry": "heavy.dll", "load_order": 40 }

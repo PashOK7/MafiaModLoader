@@ -436,3 +436,30 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   then the agents' own tools.
 - **Found on the way**: the loader loads a mod's copy from `mml\live\` with a plain `LoadLibrary`, so a DLL a mod
   ships beside itself (PhysX, Flow) would not be found: item 1, the first and the smallest.
+
+## 2026-10-14: a heavy mod's lifecycle, the loader's part
+
+- **The owner**: "continue the work": the roadmap's first item. The loader's part is done here; Jolt in
+  `tools/deps.py` and shaders compiled in a mod's build stay as item 1.
+- **Libraries**: each load now runs from its own folder in `mml\live\` (the mod's DLL as `mod_<id>_<pid>_<n>.dll`,
+  so crash reports and `where` keep naming it, and a copy of every other DLL of its folder). Copies, not the mod's
+  folder in the search path: a library loaded from the mod's folder would lock it, and a deploy could not replace it.
+  `LOAD_WITH_ALTERED_SEARCH_PATH` finds the imports; `SetDllDirectory` during `mml_mod_load` finds bare-name loads.
+  Windows reuses a loaded DLL of the same base name, so a library an older load never freed is used by the next load:
+  the loader now says so.
+- **Threads at the unload**: every other thread suspended in turn (nothing allocated while one is suspended: it may
+  hold the heap's lock) and looked at. A first version scanned every word of the stack and kept a test DLL loaded for
+  good: a thread pool thread held `heavyrt.dll+0x3017` (the CRT's `try_get_function`) in stale locals, left there by
+  `DLL_THREAD_ATTACH`. Now: its EIP, the return addresses along its saved-EBP chain (Windows' functions keep frame
+  pointers, so a wait called from a mod's code is seen; frames without one keep EBP and are passed over), and its
+  start address. A pool work item sleeping in the mod's code is seen by the chain alone (tested).
+- **A doubt of a tool's, settled**: the wait for threads that are ending was counted in `Sleep(25)` steps, but one
+  look at the threads took about 30 ms (a Toolhelp snapshot walks every thread of the system), so "a second" was
+  2.5 s and the test's thread ended inside it. The wait is on the clock now, and `NtGetNextThread` walks only the
+  game's threads: 0.2 ms a look, 0.4 ms a measure. The rest of a reload (about 85 ms for three new DLLs) is
+  `LoadLibrary` itself, likely the antivirus reading new files.
+- **Measured in the 1.2 lab**: `mod.reload {times: 20}` on core and telemetry: 0 MB of address space, 0 handles, 0
+  threads lost a reload (3381 MB free, the game is large-address aware: its largest free block 2046 MB); nothing kept
+  by mistake among the game's 18 threads; telemetry's overlay drawn after the 40 reloads.
+- `tests/run_tests.py`'s `check` could not print a tuple as its detail (a latent fault: it raised instead of
+  failing); fixed.

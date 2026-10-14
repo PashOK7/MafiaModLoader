@@ -71,6 +71,28 @@ void DispatchTo(MmlMod *mod, const MmlEvent &ev);            // to one mod's sub
 // fn(user) called behind the mod's fault guard (a fault: the mod is unloaded at the next frame); false: it faulted.
 bool ModCall(MmlMod *mod, void (*fn)(void *), void *user, const char *where);
 
+// ---- a mod's DLLs in the process (lifecycle.cpp): each load's own folder <game>\mml\live\<id>_<pid>_<n>\ (its DLL
+// and every other DLL of the mod's folder), the threads still in its code, what the process did not get back
+struct ProcessMeasure { double freeMb, largestFreeMb; int handles, threads; };   // address space free, its largest block
+ProcessMeasure MeasureProcess();
+// The mod's DLL copied to entryPath (inside liveDir), every other *.dll of srcDir next to it (their names in libs).
+bool LiveCopy(const std::string &srcDir, const std::string &entry, const std::string &liveDir, const std::string &entryPath,
+              std::vector<std::string> *libs, std::string *err);
+struct DllDirScope {                      // the process's DLL directory set for a while (a mod's load), then put back
+    explicit DllDirScope(const std::string &dir);
+    ~DllDirScope();
+    std::string previous;
+    bool had = false;
+};
+// libs loaded by their names from somewhere else than liveDir ("name is <path>"): an earlier load not freed, another
+// mod's or the game's of the same name
+std::vector<std::string> LibsElsewhere(const std::string &liveDir, const std::vector<std::string> &libs);
+struct BusyThread { DWORD tid; uintptr_t eip; const char *how; std::string where; };   // how: "at", "returns to", "began at"; where: "<module>+0x<rva>"
+std::vector<BusyThread> ThreadsInDir(const std::string &liveDir);   // threads (not this one) in code loaded from there
+std::vector<std::string> ModulesInDir(const std::string &liveDir);  // modules still loaded from there
+void LiveRemove(const std::string &liveDir);   // its files and itself (what is still mapped stays)
+void LiveCleanAll();                      // at start: what earlier runs left in <game>\mml\live\
+
 // ---- game hooks (game_hooks.cpp)
 bool GameHooksInstall();                  // false: not a known Mafia build (the loader runs without game events)
 void Frame();                             // one loader frame (game thread): from the game's frame limiter, or a pump

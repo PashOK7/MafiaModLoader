@@ -39,9 +39,14 @@ except the intro videos), on the game thread, where `LoadLibrary` is safe.
   one hooked outermost. Adding or removing a link only rewrites pointers (innermost first), so the game's bytes are
   written once and a running detour always has a valid next step. Tested in every load and unload order
   (`tests/run_tests.py`).
-- **Mods** (`mods.cpp`). A mod's DLL is copied to `mml\live\mod_<id>_<pid>_<n>.dll` and loaded from there: the
-  original can be rebuilt while the game runs. Unloading removes everything it registered (hooks, handlers, commands,
-  services, posted calls): no pointer into its code is left behind. Every call into a mod is behind `__try`: a fault
+- **Mods** (`mods.cpp`, `lifecycle.cpp`). Each load of a mod runs from its own folder,
+  `mml\live\<id>_<pid>_<n>\`: its DLL (as `mod_<id>_<pid>_<n>.dll`) and copies of the other DLLs of its folder (its
+  libraries, found next to it by `LOAD_WITH_ALTERED_SEARCH_PATH`; the folder is also the DLL directory during
+  `mml_mod_load`). The originals can be rebuilt while the game runs. Unloading removes everything it registered
+  (hooks, handlers, commands, services, posted calls): no pointer into its code is left behind. Before its DLL is
+  freed, every other thread is suspended in turn and looked at (its EIP, the return addresses along its chain of
+  saved EBPs, where it began): one still in the load's code keeps the load mapped until it has left. Each unload
+  measures the process against the load (address space, handles, threads). Every call into a mod is behind `__try`: a fault
   marks it, it is unloaded at the next frame, the game goes on. `state_put`/`state_get` keep blobs across a mod's own
   reloads.
 - **Services**: a mod publishes a versioned table of functions under a name; others find it. This is how separate
@@ -163,7 +168,7 @@ their text through it, so `Game.exe+0x...` and `LS3DF.dll+0x...` get the functio
 <game>\mml\bridge.json              written once the bridge listens: port (47100 or the next free), token (new every run), pid
 <game>\mml\mods\<id>\mod.json, ...  the mods (config.json: the defaults of a mod's settings)
 <game>\mml\data\<id>\               a mod's own files; config.json: its settings that were changed
-<game>\mml\live\                    the loaded copies of the mods' DLLs
+<game>\mml\live\<id>_<pid>_<n>\     each load of a mod: its DLL and its libraries (deleted as it unloads)
 <game>\mml\logs\mml.log             this run's log (mml.prev.log: the previous run's)
 <game>\mml\crash\*.dmp              crash dumps
 <game>\mml\shots\<n>.jpg            screenshots (the loader's raw <n>.bgra, made a JPEG by the MCP server)

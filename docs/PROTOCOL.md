@@ -35,9 +35,9 @@ Taps can also start with the game, before its first frame: `"taps": ["5409D0 n=4
 
 | Method | Params | Result |
 |---|---|---|
-| `mods.list` | | every mod: id, version, loaded, generation, error |
+| `mods.list` | | every mod: id, version, loaded, generation, error; `live_dir` (the load's folder), `last_unload` (threads found in its code and whether it was `kept`, libraries that `stays_loaded`, the process `since_load`: `free_mb`, `largest_free_mb`, `handles`, `threads`), `kept_generations` (loads not freed yet) |
 | `mods.rescan` | | new mods in `mml\mods` loaded |
-| `mod.reload` / `mod.load` / `mod.unload` | `id` (`"*"`: every loaded mod, for reload) | the mod |
+| `mod.reload` / `mod.load` / `mod.unload` | `id` (`"*"`: every loaded mod, for reload); reload: `times` (1..200) | the mod; with `times`: `rounds` (the process after each load) and `per_reload` (what one reload did not give back) |
 | `commands.list` | | every method, the mods' with their help |
 | `hooks.list` | | every hooked function and its chain |
 | `menu.state` | | the open menus (the active one first: vtable, kind, command handler, its definition's `name`, its `controls`: id, kind, text, x, y, w, h in 800x600 units inside the parent, `screen` [x, y, w, h] on the screen (where to click), flags, parent, focused, `value` (sliders, bars, checks, switches, selectors, numbers, scrolled lists), `item_of` / `page_of` a mod's) and the profiles the game has read |
