@@ -101,6 +101,7 @@ int CmdGame(const char *, MmlReply *r, void *) {
 // ---- the car (game.h `Car`: the same fields, read here through mem_read so a stale pointer is an error, not a fault)
 std::vector<uint8_t> g_carState;   // `car.save`'s
 uintptr_t g_carStateOf;
+std::string g_carStateModel;       // its car's frame's name (told in the replies)
 
 // The car asked for: {"car": "0x..."} or the one the player drives now, else the one he drove last (the HUD's).
 uintptr_t CarOf(const json &p, const char **which) {
@@ -136,6 +137,7 @@ int CmdCar(const char *args, MmlReply *r, void *) {
               {"fuel", R<float>(v + e.vehFuel)}, {"fuel_tank", R<float>(v + e.vehFuelTank)},
               {"engine_health", healthMax > 1e-4f ? health / healthMax : 0.0f},
               {"damage", healthMax > 1e-4f ? 1.0f - health / healthMax : 1.0f}};
+    if (e.vehStateSize) j["state_bytes"] = game::CarStateSize(reinterpret_cast<void *>(car));   // (grows with the body's dents)
     float w[16];
     if (frame && H->mem_read(frame + game::kFrameWorld, w, sizeof w)) j["axes"] = {Vec(w), Vec(w + 4), Vec(w + 8)};
     return Reply(r, j);
@@ -147,6 +149,8 @@ bool SafeCarSave(void *car, std::vector<uint8_t> *out) {
 bool SafeCarLoad(void *car, const std::vector<uint8_t> *state) {
     __try { return game::CarStateLoad(car, *state); } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
 }
+std::string ModelOf(uintptr_t car) { return Str(R<uintptr_t>(R<uintptr_t>(car + game::kActorFrame) + game::kFrameName)); }
+
 int CmdCarSave(const char *args, MmlReply *r, void *) {
     if (!Known() || !game::Exe().vehStateSave) return Fail(r, "a car's state is not known for this build");
     const char *which = "";
@@ -154,16 +158,21 @@ int CmdCarSave(const char *args, MmlReply *r, void *) {
     if (!car || R<int>(car + game::kActorType, -1) != game::kActorTypeCar) return Fail(r, "no car");
     if (!SafeCarSave(reinterpret_cast<void *>(car), &g_carState)) { g_carState.clear(); return Fail(r, "the game's SaveVehicleState failed"); }
     g_carStateOf = car;
-    return Reply(r, json{{"car", Hex(car)}, {"which", which}, {"bytes", g_carState.size()}});
+    g_carStateModel = ModelOf(car);
+    return Reply(r, json{{"car", Hex(car)}, {"which", which}, {"model", g_carStateModel}, {"bytes", g_carState.size()}});
 }
 int CmdCarRestore(const char *args, MmlReply *r, void *) {
     if (g_carState.empty()) return Fail(r, "nothing saved (car.save first)");
     const char *which = "";
     uintptr_t car = CarOf(Params(args), &which);
     if (!car || R<int>(car + game::kActorType, -1) != game::kActorTypeCar) return Fail(r, "no car");
-    if (!SafeCarLoad(reinterpret_cast<void *>(car), &g_carState))
-        return Fail(r, "not put back: the state is another model's (its size differs), or the game's LoadVehicleState failed");
-    return Reply(r, json{{"car", Hex(car)}, {"which", which}, {"bytes", g_carState.size()}, {"saved_from", Hex(g_carStateOf)}});
+    std::string model = ModelOf(car);   // (each car's frame has a name of its own: told, not compared)
+    if (!game::CarStateFits(reinterpret_cast<void *>(car), g_carState))
+        return Fail(r, ("the state was saved from " + g_carStateModel + ", built otherwise than " + model +
+                        " (its lights, body parts, seats or wheels differ): a state goes back into its model only").c_str());
+    if (!SafeCarLoad(reinterpret_cast<void *>(car), &g_carState)) return Fail(r, "not put back: the game's LoadVehicleState failed");
+    return Reply(r, json{{"car", Hex(car)}, {"which", which}, {"model", model}, {"bytes", g_carState.size()},
+                         {"saved_from", Hex(g_carStateOf)}});
 }
 
 int CmdPlayer(const char *, MmlReply *r, void *) {
@@ -265,6 +274,13 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     H = host;
     M = mod;
     if (uintptr_t ls3d = host->module_base("LS3DF.dll")) game::Detect(ls3d);
+    if (size_t k = host->state_get(mod, "car.state", nullptr, 0)) {   // `car.save`'s, from the previous load
+        g_carState.resize(k);
+        host->state_get(mod, "car.state", g_carState.data(), k);
+        host->state_get(mod, "car.of", &g_carStateOf, sizeof g_carStateOf);
+        g_carStateModel.resize(host->state_get(mod, "car.model", nullptr, 0));
+        host->state_get(mod, "car.model", g_carStateModel.data(), g_carStateModel.size());
+    }
     // the registry from the previous load of this mod (a reload keeps it)
     size_t n = host->state_get(mod, "humans", nullptr, 0);
     if (n) {
@@ -279,7 +295,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->command(mod, "player", "the player: position, facing, health, alive, the vehicle he is in", CmdPlayer, nullptr);
     host->command(mod, "car", "the player's car (driven now, else driven last; params: car, an address): position, speed, steering, gear, rpm, fuel, damage", CmdCar, nullptr);
     host->command(mod, "car.save", "the car's whole state kept in memory, by the game's own SaveVehicleState (params: car)", CmdCarSave, nullptr);
-    host->command(mod, "car.restore", "the kept state put back into the car (the same car or the same model), by LoadVehicleState", CmdCarRestore, nullptr);
+    host->command(mod, "car.restore", "the kept state put back into the car (the same car or the same model): repaired, then LoadVehicleState", CmdCarRestore, nullptr);
     host->command(mod, "humans", "every C_human alive in memory (params: radius m round the player)", CmdHumans, nullptr);
     host->command(mod, "actors", "the mission's actor lists: type, model, position", CmdActors, nullptr);
     host->command(mod, "frame", "an LS3D frame: name, type, world position and axes, parent (params: addr)", CmdFrame, nullptr);
@@ -292,4 +308,8 @@ MML_EXPORT void mml_mod_unload(MmlMod *mod) {
     std::vector<uintptr_t> v(g_humans.begin(), g_humans.end());
     H->state_put(mod, "humans", v.data(), v.size() * sizeof(uintptr_t));
     g_humans.clear();
+    // `car.save`'s state, its car and model: kept across this mod's reloads
+    H->state_put(mod, "car.state", g_carState.data(), g_carState.size());
+    H->state_put(mod, "car.of", &g_carStateOf, sizeof g_carStateOf);
+    H->state_put(mod, "car.model", g_carStateModel.data(), g_carStateModel.size());
 }

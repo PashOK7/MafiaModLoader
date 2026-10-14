@@ -3,6 +3,7 @@ address,kind,name,source,note
 00405D90,function,actorDtor,mafia-ragdoll,
 004087E0,function,modelOpen,game_build.h,
 004123F0,function,PhysStep,mafia-ragdoll,
+0041E690,function,carRepair,game_build.h,
 004216D8,label,carWater,mafia-ragdoll,
 00422EE0,function,carReset,mafia-ragdoll,
 0042658A,label,carIn,mafia-ragdoll,

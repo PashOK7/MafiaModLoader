@@ -493,3 +493,14 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   no scene root in the main menu. A first test hovered a submenu's items: those do not move the camera (only the main
   menu's do), so nothing moved; the next ones hovered the main menu.
 - `game_build.h` grew (the two LS3D places, the menu camera): mafia-ragdoll's copy is not changed from here.
+
+## 2026-10-14: car.restore with dents
+
+- **The owner**: "do car.restore". The game's load (0x4CFAB0, read) checks only the format; each body part's record
+  is found by its code and writes only the vertices it lists, so the core's "same size" test was wrong twice: it
+  refused the same car with other dents, and a looser test alone would leave a crashed car's extra dents. Now
+  `CarStateLoad` repairs first (the scripts' CAR_REPAIR function, checked by `check_builds.py` as what its handler
+  calls in both builds) and `CarStateFits` compares the head's counts (lights, body parts, seats, wheels).
+- A first model test compared the frames' names, and refused another taxi of the same model: every car's frame has a
+  name of its own (`taxi00_mml2`). Measured in the 1.2 lab as written in the roadmap's Done; `car.save` now
+  survives the core's reload (`state_put`), and `car` tells `state_bytes`.

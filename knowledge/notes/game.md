@@ -131,6 +131,14 @@ the function named.
   sets everything). 1.0: 0x51AAC0, 0x51AD90, 0x51BA40. Tried in the lab: saved, driven away in reverse round a
   corner, loaded while rolling: position, axes, gear, engine speed and fuel back to the last digit, the car drove
   on. `game::CarStateSave` / `CarStateLoad`, the core's `car.save` / `car.restore`.
+- **game** A state's size grows with the body's dents (`GetVehicleStateSize` counts the dented vertices of each
+  body part): the freeride taxi is 1237 bytes whole, 1285 after a scrape, 1437 after a crash. The load (read
+  2026-10-14) checks only the version; after the fixed head (`u32` counts at +352 lights, +356 body parts, +360
+  seats, +364 wheels) each part's record is found by its code (`CodeIndexDan`) and writes only the vertices it lists
+  (the original vertex plus a 6-bit delta times 0.02 per axis); the other vertices stay as they are. So a state with
+  fewer dents leaves the car's extra dents unless the car is repaired first: `C_car::RepairPosition(car, true)`
+  0x41E690 (1.0 0x465760), what the scripts' CAR_REPAIR calls (it calls `C_car::Reset`). Seen: repair, then load,
+  gives the saved size back exactly.
 
 ### What older tools said (TrackMafia, Telemetry2, LiveDelta)
 

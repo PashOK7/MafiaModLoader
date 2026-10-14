@@ -84,8 +84,9 @@ Taps can also start with the game, before its first frame: `"taps": ["5409D0 n=4
 
 The core mod's commands: `game` (the build, the mission's name and state), `player`, `car` (the car the player
 drives now, else drove last; or `car`: an address): position, velocity, speed (m/s, km/h, mph), steering, gear, rpm,
-fuel, engine health and damage; `car.save` / `car.restore` (the car's whole state kept in memory and put back, by
-the game's own `SaveVehicleState` / `LoadVehicleState`), `humans` (`radius`), `actors`, `frame` (`addr`),
+fuel, engine health and damage; `state_bytes` (its saved state's size: it grows with the
+body's dents); `car.save` / `car.restore` (the car's whole state kept in memory, across the core's reloads, and put
+back into it or another car of its model: repaired, then the game's own `SaveVehicleState` / `LoadVehicleState`), `humans` (`radius`), `actors`, `frame` (`addr`),
 `frames.find` (`name`, `limit`).
 
 ## Drawing: the coordinates

@@ -148,6 +148,14 @@ What is done, what comes next and later, and what is known to be missing or wron
   the spring by the time, measured equal to 62.5 fps within 15 ms on one flight at about 1000 fps. The taxi's
   acceleration and running measured the same unlocked (1.2 lab; `knowledge/notes/game.md`, "The frame rate").
 
+- **`car.restore` with dents** (2026-10-14): a car's state grows with its body's dents, and the restore refused a
+  state of the same taxi taken before a crash (its size was the test of the model). `CarStateLoad` now repairs the
+  car first (the scripts' `car_repair`: the game's load writes only the vertices a state lists) and checks the model
+  by the counts the load walks by (`CarStateFits`: lights, body parts, seats, wheels); `car` tells `state_bytes`, and
+  `car.save` survives the core's reload. Seen in the 1.2 lab: a dented state (1285) back into the repaired taxi, a
+  whole one (1237) back into a crashed taxi (1437, engine 86 %: back to 1237, 100 %), the state into another taxi of
+  the model, a Bolt-Thrower refused.
+
 ## Next, by importance
 
 **The goal** (the owner, 2026-10-14): a toolkit strong enough for whatever mod a user can think of, written by another
@@ -335,10 +343,6 @@ merged, sorted by importance):
   frame rate"), not checked in the game; the owner remembers more breakages above 62.5 fps that are not found yet.
   Frames of 0 ms (above 1000 fps) reach every system. 1.0: the two patch places are found and checked offline, not
   run in the 1.0 lab; its menu camera is inlined into the menu loop (0x56CCC0) and not fixed.
-- **`car.restore`** (the core mod) refuses a state whose size differs from the car's now, taking a different size for
-  another model. But the size counts the body's dented vertices (`C_Vehicle::GetVehicleStateSize` 0x4CEB30): the
-  same taxi saved at 1237 bytes was 1613 after a short drive, and the restore was refused. Whether
-  `LoadVehicleState` takes a state with another count of dents is to be read before the check is changed.
 
 - **A mod's unload** (host/lifecycle.cpp): a thread is found in a load's code by its EIP, the chain of saved EBPs and
   where it began; a thread inside a library compiled to use EBP as a plain register, between it and the mod's frame,
@@ -406,8 +410,9 @@ merged, sorted by importance):
   buffer, but nobody pressed one in the tests. `key_pressed` asked from both `FRAME` and `MISSION_TICK` sees one
   press twice. Hotkeys also fire in the menus.
 - **The car**: `Car::Damage` is the engine's health only (the body's dents are not a number). `CarStateLoad` puts a
-  state back into the same car or the same model; it was tried on the car the player drives (standing and moving),
-  not on traffic or racing cars, and a state is not kept across missions. `LastCar` is the HUD's pointer: whether
+  state back into the same car or the same model (repairing it first: a car_repair sets it on its wheels where it
+  is before the state moves it); it was tried on the player's taxi and spawned cars, in 1.2 only since dents count
+  (1.0's `carRepair` checked against its files), not on traffic or racing cars, and a state is not kept across missions. `LastCar` is the HUD's pointer: whether
   the game clears it when that car is destroyed was not looked at (read it through `mem_read`, as `call car` does).
   TrackMafia's ghost-car pointer and its recipe of copying the car's memory are not offered (see
   `knowledge/notes/game.md`, "Cars").

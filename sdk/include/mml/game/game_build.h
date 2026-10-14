@@ -245,6 +245,9 @@ struct ExeBuild {
     // the look point's target, +0x24 the eye's target, +0x30 the look point, +0x3C the eye. Each tick moves the two
     // points by velocity * ms * 0.0003, then springs the velocities once a call: v = 0.98 v + 0.02 (target - point).
     uintptr_t menuCamTick, menuCam;
+    // carRepair: C_car::RepairPosition, thiscall(C_car*, bool reset), what the scripts' CAR_REPAIR calls with true: the
+    // car set on its wheels on the ground and reset (C_car::Reset: its body undented, its engine whole).
+    uintptr_t carRepair;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -331,6 +334,7 @@ inline const ExeBuild kExe12 = {
     168,
     // the menu's camera (2026-10-14: read in ExecuteMenu 0x5EBA40 and 0x5EC8A0)
     0x5EC8A0, 0x6BD83C,
+    0x41E690,   // (CAR_REPAIR, case 0x178 of C_program::Process)
 };
 
 inline const ExeBuild kExe10 = {
@@ -389,6 +393,7 @@ inline const ExeBuild kExe10 = {
     0x671EF0, 0x6EFB94,
     164,
     0, 0,   // the menu's camera: inlined into gui_menu_execute_modal 0x56CCC0, not looked for yet
+    0x465760,   // (st0rm94's car_repair_position_on_ground)
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,

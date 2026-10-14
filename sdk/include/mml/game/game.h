@@ -202,10 +202,20 @@ struct Car {
     void *Frame() const { return at<void *>(car, kActorFrame); }       // its model: WorldMatrix(Frame()) for its axes
 };
 
+// A car repaired as the scripts' car_repair does: set on its wheels on the ground, its body undented, its engine
+// whole (C_car::RepairPosition(car, true)). Game thread only.
+inline void CarRepair(void *car) {
+    using Fn = void(__thiscall *)(void *, bool);
+    if (car && Exe().carRepair) reinterpret_cast<Fn>(Exe().carRepair)(car, true);
+}
+
 // A car's state (position, rotation, speeds, engine, gear, fuel, damage and dents, wheels, lights, doors) saved and
-// put back with the game's own functions, the ones its saved games use for every car. A state goes back only into
-// the car it was taken from, or one of the same model (the size tells: it holds the body's dents); false otherwise.
-// Game thread only. The player may sit in the car.
+// put back with the game's own functions, the ones its saved games use for every car. Its size is not the model's:
+// it grows with the body's dented vertices (the same taxi: 1237 bytes whole, 1613 after touching a curb). The game's
+// load finds each part by its name, writes only the vertices the state lists and leaves the others as they are, so
+// the car is repaired first (CarRepair): a state with fewer dents than the car now has then comes back whole. A
+// state goes back only into a car built as the one it came from (CarStateFits; false otherwise): another model's
+// parts would be skipped by name, its wheels and seats by count. Game thread only. The player may sit in the car.
 inline size_t CarStateSize(void *car) {
     using Fn = int(__thiscall *)(void *);
     return car && Exe().vehStateSize ? static_cast<size_t>(reinterpret_cast<Fn>(Exe().vehStateSize)(&at<uint8_t>(car, Exe().vehicle))) : 0;
@@ -217,10 +227,20 @@ inline bool CarStateSave(void *car, std::vector<uint8_t> *out) {
     out->assign(n, 0);
     return reinterpret_cast<Fn>(Exe().vehStateSave)(&at<uint8_t>(car, Exe().vehicle), out->data()) != 0;
 }
+// Whether a state was made for a car built as this one: the counts the game's load walks by, u32s at +352 (lights),
+// +356 (body parts), +360 (seats), +364 (wheels), compared with the car's own state now (saving it only reads the
+// car). Two cars of one model have the same; the frames' names do not tell (every car's is its own).
+inline bool CarStateFits(void *car, const std::vector<uint8_t> &state) {
+    std::vector<uint8_t> now;
+    return state.size() >= 368 && CarStateSave(car, &now) && now.size() >= 368 && !memcmp(state.data() + 352, now.data() + 352, 16);
+}
 inline bool CarStateLoad(void *car, const std::vector<uint8_t> &state) {
     using Fn = char(__thiscall *)(void *, const void *);
-    if (state.size() < 8 || *reinterpret_cast<const uint32_t *>(state.data()) != 9) return false;
-    if (CarStateSize(car) != state.size() || *reinterpret_cast<const uint32_t *>(state.data() + 4) != state.size()) return false;
+    // {u32 9 (the format), u32 its size}: what the game checks is the first; the second keeps a cut buffer out
+    if (!car || state.size() < 8 || *reinterpret_cast<const uint32_t *>(state.data()) != 9 ||
+        *reinterpret_cast<const uint32_t *>(state.data() + 4) != state.size() || !CarStateFits(car, state))
+        return false;
+    CarRepair(car);
     return reinterpret_cast<Fn>(Exe().vehStateLoad)(&at<uint8_t>(car, Exe().vehicle), state.data()) != 0;
 }
 

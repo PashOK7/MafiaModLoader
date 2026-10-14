@@ -122,13 +122,20 @@ def main(a):
     norm = lambda i: re.sub(r'0x[0-9a-f]{5,}', '@', f'{i.mnemonic} {i.op_str}') if i else None
     funcs = ['missionTick', 'missionClose', 'humanHit', 'actorDtor', 'humanCtor', 'testLine', 'frameWorldMatrix',
              'actorSetPos', 'frameSetPos', 'sceneMoved', 'vehicleDeactivate', 'carReset', 'vehicleExternalForce',
-             'pedHit', 'pedCarSweep', 'pedCarHit', 'sphereSweep', 'save1dNone', 'save1eNone', 'carExitGo', 'carExitDone']
+             'pedHit', 'pedCarSweep', 'pedCarHit', 'sphereSweep', 'save1dNone', 'save1eNone', 'carExitGo', 'carExitDone', 'carRepair']
     for f in funcs:
         a, b = norm(g12.insn(e12[f] - 0x400000)), norm(g10.insn(e10[f] - 0x400000))
         check(a == b, f'{f}: 1.2 "{a}" vs 1.0 "{b}"')
     for f in ('render', 'frameRelease', 'meshRelease', 'modelOpen', 'frameDup', 'frameLimit'):
         a, b = norm(s12.insn(l12[f])), norm(s10.insn(l10[f]))
         check(a == b, f'LS3DF {f}: 1.2 "{a}" vs 1.0 "{b}"')
+    # carRepair is what the scripts' CAR_REPAIR calls (its handler: knowledge/game.exe/script_commands.csv)
+    handlers = {'1.2': 0x478F69, '1.0': 0x5C6D4F}
+    for name, (exe, ls, gexe, gls) in builds.items():
+        md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_32)
+        calls = [int(i.op_str, 16) for i in md.disasm(gexe.at(handlers[name] - 0x400000, 0x60), handlers[name])
+                 if i.mnemonic == 'call' and i.op_str.startswith('0x')]
+        check(exe['carRepair'] in calls, f'{name} carRepair: called by CAR_REPAIR')
     # The menu's camera (fps_unlock): the tick uses the spring's 0.02 and 0.98 and every vector of the state.
     for name, (exe, ls, gexe, gls) in builds.items():
         if not exe['menuCamTick']:
