@@ -156,9 +156,11 @@ reversing a system anew.
   after it (it cost two false "the hotkey did not fire" here). To see what a step did, let one tool do both
   (`input` with `"screenshot": true`; `no_wait` and then `screenshot` with `count` and `every_ms` for a key that
   is still held), or send the second call in the next message.
-- **A here-document in the agent's shell eats backslashes even when it is quoted** (measured 2026-10-13 with
-  `od -c`: a doubled backslash arrives single, except before a double quote): the rule above about the editor's
-  tool holds for scripts fed to `python -` or written with `cat <<'EOF'` too.
+- **The agent's Bash tool turns every doubled backslash into a single one** before bash runs the command (measured
+  2026-10-14 with `od -c`: in a quoted here-document, in single quotes, in an echo alike; one before a double quote
+  survived). It corrupted files written through `cat <<'EOF'` and `python -` three times, so a hook now refuses any
+  Bash command with a doubled backslash (`.claude/settings.json`, `tools/bash_guard.py`): write such text with the
+  editor's tool, keep Python with escapes in a `.py` file, use single backslashes or forward slashes in commands.
 - **`tools/replace.py` takes one OLD/NEW pair per `=== FILE` block**: a second `--- OLD` in the same block is taken
   as text of the first NEW.
 - **The MCP server's own binary is locked while your session runs it**: to build a new one, rename
