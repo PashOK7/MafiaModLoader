@@ -40,6 +40,8 @@ pub struct Module {
 
 pub struct Kb {
     pub modules: Vec<Module>,
+    /// 1.0's Game.exe functions paired with their 1.2 twins (knowledge/game.exe/twins_10.csv), by 1.0 address.
+    pub twins10: Vec<(u32, u32)>,
 }
 
 static KB: OnceLock<Result<Kb, String>> = OnceLock::new();
@@ -93,11 +95,19 @@ pub fn get() -> Result<&'static Kb, String> {
     KB.get_or_init(|| {
         let root = crate::game::repo_root().ok_or("cannot find the repository")?;
         let dir = root.join("knowledge");
+        let mut twins10 = vec![];
+        if let Ok(mut rd) = csv::Reader::from_path(dir.join("game.exe").join("twins_10.csv")) {
+            for r in rd.records().flatten() {
+                if let (Some(a12), Some(a10)) = (hex(&r[0]), hex(&r[1])) { twins10.push((a10, a12)); }
+            }
+        }
+        twins10.sort();
         Ok(Kb {
             modules: vec![
                 load_module(&dir, "game.exe", 0x400000, "Game.c")?,
                 load_module(&dir, "ls3df.dll", 0x10000000, "LS3DF_dll.c")?,
             ],
+            twins10,
         })
     })
     .as_ref()
@@ -272,6 +282,25 @@ pub fn function(key: &str, with_code: bool, max_lines: usize) -> Result<Value, S
     Ok(v)
 }
 
+/// A name for an address of the running build's image. The knowledge base is 1.2's: in 1.0 a Game.exe address is
+/// named through its function's 1.2 twin (twins_10.csv) and marked so, an LS3DF address or an unpaired function's
+/// not at all (a 1.2 name on a 1.0 address would be a wrong name).
+fn name_for(kb: &Kb, module: &str, addr: u32) -> Option<String> {
+    let m = kb.modules.iter().find(|m| m.name == module)?;
+    if crate::game::current_build() != "1.0" {
+        return m.containing(addr).and_then(|f| m.best_name(f).map(|n| format!(" ({}+0x{:X})", n, addr - f.addr)));
+    }
+    if module != "game.exe" { return None; }
+    let i = kb.twins10.partition_point(|t| t.0 <= addr);
+    if i == 0 { return None; }
+    let (a10, a12) = kb.twins10[i - 1];
+    let f = m.at(a12)?;
+    // the offset must stay inside the 1.2 twin (taken to end where the next 1.2 function starts)
+    let next = m.funcs.iter().find(|g| g.addr > a12).map(|g| g.addr).unwrap_or(a12 + 0x10000);
+    if addr - a10 >= next - a12 { return None; }
+    m.best_name(f).map(|n| format!(" ({}+0x{:X}, 1.0; 1.2 twin {:08X})", n, addr - a10, a12))
+}
+
 /// tap's output: the addresses of code it prints (Game.exe absolute "5409D0", LS3DF "ls3d+5AC2E") after "on ",
 /// "from " and in the callers' line get the function's name.
 pub fn annotate_tap(text: &str) -> String {
@@ -284,14 +313,7 @@ pub fn annotate_tap(text: &str) -> String {
             let lead = &c[1];
             if (lead == ", " || lead == "callers: ") && !callers { return c[0].to_string(); }
             let raw = u32::from_str_radix(&c[3], 16).unwrap_or(0);
-            let (m, a) = if c.get(2).is_some() {
-                (kb.modules.iter().find(|m| m.name == "ls3df.dll"), 0x10000000 + raw)
-            } else {
-                (kb.modules.iter().find(|m| m.name == "game.exe"), raw)
-            };
-            let note = m.and_then(|m| {
-                m.containing(a).and_then(|f| m.best_name(f).map(|n| format!(" ({}+0x{:X})", n, a - f.addr)))
-            });
+            let note = if c.get(2).is_some() { name_for(kb, "ls3df.dll", 0x10000000 + raw) } else { name_for(kb, "game.exe", raw) };
             format!("{}{}", &c[0], note.unwrap_or_default())
         }).into_owned()
     }).collect::<Vec<_>>().join("\n")
@@ -305,12 +327,8 @@ pub fn annotate(text: &str) -> String {
     re.replace_all(text, |c: &regex::Captures| {
         let module = c[1].to_lowercase();
         let off = u32::from_str_radix(&c[2], 16).unwrap_or(0);
-        let m = kb.modules.iter().find(|m| m.name == module);
-        let note = m.and_then(|m| {
-            let a = m.base + off;
-            m.containing(a).and_then(|f| m.best_name(f).map(|n| format!(" ({}+0x{:X})", n, a - f.addr)))
-        });
-        format!("{}{}", &c[0], note.unwrap_or_default())
+        let base = kb.modules.iter().find(|m| m.name == module).map(|m| m.base).unwrap_or(0);
+        format!("{}{}", &c[0], name_for(kb, &module, base + off).unwrap_or_default())
     })
     .into_owned()
 }

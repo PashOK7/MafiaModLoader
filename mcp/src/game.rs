@@ -96,6 +96,21 @@ pub async fn close(pid: u32, force: bool) -> Result<String, String> {
     Ok(format!("pid {pid} ended{}", if force { "" } else { " (it did not close in 10 s)" }))
 }
 
+/// The game's build as the loader last told it ("game: Mafia 1.0" in its log; "1.2" when not told): the knowledge
+/// base names addresses for 1.2 only, so 1.0's are named through their twins.
+pub fn current_build() -> String {
+    for prev in [false, true] {
+        let Ok(dir) = game_dir() else { break };
+        let p = dir.join("mml").join("logs").join(if prev { "mml.prev.log" } else { "mml.log" });
+        if let Ok(text) = std::fs::read_to_string(&p) {
+            if let Some(line) = text.lines().rev().find(|l| l.contains("game: Mafia ")) {
+                return line.rsplit("game: Mafia ").next().unwrap_or("1.2").trim().to_string();
+            }
+        }
+    }
+    "1.2".into()
+}
+
 pub fn log_file_tail(previous: bool, lines: usize) -> Result<String, String> {
     let p = game_dir()?.join("mml").join("logs").join(if previous { "mml.prev.log" } else { "mml.log" });
     let text = std::fs::read_to_string(&p).map_err(|e| format!("{}: {e}", p.display()))?;

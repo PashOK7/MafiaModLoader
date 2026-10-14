@@ -99,6 +99,58 @@ bool Capture9(void *dev8, int id, int *w, int *h, std::string *err) {
     return true;
 }
 
+// Plain Direct3D 8 with a multisampled back buffer: nothing can read that buffer, so the front buffer is taken
+// (GetFrontBuffer: what the screen shows, desktop-sized in a window) and the game window's client area cut out of
+// it. It is the frame shown before this one, and only what is visible on the screen: a window over the game's is in
+// the picture.
+enum { kDevGetCreationParameters = 9, kDevGetDisplayMode = 8, kDevGetFrontBuffer = 30 };
+std::string CaptureFront(void *dev, int id, int *w, int *h) {
+    struct DisplayMode { UINT width, height, refresh; uint32_t format; } mode{};
+    struct CreationParams { UINT adapter; int type; HWND focus; DWORD flags; } cp{};
+    if (FAILED(Slot<HRESULT(__stdcall *)(void *, DisplayMode *)>(dev, kDevGetDisplayMode)(dev, &mode)) || !mode.width)
+        return "GetDisplayMode failed";
+    Slot<HRESULT(__stdcall *)(void *, CreationParams *)>(dev, kDevGetCreationParameters)(dev, &cp);
+    // The front buffer is the screen: only taken while the game's window is the one in front, else it would hold
+    // whatever else the owner has open over it (seen once: a chat window instead of the game).
+    HWND fg = GetForegroundWindow();
+    if (!cp.focus || !fg || GetAncestor(fg, GA_ROOT) != GetAncestor(cp.focus, GA_ROOT) || IsIconic(cp.focus))
+        return "the game's window is not in front: on plain Direct3D 8 with a multisampled back buffer the loader can only "
+               "copy the screen, and the screen shows other windows now (bring the game to the front, or turn its "
+               "antialiasing off, or run it through a Direct3D 9 wrapper)";
+    void *img = nullptr;
+    if (FAILED(Slot<HRESULT(__stdcall *)(void *, UINT, UINT, uint32_t, void **)>(dev, kDevCreateImageSurface)(dev, mode.width, mode.height, kFmtA8R8G8B8, &img)) || !img)
+        return "CreateImageSurface for the front buffer failed";
+    std::string err;
+    if (FAILED(Slot<HRESULT(__stdcall *)(void *, void *)>(dev, kDevGetFrontBuffer)(dev, img))) {
+        err = "GetFrontBuffer failed";
+    } else {
+        RECT r{0, 0, static_cast<LONG>(mode.width), static_cast<LONG>(mode.height)};
+        if (cp.focus && GetClientRect(cp.focus, &r)) {   // windowed: the client area on the screen
+            POINT tl{r.left, r.top}, br{r.right, r.bottom};
+            ClientToScreen(cp.focus, &tl);
+            ClientToScreen(cp.focus, &br);
+            r = {std::max<LONG>(tl.x, 0), std::max<LONG>(tl.y, 0), std::min<LONG>(br.x, static_cast<LONG>(mode.width)), std::min<LONG>(br.y, static_cast<LONG>(mode.height))};
+        }
+        LockedRect lr{};
+        if (r.right <= r.left || r.bottom <= r.top) err = "the game's window is not on the screen";
+        else if (FAILED(Slot<HRESULT(__stdcall *)(void *, LockedRect *, const RECT *, DWORD)>(img, kSurfLockRect)(img, &lr, nullptr, 0x10)))
+            err = "LockRect failed";
+        else {
+            *w = r.right - r.left;
+            *h = r.bottom - r.top;
+            std::vector<uint32_t> px(static_cast<size_t>(*w) * *h);
+            for (int y = 0; y < *h; y++) {
+                const uint32_t *row = reinterpret_cast<const uint32_t *>(static_cast<const uint8_t *>(lr.bits) + static_cast<size_t>(lr.pitch) * (r.top + y));
+                for (int x = 0; x < *w; x++) px[static_cast<size_t>(y) * *w + x] = row[r.left + x] | 0xFF000000u;
+            }
+            Slot<HRESULT(__stdcall *)(void *)>(img, kSurfUnlockRect)(img);
+            err = WriteShot(id, static_cast<uint32_t>(*w), static_cast<uint32_t>(*h), reinterpret_cast<const uint8_t *>(px.data()), *w * 4);
+        }
+    }
+    Release(img);
+    return err;
+}
+
 std::string Capture(void *dev, int id, int *w, int *h) {
     std::string err9;
     if (Capture9(dev, id, w, h, &err9)) return err9;
@@ -110,8 +162,10 @@ std::string Capture(void *dev, int id, int *w, int *h) {
     Slot<HRESULT(__stdcall *)(void *, SurfaceDesc *)>(bb, kSurfGetDesc)(bb, &d);
     *w = static_cast<int>(d.width);
     *h = static_cast<int>(d.height);
-    if (d.multiSample) err = "the back buffer is multisampled (CopyRects cannot read it)";
-    else if (FAILED(Slot<HRESULT(__stdcall *)(void *, UINT, UINT, uint32_t, void **)>(dev, kDevCreateImageSurface)(dev, d.width, d.height, d.format, &img)) || !img)
+    if (d.multiSample) {
+        Release(bb);
+        return CaptureFront(dev, id, w, h);
+    } else if (FAILED(Slot<HRESULT(__stdcall *)(void *, UINT, UINT, uint32_t, void **)>(dev, kDevCreateImageSurface)(dev, d.width, d.height, d.format, &img)) || !img)
         err = "CreateImageSurface failed (format " + std::to_string(d.format) + ")";
     else if (FAILED(Slot<HRESULT(__stdcall *)(void *, void *, const RECT *, UINT, void *, const POINT *)>(dev, kDevCopyRects)(dev, bb, nullptr, 0, img, nullptr)))
         err = "CopyRects failed";

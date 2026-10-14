@@ -251,3 +251,36 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   ReadChar 40, UpdateMouseData 55, Mouse_rx/ry/rz 56-58, GetMouseButtons 62).
 - A here-document turned `\b` into a backspace character in the tool once (AGENTS.md's trap again); the sources
   touched were scanned for control characters afterwards.
+
+## 2026-10-14: 1.0, in the 1.0 lab
+
+- **The owner's direction**: use `W:\Mafia10LAB` (1.0) and check everything for 1.0. Its `Game.exe` and `LS3DF.dll`
+  are byte for byte mafia-ragdoll's `re/v10`. `game_dir` switched to it, the loader installed (`lab.py mode
+  loader`), the game driven by keys (its start and menus are not known for 1.0).
+- **What ran as it was**: the host and every game hook, the mission's events (`00menu`, `freeitaly`, the pause),
+  the drawing (the example's overlay and a bridge text over the HUD and the pause menu), the car (every field; a
+  state saved, the car driven 11 m, the state loaded: the position back to the last digit), keys and hotkeys (F9
+  started the example's lap), settings (`config.set units`), the core mod's commands. None of the kit had been run
+  on 1.0 before: its 1.0 addresses, found by code match, all held.
+- **What did not, and was fixed**:
+  - `screenshot`: the 1.0 lab renders on plain Direct3D 8 with a multisampled back buffer, which `CopyRects`
+    cannot read. The fallback copies the front buffer (the screen) and cuts the game's client area out of it. **The
+    first time, the owner had another program in front, and the shot held that window, not the game**: the file
+    was deleted unread and the fallback now refuses unless the game's window is the foreground one.
+  - `input` refused every step on 1.0 ("not known for this build") because the actions were not known, though the
+    keys were: now each step is checked for what it needs.
+  - The actions: the controls' update is the same code in 1.0, its arrays 4 bytes lower (bindings `+0xB0`, held
+    `+0xC0`, pressed `+0xD0`, read in both builds' code); now per-build fields. 60 slots in 1.2's order; `Steer
+    Left`, bound to nothing, turned the wheels to -0.785; `turn` 90 and -45 measured 90.0 and -45.0 (the mouse
+    sensitivity found at the same place of the on-foot input). The texts' database: the same code, its object the
+    ECX of 91 calls.
+  - The MCP server named 1.0 addresses with 1.2's knowledge base (`tap` on 1.0's `C_mission::Tick` printed a 1.2
+    HUD function): now it reads the build from the loader's log and names a 1.0 address through its function's 1.2
+    twin, or not at all (the session's own server gets it at its next start).
+- **What is other code in 1.0** (read, not ported): the logos (AVI files played by `InitSystem` through IShow,
+  after `cd_find_game_file`), the modal menu loop (it does not tick the mission), and the menus themselves: a
+  6-slot vtable a menu (OnClick in slot 5), the OnCreate its constructor, the controls at `+0x20`, a control laid
+  out differently (no text pointer). The start, `menu.*` and the menus extended need a 1.0 layer
+  (`docs/VERSIONS.md`).
+- `tools/check_builds.py`'s controls checks were 1.2's first instructions; they are now the facts the code relies
+  on (the object is ECX of the update's calls, the arrays' offsets in its code...) and run for both builds.

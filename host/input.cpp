@@ -88,15 +88,15 @@ bool Expired(const Hold &h) { return h.ms ? GetTickCount() - h.began >= h.ms : h
 
 int SlotCount() {
     uintptr_t c = game::Exe().controls;
-    uint32_t b = Rd(c + 0xB4), e = Rd(c + 0xB8);
+    uint32_t b = Rd(c + game::Exe().controlsBind), e = Rd(c + game::Exe().controlsBind + 4);
     return b && e > b ? static_cast<int>((e - b) / 12) : 0;
 }
 
 void WriteSlot(int slot, float held, float pressed) {
     uintptr_t c = game::Exe().controls;
     if (slot < 0 || slot >= SlotCount()) return;
-    MemWrite(Rd(c + 0xC4) + 4 * slot, &held, 4);
-    MemWrite(Rd(c + 0xD4) + 4 * slot, &pressed, 4);
+    MemWrite(Rd(c + game::Exe().controlsHeld) + 4 * slot, &held, 4);
+    MemWrite(Rd(c + game::Exe().controlsPressed) + 4 * slot, &pressed, 4);
 }
 
 void __fastcall UpdateHook(uintptr_t controls, void *edx, int flag) {
@@ -308,7 +308,7 @@ std::string Text(unsigned id) { return GameString(TextOrNull(id)); }
 const char *KeyNameOf(int slot) {
     using NameFn = const char *(__fastcall *)(uintptr_t controls, void *edx, uintptr_t binding);
     const game::ExeBuild &e = game::Exe();
-    uintptr_t b = Rd(e.controls + 0xB4) + 12 * slot;
+    uintptr_t b = Rd(e.controls + e.controlsBind) + 12 * slot;
     __try { return reinterpret_cast<NameFn>(e.controlsKeyName)(e.controls, nullptr, b); }
     __except (EXCEPTION_EXECUTE_HANDLER) { return nullptr; }
 }
@@ -416,7 +416,7 @@ bool MakeHold(const json &p, DWORD now, Hold *h, std::string *err) {
             h->frames = frames;
             h->turn = deg;
         } else if (p.contains("action")) {
-            if (!g_actionsOk) { *err = "the controls' update is not hooked"; return false; }
+            if (!g_actionsOk) { *err = ActionsKnown() ? "the controls' update is not hooked" : "the game's actions are not known for this build"; return false; }
             if ((h->slot = SlotOf(p["action"], &h->name)) < 0) {
                 *err = "action: a name (input.actions lists them: \"Forwards\", \"Fire\", \"Accelerate\"...) or a slot number";
                 return false;
@@ -464,7 +464,7 @@ json Described(const Hold &h) {
 json Actions() {
     int n = SlotCount();
     uintptr_t c = game::Exe().controls;
-    uint32_t bind = Rd(c + 0xB4), held = Rd(c + 0xC4), pressed = Rd(c + 0xD4);
+    uint32_t bind = Rd(c + game::Exe().controlsBind), held = Rd(c + game::Exe().controlsHeld), pressed = Rd(c + game::Exe().controlsPressed);
     std::vector<SlotInfo> names = SlotNames(n);
     json out = json::array();
     static const char *kDevice[] = {"none", "key", "mouse", "joystick"};
@@ -580,7 +580,7 @@ int ActionSlotOf(const char *name) {
 float ActionValue(int slot, bool pressed) {
     if (!ActionsKnown() || slot < 0 || slot >= SlotCount()) return 0.0f;
     float v = 0.0f;
-    MemRead(Rd(game::Exe().controls + (pressed ? 0xD4 : 0xC4)) + 4 * slot, &v, 4);
+    MemRead(Rd(game::Exe().controls + (pressed ? game::Exe().controlsPressed : game::Exe().controlsHeld)) + 4 * slot, &v, 4);
     return v;
 }
 
@@ -633,9 +633,13 @@ bool InputMethod(const std::string &method, const std::string &paramsJson, std::
     try { p = json::parse(paramsJson.empty() || paramsJson == "null" ? "{}" : paramsJson); } catch (...) {}
     if (!p.is_object()) p = json::object();
     // (keys need no game: with none, the keyboard is what input.key holds, and mods see it the same way)
-    bool needsGame = method != "input.key" && method != "input.release" && method != "input.state" && method != "input.mouse" &&
-                     method != "input.text";
-    if (needsGame && !ActionsKnown()) { *reply = "input: not known for this build"; return true; }
+    // (the actions need the controls' object; keys, the mouse and the sequences are checked step by step: a build
+    // whose actions are not known may still know its keyboard)
+    if ((method == "input.actions" || method == "input.act") && !ActionsKnown()) { *reply = "input: the game's actions are not known for this build"; return true; }
+    if (method.compare(0, 5, "text.") == 0 && !(game::g_exe && game::Exe().textGetOrNull && game::Exe().textDb)) {
+        *reply = "text: the text database is not known for this build";
+        return true;
+    }
     std::string err;
     if (method == "text.get") {
         if (!p.contains("id")) { *reply = "id: a text id"; return true; }

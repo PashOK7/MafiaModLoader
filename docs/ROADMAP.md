@@ -83,6 +83,11 @@ What is done, what comes next and later, and what is known to be missing or wron
   to 1.2 by pairing 2726 functions by their code), and the scripts' 396 commands with their 1.2 handlers.
   `knowledge/notes/external.md`: where to read what, by topic.
 
+- **1.0, checked in the 1.0 lab** (2026-10-14; `docs/VERSIONS.md`): the host, the events, drawing, the car,
+  keys, settings and the core mod run on 1.0 as on 1.2; the actions and the texts ported (the controls' arrays sit
+  4 bytes lower in 1.0); screenshots on plain Direct3D 8 with antialiasing (the screen copied, only while the game
+  is in front).
+
 ## Next, in order
 
 1. **The engine's own commands from MCP.** The mission scripts' interpreter (`C_program::DecodeInstruction`
@@ -128,9 +133,10 @@ What is done, what comes next and later, and what is known to be missing or wron
   the process boundary.
 - **mafia-ragdoll on the loader**: its host's duties taken by the loader, the ragdoll a mod; the physics published
   as a service (for the friend's VR mod: one SDK, two mods, shared services).
-- **1.0**: the start's, the menus' and the controls' addresses for 1.0 (`game_build.h` has zeros there now; the
-  kit's are in, by code match), everything run on the 1.0 lab copy (`W:\Mafia10LAB`); the knowledge base for 1.0
-  (only 1.2's decompile is imported).
+- **1.0's start and menus**: 1.0's menus are other classes (`docs/VERSIONS.md`): the start (the logos by
+  `cd_find_game_file`, the profile and freeride menus by their 6-slot vtables, command slot 5), `menu.state` /
+  `menu.command` / `menu.value`, the menus extended and the menus' mouse need a 1.0 layer; the knowledge base for
+  1.0 (only 1.2's decompile is imported; 1.0 addresses are named through their 1.2 twins).
 - **Publishing**: CI for the offline tests (the private repository exists since 2026-10-13).
 
 ## Known gaps
@@ -144,6 +150,9 @@ What is done, what comes next and later, and what is known to be missing or wron
   not measured (down is positive). The driving actions' names come from the code that reads them (0x5917F0), not
   from the menu's rows; slot 32 is read by nothing found. A hold is counted in the controls' updates: the game's
   loop and the menus' loops, not the loading screens.
+- **Screenshots on plain Direct3D 8 with a multisampled back buffer** (the 1.0 lab): the screen is copied, so
+  only while the game's window is the one in front (else refused: once it copied another program's window over
+  the game); antialiasing off or a Direct3D 9 wrapper (as in the 1.2 lab) gives the game's own frame.
 - **Screenshots** need the game to present frames (not while it loads or is minimised). On plain Direct3D 8 a
   multisampled back buffer cannot be read (the lab runs through dxwrapper's Direct3D 9, where it is resolved).
   Every shot goes through a raw file on disk (5 MB at 1280x960; the MCP server deletes it).

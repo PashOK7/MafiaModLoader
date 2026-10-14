@@ -153,18 +153,14 @@ def main(a):
             check(got == handler, f'{name} {f}+0x24 is {got:#x}, not the command handler {handler:#x}')
         i = gexe.insn(exe['playVideo'] - 0x400000)
         check(i and f'{i.mnemonic} {i.op_str}' == 'sub esp, 0x214', f'{name} playVideo starts "{i.mnemonic} {i.op_str}"')
-    # The controls, the texts, the menus' components (host/input.cpp, host/start.cpp; 1.2 only so far): each function
-    # starts as it was read in the disassembly; the controls object is ECX where the game calls its update; the
-    # menus' setter and getter call the component's vtable +0x4C / +0x50 and return with ret 8 / ret 4; LS3D's
-    # keyboard read fills the state the loader writes keys into.
+    # The controls, the texts, the menus' components (host/input.cpp, host/start.cpp; both builds where known): the
+    # controls object is ECX where the game calls its update, and the update uses the three arrays' offsets; the key
+    # name reads the binding's device and returns with ret 4; the texts' lookups are the same code in both builds and
+    # the text database is their ECX; the mouse sensitivity is loaded as a float; the menus' setter and getter call
+    # the component's vtable +0x4C / +0x50 and return with ret 8 / ret 4; LS3D's keyboard read fills the state the
+    # loader writes keys into.
     for name, (exe, ls, gexe, gls) in builds.items():
         if exe['controls']:
-            first = {'controlsUpdate': 'sub esp, 0x60', 'controlsKeyName': 'push ebx',
-                     'textGetOrNull': 'mov edx, dword ptr [ecx + 4]',
-                     'menuSetValue': 'mov eax, dword ptr [esp + 4]', 'menuGetValue': 'mov eax, dword ptr [esp + 4]'}
-            for f, want in first.items():
-                i = gexe.insn(exe[f] - 0x400000)
-                check(i and f'{i.mnemonic} {i.op_str}' == want, f'{name} {f} starts "{i.mnemonic} {i.op_str}", not "{want}"')
             code, calls = bytes(gexe.mem), 0
             at = code.find(b'\xb9' + exe['controls'].to_bytes(4, 'little'))
             while at >= 0:
@@ -172,9 +168,21 @@ def main(a):
                     calls += i.mnemonic == 'call' and i.op_str == hex(exe['controlsUpdate'])
                 at = code.find(b'\xb9' + exe['controls'].to_bytes(4, 'little'), at + 1)
             check(calls >= 2, f'{name} controls is ECX of {calls} calls of controlsUpdate')
-            check(code.find(b'\xb9' + exe['textDb'].to_bytes(4, 'little')) >= 0, f'{name} textDb is never ECX')
-            # fmul dword ptr [mouseSensitivity] (D8 0D imm32) in the on-foot input (0x58F4B0 in 1.2)
-            check(code.find(b'\xd8\x0d' + exe['mouseSensitivity'].to_bytes(4, 'little')) >= 0, f'{name} mouseSensitivity is never a factor')
+            body = gexe.at(exe['controlsUpdate'] - 0x400000, 0x400)
+            for f in ('controlsBind', 'controlsHeld', 'controlsPressed'):
+                check(b'\x8b\x85' + exe[f].to_bytes(4, 'little') in body or b'\x8b\x8d' + exe[f].to_bytes(4, 'little') in body
+                      or b'\x8b\x95' + exe[f].to_bytes(4, 'little') in body, f'{name} {f} {exe[f]:#x} read in controlsUpdate')
+            body = gexe.at(exe['controlsKeyName'] - 0x400000, 0x40)
+            check(b'\x66\x8b' in body and b'\xc2\x04\x00' in gexe.at(exe['controlsKeyName'] - 0x400000, 0x200),
+                  f'{name} controlsKeyName reads a 16-bit device and returns with ret 4')
+            for f in ('textGetOrNull', 'textGet'):
+                i = gexe.insn(exe[f] - 0x400000)
+                check(i and f'{i.mnemonic} {i.op_str}' == 'mov edx, dword ptr [ecx + 4]' and b'\xc2\x04\x00' in gexe.at(exe[f] - 0x400000, 0x18),
+                      f'{name} {f} starts as read and returns with ret 4')
+            check(code.count(b'\xb9' + exe['textDb'].to_bytes(4, 'little')) >= 20, f'{name} textDb is not the ECX of the texts\' lookups')
+            sens = exe['mouseSensitivity'].to_bytes(4, 'little')
+            check(code.find(b'\xd8\x0d' + sens) >= 0 or code.find(b'\xd9\x05' + sens) >= 0, f'{name} mouseSensitivity is never a float operand')
+        if exe['menuSetValue']:
             for f, call, ret in (('menuSetValue', b'\xff\x52\x4c', b'\xc2\x08\x00'), ('menuGetValue', b'\xff\x52\x50', b'\xc2\x04\x00')):
                 body = gexe.at(exe[f] - 0x400000, 0x20)
                 check(call in body and ret in body, f'{name} {f}: the component\'s call and the ret')

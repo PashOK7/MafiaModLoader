@@ -173,6 +173,10 @@ struct ExeBuild {
     // menuLang: the language's two letters (a u16), the suffix the definitions' loader (0x5EA370) tries first:
     // tables\menu\<name>_<ll>.mnu, then tables\menu\<name>.mnu.
     uintptr_t menuLang;
+    // The controls' arrays in the controls object (host/input.cpp): controlsBind its binding slots' begin (the end
+    // 4 further; 12 bytes a slot), controlsHeld and controlsPressed the float arrays "held" and "pressed this
+    // frame". 1.0 keeps them 4 bytes lower than 1.2 (read in both builds' controlsUpdate).
+    int controlsBind, controlsHeld, controlsPressed;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -240,6 +244,7 @@ inline const ExeBuild kExe12 = {
     0x4CEB30, 0x4CEE00, 0x4CFAB0,
     0x5EA2E0, 0x5EA690, 0x5EA1F0, 0x5EAD50, 0x5EAE10, 0x5EB7D0, 0x5EB2F0, 0x627834, 0x6BD8B0, 0x6106FC,
     0x6BD8A0, 0x6BD888, 0x6C42C4,
+    0xB4, 0xC4, 0xD4,
 };
 
 inline const ExeBuild kExe10 = {
@@ -261,10 +266,13 @@ inline const ExeBuild kExe10 = {
     0,
     0, 0,            // trams: not looked for in 1.0 yet
     0, 0x67A4D8, 0, 0, 0, 0,   // the start: not looked for in 1.0 yet (menuTop: for the pause, see below)
-    0, 0, 0, 0, 0,      // the controls, the texts: not looked for in 1.0 yet
-    0,
+    // the controls and the texts (2026-10-14, read against 1.2's code and run in the 1.0 lab): controlsUpdate the
+    // same code (st0rm94's twin), its object the ECX of its six calls; the key name input_binding_get_label; the
+    // text database the ECX of 91 calls of GetText
+    0x6F92E0, 0x5D1F30, 0x5D3180, 0x67A57C, 0x57D8B0,
+    0x57D850,
     0, 0,               // the menus' components: not looked for in 1.0 yet
-    0,                  // the mouse sensitivity: not looked for in 1.0 yet
+    0x672488,           // the mouse sensitivity: the same place in the on-foot input (0x4C77B5, 1.2's 0x58FD95)
     // The kit (drawing, the mission, the car): each address is the 1.0 twin of the 1.2 function, found by its code
     // and checked against the 1.0 files (tools/check_builds.py); none of it has been run in a 1.0 game yet.
     0x5F86C0, 0x658330, 0x5551A0, 0x554FD0, 0, 0x6F9528, 0x6F9520,
@@ -277,6 +285,7 @@ inline const ExeBuild kExe10 = {
     0x51AAC0, 0x51AD90, 0x51BA40,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   // the menus as objects: 1.0's menu code is built differently, not looked for yet
     0, 0, 0,                        // the menus' mouse, the language: not looked for in 1.0 yet
+    0xB0, 0xC0, 0xD0,               // the controls' arrays
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,

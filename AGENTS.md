@@ -8,7 +8,9 @@ missing) and the end of `docs/JOURNAL.md`. Keep the roadmap and the journal curr
 
 ## Rules
 
-- **Only the game folder in `mml.config.json`** (`game_dir`). Never search the disk for other installs.
+- **Only the game folder in `mml.config.json`** (`game_dir`). Never search the disk for other installs. The owner's
+  labs: `W:\MafiaLAB` (1.2, the usual one) and `W:\Mafia10LAB` (1.0); switch `game_dir` to work on 1.0 and set it
+  back to the 1.2 lab when done (`docs/VERSIONS.md`).
 - **The lab may be shared** with other projects (mafia-ragdoll's developer host is the game's `IJoy.dll` there).
   `python tools/lab.py status` tells which mode it is in; `mode loader` / `mode ragdoll` switch, keeping what they
   take out in `<game>\mml_lab\` and the saves in `<game>-backup\savegame-<date>`. Never delete another project's
