@@ -144,6 +144,18 @@ void ConfigFrame();                       // every frame: files changed are read
 void ConfigForget(MmlMod *mod);           // the mod unloads: what was handed to it is dropped
 bool ConfigMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 
+// ---- the game's script machine (script.cpp): programs in the missions' language run by the game's interpreter;
+// script.run, script.state, script.stop, script.list
+int ScriptRun(MmlMod *mod, const char *code, void *owner, void *const *acts, int nacts, const float *flts, int nflts,
+              uint32_t timeoutMs, MmlScriptFn fn, void *user, std::string *err);   // a handle, 0: refused (err)
+void ScriptStop(MmlMod *mod, int handle);
+int ScriptState(MmlMod *mod, int handle);
+void ScriptsRemove(MmlMod *mod);          // its mod unloads: stopped, not told
+void ScriptTick(int ms);                  // after the mission's tick (game thread): one step of each program
+void ScriptMissionClose();                // every program stopped
+void ScriptActorGone(void *actor);        // out of every program's act[]
+bool ScriptMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+
 // ---- screenshots (screenshot.cpp): the back buffer at Present; screenshot, screenshot.state
 bool ScreenshotMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 

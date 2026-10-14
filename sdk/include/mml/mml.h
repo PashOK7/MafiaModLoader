@@ -133,6 +133,36 @@ typedef struct MmlMenuControl {
 } MmlMenuControl;
 typedef void (*MmlMenuFn)(int id, void *user);   /* a control was clicked, changed (or Enter on it): its id */
 
+/* The game's own script machine (MmlHost script_*): a program in the mission scripts' language (the language of
+ * the missions' .bin scripts: one command a line, "// comments"; e.g. "findactor 0, \"Tommy\"",
+ * "actor_setpos 0, 1, 2, 3", "wait 500", "human_addweapon 0, 6, 50"), compiled and run by the game's own
+ * interpreter (C_program), one step a mission tick, as the missions run theirs: every command the game has, with
+ * the game's own behaviour (docs/SCRIPTS.md). Its registers: flt[] (floats), act[] (actors), frm[] (frames);
+ * the loader gives every program 256 floats, 64 actors and 64 frames before it starts (a `dim_*` up to those keeps
+ * them, a larger one makes new, zeroed registers), act[] filled from `acts`, flt[] from `flts`. A program ends at
+ * its `end` (or its last line), or fails (a line that does not compile: `line` and `error` tell; a command that
+ * faults), or is stopped (script_stop, its mod unloaded, the mission closed, its time out). `owner`: the actor the
+ * program runs as, as a mission's script runs as its entity (null: none): what `explosion` (at its position),
+ * `playsound`, `frm_seton`, `act_setstate` with no register of theirs use, and what `findnearactor` skips. */
+#define MML_SCRIPT_RUNNING 0
+#define MML_SCRIPT_DONE 1
+#define MML_SCRIPT_FAILED 2
+#define MML_SCRIPT_STOPPED 3
+typedef struct MmlScriptResult {
+    uint32_t size;
+    int handle;
+    int state;                    /* MML_SCRIPT_DONE, _FAILED, _STOPPED */
+    const char *error;            /* why it failed or stopped; "" when done */
+    int line;                     /* the source line (1-based) that failed to compile or faulted; 0: none */
+    const float *flt;             /* the registers as they ended (valid during the call) */
+    int flt_count;
+    void *const *act;
+    int act_count;
+    void *const *frm;
+    int frm_count;
+} MmlScriptResult;
+typedef void (*MmlScriptFn)(const MmlScriptResult *result, void *user);
+
 typedef struct MmlHumanHit {
     int type;               /* the game's hit type (0 bullet, 2 tram/plane, 3 explosion, 5 car, 6 fall, 8 car...) */
     MmlVec3 dir, pos;       /* as the game passed them (may be zero) */
@@ -274,6 +304,17 @@ typedef struct MmlHost {
     int (*menu_value)(MmlMod *mod, int id, float *value);
     int (*menu_set_range)(MmlMod *mod, int id, int min, int max);
     int (*menu_text)(MmlMod *mod, int id, char *buf, int size);
+
+    /* ---- the game's script machine (see MmlScriptResult above; both builds; while a mission runs).
+     * script_run: `code` compiled at once (a line that does not compile: 0, the log tells which), then run from the
+     * next mission tick; acts[i] (null: none) into act[i], flts[i] into flt[i]; timeout_ms: stopped after that long
+     * (0: 30 s). fn(result, user) is called once it ends, on the game thread (fn may be null). Returns a handle,
+     * 0 when refused. script_stop: stopped now (fn told, MML_SCRIPT_STOPPED). script_state: MML_SCRIPT_* (or -1:
+     * no such handle of the mod's). A mod's programs are stopped when it unloads (fn not called). */
+    int (*script_run)(MmlMod *mod, const char *code, void *owner, void *const *acts, int act_count, const float *flts,
+                      int flt_count, uint32_t timeout_ms, MmlScriptFn fn, void *user);
+    void (*script_stop)(MmlMod *mod, int handle);
+    int (*script_state)(MmlMod *mod, int handle);
 } MmlHost;
 
 typedef int (*MmlModLoadFn)(const MmlHost *host, MmlMod *mod);

@@ -66,7 +66,9 @@ python tools/start.py freeride --profile 4            :: the game, straight into
 - [AGENTS.md](AGENTS.md): the guide for agents (rules, the work loop, the map, facts that cost time).
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how it works. [docs/PROTOCOL.md](docs/PROTOCOL.md): the bridge.
 - [docs/MODDING.md](docs/MODDING.md): writing a mod, from `tools/new_mod.py` to the game (what the host gives:
-  drawing, keys, the car, the mission, files and settings). [knowledge/README.md](knowledge/README.md): the
+  drawing, keys, the car, the mission, files and settings). [docs/SCRIPTS.md](docs/SCRIPTS.md): the game's own
+  script machine for agents and mods (every command the missions have). [docs/VERSIONS.md](docs/VERSIONS.md): the
+  two builds. [knowledge/README.md](knowledge/README.md): the
   knowledge base.
 - [docs/ROADMAP.md](docs/ROADMAP.md): what is done, next, later, and the known gaps.
 - [docs/JOURNAL.md](docs/JOURNAL.md): what was done and found, in order.

@@ -199,6 +199,21 @@ struct ExeBuild {
     // The freeride menu's kind (28, the default, missions\freeitaly; its start reads it): its object + this (1.2's
     // command 201 handler reads +0x30, 1.0's tick +0x48).
     int freerideKind;
+    // The mission scripts' machine (host/script.cpp; 0: not known): C_program, the class every scripted actor
+    // carries (C_entity +0xA9C, C_detector +0x70), here a standalone one of the loader's. progCtor thiscall(prog) on
+    // gameNew(the program's size, 0x68; 0x80 allocated); progSetSource thiscall(prog, const char *) ret 4 (copied,
+    // kept for saves); progCompile thiscall(prog, char *text (lines cut in place), bool stop at the first error,
+    // int *error's offset, int *its length) -> errors, ret 0x10: each line by the vtable's slot 6 (the command's name
+    // to its opcode, -1 unknown) and slot 5 (its arguments to a payload); progCallProcess thiscall(prog, int ms) ->
+    // bool, ret 4: the vtable's slot 7 (Process, the opcode switch) until an instruction gives the frame back (a
+    // wait, a command that blocks; a command block keeps it); progDone thiscall(prog): the payloads and the
+    // registers freed; progInvalidateActor thiscall(prog, actor) ret 4: that actor out of act[]. progVt: the
+    // standalone program's vtable (slot 0 its deleting destructor, thiscall(prog, 1)). Its layout, the same in both
+    // builds: +0x10/+0x14 the instructions ({opcode, payload*}, 8 bytes), +0x1C the current one, +0x20 the line
+    // before (-1 at the start), +0x24 ms on the current one, +0x40 the call stack's head (a `call`'s), +0x44 its
+    // own actor, +0x48/+0x4C flt[] (floats, count), +0x50/+0x54 frm[], +0x58/+0x5C act[], +0x64 in a command block.
+    // END (opcode 6) ends a program: it stays on it.
+    uintptr_t progCtor, progSetSource, progCompile, progCallProcess, progDone, progInvalidateActor, progVt;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -269,6 +284,8 @@ inline const ExeBuild kExe12 = {
     0xB4, 0xC4, 0xD4,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   // the 1.0 menus: none
     0x30,
+    // the scripts' machine (2026-10-14: the decompile's C_program, st0rm94's 1.0 names carried over)
+    0x460AD0, 0x461530, 0x46C770, 0x46CCB0, 0x4616A0, 0x46CEC0, 0x624858,
 };
 
 inline const ExeBuild kExe10 = {
@@ -316,6 +333,8 @@ inline const ExeBuild kExe10 = {
     // the 1.0 menus (2026-10-14; st0rm94's 1.0 reverse, each function read in 1.0's code)
     0x56EA70, 0x56AE50, 0x56AF10, 0x56E500, 0x672630, 0x56F390, 0x56C1D0, 0x63D584, 0x672618, 0x623FC0,
     0x48,
+    // the scripts' machine (st0rm94's program_*, each read in 1.0's code)
+    0x5AF2F0, 0x5AF730, 0x5BA6A0, 0x5BABD0, 0x5AF8A0, 0x5BADE0, 0x63EAB0,
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,

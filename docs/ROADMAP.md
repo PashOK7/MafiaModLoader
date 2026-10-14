@@ -97,16 +97,23 @@ What is done, what comes next and later, and what is known to be missing or wron
   it (`start.json`'s `background`: user32's activating calls answered for the game's windows; LS3D's SetFocus,
   ClipCursor and SetCursorPos skipped while it is not in front). Keys, the menus' mouse and screenshots work there;
   the 1.0 lab got dxwrapper's Direct3D 9, as the 1.2 lab has. `game_launch` tells `in_front`.
+- **The game's script machine for agents and mods** (2026-10-14; the owner: "pump up the agent's hands, as many
+  abilities as there can be", for mods too; docs/SCRIPTS.md): a program in the missions' language compiled by the
+  game's own compiler and run by its interpreter (`C_program`), one step a mission tick: every command the missions
+  have. MCP `script` (run and wait: the state, the failing line, the registers) and `script_commands` (opcodes and
+  handlers of both builds, st0rm94's notes read in place); the bridge's `script.run`, `script.state`,
+  `script.stop`, `script.list`; mods' `script_run`, `script_stop`, `script_state` (the telemetry example's F7
+  repairs the car). Seen in both labs: registers, waits, loops stopped by their time; a car teleported, a car
+  cloned beside the player, rain, the traffic hidden, an explosion at an actor, a weapon given, a compile error
+  named by its line.
 
 ## Next, in order
 
-1. **The engine's own commands from MCP.** The mission scripts' interpreter (`C_program::DecodeInstruction`
-   0x463960, `C_program::Process` 0x46D3B0) knows 396 commands (each one's handler in 1.2:
-   `knowledge/game.exe/script_commands.csv`; what each does: st0rm94's `opcode-table.md`, `opcodes-verified.md`;
-   spawning people and cars as MafiaOnline does it: `knowledge/notes/external.md`) (`HUMAN_*`, `PLAYER_*`, `CAR_*`,
-   `ACTOR_SETPOS`, weather, time). Run one at a time from the bridge (a small program given to the interpreter, or
-   the command handlers called directly): teleport, spawn a car or a person, give a weapon, kill or knock someone
-   down, set the time of day. A developer console built on the game's own mechanisms.
+1. **More hands, past the script machine.** What the missions' commands do not offer: a person or a car of any
+   model made new (not a copy: MafiaOnline's human factory and car catalog, `knowledge/notes/external.md`), the time
+   of day (no command found yet), a knock-down that always works (`human_forcefall` only nudges), the weapons' ids
+   by name (`tables\predmety.def`), named helpers for the common recipes (teleport to coordinates, spawn here) so an
+   agent need not write the program; scripts' events (`setplayerfireevent`...) to a program of the loader's.
 2. **LuaJIT script mods** (`type: "lua"`): a runtime mod embedding LuaJIT (pinned by `tools/deps.py`), one Lua state
    per script mod, hot reload on change; the C API through LuaJIT's FFI (`ffi.cdef` of `mml.h`), so scripts read and
    write memory, describe the game's structures and call its functions; `lua.eval` for agents (a hypothesis tested
@@ -149,6 +156,16 @@ What is done, what comes next and later, and what is known to be missing or wron
 - **Publishing**: CI for the offline tests (the private repository exists since 2026-10-13).
 
 ## Known gaps
+
+- **The script machine** (docs/SCRIPTS.md): programs step only in the mission's tick (not in the menus, not while
+  paused). Of the ~390 commands a handful were run (`let`, `if`, `goto`, `wait`, `findactor`, `findnearactor`,
+  `getactiveplayer`, `getactorframe`, `frm_setpos`, `actor_setpos`, `actor_duplicate`, `car_repair`,
+  `human_addweapon`, `weather_setparam`, `setcitytrafficvisible`, `explosion`, `getgametime`); the others behave as
+  the game makes them, untried. `call`, `callsubroutine` and the event registrations reach other programs: untested
+  with one of the loader's (a program ends at `end`, an event to it may come after it is freed). The game's
+  argument parsing is lenient (a bad number is 0): only an unknown command or unparsable arguments fail the
+  compile. A program's `dim_*` larger than the loader's 256 / 64 / 64 makes new, zeroed registers. A command that
+  faults stops its program; the game's state the command had changed by then is left as it is.
 
 - **The start covers the default freeride and the main menu only** (see Next, 4). Without `profile` the profile
   menu waits for the player. The freeride's densities count only for a profile that has opened the freeride's

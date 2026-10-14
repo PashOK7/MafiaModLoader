@@ -328,3 +328,32 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   copied from the 1.2 lab; it had no `d3d8.dll` of its own), so screenshots work there without the game in front.
 - `check_builds.py` checks 1.0's menu addresses (each tick, the base vtable, the builder's `stop` and `ret 0xC`, the
   cursor's floats, `cd_find_game_file` called with `logo1.avi`): ALL PASSED. `mml.config.json` back on the 1.2 lab.
+
+## 2026-10-14: the game's script machine, for agents and mods
+
+- **The owner's direction**: the next item of the roadmap, "the engine's own commands from MCP": "pump up the
+  agent's hands, as many abilities as there can be", and the same for mods.
+- **The way chosen**: not each command's handler called by hand, but the missions' own interpreter given a program:
+  every command, with the game's own behaviour, at once. MafiaOnline does not run the game's programs (it rewrites
+  the commands it needs); st0rm94's `structs/program.md` describes `C_program` whole (its layout, the same in both
+  builds, its vtable, Compile, CallProcess, END leaving the program on it). A standalone `C_program` of the loader's:
+  the game's new and constructor (the standalone vtable, whose Process is the full switch), Compile stopping at the
+  first bad line (its offset gives the source line), the registers allocated with the game's new, CallProcess once
+  a mission tick after the mission's own. Init is not called (it frees the registers and compiles again).
+- **Learned in the lab** (1.2, then 1.0): `wait 300` took 22 ticks; an unknown command fails with its line; the
+  argument parser is lenient (`actor_setpos zz, qq` compiles to 0, 0). The player in a car is the car's child:
+  `frm_setpos` on his frame moved him in the car's space (put back by hand); a car teleports with
+  `getactorframe` + `frm_setpos` + `actor_setpos` + `car_repair`. `findnearactor` with its kind in quotes (as
+  st0rm94's note writes it) finds nothing: the compile does not recognise the kind; bare it works (`Car`). Traffic's
+  cars are not actors of their own (`Traffic_car` finds the manager). `actor_duplicate` cloned a car, placed ahead;
+  `explosion` needs an owner (the actor the program runs as: a new `owner` argument), it went off at the clone.
+  Rain on and off, traffic hidden and shown. The program's source texts of the freeride's 67 scripted actors (read
+  from their `C_program +0x08`) showed the real syntax (`FINDFRAME 0, "police1"`, `if flt[0] = 0, -1, 101`).
+- **For mods**: `script_run(mod, code, owner, acts, flts, timeout, fn, user)`, `script_stop`, `script_state`; the
+  telemetry example's F7 repairs the car through it: hot-reloaded into the running 1.0 game, F7 pressed, "car
+  repaired" in the log one tick later.
+- **MCP**: `script` (runs and waits; failed and stopped programs are errors with their state) and `script_commands`
+  (opcodes and handlers of both builds from `script_commands.csv`; st0rm94's note on each case read in place from
+  `re/ext`, never copied). The tap tool's text still said "the owner": now "the user".
+- The tests drove the 1.0 lab through `MML_GAME_DIR` (the MCP server's and the bridge client's override), so the
+  user's `mml.config.json` was not touched. `check_builds.py` checks the machine's addresses in both builds.

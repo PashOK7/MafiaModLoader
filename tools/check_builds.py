@@ -330,6 +330,31 @@ def main(a):
         at = code.find(b'\xb9' + (0x400000 + logo).to_bytes(4, 'little')) if logo >= 0 else -1
         calls = [i for i in gexe.md.disasm(code[at:at + 24], 0x400000 + at) if i.mnemonic == 'call'] if at >= 0 else []
         check(calls and int(calls[0].op_str, 16) == exe['m10CdFind'], f'{name} m10CdFind called with logo1.avi in ECX')
+    # The scripts' machine (host/script.cpp; both builds): the constructor puts the standalone vtable, whose slot 6
+    # is DecodeInstruction and slot 7 the opcode switch (read in the decompiles); CallProcess calls slot 7 and returns
+    # with ret 4; Compile calls slots 6 and 5, ret 0x10; SetSourceCode ret 4; InvalidateActorReg walks act[] (+0x58,
+    # +0x5C), ret 4; Done frees the three register files (+0x48, +0x50, +0x58).
+    machine = {'1.2': {'decode': 0x463960, 'process': 0x46D3B0}, '1.0': {'decode': 0x5B1B60, 'process': 0x5BB2D0}}
+    for name, (exe, ls, gexe, gls) in builds.items():
+        if not exe['progCtor']:
+            continue
+        body = lambda f, n: gexe.at(exe[f] - 0x400000, n)
+        slot = lambda i: int.from_bytes(gexe.at(exe['progVt'] + 4 * i - 0x400000, 4), 'little')
+        check(exe['progVt'] in operands(gexe, exe['progCtor'], 0x60), f'{name} progCtor puts progVt')
+        check(slot(6) == machine[name]['decode'] and slot(7) == machine[name]['process'], f'{name} progVt slots 6, 7: {slot(6):#x}, {slot(7):#x}')
+        check(any(b'\xff' + bytes([m]) + b'\x1c' in body('progCallProcess', 0x40) for m in (0x50, 0x51, 0x52, 0x53, 0x56, 0x57))
+              and b'\xc2\x04\x00' in body('progCallProcess', 0x40), f'{name} progCallProcess calls slot 7, ret 4')
+        cb = body('progCompile', 0x300)
+        check(any(b'\xff' + bytes([m]) + b'\x18' in cb for m in range(0x50, 0x58)) and any(b'\xff' + bytes([m]) + b'\x14' in cb for m in range(0x50, 0x58))
+              and b'\xc2\x10\x00' in cb, f'{name} progCompile calls slots 6 and 5, ret 0x10')
+        check(b'\xc2\x04\x00' in body('progSetSource', 0x50), f'{name} progSetSource returns with ret 4')
+        d = operands(gexe, exe['progInvalidateActor'], 0x2A)
+        check(0x58 in d and 0x5C in d and b'\xc2\x04\x00' in body('progInvalidateActor', 0x30), f'{name} progInvalidateActor walks act[], ret 4')
+        d = operands(gexe, exe['progDone'], 0x130)
+        check(0x48 in d and 0x50 in d and 0x58 in d, f'{name} progDone frees flt[], frm[], act[]')
+    for f in ('progSetSource', 'progCallProcess', 'progInvalidateActor'):
+        a, b = norm(g12.insn(e12[f] - 0x400000)), norm(g10.insn(e10[f] - 0x400000))
+        check(a == b, f'{f}: 1.2 "{a}" vs 1.0 "{b}"')
     # LS3D's mouse read (both builds): GetDeviceState(16, mouseState) in it, ret 4
     for name, (exe, ls, gexe, gls) in builds.items():
         if not ls['mouseUpdate']:

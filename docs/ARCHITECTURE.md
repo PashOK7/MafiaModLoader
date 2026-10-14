@@ -86,6 +86,12 @@ except the intro videos), on the game thread, where `LoadLibrary` is safe.
   buffer `screenshot` copies. The three engine states the HUD sets for itself are set and put back. Coordinates
   are the menus' 800x600 units, scaled as the HUD's. Mods' items live one frame; each owner's items are drawn behind
   a fault guard (a fault: that mod's drawing off until it is reloaded, logged).
+- **The game's script machine** (`script.cpp`, docs/SCRIPTS.md): programs of agents and mods in the missions'
+  language, each a standalone `C_program` of the loader's (the game's new and constructor), compiled by the game's
+  `Compile` (the first line it does not take fails the program, named), its registers given before it starts, then
+  stepped by the game's `CallProcess` once a mission tick, after the mission's own. Stopped at `END`, by a fault in a
+  command (the guard), by its time, its mod's unload or the mission's close; actors deleted are taken out of its
+  `act[]` by the game's `InvalidateActorReg`.
 - **The game's own menus, extended** (`menus.cpp`; 1.0's screens, other classes: `menus10.cpp`, the same services
   through the tick every screen calls, `docs/VERSIONS.md`): items and pages for mods (`menu_*`) and agents (`menu.item`,
   `menu.page`), made of the game's controls by the game's code; nothing drawn by the loader. The game's menus are

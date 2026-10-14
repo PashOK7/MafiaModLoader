@@ -80,6 +80,19 @@ int Menu(const char *, MmlReply *r, void *) {
     return 0;
 }
 
+void OnScript(const MmlScriptResult *, void *) {}
+
+// script_run with no game: refused (0); script_state of no such handle: -1.
+int Script(const char *, MmlReply *r, void *) {
+    if (!MML_HAS(H, script_state)) { H->reply_error(r, "the loader has no script machine"); return 1; }
+    const float flts[1] = {1.5f};
+    int h = H->script_run(M, "let flt[0] = 2\nend", nullptr, nullptr, 0, flts, 1, 1000, OnScript, nullptr);
+    char out[96];
+    snprintf(out, sizeof out, "{\"run\":%d,\"state\":%d}", h, H->script_state(M, 12345));
+    H->reply_append(r, out, static_cast<size_t>(-1));
+    return 0;
+}
+
 int Write(const char *, MmlReply *r, void *) {
     std::string path = std::string(H->mod_data_dir(M)) + "note.txt";
     FILE *f = fopen(path.c_str(), "w");
@@ -112,6 +125,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     g_menuItem = MML_HAS(host, menu_value) ? host->menu_item(mod, "gamemenu", 108, "Kit", OnMenu, nullptr) : -1;
     host->command(mod, "menu", "tries to open a page of its own; what menu_open, menu_set_value, menu_value, menu_set_text gave", Menu, nullptr);
     host->command(mod, "write", "writes note.txt into the mod's data folder; its path", Write, nullptr);
+    host->command(mod, "script", "tries script_run (no game: refused) and script_state", Script, nullptr);
     return 0;
 }
 

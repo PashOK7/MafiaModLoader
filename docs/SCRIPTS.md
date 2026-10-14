@@ -1,0 +1,137 @@
+# The game's script machine: agents' and mods' hands in the world
+
+The missions of Mafia are programs in a small language of the game's own (the scripts in each mission's
+`scene2.bin`), compiled and run by the game's interpreter, `C_program`: about 390 commands that move actors, give
+weapons, kill, spawn copies, drive cars, change the weather, the traffic, the camera, the HUD. The loader gives that
+machine to agents and mods: a program sent to it is compiled by the game's own compiler and run by the game's own
+interpreter, one step each mission tick, exactly as a mission runs its scripts. Whatever a mission can do, a program
+can.
+
+- **Agents** (MCP): `script {code, act, flt, owner, timeout_ms}` runs a program and waits until it ends: its state
+  (`done`, `failed` with the line, `stopped`) and its registers. `script_commands {query}` lists the commands with
+  their opcodes and handlers in both builds and, where st0rm94's 1.0 reverse is cloned in `re/ext`, its note on each
+  command's arguments and behaviour (read in place; a lead: check in the game). On the bridge: `script.run`,
+  `script.state {id}`, `script.stop {id | "all"}`, `script.list` (docs/PROTOCOL.md).
+- **Mods** (`mml.h`): `script_run(mod, code, owner, acts, n, flts, n, timeout_ms, fn, user)` returns a handle; `fn`
+  gets an `MmlScriptResult` (the state, the error and its line, the registers) when the program ends;
+  `script_stop`, `script_state`. A mod's programs stop when it unloads. The telemetry example's F7 repairs the car
+  this way.
+
+A mission must be running: programs step in the mission's tick, so they wait while the pause menu is open. Both
+builds (seen in the 1.2 and the 1.0 labs, 2026-10-14).
+
+## The language
+
+- One command a line; `//` starts a comment; empty lines are skipped (the loader strips them, and leading blanks,
+  before the game compiles). Command names are case-insensitive. Arguments are separated by commas. Numbers are
+  floats. A name (an actor's, a frame's, a model file) is in double quotes: `findactor 0, "Tommy"`; a few commands
+  take bare keywords instead: `findnearactor 0, 1, Car`, `weather_setparam ON, 1` (in quotes the keyword is not
+  recognised and the command finds or sets nothing).
+- **Registers**: `flt[]` floats, `act[]` actors, `frm[]` frames, addressed by index in the commands' arguments
+  (`actor_setpos 0, 1`: actor `act[0]` to frame `frm[1]`). The loader gives every program 256 floats, 64 actors and
+  64 frames before it starts, `act[]` and `flt[]` filled as asked (`act: {"0": "player", "1": "car", "2":
+  "0x0F923CF0"}`, `flt: {"0": -1940.5}`); `dim_flt`, `dim_act`, `dim_frm` are not needed (a larger one makes new,
+  zeroed registers, losing what was given).
+- `let flt[0] = flt[1] * 3`: one operator (`+ - * /`), no precedence, no parentheses; the left side must be a
+  `flt[]`.
+- `label 10` ... `goto 10`; `if flt[0] = 1, 10, -1`: to label 10 when true, else to `-1` (no such label: the next
+  line). Comparisons `<`, `>`, `=`, `!` (not equal).
+- `wait 500` (ms): the program gives the frame back and goes on later. Most commands take one step; a few wait by
+  themselves (`human_waittoready`).
+- `commandblock 1` ... `commandblock 0`: the lines between run in one frame. A loop with no `wait` inside a block
+  never gives the frame back: the game hangs.
+- `end` ends the program (also the last line does). The loader stops a program after its time (`timeout_ms`,
+  10 s from MCP, 30 s from the bridge and for mods).
+- **Arguments are read leniently**: a word where a number is expected is 0, a missing argument is 0. A line the
+  compiler does not take (an unknown command, arguments it cannot parse) fails the whole program before it runs:
+  `line 4: "humna_addweapon 0, 2, 3": not a command of the game's`.
+- **The owner**: a mission's script runs as its entity; a program of the loader's runs as `owner` (default none).
+  Commands that act on "the script's own actor" use it: `explosion` goes off at its position, `playsound`,
+  `frm_seton`, `act_setstate` with no register of theirs; `findnearactor` skips it.
+
+## Finding what to act on
+
+- The player: `act: {"0": "player"}`, or in the program `getactiveplayer 0`. His car (or the last one he drove):
+  `"car"`. Any actor by its address, as `call actors` and `call humans` list them (type 2 the player, 4 a car, 27
+  an NPC with a script).
+- By name: `findactor 0, "Tommy"` (an actor by its model frame's name), `findframe 0, "police1"` (a frame of the
+  scene).
+- The nearest of a kind: `findnearactor 0, 1, Car` puts the nearest car to `act[0]` into `act[1]`. The kinds: Player,
+  Enemy, Car, Detector, Door, Railway, Box, Bottle, Traffic_person, Traffic_car, Bridge, Dog, Airplane, Turnout,
+  Pumper. Traffic's cars are not single actors (`Traffic_car` finds the traffic manager).
+- An actor's own frame: `getactorframe 0, 1` (`frm[1]` = `act[0]`'s model frame).
+
+## Recipes (each run in the lab)
+
+Teleport a car (or the player on foot) to `flt[0..2]`:
+
+```
+getactorframe 0, 0
+frm_setpos 0, 0
+actor_setpos 0, 0
+car_repair 0          // a car: stopped, repaired and put on its wheels where it is
+```
+
+with `act: {"0": "car"}`, `flt: {"0": x, "1": y, "2": z}` (world metres, y up). The player sitting in a car is the
+car's child: his frame is in the car's space, so move the car, not him.
+
+A copy of an actor (here a car) next to the player:
+
+```
+actor_duplicate 1, 2, 0     // act[1] cloned into act[2] (a temporary actor: actor_delete 2 removes it)
+getactorframe 2, 1
+frm_setpos 1, 0
+actor_setpos 2, 1
+car_repair 2
+```
+
+with `act: {"1": "0x0F923CF0"}` (any car from `actors`) and the place in `flt[0..2]`. The clone's actor is in the
+result's `act[2]`.
+
+A weapon: `human_addweapon 0, 6, 8, 40` (the character `act[0]`, the weapon's id from the game's
+`tables\predmety.def`, rounds loaded, rounds in reserve). An NPC holds it at once; the player gets it in his
+inventory.
+
+An explosion at an actor: `explosion 6, 400` (radius in metres, force; a grenade's is 400) with `owner` that actor.
+
+The weather and the city: `weather_setparam ON, 1`, `weather_setparam MAX_CNT, 20000`, `weather_setparam SPEED, 30`
+(rain on, the drops, their speed; `ON, 0` stops it; the player's detail setting caps the drops);
+`setcitytrafficvisible 0` hides the city's traffic (it goes on driving, without collisions), `1` shows it.
+
+Time: `getgametime 0` (ms since the game started into `flt[0]`), `wait`, a loop:
+
+```
+label 1
+let flt[0] = flt[0] + 1
+wait 100
+goto 1
+```
+
+(stopped by its time, or `script.stop`).
+
+Others worth knowing (see `script_commands`): `human_death`, `human_changemodel`, `human_force_settocar` (a
+character into a car's seat), `car_setspeed` (km/h), `car_lock`, `zatmyse` (the screen faded to black and back),
+`camera_lock` / `camera_unlock`, `console_addtext` (a text of the game's database in the HUD's console),
+`player_lockcontrols`, `explosion`, `create_physicalobject`, `actor_delete`, `frm_seton` (a frame shown or hidden),
+the vector and matrix commands (`vect_*`, `matrix_*`, `quat_*`) on runs of `flt[]`.
+
+## What does not run here
+
+- Commands whose dispatcher arm is the default one (`"runs": false` in `script_commands`: `DEBUG_TEXT` and other
+  markers) do nothing in a standalone program; some are handled only by a mission entity's or a detector's own
+  override.
+- `callsubroutine`, `call` reach other actors' programs and the mission's global ones: they behave as the game
+  does, untested here.
+- Events (`settimeoutevent`, `setplayerfireevent`...) register a C_program to be raised later: a program of the
+  loader's ends when it reaches `end`, so an event to it may come after it is gone (untested).
+
+## How it works (host/script.cpp; the addresses: game_build.h `prog*`)
+
+A program is a standalone `C_program` (the class every mission entity carries at `+0xA9C`, a detector at `+0x70`)
+made with the game's operator new and constructor; its source is compiled by the game's `Compile` (each line by the
+vtable's DecodeInstruction, then its DecodeParams), stopping at the first line that fails; its registers are
+allocated with the game's new as its own `dim_*` would; then `CallProcess` (the vtable's Process: the opcode
+switch, until an instruction gives the frame back) once a mission tick, after the mission's own tick. `END` leaves
+the program standing on it: that is its end. A fault in a command stops the program (the guard tells the line and
+the address); the mission's close stops every program (their actors go with it); an actor deleted is taken out of
+every program's `act[]` by the game's `InvalidateActorReg`. The game's `Done` and deleting destructor free it.

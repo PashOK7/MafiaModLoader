@@ -14,6 +14,7 @@
 //   the mission        OnMission         opened, loaded, paused: the lap is dropped with the mission, the best read
 //   files, settings    ReadSettings, LoadBest, SaveBest   config_*, mod_data_dir, MML_EVENT_CONFIG_CHANGED
 //   the game's menus   OnMenuItem, OpenPage, OnPage   an item in the pause menu, a page of the mod's own (menu_*)
+//   the script machine OnRepairKey       the game's own `car_repair` on the car, run by the game's interpreter (script_run)
 //   commands           telemetry.status, telemetry.lap, telemetry.checkpoint   (for agents, over MCP)
 #include <windows.h>
 #include <algorithm>
@@ -63,10 +64,25 @@ void OnLapKey(void *) {
     H->log(M, MML_LOG_INFO, "lap started by the hotkey");
 }
 
+// The other hotkey: the car repaired and put back on its wheels, by the game's own script command (what a mission
+// does with `car_repair`); the program ends in a tick or two and tells how it went.
+void OnRepaired(const MmlScriptResult *r, void *) {
+    if (r->state == MML_SCRIPT_DONE) H->log(M, MML_LOG_INFO, "car repaired");
+    else H->log(M, MML_LOG_WARN, "car_repair: %s", r->error);
+}
+void OnRepairKey(void *) {
+    void *car = game::LastCar();
+    if (H->mission_state() != MML_MISSION_RUNNING || !car || !MML_HAS(H, script_run)) return;
+    void *acts[1] = {car};
+    H->script_run(M, "car_repair 0", nullptr, acts, 1, nullptr, 0, 2000, OnRepaired, nullptr);
+}
+
 // (Called again when the settings change: the same function and user replace the combination.)
 void Bind() {
     const char *combo = H->config_string(M, "hotkey_lap", "F9");
     if (!H->hotkey(M, combo, OnLapKey, nullptr)) H->log(M, MML_LOG_WARN, "hotkey_lap '%s' is not a key combination", combo);
+    combo = H->config_string(M, "hotkey_repair", "F7");
+    if (!H->hotkey(M, combo, OnRepairKey, nullptr)) H->log(M, MML_LOG_WARN, "hotkey_repair '%s' is not a key combination", combo);
 }
 
 void ReadSettings() {

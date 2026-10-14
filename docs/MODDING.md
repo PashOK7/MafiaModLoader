@@ -190,6 +190,24 @@ H->menu_item(M, "gamemenu", 108, "Achievements", OnItem, NULL);
   button's or a row's colour flag is not 1.0's (`docs/ROADMAP.md`, Known gaps). `menu.def` and `menu.state` show
   1.0's own.
 
+### The game's script machine: a mission's commands
+
+```c
+void OnDone(const MmlScriptResult *r, void *user) {   /* when it ends, on the game thread */
+    if (r->state != MML_SCRIPT_DONE) H->log(M, MML_LOG_WARN, "%s (line %d)", r->error, r->line);
+}
+void *acts[1] = {game::LastCar()};
+H->script_run(M, "car_repair 0", NULL, acts, 1, NULL, 0, 2000, OnDone, NULL);   /* the game's own car_repair */
+```
+
+- A program in the missions' own language, compiled and run by the game's interpreter, one step a mission tick:
+  every command the missions have (teleport, copies of actors, weapons, deaths, cars, weather, traffic, the camera,
+  fades). The language, the registers and tested recipes: docs/SCRIPTS.md; each command: `script_commands` over MCP.
+- `acts` and `flts` fill `act[]` and `flt[]` before it starts; `owner` is the actor it runs as (where `explosion`
+  goes off). A line that does not compile: 0 and the log says which. `fn` gets the state and the registers;
+  `script_stop`, `script_state`. Stopped when the mod unloads, the mission closes, or its time is out.
+- The telemetry example's F7 (`OnRepairKey`) is a complete use.
+
 ### Keys, actions, hotkeys
 
 ```c
@@ -282,5 +300,4 @@ default checkpoints.
 
 ## Not there yet
 
-LuaJIT script mods, a Rust crate, 64-bit sidecar mods, the engine's script commands (spawn a car, teleport), and
-1.0 beyond what `game_build.h` holds: `docs/ROADMAP.md`.
+LuaJIT script mods, a Rust crate, 64-bit sidecar mods: `docs/ROADMAP.md`.

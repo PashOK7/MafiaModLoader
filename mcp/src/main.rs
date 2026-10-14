@@ -10,6 +10,7 @@ mod bridge;
 mod crash;
 mod game;
 mod kb;
+mod script;
 mod shot;
 
 use base64::Engine;
@@ -142,6 +143,45 @@ struct DeployArgs {
     /// Reload the deployed mods in the running game afterwards (default true).
     #[serde(default)]
     reload: Option<bool>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct ScriptArgs {
+    /// The program, one command a line ("// comments"; commands case-insensitive; arguments separated by commas;
+    /// strings in quotes, except the kind names of findnearactor). Registers: flt[0..255] (floats), act[0..63]
+    /// (actors), frm[0..63] (frames), given before it starts (no dim_* needed). E.g. teleport the car:
+    /// "getactorframe 0, 0\nfrm_setpos 0, 0\nactor_setpos 0, 0\ncar_repair 0" with act {"0": "car"} and flt
+    /// {"0": x, "1": y, "2": z}. `script_commands` tells each command's arguments; docs/SCRIPTS.md has recipes.
+    code: String,
+    /// act[] given before it starts: {"0": "player", "1": "car", "2": "0x0F923CF0"} (an actor's address, as `actors`
+    /// or `humans` list them).
+    #[serde(default)]
+    act: Option<Value>,
+    /// flt[] given before it starts: {"0": -1940.5, "1": -4.5}.
+    #[serde(default)]
+    flt: Option<Value>,
+    /// The actor the program runs as, as a mission's script runs as its entity ("player", "car", an address): where
+    /// `explosion` goes off, what `playsound`, `frm_seton`, `act_setstate` use with no register, what
+    /// `findnearactor` skips. Default none.
+    #[serde(default)]
+    owner: Option<Value>,
+    /// Stopped after this long (ms, default 10000).
+    #[serde(default)]
+    timeout_ms: Option<u64>,
+    /// Return at once with the program's id (default false: wait until it ends); `call script.state {id}` then.
+    #[serde(default)]
+    no_wait: Option<bool>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct ScriptCommandsArgs {
+    /// A part of the commands' names ("human_", "car_", "actor", "frm_set", "weather"); empty: every name.
+    #[serde(default)]
+    query: Option<String>,
+    /// Add each command's note (its arguments and what it does) from st0rm94's 1.0 reverse when it is cloned in re/ext
+    /// (default true; at most 40 commands).
+    #[serde(default)]
+    notes: Option<bool>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -569,12 +609,49 @@ impl Server {
 
     /// Watch any function of the running game without writing a hook: who calls it, with what arguments (ECX, the
     /// stack), what memory behind them holds (strings shown as text), what it returns. Start a tap, let the game (or
-    /// the owner) do the thing, then "show <id>". Works before the first frame too (during the intro videos).
+    /// the user) do the thing, then "show <id>". Works before the first frame too (during the intro videos).
     #[tool]
     async fn tap(&self, Parameters(a): Parameters<TapArgs>) -> Out {
         let v = self.bridge.call("tap", json!({"cmd": a.cmd}), 5000).await?;
         let text = v.as_str().map(String::from).unwrap_or_else(|| pretty(&v));
         if text.starts_with("error") { Err(text) } else { Ok(kb::annotate_tap(&text)) }
+    }
+
+    /// Run a program on the game's own script machine (the mission scripts' language, compiled and run by the game's
+    /// interpreter, one step a mission tick): every command the game's missions have (teleport, spawn a copy of an
+    /// actor, give weapons, kill, cars, weather, traffic, camera, fades, the HUD's console...), with the game's own
+    /// behaviour. Waits until it ends; returns its state (done / failed with the line / stopped) and its registers
+    /// (flt[], act[] with each actor's type and model, frm[]). A mission must be running (not paused: the pause
+    /// does not tick it).
+    #[tool]
+    async fn script(&self, Parameters(a): Parameters<ScriptArgs>) -> Out {
+        let timeout = a.timeout_ms.unwrap_or(10000);
+        let mut req = json!({"code": a.code, "timeout_ms": timeout});
+        if let Some(v) = a.act { req["act"] = v; }
+        if let Some(v) = a.flt { req["flt"] = v; }
+        if let Some(v) = a.owner { req["owner"] = v; }
+        let started = self.bridge.call("script.run", req, 5000).await?;
+        let id = started["id"].as_u64().ok_or("script.run: no id")?;
+        if a.no_wait.unwrap_or(false) { return Ok(pretty(&started)); }
+        let t0 = std::time::Instant::now();
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            let s = self.bridge.call("script.state", json!({"id": id}), 3000).await?;
+            if s["state"].as_str() != Some("running") {
+                return if s["state"].as_str() == Some("done") { Ok(pretty(&s)) } else { Err(pretty(&s)) };
+            }
+            if t0.elapsed().as_millis() as u64 > timeout + 3000 {
+                return Err(format!("script {id} still runs after {} ms (the mission paused?): {}", timeout + 3000, pretty(&s)));
+            }
+        }
+    }
+
+    /// The mission scripts' commands (the language of `script`): each one's opcode and handler in 1.2 and 1.0
+    /// ("runs": false where the standalone program has no case for it), with its arguments and what it does where
+    /// st0rm94's annotated 1.0 reverse is cloned (re/ext/mafia-reverse-engineering-export; a lead, read in place).
+    #[tool(annotations(read_only_hint = true))]
+    async fn script_commands(&self, Parameters(a): Parameters<ScriptCommandsArgs>) -> Out {
+        script::commands(a.query.as_deref().unwrap_or(""), a.notes.unwrap_or(true)).map(|v| pretty(&v))
     }
 
     /// Search the game's knowledge base (every function of Game.exe and LS3DF.dll 1.2 from the full decompiles:
@@ -630,7 +707,7 @@ controls}` opens a page made by the game from control descriptions; a mod does t
 A new mod: python tools/new_mod.py <id>, then docs/MODDING.md (mods/examples/telemetry is a complete one). \
 The loop for a mod: edit -> build (cmake --build --preset x86-release) -> \
 deploy -> call its commands -> log_tail. After a crash: crash_list, crash_inspect, log_tail with previous. \
-What a game function does, where a thing lives: kb_search, then kb_function (facts, calls, decompiled code); \
+The game's own script machine: `script {code, act, flt}` runs a program in the missions' language (teleport, spawn, weapons, kill, cars, weather, camera: every command the missions have), `script_commands {query}` tells the commands' arguments, docs/SCRIPTS.md has recipes; a mod does the same with script_run. What a game function does, where a thing lives: kb_search, then kb_function (facts, calls, decompiled code); \
 knowledge/notes/ holds the hand-written findings.";
 
 #[tool_handler(router = self.tool_router)]

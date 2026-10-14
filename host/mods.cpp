@@ -203,6 +203,16 @@ int H_MenuSetValue(MmlMod *m, int id, float value) { return Alive(m) ? MenuPageV
 int H_MenuValue(MmlMod *m, int id, float *value) { return Alive(m) ? MenuPageGetValue(m, id, value) : 0; }
 int H_MenuSetRange(MmlMod *m, int id, int lo, int hi) { return Alive(m) ? MenuPageRange(m, id, lo, hi) : 0; }
 int H_MenuText(MmlMod *m, int id, char *buf, int size) { return Alive(m) ? MenuPageGetText(m, id, buf, size) : 0; }
+int H_ScriptRun(MmlMod *m, const char *code, void *owner, void *const *acts, int nacts, const float *flts, int nflts, uint32_t timeout,
+                MmlScriptFn fn, void *user) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    int h = ScriptRun(m, code, owner, acts, nacts, flts, nflts, timeout, fn, user, &err);
+    if (!h) Log(MML_LOG_WARN, Who(m), "script_run: %s", err.c_str());
+    return h;
+}
+void H_ScriptStop(MmlMod *m, int handle) { if (Alive(m)) ScriptStop(m, handle); }
+int H_ScriptState(MmlMod *m, int handle) { return Alive(m) ? ScriptState(m, handle) : -1; }
 
 // ---- manifests
 bool ReadManifest(const std::string &dir, const std::string &folder, ModEntry *e, std::string *err) {
@@ -290,6 +300,7 @@ bool UnloadMod(ModEntry *e, const char *why) {
     HookRemoveAll(m);
     HotkeysRemove(m);
     MenusRemove(m);
+    ScriptsRemove(m);
     DrawRemove(m);
     ConfigForget(m);
     g_subs.erase(std::remove_if(g_subs.begin(), g_subs.end(), [&](const Sub &s) { return s.mod == m; }), g_subs.end());
@@ -455,6 +466,9 @@ void ModsInit() {
     g_host.menu_value = H_MenuValue;
     g_host.menu_set_range = H_MenuSetRange;
     g_host.menu_text = H_MenuText;
+    g_host.script_run = H_ScriptRun;
+    g_host.script_stop = H_ScriptStop;
+    g_host.script_state = H_ScriptState;
     CleanLive();
     Scan();
     LoadEnabled();
@@ -507,6 +521,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (DrawMethod(method, paramsJson, reply, &ok)) return ok;
     if (ConfigMethod(method, paramsJson, reply, &ok)) return ok;
     if (MenusMethod(method, paramsJson, reply, &ok)) return ok;
+    if (ScriptMethod(method, paramsJson, reply, &ok)) return ok;
     if (method == "mods.list") { *reply = ModsList(); return true; }
     if (method == "commands.list") { *reply = CommandsList(); return true; }
     if (method == "hooks.list") { *reply = HookList(); return true; }
@@ -568,7 +583,8 @@ std::string CommandsList() {
                           "menu.state", "menu.command", "menu.value", "start.state", "input.actions", "input.act", "input.key",
                           "input.seq", "input.release", "input.state", "text.get", "text.find", "screenshot", "screenshot.state",
                           "draw.text", "draw.rect", "draw.line", "draw.clear", "draw.state", "config.get", "config.set",
-                          "menu.item", "menu.items", "menu.item.remove", "menu.page", "menu.page.set", "menu.page.close", "menu.def", "menu.click", "input.mouse", "input.text"})
+                          "menu.item", "menu.items", "menu.item.remove", "menu.page", "menu.page.set", "menu.page.close", "menu.def", "menu.click", "input.mouse", "input.text",
+                          "script.run", "script.state", "script.stop", "script.list"})
         out.push_back({{"name", m}, {"owner", "host"}});
     for (auto &kv : g_commands) out.push_back({{"name", kv.first}, {"owner", Who(kv.second.mod)}, {"help", kv.second.help}});
     return out.dump();

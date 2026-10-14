@@ -57,7 +57,9 @@ others); `input` plays a timed sequence inside the game: the game's actions by n
 (`{"action": "Forwards", "ms": 2000}`, `"Accelerate"`, `"Fire"`, `"Action"`), an exact turn on foot
 (`{"turn": 90}`), keys for the menus (`{"key": "Esc"}`), the menus' mouse (`{"click": [x, y]}`, `{"wheel": -3}`);
 `"screenshot": true` shows the result. `call menu.click {"id": 102}` clicks a menu's control by its id (safer than
-coordinates), `call input.text {"text": "Tommy"}` types. It returns the
+coordinates), `call input.text {"text": "Tommy"}` types. **In the world**: `script {code, act, flt, owner}` runs a
+program on the game's own script machine (the missions' language: teleport, spawn copies, weapons, deaths, cars,
+weather, traffic, camera; docs/SCRIPTS.md has the recipes), `script_commands {query}` tells a command's arguments. It returns the
 player's state when the last step has ended. `call input.actions` lists every action and its binding.
 **Watch any function** with `tap` (`"5409D0 n=4 ptr=1:32"`, let the game do the thing, `"show 0"`): the fastest way
 to learn what the game does.
@@ -86,7 +88,7 @@ reversing a system anew.
 
 | Path | What |
 |---|---|
-| `host/` | `MafiaModLoader.asi`: the never-unloaded host: game hooks → events (the mission's too), hook chains, mods, bridge, crash dumps, `tap`, the start (`start.cpp`: logos, profile, menus), input (`input.cpp`: actions, keys, the mods' keys and hotkeys), screenshots (`screenshot.cpp`), drawing (`draw.cpp`: the game's own 2D drawing for mods and `draw.*`), the game's menus extended (`menus.cpp`: items and pages for mods, `menu.item`, `menu.page`; 1.0's screens: `menus10.cpp`), a mod's data folder and settings (`config.cpp`) |
+| `host/` | `MafiaModLoader.asi`: the never-unloaded host: game hooks → events (the mission's too), hook chains, mods, bridge, crash dumps, `tap`, the start (`start.cpp`: logos, profile, menus), input (`input.cpp`: actions, keys, the mods' keys and hotkeys), screenshots (`screenshot.cpp`), drawing (`draw.cpp`: the game's own 2D drawing for mods and `draw.*`), the game's menus extended (`menus.cpp`: items and pages for mods, `menu.item`, `menu.page`; 1.0's screens: `menus10.cpp`), a mod's data folder and settings (`config.cpp`), the game's script machine for agents and mods (`script.cpp`: `script.run`, `script_run`) |
 | `sdk/include/mml/mml.h` | **the C ABI** every native mod uses (C, C++, Rust, Zig...): read it whole |
 | `sdk/include/mml/game/` | what code uses: `game_build.h` (every address, per build, `game::Detect`), `game.h` (layouts, calls: actors, frames, the player's car `game::Car`, a car's state, the mission's name), `mathx.h` |
 | `knowledge/` | the knowledge base: every function of the 1.2 game (from MafiaReverse), our names, notes (`tools/kb_import.py`) |
@@ -94,6 +96,7 @@ reversing a system anew.
 | `mods/examples/` | `telemetry` (C++: the mod kit's complete example: an overlay, a hotkey, the car, saved files, settings), `hello_c` (plain C, the smallest); more languages to come (see `docs/ROADMAP.md`) |
 | `mcp/` | the MCP server (Rust, `rmcp`): bridge client, game process, crash dumps, deploy, the knowledge base (`kb.rs`), screenshots (`shot.rs`) |
 | `tests/` | `harness/` (the stand-in game), `mods/` (test mods: `hook_a`, `hook_b`, `kit`), `run_tests.py`, `mcp_smoke.py` |
+| `docs/SCRIPTS.md` | the game's script machine: the language, the registers, tested recipes |
 | `tools/` | `lab.py` (the lab's modes, install), `deps.py` (pinned downloads), `check_builds.py` (the address tables against the game's files), `kb_import.py` (the knowledge base from MafiaReverse), `kb_external.py` (other projects' names, checked), `start.py` (launch into a profile and the freeride), `new_mod.py` (a new mod: its folder, manifest, settings, CMake line), `replace.py` (exact text edits) |
 | `third_party/` | MinHook, nlohmann/json (vendored); `_deps/` (downloaded: Ultimate ASI Loader, LuaJIT) |
 
@@ -103,6 +106,9 @@ reversing a system anew.
   The loader's `menu.command` there is that tick's answer at the screen's next frame, so what it did shows in the
   next `menu.state`, not in its own reply. Screens are built from one table (`tables\menu.def`, `menu.def {name}`)
   and named by their vtables; the kinds have other tags (`docs/VERSIONS.md`).
+- **Scripts: the player in a car is the car's child** (his frame is in its space): a teleport moves the car.
+  `findnearactor` and `weather_setparam` take bare keywords (`Car`, `ON`), not quoted ones: quoted, they find or set
+  nothing. Programs step in the mission's tick: they wait while the game is paused.
 - **The real mouse reaches the game** whenever the game reads it: the user moving theirs during a test moves the
   menus' cursor (a click once missed so). In the background the loader keeps LS3D from clipping or moving the
   user's cursor; whether DirectInput still hands the game the user's moves there was not measured.

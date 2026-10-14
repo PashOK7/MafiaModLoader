@@ -91,9 +91,11 @@ int __fastcall hkMissionTick(void *self, void *edx, int ms) {
     MmlEvent ev = Event(MML_EVENT_MISSION_TICK);
     ev.dt = ms > 0 && ms < 200 ? ms / 1000.0f : 1.0f / 60.0f;
     Dispatch(ev);
+    ScriptTick(ms);   // the programs of agents and mods, after the mission's own
     return r;
 }
 int __fastcall hkMissionClose(void *self, void *edx) {
+    ScriptMissionClose();   // (their actors go with the mission)
     SetPaused(false);
     Dispatch(Event(MML_EVENT_MISSION_CLOSE));
     g_missionLoaded = false;
@@ -106,6 +108,7 @@ void __fastcall hkActorDtor(void *self, void *edx) {
     MmlEvent ev = Event(MML_EVENT_ACTOR_DESTROYED);
     ev.actor = self;
     Dispatch(ev);
+    ScriptActorGone(self);
     oActorDtor(self, edx);
 }
 void *__fastcall hkHumanCtor(void *self, void *edx) {

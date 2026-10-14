@@ -6,6 +6,7 @@
   // Keys the game's own controls do not use by default (`call input.actions` lists what each action is bound to in
   // the profile: there F5 is the speed limiter and Tab the city map).
   "hotkey_lap": "F9",          // starts a lap here and now (modifiers: "Ctrl+F9", "Ctrl+Shift+L")
+  "hotkey_repair": "F7",       // repairs the car and puts it on its wheels (the game's own car_repair)
   "key_details": "F8",         // held: fuel, damage, the position
   "units": "kmh",              // "kmh" or "mph"
 

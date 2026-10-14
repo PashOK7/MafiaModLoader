@@ -166,6 +166,13 @@ def kit_tests(b):
     r = b.call('kit.menu')
     check('menu_open with no menus: refused; menu_set_value, menu_value, menu_set_text: no page, 0',
           r['ok'] and r['result'] == {'open': 0, 'set_value': 0, 'value': 0, 'set_text': 0}, r)
+    r = b.call('kit.script')
+    check('script_run with no game: refused (0); script_state of no such program: -1',
+          r['ok'] and r['result'] == {'run': 0, 'state': -1}, r)
+    r = b.call('script.run', {'code': 'end'})
+    check('script.run with no game: an error, saying why', not r['ok'] and 'not known' in str(r), r)
+    r = b.call('script.list')
+    check('script.list with no game: known false, none', r['ok'] and r['result'] == {'known': False, 'scripts': []}, r)
     r = b.call('menu.page', {'name': 'x', 'controls': [{'id': 1, 'kind': 'wind', 'x': 0, 'y': 0, 'w': 100, 'h': 100}, {'kind': 'end'}]})
     check('menu.page with no menus: refused, saying why', not r['ok'] and 'not known' in str(r), r)
     r = b.call('menu.item', {'menu': 'gamemenu', 'after': 108, 'text': 'Bridge'})
