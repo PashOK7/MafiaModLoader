@@ -420,3 +420,19 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - A doubt about a tool was settled on the way: `player` said Tommy sat in a car while the screenshot showed him on
   foot; read again, he was on foot: the first reading was taken in the chapter's opening scene, where he arrives by
   car.
+
+## 2026-10-14: the roadmap aimed at four mods
+
+- **The owner**: no ragdoll port, no VR, water or smoke mod here: the toolkit, so that another agent can write a
+  ragdoll, shader water, realistic smoke and a VR mod on the loader; the old tasks stay, duplicates merged, sorted
+  by importance.
+- **How the list was made**: mafia-ragdoll's sources and documents were read (not changed) for what its host and core
+  build for themselves: a Direct3D 11 bridge beside the game's Direct3D 9Ex (`gfx.cpp`), the scene drawn again from a
+  mirrored camera (`reflection.cpp`), the world's triangles from the visuals (`scenery.cpp`), every human in a
+  registry, poses written right before Render, shots and pedestrians' hits hooked, PhysX 2.8.4 and NVIDIA Flow and
+  FleX loaded beside it. Each became a service of the loader in "Next", tiered: what blocks the four mods (a heavy
+  mod's lifecycle, render events and the bridge, the scene from another camera, the frame measured), the game's
+  world as data (people and skeletons, shots, geometry, the camera, effects, a tuning panel), the 64-bit sidecar,
+  then the agents' own tools.
+- **Found on the way**: the loader loads a mod's copy from `mml\live\` with a plain `LoadLibrary`, so a DLL a mod
+  ships beside itself (PhysX, Flow) would not be found: item 1, the first and the smallest.
