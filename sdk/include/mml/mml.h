@@ -247,7 +247,8 @@ typedef struct MmlHost {
     const char *(*config_json)(MmlMod *mod, const char *key);
     int (*config_set)(MmlMod *mod, const char *key, const char *value_json);
 
-    /* ---- the game's own menus (see MmlMenuControl above; 1.2 only: 0 elsewhere).
+    /* ---- the game's own menus (see MmlMenuControl above; both builds: on 1.0 the same names and ids, and 1.2's
+     * kinds made as 1.0's that do the same, docs/VERSIONS.md).
      * menu_item: an item added to one of the game's menus, the way the game itself adds rows to its lists (its
      * PridejComponentPod): whenever that menu is made, a copy of the control `after_id` is put right under it with
      * this text, the window grows by its height and what is below moves down. The copy looks, sounds and is

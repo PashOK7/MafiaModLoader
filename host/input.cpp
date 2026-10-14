@@ -18,7 +18,7 @@
 // the focus as under a real mouse), buttons held, wheel notches. A move is made only while a menu is open (outside
 // one the mouse turns the player).
 //
-// The owner's real keyboard and mouse are never touched: everything is injected in the game's own memory.
+// The user's real keyboard and mouse are never touched: everything is injected in the game's own memory.
 //
 // A button's value is 1. A mouse axis' ("Aim X", "Aim Y": right and down are positive) is what the game makes of the
 // mouse: its counts in that update / 400. On foot the player turns by sensitivity * 5 * value radians an update, so
@@ -167,14 +167,25 @@ int __stdcall KeyboardHook(void *igraph) {
 }
 
 // ---- the mouse
-bool MenusMouseKnown() { return game::g_exe && game::Exe().menuCursor && game::Exe().menuScale && game::Exe().menuTop; }
+// The cursor: 1.2's two ints (menuCursor), 1.0's two floats (m10Cursor); both pixels, moved by the mouse's moves.
+bool MenusMouseKnown() {
+    return game::g_exe && (game::Exe().menuCursor || game::Exe().m10Cursor) && game::Exe().menuScale && game::Exe().menuTop;
+}
 struct Cursor { bool menu; int px, py; float sx, sy; };
 Cursor MenuCursor() {
     Cursor c{false, 0, 0, 1, 1};
     if (!MenusMouseKnown()) return c;
     c.menu = Rd(game::Exe().menuTop) != 0;
-    MemRead(game::Exe().menuCursor, &c.px, 4);
-    MemRead(game::Exe().menuCursor + 4, &c.py, 4);
+    if (game::Exe().menuCursor) {
+        MemRead(game::Exe().menuCursor, &c.px, 4);
+        MemRead(game::Exe().menuCursor + 4, &c.py, 4);
+    } else {
+        float x = 0, y = 0;
+        MemRead(game::Exe().m10Cursor, &x, 4);
+        MemRead(game::Exe().m10Cursor + 4, &y, 4);
+        c.px = static_cast<int>(lroundf(x));
+        c.py = static_cast<int>(lroundf(y));
+    }
     MemRead(game::Exe().menuScale, &c.sx, 4);
     MemRead(game::Exe().menuScale + 4, &c.sy, 4);
     if (!(c.sx > 0.01f)) c.sx = 1;

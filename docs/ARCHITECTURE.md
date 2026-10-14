@@ -53,11 +53,13 @@ except the intro videos), on the game thread, where `LoadLibrary` is safe.
   back in front every frame.
 
 - **The start** (`start.cpp`): `<game>\mml\start.json` (`{"skip_logos", "profile", "go": "menu"|"freeride",
-  "traffic", "pedestrians", "police"}`, written by `game_launch` or `tools/start.py`, deleted when read) takes the
-  game to a profile and the freeride by its own menus: the logo videos answered "played" (PlayVideo), then in each
-  menu's frame the command a click would send (the menu's vtable `+0x24`); the freeride menu's density sliders are
-  set first, by the setter the menu sets them with. `menu.state` / `menu.command` / `menu.value` drive any menu
-  the same way.
+  "traffic", "pedestrians", "police", "background"}`, written by `game_launch` or `tools/start.py`, deleted when
+  read) takes the game to a profile and the freeride by its own menus: the logo videos answered "played"
+  (PlayVideo; 1.0's AVI logos "not found" by `cd_find_game_file`), then in each menu's frame the command a click
+  would send (1.2: the menu's vtable `+0x24`; 1.0: the screen's next tick's answer, `menus10.cpp`); the freeride
+  menu's density sliders are set first, by the setter the menu sets them with. `menu.state` / `menu.command` /
+  `menu.value` drive any menu the same way. `background`: user32's activating calls answered for the game's own
+  windows, LS3D's focus, cursor clip and cursor moves skipped while it is not in front.
 - **Input** (`input.cpp`): hands for agents, inside the game. *Actions*: the game reads its controls from one
   object, a list of binding slots (two an action: primary, secondary) and two float arrays parallel to it ("held",
   "pressed this frame") that its update fills from the devices once a frame, before the mission's tick reads them.
@@ -69,7 +71,7 @@ except the intro videos), on the game thread, where `LoadLibrary` is safe.
   state the move that takes the menus' cursor exactly to the point asked for (the difference to the cursor, which the
   menus' input tick adds), the buttons held and wheel notches; so the game's own code focuses what is under the
   cursor and clicks it (`input.mouse`, `menu.click`, MCP `input`'s `click`). Text is typed as keys: LS3D makes the
-  characters of the keys it read (`input.text`). The owner's keyboard and mouse are never touched, the window needs
+  characters of the keys it read (`input.text`). The user's keyboard and mouse are never touched, the window needs
   no focus.
 - **Screenshots** (`screenshot.cpp`): eyes for agents. The device's `Present` is hooked at the first request; when
   a shot is asked for, the back buffer is copied before the frame is shown (through Direct3D 9 when a wrapper such
@@ -84,7 +86,8 @@ except the intro videos), on the game thread, where `LoadLibrary` is safe.
   buffer `screenshot` copies. The three engine states the HUD sets for itself are set and put back. Coordinates
   are the menus' 800x600 units, scaled as the HUD's. Mods' items live one frame; each owner's items are drawn behind
   a fault guard (a fault: that mod's drawing off until it is reloaded, logged).
-- **The game's own menus, extended** (`menus.cpp`): items and pages for mods (`menu_*`) and agents (`menu.item`,
+- **The game's own menus, extended** (`menus.cpp`; 1.0's screens, other classes: `menus10.cpp`, the same services
+  through the tick every screen calls, `docs/VERSIONS.md`): items and pages for mods (`menu_*`) and agents (`menu.item`,
   `menu.page`), made of the game's controls by the game's code; nothing drawn by the loader. The game's menus are
   `GM_Menu` objects holding controls it makes from definitions (`tables\menu\<name>.mnu`: 32-byte records) with one
   factory a kind; a click or Enter gives the control's id to the menu's command handler (vtable slot 9).

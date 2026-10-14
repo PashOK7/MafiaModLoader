@@ -1,7 +1,7 @@
 """kb_import.py: the game knowledge base (knowledge/) rebuilt from a MafiaReverse folder.
 
     python tools/kb_import.py                       # reverse_dir from mml.config.json
-    python tools/kb_import.py W:/github/MafiaReverse
+    python tools/kb_import.py <the reverse folder>      (or reverse_dir in mml.config.json)
 
 MafiaReverse holds full Hex-Rays decompiles of the 1.2 Game.exe and LS3DF.dll with generated indexes. The
 repository takes the facts only: every function's address, name, class, signature, topics and the strings it uses,

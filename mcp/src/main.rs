@@ -111,6 +111,12 @@ struct LaunchArgs {
     /// The freeride's pedestrian density, 0..1 (default: the menu's own, 1).
     #[serde(default)]
     pedestrians: Option<f64>,
+    /// Keep the game's window in the background (default true): neither the launch nor the game itself activates it,
+    /// so whoever works in the window in front is not disturbed (a click on the game's window activates it as
+    /// usual). The game runs and draws there; `screenshot` reads its frame where the renderer allows it (Direct3D 9:
+    /// the labs run through dxwrapper).
+    #[serde(default)]
+    background: Option<bool>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -487,9 +493,11 @@ impl Server {
             return Err("the game is already running (game_close first)".into());
         }
         let asked = a.go.is_some() || a.profile.is_some() || a.skip_logos == Some(true);
-        if asked {
+        let background = a.background.unwrap_or(true);
+        if asked || background {
             // read (and deleted) by the loader at the game's start: host/start.cpp
-            let mut req = json!({"skip_logos": a.skip_logos.unwrap_or(true), "go": a.go.clone().unwrap_or_default()});
+            let skip = if asked { a.skip_logos.unwrap_or(true) } else { false };
+            let mut req = json!({"skip_logos": skip, "go": a.go.clone().unwrap_or_default(), "background": background});
             if let Some(p) = &a.profile { req["profile"] = p.clone(); }
             for (name, v) in [("traffic", a.traffic), ("pedestrians", a.pedestrians), ("police", a.police)] {
                 if let Some(v) = v { req[name] = json!(v); }
@@ -497,7 +505,7 @@ impl Server {
             let path = game::game_dir()?.join("mml").join("start.json");
             std::fs::write(&path, req.to_string()).map_err(|e| format!("{}: {e}", path.display()))?;
         }
-        let pid = game::launch()?;
+        let pid = game::launch(background)?;
         self.bridge.reset().await;
         let wait = a.wait_s.unwrap_or(60);
         let start = std::time::Instant::now();
@@ -512,8 +520,9 @@ impl Server {
         let Some(ping) = ping else {
             return Err(format!("Game.exe started (pid {pid}) but the bridge did not answer in {wait} s: is MafiaModLoader.asi installed and Ultimate ASI Loader present?"));
         };
+        let front = move || game::foreground_pid() == pid;   // (the game's window the one in front)
         if !asked || a.go.as_deref().unwrap_or("").is_empty() {
-            return Ok(pretty(&json!({"started": pid, "ping": ping})));
+            return Ok(pretty(&json!({"started": pid, "ping": ping, "in_front": front()})));
         }
         // the start's steps run in the menus' frames; then (freeride) the mission loads until the player exists
         while start.elapsed().as_secs() < wait {
@@ -521,9 +530,9 @@ impl Server {
                 match s["state"].as_str() {
                     Some("failed") => return Err(format!("the start failed: {}; the menus are left as they are", s["error"])),
                     Some("done") => {
-                        if a.go.as_deref() != Some("freeride") { return Ok(pretty(&json!({"started": pid, "start": s}))); }
+                        if a.go.as_deref() != Some("freeride") { return Ok(pretty(&json!({"started": pid, "start": s, "in_front": front()}))); }
                         if let Ok(p) = self.call_value("player", Value::Null, Some(2000)).await {
-                            if p.get("actor").is_some() { return Ok(pretty(&json!({"started": pid, "start": s, "player": p}))); }
+                            if p.get("actor").is_some() { return Ok(pretty(&json!({"started": pid, "start": s, "player": p, "in_front": front()}))); }
                         }
                     }
                     _ => {}

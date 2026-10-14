@@ -19,7 +19,7 @@ server (`kb_search`, `kb_function`) and the loader uses to name addresses (`cras
 
 ## Sources
 
-- **MafiaReverse** (the owner's folder; `reverse_dir` in `mml.config.json`): full Hex-Rays decompiles of the 1.2
+- **MafiaReverse** (a private folder, not published; `reverse_dir` in `mml.config.json`): full Hex-Rays decompiles of the 1.2
   `Game.exe` (4833 functions, 1399 with real class and method names) and `LS3DF.dll` (1599), with generated indexes.
   The repository takes the facts only. **The decompiled code is never committed**: `kb_function` reads it from the
   reverse folder at run time, so without that folder the facts still work and the code is absent.

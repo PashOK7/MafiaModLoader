@@ -13,7 +13,7 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 
 ## 2026-10-13: the knowledge base
 
-- The owner's MafiaReverse folder (full Hex-Rays decompiles of the 1.2 Game.exe and LS3DF.dll with indexes) brought
+- A MafiaReverse folder (full Hex-Rays decompiles of the 1.2 Game.exe and LS3DF.dll with indexes) brought
   in as `knowledge/` (`tools/kb_import.py`): 4833 + 1599 functions, the call graph, string sites; the decompiled
   code stays out of the repository and is read at run time from `reverse_dir`. Our own names merged in
   (`names.csv`: mafia-ragdoll's Ghidra project, AntiCulling's report, `game_build.h`), and notes
@@ -147,7 +147,7 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 
 ## 2026-10-13: the game's own menus, extended
 
-- **The owner's direction**: a friend's achievements mod must sit in the game's real interface, an item of the
+- **The owner's direction**: an achievements mod must sit in the game's real interface, an item of the
   pause menu that is a real item (the window grown, clicked, walked by the keys), not an overlay. Not the mod
   itself: the base every such mod stands on.
 - **How the game builds its menus** (decompile, disassembly, then the lab): `GM_Menu` objects whose controls the
@@ -254,7 +254,7 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 
 ## 2026-10-14: 1.0, in the 1.0 lab
 
-- **The owner's direction**: use `W:\Mafia10LAB` (1.0) and check everything for 1.0. Its `Game.exe` and `LS3DF.dll`
+- **The owner's direction**: use the 1.0 lab and check everything for 1.0. Its `Game.exe` and `LS3DF.dll`
   are byte for byte mafia-ragdoll's `re/v10`. `game_dir` switched to it, the loader installed (`lab.py mode
   loader`), the game driven by keys (its start and menus are not known for 1.0).
 - **What ran as it was**: the host and every game hook, the mission's events (`00menu`, `freeitaly`, the pause),
@@ -284,3 +284,47 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   (`docs/VERSIONS.md`).
 - `tools/check_builds.py`'s controls checks were 1.2's first instructions; they are now the facts the code relies
   on (the object is ECX of the update's calls, the arrays' offsets in its code...) and run for both builds.
+
+## 2026-10-14: 1.0 at 1.2's level: the start, the menus; the game in the background
+
+- **The owner's direction**: "full support of 1.0 in MafiaModLoader, at the same level as 1.2" (and: maybe 1.0
+  has no intro videos). Read first: st0rm94's 1.0 reverse (`structs/gui_screen.md`, `gui_widget.md`,
+  `game_menus.md` and the annotated decompile), then each function in mafia-ragdoll's 1.0 Ghidra project
+  (`tools/ghq.py --v10`): the calling conventions and every `ret`.
+- **The logos**: 1.0 plays `logo1.avi` and `logo2.avi` only when `cd_find_game_file` finds them (on the disc); the
+  owner was right that the lab plays none (its start was 2.5 s to the profile menu). The start answers "not found"
+  for the two names all the same.
+- **1.0's menus are another model**, not other offsets: no command handler (each screen's Tick switches on what
+  the base `gui_menu_tick` returns), one design table for every screen, containers with no `end`, other tags. So
+  the 1.0 layer is a file of its own (`host/menus10.cpp`, sharing the registry, the texts and the delivery with
+  `menus.cpp` through `menus_shared.h`): `gui_menu_tick` is hooked and a command is its answer at the screen's next
+  frame; the mods' items are added when a screen is first seen (its tick, or the loader's frame walking the stack)
+  by the game's `gui_menu_clone_component_under`; a page is built by the game's builder from a design of the
+  loader's and made the active screen. The ids are 1.2's, so the start and the example's "gamemenu after 108" item
+  ran on 1.0 unchanged.
+- **Seen in the 1.0 lab**: the start (profile "Run", the main menu, the freeride with police 0: the density
+  globals 1, 1, 0) in 3.0 s; `menu.state` of every screen; the freeride opened by `menu.command 990105`, its
+  slider set, OK clicked by the mouse; the example's item in the pause menu and its page: texts, the fuel bar, the
+  check box and the selector (the game's drop-down) told to the mod (its settings written), Back; the mod reloaded
+  with its item shown (taken over); two items in the main menu (rows 25 apart and 30 high: moved by the pitch); a
+  bridge page with every kind (a number stepped, text typed, a list scrolled by the wheel, a selection set); a
+  page with no menu open (the pause menu opened under it). And 1.2's lab afterwards: the start, the item, the page.
+- **Found and fixed on the way**: the page's rows at first sat in its title (a 40-unit shift of mine: both builds
+  measure a window's controls from under its title); a mod closing its page from its own click (Back) would have
+  freed the page under the loader's tick (the page is looked up again after each delivery); a command given to an
+  item's id skipped the item's delivery; a page put over the pause menu before its first tick kept the mods' items
+  out of it (the frame now walks the stack); the freeride's kind was read at 1.2's offset ("kind 218169528").
+- **The texts' code page**: the bridge turned "é" into "й" (the system's ANSI code page here is 1251); the game's
+  texts are 1250 (its text database): `Utf8`/`Ansi` take 1250, on both builds.
+- **The owner moved the mouse** during a click test ("sorry, I moved the mouse"): the menus' cursor went to the
+  corner and the click missed. Not a tool fault: the game reads the real mouse while it is in front.
+- **The game in the background** (the owner: "can we start the game without bringing it into focus?"): the MCP
+  server starts it with `SW_SHOWNOACTIVATE` and `start.json`'s `background` makes the loader answer user32's
+  activating calls for the game's windows; that alone still let the game come in front: LS3D's own `SetFocus` did
+  it, now skipped while the game is not in front (with its `ClipCursor` and `SetCursorPos`, which would take the
+  owner's cursor). `CreateWindowExA` could not be hooked (MinHook: unsupported) and was not needed. `game_launch`
+  now tells `in_front`: false on both builds; keys, the menus' mouse and screenshots worked behind other windows.
+  With the owner's go-ahead the 1.0 lab got dxwrapper's Direct3D 9 (`d3d8.dll`, `dxwrapper.dll`, `dxwrapper.ini`
+  copied from the 1.2 lab; it had no `d3d8.dll` of its own), so screenshots work there without the game in front.
+- `check_builds.py` checks 1.0's menu addresses (each tick, the base vtable, the builder's `stop` and `ret 0xC`, the
+  cursor's floats, `cd_find_game_file` called with `logo1.avi`): ALL PASSED. `mml.config.json` back on the 1.2 lab.

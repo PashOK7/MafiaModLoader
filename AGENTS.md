@@ -8,26 +8,27 @@ missing) and the end of `docs/JOURNAL.md`. Keep the roadmap and the journal curr
 
 ## Rules
 
-- **Only the game folder in `mml.config.json`** (`game_dir`). Never search the disk for other installs. The owner's
-  labs: `W:\MafiaLAB` (1.2, the usual one) and `W:\Mafia10LAB` (1.0); switch `game_dir` to work on 1.0 and set it
-  back to the 1.2 lab when done (`docs/VERSIONS.md`).
+- **Only the game folder in `mml.config.json`** (`game_dir`: the user's own file, not in the repository). Never
+  search the disk for other installs. `game_dir` is the user's choice: change it only when they ask for another
+  build or folder, and leave it where it is when the work is done (no switching back on your own). A user may
+  keep a lab for each build (`docs/VERSIONS.md`).
 - **The lab may be shared** with other projects (mafia-ragdoll's developer host is the game's `IJoy.dll` there).
   `python tools/lab.py status` tells which mode it is in; `mode loader` / `mode ragdoll` switch, keeping what they
   take out in `<game>\mml_lab\` and the saves in `<game>-backup\savegame-<date>`. Never delete another project's
-  files; put the lab back in the mode the owner uses when you are done.
+  files; put the lab back in the mode the user uses when you are done.
 - **The game may be driven by agents, from inside**: launch and close it (`game_launch`, `game_close`, by its exact
-  pid), query and change its state through the bridge. Never send the owner's real mouse or keyboard input.
+  pid), query and change its state through the bridge. Never send the user's real mouse or keyboard input.
 - **Never commit game files, extracted assets, dumps or decompiles.** `re/` and `*.dmp` are ignored.
 - **Correct over quick**: use the engine's own functions and hook points, verify every address in the disassembly,
   say plainly what is a compromise.
 - **Doubt the tools.** When a tool here answers something the game contradicts (an input that "did not work", a
   value that cannot be), do not work around it and do not blame the game: read the code that is involved
   (`kb_function`, `tap`, the disassembly) until the reason is known, and write it down (`knowledge/notes/`, the
-  journal). If the tool is at fault, say so to the owner and, with their go-ahead, fix the tool in this repository
+  journal). If the tool is at fault, say so to the user and, with their go-ahead, fix the tool in this repository
   (a test with it); what is not fixed now goes to `docs/ROADMAP.md` "Known gaps" (and, once the repository is on
   GitHub, an issue; a fix from another repository's work comes as a pull request).
-- **Language**: everything in the repository is English. Talk to the owner in the language they use.
-- **Ask the owner before**: pushing, publishing, opening PRs, anything outside the game folder and this repository.
+- **Language**: everything in the repository is English. Talk to the user in the language they use.
+- **Ask the user before**: pushing, publishing, opening PRs, anything outside the game folder and this repository.
 
 ## The loop
 
@@ -45,10 +46,11 @@ Then, through MCP (`.mcp.json` registers the server as `mafia`): `game_launch` �
 `log_tail`. The loader itself (`MafiaModLoader.asi`) changes only with the game closed (`game_close`, `deploy`,
 `game_launch`).
 
-**Into the game in seconds**: `game_launch {"profile": 4, "go": "freeride", "police": 0}` (or `"go": "menu"`) skips
+**Into the game in seconds** (both builds; in the background by default: the game's window is not activated, the
+user keeps working in front): `game_launch {"profile": 4, "go": "freeride", "police": 0}` (or `"go": "menu"`) skips
 the logos and takes the game through its own menus; it returns once the player exists. `"police": 0` is the freeride
 menu's slider: a city without patrols (the player starts with a Thompson in his hands, and patrols shoot at that).
-The owner's shortcut: `python tools/start.py freeride --profile 4 --police 0`. Other menus: `call menu.state`,
+The same from a terminal: `python tools/start.py freeride --profile 4 --police 0`. Other menus: `call menu.state`,
 `call menu.command {command}`, `call menu.value {id, value}`.
 **Eyes and hands**: `screenshot` returns the game's own frame as a picture (the window may be hidden or behind
 others); `input` plays a timed sequence inside the game: the game's actions by name, whatever they are bound to
@@ -71,7 +73,7 @@ needs no thread, window or Windows hook of its own. Try things without a mod: `c
 
 **Ask the knowledge base first** (`knowledge/README.md`): `kb_search` finds functions of Game.exe and LS3DF.dll
 (1.2) by name, class, signature or a string they use, our own names and the notes; `kb_function` gives one function's
-facts, callers, callees and its decompiled code (read from the MafiaReverse folder, `reverse_dir` in
+facts, callers, callees and its decompiled code (read from a reverse folder of full decompiles, `reverse_dir` in
 `mml.config.json`; never committed). `crash_inspect` and `where` name the functions they show. Then check in the
 running game (`mem_read`, `call`), and write what you learned back: `knowledge/<module>/names.csv`,
 `knowledge/notes/`, addresses code uses in `game_build.h`. **Others have reversed much of the game** (multiplayer
@@ -84,7 +86,7 @@ reversing a system anew.
 
 | Path | What |
 |---|---|
-| `host/` | `MafiaModLoader.asi`: the never-unloaded host: game hooks → events (the mission's too), hook chains, mods, bridge, crash dumps, `tap`, the start (`start.cpp`: logos, profile, menus), input (`input.cpp`: actions, keys, the mods' keys and hotkeys), screenshots (`screenshot.cpp`), drawing (`draw.cpp`: the game's own 2D drawing for mods and `draw.*`), the game's menus extended (`menus.cpp`: items and pages for mods, `menu.item`, `menu.page`), a mod's data folder and settings (`config.cpp`) |
+| `host/` | `MafiaModLoader.asi`: the never-unloaded host: game hooks → events (the mission's too), hook chains, mods, bridge, crash dumps, `tap`, the start (`start.cpp`: logos, profile, menus), input (`input.cpp`: actions, keys, the mods' keys and hotkeys), screenshots (`screenshot.cpp`), drawing (`draw.cpp`: the game's own 2D drawing for mods and `draw.*`), the game's menus extended (`menus.cpp`: items and pages for mods, `menu.item`, `menu.page`; 1.0's screens: `menus10.cpp`), a mod's data folder and settings (`config.cpp`) |
 | `sdk/include/mml/mml.h` | **the C ABI** every native mod uses (C, C++, Rust, Zig...): read it whole |
 | `sdk/include/mml/game/` | what code uses: `game_build.h` (every address, per build, `game::Detect`), `game.h` (layouts, calls: actors, frames, the player's car `game::Car`, a car's state, the mission's name), `mathx.h` |
 | `knowledge/` | the knowledge base: every function of the 1.2 game (from MafiaReverse), our names, notes (`tools/kb_import.py`) |
@@ -96,6 +98,14 @@ reversing a system anew.
 | `third_party/` | MinHook, nlohmann/json (vendored); `_deps/` (downloaded: Ultimate ASI Loader, LuaJIT) |
 
 ## Facts that cost time to find
+
+- **1.0's menus have no command handler**: each screen's Tick switches on the id the base `gui_menu_tick` returns.
+  The loader's `menu.command` there is that tick's answer at the screen's next frame, so what it did shows in the
+  next `menu.state`, not in its own reply. Screens are built from one table (`tables\menu.def`, `menu.def {name}`)
+  and named by their vtables; the kinds have other tags (`docs/VERSIONS.md`).
+- **The real mouse reaches the game** whenever the game reads it: the user moving theirs during a test moves the
+  menus' cursor (a click once missed so). In the background the loader keeps LS3D from clipping or moving the
+  user's cursor; whether DirectInput still hands the game the user's moves there was not measured.
 
 - **The intro videos** (Bink) run before the game's frame loop: no frames, so mods load and game-thread commands
   answer only after them (or once they are skipped). `where` shows `binkw32.dll` meanwhile. Bridge-thread methods

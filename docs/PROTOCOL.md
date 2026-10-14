@@ -41,7 +41,7 @@ Taps can also start with the game, before its first frame: `"taps": ["5409D0 n=4
 | `commands.list` | | every method, the mods' with their help |
 | `hooks.list` | | every hooked function and its chain |
 | `menu.state` | | the open menus (the active one first: vtable, kind, command handler, its definition's `name`, its `controls`: id, kind, text, x, y, w, h in 800x600 units inside the parent, `screen` [x, y, w, h] on the screen (where to click), flags, parent, focused, `value` (sliders, bars, checks, switches, selectors, numbers, scrolled lists), `item_of` / `page_of` a mod's) and the profiles the game has read |
-| `menu.command` | `command` | the command sent to the active menu as a click sends it (its vtable's `+0x24`); the new `menu.state` |
+| `menu.command` | `command` | the command sent to the active menu as a click sends it (1.2: its vtable's `+0x24`; 1.0: the screen's next tick answers it as the control activated, a frame later); the new `menu.state` (on 1.0 still the one before) |
 | `menu.value` | `id`, `value` (optional) | a component of the active menu by its id: its value set (when given) and read, by the menu's own setter and getter (a slider or a progress bar: 0..1; a check, a switch, a number, a selector: read where the control keeps it; the freeride menu's 21 traffic, 22 pedestrians, 23 police) |
 | `menu.item` | `menu` (a definition's name: `"gamemenu"` the pause menu), `after` (a control's id), `text` | an item of the bridge's own, added under that control whenever the menu is made (from its next opening), as a mod's `menu_item` is: `handle`; its clicks are logged and listed by `menu.items` |
 | `menu.item.remove` | `handle` | one of the bridge's items forgotten (gone at the menu's next opening) |
@@ -49,7 +49,7 @@ Taps can also start with the game, before its first frame: `"taps": ["5409D0 n=4
 | `menu.page` | `name`, `controls`: `[{id, kind, x, y, w, h, text, flags, value, range}]` (`"wind"` first; a container (`wins`, `wind`) holds what follows until `"end"`; units 800x600, from the paper's corner; `text` is the options of `bslb` / `bsel` (`"Off\|On"`), the format of `iten` (`"Laps: %u"`), the image file of `rctt`; `range` [min, max] of `iten`) | the bridge's page put over the open menu (with none open, the pause menu is opened first), made by the game from these descriptions as mods' `menu_open` pages are; Esc or `menu.page.close` closes it. The kinds: docs/MODDING.md |
 | `menu.page.set` | `id`, `text`, `value`, `range` (each optional) | a control of the bridge's page changed; `now` its value, `now_text` its text (a text field's: what was typed) |
 | `menu.page.close` | | the bridge's page closed |
-| `menu.def` | `name` (`"gamemenu"`, `"mainmenu"`, `"optionsa"`, `"loadgame"`, `"profilecreate"`...) | one of the game's own definitions (`tables\menu\<name>.mnu`, the language's first) read through its file layer: `file`, `header`, `controls` [{id, kind, x, y, w, h, flags, text_id, text, depth}]: how the game builds its pages, to copy |
+| `menu.def` | `name` (`"gamemenu"`, `"mainmenu"`, `"optionsa"`, `"loadgame"`, `"profilecreate"`...); 1.0 also `design` | one of the game's own definitions (`tables\menu\<name>.mnu`, the language's first) read through its file layer: `file`, `header`, `controls` [{id, kind, x, y, w, h, flags, text_id, text, depth}]: how the game builds its pages, to copy. 1.0: the screen's group of `tables\menu.def` (`design`, `controls` [{id, kind, x, y, w, h, flags, colour, text_id, text}]) |
 | `menu.click` | `id`, `menu` (optional: another open menu's name) | that control clicked in its middle by the injected mouse (moved there, the left button 80 ms later for 100 ms): the game's own hit test, focus and click |
 | `start.state` | | the start asked by `<game>\mml\start.json`: `waiting`, `profile`, `main`, `done`, `failed` (+ `error`) |
 | `input.actions` | | every action slot: its name, primary or secondary binding, the device and key it is bound to, its values now |
@@ -100,4 +100,5 @@ counts / 400: right and down are positive. On foot the player turns by `sensitiv
 camera has its own code, not measured yet.
 
 `<game>\mml\start.json` (a start, read once at the game's launch): `{"skip_logos": true, "profile": 4 | "name",
-"go": "menu" | "freeride", "traffic": 0..1, "pedestrians": 0..1, "police": 0..1}`.
+"go": "menu" | "freeride", "traffic": 0..1, "pedestrians": 0..1, "police": 0..1, "background": true}`
+(`background`: the game never activates its own window; `game_launch` asks for it by default).

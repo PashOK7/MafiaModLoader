@@ -15,7 +15,7 @@ any of them up with `kb_function`.
 - **code** Profiles are `savegame\mafia%03d.sav`, saves `savegame\mafia%03d.%03d` (code 0x605260..0x606150,
   `G_LoadSaveClass`). The freeride menu's image is `freeride0.bmp` (0x5E1920). Racing records: `savegame\mr%03u.sav`,
   `savegame\mrtimes.sav`, `records\%s`.
-- **game** From the launch to the freeride (recorded with `tap` while the owner clicked, then driven by the loader's
+- **game** From the launch to the freeride (recorded with `tap` while a person clicked, then driven by the loader's
   start, `host/start.cpp`):
   1. `InitSystem` (0x5BF5A0) plays `logo1`, `logo3`, `logo2` with `PlayVideo` (0x55D460), then
      `G_LoadSaveClass::Init` (0x604EE0): the profiles enumerated (`ProfileEnumFiles`), `00menu` opened, the profile
@@ -132,9 +132,9 @@ the function named.
   corner, loaded while rolling: position, axes, gear, engine speed and fuel back to the last digit, the car drove
   on. `game::CarStateSave` / `CarStateLoad`, the core's `car.save` / `car.restore`.
 
-### What the owner's older tools said (TrackMafia, Telemetry2, LiveDelta)
+### What older tools said (TrackMafia, Telemetry2, LiveDelta)
 
-Racing tools the owner made before this repository (a ghost car replayed from recorded laps, lap telemetry, an
+Racing tools made before this repository (a ghost car replayed from recorded laps, lap telemetry, an
 autosplitter; kept outside it, not ported). Checked against the above:
 
 - **game** (1.2), **code** (1.0) Right: the player-car pointer, the position (`car + 0x390` / `+0x40C`), the

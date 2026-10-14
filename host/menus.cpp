@@ -34,6 +34,7 @@
 #include <memory>
 #include <set>
 #include "json.hpp"
+#include "menus_shared.h"
 #include "mml/game/game_build.h"
 
 using json = nlohmann::json;
@@ -150,18 +151,21 @@ std::string Lower(std::string s) {
     return s;
 }
 
-// The game's strings are in the system's ANSI code page; the bridge speaks UTF-8.
+// The game's strings are in code page 1250 (its text database's, tables\textdb_<lang>.def; its fonts map those bytes),
+// whatever the system's ANSI code page is (code page 1251 turned a French "é" into "й"); the bridge speaks
+// UTF-8.
+constexpr UINT kGameCodePage = 1250;
 std::string Utf8(const char *ansi) {
     wchar_t w[512];
     char out[1536];
-    if (MultiByteToWideChar(CP_ACP, 0, ansi, -1, w, 512) <= 0) return "";
+    if (MultiByteToWideChar(kGameCodePage, 0, ansi, -1, w, 512) <= 0) return "";
     return WideCharToMultiByte(CP_UTF8, 0, w, -1, out, sizeof out, nullptr, nullptr) > 0 ? std::string(out) : std::string();
 }
 std::string Ansi(const std::string &utf8) {
     wchar_t w[512];
     char out[1024];
     if (MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, w, 512) <= 0) return utf8;
-    return WideCharToMultiByte(CP_ACP, 0, w, -1, out, sizeof out, nullptr, nullptr) > 0 ? std::string(out) : utf8;
+    return WideCharToMultiByte(kGameCodePage, 0, w, -1, out, sizeof out, nullptr, nullptr) > 0 ? std::string(out) : utf8;
 }
 std::string GameString(uintptr_t p) {
     char buf[256] = {};
@@ -817,7 +821,39 @@ json Described(uintptr_t menu) {
 
 } // namespace
 
+// ---- what menus10.cpp shares (menus_shared.h)
+const char *MenuIntern(const std::string &s) { return Intern(s); }
+uint32_t MenuTextIds(const std::vector<std::string> &strings) { return TextIds(strings); }
+bool MenuTextsHook() {
+    static bool tried;
+    if (tried || !game::g_exe) return g_textsOk;
+    tried = true;
+    const game::ExeBuild &e = game::Exe();
+    if (!e.textGet || !e.textGetOrNull) return false;
+    std::string err;
+    g_textsOk = HookAdd(nullptr, e.textGet, reinterpret_cast<void *>(&hkGetText), reinterpret_cast<void **>(&oGetText), &err) &&
+                HookAdd(nullptr, e.textGetOrNull, reinterpret_cast<void *>(&hkGetTextOrNull), reinterpret_cast<void **>(&oGetTextOrNull), &err);
+    if (!g_textsOk) HWARN("menus: cannot hook the text database (no options for switches and selectors): %s", err.c_str());
+    return g_textsOk;
+}
+std::string MenuUtf8(const char *ansi) { return Utf8(ansi); }
+std::string MenuAnsi(const std::string &utf8) { return Ansi(utf8); }
+std::vector<std::string> MenuSplitOptions(const std::string &text) { return SplitOptions(text); }
+void MenuDeliver(MmlMod *mod, MmlMenuFn fn, void *user, int id, const std::string &what) { Deliver(mod, fn, user, id, what); }
+std::vector<MenuItemInfo> MenuItemsFor(const std::string &menu) {
+    std::vector<MenuItemInfo> out;
+    for (const ItemReg &r : g_items)
+        if (r.menu == menu && (!r.mod || ModAlive(r.mod))) out.push_back({r.handle, r.mod, r.menu, r.after, r.text, r.fn, r.user});
+    return out;
+}
+bool MenuItemByHandle(int handle, MenuItemInfo *out) {
+    for (const ItemReg &r : g_items)
+        if (r.handle == handle) { *out = {r.handle, r.mod, r.menu, r.after, r.text, r.fn, r.user}; return true; }
+    return false;
+}
+
 void MenusInit() {
+    if (game::g_exe && game::Exe().m10Tick) { m10::Init(); return; }   // 1.0's screens (menus10.cpp)
     if (!game::g_exe || !game::Exe().menuCreate) return;
     const game::ExeBuild &e = game::Exe();
     std::string err;
@@ -835,11 +871,7 @@ void MenusInit() {
     g_pageTable->slot[kSlotCommand] = reinterpret_cast<uintptr_t>(&MenuCommand);
     g_tables.push_back(g_pageTable);
     g_ok = true;
-    if (e.textGet && e.textGetOrNull) {
-        g_textsOk = HookAdd(nullptr, e.textGet, reinterpret_cast<void *>(&hkGetText), reinterpret_cast<void **>(&oGetText), &err) &&
-                    HookAdd(nullptr, e.textGetOrNull, reinterpret_cast<void *>(&hkGetTextOrNull), reinterpret_cast<void **>(&oGetTextOrNull), &err);
-        if (!g_textsOk) HWARN("menus: cannot hook the text database (no options for switches and selectors): %s", err.c_str());
-    }
+    MenuTextsHook();
 }
 
 void HideControl(uintptr_t menu, int id) {
@@ -848,6 +880,7 @@ void HideControl(uintptr_t menu, int id) {
 }
 
 void MenusFrame() {
+    if (m10::Known()) { m10::Frame(); return; }
     if (!g_ok) return;
     for (const Orphan &o : g_orphans)
         if (g_live.count(o.menu)) HideControl(o.menu, o.id);
@@ -879,6 +912,7 @@ int MenuItemAdd(MmlMod *mod, const char *menu, int afterId, const char *text, Mm
             }
     g_items.push_back({g_nextHandle++, mod, name, afterId, Intern(text), fn, user});
     int handle = g_items.back().handle;
+    if (m10::Known()) m10::ItemAsked(handle);
     for (size_t i = 0; mod && i < g_orphans.size();) {   // its own item, still in an open menu, from before its reload
         const Orphan &o = g_orphans[i];
         auto live = g_live.find(o.menu);
@@ -895,12 +929,14 @@ int MenuItemAdd(MmlMod *mod, const char *menu, int afterId, const char *text, Mm
 int MenuPageOpen(MmlMod *mod, const char *name, const MmlMenuControl *controls, int count, MmlMenuFn fn, void *user) {
     if (!ModAlive(mod) || !fn) return 0;
     std::string err;
-    if (OpenPage(mod, false, name, controls, count, fn, user, &err)) return 1;
+    if (m10::Known() ? m10::PageOpen(mod, false, name, controls, count, fn, user, &err) != 0 : OpenPage(mod, false, name, controls, count, fn, user, &err) != 0)
+        return 1;
     Log(MML_LOG_WARN, ModIdOf(mod), "menu_open %s: %s", name ? name : "", err.c_str());
     return 0;
 }
 
 void MenuPageClose(MmlMod *mod) {
+    if (m10::Known()) { if (mod) m10::PageClose(mod, false); return; }
     if (Page *p = mod ? PageOf(mod, false) : nullptr) ClosePage(p);
 }
 
@@ -963,13 +999,26 @@ int PageGetValue(Page *p, int id, float *value) {
 }
 } // namespace
 
-int MenuPageText(MmlMod *mod, int id, const char *text) { return mod ? PageText(PageOf(mod, false), id, text) : 0; }
-int MenuPageValue(MmlMod *mod, int id, float value) { return mod ? PageValue(PageOf(mod, false), id, value) : 0; }
-int MenuPageGetValue(MmlMod *mod, int id, float *value) { return mod ? PageGetValue(PageOf(mod, false), id, value) : 0; }
-int MenuPageRange(MmlMod *mod, int id, int lo, int hi) { return mod ? PageRange(PageOf(mod, false), id, lo, hi) : 0; }
+int MenuPageText(MmlMod *mod, int id, const char *text) {
+    if (m10::Known()) return mod ? m10::PageText(mod, false, id, text) : 0;
+    return mod ? PageText(PageOf(mod, false), id, text) : 0;
+}
+int MenuPageValue(MmlMod *mod, int id, float value) {
+    if (m10::Known()) return mod ? m10::PageValue(mod, false, id, value) : 0;
+    return mod ? PageValue(PageOf(mod, false), id, value) : 0;
+}
+int MenuPageGetValue(MmlMod *mod, int id, float *value) {
+    if (m10::Known()) return mod && value ? m10::PageGetValue(mod, false, id, value) : 0;
+    return mod ? PageGetValue(PageOf(mod, false), id, value) : 0;
+}
+int MenuPageRange(MmlMod *mod, int id, int lo, int hi) {
+    if (m10::Known()) return mod ? m10::PageRange(mod, false, id, lo, hi) : 0;
+    return mod ? PageRange(PageOf(mod, false), id, lo, hi) : 0;
+}
 int MenuPageGetText(MmlMod *mod, int id, char *buf, int size) {
     std::string text;
-    if (!mod || !buf || size < 1 || !PageGetText(PageOf(mod, false), id, &text)) return 0;
+    if (!mod || !buf || size < 1) return 0;
+    if (m10::Known() ? !m10::PageGetText(mod, false, id, &text) : !PageGetText(PageOf(mod, false), id, &text)) return 0;
     snprintf(buf, static_cast<size_t>(size), "%s", text.c_str());
     return 1;
 }
@@ -977,6 +1026,7 @@ int MenuPageGetText(MmlMod *mod, int id, char *buf, int size) {
 // A mod unloads: its items leave the menus that show them (hidden at the next frame, unless its reload asks for the
 // same item: the game owns the controls), its page closes.
 void MenusRemove(MmlMod *mod) {
+    if (m10::Known()) m10::ModRemoved(mod);
     for (size_t i = 0; i < g_items.size();) {
         if (g_items[i].mod != mod) { i++; continue; }
         for (auto &kv : g_live)
@@ -997,12 +1047,13 @@ void MenusRemove(MmlMod *mod) {
 // A control's value as its kind keeps it (a progress bar has no getter of its own: the menu's GetValue answers 0 for
 // it; a check, a switch, a number, a selector are read from their own fields). False: another kind, or no such control.
 bool MenuControlValue(uintptr_t menu, int id, float *value) {
+    if (m10::Known()) return m10::ControlValue(menu, id, value);
     for (uintptr_t c : Controls(menu))
         if (static_cast<int>(R32(c + kCtlId)) == id) return GetValue(c, value);
     return false;
 }
 
-std::string MenuDefName(uintptr_t menu) { return DefNameOf(menu); }
+std::string MenuDefName(uintptr_t menu) { return m10::Known() ? m10::Name(menu) : DefNameOf(menu); }
 
 uintptr_t MenuClassOf(uintptr_t menu) {
     uintptr_t vptr = R32(menu);
@@ -1010,12 +1061,16 @@ uintptr_t MenuClassOf(uintptr_t menu) {
     return t ? t->orig : vptr;
 }
 
-std::string MenuDescribe(uintptr_t menu) { return Described(menu).dump(-1, ' ', false, json::error_handler_t::replace); }
+std::string MenuDescribe(uintptr_t menu) {
+    if (m10::Known()) return m10::Describe(menu);
+    return Described(menu).dump(-1, ' ', false, json::error_handler_t::replace);
+}
 
 bool MenusMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok) {
     if (method != "menu.item" && method != "menu.items" && method != "menu.item.remove" && method != "menu.page" && method != "menu.page.set" &&
         method != "menu.page.close" && method != "menu.def" && method != "menu.click")
         return false;
+    if (m10::Known() && m10::Method(method, paramsJson, reply, ok)) return true;
     *ok = false;
     json p;
     try { p = json::parse(paramsJson.empty() || paramsJson == "null" ? "{}" : paramsJson); } catch (...) {}
@@ -1059,7 +1114,9 @@ bool MenusMethod(const std::string &method, const std::string &paramsJson, std::
             DWORD now = GetTickCount();
             for (const Click &c : g_clicks) clicks.push_back({{"id", c.id}, {"what", Utf8(c.what.c_str())}, {"ms_ago", now - c.at}});
             for (auto &pg : g_pages) pages.push_back({{"name", pg->def}, {"owner", pg->bridge ? "bridge" : ModIdOf(pg->mod)}, {"open", pg->menu != 0}});
-            *reply = dump({{"known", g_ok}, {"items", items}, {"pages", pages}, {"bridge_clicks", clicks}});
+            if (m10::Known())
+                for (const json &pg : json::parse(m10::PagesJson())) pages.push_back(pg);
+            *reply = dump({{"known", g_ok || m10::Known()}, {"items", items}, {"pages", pages}, {"bridge_clicks", clicks}});
         } else if (method == "menu.item") {
             std::string menu = p.value("menu", ""), text = p.value("text", "");
             if (menu.empty() || text.empty() || !p.contains("after") || !p["after"].is_number_integer()) {
@@ -1069,7 +1126,7 @@ bool MenusMethod(const std::string &method, const std::string &paramsJson, std::
             int handle = MenuItemAdd(nullptr, menu.c_str(), p["after"].get<int>(), Ansi(text).c_str(), nullptr, nullptr);
             json out = {{"handle", handle}, {"menu", Lower(menu)}, {"after", p["after"]}, {"text", text},
                         {"note", "in the menu from its next opening; a click is logged and listed by menu.items"}};
-            if (!g_ok) out["note"] = "the menus are not known for this build: the item is kept, it will not be shown";
+            if (!g_ok && !m10::Known()) out["note"] = "the menus are not known for this build: the item is kept, it will not be shown";
             *reply = dump(out);
         } else if (method == "menu.item.remove") {
             int handle = p.value("handle", 0);

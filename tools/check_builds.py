@@ -7,7 +7,8 @@ For each build's table: Detect's signatures are at its addresses in its own file
 step's return addresses follow calls to its sphere sweep, and every function address starts a function the way it
 does in the other build (the same first instruction). The mod kit's tables (the 2D drawing, the mission, the car):
 every address is where the code that was read is, and every offset is in the function that uses it, in both
-builds. The menus as objects (1.2): each function is where the code that was read is. Exit code 1 on any failure.
+builds. The menus as objects (1.2) and 1.0's screens: each function is where the code that was read is. Exit code 1
+on any failure.
 """
 import os
 import re
@@ -103,6 +104,18 @@ def main(a):
         check(gexe.at(exe['save1dGo'] - 0x400000, 1) == b'\x68' and gexe.at(exe['save1eGo'] - 0x400000, 1) == b'\x68',
               f'{name} save go sites (push)')
         print(f'{name}: checked ({len(sg)} signatures, {len(site_bytes)} patch sites)')
+    def operands(img, va, n):
+        md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_32)
+        md.detail = True
+        out = set()
+        for i in md.disasm(img.at(va - img.base, n), va):
+            for op in i.operands:
+                if op.type == capstone.x86.X86_OP_MEM:
+                    out.add(op.mem.disp & 0xFFFFFFFF)
+                elif op.type == capstone.x86.X86_OP_IMM:
+                    out.add(op.imm & 0xFFFFFFFF)
+        return out
+
     # Functions: the same first instruction in both builds (mnemonic and operands without addresses).
     e12, l12, g12, s12 = builds['1.2']
     e10, l10, g10, s10 = builds['1.0']
@@ -142,17 +155,22 @@ def main(a):
         d = disps(gls, gls.base + w['morph'], 0x100)
         check(ls['vbStride'] // 4 * 4 == ls['vbStride'] and (ls['vbD3d'] in d) and (ls['vbStride'] in d or
               ls['vbStride'] // 4 in d), f'{name} LS3DF vertex buffer stride/D3D in the morph update')
-    # The start (host/start.cpp; 1.2 only so far): the menus' vtables hold their command handlers at +0x24 (read in
-    # the decompile: the profile menu's takes 100 + i, the main menu's 990105, the freeride menu's 201), PlayVideo
-    # starts with its frame.
+    # The start (host/start.cpp): 1.2's menus' vtables hold their command handlers at +0x24, 1.0's screens their
+    # ticks at +0x14 (read in the decompile: the profile menu's takes 100 + i, the main menu's 990105, the freeride
+    # menu's 201, and the freeride menu's kind is the field its handler reads); PlayVideo starts with its frame.
+    handlers = {'1.2': (0x24, {'menuProfileVt': 0x5E88D0, 'menuMainVt': 0x5E06E0, 'menuFreerideVt': 0x5E1B40}),
+                '1.0': (0x14, {'menuProfileVt': 0x579CC0, 'menuMainVt': 0x576A20, 'menuFreerideVt': 0x57AD80})}
     for name, (exe, ls, gexe, gls) in builds.items():
         if not exe['menuProfileVt']:
             continue
-        for f, handler in (('menuProfileVt', 0x5E88D0), ('menuMainVt', 0x5E06E0), ('menuFreerideVt', 0x5E1B40)):
-            got = int.from_bytes(gexe.at(exe[f] + 0x24 - 0x400000, 4), 'little')
-            check(got == handler, f'{name} {f}+0x24 is {got:#x}, not the command handler {handler:#x}')
-        i = gexe.insn(exe['playVideo'] - 0x400000)
-        check(i and f'{i.mnemonic} {i.op_str}' == 'sub esp, 0x214', f'{name} playVideo starts "{i.mnemonic} {i.op_str}"')
+        slot, hs = handlers[name]
+        for f, handler in hs.items():
+            got = int.from_bytes(gexe.at(exe[f] + slot - 0x400000, 4), 'little')
+            check(got == handler, f'{name} {f}+{slot:#x} is {got:#x}, not the handler {handler:#x}')
+        check(exe['freerideKind'] in operands(gexe, hs['menuFreerideVt'], 0x200), f'{name} freerideKind {exe["freerideKind"]:#x} in the freeride start')
+        if exe['playVideo']:
+            i = gexe.insn(exe['playVideo'] - 0x400000)
+            check(i and f'{i.mnemonic} {i.op_str}' == 'sub esp, 0x214', f'{name} playVideo starts "{i.mnemonic} {i.op_str}"')
     # The controls, the texts, the menus' components (host/input.cpp, host/start.cpp; both builds where known): the
     # controls object is ECX where the game calls its update, and the update uses the three arrays' offsets; the key
     # name reads the binding's device and returns with ret 4; the texts' lookups are the same code in both builds and
@@ -182,10 +200,15 @@ def main(a):
             check(code.count(b'\xb9' + exe['textDb'].to_bytes(4, 'little')) >= 20, f'{name} textDb is not the ECX of the texts\' lookups')
             sens = exe['mouseSensitivity'].to_bytes(4, 'little')
             check(code.find(b'\xd8\x0d' + sens) >= 0 or code.find(b'\xd9\x05' + sens) >= 0, f'{name} mouseSensitivity is never a float operand')
-        if exe['menuSetValue']:
+        if exe['menuSetValue'] and not exe['m10Tick']:   # 1.2: the component's own setter / getter
             for f, call, ret in (('menuSetValue', b'\xff\x52\x4c', b'\xc2\x08\x00'), ('menuGetValue', b'\xff\x52\x50', b'\xc2\x04\x00')):
                 body = gexe.at(exe[f] - 0x400000, 0x20)
                 check(call in body and ret in body, f'{name} {f}: the component\'s call and the ret')
+        elif exe['menuSetValue']:   # 1.0: the control's +0x2C written / read, ret 8 / ret 4
+            check(0x2C in operands(gexe, exe['menuSetValue'], 0x2A) and b'\xc2\x08\x00' in gexe.at(exe['menuSetValue'] - 0x400000, 0x30),
+                  f'{name} menuSetValue writes +0x2C, ret 8')
+            check(0x2C in operands(gexe, exe['menuGetValue'], 0x30) and b'\xc2\x04\x00' in gexe.at(exe['menuGetValue'] - 0x400000, 0x30),
+                  f'{name} menuGetValue reads +0x2C, ret 4')
         if ls['keyboardUpdate']:
             body = gls.at(ls['keyboardUpdate'], 0x60)
             check((gls.base + ls['keyboardState']).to_bytes(4, 'little') in body, f'{name} LS3DF keyboardState in keyboardUpdate')
@@ -199,18 +222,6 @@ def main(a):
                    'setSteer': 0x4CB4D0, 'getRotations': 0x4CD590, 'calcSpeed': 0x4CDE90, 'engineDamage': 0x4D6720},
            '1.0': {'textUnits': 0x560550, 'drawAll': 0x54D180, 'setCar': 0x54C620, 'setFuel': 0x517A10, 'setGear': 0x5173A0,
                    'setSteer': 0x517800, 'getRotations': 0x5195E0, 'calcSpeed': 0x519E50, 'engineDamage': 0x522F70}}
-
-    def operands(img, va, n):
-        md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_32)
-        md.detail = True
-        out = set()
-        for i in md.disasm(img.at(va - img.base, n), va):
-            for op in i.operands:
-                if op.type == capstone.x86.X86_OP_MEM:
-                    out.add(op.mem.disp & 0xFFFFFFFF)
-                elif op.type == capstone.x86.X86_OP_IMM:
-                    out.add(op.imm & 0xFFFFFFFF)
-        return out
 
     def text(img, va):
         i = img.insn(va - img.base)
@@ -288,6 +299,37 @@ def main(a):
         check(text(gexe, lang) == f'mov eax, dword ptr [{exe["menuLang"]:#x}]', f'{name} menuLang: the language getter starts "{text(gexe, lang)}"')
         check(text(gexe, exe['textGet']) == 'mov edx, dword ptr [ecx + 4]' and b'\xc2\x04\x00' in gexe.at(exe['textGet'] - 0x400000, 0x20),
               f'{name} textGet starts as read and returns with ret 4')
+    # 1.0's screens (host/menus10.cpp): the base tick returns with ret 0x1C and is the base vtable's slot 5 and what
+    # the three screens' ticks call; the constructor puts the base vtable, ret 8, the destructor too; the builder
+    # looks for "stop" records and returns with ret 0xC, the screens' constructors give it the design table; the
+    # update calls each control's slot 3; the copy-under allocates with the game's new, ret 0xC; the menus' loop adds
+    # the mouse's moves to the cursor's two floats; the builder sets the scale; cd_find_game_file is called with
+    # logo1.avi in ECX.
+    for name, (exe, ls, gexe, gls) in builds.items():
+        if not exe['m10Tick']:
+            continue
+        body = lambda f, n: gexe.at(exe[f] - 0x400000, n)
+        check(b'\xc2\x1c\x00' in body('m10Tick', 0x360), f'{name} m10Tick returns with ret 0x1C')
+        check(int.from_bytes(gexe.at(exe['m10BaseVt'] + 0x14 - 0x400000, 4), 'little') == exe['m10Tick'], f'{name} m10BaseVt slot 5 is m10Tick')
+        for f in ('menuProfileVt', 'menuMainVt', 'menuFreerideVt'):
+            tick = int.from_bytes(gexe.at(exe[f] + 0x14 - 0x400000, 4), 'little')
+            check(exe['m10Tick'] in operands(gexe, tick, 0x140), f'{name} {f}\'s tick calls m10Tick')
+        check(exe['m10BaseVt'] in operands(gexe, exe['m10Ctor'], 0x90) and b'\xc2\x08\x00' in body('m10Ctor', 0xA0), f'{name} m10Ctor: the base vtable, ret 8')
+        check(exe['m10BaseVt'] in operands(gexe, exe['m10Dtor'], 0x30), f'{name} m10Dtor puts the base vtable')
+        check(0x73746F70 in operands(gexe, exe['m10Build'], 0xD0) and b'\xc2\x0c\x00' in body('m10Build', 0x350), f'{name} m10Build: "stop", ret 0xC')
+        check(exe['m10Designs'] in operands(gexe, 0x57AAF0, 0x40), f'{name} m10Designs given to the builder by the freeride screen\'s constructor')
+        check(b'\xff\x50\x0c' in body('m10UpdateAll', 0x20), f'{name} m10UpdateAll calls each control\'s slot 3')
+        check(exe['gameNew'] in operands(gexe, exe['m10CloneUnder'], 0x430) and b'\xc2\x0c\x00' in body('m10CloneUnder', 0x430),
+              f'{name} m10CloneUnder: the game\'s new, ret 0xC')
+        code = bytes(gexe.mem)
+        for off in (0, 4):
+            check(code.find(b'\xd8\x05' + (exe['m10Cursor'] + off).to_bytes(4, 'little')) >= 0, f'{name} m10Cursor+{off}: a move added to it')
+        for off in (0, 4):
+            check(exe['menuScale'] + off in operands(gexe, exe['m10Build'], 0x60), f'{name} menuScale+{off} set by the builder')
+        logo = code.find(b'logo1.avi\x00')
+        at = code.find(b'\xb9' + (0x400000 + logo).to_bytes(4, 'little')) if logo >= 0 else -1
+        calls = [i for i in gexe.md.disasm(code[at:at + 24], 0x400000 + at) if i.mnemonic == 'call'] if at >= 0 else []
+        check(calls and int(calls[0].op_str, 16) == exe['m10CdFind'], f'{name} m10CdFind called with logo1.avi in ECX')
     # LS3D's mouse read (both builds): GetDeviceState(16, mouseState) in it, ret 4
     for name, (exe, ls, gexe, gls) in builds.items():
         if not ls['mouseUpdate']:

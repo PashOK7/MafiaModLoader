@@ -184,7 +184,11 @@ H->menu_item(M, "gamemenu", 108, "Achievements", OnItem, NULL);
   own hit test and focus); the `input` tool takes `{"click": [x, y]}`, `{"mouse": [x, y]}`, `{"wheel": -3}`
   (`menu.state` gives each control's `screen` place); `call input.text {"text": "Tommy"}` types into a text field;
   keys (`Up`, `Down`, `Enter`, `Esc`) walk a menu.
-- 1.2 only for now (`menu_item` keeps the item, `menu_open` refuses elsewhere).
+- Both builds. 1.0's menus are other classes (`docs/VERSIONS.md`): the screens have 1.2's names where 1.2 has the
+  same screen (`gamemenu`, `mainmenu`... with the same ids), and 1.2's kinds asked for become 1.0's that do the same
+  (`slid` a `scrl`, `wins` a `swnd`, `bsel` and `bslb` a drop-down `cmbs`, `edit` an `edtl`, `rctt` an `rctf`); a
+  button's or a row's colour flag is not 1.0's (`docs/ROADMAP.md`, Known gaps). `menu.def` and `menu.state` show
+  1.0's own.
 
 ### Keys, actions, hotkeys
 

@@ -1,6 +1,6 @@
 # Other projects' work on Mafia: what each holds, where to read it
 
-Found 2026-10-14 (the owner asked: take the most from what others have already reversed). The repositories are
+Found 2026-10-14 (to take the most from what others have already reversed). The repositories are
 cloned into `re/ext/` (ignored by git; `git clone --depth 1` each again on another machine). Only facts land in
 this repository: names, addresses, layouts, each with its source, in `knowledge/<module>/external.csv`
 (`tools/kb_external.py` makes it and checks every address against our files). No code and no prose of theirs is

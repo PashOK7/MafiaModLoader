@@ -2,11 +2,16 @@
 //! deploying the build.
 
 use serde_json::Value;
-use std::os::windows::process::CommandExt;
+use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
-use windows_sys::Win32::Foundation::{CloseHandle, HWND, LPARAM, STILL_ACTIVE};
-use windows_sys::Win32::System::Threading::{GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE, TerminateProcess};
-use windows_sys::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowThreadProcessId, IsWindowVisible, PostMessageW, WM_CLOSE};
+use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, HWND, LPARAM, STILL_ACTIVE};
+use windows_sys::Win32::System::Threading::{
+    CREATE_NEW_PROCESS_GROUP, CreateProcessW, DETACHED_PROCESS, GetExitCodeProcess, OpenProcess, PROCESS_INFORMATION,
+    PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE, STARTF_USESHOWWINDOW, STARTUPINFOW, TerminateProcess,
+};
+use windows_sys::Win32::UI::WindowsAndMessaging::{
+    EnumWindows, GetForegroundWindow, GetWindowThreadProcessId, IsWindowVisible, PostMessageW, SW_SHOWNOACTIVATE, WM_CLOSE,
+};
 
 /// The repository's root: MML_REPO, else the first folder above this executable (or the current one) holding
 /// mcp\Cargo.toml.
@@ -53,18 +58,42 @@ pub fn alive(pid: u32) -> bool {
     }
 }
 
-pub fn launch() -> Result<u32, String> {
+/// Starts Game.exe in its folder, detached. `background`: its window shown without being activated (the startup
+/// information's SW_SHOWNOACTIVATE, which the game's first ShowWindow takes; the loader keeps the game from
+/// activating it afterwards: start.json's "background").
+pub fn launch(background: bool) -> Result<u32, String> {
     let dir = game_dir()?;
     let exe = dir.join("Game.exe");
     if !exe.exists() { return Err(format!("no {}", exe.display())); }
-    const DETACHED_PROCESS: u32 = 0x8;
-    const CREATE_NEW_PROCESS_GROUP: u32 = 0x200;
-    let child = std::process::Command::new(&exe)
-        .current_dir(&dir)
-        .creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)
-        .spawn()
-        .map_err(|e| format!("cannot start {}: {e}", exe.display()))?;
-    Ok(child.id())
+    let wide = |s: &std::ffi::OsStr| s.encode_wide().chain(Some(0)).collect::<Vec<u16>>();
+    let app = wide(exe.as_os_str());
+    let mut line = wide(std::ffi::OsStr::new(&format!("\"{}\"", exe.display())));
+    let cwd = wide(dir.as_os_str());
+    unsafe {
+        let mut si: STARTUPINFOW = std::mem::zeroed();
+        si.cb = std::mem::size_of::<STARTUPINFOW>() as u32;
+        if background {
+            si.dwFlags = STARTF_USESHOWWINDOW;
+            si.wShowWindow = SW_SHOWNOACTIVATE as u16;
+        }
+        let mut pi: PROCESS_INFORMATION = std::mem::zeroed();
+        let ok = CreateProcessW(app.as_ptr(), line.as_mut_ptr(), std::ptr::null(), std::ptr::null(), 0,
+                                DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP, std::ptr::null(), cwd.as_ptr(), &si, &mut pi);
+        if ok == 0 { return Err(format!("cannot start {}: error {}", exe.display(), GetLastError())); }
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        Ok(pi.dwProcessId)
+    }
+}
+
+/// The process whose window is the one in front (0: none).
+pub fn foreground_pid() -> u32 {
+    let mut pid = 0u32;
+    unsafe {
+        let w = GetForegroundWindow();
+        if !w.is_null() { GetWindowThreadProcessId(w, &mut pid); }
+    }
+    pid
 }
 
 unsafe extern "system" fn close_windows(hwnd: HWND, lparam: LPARAM) -> i32 {

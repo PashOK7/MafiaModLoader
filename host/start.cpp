@@ -3,9 +3,12 @@
 //
 // A start is asked for once, by <game>\mml\start.json (the MCP server's game_launch writes it; it is deleted when
 // read, so the next launch is the game's usual one):
-//   {"skip_logos": true, "profile": 4 | "name", "go": "menu" | "freeride", "traffic": 1, "pedestrians": 1, "police": 0}
+//   {"skip_logos": true, "profile": 4 | "name", "go": "menu" | "freeride", "traffic": 1, "pedestrians": 1, "police": 0,
+//    "background": true}
 // - skip_logos: the three logo videos InitSystem plays before the profile menu are not played (PlayVideo answers
-//   "played" for logo1, logo2, logo3 only: the videos missions play are left alone);
+//   "played" for logo1, logo2, logo3 only: the videos missions play are left alone). 1.0 plays two AVI logos,
+//   logo1.avi and logo2.avi, and only when cd_find_game_file finds them (on the game's disc): it is answered "not
+//   found" for those two;
 // - profile: in the profile menu, the profile with this number (savegame\mafiaNNN.sav) or name is taken, by the
 //   command a click on it sends (100 + its place in the list the game has read);
 // - go: "freeride" sends the main menu's freeride command, then the freeride menu's start: the game's default
@@ -13,12 +16,23 @@
 // - traffic, pedestrians, police (0..1; each optional): the freeride menu's three density sliders, set before its
 //   start by the setter the menu itself sets them with ("police": 0 is a city without patrols). The game uses
 //   them only for a profile that has opened the freeride's settings; the log says when it has not.
+// - background: the game never makes its own window the active one (the user keeps working in the window in front):
+//   user32's ShowWindow shows the game's windows without activating them, SetForegroundWindow, SetActiveWindow and BringWindowToTop are answered
+//   as done for them, SetWindowPos gets SWP_NOACTIVATE; while the game's window is not the one in front, its
+//   SetFocus, ClipCursor and SetCursorPos do nothing (LS3D would take the focus, keep the user's cursor in its
+//   window, put it in its middle). A click on the game's window activates it as usual (that does not go through
+//   these calls), and in front the game has the mouse as before. The game runs and draws behind other windows;
+//   screenshots need a renderer whose frame can be read there (Direct3D 9, dxwrapper's), not plain Direct3D 8 with
+//   antialiasing (screenshot.cpp copies the screen then).
 // The bridge's menu.value {id, value} reads (and sets) such a component of the active menu.
 // Each step waits for its menu to be the active one and sends one command, as a click would, from the frame
 // limiter's call inside the menu's loop (the loop the click handlers run in). The menus' addresses: game_build.h.
+// In 1.0 a command is the screen's next tick's answer (menus10.cpp): the screen does with it what a click does, a
+// frame later; its ids are 1.2's (the profiles 100 + i, the main menu's 990105, the freeride's 201).
 #include "host.h"
 #include <fstream>
 #include "json.hpp"
+#include "menus_shared.h"
 #include "mml/game/game_build.h"
 
 using json = nlohmann::json;
@@ -50,13 +64,81 @@ bool __fastcall PlayVideoHook(const char *name, void *edx, float w, float h) {
     return g_playVideo(name, edx, w, h);
 }
 
+// 1.0: cd_find_game_file, fastcall(name, char *path) -> bool; the logos are played only when it finds them.
+using CdFindFn = bool(__fastcall *)(const char *name, char *path);
+CdFindFn g_cdFind;
+bool __fastcall CdFindHook(const char *name, char *path) {
+    if (g_req.skipLogos && name && (!_stricmp(name, "logo1.avi") || !_stricmp(name, "logo2.avi"))) {
+        HLOG("start: logo video '%s' skipped", name);
+        return false;
+    }
+    return g_cdFind(name, path);
+}
+
 uint32_t Rd(uintptr_t a) {
     uint32_t v = 0;
     MemRead(a, &v, 4);
     return v;
 }
 
+// ---- the game kept in the background
+bool Own(HWND h) {
+    DWORD pid = 0;
+    return h && GetWindowThreadProcessId(h, &pid) && pid == GetCurrentProcessId();
+}
+using ShowWindowFn = BOOL(WINAPI *)(HWND, int);
+using HwndFn = BOOL(WINAPI *)(HWND);
+using ActiveFn = HWND(WINAPI *)(HWND);
+using SetPosFn = BOOL(WINAPI *)(HWND, HWND, int, int, int, int, UINT);
+using ClipFn = BOOL(WINAPI *)(const RECT *);
+using CursorPosFn = BOOL(WINAPI *)(int, int);
+ActiveFn oSetFocus;
+ClipFn oClipCursor;
+CursorPosFn oSetCursorPos;
+bool GameInFront() { return Own(GetForegroundWindow()); }
+HWND WINAPI hkSetFocus(HWND h) { return Own(h) && !GameInFront() ? GetFocus() : oSetFocus(h); }
+BOOL WINAPI hkClipCursor(const RECT *r) { return r && !GameInFront() ? TRUE : oClipCursor(r); }
+BOOL WINAPI hkSetCursorPos(int x, int y) { return GameInFront() ? oSetCursorPos(x, y) : TRUE; }
+ShowWindowFn oShowWindow;
+HwndFn oSetForeground, oBringToTop;
+ActiveFn oSetActive;
+SetPosFn oSetWindowPos;
+BOOL WINAPI hkShowWindow(HWND h, int cmd) {
+    if (Own(h)) {
+        if (cmd == SW_SHOWNORMAL || cmd == SW_RESTORE || cmd == SW_SHOWDEFAULT) cmd = SW_SHOWNOACTIVATE;
+        else if (cmd == SW_SHOW || cmd == SW_SHOWMAXIMIZED) cmd = SW_SHOWNA;
+    }
+    return oShowWindow(h, cmd);
+}
+BOOL WINAPI hkSetForeground(HWND h) { return Own(h) ? TRUE : oSetForeground(h); }
+BOOL WINAPI hkBringToTop(HWND h) { return Own(h) ? TRUE : oBringToTop(h); }
+HWND WINAPI hkSetActive(HWND h) { return Own(h) ? GetActiveWindow() : oSetActive(h); }
+BOOL WINAPI hkSetWindowPos(HWND h, HWND after, int x, int y, int cx, int cy, UINT flags) {
+    return oSetWindowPos(h, after, x, y, cx, cy, Own(h) ? flags | SWP_NOACTIVATE : flags);
+}
+void KeepInBackground() {
+    HMODULE u = GetModuleHandleA("user32.dll");   // (the game imports it; no LoadLibrary under the loader lock)
+    struct { const char *name; void *detour; void **orig; } hooks[] = {
+        {"ShowWindow", reinterpret_cast<void *>(&hkShowWindow), reinterpret_cast<void **>(&oShowWindow)},
+        {"SetForegroundWindow", reinterpret_cast<void *>(&hkSetForeground), reinterpret_cast<void **>(&oSetForeground)},
+        {"BringWindowToTop", reinterpret_cast<void *>(&hkBringToTop), reinterpret_cast<void **>(&oBringToTop)},
+        {"SetActiveWindow", reinterpret_cast<void *>(&hkSetActive), reinterpret_cast<void **>(&oSetActive)},
+        {"SetWindowPos", reinterpret_cast<void *>(&hkSetWindowPos), reinterpret_cast<void **>(&oSetWindowPos)},
+        {"SetFocus", reinterpret_cast<void *>(&hkSetFocus), reinterpret_cast<void **>(&oSetFocus)},
+        {"ClipCursor", reinterpret_cast<void *>(&hkClipCursor), reinterpret_cast<void **>(&oClipCursor)},
+        {"SetCursorPos", reinterpret_cast<void *>(&hkSetCursorPos), reinterpret_cast<void **>(&oSetCursorPos)},
+    };
+    for (auto &h : hooks) {
+        std::string err;
+        uintptr_t at = u ? reinterpret_cast<uintptr_t>(GetProcAddress(u, h.name)) : 0;
+        if (!at || !HookAdd(nullptr, at, h.detour, h.orig, &err)) HWARN("start: background: cannot hook %s: %s", h.name, err.c_str());
+    }
+    HLOG("start: the game's window is kept in the background (the game does not activate it)");
+}
+
 uintptr_t TopMenu() { return g_menuOk ? Rd(game::Exe().menuTop) : 0; }
+// The menu it was opened over (1.2: +4; 1.0's screens: +0x18).
+uintptr_t UnderMenu(uintptr_t m) { return m10::Known() ? m10::Under(m) : Rd(m + 4); }
 
 const char *MenuName(uintptr_t vt) {
     const game::ExeBuild &e = game::Exe();
@@ -66,9 +148,11 @@ const char *MenuName(uintptr_t vt) {
     return "";
 }
 
-// A menu's command, as a click sends it: its vtable's +0x24, thiscall(menu, command). Game thread only.
+// A menu's command, as a click sends it: its vtable's +0x24, thiscall(menu, command). Game thread only. 1.0: the
+// screen's next tick gets it (menus10.cpp).
 using CommandFn = int(__fastcall *)(uintptr_t menu, void *edx, int command);
 bool SafeCommand(uintptr_t menu, int command) {
+    if (m10::Known()) return m10::Command(menu, command);
     __try {
         auto fn = reinterpret_cast<CommandFn>(Rd(Rd(menu) + 0x24));
         fn(menu, nullptr, command);
@@ -161,7 +245,7 @@ void Step() {
             if (Rd(e.loadSave + 0x1F0) < 3)
                 HWARN("start: this profile has not opened the freeride's settings: the game will not use the %s density", kDensity[i]);
         }
-        HLOG("start: freeride menu -> start (kind %u)", Rd(top + 0x30));
+        HLOG("start: freeride menu -> start (kind %u)", Rd(top + e.freerideKind));
         if (!SafeCommand(top, 201)) return Fail("the freeride menu's command faulted");
         g_req.state = "done";
         g_req.done = true;
@@ -174,12 +258,14 @@ json MenuState() {
     json out = {{"menu_known", g_menuOk}};
     if (!g_menuOk) return out;
     json stack = json::array();
-    for (uintptr_t m = TopMenu(), n = 0; m && n < 16; m = Rd(m + 4), n++) {
+    for (uintptr_t m = TopMenu(), n = 0; m && n < 16; m = UnderMenu(m), n++) {
         uintptr_t vt = MenuClassOf(m);   // (the menu's own class: the loader may have put a copy of its vtable there)
         char a[16], v[16];
         snprintf(a, sizeof a, "0x%08X", static_cast<unsigned>(m));
         snprintf(v, sizeof v, "0x%06X", static_cast<unsigned>(vt));
-        json entry = {{"menu", a}, {"vtable", v}, {"kind", MenuName(vt)}, {"command_handler", DescribeAddress(Rd(vt + 0x24))}};
+        // what a click's id reaches: 1.2's command handler, 1.0's screen tick (it switches on the id)
+        json entry = {{"menu", a}, {"vtable", v}, {"kind", MenuName(vt)}};
+        entry[m10::Known() ? "tick" : "command_handler"] = DescribeAddress(Rd(vt + (m10::Known() ? 0x14 : 0x24)));
         try {
             json d = json::parse(MenuDescribe(m));   // its definition's name, its controls (menus.cpp)
             entry["name"] = d["name"];
@@ -217,16 +303,22 @@ void StartInit() {
         else if (r["profile"].is_string()) g_req.profileName = r["profile"].get<std::string>();
     }
     g_req.go = r.value("go", "");
+    if (r.value("background", false)) KeepInBackground();
     static const char *kDensity[3] = {"traffic", "pedestrians", "police"};
     for (int i = 0; i < 3; i++)
         if (r.contains(kDensity[i]) && r[kDensity[i]].is_number()) {
             float v = r[kDensity[i]].get<float>();
             g_req.density[i] = v < 0 ? 0 : v > 1 ? 1 : v;
         }
-    if (g_req.skipLogos) {
+    if (g_req.skipLogos && game::Exe().playVideo) {
         std::string err;
         if (!HookAdd(nullptr, game::Exe().playVideo, reinterpret_cast<void *>(&PlayVideoHook), reinterpret_cast<void **>(&g_playVideo), &err))
             HWARN("start: cannot hook PlayVideo: %s", err.c_str());
+    }
+    if (g_req.skipLogos && game::Exe().m10CdFind) {
+        std::string err;
+        if (!HookAdd(nullptr, game::Exe().m10CdFind, reinterpret_cast<void *>(&CdFindHook), reinterpret_cast<void **>(&g_cdFind), &err))
+            HWARN("start: cannot hook cd_find_game_file: %s", err.c_str());
     }
     HLOG("start asked: skip_logos %d, profile %s, go '%s'", g_req.skipLogos,
          g_req.profileName.empty() ? std::to_string(g_req.profileNumber).c_str() : g_req.profileName.c_str(), g_req.go.c_str());
@@ -267,7 +359,9 @@ bool StartMethod(const std::string &method, const std::string &paramsJson, std::
     int cmd = p["command"].get<int>();
     HLOG("menu.command %d to the %s menu 0x%08X", cmd, MenuName(MenuClassOf(top)), static_cast<unsigned>(top));
     if (!SafeCommand(top, cmd)) { *ok = false; *reply = "the menu's command faulted"; return true; }
-    *reply = MenuState().dump(-1, ' ', false, json::error_handler_t::replace);
+    json state = MenuState();
+    if (m10::Known()) state["note"] = "1.0: the command is the screen's next tick's answer (as a click there): menu.state shows what it did";
+    *reply = state.dump(-1, ' ', false, json::error_handler_t::replace);
     return true;
 }
 

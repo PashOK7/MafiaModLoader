@@ -177,6 +177,28 @@ struct ExeBuild {
     // 4 further; 12 bytes a slot), controlsHeld and controlsPressed the float arrays "held" and "pressed this
     // frame". 1.0 keeps them 4 bytes lower than 1.2 (read in both builds' controlsUpdate).
     int controlsBind, controlsHeld, controlsPressed;
+    // The 1.0 menus (host/menus10.cpp; 0 in 1.2, whose menus are the GM_Menu classes above). 1.0's screens are
+    // other classes (docs/VERSIONS.md, knowledge/notes/interface.md "1.0"): a screen is +0x18 the one under it,
+    // +0x20/+0x24 its controls (a vector of pointers), +0x2C the focused one, +0x40 flags, +0x44 the id it hands its
+    // parent when it closes; its vtable has 6 slots: 0 the deleting destructor, 1 OnExchange, 2 Destroy (the
+    // controls and itself deleted), 3 OnCloseChild(child id, result), 4 MenuClose(id, result), 5 Tick(7 arguments)
+    // -> a code for the menus' loop (0: go on). There is no command handler: each screen's Tick calls the base's,
+    // m10Tick (gui_menu_tick, thiscall(screen, key flags, key, mouse x, y, wheel, buttons, ms) ret 0x1C), which
+    // returns the id of the control a click or Enter activated, and switches on it. m10Ctor: thiscall(screen,
+    // parent, id) ret 8 (on gameNew(size)); m10Dtor: gui_menu_dtor, thiscall(screen), what every screen's
+    // destructor ends in; m10Build: thiscall(screen, table, design, gate) ret 0xC, the controls made from the
+    // design-th group of a table of 0x24-byte records {id, tag, x, y, w, h (800x600), text id, flags, colour}
+    // (groups end in a record tagged "stop"; a container kind becomes the parent of the records after it);
+    // m10Designs: the game's own table (tables\menu.def); m10UpdateAll: fastcall(screen), each control's slot 3
+    // (its texts worked out again); m10CloneUnder: thiscall(screen, tag, id, newId) ret 0xC -> the copy of control
+    // `id` (made as a `tag`), put right after it in the vector and one row under it (the game's profile list grows
+    // so). m10BaseVt: the base class's vtable. m10Cursor: the menus' cursor, two floats in pixels (1.2's are ints);
+    // m10CdFind: cd_find_game_file, fastcall(name, char *path) -> bool: the logos (logo1.avi, logo2.avi) are played
+    // only when it finds them.
+    uintptr_t m10Tick, m10Ctor, m10Dtor, m10Build, m10Designs, m10UpdateAll, m10CloneUnder, m10BaseVt, m10Cursor, m10CdFind;
+    // The freeride menu's kind (28, the default, missions\freeitaly; its start reads it): its object + this (1.2's
+    // command 201 handler reads +0x30, 1.0's tick +0x48).
+    int freerideKind;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -245,6 +267,8 @@ inline const ExeBuild kExe12 = {
     0x5EA2E0, 0x5EA690, 0x5EA1F0, 0x5EAD50, 0x5EAE10, 0x5EB7D0, 0x5EB2F0, 0x627834, 0x6BD8B0, 0x6106FC,
     0x6BD8A0, 0x6BD888, 0x6C42C4,
     0xB4, 0xC4, 0xD4,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   // the 1.0 menus: none
+    0x30,
 };
 
 inline const ExeBuild kExe10 = {
@@ -265,13 +289,16 @@ inline const ExeBuild kExe10 = {
     0, 0, 0, 0, 0,   // getting up: not looked for in 1.0 yet
     0,
     0, 0,            // trams: not looked for in 1.0 yet
-    0, 0x67A4D8, 0, 0, 0, 0,   // the start: not looked for in 1.0 yet (menuTop: for the pause, see below)
+    // the start (2026-10-14, read in 1.0's code): no Bink logos (the AVI ones: m10CdFind); the active screen; the
+    // profile manager (+4/+8 the profiles, 0x54 bytes each, as in 1.2); the profile, main and freeride screens'
+    // vtables (their Ticks take the same ids as 1.2's handlers: 100 + i, 990105, 201)
+    0, 0x67A4D8, 0x671FB0, 0x63DF6C, 0x63DE74, 0x63DFCC,
     // the controls and the texts (2026-10-14, read against 1.2's code and run in the 1.0 lab): controlsUpdate the
     // same code (st0rm94's twin), its object the ECX of its six calls; the key name input_binding_get_label; the
     // text database the ECX of 91 calls of GetText
     0x6F92E0, 0x5D1F30, 0x5D3180, 0x67A57C, 0x57D8B0,
     0x57D850,
-    0, 0,               // the menus' components: not looked for in 1.0 yet
+    0x56F1F0, 0x56F1C0, // the menus' components: gui_menu_set_component_float / get (a control's +0x2C, the sliders' 0..1)
     0x672488,           // the mouse sensitivity: the same place in the on-foot input (0x4C77B5, 1.2's 0x58FD95)
     // The kit (drawing, the mission, the car): each address is the 1.0 twin of the 1.2 function, found by its code
     // and checked against the 1.0 files (tools/check_builds.py); none of it has been run in a 1.0 game yet.
@@ -283,9 +310,12 @@ inline const ExeBuild kExe10 = {
     0x39C, 0x618, 0x6A0, 0x6A4, 0x68C, 0x5DC, 0x5E4, 0x5C4, 0xCAC, 0x1F1C,
     0xCA8, 0x234, 0x238,
     0x51AAC0, 0x51AD90, 0x51BA40,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   // the menus as objects: 1.0's menu code is built differently, not looked for yet
-    0, 0, 0,                        // the menus' mouse, the language: not looked for in 1.0 yet
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0x624934,   // the menus as 1.2's objects: none (1.0's are below); the game's operator new
+    0, 0x67A4C0, 0,                 // the menus' cursor (floats in 1.0: m10Cursor), their scale (g_gui_scale_x, y), the language
     0xB0, 0xC0, 0xD0,               // the controls' arrays
+    // the 1.0 menus (2026-10-14; st0rm94's 1.0 reverse, each function read in 1.0's code)
+    0x56EA70, 0x56AE50, 0x56AF10, 0x56E500, 0x672630, 0x56F390, 0x56C1D0, 0x63D584, 0x672618, 0x623FC0,
+    0x48,
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,

@@ -11,10 +11,10 @@ What is done, what comes next and later, and what is known to be missing or wron
 - Mods in any native language through one C ABI, plus LuaJIT scripts; heavy logic may go to a 64-bit sidecar.
 - Agents have full access, and may launch, drive and close the game themselves, from inside (never the owner's
   real mouse or keyboard).
-- The repository is English; it is a private GitHub repository, PashOK7/MafiaModLoader (2026-10-13). Pushing,
+- The repository is English; it is a private GitHub repository (2026-10-13). Pushing,
   publishing and pull requests: ask the owner first.
-- The lab (`W:\MafiaLAB`) is shared with mafia-ragdoll (`tools/lab.py mode loader|ragdoll`).
-- The loader is measured by how easily another agent writes a mod with it (2026-10-13). The owner's older mods
+- The owner's 1.2 lab is shared with mafia-ragdoll (`tools/lab.py mode loader|ragdoll`).
+- The loader is measured by how easily another agent writes a mod with it (2026-10-13). Older mods
   (TrackMafia: lap telemetry, a ghost car, an overlay; `knowledge/notes/game.md`, "Cars") are not ported here: they
   show what every such mod had to build for itself, and so what the loader must give instead.
 
@@ -87,6 +87,16 @@ What is done, what comes next and later, and what is known to be missing or wron
   keys, settings and the core mod run on 1.0 as on 1.2; the actions and the texts ported (the controls' arrays sit
   4 bytes lower in 1.0); screenshots on plain Direct3D 8 with antialiasing (the screen copied, only while the game
   is in front).
+- **1.0 at 1.2's level: the start and the menus** (2026-10-14; the owner: "full support of 1.0, at the level of
+  1.2"). 1.0's screens are other classes with no command handler (`host/menus10.cpp`, `docs/VERSIONS.md`): the
+  start (the AVI logos, the profile, the main menu, the freeride and its densities), `menu.state`, `menu.command`,
+  `menu.value`, `menu.def`, `menu.click`, the menus' mouse, the mods' items and pages (1.2's kinds asked for get
+  1.0's), all seen in the 1.0 lab; the same in 1.2's lab afterwards. `check_builds.py` checks 1.0's menu addresses.
+- **The game in the background** (2026-10-14; the owner: "can the game start without taking the focus?"):
+  `game_launch` starts it without activating its window (by default), and the loader keeps the game from activating
+  it (`start.json`'s `background`: user32's activating calls answered for the game's windows; LS3D's SetFocus,
+  ClipCursor and SetCursorPos skipped while it is not in front). Keys, the menus' mouse and screenshots work there;
+  the 1.0 lab got dxwrapper's Direct3D 9, as the 1.2 lab has. `game_launch` tells `in_front`.
 
 ## Next, in order
 
@@ -107,7 +117,7 @@ What is done, what comes next and later, and what is known to be missing or wron
 4. **The start, completed.** Missions and saves through the load menu (the main menu's 990104, then the chapter or
    save chosen: `SaveGameSelect` / `SaveGameLoad`); the other freerides (`freeride`, `freeridenoc`, `freekrajina`,
    `extreme`: the freeride menu's kind menu (command 100) and the spawn menu its start opens for kinds other than
-   28); a new game (990103). The friend's reverse of the game's interface is in
+   28); a new game (990103). pet1kk's reverse of the game's interface is in
    `knowledge/notes/interface.md` (the menus' input tick and cursor, the controls by vtable, the profiles'
    functions).
 5. **Structures by name.** `inspect <addr> as C_human` (and other classes): fields named and typed from `game.h`
@@ -132,27 +142,33 @@ What is done, what comes next and later, and what is known to be missing or wron
   address space); shared-memory channels (lock-free rings, bulk blocks for poses and meshes); services that cross
   the process boundary.
 - **mafia-ragdoll on the loader**: its host's duties taken by the loader, the ragdoll a mod; the physics published
-  as a service (for the friend's VR mod: one SDK, two mods, shared services).
-- **1.0's start and menus**: 1.0's menus are other classes (`docs/VERSIONS.md`): the start (the logos by
-  `cd_find_game_file`, the profile and freeride menus by their 6-slot vtables, command slot 5), `menu.state` /
-  `menu.command` / `menu.value`, the menus extended and the menus' mouse need a 1.0 layer; the knowledge base for
-  1.0 (only 1.2's decompile is imported; 1.0 addresses are named through their 1.2 twins).
+  as a service (for a VR mod: one SDK, two mods, shared services).
+- **The knowledge base for 1.0**: only 1.2's decompile is imported; 1.0 addresses are named through their 1.2 twins,
+  and 1.0's menus (which have no twins) are read in st0rm94's annotated decompile (`re/ext/...`): import its names
+  for 1.0 (`kb_search` on a 1.0 address).
 - **Publishing**: CI for the offline tests (the private repository exists since 2026-10-13).
 
 ## Known gaps
 
 - **The start covers the default freeride and the main menu only** (see Next, 4). Without `profile` the profile
-  menu waits for the player. The start runs only for 1.2. The freeride's densities count only for a profile that
-  has opened the freeride's settings (the log warns).
-- **Input**: 1.2 only. The menus' mouse is driven only while a menu is open (outside one, the mouse is the player's
+  menu waits for the player. The freeride's densities count only for a profile that has opened the freeride's
+  settings (the log warns). On 1.0 a step's command is the screen's next tick's answer, so the start is a frame
+  longer a step (3.0 s from the launch to the freeride in the 1.0 lab).
+- **Input**: the menus' mouse is driven only while a menu is open (outside one, the mouse is the player's
   aim: use `turn` and `Aim X`).
   `turn` is exact on foot only: the car's and the free look's cameras have their own code, and `Aim Y`'s scale is
   not measured (down is positive). The driving actions' names come from the code that reads them (0x5917F0), not
   from the menu's rows; slot 32 is read by nothing found. A hold is counted in the controls' updates: the game's
   loop and the menus' loops, not the loading screens.
-- **Screenshots on plain Direct3D 8 with a multisampled back buffer** (the 1.0 lab): the screen is copied, so
-  only while the game's window is the one in front (else refused: once it copied another program's window over
-  the game); antialiasing off or a Direct3D 9 wrapper (as in the 1.2 lab) gives the game's own frame.
+- **Screenshots on plain Direct3D 8 with a multisampled back buffer** (the 1.0 lab before 2026-10-14): the screen
+  is copied, so only while the game's window is the one in front (else refused: once it copied another program's
+  window over the game); antialiasing off or a Direct3D 9 wrapper (both labs have dxwrapper now) gives the game's
+  own frame.
+- **The game in the background**: the loader keeps the game from activating its own window for the whole run (a
+  click on it activates it; the game's own later calls to come in front, after an Alt+Tab, are answered without
+  effect too). Whether LS3D or the sound play the same with the window inactive for long runs was not looked at;
+  the game drew, ticked and took input in the tests. `tools/start.py` (the owner's start, to play) is not in the
+  background.
 - **Screenshots** need the game to present frames (not while it loads or is minimised). On plain Direct3D 8 a
   multisampled back buffer cannot be read (the lab runs through dxwrapper's Direct3D 9, where it is resolved).
   Every shot goes through a raw file on disk (5 MB at 1280x960; the MCP server deletes it).
@@ -163,7 +179,7 @@ What is done, what comes next and later, and what is known to be missing or wron
 - **Keys for mods**: the mouse (buttons, axes) is not given by itself, only through the game's actions. The keys
   were tested with injected ones (agents never touch the owner's keyboard): a real key goes through the same
   buffer, but nobody pressed one in the tests. `key_pressed` asked from both `FRAME` and `MISSION_TICK` sees one
-  press twice. Hotkeys also fire in the menus. Actions (`action_*`) are known for 1.2 only.
+  press twice. Hotkeys also fire in the menus.
 - **The car**: `Car::Damage` is the engine's health only (the body's dents are not a number). `CarStateLoad` puts a
   state back into the same car or the same model; it was tried on the car the player drives (standing and moving),
   not on traffic or racing cars, and a state is not kept across missions. `LastCar` is the HUD's pointer: whether
@@ -177,8 +193,16 @@ What is done, what comes next and later, and what is known to be missing or wron
   understood; 3 of 889 checked differ in class from the decompile's. MafiaOnline's contract rows count only where
   their bytes are ours. Field layouts (st0rm94's are 1.0's) are not imported: read in place.
 - **Settings**: no schema (a mod checks its own values); the files are polled twice a second.
-- **The game's menus, extended**: 1.2 only (1.0's menu code is built differently; its addresses are zeros; LS3D's
-  mouse read is known in 1.0 too, by code). The pause menu and the main menu were extended in the lab; items in
+- **The game's menus on 1.0** (`docs/VERSIONS.md`): 1.2's kinds asked for are 1.0's that do the same, not the
+  same: a switch (`bslb`) is a drop-down like the selector (`cmbs`); a button's colour (`MML_MENU_BUTTON_*`) and a
+  row's (`MML_MENU_ITEM_RED`) are not 1.0's (its buttons and rows are drawn black, grey when disabled); a text's
+  font and colour are its record's (`MML_MENU_FONT_*`, `MML_MENU_TEXT_*` translated); a text field takes 31
+  characters. A change that sends no id (a check box, a selection) is told to the page's mod when its tick sees the
+  value changed. A number (`iten`) steps by the loader as the game's own screens do it (+1 on its id). The racing
+  and multiplayer screens' names are st0rm94's, not 1.2's (not compared). A screen rebuilt in place (its
+  OnExchange: a language or resolution change) loses the mods' items until it is made again. Items in screens other
+  than the pause and main menus, and pictures (`rctf`), were made but not looked at on the screen.
+- **The game's menus, extended**: the pause menu and the main menu were extended in the lab (both builds); items in
   other menus (and in a scrolled list such as the load menu's) were not tried. The kinds `edin`, `sldi`, `rari`,
   `list`, `lstc`, `vscr`, `comb`, `cmbw`, `grid`, `vidc`, `mtxt`, `htxt`, `ntxt`, `stxb`, `tinp` are made from a
   description but their data and values are not offered (`menu.def` shows where the game uses them). Containers do
@@ -188,9 +212,8 @@ What is done, what comes next and later, and what is known to be missing or wron
   set). One page a mod at a time; a page closed by Esc lives until the game deletes it, so a `menu_open` in the
   same frame as the close is refused. An item copies its neighbour's text id: a language change re-reading texts
   by id was not looked at.
-- **1.0 and the kit**: the kit's addresses and offsets for 1.0 are the twins of the 1.2 code, found by matching the
-  code and checked against the 1.0 files (`tools/check_builds.py`); nothing of it was run in a 1.0 game (the lab
-  in `mml.config.json` is 1.2). The start, the menus and the actions are still not known for 1.0.
+- **1.0's bullets, getting up and trams** (`game_build.h`'s mafia-ragdoll fields) are zeros for 1.0: the loader does
+  not use them; mafia-ragdoll's own port has them.
 - **`tools/new_mod.py`** was tried by hand (a mod made, built, loaded and seen in the lab); the offline tests do
   not run it.
 - **`menu.command` sends any integer**: a command the active menu does not expect may do anything that menu's
@@ -201,8 +224,9 @@ What is done, what comes next and later, and what is known to be missing or wron
 - **Knowledge base names**: a few names imported from the decompile keep calling-convention marks from its
   signatures (`GM_Menu::ExecuteMenu@<eax>`); names of ours for menus (`GM_MainMenu::OnCommand`...) are ours, not the
   game's. LS3DF.dll has few names (64 of 1599).
-- **`game_build.h` has diverged from mafia-ragdoll's copy** (the start's fields): when the ragdoll moves onto the
-  loader there is one copy again; until then changes go to both.
+- **`game_build.h` has diverged from mafia-ragdoll's copy** (the start's, the menus' and 1.0's menu fields): when
+  the ragdoll moves onto the loader there is one copy again; mafia-ragdoll's is another repository (the owner's
+  go-ahead first).
 - **`tap`**: at most 16 taps, 8 stack arguments, 4 snapshots of up to 64 bytes each; a function whose first bytes
   MinHook cannot relocate cannot be tapped.
 - **The exit crash** seen in mafia-ragdoll (LS3DF's index buffer manager at exit, `knowledge/notes/game.md`) is not
