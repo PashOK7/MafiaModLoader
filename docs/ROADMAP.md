@@ -263,6 +263,13 @@ What is done, what comes next and later, and what is known to be missing or wron
   game thread sampled every 0.5 ms with its phase, its mod and the game's caller of the driver (`prof.sample`,
   MCP `profile` naming the game's functions); `frame_stats` for mods (`river_water.status` shows it). Seen in the
   1.2 and 1.0 labs (the river's reflection: 41 % of the game thread in 1.2); offline tests and `mcp_smoke.py`.
+- **Waiting for what happens** (2026-10-16; item 20): the bridge keeps the last 2000 events with a sequence number
+  (every event the host sends mods but each frame's, and the host's own: a mod unloaded or faulted, a script
+  ended), answered on its own thread (`events.since {seq, types, filter}`: while the game loads too); MCP `wait`
+  (polls it until an event of the types with the filter's fields comes). Seen in the 1.2 lab (a freeride's
+  missions opened, loaded and closed; a person spawned; a script ended); offline tests and `mcp_smoke.py`. The
+  roadmap's `events.wait` on the bridge is MCP's `wait` (a bridge call that blocked would hold its client's line).
+  What item 7 will add (deaths, shots, cars entered) comes through the same way.
 
 ## Next, by importance
 
@@ -370,7 +377,7 @@ V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselv
 
 ### Tier 5: the agent's own tools (to write and debug those mods)
 
-20. **Waiting for what happens** (A). The bridge keeps the last events (item 7's, missions, actors destroyed,
+20. *(Done 2026-10-16: see "Done".)* **Waiting for what happens** (A). The bridge keeps the last events (item 7's, missions, actors destroyed,
     programs ended, mods faulted) with a sequence number; `events.since {seq}`, `events.wait {type, filter,
     timeout_ms}`, MCP `wait` ("until the mission is loaded", "until he dies").
 21. **`native.call`** (A). Any game function called from the bridge by its address and convention (thiscall,

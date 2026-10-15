@@ -21,6 +21,7 @@ Addresses: `"0x5762A0"`, `"5762A0"`, `"game+0x1762A0"`, `"ls3d+1AAE0"`, `"<modul
 |---|---|---|
 | `ping` | | pid, build, frames, api, uptime, game_dir |
 | `log.tail` | `lines` | the last lines of the loader's log |
+| `events.since` | `seq`, `types` (a list or "A,B"), `filter` (fields equal; strings in any case), `limit` | the events kept after `seq` (the last 2000; not each frame's: FRAME, MISSION_TICK, RENDER_*, PRESENT, VIEW_WORLD): `seq`, `t` (s), `type`, `data` (`actor`, `name`; a hit's `hit_type`, `damage`, `pos`, `dir`, `attacker`, `killed`; `MOD_FAULTED` `where`, `exception`, `at`; `MOD_UNLOADED` `why`; `SCRIPT_ENDED` `id`, `owner`, `state`, `why`); `latest` (MCP `wait` waits on it) |
 | `mem.read` | `addr`, `size` (≤ 1 MiB), `as` (u8 i8 u16 i16 u32 i32 f32 f64 ptr str) | hex (and the values) |
 | `mem.write` | `addr`, `hex` or `as` + `values` | bytes written (code pages unprotected for it) |
 | `addr.describe` | `addr` | module+offset |

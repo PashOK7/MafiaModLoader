@@ -883,3 +883,18 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Tests**: offline `prof.state` (an event and a command by site) and `prof.sample` (the harness's thread sleeps
   between its frames: all ntdll, so the check asks for samples, not modules); `mcp_smoke.py` calls `profile`.
   ALL PASSED both.
+
+## 2026-10-16: waiting for what happens (item 20)
+
+- Moved before item 6 (the owner's overnight order allows it): every test of a later item waits on something.
+- **Made** `host/events.cpp`: a ring of 2000 events, written on the game thread from `Dispatch` (each frame's
+  events left out) and by the host (MOD_FAULTED with where and the exception, MOD_UNLOADED with why, SCRIPT_ENDED
+  with its state), read on the bridge's thread (`events.since`: answered while the game thread loads). MCP `wait`
+  takes the latest sequence number at the call (or `since`) and polls every 100 ms. The roadmap's bridge
+  `events.wait` was not made: the MCP server has one line to the bridge, and a call that blocked would hold it.
+- **In the 1.2 lab**: a freeride's start kept as MISSION_CLOSE, MISSION_OPEN 00menu, MISSION_LOADED 00menu,
+  MISSION_CLOSE twice (the menu's mission closed, then a close before freeitaly opens), MISSION_OPEN and
+  MISSION_LOADED freeitaly; a spawned Paulie as HUMAN_CREATED; `human_death` gave no HUMAN_HIT (the game's death
+  queue, not a hit: deaths are item 7's), the script's end SCRIPT_ENDED.
+- **Tests**: offline (the fault, the unload after it, nothing after `latest`); `mcp_smoke.py` (`wait` from `since`,
+  `wait` timing out with a plain error). ALL PASSED both.

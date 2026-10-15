@@ -308,6 +308,22 @@ struct TapArgs {
 }
 
 #[derive(Deserialize, JsonSchema)]
+struct WaitArgs {
+    /// The event types to wait for, comma-separated: MISSION_LOADED, MISSION_OPEN, MISSION_CLOSE, GAME_PAUSED,
+    /// GAME_RESUMED, HUMAN_CREATED, HUMAN_HIT, ACTOR_DESTROYED, MOD_LOADED, MOD_UNLOADED, MOD_FAULTED, SCRIPT_ENDED,
+    /// CONFIG_CHANGED, FILE_CHANGED, SERVICES_CHANGED (`call events.since` lists the recent ones).
+    types: String,
+    /// Fields the event's data must have, equal (strings without regard to case): {"name": "freeitaly"},
+    /// {"killed": true}, {"actor": "0x12345678"}.
+    filter: Option<Value>,
+    /// Seconds to wait (default 30).
+    timeout_s: Option<f64>,
+    /// Count events after this sequence number (an earlier reply's `latest`); default: only those that come after
+    /// this call (so an action, then `wait` in the next message, can miss a quick event: pass `since` from before).
+    since: Option<u64>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 struct ProfileArgs {
     /// How long the game thread is sampled (seconds, default 3, 0.5..30): let the game do the thing meanwhile.
     seconds: Option<f64>,
@@ -719,6 +735,38 @@ impl Server {
         let v = self.bridge.call("tap", json!({"cmd": a.cmd}), 5000).await?;
         let text = v.as_str().map(String::from).unwrap_or_else(|| pretty(&v));
         if text.starts_with("error") { Err(text) } else { Ok(kb::annotate_tap(&text)) }
+    }
+
+    /// Wait for something to happen in the game: until an event of `types` (with `filter`'s fields) comes, or
+    /// `timeout_s` passes. Returns the event (its sequence number, time and data) and `latest`, to wait again from.
+    /// "Until the mission is loaded": {"types": "MISSION_LOADED"}; "until he dies": {"types": "HUMAN_HIT",
+    /// "filter": {"actor": "0x...", "killed": true}}; a script's end: {"types": "SCRIPT_ENDED"}.
+    #[tool(annotations(read_only_hint = true))]
+    async fn wait(&self, Parameters(a): Parameters<WaitArgs>) -> Out {
+        let mut seq = match a.since {
+            Some(s) => s,
+            None => self.bridge.call("events.since", json!({"seq": u64::MAX, "limit": 1}), 3000).await?["latest"].as_u64().unwrap_or(0),
+        };
+        let begun = std::time::Instant::now();
+        let timeout = a.timeout_s.unwrap_or(30.0).max(0.1);
+        loop {
+            let mut p = json!({"seq": seq, "types": a.types, "limit": 1});
+            if let Some(f) = &a.filter { p["filter"] = f.clone(); }
+            match self.bridge.call("events.since", p, 3000).await {
+                Ok(r) => {
+                    if let Some(e) = r["events"].as_array().and_then(|v| v.first()) {
+                        return Ok(pretty(&json!({"event": e, "latest": r["latest"], "waited_s": begun.elapsed().as_secs_f64()})));
+                    }
+                    seq = seq.max(r["latest"].as_u64().unwrap_or(seq));
+                }
+                Err(e) if begun.elapsed().as_secs_f64() > timeout => return Err(format!("no answer from the game: {e}")),
+                Err(_) => {}   // (the game restarting or busy: tried again)
+            }
+            if begun.elapsed().as_secs_f64() > timeout {
+                return Err(format!("no {} in {:.1} s (latest {}): `call events.since` shows what came", a.types, timeout, seq));
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
     }
 
     /// Where the game thread's time goes: samples it every half millisecond for `seconds` (the phase: the game's own

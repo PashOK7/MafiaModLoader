@@ -86,6 +86,9 @@ void Faulted(MmlMod *m, const char *where, DWORD code) {
         snprintf(touched, sizeof touched, ", touching 0x%08X", static_cast<unsigned>(t_faultData));
     Log(MML_LOG_ERROR, "host", "mod %s faulted (exception %08X at %s%s) in %s: unloaded at the next frame", Who(m),
         static_cast<unsigned>(code), DescribeAddress(t_faultAt).c_str(), touched, where);
+    char code8[16];
+    snprintf(code8, sizeof code8, "%08X", static_cast<unsigned>(code));
+    EventsRecord("MOD_FAULTED", json({{"name", Who(m)}, {"where", where}, {"exception", code8}, {"at", DescribeAddress(t_faultAt)}}).dump());
 }
 DWORD SafeEvent(MmlEventFn fn, const MmlEvent *ev, void *user) {
     __try { fn(ev, user); return 0; } __except (NoteFault(GetExceptionInformation())) { return GetExceptionCode(); }
@@ -491,6 +494,7 @@ bool UnloadMod(ModEntry *e, const char *why) {
         e->lastUnload = json{{"generation", e->generation}, {"why", why}};
         e->current = nullptr;
         Log(MML_LOG_INFO, "host", "mod %s unloaded (%s)", e->id.c_str(), why);
+        EventsRecord("MOD_UNLOADED", json({{"name", e->id}, {"why", why}}).dump());
         return true;
     }
     // A thread still in the load's code (one the mod started and did not stop, or a library's worker): freeing the
@@ -536,6 +540,7 @@ bool UnloadMod(ModEntry *e, const char *why) {
     // (the whole process's numbers over the load's life: the game's own changes are in them too)
     Log(MML_LOG_INFO, "host", "mod %s unloaded (%s); since its load: address space free %+.1f MB (largest block %+.1f MB), "
         "handles %+d, threads %+d", e->id.c_str(), why, freeMb, largestMb, handles, threads);
+    EventsRecord("MOD_UNLOADED", json({{"name", e->id}, {"why", why}}).dump());
     for (const std::string &s : gone) ServicesChanged(s);
     return true;
 }
@@ -752,6 +757,7 @@ bool Subscribed(MmlEventType type) {
 }
 
 void Dispatch(const MmlEvent &ev) {
+    EventsFromDispatch(ev);   // (events.cpp: kept for agents)
     if (g_subs.empty()) return;
     std::vector<Sub> subs = g_subs;   // a handler may subscribe; a faulted mod is unloaded only at the next frame
     for (const Sub &s : subs) {

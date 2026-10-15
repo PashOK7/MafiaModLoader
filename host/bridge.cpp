@@ -27,6 +27,7 @@
 using json = nlohmann::json;
 
 namespace host {
+json EventsSince(const json &p, std::string *err);   // (events.cpp: the bridge thread answers it)
 namespace {
 struct Job {
     std::string method, params, reply;
@@ -163,6 +164,7 @@ bool Immediate(const std::string &m, const json &p, json *result, std::string *e
     if (m == "modules") { *result = Modules(); return true; }
     if (m == "where") { *result = Where(); return true; }
     if (m == "tap") { *result = tap::Command(p.is_object() ? p.value("cmd", "") : ""); return true; }
+    if (m == "events.since") { *result = EventsSince(p, err); return true; }   // (events.cpp)
     return false;
 }
 

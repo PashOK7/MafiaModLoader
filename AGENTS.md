@@ -75,7 +75,9 @@ program on the game's own script machine (the missions' language: teleport, spaw
 weather, traffic, camera; docs/SCRIPTS.md has the recipes), `script_commands {query}` tells a command's arguments. It returns the
 player's state when the last step has ended. `call input.actions` lists every action and its binding.
 **Watch any function** with `tap` (`"5409D0 n=4 ptr=1:32"`, let the game do the thing, `"show 0"`): the fastest way
-to learn what the game does.
+to learn what the game does. **Wait for what happens** with `wait {"types": "MISSION_LOADED"}` (or `HUMAN_HIT` with
+`"filter": {"killed": true}`, `SCRIPT_ENDED`, `MOD_FAULTED`...; `call events.since` lists what came) instead of
+sleeping. **Where the time goes**: `profile {seconds}` (each mod's cost by site, the game thread sampled, named).
 **Writing a mod**: `python tools/new_mod.py <id>`, then `docs/MODDING.md` (the whole way; `mods/examples/telemetry`
 is a complete one). The host gives a mod the frame's drawing (text, lines, rectangles in the game's fonts), the
 keys and the game's actions, hotkeys, the car by name, the mission as events, a data folder and settings, and the

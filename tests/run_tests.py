@@ -656,6 +656,18 @@ def main():
         check('the faulted mod is unloaded at the next frame', loaded.get('hook_b') is False, loaded)
         check('the game goes on (ping)', b.call('ping')['ok'])
         check('the chain without it: a(add) = 15', add().get('result') == 15)
+        # what happened, kept for agents: the fault, the unload it caused, the loads before (events.since)
+        r = b.call('events.since', {'types': 'MOD_FAULTED', 'filter': {'name': 'HOOK_B'}})
+        ev = r['result']['events'] if r['ok'] else []
+        check('events.since: the fault kept, found by type and by a field (any case)', len(ev) == 1 and ev[0]['data']['where'] == 'hook_b.crash'
+              and ev[0]['seq'] > 0, r)
+        r = b.call('events.since', {'types': ['MOD_UNLOADED', 'MOD_LOADED'], 'filter': {'name': 'hook_b'}})
+        kinds = [e['type'] for e in r['result']['events']] if r['ok'] else []
+        check('events.since: hook_b loaded, then unloaded after its fault', kinds[:1] == ['MOD_LOADED'] and 'MOD_UNLOADED' in kinds, r)
+        latest = r['result']['latest'] if r['ok'] else 0
+        r = b.call('events.since', {'seq': latest})
+        check('events.since after the latest: nothing, every frame\'s events left out', r['ok'] and r['result']['events'] == []
+              and r['result']['latest'] == latest, r)
         b.call('mod.load', {'id': 'hook_b'})
 
         # state across a hot reload (hello_c keeps its counts)
