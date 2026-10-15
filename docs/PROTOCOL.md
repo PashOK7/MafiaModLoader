@@ -84,7 +84,7 @@ Taps can also start with the game, before its first frame: `"taps": ["5409D0 n=4
 | `files.which` | `name` (the game's name of a file: `"maps\\crate.bmp"`) | who answers it: `mod`, `path`, `over` (the mods under it), `game_has`, `game_size` (its folder's or archives' own), `hidden_for` (a presaved texture of a mod's picture, not given), `answer` |
 | `files.read` | `name`, `game` (the game's own under a mod's), `offset`, `size` (default 256, at most 65536) | `source` (`mod`, `game`), `size` (the whole file's), `hex`, `text` (when it is text) |
 | `render.state` | | the frame's drawing: `hooked`, `renders` (frames' scenes drawn), `world_renders`, `stage1` (RENDER_WORLD points), `presents`, `last_scene`, `last_scene_world`, `device8`, `direct3d9` (a wrapper's Direct3D 9 interface), `camera` (`eye`, `fwd`, `fov_y_deg`, `near`, `far`, `viewport`) |
-| `gfx.state` | | the graphics bridge: `state` (on, off and why), `adapter`, `size`, `frames`, `generation`, `passes` (each: `mod`, `order`, `cpu_ms`, `gpu_ms`), `ms` (`copy_9`, `passes_11`, `wait_11`, `all`, `gpu_passes`), `multisampling` (off for which mods), `world` (`eye`, `fog`, `sun`) |
+| `gfx.state` | | the graphics bridge: `state` (on, off and why), `adapter`, `size`, `frames`, `generation`, `passes` (each: `mod`, `order`, `cpu_ms`, `gpu_ms`), `ms` (`copy_9`, `passes_11`, `wait_11`, `all`, `gpu_passes`), `multisampling` (off for which mods), `ui` (`mode`, `frames`: the 2D pass taken), `world` (`eye`, `fog`, `sun`) |
 | `gfx.reset` | | after a failure: try again at the next frame |
 | `<command>` | the command's | a mod's command: the core mod's without a prefix (`player`), others' as `<mod>.<name>` |
 

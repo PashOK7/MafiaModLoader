@@ -100,6 +100,17 @@ ID3D11Texture2D *g_color11, *g_depth11, *g_fx11;
 ID3D11ShaderResourceView *g_colorSRV, *g_depthSRV;
 ID3D11RenderTargetView *g_fxRTV;
 
+// the 2D pass for mods (gfx_ui): the HUD and the menus drawn into a shared target (premultiplied RGBA8)
+std::vector<std::pair<MmlMod *, int>> g_uiAsk;   // each mod's mode
+IDirect3DTexture9 *g_ui9; IDirect3DSurface9 *g_uiSurf9;
+ID3D11Texture2D *g_ui11;
+ID3D11ShaderResourceView *g_uiSRV;
+unsigned g_uiFrames;
+IDirect3DSurface9 *g_uiGameRT;     // the frame's target while the 2D pass draws into ours
+D3DVIEWPORT9 g_uiViewport;
+DWORD g_uiSep, g_uiSrcA, g_uiDstA, g_uiOpA;
+int g_uiMode;                      // this 2D pass's
+
 // the frame in flight
 IDirect3DSurface9 *g_gameDS;       // the game's depth buffer while ours is bound
 bool g_swapped;
@@ -363,7 +374,15 @@ void ReleaseSized() {
     SafeRelease(g_colorSurf9); SafeRelease(g_color9);
     SafeRelease(g_depthSurf9); SafeRelease(g_depth9);
     SafeRelease(g_fx9);
+    SafeRelease(g_uiSRV); SafeRelease(g_ui11); SafeRelease(g_uiSurf9); SafeRelease(g_ui9);
+    g_uiFrames = 0;
     g_w = g_h = 0;
+}
+
+int UiMode() {
+    int m = MML_GFX_UI_OFF;
+    for (auto &a : g_uiAsk) if (ModAlive(a.first)) m = std::max(m, a.second);
+    return m;
 }
 
 void ReleaseAll() {
@@ -655,6 +674,8 @@ bool RunPasses(MmlGfxConstants &k) {
     f.height = g_h;
     memcpy(f.view, g_viewM, sizeof f.view);
     memcpy(f.proj, g_projM, sizeof f.proj);
+    if (UiMode() != MML_GFX_UI_OFF && g_uiFrames) f.ui = g_uiSRV;
+    f.ui_frames = g_uiFrames;
     TimerFrame *tf = BeginTimers();
     Mark(tf, 0);
     std::vector<Pass> passes = g_passes;   // (a pass may add or take back passes)
@@ -897,9 +918,83 @@ void GfxPassRemove(MmlMod *mod, int handle) {
     }), g_passes.end());
     if (g_passes.empty() && !g_failed && g_dev11) g_state = "on, no pass (the device is kept)";
 }
-void GfxRemove(MmlMod *mod) { GfxPassRemove(mod, 0); }
+void GfxRemove(MmlMod *mod) {
+    GfxPassRemove(mod, 0);
+    GfxUiAsk(mod, MML_GFX_UI_OFF);
+}
 
 void GfxQuiet(bool on) { g_quiet += on ? 1 : -1; }
+
+void GfxUiAsk(MmlMod *mod, int mode) {
+    g_uiAsk.erase(std::remove_if(g_uiAsk.begin(), g_uiAsk.end(), [&](const std::pair<MmlMod *, int> &a) { return a.first == mod; }),
+                  g_uiAsk.end());
+    if (mode == MML_GFX_UI_TAKE || mode == MML_GFX_UI_HIDE) g_uiAsk.push_back({mod, mode});
+}
+
+// The 2D pass begins (the scene's stage 2, inside the world's Render): into the shared target, when a mod asks.
+bool GfxUiBegin() {
+    g_uiMode = UiMode();
+    if (g_uiMode == MML_GFX_UI_OFF || !g_swapped || !g_dev9 || g_failed || !g_w) return false;
+    g_quiet++;
+    bool ok = false;
+    if (!g_ui9) {
+        HANDLE h = nullptr;
+        if (SUCCEEDED(g_dev9->CreateTexture(g_w, g_h, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &g_ui9, &h)) && h &&
+            SUCCEEDED(g_dev11->OpenSharedResource(h, __uuidof(ID3D11Texture2D), reinterpret_cast<void **>(&g_ui11))) &&
+            SUCCEEDED(g_dev11->CreateShaderResourceView(g_ui11, nullptr, &g_uiSRV)))
+            g_ui9->GetSurfaceLevel(0, &g_uiSurf9);
+        if (!g_uiSurf9) HWARN("gfx: the 2D pass's target could not be made: the HUD stays on the frame");
+    }
+    if (g_uiSurf9 && SUCCEEDED(g_dev9->GetRenderTarget(0, &g_uiGameRT)) && g_uiGameRT) {
+        D3DSURFACE_DESC d{};
+        g_uiGameRT->GetDesc(&d);
+        if (d.Width == g_w && d.Height == g_h) {
+            g_dev9->GetViewport(&g_uiViewport);
+            g_dev9->SetRenderTarget(0, g_uiSurf9);
+            g_dev9->SetViewport(&g_uiViewport);   // (SetRenderTarget set the whole target)
+            g_dev9->Clear(0, nullptr, D3DCLEAR_TARGET, 0, 1.0f, 0);
+            // the game blends its 2D colour by its alpha: the alpha written as coverage (premultiplied over 0)
+            g_dev9->GetRenderState(D3DRS_SEPARATEALPHABLENDENABLE, &g_uiSep);
+            g_dev9->GetRenderState(D3DRS_SRCBLENDALPHA, &g_uiSrcA);
+            g_dev9->GetRenderState(D3DRS_DESTBLENDALPHA, &g_uiDstA);
+            g_dev9->GetRenderState(D3DRS_BLENDOPALPHA, &g_uiOpA);
+            g_dev9->SetRenderState(D3DRS_SEPARATEALPHABLENDENABLE, TRUE);
+            g_dev9->SetRenderState(D3DRS_SRCBLENDALPHA, D3DBLEND_ONE);
+            g_dev9->SetRenderState(D3DRS_DESTBLENDALPHA, D3DBLEND_INVSRCALPHA);
+            g_dev9->SetRenderState(D3DRS_BLENDOPALPHA, D3DBLENDOP_ADD);
+            ok = true;
+        } else {
+            SafeRelease(g_uiGameRT);
+        }
+    }
+    g_quiet--;
+    return ok;
+}
+
+// The 2D pass ended: the frame's target back; the 2D over the frame again unless a mod hides it.
+void GfxUiEnd() {
+    g_quiet++;
+    g_dev9->SetRenderState(D3DRS_SEPARATEALPHABLENDENABLE, g_uiSep);
+    g_dev9->SetRenderState(D3DRS_SRCBLENDALPHA, g_uiSrcA);
+    g_dev9->SetRenderState(D3DRS_DESTBLENDALPHA, g_uiDstA);
+    g_dev9->SetRenderState(D3DRS_BLENDOPALPHA, g_uiOpA);
+    g_dev9->SetRenderTarget(0, g_uiGameRT);
+    g_dev9->SetViewport(&g_uiViewport);
+    g_uiFrames++;
+    if (g_uiMode == MML_GFX_UI_TAKE) {
+        Saved9 saved;
+        SaveAndNeutral9(saved);
+        const float c[8] = {static_cast<float>(g_w), static_cast<float>(g_h), 1.0f / g_w, 1.0f / g_h, 0, 0, 0, 0};
+        g_dev9->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+        g_dev9->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_ONE);
+        g_dev9->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+        g_dev9->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD);
+        FullScreen9(g_psComposite, g_ui9, c);
+        Restore9(saved);
+    }
+    SafeRelease(g_uiGameRT);
+    g_quiet--;
+}
 
 void GfxBeforeWorld() {
     g_fogTallies = g_sunTallies = 0;   // a new frame: the tallies start over
@@ -952,7 +1047,8 @@ bool GfxMethod(const std::string &method, const std::string &, std::string *repl
                 {"passes", passes}, {"skipped", g_skipped}, {"not_our_depth", g_notOurDepth},
                 {"ms", {{"copy_9", r2(g_ms9)}, {"passes_11", r2(g_ms11)}, {"wait_11", r2(g_wait11)}, {"all", r2(g_msAll)},
                         {"gpu_passes", r2(g_gpuPasses)}}},
-                {"following_state", g_stateHooked}, {"multisampling", g_msaa}};
+                {"following_state", g_stateHooked}, {"multisampling", g_msaa},
+                {"ui", {{"mode", UiMode()}, {"frames", g_uiFrames}}}};
     if (g_frames) {
         const MmlGfxConstants &k = g_k;
         out["world"] = {{"eye", {k.eye[0], k.eye[1], k.eye[2]}}, {"sun", {k.sun[0], k.sun[1], k.sun[2]}}, {"sun_from_game", k.sun[3] > 0.5f},

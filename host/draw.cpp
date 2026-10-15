@@ -168,8 +168,10 @@ void DrawQueued() {
 }
 
 int __stdcall Draw2dHook(int stage, int a, int b) {
+    bool ui = stage == 2 && GfxUiBegin();   // (gfx.cpp: a mod takes the 2D pass: into its target)
     int r = g_draw2d(stage, a, b);
     if (stage == 2) DrawQueued();
+    if (ui) GfxUiEnd();
     RenderStage(stage);   // (render.cpp: stage 1, the 3D world drawn: MML_EVENT_RENDER_WORLD)
     return r;
 }

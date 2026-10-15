@@ -181,6 +181,8 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     mml_add_mod(world_marker ${CMAKE_SOURCE_DIR}/mods/examples/world_marker mods/examples/world_marker/world_marker.cpp)
     mml_add_mod(depth_pulse ${CMAKE_SOURCE_DIR}/mods/examples/depth_pulse mods/examples/depth_pulse/depth_pulse.cpp
         SHADERS depth_pulse.hlsl:PsPulse:ps_5_0)
+    mml_add_mod(hud_panel ${CMAKE_SOURCE_DIR}/mods/examples/hud_panel mods/examples/hud_panel/hud_panel.cpp
+        SHADERS hud_panel.hlsl:PsPanel:ps_5_0)
     mml_add_files_mod(freeride_picture ${CMAKE_SOURCE_DIR}/mods/examples/freeride_picture)
     # (tools/new_mod.py adds a mod's line above this one)
 

@@ -242,7 +242,15 @@ typedef struct MmlGfxFrame {
     void *full_screen;      /* ID3D11VertexShader*: VsFullScreen (bound): Draw(3) covers the frame */
     unsigned width, height;
     float view[16], proj[16];   /* the camera's (row vectors) */
+    /* (members after this one: MML_GFX_HAS(frame, member)) */
+    void *ui;               /* ID3D11ShaderResourceView*: the frame's 2D pass (the HUD, the menus, draw_*) as the last
+                               frame drew it, premultiplied RGBA8 (gfx_ui asked for; else NULL) */
+    unsigned ui_frames;     /* 2D passes taken so far (0: none yet) */
 } MmlGfxFrame;
+#define MML_GFX_HAS(f, member) ((size_t)(f)->size >= offsetof(MmlGfxFrame, member) + sizeof((f)->member))
+#define MML_GFX_UI_OFF 0     /* gfx_ui: the 2D pass as the game draws it */
+#define MML_GFX_UI_TAKE 1    /* ... also into MmlGfxFrame::ui (the frame unchanged) */
+#define MML_GFX_UI_HIDE 2    /* ... into MmlGfxFrame::ui only: the HUD and the menus not on the frame (a VR panel) */
 /* A pass may change any Direct3D 11 state: the bridge binds what it hands out again before each pass. */
 typedef void (*MmlGfxPassFn)(const MmlGfxFrame *frame, void *user);
 
@@ -450,6 +458,10 @@ typedef struct MmlHost {
      * mod's fault guard; a fault unloads the mod. */
     int (*gfx_pass)(MmlMod *mod, int order, MmlGfxPassFn fn, void *user);
     void (*gfx_pass_remove)(MmlMod *mod, int handle);
+    /* The frame's 2D pass (the HUD, the menus over the world, the loader's draw_*) for the mod's passes: mode
+     * MML_GFX_UI_TAKE or _HIDE (the strongest any mod asks for counts), _OFF taken back (and at the unload). The 2D
+     * pass is drawn after the passes, so they get the last frame's. In the mission's world only, like the passes. */
+    void (*gfx_ui)(MmlMod *mod, int mode);
 } MmlHost;
 
 #define MML_FILE_GAME 1              /* file_read: the game's own file, not a mod's of the same name */

@@ -1,0 +1,9 @@
+{
+  // The defaults of hud_panel's settings (config.set {"mod": "hud_panel", "key": "turn", "value": 40}).
+  // It is not enabled by default (it takes the HUD off the screen): mod.load {"id": "hud_panel"}.
+  "distance": 2.6,   // metres ahead of the camera
+  "side": 0.9,       // metres to its right
+  "width": 1.6,      // the panel's width, metres (its height: the frame's shape)
+  "turn": 25,        // degrees it is turned towards the camera
+  "backing": 0.55    // the opacity of its dark backing
+}

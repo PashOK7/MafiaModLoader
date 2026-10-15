@@ -186,6 +186,13 @@ float4 PsMine(float4 pos : SV_Position) : SV_Target {
   waits (about 0.65 ms of CPU a frame for the whole bridge at 1280x960 in the labs), the device, the frame's size,
   the fog and sun found.
 - `mods/examples/depth_pulse`: a scanner's wave over the world from the player (`depth_pulse.now`, F11).
+- **The 2D pass for a mod** (`gfx_ui(M, MML_GFX_UI_HIDE)` or `_TAKE`): the HUD, the menus over the world and the
+  loader's `draw_*` are drawn into a shared target (premultiplied RGBA8, the frame's size) that the passes get as
+  `MmlGfxFrame::ui` (the last frame's: the 2D pass comes after them); `_HIDE` keeps it off the screen (a VR mod
+  shows it on a panel), `_TAKE` puts it back over the frame as well. The game's additive 2D (glows) is put back as
+  blended, not added. Input stays the screen's: a mod that shows the menus elsewhere maps the cursor itself.
+  `mods/examples/hud_panel` (not enabled by default): the HUD on a panel in the world (`hud_panel.place`,
+  `follow`, `mode`).
 
 ### The game's own menus: an item, a page
 

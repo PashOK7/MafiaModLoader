@@ -280,6 +280,7 @@ int H_GfxPass(MmlMod *m, int order, MmlGfxPassFn fn, void *user) {
     return h;
 }
 void H_GfxPassRemove(MmlMod *m, int handle) { if (m && handle > 0) GfxPassRemove(m, handle); }
+void H_GfxUi(MmlMod *m, int mode) { if (Alive(m)) GfxUiAsk(m, mode); }
 
 // ---- manifests
 bool ReadManifest(const std::string &dir, const std::string &folder, ModEntry *e, std::string *err) {
@@ -674,6 +675,7 @@ void ModsInit() {
     g_host.render_camera = RenderCamera;
     g_host.gfx_pass = H_GfxPass;
     g_host.gfx_pass_remove = H_GfxPassRemove;
+    g_host.gfx_ui = H_GfxUi;
     LiveCleanAll();
     Scan();
     LoadEnabled();

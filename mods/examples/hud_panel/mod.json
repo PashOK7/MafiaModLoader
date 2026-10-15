@@ -1,0 +1,12 @@
+{
+  "id": "hud_panel",
+  "name": "HUD panel: the HUD and the menus on a panel in the 3D world (the 2D pass taken by a mod)",
+  "version": "0.1.0",
+  "type": "native",
+  "entry": "hud_panel.dll",
+  "enabled": false,
+  "builds": ["1.2", "1.0"],
+  "gfx": true,
+  "load_order": 100,
+  "depends": []
+}

@@ -767,3 +767,13 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   said "no pass" after a reload (its text was not set again when a pass came back).
 - **In the 1.0 lab**: the same (no address of the game's is used): the device made without multisampling, the wave
   drawn, the same fog. Both labs back on 1.2.
+
+## 2026-10-15: the 2D pass for mods (item 3, block 3c)
+
+- **Made**: `gfx_ui` (take, hide); at the scene's stage 2 (`draw.cpp`'s hook) the render target is a shared RGBA8 of
+  the bridge's while the game draws its HUD, menus and console and the loader its `draw_*`; separate alpha blending
+  (ONE, INVSRCALPHA) makes the alpha the coverage, so the target is premultiplied; with `take` it is blended back
+  over the frame (the game draws its 2D once). The passes get the last frame's (`MmlGfxFrame::ui`).
+- **The example** `hud_panel` (off by default): the HUD on a turned panel ahead and right of the camera, hidden by
+  the world in front; seen in the 1.2 lab (the HUD, the mods' overlays, the pause menu on it; with `take` the HUD on
+  the screen as before) and in the 1.0 lab. Both labs back on 1.2.

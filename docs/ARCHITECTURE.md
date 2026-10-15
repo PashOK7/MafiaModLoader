@@ -159,6 +159,9 @@ except the intro videos), on the game thread, where `LoadLibrary` is safe.
   world's fog and sun come from the game's own draw calls up to stage 1 (Direct3D 9's SetRenderState, SetLight,
   LightEnable and draw calls hooked), the mods' and the bridge's own not counted. `Direct3DCreate8`'s import is
   patched so that the device is made (and Reset) without multisampling while a mod with `"gfx": true` is enabled.
+  The 2D pass for mods: `draw.cpp`'s hook of the scene's callback at stage 2 points the render target at a shared
+  one (separate alpha blending ONE, INVSRCALPHA: the alpha is coverage), and back after, the target blended over
+  the frame unless a mod hides it.
 - **Tap** (`tap.cpp`, from mafia-ragdoll): a link of the hook chain (owner: the host) whose thunk books every call
   of a function (callers, registers, arguments, memory, the result) into fixed tables; `tap` on the bridge, startup
   taps from `<game>\mml\config.json`.

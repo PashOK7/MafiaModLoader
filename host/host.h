@@ -235,6 +235,9 @@ void GfxBeforeWorld();                    // (render.cpp) the world's Render beg
 void GfxTakeWorldLight();                 // stage 1: the fog and sun the world was drawn with
 void GfxStage1();                         // stage 1, after the mods' RENDER_WORLD: copies, passes, composite
 void GfxAfterWorld();                     // the world's Render ended: the game's depth buffer back
+void GfxUiAsk(MmlMod *mod, int mode);     // mml.h gfx_ui
+bool GfxUiBegin();                        // (draw.cpp) the 2D pass begins: true, it draws into the shared target
+void GfxUiEnd();                          // ... it ended: the frame's target back (GfxUiBegin said true)
 bool GfxMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 
 // ---- screenshots (screenshot.cpp): the back buffer at Present; screenshot, screenshot.state

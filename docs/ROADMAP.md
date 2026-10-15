@@ -233,6 +233,9 @@ What is done, what comes next and later, and what is known to be missing or wron
   device made without multisampling while a mod says `"gfx": true`; the loader's own shaders and the mods' share
   `mml_shaders`. The example `mods/examples/depth_pulse` (a scanner's wave from the player) in the 1.2 and 1.0
   labs, about 0.65 ms a frame for the bridge; 10 reloads of it: 0 MB, 0 handles, 0 threads.
+- **The 2D pass for mods** (2026-10-15; item 3, block 3c): `gfx_ui` takes the HUD and the menus into a shared target
+  for the passes (`MmlGfxFrame::ui`), off the screen or also on it; `mods/examples/hud_panel` showed the HUD and the
+  pause menu on a panel in the world in the 1.2 and 1.0 labs, and the HUD unchanged on the screen with `take`.
 
 ## Next, by importance
 
@@ -251,8 +254,8 @@ V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselv
 1. *(Done 2026-10-15: a heavy mod's lifecycle, the loader's part and the build's part; see "Done". The number is
    kept so the items' numbers stay.)*
 2. *(Done 2026-10-15: a mod's own files in the game; see "Done".)*
-3. **Render events and the graphics bridge** (W S V; R for posing). In three blocks: *3a, the render events* and *3b, the bridge* (done
-   2026-10-15, see "Done"; what 3b left: below); **3c**, the 2D pass, and the rest of 3b: the game's Direct3D 9Ex device (dxwrapper);
+3. **Render events and the graphics bridge** (W S V; R for posing). In three blocks: *3a, the render events*, *3b, the bridge*, *3c, the 2D pass for mods* (done
+   2026-10-15, see "Done"; what is left: Known gaps). As it was asked: the game's Direct3D 9Ex device (dxwrapper);
    one Direct3D 11 device beside it on the same adapter, shared by every mod: the frame's colour and depth (the depth
    buffer swapped for a readable one before the world is drawn), the frame's constants (camera, projection, the
    sun's direction and colour, the fog, the ambient light, read from the device), the mods' passes in order into one
@@ -423,6 +426,10 @@ merged, sorted by importance):
   the frame's depth as a Direct3D 11 depth buffer for libraries that test against one (mafia-ragdoll's
   `BuildSceneDsv`), the readback of a pixel's depth (its `Aim`). Plain Direct3D 8 (no wrapper) has no bridge. The
   passes run in the mission's world only, not in a menu's scene. At most 64 passes. Measured on one NVIDIA RTX 3070.
+- **The 2D pass for mods** (host/gfx.cpp): the game's additive 2D (if any) comes back blended, not added, when it
+  is put back over the frame (`take`); the menus' cursor is the screen's; the last frame's is what the passes get.
+- **`game_launch` in front**: once (2026-10-15, the 1.0 lab, `background` by default) it answered `"in_front": true`;
+  whether the window was clicked was not known. Watched for.
 - **`menu.click` in 1.0** once did not close the freeride screen (its "Retour", clicked right after the screen was
   opened and a screenshot taken); clicked again later it did. Seen once, the cause not found (the screen's opening
   not finished?).
