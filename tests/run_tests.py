@@ -1,11 +1,13 @@
 """run_tests.py: the loader's offline tests, through the real bridge (Python standard library only).
 
 Starts build/x86/harness/mml_harness.exe (a stand-in game that loads MafiaModLoader.asi and pumps its frames), with
-the test mods (hook_a, hook_b, kit, heavy) and the shipped ones (core, hello_c, boxes) in its mml/mods, and checks over the bridge:
+the test mods (hook_a, hook_b, kit, heavy, files_a, files_b) and the shipped ones (core, hello_c, boxes) in its mml/mods, and checks over the bridge:
 hello and the token, ping, the mods' list, hook chains in every load and unload order, services, memory read and
 write (a write-protected page), a mod faulting in a command (unloaded, the game goes on), state kept across a hot
 reload, the core mod with no game, the log; the mod author's kit (kit_tests: the drawing queue, keys and
 hotkeys through injected keys, a mod's settings changed by the host, by the bridge and on disk, its data folder);
+a mod's own files in the game (files_tests: a stand-in rw_data.dll's names answered from the mods' `files` folders,
+the order, changes on disk, file_add, a file held open replaced, loads and unloads);
 and a heavy mod's lifecycle (heavy_tests: its libraries in each load's folder, threads left in its code, leaks; boxes_tests:
 the heavy example, Jolt and its own shaders on a Direct3D 11 device, reloaded 20 times).
 Exit code 0: all passed.
@@ -193,7 +195,7 @@ def kit_tests(b):
     r = b.call('menu.item.remove', {'handle': r['result']['handle']})
     check('menu.item.remove', r['ok'], r)
     r = b.call('menu.def', {'name': 'gamemenu'})
-    check('menu.def with no game\'s files: an error, saying why', not r['ok'] and 'rw_data' in str(r), r)
+    check('menu.def with no game\'s menus: an error, saying why', not r['ok'] and 'gamemenu.mnu' in str(r), r)
     r = b.call('menu.click', {'id': 102})
     check('menu.click with no menus: an error', not r['ok'], r)
     r = b.call('input.mouse', {'mouse': [100, 100]})
@@ -376,12 +378,161 @@ def boxes_tests(b):
     check('boxes: back to the defaults: a device again, two threads', s4['gpu']['device'] and s4['threads'] == 2, s4)
 
 
+def files_tests(b):
+    """A mod's own files in the game: rw_data's dtaOpen (the stand-in's) answered from the mods' files\\ folders.
+    files_a ships files alone (no DLL, load order 40); files_b (50) ships two and opens names as the game does."""
+    mods = os.path.join(HARNESS, 'mml', 'mods')
+    fa, fb = os.path.join(mods, 'files_a', 'files'), os.path.join(mods, 'files_b', 'files')
+    opn = lambda name: b.call('files_b.open', {'name': name})['result']
+    st = lambda: b.call('files_b.status')['result']
+
+    ms = {m['id']: m for m in b.call('mods.list')['result']}
+    check('files: a mod of files alone is loaded (no DLL), its 3 files counted; files_b\'s 2',
+          ms['files_a']['loaded'] and ms['files_a']['type'] == 'files' and ms['files_a'].get('files') == 3
+          and ms['files_b'].get('files') == 2 and 'live_dir' not in ms['files_a'], (ms.get('files_a'), ms.get('files_b')))
+    check('mods.list: a mod\'s builds ("builds" in mod.json; with no known game every mod loads)',
+          ms['kit'].get('builds') == ['1.2', '1.0'] and ms['kit']['loaded'] and 'builds' not in ms['files_a'], ms.get('kit'))
+    check('files: one name in two mods: the later in load order answers', opn('tables\\test.txt') == {'ok': True, 'text': 'files_b'})
+    check('files: names as the archives compare them (case, "/")', opn('TABLES/Test.TXT').get('text') == 'files_b'
+          and opn('maps\\crate.bmp').get('text') == 'a crate')
+    check('files: a name only the lower mod ships', opn('tables\\a_only.txt').get('text') == 'a only')
+    check('files: a mod\'s file over the archive\'s', opn('archived.txt').get('text') == 'b over the archive')
+    check('files: a name no mod ships: the archive\'s', opn('only_archive.txt').get('text') == 'the archive\'s own')
+    check('files: a name nobody has: dtaOpen fails as before', opn('nothing.txt') == {'ok': False})
+    check('files: the game\'s presaved copies of a mod\'s picture are not given (LS3D makes them from the picture)',
+          opn('Maps\\crate_1.565') == {'ok': False} and opn('Maps\\CRATE_2L.DX1') == {'ok': False})
+    check('files: a presaved copy of a picture no mod ships is given', opn('Maps\\other_1.565').get('text') == 'presaved')
+    r = b.call('files.which', {'name': 'maps\\crate_1.565'})
+    check('files.which: a presaved copy hidden, for which picture', r['ok'] and r['result'].get('hidden_for') == 'maps\\crate.bmp', r)
+
+    r = b.call('files.which', {'name': 'Tables/TEST.txt'})
+    check('files.which: who answers, over whom, the game has none',
+          r['ok'] and r['result']['name'] == 'tables\\test.txt' and r['result']['mod'] == 'files_b'
+          and [o['mod'] for o in r['result']['over']] == ['files_a'] and r['result']['game_has'] is False, r)
+    r = b.call('files.which', {'name': 'only_archive.txt'})
+    check('files.which: a name only the game has', r['ok'] and 'mod' not in r['result'] and r['result']['game_has'] is True
+          and r['result']['game_size'] == len("the archive's own"), r)
+    r = b.call('files.which', {'name': 'C:\\Windows\\win.ini'})
+    check('files.which: a name outside the game\'s folder is refused', not r['ok'], r)
+    r = b.call('files.read', {'name': 'archived.txt'})
+    check('files.read: what the game reads (the mod\'s)', r['ok'] and r['result']['source'] == 'mod' and r['result']['text'] == 'b over the archive', r)
+    r = b.call('files.read', {'name': 'archived.txt', 'game': True})
+    check('files.read game: the game\'s own under the mod\'s', r['ok'] and r['result']['source'] == 'game' and r['result']['text'] == 'the archive\'s own', r)
+    r = b.call('files.read', {'name': 'archived.txt', 'offset': 2, 'size': 4})
+    check('files.read: offset and size', r['ok'] and r['result']['text'] == 'over' and r['result']['size'] == 18, r)
+    r = b.call('files_b.read', {'name': 'archived.txt'})
+    check('file_read: the size and what the game reads', r['result'] == {'size': 18, 'text': 'b over the archive'}, r)
+    r = b.call('files_b.read', {'name': 'archived.txt', 'game': True})
+    check('file_read MML_FILE_GAME: the game\'s own', r['result']['text'] == 'the archive\'s own', r)
+    check('file_read: no such file: -1', b.call('files_b.read', {'name': 'nothing.txt'})['result']['size'] == -1)
+    r = b.call('files_b.source', {'name': 'tables/test.txt'})['result']
+    check('file_source: a mod\'s, its full path', r['rc'] == 1 and r['path'].lower() == os.path.join(fb, 'tables', 'test.txt').lower(), r)
+    check('file_source: the game\'s own: 0', b.call('files_b.source', {'name': 'only_archive.txt'})['result']['rc'] == 0)
+    r = b.call('files.list', {'mod': 'files_a'})
+    rows = {f['name']: f for f in r['result']['files']} if r['ok'] else {}
+    check('files.list: a mod\'s names, who answers each, how often the game opened it',
+          r['ok'] and rows['tables\\test.txt']['mod'] == 'files_b' and rows['tables\\test.txt']['over'] == ['files_a']
+          and rows['tables\\a_only.txt']['opens'] >= 1 and r['result']['mods'][0]['watched'] is True, r)
+
+    # changes on disk: the next open reads the new file, every mod is told the name
+    e0 = st()['events']
+    with open(os.path.join(fa, 'tables', 'a_only.txt'), 'w') as f:
+        f.write('a changed')
+    time.sleep(0.8)
+    s = st()
+    check('files: a file changed on disk: the mods told its name, the game reads the new one',
+          s['events'] == e0 + 1 and s['names'][-1] == 'tables\\a_only.txt' and opn('tables\\a_only.txt').get('text') == 'a changed', s)
+    with open(os.path.join(fa, 'tables', 'test.txt'), 'w') as f:
+        f.write('files_a changed')
+    time.sleep(0.8)
+    check('files: a change under another mod\'s file is no change of what the game reads: nobody told',
+          st()['events'] == e0 + 1, st())
+    with open(os.path.join(fa, 'tables', 'new.txt'), 'w') as f:
+        f.write('new')
+    time.sleep(0.8)
+    check('files: a file come on disk: told, opened', st()['names'][-1] == 'tables\\new.txt' and opn('tables\\new.txt').get('text') == 'new', st())
+    os.remove(os.path.join(fa, 'tables', 'new.txt'))
+    time.sleep(0.8)
+    check('files: a file gone: told, the name is nobody\'s again', st()['names'][-1] == 'tables\\new.txt' and opn('tables\\new.txt') == {'ok': False}, st())
+
+    # a file the game holds open is replaced (a deploy while a sound streams): the game reads the old one to its close.
+    # As the MCP server's deploy replaces it: a copy beside it, the old one deleted (a rename over a file open, even
+    # sharing deletion, is refused by Windows), the copy renamed.
+    check('files: a mod\'s file held open', b.call('files_b.hold', {'name': 'archived.txt'})['result']['ok'])
+    tmp, dst = os.path.join(fb, 'archived.txt.mmltmp'), os.path.join(fb, 'archived.txt')
+    with open(tmp, 'w') as f:
+        f.write('b replaced')
+    replaced = True
+    try:
+        os.remove(dst)
+        os.rename(tmp, dst)
+    except OSError as ex:
+        replaced = str(ex)
+    check('files: a file the game holds open can be replaced', replaced is True, replaced)
+    r = b.call('files_b.release')['result']
+    check('files: the held file reads the old one to its close', r == {'ok': True, 'text': 'b over the archive'}, r)
+    time.sleep(0.8)
+    check('files: then the new one is opened', opn('archived.txt').get('text') == 'b replaced')
+    check('files: a deploy\'s copy on its way (*.mmltmp) is never a game file', 'archived.txt.mmltmp' not in
+          {f['name'] for f in b.call('files.list', {'mod': 'files_b'})['result']['files']})
+
+    # file_add: a game name answered by a file of the mod's choosing (a patched copy in its data folder)
+    path = b.call('files_b.write', {'file': 'patched.txt', 'text': 'patched'})['result']['path']
+    e1 = st()['events']
+    check('file_add: a file of the data folder for a name', b.call('files_b.add', {'name': 'tables\\test.txt', 'path': path})['result']['rc'] == 1)
+    check('file_add: answered at once', opn('tables\\test.txt').get('text') == 'patched')
+    time.sleep(0.2)
+    check('file_add: the mods told', st()['events'] == e1 + 1, st())
+    b.call('files_b.write', {'file': 'patched.txt', 'text': 'patched again'})
+    time.sleep(1.5)
+    check('file_add: its file changed on disk: seen (looked at once a second)', opn('tables\\test.txt').get('text') == 'patched again'
+          and st()['events'] == e1 + 2, st())
+    check('file_add: taken back ("")', b.call('files_b.add', {'name': 'tables\\test.txt', 'path': ''})['result']['rc'] == 1
+          and opn('tables\\test.txt').get('text') == 'files_b')
+    check('file_add: a name outside the game\'s folder is refused', b.call('files_b.add', {'name': '..\\x.txt', 'path': path})['result']['rc'] == 0)
+    check('file_add: no such file is refused', b.call('files_b.add', {'name': 'x.txt', 'path': 'nothing\\here.txt'})['result']['rc'] == 0)
+
+    # loads and unloads
+    r = b.call('mod.reload', {'id': 'files_b'})
+    time.sleep(0.3)
+    check('files: a reload keeps its files and tells nobody (nothing changed)', r['ok'] and st()['events'] == 0
+          and opn('archived.txt').get('text') == 'b replaced', st())
+    b.call('mod.unload', {'id': 'files_a'})
+    time.sleep(0.3)
+    s = st()
+    check('files: a mod of files unloaded: its names are the game\'s again, the mods told',
+          opn('tables\\a_only.txt') == {'ok': False} and opn('maps\\crate.bmp') == {'ok': False}
+          and set(s['names']) == {'tables\\a_only.txt', 'maps\\crate.bmp'}, s)
+    check('files: the name both shipped stays files_b\'s', opn('tables\\test.txt').get('text') == 'files_b')
+    b.call('mod.load', {'id': 'files_a'})
+    check('files: loaded again', opn('tables\\a_only.txt').get('text') == 'a changed')
+    b.call('mod.unload', {'id': 'files_b'})
+    check('files: files_b unloaded: files_a\'s file answers the name', b.call('files.read', {'name': 'tables\\test.txt'})['result']['text'] == 'files_a changed')
+    check('files: and the archive\'s its own', b.call('files.read', {'name': 'archived.txt'})['result']['text'] == 'the archive\'s own')
+    b.call('mod.load', {'id': 'files_b'})
+    check('files: files_b back over files_a', opn('tables\\test.txt').get('text') == 'files_b')
+
+
 def main():
     # the harness's game folder: the loader, the test mods and the shipped ones
     mods = os.path.join(HARNESS, 'mml', 'mods')
     for mod in ('core', 'hello_c', 'boxes'):
         shutil.rmtree(os.path.join(mods, mod), ignore_errors=True)
         shutil.copytree(os.path.join(OUT, 'mml', 'mods', mod), os.path.join(mods, mod))
+    # a mod's own files: files_a (files alone), files_b's files\ folder, the stand-in rw_data's "archive"
+    src = os.path.join(ROOT, 'tests', 'mods')
+    shutil.rmtree(os.path.join(mods, 'files_a'), ignore_errors=True)
+    shutil.copytree(os.path.join(src, 'files_a'), os.path.join(mods, 'files_a'))
+    shutil.rmtree(os.path.join(mods, 'files_b', 'files'), ignore_errors=True)
+    shutil.copytree(os.path.join(src, 'files_b', 'files'), os.path.join(mods, 'files_b', 'files'))
+    archive = os.path.join(HARNESS, 'archive')
+    shutil.rmtree(archive, ignore_errors=True)
+    os.makedirs(archive)
+    os.makedirs(os.path.join(archive, 'Maps'))
+    for name, text in (('archived.txt', "the archive's own"), ('only_archive.txt', "the archive's own"),
+                       ('Maps/crate_1.565', 'presaved'), ('Maps/CRATE_2L.DX1', 'presaved'), ('Maps/other_1.565', 'presaved')):
+        with open(os.path.join(archive, name), 'w') as f:
+            f.write(text)
     for stale in ('bridge.json',):
         p = os.path.join(HARNESS, 'mml', stale)
         if os.path.exists(p):
@@ -403,15 +554,16 @@ def main():
         time.sleep(0.2)
         r = b.call('mods.list')
         loaded = {m['id']: m['loaded'] for m in r['result']}
-        check('mods loaded: core, hello_c, hook_a, hook_b, kit, heavy, boxes',
-              all(loaded.get(m) for m in ('core', 'hello_c', 'hook_a', 'hook_b', 'kit', 'heavy', 'boxes')), loaded)
+        check('mods loaded: core, hello_c, hook_a, hook_b, kit, heavy, boxes, files_a, files_b',
+              all(loaded.get(m) for m in ('core', 'hello_c', 'hook_a', 'hook_b', 'kit', 'heavy', 'boxes', 'files_a', 'files_b')), loaded)
         b.call('mod.unload', {'id': 'boxes'})   # (its overlay's 500 items a frame would count in the kit's; boxes_tests loads it)
 
         add = lambda: b.call('hook_a.call', {'a': 2, 'b': 3})
         r = add()
         check('chain b(a(add)): (2+3+10)*2 = 30', r.get('result') == 30, r)
         r = b.call('hooks.list')
-        chain = r['result'][0]['links'] if r['ok'] and r['result'] else []
+        harness_fn = [h for h in r['result'] if h['target'].startswith('mml_harness.exe')] if r['ok'] else []
+        chain = harness_fn[0]['links'] if harness_fn else []
         check('hooks.list: one function, two links, hook_b outermost',
               [l['owner'] for l in chain] == ['hook_b', 'hook_a'], r)
         r = b.call('hook_a.math')
@@ -446,7 +598,7 @@ def main():
         r = b.call('tap', {'cmd': 'harness_add n=2 ret'})
         check('tap: refuses a name it cannot resolve', r['ok'] and r['result'].startswith('error'), r)
         r = b.call('hooks.list')
-        target = r['result'][0]['target']
+        target = next(h['target'] for h in r['result'] if h['target'].startswith('mml_harness.exe'))
         before = add().get('result')
         r = b.call('tap', {'cmd': target + ' n=2 ret ptr=c:4'})
         check('tap on the chained function', r['ok'] and r['result'].startswith('tap 0 on'), r)
@@ -495,6 +647,7 @@ def main():
         r = b.call('menu.value', {'id': 21})
         check('menu.value: says plainly the menus are not known', not r['ok'] and 'not known' in str(r), r)
         kit_tests(b)
+        files_tests(b)
         heavy_tests(b)
         boxes_tests(b)
         r = b.call('nonexistent.method')
@@ -509,6 +662,8 @@ def main():
             proc.kill()
             out, _ = proc.communicate()
     check('the harness exits cleanly', proc.returncode == 0, out.decode(errors='replace'))
+    check('files: a mod\'s file answers before the first frame (the game\'s first tables)',
+          "before the first frame, tables\\test.txt is 'files_b'" in out.decode(errors='replace'), out.decode(errors='replace'))
     print('ALL PASSED' if not failures else '%d FAILED: %s' % (len(failures), ', '.join(failures)))
     return 0 if not failures else 1
 

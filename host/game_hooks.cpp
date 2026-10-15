@@ -168,6 +168,7 @@ void Frame() {
     MenusFrame();
     InputFrame();     // (before the settings' events: a handler that binds its hotkey again must not lose a press)
     ConfigFrame();
+    FilesFrame();
     // a pause: a frame went by without the mission's tick while a menu is open over a loaded mission
     bool ticked = g_ticks != g_ticksSeen;
     g_ticksSeen = g_ticks;

@@ -27,7 +27,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     # ---- the loader
     add_library(MafiaModLoader SHARED
         host/main.cpp host/log.cpp host/memory.cpp host/crash.cpp host/hooks.cpp host/mods.cpp host/game_hooks.cpp
-        host/bridge.cpp host/tap.cpp host/start.cpp host/input.cpp host/screenshot.cpp host/draw.cpp host/config.cpp host/menus.cpp host/menus10.cpp host/script.cpp host/world.cpp host/lifecycle.cpp)
+        host/bridge.cpp host/tap.cpp host/start.cpp host/input.cpp host/screenshot.cpp host/draw.cpp host/config.cpp host/menus.cpp host/menus10.cpp host/script.cpp host/world.cpp host/lifecycle.cpp host/files.cpp)
     # ($<0:> keeps Visual Studio from adding a per-configuration folder)
     set_target_properties(MafiaModLoader PROPERTIES SUFFIX ".asi" RUNTIME_OUTPUT_DIRECTORY ${MML_OUT}/$<0:>)
     target_include_directories(MafiaModLoader PRIVATE third_party/json host)
@@ -76,8 +76,9 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     find_program(MML_DXC dxc)
 
     # mml_add_mod(<id> <dir> <sources...> [SHADERS <file>:<entry>:<profile>[:<name>] ...]): a native mod:
-    # <out>/mml/mods/<id>/<id>.dll, its mod.json and, when it has one, its config.json (the defaults of its settings),
-    # both from <dir>. SHADERS: each entry point compiled at build time (optimised, warnings as errors) into a header
+    # <out>/mml/mods/<id>/<id>.dll, its mod.json and, when it has them, its config.json (the defaults of its settings)
+    # and its files\ folder (game files: copied over, a file deleted from <dir> stays in <out> until it is cleaned),
+    # all from <dir>. SHADERS: each entry point compiled at build time (optimised, warnings as errors) into a header
     # `shaders/<name>.h` holding the bytecode as `k<name>[]` (fxc: const BYTE, so <windows.h> first; dxc: const
     # unsigned char) (<name>: the entry's name by default);
     # <file> is relative to <dir>, and changes to it or to any .hlsli beside it compile it again.
@@ -92,6 +93,10 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
         if(EXISTS ${dir}/config.json)
             add_custom_command(TARGET mod_${id} POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different ${dir}/config.json ${dest}/config.json)
+        endif()
+        if(EXISTS ${dir}/files)   # the files it gives the game (docs/MODDING.md "A mod's own files in the game")
+            add_custom_command(TARGET mod_${id} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_directory ${dir}/files ${dest}/files)
         endif()
         if(arg_SHADERS)
             set(gen ${CMAKE_BINARY_DIR}/shaders/${id})
@@ -133,6 +138,21 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
         endif()
     endfunction()
 
+    # mml_add_files_mod(<id> <dir>): a mod of files alone ("type": "files" in its mod.json, no DLL): its mod.json,
+    # config.json and files\ folder copied to <out>/mml/mods/<id>/ by the target files_<id>, built with everything
+    function(mml_add_files_mod id dir)
+        set(dest ${MML_OUT}/mml/mods/${id})
+        set(cmds COMMAND ${CMAKE_COMMAND} -E make_directory ${dest}
+                 COMMAND ${CMAKE_COMMAND} -E copy_if_different ${dir}/mod.json ${dest}/mod.json)
+        if(EXISTS ${dir}/config.json)
+            list(APPEND cmds COMMAND ${CMAKE_COMMAND} -E copy_if_different ${dir}/config.json ${dest}/config.json)
+        endif()
+        if(EXISTS ${dir}/files)
+            list(APPEND cmds COMMAND ${CMAKE_COMMAND} -E copy_directory ${dir}/files ${dest}/files)
+        endif()
+        add_custom_target(files_${id} ALL ${cmds} COMMENT "${id}: a mod of files" VERBATIM)
+    endfunction()
+
     mml_add_mod(core ${CMAKE_SOURCE_DIR}/mods/core mods/core/core.cpp)
     target_include_directories(mod_core PRIVATE third_party/json)
     mml_add_mod(hello_c ${CMAKE_SOURCE_DIR}/mods/examples/hello_c mods/examples/hello_c/hello.c)
@@ -143,6 +163,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
             SHADERS boxes.hlsl:VsBox:vs_5_0 boxes.hlsl:PsBox:ps_5_0 boxes.hlsl:CsCoverage:cs_5_0)
         target_link_libraries(mod_boxes PRIVATE Jolt d3d11)
     endif()
+    mml_add_files_mod(freeride_picture ${CMAKE_SOURCE_DIR}/mods/examples/freeride_picture)
     # (tools/new_mod.py adds a mod's line above this one)
 
     # ---- offline tests: a stand-in game that loads the loader and pumps its frames (tests/run_tests.py)
@@ -151,6 +172,9 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
         COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/harness
         COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:MafiaModLoader> ${CMAKE_BINARY_DIR}/harness/)
     set_target_properties(mml_harness PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/harness/$<0:>)
+    add_library(harness_rw_data SHARED tests/harness/rw_data.cpp)   # the game's file layer, stood in for
+    set_target_properties(harness_rw_data PROPERTIES OUTPUT_NAME rw_data RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/harness/$<0:>)
+    add_dependencies(mml_harness harness_rw_data)
     function(mml_add_test_mod id)
         add_library(testmod_${id} SHARED tests/mods/${id}/${id}.cpp)
         set(dest ${CMAKE_BINARY_DIR}/harness/mml/mods/${id})
@@ -167,6 +191,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     mml_add_test_mod(hook_b)
     mml_add_test_mod(kit)
     mml_add_test_mod(heavy)
+    mml_add_test_mod(files_b)   # (its files\ folder and files_a, a mod of files alone, are copied by run_tests.py)
     # its libraries in its folder: one it imports, one it loads by name (each load's own folder: host/lifecycle.cpp)
     foreach(lib heavylib heavyrt)
         add_library(testlib_${lib} SHARED tests/mods/heavy/${lib}.c)

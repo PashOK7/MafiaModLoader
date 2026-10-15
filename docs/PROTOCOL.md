@@ -80,6 +80,9 @@ Taps can also start with the game, before its first frame: `"taps": ["5409D0 n=4
 | `draw.clear` / `draw.state` | | the held items dropped / the 2D pass hooked or not, passes seen, items queued by mods last frame and drawn in the last pass, items held, mods whose drawing faulted (`off`), the last fault |
 | `config.get` | `mod`, `key` (a path: `"overlay.x"`; none: the whole config) | `value` (the defaults with the changes over them), `default`, `known`, `changes` (what differs from the defaults), `files` |
 | `config.set` | `mod`, `key`, `value` (any JSON; `null`: back to the default) | the same; the change is written to `<game>\mml\data\<mod>\config.json` and the mod gets `MML_EVENT_CONFIG_CHANGED` at the next frame |
+| `files.list` | `mod` (only its), `name` (a part of the names) | the mods with files (`id`, `load_order`, `files`, `added`: by `file_add`, `folder`, `watched`) and each name a mod answers (`name`, `mod`, `path`, `size`, `opens`: how often the game opened it, `over`: the mods under it, `added`), at most 1000; `presaves_hidden`: the game's presaved textures not given for a mod's picture, how often |
+| `files.which` | `name` (the game's name of a file: `"maps\\crate.bmp"`) | who answers it: `mod`, `path`, `over` (the mods under it), `game_has`, `game_size` (its folder's or archives' own), `hidden_for` (a presaved texture of a mod's picture, not given), `answer` |
+| `files.read` | `name`, `game` (the game's own under a mod's), `offset`, `size` (default 256, at most 65536) | `source` (`mod`, `game`), `size` (the whole file's), `hex`, `text` (when it is text) |
 | `<command>` | the command's | a mod's command: the core mod's without a prefix (`player`), others' as `<mod>.<name>` |
 
 The core mod's commands: `game` (the build, the mission's name and state), `player`, `car` (the car the player

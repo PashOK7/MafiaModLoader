@@ -7,7 +7,10 @@ What is done, what comes next and later, and what is known to be missing or wron
 
 - The host is a `.asi` loaded by Ultimate ASI Loader (`dinput8.dll`); it never unloads. Mods hot-reload.
 - The MCP server is a separate process (Rust), talking to the game over the bridge; it outlives the game.
-- Builds: 1.2 first, 1.0 too (per-build tables in `game_build.h`).
+- Builds: 1.2 and 1.0 (per-build tables in `game_build.h`). The owner, 2026-10-15: the loader and the SDK must
+  work on both, so everything for both is tested in both labs (at the end of a block of work, or at once where 1.0's
+  code differs; not every small test); a mod made for one build is worked on and tested in that build's lab only
+  (`"builds"` in its `mod.json`). The labs are listed in `mml.config.json` (`labs`); agents switch between them.
 - Mods in any native language through one C ABI. (LuaJIT scripts were listed here too; the owner says the roadmap
   was the agents' work, so they are parked until the owner confirms them: "Taken out or changed".)
 - A 64-bit sidecar for what only exists for 64 bits (the owner, 2026-10-14: "what if a user wants a modern
@@ -202,6 +205,19 @@ What is done, what comes next and later, and what is known to be missing or wron
   reloads with frames between and 100 in a row: 143 devices made, each drew, none lost, each released to its last
   reference, 0.0 MB, 0 handles, 0 threads lost a reload (`docs/MODDING.md`, "A heavy mod's build").
 
+- **A mod's own files in the game** (2026-10-15; "Next" item 2): every file under a mod's `files\` is a game file by
+  its path there (`rw_data.dll`'s `dtaOpen` answered from the mods first, from the process's start), new or in
+  place of the game's; the later mod in load order answers a name two ship; mods of files alone (`"type": "files"`,
+  `mml_add_files_mod`); `file_add` (a file of the mod's choosing for a name: a patched copy of a table),
+  `file_source`, `file_read` (the game's own under a mod's: `MML_FILE_GAME`), `MML_EVENT_FILE_CHANGED`; changes on
+  disk seen; the game's presaved copies of a replaced texture hidden; `files.list`, `files.which`, `files.read`;
+  `deploy` copies subfolders and replaces a file the game holds open. Offline tests (`files_tests`: a stand-in
+  `rw_data.dll`, 46 checks; `mcp_smoke.py`: deploy); in the 1.2 lab the example `freeride_picture` replaced the
+  freeride menu's picture (its presaved copy hidden), a new picture deployed into the running game showed at the
+  menu's next opening, the game's own came back at the mod's unload; the same in the 1.0 lab (1.0's LS3DF asks the
+  same presaved name), with a mod made for 1.2 only refused there (`"builds"`) (`docs/MODDING.md`, "A mod's own
+  files in the game").
+
 ## Next, by importance
 
 **The goal** (the owner, 2026-10-14): a toolkit strong enough for whatever mod a user can think of, written by another
@@ -210,19 +226,15 @@ gameplay mods (**fishing, skateboarding, a working airplane, achievements**). No
 mafia-ragdoll is not ported: it already has a ragdoll (Jolt), water and smoke (a Direct3D 11 bridge, PhysX 2.8.4,
 NVIDIA Flow) on a host of its own, and its code is the reference for what several services below must do
 (`W:\github\mafia-ragdoll\src`, read only). Every service lands with an example mod (`mods/examples`), a section in
-`docs/MODDING.md` and its offline test, is seen working in the 1.2 lab, and in the 1.0 lab once its addresses are
-found there (1.2 first, as the builds' decision says). Each item names who needs it (R ragdoll, W water, S smoke,
+`docs/MODDING.md` and its offline test, and is seen working in both labs, 1.2 and 1.0, before it is done (the
+builds' decision; AGENTS.md "Builds"). Each item names who needs it (R ragdoll, W water, S smoke,
 V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselves) and its reference.
 
 ### Tier 1: foundations every large mod stands on
 
 1. *(Done 2026-10-15: a heavy mod's lifecycle, the loader's part and the build's part; see "Done". The number is
    kept so the items' numbers stay.)*
-2. **A mod's own files in the game** (F K P C S W, any mod with new content). Models (`.4ds`), textures, animations
-   (`.5ds`), sounds, tables and menu definitions shipped in the mod's folder and opened by the game by name, as if
-   they were in its archives (the archives' open in `rw_data.dll`, `dtaOpen`, answered from the mods' folders first);
-   a mod replacing one of the game's files (a texture, a table) while it is loaded; the order when two mods ship the
-   same name; a file changed on disk seen again where the engine allows (or said where it does not).
+2. *(Done 2026-10-15: a mod's own files in the game; see "Done".)*
 3. **Render events and the graphics bridge** (W S V; R for posing). Events around the scene's drawing: before and
    after `I3D_driver::Render` (LS3DF `0x62030`; a ragdoll writes its bones right before it: the game re-poses in
    between), at stage 1 (the 3D world drawn, the HUD not yet), at Present. The game's Direct3D 9Ex device (dxwrapper);
@@ -381,6 +393,21 @@ merged, sorted by importance):
 
 ## Known gaps
 
+- **A mod's own files** (host/files.cpp): seen in the 1.2 lab with a menu's picture only; a model, a sound, an
+  animation and a table of a mod's were not loaded in the game (they come through the same `dtaOpen`: about 720
+  models, 240 sounds and 50 tables a freeride's load); in the 1.0 lab only the menu's picture was seen. A table the game reads only at its start, and which tables those are, was not listed.
+  What opens files without rw_data is not answered: the Bink videos (binkw32 opens its own), the saves
+  (`dtaOpenWrite`, not hooked). A name longer than 259 characters with the mod's folder is left out (rw_data copies
+  names into MAX_PATH bytes). The build's `files\` copy and `deploy` add and replace files, never delete one that
+  is gone from the source (clean `build/x86/out` or the game's copy by hand). The presaved textures are recognised
+  by their names' form as LS3DF 1.2 builds them (read in its decompile); 1.0's LS3DF asked the same name for the
+  menu's picture (its code not read).
+- **`menu.click` in 1.0** once did not close the freeride screen (its "Retour", clicked right after the screen was
+  opened and a screenshot taken); clicked again later it did. Seen once, the cause not found (the screen's opening
+  not finished?).
+- **`menu.state`** did not list the pause menu's "Exit Game?" confirmation (seen 2026-10-15: it was on screen, the
+  reply showed only the game menu under it); Enter answered it. Not looked into.
+
 - **fps_unlock** (mods/examples/fps_unlock): the main menu's camera, a person's step at curbs and LS3D's small
   rotations are fixed. The rotation fix was measured on the player's taxi on flat ground in 1.2 (the stop, slow
   steering, acceleration) and in 1.0 (the stop; 1.0's lab reaches 185 fps only); handling at speed, crashes and
@@ -410,7 +437,7 @@ merged, sorted by importance):
   `#include` of a file outside its own folder does not compile it again when that file changes (only `.hlsli` beside
   it are watched). A mod's own Direct3D 11 device is on the default adapter, not looked up as the game's (two GPUs:
   not tried); measured on one NVIDIA RTX 3070 and WARP (the stand-in game), not on AMD or Intel. `boxes` needs no
-  game address and was not run in the 1.0 lab.
+  game address; in the 1.0 lab it drew and reloaded 10 times (2026-10-15).
 
 - **The script machine** (docs/SCRIPTS.md): programs step only in the mission's tick (not in the menus, not while
   paused). Of the ~390 commands a handful were run (`let`, `if`, `goto`, `wait`, `findactor`, `findnearactor`,

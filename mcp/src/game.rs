@@ -153,17 +153,44 @@ pub struct Deployed {
     pub mods: Vec<String>,
 }
 
+/// One file put in place. A file the game may hold open (a mod's game file: a sound it streams) cannot be renamed
+/// over, so the copy goes beside it (`<name>.mmltmp`, which the loader never takes for a game file), the old one is
+/// deleted (the loader opens the mods' files sharing deletion: the game reads the old one until it closes it) and
+/// the copy renamed. A file with the same size and time as its source is left alone (nothing changes in the game).
+fn put_file(src: &Path, dst: &Path) -> Result<bool, String> {
+    let err = |e: std::io::Error| format!("{} -> {}: {e}", src.display(), dst.display());
+    let from = std::fs::metadata(src).map_err(err)?;
+    if let Ok(to) = std::fs::metadata(dst) {
+        if to.len() == from.len() && to.modified().ok() == from.modified().ok() { return Ok(false); }
+    }
+    let mut tmp = dst.as_os_str().to_owned();
+    tmp.push(".mmltmp");
+    let tmp = std::path::PathBuf::from(tmp);
+    std::fs::copy(src, &tmp).map_err(err)?;
+    if dst.exists() {
+        if let Err(e) = std::fs::remove_file(dst) {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(err(e));
+        }
+    }
+    std::fs::rename(&tmp, dst).map_err(err)?;
+    Ok(true)
+}
+
+/// A mod's folder copied with its subfolders (its `files\`: the game files it ships); the build's leftovers skipped.
 fn copy_dir(from: &Path, to: &Path, copied: &mut Vec<String>) -> Result<(), String> {
     std::fs::create_dir_all(to).map_err(|e| format!("{}: {e}", to.display()))?;
     for e in std::fs::read_dir(from).map_err(|e| format!("{}: {e}", from.display()))? {
         let e = e.map_err(|e| e.to_string())?;
         let src = e.path();
-        if src.is_dir() { continue; }
-        let ext = src.extension().and_then(|x| x.to_str()).unwrap_or("").to_ascii_lowercase();
-        if ["ilk", "exp", "lib"].contains(&ext.as_str()) { continue; }
         let dst = to.join(e.file_name());
-        std::fs::copy(&src, &dst).map_err(|err| format!("{} -> {}: {err}", src.display(), dst.display()))?;
-        copied.push(dst.display().to_string());
+        if src.is_dir() {
+            copy_dir(&src, &dst, copied)?;
+            continue;
+        }
+        let ext = src.extension().and_then(|x| x.to_str()).unwrap_or("").to_ascii_lowercase();
+        if ["ilk", "exp", "lib", "mmltmp"].contains(&ext.as_str()) { continue; }
+        if put_file(&src, &dst)? { copied.push(dst.display().to_string()); }
     }
     Ok(())
 }

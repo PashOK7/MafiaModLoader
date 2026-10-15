@@ -35,6 +35,7 @@ struct ModEntry {
     bool enabled = true;
     int order = 100;
     std::vector<std::string> depends;
+    std::vector<std::string> builds;  // the game's builds it is made for ("1.2", "1.0"); empty: every build
     HMODULE dll = nullptr;
     MmlModUnloadFn unload = nullptr;
     MmlMod *current = nullptr;        // the live load, or null
@@ -259,6 +260,9 @@ int H_ActorSeat(MmlMod *m, void *human, void *car, int seat) {
     Log(MML_LOG_WARN, Who(m), "actor_seat: %s", err.c_str());
     return 0;
 }
+int H_FileAdd(MmlMod *m, const char *name, const char *path) { return Alive(m) ? FilesAdd(m, name, path) : 0; }
+int H_FileSource(const char *name, char *path, int size) { return FilesSource(name, path, size); }
+int64_t H_FileRead(MmlMod *, const char *name, void *buf, size_t cap, int flags) { return FilesRead(name, buf, cap, flags); }
 
 // ---- manifests
 bool ReadManifest(const std::string &dir, const std::string &folder, ModEntry *e, std::string *err) {
@@ -276,6 +280,9 @@ bool ReadManifest(const std::string &dir, const std::string &folder, ModEntry *e
         e->depends.clear();
         if (j.contains("depends") && j["depends"].is_array())
             for (auto &d : j["depends"]) if (d.is_string()) e->depends.push_back(d.get<std::string>());
+        e->builds.clear();
+        if (j.contains("builds") && j["builds"].is_array())
+            for (auto &b : j["builds"]) if (b.is_string()) e->builds.push_back(b.get<std::string>());
         e->dir = dir;
         return true;
     } catch (const std::exception &ex) {
@@ -286,13 +293,64 @@ bool ReadManifest(const std::string &dir, const std::string &folder, ModEntry *e
 
 bool UnloadMod(ModEntry *e, const char *why);
 
-bool LoadMod(ModEntry *e, std::string *err) {
+// Made for the running build: its "builds" name it, or it names none. With no known game (the stand-in game of
+// the tests) every mod is.
+bool ForThisBuild(const ModEntry &e) {
+    std::string build = GameBuild();
+    if (e.builds.empty() || build == "unknown") return true;
+    return std::find(e.builds.begin(), e.builds.end(), build) != e.builds.end();
+}
+std::string BuildsText(const ModEntry &e) {
+    std::string s;
+    for (const std::string &b : e.builds) s += (s.empty() ? "" : ", ") + b;
+    return s;
+}
+
+// A mod of files alone ("type": "files"): no DLL, its files\ folder is the whole mod (files.cpp).
+bool LoadFilesOnly(ModEntry *e) {
+    MmlMod *m = new MmlMod{e, true};
+    e->dll = nullptr;
+    e->unload = nullptr;
+    e->current = m;
+    e->liveDir.clear();
+    e->faulted = false;
+    ++e->generation;
+    Log(MML_LOG_INFO, "host", "mod %s %s loaded (files only: %zu files, generation %u)", e->id.c_str(), e->version.c_str(),
+        FilesCount(e->id), e->generation);
+    MmlEvent ev{};
+    ev.size = sizeof ev;
+    ev.type = MML_EVENT_MOD_LOADED;
+    ev.name = e->id.c_str();
+    Dispatch(ev);
+    return true;
+}
+
+bool LoadModDll(ModEntry *e, std::string *err);
+
+// A mod's load: its files in the game first (its mml_mod_load may read them), then its DLL. keepFiles: a failed load
+// leaves its files in (LoadEnabled's passes: a mod whose dependency loads in a later pass; it takes out what failed
+// at the end).
+bool LoadMod(ModEntry *e, std::string *err, bool keepFiles = false) {
     if (e->current) { *err = "already loaded"; return false; }
+    bool ok = true;
     for (const std::string &d : e->depends) {
         ModEntry *dep = ById(d);
-        if (!dep || !dep->current) { *err = "depends on " + d + ", which is not loaded"; return false; }
+        if (!dep || !dep->current) { *err = "depends on " + d + ", which is not loaded"; ok = false; break; }
     }
-    if (e->type != "native") { *err = "type " + e->type + " has no runtime yet"; return false; }
+    if (ok && e->type != "native" && e->type != "files") { *err = "type " + e->type + " has no runtime yet"; ok = false; }
+    if (ok && !ForThisBuild(*e)) {
+        *err = "made for the game's build " + BuildsText(*e) + ", not " + GameBuild() + " (\"builds\" in its mod.json)";
+        ok = false;
+    }
+    if (ok) {
+        FilesModOn(e->id, e->dir, e->order, false);
+        ok = e->type == "files" ? LoadFilesOnly(e) : LoadModDll(e, err);
+    }
+    if (!ok && !keepFiles) FilesModOff(e->id);
+    return ok;
+}
+
+bool LoadModDll(ModEntry *e, std::string *err) {
     char tag[128];
     snprintf(tag, sizeof tag, "%s_%u_%u", e->id.c_str(), static_cast<unsigned>(GetCurrentProcessId()), ++e->generation);
     std::string liveDir = MmlDir() + "live\\" + tag + "\\";
@@ -371,6 +429,15 @@ bool UnloadMod(ModEntry *e, const char *why) {
         std::lock_guard<std::mutex> lk(g_postMx);
         g_posted.erase(std::remove_if(g_posted.begin(), g_posted.end(), [&](const Posted &p) { return p.mod == m; }), g_posted.end());
     }
+    // its files out of the game, but in a reload: the load that follows looks at them again (a name whose file did
+    // not change is not told as changed)
+    if (strcmp(why, "reload") != 0) FilesModOff(e->id);
+    if (!e->dll) {   // a mod of files alone
+        e->lastUnload = json{{"generation", e->generation}, {"why", why}};
+        e->current = nullptr;
+        Log(MML_LOG_INFO, "host", "mod %s unloaded (%s)", e->id.c_str(), why);
+        return true;
+    }
     // A thread still in the load's code (one the mod started and did not stop, or a library's worker): freeing the
     // DLL would crash the game at that thread's next instruction. A little time for threads that are ending.
     std::vector<BusyThread> busy = ThreadsInDir(e->liveDir);
@@ -443,7 +510,7 @@ void Scan() {
         }
         if (e->current) continue;
         e->name = tmp.name; e->version = tmp.version; e->type = tmp.type; e->entry = tmp.entry; e->enabled = tmp.enabled;
-        e->order = tmp.order; e->depends = tmp.depends; e->dir = tmp.dir;
+        e->order = tmp.order; e->depends = tmp.depends; e->builds = tmp.builds; e->dir = tmp.dir;
     } while (FindNextFileA(h, &fd));
     FindClose(h);
     std::stable_sort(g_mods.begin(), g_mods.end(), [](const std::unique_ptr<ModEntry> &a, const std::unique_ptr<ModEntry> &b) {
@@ -458,13 +525,16 @@ void LoadEnabled() {
         for (auto &e : g_mods) {
             if (!e->enabled || e->current) continue;
             std::string err;
-            if (LoadMod(e.get(), &err)) { e->error.clear(); any = true; }
+            if (LoadMod(e.get(), &err, true)) { e->error.clear(); any = true; }
             else e->error = err;
         }
         if (!any) break;
     }
     for (auto &e : g_mods)
-        if (e->enabled && !e->current) Log(MML_LOG_WARN, "host", "mod %s not loaded: %s", e->id.c_str(), e->error.c_str());
+        if (e->enabled && !e->current) {
+            Log(MML_LOG_WARN, "host", "mod %s not loaded: %s", e->id.c_str(), e->error.c_str());
+            FilesModOff(e->id);
+        }
 }
 
 // Loads kept after their unload: freed once no thread is in their code any more (checked now and then).
@@ -482,7 +552,9 @@ json ModValue(const ModEntry &e) {
     json j = {{"id", e.id}, {"name", e.name}, {"version", e.version}, {"type", e.type}, {"enabled", e.enabled},
               {"loaded", e.current != nullptr}, {"generation", e.generation}, {"load_order", e.order}, {"dir", e.dir},
               {"depends", e.depends}};
-    if (e.current) j["live_dir"] = e.liveDir;
+    if (!e.builds.empty()) j["builds"] = e.builds;
+    if (e.current && !e.liveDir.empty()) j["live_dir"] = e.liveDir;
+    if (size_t n = FilesCount(e.id)) j["files"] = n;
     if (!e.error.empty()) j["error"] = e.error;
     if (!e.lastUnload.is_null()) j["last_unload"] = e.lastUnload;
     json kept = json::array();
@@ -575,9 +647,18 @@ void ModsInit() {
     g_host.item_id = H_ItemId;
     g_host.give_item = H_GiveItem;
     g_host.actor_seat = H_ActorSeat;
+    g_host.file_add = H_FileAdd;
+    g_host.file_source = H_FileSource;
+    g_host.file_read = H_FileRead;
     LiveCleanAll();
     Scan();
     LoadEnabled();
+}
+
+void ModsEarlyFiles() {
+    Scan();
+    for (auto &e : g_mods)
+        if (e->enabled && (e->type == "native" || e->type == "files") && ForThisBuild(*e)) FilesModOn(e->id, e->dir, e->order, true);
 }
 
 void ModsShutdown() {
@@ -631,6 +712,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (MenusMethod(method, paramsJson, reply, &ok)) return ok;
     if (ScriptMethod(method, paramsJson, reply, &ok)) return ok;
     if (WorldMethod(method, paramsJson, reply, &ok)) return ok;
+    if (FilesMethod(method, paramsJson, reply, &ok)) return ok;
     if (method == "mods.list") { *reply = ModsList(); return true; }
     if (method == "commands.list") { *reply = CommandsList(); return true; }
     if (method == "hooks.list") { *reply = HookList(); return true; }
@@ -724,7 +806,7 @@ std::string CommandsList() {
                           "input.seq", "input.release", "input.state", "text.get", "text.find", "screenshot", "screenshot.state",
                           "draw.text", "draw.rect", "draw.line", "draw.clear", "draw.state", "config.get", "config.set",
                           "menu.item", "menu.items", "menu.item.remove", "menu.page", "menu.page.set", "menu.page.close", "menu.def", "menu.click", "input.mouse", "input.text",
-                          "script.run", "script.state", "script.stop", "script.list"})
+                          "script.run", "script.state", "script.stop", "script.list", "files.list", "files.which", "files.read"})
         out.push_back({{"name", m}, {"owner", "host"}});
     for (auto &kv : g_commands) out.push_back({{"name", kv.first}, {"owner", Who(kv.second.mod)}, {"help", kv.second.help}});
     return out.dump();

@@ -2,8 +2,9 @@
 //
 // Ultimate ASI Loader loads this DLL early, on the game's main thread, before the game's own code runs. Init does
 // only what is safe under the loader lock: paths, the log, the crash filter, the game's hooks (MinHook writes code,
-// it loads nothing), the bridge's thread. Mods are loaded at the first frame (the game's frame limiter), on the game
-// thread, where LoadLibrary is safe.
+// it loads nothing), the mods' manifests and their files\ folders (files.cpp: read before the game's first file),
+// the bridge's thread. Mods are loaded at the first frame (the game's frame limiter), on the game thread, where
+// LoadLibrary is safe.
 #include "host.h"
 
 namespace host {
@@ -30,6 +31,8 @@ void Init() {
         DrawInit();
         MenusInit();
     }
+    FilesInit();        // (the game reads its first tables before the first frame: the mods' files are there already;
+    ModsEarlyFiles();   // after the build is known: a mod made for another build gives none)
     BridgeStart();
 }
 } // namespace host

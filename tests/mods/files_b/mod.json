@@ -1,0 +1,1 @@
+{ "id": "files_b", "name": "test: a mod's files, opened as the game opens them", "version": "1", "entry": "files_b.dll", "load_order": 50 }

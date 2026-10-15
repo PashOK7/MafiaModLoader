@@ -1,4 +1,8 @@
 {
   "game_dir": "C:/Games/Mafia",
+  "labs": {
+    "1.2": "C:/Games/Mafia",
+    "1.0": "C:/Games/Mafia10"
+  },
   "reverse_dir": "C:/Reverse/MafiaReverse"
 }

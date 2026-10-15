@@ -62,6 +62,10 @@ typedef enum MmlEventType {
     MML_EVENT_GAME_RESUMED = 12,     /* ... the world runs again */
     MML_EVENT_CONFIG_CHANGED = 13,   /* this mod's settings changed (its config.json edited, or config.set): name
                                         (the mod's id). Only the mod itself gets it */
+    MML_EVENT_FILE_CHANGED = 14,     /* what the game reads for a file's name changed: a mod's file of that name was
+                                        changed on disk, or a mod's file came, went or took another's place (a mod
+                                        loaded, unloaded, file_add). name: the game's name of the file, lower case
+                                        ("maps\crate.bmp"). Every mod gets it, at the frame after the change */
     MML_EVENT_COUNT_
 } MmlEventType;
 
@@ -343,7 +347,31 @@ typedef struct MmlHost {
     int (*item_id)(const char *name);
     int (*give_item)(MmlMod *mod, void *human, int item, int loaded, int reserve);
     int (*actor_seat)(MmlMod *mod, void *human, void *car, int seat);
+
+    /* ---- a mod's own files in the game (docs/MODDING.md "A mod's own files in the game"; both builds). The game
+     * opens every file by a name relative to its folder ("models\crate.4ds", "maps\crate.bmp", "tables\credits.def",
+     * "sounds\x.wav", "anims\x.5ds", "tables\menu\gamemenu.mnu"), from its folder or its .dta archives. Each file
+     * under the mod's folder's `files\` is a game file by its path there (files\maps\crate.bmp is "maps\crate.bmp"):
+     * while the mod is loaded the game opens the mod's file for that name, whether the game has one (replaced) or not
+     * (new); when it unloads, the game's own is read again. Nothing to call: the folder is enough (a mod of files
+     * alone needs no DLL: "type": "files" in mod.json). Two mods with one name: the later in load order answers
+     * (a higher load_order; the same: the id later in the alphabet). A file is read when the game opens it: what
+     * the game keeps once read (a texture or a model in use, a table read at its start) is not read again by itself
+     * (docs/MODDING.md says where the engine reads again; MML_EVENT_FILE_CHANGED tells a mod when to make it).
+     * file_add: a game file answered from a file of the mod's choosing (path: absolute, or relative to the mod's
+     * folder; a file it wrote in its data folder: a patched copy of a game's table), in the mod's place in the order,
+     * over its own `files\` of that name; path NULL or "": taken back. Looked at for changes as the folder is.
+     * 1: done, 0: refused (no such file, a name outside the game's folder).
+     * file_source: who answers a name now: 1 a mod's file (its full path written into path), 0 the game's own.
+     * file_read: a file read as the game reads it (by its name, from a mod's file or the archives: flags 0), or the
+     * game's own whatever the mods ship (MML_FILE_GAME): the whole size, cap bytes of it copied into buf (buf may be
+     * NULL to ask the size); -1: the game has no such file. Any thread. */
+    int (*file_add)(MmlMod *mod, const char *name, const char *path);
+    int (*file_source)(const char *name, char *path, int size);
+    int64_t (*file_read)(MmlMod *mod, const char *name, void *buf, size_t cap, int flags);
 } MmlHost;
+
+#define MML_FILE_GAME 1              /* file_read: the game's own file, not a mod's of the same name */
 
 /* actor_spawn's kinds: the game's actor types (C_actor +0x10) */
 #define MML_ACTOR_CAR 4

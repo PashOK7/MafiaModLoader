@@ -791,7 +791,9 @@ impl Server {
     }
 
     /// Copy the build (build/x86/out: the loader and the mods) into the game's folder, and reload the mods in the
-    /// running game. The loader itself is copied only while the game is not running.
+    /// running game. The loader itself is copied only while the game is not running. A mod's folder goes with its
+    /// subfolders (its `files\`: game files), files unchanged left alone (`copied` lists what changed); a game file
+    /// the game holds open is replaced all the same (it reads the old one until it closes it).
     #[tool]
     async fn deploy(&self, Parameters(a): Parameters<DeployArgs>) -> Out {
         let running = self.bridge.call("ping", json!({}), 1500).await.is_ok();

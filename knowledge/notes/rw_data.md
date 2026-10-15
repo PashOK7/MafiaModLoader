@@ -1,7 +1,7 @@
 # rw_data.dll: the game's file layer and the DTA archives
 
 From MafiaReverse (`rw_data_notes.md`, `WORKLOG.md`, 2026-05; read-only work on a clean 1.2 install, the archive
-parsing verified by a scanner over every present archive: 27018 entries). Not yet checked through the loader.
+parsing verified by a scanner over every present archive: 27018 entries). Checked through the loader since 2026-10-15 (see the end).
 
 `rw_data.dll` is what `Game.exe` and `LS3DF.dll` read every file through: loose files on disk and entries of the
 encrypted `.dta` archives. A mod that wants to read a game file the way the game does (an archive entry by its
@@ -59,3 +59,24 @@ Layout (after the magic `ISD0`, decrypted):
 - payload: blocks, each with a 4-byte header (low 16 bits the packed size); the block's first byte is its mode:
   below 8 and not 1 raw, 1 an LZ bit stream (scripts, text), 0x0C..0x20 in steps of 4 audio predictors
   (`rw_data` 0x10004250, not ported).
+
+## Checked through the loader (2026-10-15, 1.2)
+
+- **`dtaOpen` (rw_data 0x100018A0)**, read in mafia-re's byte-exact `rw_data.cpp`: loose file first
+  (`CreateFileA(name, GENERIC_READ, FILE_SHARE_READ, ..., OPEN_EXISTING)`), then the archives, unless
+  `forceDirect` or `dtaSetDtaFirstForce` puts the archives first. An absolute path opens that file (the archives'
+  lookup fails on it). The archives' lookup copies the name into `MAX_PATH` bytes with `strcpy`: longer names
+  overflow. The loader's `host/files.cpp` hooks it to answer the mods' files.
+- **Everything goes through it**: a tap on `dtaOpen` during the freeride's load (City - Small) saw 3002 opens:
+  1323 `.bmp`, 723 `.4ds`, 577 `.tck`, 236 `.wav`, 51 `.bin`, 43 `.6ds`, 25 `.5ds`, 10 `.tga`, the menus' `.mnu`,
+  `.def` tables, the scene's `.bin`, `clusters.seg`, the music's `.ogg`. Callers: LS3DF's texture loader
+  (`ls3d+705A5`), its model loader (`ls3d+60CF0`), its sound (`ls3d+7D5D0`), Game.exe (`411C12`: `.tck`, the
+  scene). A second load of the same freeride opened them all again (1321 pictures, 720 models): nothing of a
+  mission's files is kept between loads. A menu opens its pictures each time it opens.
+- **Presaved textures** (LS3DF `ITexture::Create` 0x10075F50 calls `m_TryPresaved_555_565` 0x10078430 and
+  `m_TryPresavedDXT` 0x10078190): before converting a picture LS3D opens `<picture without its extension>_<mip
+  levels>[L].555` or `.565` (header `TEX`, version 1) or `<picture>[_<alpha picture>]_<mips>[L].DX<n>` (header
+  `DXT`, version 9); `L` (the string at LS3DF 0x100AAF00) when the texture flag 0x2000 halves it. The file is used
+  when its width and height match the texture's, whatever its time or the picture's content. The archives ship such
+  copies (`Maps\freeride0_1.565`, `Maps\2intmph_1.555` for the speedometer's `2intmph.tga`): a replaced picture
+  would be ignored, so the loader hides the presaved copies of a mod's picture.

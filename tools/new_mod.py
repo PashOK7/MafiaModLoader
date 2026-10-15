@@ -11,6 +11,12 @@ command; every part of the mod kit touched once: cut what you do not need), mod.
     (MCP) deploy {"mods": ["<id>"]}         # into the running game, loaded at once; again after every build
 
 The whole way, and what the host gives a mod: docs/MODDING.md. A complete example: mods/examples/telemetry.
+
+    python tools/new_mod.py night_signs --files
+
+A mod of files alone (no DLL, no code): mod.json ("type": "files") and an empty files/ folder, where every file is
+a game file by its path there (files/maps/sign.bmp answers the game's "maps\\sign.bmp"); its CMake line is
+mml_add_files_mod. docs/MODDING.md "A mod's own files in the game"; mods/examples/freeride_picture.
 """
 import argparse
 import os
@@ -107,8 +113,22 @@ MANIFEST = '''{
   "type": "native",
   "entry": "@ID@.dll",
   "enabled": true,
+  "builds": ["1.2", "1.0"],
   "load_order": 100,
   "depends": ["core"]
+}
+'''
+
+FILES_MANIFEST = '''{
+  // A mod of files alone: every file under files/ is given to the game by its path there (docs/MODDING.md
+  // "A mod's own files in the game").
+  "id": "@ID@",
+  "name": "@NAME@",
+  "version": "0.1.0",
+  "type": "files",
+  "enabled": true,
+  "builds": ["1.2", "1.0"],
+  "load_order": 100
 }
 '''
 
@@ -126,6 +146,7 @@ def main():
     ap.add_argument('id', help='the mod\'s id: its folder, its DLL, its commands\' prefix (lower case, digits, _)')
     ap.add_argument('--name', help='its name for people (default: the id)')
     ap.add_argument('--dir', help='where its sources go, relative to the repository (default: mods/<id>)')
+    ap.add_argument('--files', action='store_true', help='a mod of files alone: no DLL, a files/ folder of game files')
     a = ap.parse_args()
     if not re.fullmatch(r'[a-z][a-z0-9_]{1,31}', a.id):
         sys.exit('id: a lower-case letter, then lower-case letters, digits or _ (2..32 characters)')
@@ -135,7 +156,7 @@ def main():
     folder = os.path.join(ROOT, *rel.split('/'))
     cmake_path = os.path.join(ROOT, 'CMakeLists.txt')
     cmake = open(cmake_path, encoding='utf-8', newline='').read()
-    if re.search(r'mml_add_mod\(%s\s' % re.escape(a.id), cmake):
+    if re.search(r'mml_add_(files_)?mod\(%s\s' % re.escape(a.id), cmake):
         sys.exit('CMakeLists.txt already has a mod "%s"' % a.id)
     if os.path.exists(folder) and os.listdir(folder):
         sys.exit('%s exists and is not empty' % rel)
@@ -143,16 +164,25 @@ def main():
         sys.exit('CMakeLists.txt: the line "%s" is gone; add mml_add_mod(...) by hand' % MARK.strip())
     name = a.name or a.id
     os.makedirs(folder, exist_ok=True)
-    files = {a.id + '.cpp': SOURCE, 'mod.json': MANIFEST, 'config.json': CONFIG}
+    files = {'mod.json': FILES_MANIFEST} if a.files else {a.id + '.cpp': SOURCE, 'mod.json': MANIFEST, 'config.json': CONFIG}
     for fname, text in files.items():
         text = text.replace('@ID@', a.id).replace('@NAME@', name.replace('"', '\\"') if fname != a.id + '.cpp' else name)
         with open(os.path.join(folder, fname), 'w', encoding='utf-8', newline='\n') as f:
             f.write(text)
     nl = '\r\n' if '\r\n' in cmake else '\n'
-    line = '    mml_add_mod(%s ${CMAKE_SOURCE_DIR}/%s %s/%s.cpp)' % (a.id, rel, rel, a.id)
+    if a.files:
+        os.makedirs(os.path.join(folder, 'files'), exist_ok=True)
+        line = '    mml_add_files_mod(%s ${CMAKE_SOURCE_DIR}/%s)' % (a.id, rel)
+    else:
+        line = '    mml_add_mod(%s ${CMAKE_SOURCE_DIR}/%s %s/%s.cpp)' % (a.id, rel, rel, a.id)
     cmake = cmake.replace(MARK, line + nl + MARK, 1)
     with open(cmake_path, 'w', encoding='utf-8', newline='') as f:
         f.write(cmake)
+    if a.files:
+        print('%s: mod.json and files/ (put game files there by their paths); CMakeLists.txt has its line.' % rel)
+        print('Next: cmake --preset x86 (a new target), cmake --build --preset x86-release, then (MCP) deploy {"mods": ["%s"]}' % a.id)
+        print('The way from here: docs/MODDING.md "A mod\'s own files in the game"')
+        return
     print('%s: %s, mod.json, config.json; CMakeLists.txt has its line.' % (rel, a.id + '.cpp'))
     print('Next: cmake --build --preset x86-release   then (MCP) deploy {"mods": ["%s"]}   then call %s.status' % (a.id, a.id))
     print('The way from here: docs/MODDING.md')

@@ -1,0 +1,1 @@
+{ "id": "files_a", "name": "test: a mod of files alone", "version": "1", "type": "files", "load_order": 40 }

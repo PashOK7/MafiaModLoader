@@ -3,9 +3,11 @@
 The loader runs on both builds of `Game.exe` / `LS3DF.dll` that `game_build.h` knows (`game::Detect` picks one by
 its code). 1.2 is the last patch and the Steam/GOG release (the 1.2 lab). 1.0 is the first retail build (the 1.0 lab:
 the same files as mafia-ragdoll's `re/v10`, a French game).
-To work on 1.0, `game_dir` in `mml.config.json` points at a 1.0 install (every tool and the MCP server read it on
-each call), then `python tools/lab.py mode loader`. Which folder it points at is the user's choice: it stays until
-they change it (or ask an agent to).
+The labs are listed in `mml.config.json` (`"labs": {"1.2": <folder>, "1.0": <folder>}`, the user's folders);
+`python tools/lab.py use 1.0` points `game_dir` at the 1.0 lab (every tool and the MCP server read it on each
+call), `use 1.2` back; `lab.py status` tells the build of the folder in use (by its `LS3DF.dll`). Work for both
+builds (the loader, the SDK, the shipped mods) is tested in both labs, a mod for one build in its own
+(`AGENTS.md`, "Builds").
 
 ## What runs on 1.0 (seen in the 1.0 lab, 2026-10-14)
 
@@ -20,6 +22,8 @@ Everything the loader offers on 1.2 runs on 1.0; where 1.0's code differs, the l
 | The car (`car`, `game::Car`) and its state | yes | every field moving as in 1.2; `car.save`, a drive, `car.restore`: the position back to the last digit |
 | Keys, hotkeys, settings, data folders | yes | F9 started the example's lap; `config.set units` took effect at once |
 | Actions (`input.act`, `turn`) | yes | 60 slots in 1.2's order with the profile's bindings; `Steer Left` (bound to nothing) turned the wheels; turns of 90 and -45 degrees measured 90.0 and -45.0 |
+| A mod's own files (`host/files.cpp`) | yes | the same `rw_data.dll` exports; seen in the 1.0 lab (2026-10-15): `freeride_picture`'s picture in the freeride menu, 1.0's LS3DF asking the same presaved name (`Maps\freeride0_1.565`, from `ls3d+74355`) and the loader hiding it, the game's own picture back at the mod's unload; a mod made for 1.2 only (`"builds"`) not loaded and its file not given |
+| A heavy mod (`mods/examples/boxes`) | yes | Jolt and its own Direct3D 11 device drawing in the 1.0 lab (2026-10-15); 10 reloads in a row: 0.0 MB, 0 handles, 0 threads a reload after the first (-1.2 MB, +1 thread: as the first unload in 1.2) |
 | Screenshots | yes | the 1.0 lab now runs through dxwrapper's Direct3D 9 as the 1.2 lab does (2026-10-14): shots with the game behind other windows. On plain Direct3D 8 with antialiasing the loader copies the screen, only while the game is in front |
 | The core mod's commands, `tap`, crash dumps | yes | `humans`, `frames.find`, `player`, `car` |
 | The start (`game_launch` with `profile` / `go` and the densities) | yes | the logos skipped, profile "Run" taken, the main menu, the freeride with `police` 0 (the game's density globals: 1, 1, 0) in 3.0 s |

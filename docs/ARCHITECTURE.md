@@ -135,6 +135,16 @@ except the intro videos), on the game thread, where `LoadLibrary` is safe.
   `config.json` in its own folder (the defaults, shipped) with `config.json` of its data folder merged over them
   (the changes: `config_set`, `config.set`, a hand). Both files' times are looked at twice a second; a change is
   read and the mod gets `CONFIG_CHANGED`.
+- **A mod's own files in the game** (`files.cpp`): `rw_data.dll`'s `dtaOpen` (the one function Game.exe and LS3D
+  open every file by) is hooked in `Init`, and every enabled mod's `files\` folder is read there too, before the
+  game opens its first table. A name a loaded mod ships is opened by rw_data's own `dtaOpen` from the mod's file
+  (its full path), so the reads, seeks and closes after it are the game's; rw_data's `CreateFileA` import adds
+  write and delete sharing for those files (a deploy replaces a file the game holds open). The answers (the last
+  mod in load order a name) sit behind a reader-writer lock: the game opens files on several threads. Each mod's
+  folder is watched (`FindFirstChangeNotification`), `file_add`'s files are looked at once a second; a changed
+  answer is logged and sent as `FILE_CHANGED` at the next frame. The presaved copies of a texture a mod replaces
+  (`<name>_<mips>.565` and the like) are answered "no such file", so LS3D makes the texture from the mod's picture.
+  A mod of files alone (`"type": "files"`) is a load with no DLL.
 - **Tap** (`tap.cpp`, from mafia-ragdoll): a link of the hook chain (owner: the host) whose thunk books every call
   of a function (callers, registers, arguments, memory, the result) into fixed tables; `tap` on the bridge, startup
   taps from `<game>\mml\config.json`.

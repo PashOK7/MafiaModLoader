@@ -4,6 +4,7 @@ the test harness standing in for the game (MML_GAME_DIR = build/x86/harness). Py
     cmake --build --preset x86-release && cargo build --release --manifest-path mcp/Cargo.toml && python tests/mcp_smoke.py
 """
 import json
+import shutil
 import os
 import subprocess
 import sys
@@ -125,6 +126,15 @@ def main():
     check('game_status after the game is gone: not running', ok and '"running": false' in text, text)
     ok, text = c.tool('log_tail', {'lines': 20})
     check('log_tail from the file when the game is gone', ok and 'process detaching' in text, text)
+    # deploy: a mod's folder with its subfolders (a mod of files alone: its files\), what did not change left alone
+    pic = os.path.join(HARNESS, 'mml', 'mods', 'freeride_picture')
+    shutil.rmtree(pic, ignore_errors=True)
+    ok, text = c.tool('deploy', {'mods': ['freeride_picture']})
+    check('deploy: a mod\'s files\\ folder goes with it', ok and 'freeride0.bmp' in text
+          and os.path.exists(os.path.join(pic, 'files', 'Maps', 'freeride0.bmp')), text)
+    ok, text = c.tool('deploy', {'mods': ['freeride_picture']})
+    check('deploy again: unchanged files are left alone', ok and 'freeride0.bmp' not in text and 'mod.json' not in text, text)
+    shutil.rmtree(pic, ignore_errors=True)
     c.close()
     print('ALL PASSED' if not failures else '%d FAILED: %s' % (len(failures), ', '.join(failures)))
     return 0 if not failures else 1

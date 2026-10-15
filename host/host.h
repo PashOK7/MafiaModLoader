@@ -167,6 +167,21 @@ void ConfigFrame();                       // every frame: files changed are read
 void ConfigForget(MmlMod *mod);           // the mod unloads: what was handed to it is dropped
 bool ConfigMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 
+// ---- a mod's own files in the game (files.cpp): rw_data's dtaOpen answered from the mods' files\ folders and
+// file_add; files.list, files.which, files.read
+void FilesInit();                         // at the process's start (before the game reads its first file)
+// A mod's files in the game (its load; initial: the process's start, before any frame, nobody told), or looked at
+// again (a reload). Off: taken out (its unload, a failed load).
+void FilesModOn(const std::string &id, const std::string &dir, int order, bool initial);
+void FilesModOff(const std::string &id);
+size_t FilesCount(const std::string &id);
+void FilesFrame();                        // every frame: changes on disk looked at, MML_EVENT_FILE_CHANGED sent
+int FilesAdd(MmlMod *mod, const char *name, const char *path);
+int FilesSource(const char *name, char *path, int size);
+int64_t FilesRead(const char *name, void *buf, size_t cap, int flags);
+bool FilesMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+void ModsEarlyFiles();                    // (mods.cpp) at the process's start: every enabled mod's files in the game
+
 // ---- the game's script machine (script.cpp): programs in the missions' language run by the game's interpreter;
 // script.run, script.state, script.stop, script.list
 int ScriptRun(MmlMod *mod, const char *code, void *owner, void *const *acts, int nacts, const float *flts, int nflts,

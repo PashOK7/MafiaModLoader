@@ -16,7 +16,7 @@ makes `mods/my_mod/` and adds its line to `CMakeLists.txt`:
 | File | What |
 |---|---|
 | `my_mod.cpp` | a small working mod: an overlay line, a hotkey from its settings, a command. Cut what you do not need |
-| `mod.json` | the manifest: `id` (its folder, its DLL, its commands' prefix), `name`, `version`, `entry`, `enabled`, `load_order`, `depends` |
+| `mod.json` | the manifest: `id` (its folder, its DLL, its commands' prefix), `name`, `version`, `entry`, `enabled`, `load_order`, `depends`, `builds` (the game's builds it is made for, `["1.2", "1.0"]`: on another it is not loaded and gives the game none of its files, `mods.list` says why; absent: every build) |
 | `config.json` | the defaults of its settings (optional) |
 
 A mod is a 32-bit DLL with three exports; `sdk/include/mml/mml.h` is the whole contract (read it once, it is short):
@@ -68,6 +68,7 @@ Everything below is a member of `MmlHost` (`H->...`); `M` is the mod. Calls into
 | `MML_EVENT_GAME_PAUSED` / `_RESUMED` | a menu stopped the world (the pause menu) / it runs again | |
 | `MML_EVENT_ACTOR_DESTROYED`, `MML_EVENT_HUMAN_CREATED`, `MML_EVENT_HUMAN_HIT` | the game's objects | `actor`, `hit` |
 | `MML_EVENT_CONFIG_CHANGED` | this mod's settings changed (only this mod is told) | `name` (its id) |
+| `MML_EVENT_FILE_CHANGED` | what the game reads for a file's name changed (a mod's file changed on disk, came, went, or took another's place) | `name` (the game's name, lower case: `"maps\\crate.bmp"`) |
 | `MML_EVENT_SERVICES_CHANGED`, `MML_EVENT_MOD_LOADED` | another mod came or went | `name` |
 
 A mod loaded in the middle of a mission (every hot reload) gets no `MISSION_OPEN`: ask `H->mission_name()` and
@@ -294,6 +295,61 @@ H->config_set(M, "finish", "{\"x\": 1.5, \"z\": -2}");           /* any JSON val
 - Agents change settings with `call config.set {"mod": "<id>", "key": "units", "value": "mph"}` and read them with
   `config.get`: no settings window is needed.
 - Never write into the mod's own folder: a deploy replaces it.
+
+### A mod's own files in the game
+
+The game opens every file by a name relative to its folder (`models\crate.4ds`, `maps\crate.bmp`, `anims\x.5ds`,
+`sounds\x.wav`, `tables\vehicles.bin`, `tables\menu\gamemenu.mnu`, `missions\<name>\scene2.bin`), from its folder
+or its `.dta` archives, through one function (`rw_data.dll`'s `dtaOpen`: Game.exe and LS3D alike). The loader
+answers those names from the mods first:
+
+- **Every file under the mod's `files\` folder is a game file by its path there**: `files\Maps\crate.bmp` is
+  `maps\crate.bmp` (names compared as the archives compare them: case ignored, `/` as `\`). While the mod is loaded
+  the game opens the mod's file for that name, whether the game has one (replaced) or not (new); unloaded, the
+  game's own again. The build copies `files\` with the mod (`mml_add_mod`), `deploy` too (a file the game holds
+  open is replaced all the same: it reads the old one until it closes it).
+- **A mod of files alone** needs no DLL and no code: `"type": "files"` in `mod.json`, a `files\` folder, and in
+  `CMakeLists.txt` `mml_add_files_mod(<id> <dir>)` (`mods/examples/freeride_picture`: the freeride menu's picture
+  replaced). It loads, unloads and reloads like any mod (`mod.unload`, `mods.list` counts its `files`).
+- **Two mods with one name**: the later in load order answers (a higher `load_order`; the same: the id later in the
+  alphabet). The log says who answers over whom; `call files.which {"name": "maps\\crate.bmp"}` and `files.list`
+  tell it at any time.
+- **When the game reads it**: a file is read when the game opens it, and what it keeps once read is not read again
+  by itself. Measured in 1.2: every mission's load opens its textures, models, animations, sounds and its tables
+  again (the freeride: about 1300 pictures, 720 models, 240 sounds each time); a menu opens its pictures each time
+  it opens. So a changed texture or model shows at the next load of a mission, a menu's picture at its next opening;
+  a texture in use in the running mission stays as it was. The mods' files are in the game from the process's start
+  (before the game reads its first tables, before the first frame); a mod loaded later (`mod.load`, a new mod) is
+  read from then on, so a table the game reads only at its start needs a restart.
+- **Textures**: LS3D keeps presaved copies of some textures in the archives (`<name>_<mips>.565`, `.555`,
+  `.DX<n>`: converted once) and reads one in place of the picture when its size matches. For a picture a mod
+  ships, the loader hides the game's presaved copies (the log says so once a name), so LS3D makes the texture from
+  the mod's picture. A picture is a `.bmp` or `.tga` of 8, 16, 24 or 32 bits (LS3D's `LoadImage`).
+- **Changes on disk** are seen: the `files\` folder is watched (a quarter of a second after the last change), and
+  every mod gets `MML_EVENT_FILE_CHANGED` with the game's name of each file whose answer changed (its content, a
+  file come or gone, another mod's in its place; not for a change under another mod's file of the same name, nor
+  for a reload that changed nothing). A mod that keeps something made of a file (its own model, a table it parsed)
+  makes it again then.
+
+From code:
+
+```c
+/* a game file answered by a file of the mod's choosing: a patched copy of a game's table in its data folder */
+char path[MAX_PATH];
+snprintf(path, sizeof path, "%spatched_vehicles.bin", H->mod_data_dir(M));
+int64_t n = H->file_read(M, "tables\\vehicles.bin", NULL, 0, MML_FILE_GAME);   /* the game's own: its size */
+/* ... read it (buf, n), change it, write it to path ... */
+H->file_add(M, "tables\\vehicles.bin", path);    /* 1: done; path NULL or "": taken back */
+char who[MAX_PATH];
+if (H->file_source("maps\\crate.bmp", who, sizeof who)) { /* a mod's file answers: who is its full path */ }
+```
+
+- `file_read(mod, name, buf, cap, flags)` reads a file as the game reads it (a mod's, or the archives'), or the
+  game's own whatever the mods ship (`MML_FILE_GAME`): the whole size, `cap` bytes of it copied (`buf` NULL to ask
+  the size), -1 when there is no such file. Any thread.
+- `file_add` puts a file of the mod's in its place in the order, over its own `files\` of that name; it is looked at
+  for changes once a second. Names outside the game's folder and files that do not exist are refused (0).
+- Agents: `files.list {mod, name}`, `files.which {name}`, `files.read {name, game, offset, size}` (`docs/PROTOCOL.md`).
 
 ### Commands, the log, state, hooks, services
 

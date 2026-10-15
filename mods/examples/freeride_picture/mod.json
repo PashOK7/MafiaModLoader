@@ -1,0 +1,12 @@
+{
+  // A mod of files alone: no DLL, no code. Every file under files\ is given to the game by its path there:
+  // files\Maps\freeride0.bmp answers the game's "Maps\freeride0.bmp", the freeride menu's picture of
+  // "City - Small" (drawn by make_picture.py). docs/MODDING.md "A mod's own files in the game".
+  "id": "freeride_picture",
+  "name": "Freeride picture: a picture of the game's replaced by a mod's own file",
+  "version": "0.1.0",
+  "type": "files",
+  "enabled": true,
+  "builds": ["1.2", "1.0"],
+  "load_order": 100
+}

@@ -8,10 +8,18 @@ missing) and the end of `docs/JOURNAL.md`. Keep the roadmap and the journal curr
 
 ## Rules
 
-- **Only the game folder in `mml.config.json`** (`game_dir`: the user's own file, not in the repository). Never
-  search the disk for other installs. `game_dir` is the user's choice: change it only when they ask for another
-  build or folder, and leave it where it is when the work is done (no switching back on your own). A user may
-  keep a lab for each build (`docs/VERSIONS.md`).
+- **Only the game folders in `mml.config.json`** (the user's own file, not in the repository): `game_dir`, the one
+  in use, and `labs`, one folder a build (`{"1.2": ..., "1.0": ...}`). Never search the disk for other installs; a
+  build with no lab listed: ask the user for its folder. Switching between the listed labs is the agent's to do as
+  the work needs (`python tools/lab.py use 1.0`, then `mode loader` if `status` says so); put `game_dir` back where it
+  was when the work is done.
+- **Builds: what the work is for says where it is tested.** The loader, the SDK (`mml.h`, `game_build.h`,
+  `game.h`), the MCP server and every shipped mod (`mods/core`, `mods/examples`) are for both builds, 1.2 and 1.0;
+  a mod is for the builds its `mod.json` names in `"builds"` (absent: both). Work for both builds is seen working in
+  both labs before it is called done: not every small step, but at the end of a block of work (a roadmap item, a
+  feature, before a commit), and at once where 1.0's code differs (another address, layout or function: read in
+  both builds' code, `docs/VERSIONS.md`). Work for one build stays in that build's lab: no switching, no testing
+  in the other. "Not checked in 1.0" is not an end state for work for both builds: it is the next step.
 - **The lab may be shared** with other projects (mafia-ragdoll's developer host is the game's `IJoy.dll` there).
   `python tools/lab.py status` tells which mode it is in; `mode loader` / `mode ragdoll` switch, keeping what they
   take out in `<game>\mml_lab\` and the saves in `<game>-backup\savegame-<date>`. Never delete another project's
@@ -93,7 +101,7 @@ reversing a system anew.
 
 | Path | What |
 |---|---|
-| `host/` | `MafiaModLoader.asi`: the never-unloaded host: game hooks → events (the mission's too), hook chains, mods, bridge, crash dumps, `tap`, the start (`start.cpp`: logos, profile, menus), input (`input.cpp`: actions, keys, the mods' keys and hotkeys), screenshots (`screenshot.cpp`), drawing (`draw.cpp`: the game's own 2D drawing for mods and `draw.*`), the game's menus extended (`menus.cpp`: items and pages for mods, `menu.item`, `menu.page`; 1.0's screens: `menus10.cpp`), a mod's data folder and settings (`config.cpp`), the game's script machine for agents and mods (`script.cpp`: `script.run`, `script_run`), the world (`world.cpp`: actors made new, moved, seated, armed; the car list and the items) |
+| `host/` | `MafiaModLoader.asi`: the never-unloaded host: game hooks → events (the mission's too), hook chains, mods, bridge, crash dumps, `tap`, the start (`start.cpp`: logos, profile, menus), input (`input.cpp`: actions, keys, the mods' keys and hotkeys), screenshots (`screenshot.cpp`), drawing (`draw.cpp`: the game's own 2D drawing for mods and `draw.*`), the game's menus extended (`menus.cpp`: items and pages for mods, `menu.item`, `menu.page`; 1.0's screens: `menus10.cpp`), a mod's data folder and settings (`config.cpp`), the game's script machine for agents and mods (`script.cpp`: `script.run`, `script_run`), the world (`world.cpp`: actors made new, moved, seated, armed; the car list and the items), a mod's own files in the game (`files.cpp`: the game's `dtaOpen` answered from the mods' `files\`; `files.list`, `files.which`, `files.read`) |
 | `sdk/include/mml/mml.h` | **the C ABI** every native mod uses (C, C++, Rust, Zig...): read it whole |
 | `sdk/include/mml/game/` | what code uses: `game_build.h` (every address, per build, `game::Detect`), `game.h` (layouts, calls: actors, frames, the player's car `game::Car` with its rigid body and wheels, a car's state, the mission's name), `mathx.h` |
 | `knowledge/` | the knowledge base: every function of the 1.2 game (from MafiaReverse), our names, notes (`tools/kb_import.py`) |
@@ -163,6 +171,12 @@ reversing a system anew.
   survived). It corrupted files written through `cat <<'EOF'` and `python -` three times, so a hook now refuses any
   Bash command with a doubled backslash (`.claude/settings.json`, `tools/bash_guard.py`): write such text with the
   editor's tool, keep Python with escapes in a `.py` file, use single backslashes or forward slashes in commands.
+- **A mod's files reach the game when it next opens them**: every mission's load opens its textures, models and
+  sounds again, a menu its pictures at each opening; what the running mission has loaded stays. A texture also has
+  presaved copies in the archives (`<name>_1.565`...) that LS3D takes over the picture: the loader hides them for a
+  mod's picture (`knowledge/notes/rw_data.md`). `call files.which {"name"}` tells who answers a name.
+- **Windows refuses a rename over an open file**, even one opened sharing deletion: delete it, then rename the new
+  one into its place (the reader goes on reading the old one). `deploy` replaces files so.
 - **`tools/replace.py` takes one OLD/NEW pair per `=== FILE` block**: a second `--- OLD` in the same block is taken
   as text of the first NEW.
 - **The MCP server's own binary is locked while your session runs it**: to build a new one, rename

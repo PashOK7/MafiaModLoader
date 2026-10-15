@@ -682,3 +682,50 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - So a mod's own device survives reloads when it is released whole; what ends a 32-bit game is address space, and
   `mod.reload {"times"}` measures it. The device shared by every mod is still the graphics bridge (item 3).
 
+
+## 2026-10-15: a mod's own files in the game
+
+- **The task** (the roadmap's "Next" item 2): models, textures, sounds, tables shipped in a mod's folder and opened
+  by the game by name, new or in place of the game's; the order of two mods; changes on disk seen where the engine
+  reads again. An earlier session had written `host/files.cpp` and the `mml.h` members, not wired or tested.
+- **Read**: mafia-re's `rw_data.cpp` (byte-exact): `dtaOpen` opens a loose file before the archives and an absolute
+  path as it is, so a mod's file is opened by rw_data itself from its full path and everything after the open is
+  the game's own. A tap on `dtaOpen` during a freeride's load: 3002 opens of every kind (pictures, models, sounds,
+  tables, the scene); a second load opened them all again.
+- **Found on the way**: LS3D reads a presaved copy of a texture (`<name>_<mips>.565/.555/.DX<n>`, LS3DF
+  `m_TryPresaved_555_565`, `m_TryPresavedDXT`) in place of its picture when the size matches, and the archives ship
+  such copies (`freeride0_1.565`, the speedometer's `2intmph_1.555`): a mod's picture of the same size would have
+  been ignored. The loader answers "no such file" for the presaved copies of a mod's picture.
+- **Wired**: the mods' `files\` folders read in `Init` (before the game's first table; the stand-in game checks a
+  read before the first frame), taken out at an unload or a failed load, kept across a reload (nothing told when
+  nothing changed); `"type": "files"` mods with no DLL (`mml_add_files_mod`, `new_mod.py --files`); the host table's
+  `file_add`, `file_source`, `file_read`; `files.list`, `files.which`, `files.read`.
+- **A tool fixed**: `deploy` copied a mod's top folder only (its `files\` would never have reached the game); now
+  subfolders, unchanged files left alone, a changed one put beside the old, the old deleted, the new renamed:
+  Windows refuses a rename over a file open even with delete sharing (measured), and the loader opens the mods'
+  files sharing deletion (rw_data's `CreateFileA` import) so the game reads the old one to its close.
+- **Tests**: a stand-in `rw_data.dll` for the harness (loose files and an `archive\` folder as its archives),
+  `files_a` (files alone) and `files_b` (opens names by rw_data's export as the game does): 46 checks; two older
+  checks assumed no rw_data in the harness and were made exact; `mcp_smoke.py` checks `deploy`. ALL PASSED both.
+- **In the 1.2 lab**: `mods/examples/freeride_picture` (a picture drawn by its own script) in the freeride menu, the
+  presaved copy hidden (logged); a new picture deployed into the running game showed at the menu's next opening;
+  `mod.unload`: the game's own picture again. Not seen in the game: a model, a sound, a table of a mod's; the 1.0
+  lab (Known gaps). Also noticed: `menu.state` did not list the pause menu's "Exit Game?" confirmation.
+
+## 2026-10-15: both builds tested, by rule; the files in the 1.0 lab
+
+- **The owner**: why was 1.0 left as "the owner's decision"? The SDK must work on 1.0 and 1.2, so everything for
+  both is tested in both labs (at the end of a block of work, or at once where 1.0's code differs; not every small
+  test); a mod for one build stays in its lab.
+- **The cause**: an agent-written rule in AGENTS.md ("`game_dir` is the user's choice: change it only when they ask
+  for another build"), the same in VERSIONS.md, the roadmap's "in the 1.0 lab once its addresses are found (1.2
+  first)", and above all the 1.0 lab's folder written nowhere (one `game_dir`, and searching the disk is not
+  allowed): an agent could not have tested 1.0 even wanting to.
+- **Changed**: `mml.config.json` lists the labs (`"labs": {"1.2", "1.0"}`); `tools/lab.py use 1.0|1.2` switches
+  `game_dir` (the build told by LS3DF.dll's link time, checked against the lab's name), `status` tells the build
+  and the labs; AGENTS.md "Builds" says what is tested where; a mod's `"builds"` in `mod.json`: on another build the
+  loader does not load it nor give the game its files (`mods.list` says why); every shipped mod and `new_mod.py`
+  name both. `lab.py install` copied a mod's top folder only (as `deploy` did): now its subfolders too.
+- **In the 1.0 lab**: the files work there as in 1.2 (above, VERSIONS.md); `boxes` ran there for the first time.
+  Seen once: `menu.click` on the freeride screen's "Retour" right after it opened did not close it (Known gaps).
+  The lab put back on 1.2 after.
