@@ -71,26 +71,35 @@ bool Alive(const MmlMod *m) { return m && m->alive; }
 const char *Who(const MmlMod *m) { return m ? m->entry->id.c_str() : "?"; }
 
 // ---- calls into mods, each behind __try: a fault marks the mod for unloading instead of killing the game
+thread_local uintptr_t t_faultAt, t_faultData;   // the last fault caught: where, and the address it touched
+int NoteFault(EXCEPTION_POINTERS *x) {
+    t_faultAt = reinterpret_cast<uintptr_t>(x->ExceptionRecord->ExceptionAddress);
+    t_faultData = x->ExceptionRecord->NumberParameters >= 2 ? x->ExceptionRecord->ExceptionInformation[1] : 0;
+    return EXCEPTION_EXECUTE_HANDLER;
+}
 void Faulted(MmlMod *m, const char *where, DWORD code) {
     if (!m || m->entry->faulted) return;
     m->entry->faulted = true;
-    Log(MML_LOG_ERROR, "host", "mod %s faulted (exception %08X) in %s: unloaded at the next frame", Who(m),
-        static_cast<unsigned>(code), where);
+    char touched[48] = "";
+    if (code == EXCEPTION_ACCESS_VIOLATION)
+        snprintf(touched, sizeof touched, ", touching 0x%08X", static_cast<unsigned>(t_faultData));
+    Log(MML_LOG_ERROR, "host", "mod %s faulted (exception %08X at %s%s) in %s: unloaded at the next frame", Who(m),
+        static_cast<unsigned>(code), DescribeAddress(t_faultAt).c_str(), touched, where);
 }
 DWORD SafeEvent(MmlEventFn fn, const MmlEvent *ev, void *user) {
-    __try { fn(ev, user); return 0; } __except (EXCEPTION_EXECUTE_HANDLER) { return GetExceptionCode(); }
+    __try { fn(ev, user); return 0; } __except (NoteFault(GetExceptionInformation())) { return GetExceptionCode(); }
 }
 DWORD SafeCommand(MmlCommandFn fn, const char *args, MmlReply *r, void *user, int *rc) {
-    __try { *rc = fn(args, r, user); return 0; } __except (EXCEPTION_EXECUTE_HANDLER) { return GetExceptionCode(); }
+    __try { *rc = fn(args, r, user); return 0; } __except (NoteFault(GetExceptionInformation())) { return GetExceptionCode(); }
 }
 DWORD SafeLoad(MmlModLoadFn fn, const MmlHost *h, MmlMod *m, int *rc) {
-    __try { *rc = fn(h, m); return 0; } __except (EXCEPTION_EXECUTE_HANDLER) { return GetExceptionCode(); }
+    __try { *rc = fn(h, m); return 0; } __except (NoteFault(GetExceptionInformation())) { return GetExceptionCode(); }
 }
 DWORD SafeUnload(MmlModUnloadFn fn, MmlMod *m) {
-    __try { fn(m); return 0; } __except (EXCEPTION_EXECUTE_HANDLER) { return GetExceptionCode(); }
+    __try { fn(m); return 0; } __except (NoteFault(GetExceptionInformation())) { return GetExceptionCode(); }
 }
 DWORD SafePosted(void (*fn)(void *), void *user) {
-    __try { fn(user); return 0; } __except (EXCEPTION_EXECUTE_HANDLER) { return GetExceptionCode(); }
+    __try { fn(user); return 0; } __except (NoteFault(GetExceptionInformation())) { return GetExceptionCode(); }
 }
 
 void ServicesChanged(const std::string &name) {
@@ -386,7 +395,7 @@ bool LoadModDll(ModEntry *e, std::string *err) {
     int rc = 0;
     DWORD ex = SafeLoad(load, &g_host, m, &rc);
     if (ex || rc != 0) {
-        *err = ex ? "mml_mod_load faulted" : "mml_mod_load returned " + std::to_string(rc);
+        *err = ex ? "mml_mod_load faulted at " + DescribeAddress(t_faultAt) : "mml_mod_load returned " + std::to_string(rc);
         e->unload = nullptr;   // (a failed load is not unloaded by the mod; what it registered goes all the same)
         UnloadMod(e, "its load failed");
         return false;
@@ -409,7 +418,7 @@ bool UnloadMod(ModEntry *e, const char *why) {
     if (!m) return false;
     if (e->unload && !e->faulted) {
         DWORD ex = SafeUnload(e->unload, m);
-        if (ex) Log(MML_LOG_ERROR, "host", "mod %s faulted in mml_mod_unload (%08X)", e->id.c_str(), static_cast<unsigned>(ex));
+        if (ex) Log(MML_LOG_ERROR, "host", "mod %s faulted in mml_mod_unload (%08X at %s)", e->id.c_str(), static_cast<unsigned>(ex), DescribeAddress(t_faultAt).c_str());
     }
     m->alive = false;
     HookRemoveAll(m);
@@ -650,6 +659,8 @@ void ModsInit() {
     g_host.file_add = H_FileAdd;
     g_host.file_source = H_FileSource;
     g_host.file_read = H_FileRead;
+    g_host.render_device = RenderDevice;
+    g_host.render_camera = RenderCamera;
     LiveCleanAll();
     Scan();
     LoadEnabled();
@@ -665,12 +676,18 @@ void ModsShutdown() {
     for (auto it = g_mods.rbegin(); it != g_mods.rend(); ++it) UnloadMod(it->get(), "the game is closing");
 }
 
+bool Subscribed(MmlEventType type) {
+    for (const Sub &s : g_subs)
+        if (s.type == type && Alive(s.mod) && !s.mod->entry->faulted) return true;
+    return false;
+}
+
 void Dispatch(const MmlEvent &ev) {
     if (g_subs.empty()) return;
     std::vector<Sub> subs = g_subs;   // a handler may subscribe; a faulted mod is unloaded only at the next frame
     for (const Sub &s : subs) {
         if (s.type != ev.type || !Alive(s.mod) || s.mod->entry->faulted) continue;
-        if (DWORD ex = SafeEvent(s.fn, &ev, s.user)) Faulted(s.mod, "an event handler", ex);
+        if (DWORD ex = SafeEvent(s.fn, &ev, s.user)) Faulted(s.mod, ("its handler of event " + std::to_string(ev.type)).c_str(), ex);
     }
 }
 
@@ -678,7 +695,7 @@ void DispatchTo(MmlMod *mod, const MmlEvent &ev) {
     std::vector<Sub> subs = g_subs;
     for (const Sub &s : subs) {
         if (s.mod != mod || s.type != ev.type || !Alive(s.mod) || s.mod->entry->faulted) continue;
-        if (DWORD ex = SafeEvent(s.fn, &ev, s.user)) Faulted(s.mod, "an event handler", ex);
+        if (DWORD ex = SafeEvent(s.fn, &ev, s.user)) Faulted(s.mod, ("its handler of event " + std::to_string(ev.type)).c_str(), ex);
     }
 }
 
@@ -713,6 +730,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (ScriptMethod(method, paramsJson, reply, &ok)) return ok;
     if (WorldMethod(method, paramsJson, reply, &ok)) return ok;
     if (FilesMethod(method, paramsJson, reply, &ok)) return ok;
+    if (RenderMethod(method, paramsJson, reply, &ok)) return ok;
     if (method == "mods.list") { *reply = ModsList(); return true; }
     if (method == "commands.list") { *reply = CommandsList(); return true; }
     if (method == "hooks.list") { *reply = HookList(); return true; }
@@ -806,7 +824,7 @@ std::string CommandsList() {
                           "input.seq", "input.release", "input.state", "text.get", "text.find", "screenshot", "screenshot.state",
                           "draw.text", "draw.rect", "draw.line", "draw.clear", "draw.state", "config.get", "config.set",
                           "menu.item", "menu.items", "menu.item.remove", "menu.page", "menu.page.set", "menu.page.close", "menu.def", "menu.click", "input.mouse", "input.text",
-                          "script.run", "script.state", "script.stop", "script.list", "files.list", "files.which", "files.read"})
+                          "script.run", "script.state", "script.stop", "script.list", "files.list", "files.which", "files.read", "render.state"})
         out.push_back({{"name", m}, {"owner", "host"}});
     for (auto &kv : g_commands) out.push_back({{"name", kv.first}, {"owner", Who(kv.second.mod)}, {"help", kv.second.help}});
     return out.dump();

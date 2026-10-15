@@ -1,0 +1,7 @@
+{
+  // The defaults of world_marker's settings (config.set {"mod": "world_marker", "key": "color", "value": "#40C0FF"}).
+  "color": "#FFC040",   // the diamond's colour ("#RRGGBB" or "#AARRGGBB")
+  "height": 2.6,        // metres over the player (a car: 0.6 more)
+  "size": 0.35,         // the diamond's radius, metres
+  "beam": 40            // the beam's length up from it, metres
+}

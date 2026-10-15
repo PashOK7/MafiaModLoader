@@ -66,6 +66,18 @@ typedef enum MmlEventType {
                                         changed on disk, or a mod's file came, went or took another's place (a mod
                                         loaded, unloaded, file_add). name: the game's name of the file, lower case
                                         ("maps\crate.bmp"). Every mod gets it, at the frame after the change */
+    /* The frame's drawing (docs/MODDING.md "Drawing in the 3D world"), on the game thread, around LS3D's
+     * I3D_driver::Render of the frame's scene (the mission's world, or a menu's scene: `world` says which). scene:
+     * the I3D_scene drawn; device: the game's IDirect3DDevice8 (render_device gives its Direct3D 9 interface). */
+    MML_EVENT_RENDER_BEGIN = 15,     /* the scene is about to be drawn: the game has posed it (write bones here) */
+    MML_EVENT_RENDER_WORLD = 16,     /* its 3D world is drawn, its 2D (the HUD, the menus) not yet: what a mod draws
+                                        with the device here is in the scene, depth-tested against it, under the
+                                        HUD. The device's transforms are the scene's camera (render_camera). The
+                                        loader saves the device's states, render target and depth buffer before and
+                                        puts them back after (Direct3D 9) */
+    MML_EVENT_RENDER_END = 17,       /* the scene is drawn (its 2D too) */
+    MML_EVENT_PRESENT = 18,          /* the frame is complete, about to be shown: drawing here is over everything
+                                        (the HUD, the menus) and in `screenshot`'s picture; states put back too */
     MML_EVENT_COUNT_
 } MmlEventType;
 
@@ -182,7 +194,24 @@ typedef struct MmlEvent {
     void *actor;            /* ACTOR_DESTROYED, HUMAN_CREATED, HUMAN_HIT */
     const MmlHumanHit *hit; /* HUMAN_HIT */
     const char *name;       /* SERVICES_CHANGED, MOD_LOADED, MISSION_OPEN, MISSION_LOADED, CONFIG_CHANGED */
+    /* (members after this one: MML_EVENT_HAS(ev, member)) */
+    void *scene;            /* RENDER_*: the I3D_scene drawn */
+    int world;              /* RENDER_*: 1 the mission's world scene, 0 another (a menu's) */
+    void *device;           /* RENDER_*, PRESENT: the game's IDirect3DDevice8 */
 } MmlEvent;
+
+#define MML_EVENT_HAS(ev, member) ((size_t)(ev)->size >= offsetof(MmlEvent, member) + sizeof((ev)->member))
+
+/* The camera the frame's scene is drawn with (render_camera), Direct3D's row vectors: a point p (row) is on the
+ * screen at p * view * proj. eye, right, up, fwd: the camera in the world (metres; y up). */
+typedef struct MmlRenderCamera {
+    uint32_t size;
+    float view[16], proj[16];
+    MmlVec3 eye, right, up, fwd;
+    float fov_x, fov_y;     /* the full fields of view, radians */
+    float near_z, far_z;
+    int width, height;      /* the viewport, pixels */
+} MmlRenderCamera;
 
 typedef void (*MmlEventFn)(const MmlEvent *ev, void *user);
 
@@ -369,6 +398,14 @@ typedef struct MmlHost {
     int (*file_add)(MmlMod *mod, const char *name, const char *path);
     int (*file_source)(const char *name, char *path, int size);
     int64_t (*file_read)(MmlMod *mod, const char *name, void *buf, size_t cap, int flags);
+
+    /* ---- the frame's drawing (docs/MODDING.md "Drawing in the 3D world"; both builds). render_device: the game's
+     * Direct3D device: version 8 its IDirect3DDevice8, 9 its IDirect3DDevice9 (the game run on Direct3D 9 by a
+     * wrapper, dxwrapper's d3d8to9 as in the labs; NULL on plain Direct3D 8). No reference is added: valid while the
+     * game keeps the device (ask again each frame). render_camera: the frame scene's camera as the device has it
+     * now (during RENDER_WORLD: the world's); 1: done, 0: no device yet. Game thread. */
+    void *(*render_device)(int version);
+    int (*render_camera)(MmlRenderCamera *out);
 } MmlHost;
 
 #define MML_FILE_GAME 1              /* file_read: the game's own file, not a mod's of the same name */

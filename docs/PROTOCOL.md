@@ -83,6 +83,7 @@ Taps can also start with the game, before its first frame: `"taps": ["5409D0 n=4
 | `files.list` | `mod` (only its), `name` (a part of the names) | the mods with files (`id`, `load_order`, `files`, `added`: by `file_add`, `folder`, `watched`) and each name a mod answers (`name`, `mod`, `path`, `size`, `opens`: how often the game opened it, `over`: the mods under it, `added`), at most 1000; `presaves_hidden`: the game's presaved textures not given for a mod's picture, how often |
 | `files.which` | `name` (the game's name of a file: `"maps\\crate.bmp"`) | who answers it: `mod`, `path`, `over` (the mods under it), `game_has`, `game_size` (its folder's or archives' own), `hidden_for` (a presaved texture of a mod's picture, not given), `answer` |
 | `files.read` | `name`, `game` (the game's own under a mod's), `offset`, `size` (default 256, at most 65536) | `source` (`mod`, `game`), `size` (the whole file's), `hex`, `text` (when it is text) |
+| `render.state` | | the frame's drawing: `hooked`, `renders` (frames' scenes drawn), `world_renders`, `stage1` (RENDER_WORLD points), `presents`, `last_scene`, `last_scene_world`, `device8`, `direct3d9` (a wrapper's Direct3D 9 interface), `camera` (`eye`, `fwd`, `fov_y_deg`, `near`, `far`, `viewport`) |
 | `<command>` | the command's | a mod's command: the core mod's without a prefix (`player`), others' as `<mod>.<name>` |
 
 The core mod's commands: `game` (the build, the mission's name and state), `player`, `car` (the car the player

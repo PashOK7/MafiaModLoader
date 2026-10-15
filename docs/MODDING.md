@@ -69,6 +69,7 @@ Everything below is a member of `MmlHost` (`H->...`); `M` is the mod. Calls into
 | `MML_EVENT_ACTOR_DESTROYED`, `MML_EVENT_HUMAN_CREATED`, `MML_EVENT_HUMAN_HIT` | the game's objects | `actor`, `hit` |
 | `MML_EVENT_CONFIG_CHANGED` | this mod's settings changed (only this mod is told) | `name` (its id) |
 | `MML_EVENT_FILE_CHANGED` | what the game reads for a file's name changed (a mod's file changed on disk, came, went, or took another's place) | `name` (the game's name, lower case: `"maps\\crate.bmp"`) |
+| `MML_EVENT_RENDER_BEGIN`, `_WORLD`, `_END`, `MML_EVENT_PRESENT` | the frame's drawing ("Drawing in the 3D world") | `scene`, `world`, `device` |
 | `MML_EVENT_SERVICES_CHANGED`, `MML_EVENT_MOD_LOADED` | another mod came or went | `name` |
 
 A mod loaded in the middle of a mission (every hot reload) gets no `MISSION_OPEN`: ask `H->mission_name()` and
@@ -97,6 +98,43 @@ float w = H->draw_text_width(MML_FONT_SMALL, 14, "how wide is this");
   goes on.
 - To try a layout without building anything: `call draw.text {"x": 400, "y": 100, "text": "hello", "size": 30,
   "color": "#FFFFD040", "font": 1, "align": "center", "ms": 10000}` (also `draw.rect`, `draw.line`, `draw.clear`).
+
+### Drawing in the 3D world (the render events)
+
+LS3D draws each frame's scene (the mission's world, or a menu's 3D scene) in one call; the loader tells mods
+around it, on the game thread, in both builds:
+
+| Event | When | What to do there |
+|---|---|---|
+| `MML_EVENT_RENDER_BEGIN` | the scene is posed and about to be drawn | write bones, move things for this frame's picture |
+| `MML_EVENT_RENDER_WORLD` | its 3D world is drawn, its 2D (HUD, menus) not yet | draw with the game's device into the scene: depth-tested against the world, under the HUD |
+| `MML_EVENT_RENDER_END` | the scene is drawn | put back what BEGIN changed |
+| `MML_EVENT_PRESENT` | the frame is complete, about to be shown | draw over everything (it is in `screenshot`'s picture) |
+
+The event carries `scene` (the I3D_scene), `world` (1: the mission's world; the main menu's `00menu` is a world
+too: check `mission_name()`), `device` (the game's `IDirect3DDevice8`); ask `MML_EVENT_HAS(ev, world)` first.
+
+```c
+#include <d3d9.h>
+IDirect3DDevice9 *d = (IDirect3DDevice9 *)H->render_device(9);   /* NULL on plain Direct3D 8 */
+MmlRenderCamera cam = {sizeof cam};
+H->render_camera(&cam);          /* view, proj (the device's), eye, axes, fields of view, near, far, viewport */
+/* in RENDER_WORLD: set the world matrix and the states you need, draw; the view and projection are the camera's */
+```
+
+- **The game's state is kept for you**: around `RENDER_WORLD` and `PRESENT` the loader captures every Direct3D 9
+  state (a `D3DSBT_ALL` state block), the render target and the depth buffer, and puts them back after the mods
+  (nothing is done in a frame no mod subscribed). So set every state you rely on (the game leaves whatever it drew
+  last: lighting, fog, blending, textures, shaders) and leave them as they are.
+- The device is the game's Direct3D 8 one; on a wrapper that runs the game on Direct3D 9 (dxwrapper's d3d8to9, as
+  in the labs) `render_device(9)` gives its Direct3D 9 interface. On plain Direct3D 8 that is NULL and nothing is
+  kept: draw through the Direct3D 8 interface and put back what you change.
+- Every frame of a mission draws the world once (`call render.state`: renders, world renders, stage 1, presents,
+  the camera now).
+- `mods/examples/world_marker`: a diamond and a beam over the player, fixed-function Direct3D 9, hidden by what
+  stands in front (`world_marker.at {x, y, z}` puts it anywhere).
+- Mods that use `game.h` (the player, cars) call `game::Detect(H->module_base("LS3DF.dll"))` in `mml_mod_load`
+  first: its helpers read the build's addresses.
 
 ### The game's own menus: an item, a page
 

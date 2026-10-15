@@ -646,6 +646,9 @@ def main():
         check('screenshot: says plainly the device is not known', not r['ok'] and 'device' in str(r), r)
         r = b.call('menu.value', {'id': 21})
         check('menu.value: says plainly the menus are not known', not r['ok'] and 'not known' in str(r), r)
+        r = b.call('render.state')
+        check('render.state with no game: not hooked, nothing drawn, it says so',
+              r['ok'] and r['result']['hooked'] is False and r['result']['renders'] == 0 and 'note' in r['result'], r)
         kit_tests(b)
         files_tests(b)
         heavy_tests(b)
@@ -653,7 +656,8 @@ def main():
         r = b.call('nonexistent.method')
         check('an unknown method: an error', not r['ok'])
         tail = '\n'.join(b.call('log.tail', {'lines': 400})['result'])
-        check('the log tells of the fault', 'faulted' in tail)
+        check('the log tells of the fault, where in the mod and what it touched',
+              'faulted' in tail and 'at mod_hook_b_' in tail and 'touching 0x' in tail, tail[-600:])
     finally:
         open(os.path.join(HARNESS, 'quit'), 'w').close()
         try:

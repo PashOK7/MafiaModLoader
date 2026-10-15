@@ -27,7 +27,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     # ---- the loader
     add_library(MafiaModLoader SHARED
         host/main.cpp host/log.cpp host/memory.cpp host/crash.cpp host/hooks.cpp host/mods.cpp host/game_hooks.cpp
-        host/bridge.cpp host/tap.cpp host/start.cpp host/input.cpp host/screenshot.cpp host/draw.cpp host/config.cpp host/menus.cpp host/menus10.cpp host/script.cpp host/world.cpp host/lifecycle.cpp host/files.cpp)
+        host/bridge.cpp host/tap.cpp host/start.cpp host/input.cpp host/screenshot.cpp host/draw.cpp host/config.cpp host/menus.cpp host/menus10.cpp host/script.cpp host/world.cpp host/lifecycle.cpp host/files.cpp host/render.cpp)
     # ($<0:> keeps Visual Studio from adding a per-configuration folder)
     set_target_properties(MafiaModLoader PROPERTIES SUFFIX ".asi" RUNTIME_OUTPUT_DIRECTORY ${MML_OUT}/$<0:>)
     target_include_directories(MafiaModLoader PRIVATE third_party/json host)
@@ -163,6 +163,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
             SHADERS boxes.hlsl:VsBox:vs_5_0 boxes.hlsl:PsBox:ps_5_0 boxes.hlsl:CsCoverage:cs_5_0)
         target_link_libraries(mod_boxes PRIVATE Jolt d3d11)
     endif()
+    mml_add_mod(world_marker ${CMAKE_SOURCE_DIR}/mods/examples/world_marker mods/examples/world_marker/world_marker.cpp)
     mml_add_files_mod(freeride_picture ${CMAKE_SOURCE_DIR}/mods/examples/freeride_picture)
     # (tools/new_mod.py adds a mod's line above this one)
 

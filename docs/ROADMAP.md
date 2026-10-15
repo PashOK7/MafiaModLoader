@@ -218,6 +218,14 @@ What is done, what comes next and later, and what is known to be missing or wron
   same presaved name), with a mod made for 1.2 only refused there (`"builds"`) (`docs/MODDING.md`, "A mod's own
   files in the game").
 
+- **The render events** (2026-10-15; "Next" item 3, block 3a): `MML_EVENT_RENDER_BEGIN`, `_WORLD` (the 3D world
+  drawn, the HUD not yet), `_END`, `MML_EVENT_PRESENT`, with the scene, whether it is the mission's world and the
+  game's device; `render_device` (8, or a wrapper's Direct3D 9), `render_camera`; the game's Direct3D 9 state kept
+  around the mods' drawing (a state block, the render target, the depth buffer); `render.state`. The example
+  `mods/examples/world_marker` drew a diamond and a beam over the player in the 1.2 and the 1.0 labs, hidden by a
+  building in front of it, under the HUD. On the way: a mod's fault is logged with where (`<module>+<offset>`),
+  what it touched and the event (`docs/MODDING.md`, "Drawing in the 3D world").
+
 ## Next, by importance
 
 **The goal** (the owner, 2026-10-14): a toolkit strong enough for whatever mod a user can think of, written by another
@@ -235,14 +243,13 @@ V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselv
 1. *(Done 2026-10-15: a heavy mod's lifecycle, the loader's part and the build's part; see "Done". The number is
    kept so the items' numbers stay.)*
 2. *(Done 2026-10-15: a mod's own files in the game; see "Done".)*
-3. **Render events and the graphics bridge** (W S V; R for posing). Events around the scene's drawing: before and
-   after `I3D_driver::Render` (LS3DF `0x62030`; a ragdoll writes its bones right before it: the game re-poses in
-   between), at stage 1 (the 3D world drawn, the HUD not yet), at Present. The game's Direct3D 9Ex device (dxwrapper);
+3. **Render events and the graphics bridge** (W S V; R for posing). In three blocks: *3a, the render events (done
+   2026-10-15, see "Done")*; **3b, the bridge**: the game's Direct3D 9Ex device (dxwrapper);
    one Direct3D 11 device beside it on the same adapter, shared by every mod: the frame's colour and depth (the depth
    buffer swapped for a readable one before the world is drawn), the frame's constants (camera, projection, the
    sun's direction and colour, the fog, the ambient light, read from the device), the mods' passes in order into one
    effects target, composited over the frame; GPU timers per pass; the 2D pass (HUD, menus) drawn into a target of a
-   mod's when it asks (a VR mod shows it on a panel). One owner for the depth swap and the composite: two mods doing
+   mod's when it asks (**3c**; a VR mod shows it on a panel). One owner for the depth swap and the composite: two mods doing
    them each would break each other, so it is the loader's. Reference: mafia-ragdoll `gfx.cpp`, `shaders/frame.hlsli`.
 4. **The scene drawn from another camera** (W V). The mission's scene drawn a second time into a target, with a
    camera and projection of the mod's (a mirrored camera and a clip plane for a reflection, two eyes with asymmetric

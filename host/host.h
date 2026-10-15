@@ -213,7 +213,17 @@ void WorldActorGone(void *actor);         // (game_hooks.cpp) out of the spawned
 void WorldMissionClose();
 bool WorldMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 
+// ---- the frame's drawing (render.cpp): I3D_driver::Render hooked; MML_EVENT_RENDER_*, PRESENT; render.state
+void RenderInit();                        // after the game's hooks
+void RenderStage(int stage);              // (draw.cpp) the scene's callback was called with this stage
+void RenderPresent(void *dev8);           // (screenshot.cpp) the device's Present, before the frame is shown
+void *RenderDevice(int version);          // mml.h render_device
+int RenderCamera(MmlRenderCamera *out);   // mml.h render_camera
+bool RenderMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+bool Subscribed(MmlEventType type);       // (mods.cpp) a live mod subscribed to it
+
 // ---- screenshots (screenshot.cpp): the back buffer at Present; screenshot, screenshot.state
+bool ScreenshotHookPresent(std::string *err);   // the device's Present hooked (once; err may be null)
 bool ScreenshotMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 
 // ---- bridge (bridge.cpp)

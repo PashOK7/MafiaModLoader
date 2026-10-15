@@ -170,6 +170,7 @@ void DrawQueued() {
 int __stdcall Draw2dHook(int stage, int a, int b) {
     int r = g_draw2d(stage, a, b);
     if (stage == 2) DrawQueued();
+    RenderStage(stage);   // (render.cpp: stage 1, the 3D world drawn: MML_EVENT_RENDER_WORLD)
     return r;
 }
 

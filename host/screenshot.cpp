@@ -209,6 +209,7 @@ DWORD SafeCapture(void *dev, int id, int *w, int *h, std::string *err) {
 }
 
 HRESULT __stdcall PresentHook(void *dev, const RECT *src, const RECT *dst, HWND wnd, const void *dirty) {
+    RenderPresent(dev);   // (mods' drawing over the whole frame first: it is in the shot)
     int id = 0;
     {
         std::lock_guard<std::mutex> lk(g_mx);
@@ -245,6 +246,11 @@ bool EnsureHooked(std::string *err) {
 }
 
 } // namespace
+
+bool ScreenshotHookPresent(std::string *err) {
+    std::string e;
+    return EnsureHooked(err ? err : &e);
+}
 
 // Game thread (the bridge's jobs run there): hooking is done on the thread that renders.
 bool ScreenshotMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok) {

@@ -729,3 +729,20 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **In the 1.0 lab**: the files work there as in 1.2 (above, VERSIONS.md); `boxes` ran there for the first time.
   Seen once: `menu.click` on the freeride screen's "Retour" right after it opened did not close it (Known gaps).
   The lab put back on 1.2 after.
+
+## 2026-10-15: the render events (item 3, block 3a)
+
+- **Item 3 split** into blocks: 3a the render events, 3b the Direct3D 11 bridge, 3c the 2D pass into a mod's
+  target; each block seen in both labs at its end.
+- **Read**: mafia-ragdoll's render hook (`core.cpp` `hkRender`, `smoke_game.cpp`, `gfx.cpp`). In the 1.2 lab the
+  mission's scene (`C_mission +0x10`) has the game's callback 0x5BD8D0 at `+0x140` and the mask 6 at `+0x144`: the
+  game asks for stages 1 and 2, and does nothing at 1 (its code tests stage 2 only): so the stage-1 point needs no
+  callback of the loader's, only `draw.cpp`'s hook. The device's transforms there are the scene's camera.
+- **Made**: `host/render.cpp` (events, the device, the camera, the state kept around mods' drawing), the example
+  `world_marker`. Its first build faulted (`game::g_exe` null: it never called `game::Detect`); the log said only
+  "faulted in an event handler", so the loader now logs where (`<module>+<offset>`), what the access touched and the
+  event's number, also for a mod's load and unload (offline test: hook_b's crash at `mod_hook_b_...dll+0x10A2`,
+  touching 0x00000000).
+- **In the labs**: 1.2: the marker over the taxi; behind a building it is hidden whole, in front of the facade seen,
+  the frame otherwise unchanged; 1.0: the same events and the marker under the HUD's tips. (A camera looking up in
+  one shot was the owner's.) Both labs back on 1.2.

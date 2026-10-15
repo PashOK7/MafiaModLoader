@@ -145,6 +145,12 @@ except the intro videos), on the game thread, where `LoadLibrary` is safe.
   answer is logged and sent as `FILE_CHANGED` at the next frame. The presaved copies of a texture a mod replaces
   (`<name>_<mips>.565` and the like) are answered "no such file", so LS3D makes the texture from the mod's picture.
   A mod of files alone (`"type": "files"`) is a load with no DLL.
+- **The frame's drawing** (`render.cpp`): LS3D's `I3D_driver::Render` is hooked (both builds): `RENDER_BEGIN` and
+  `RENDER_END` around the outermost call (the scene drawn inside another's is not told), `RENDER_WORLD` at its stage
+  1 (`draw.cpp`'s hook of the scene's callback calls it; the game's scenes ask for stages 1 and 2, and the game does
+  nothing at 1), `PRESENT` from `screenshot.cpp`'s Present hook (hooked at the first Render). Around the drawing
+  events, on Direct3D 9 (a wrapper), a `D3DSBT_ALL` state block is captured and applied, the render target and the
+  depth buffer put back, only in frames a mod subscribed.
 - **Tap** (`tap.cpp`, from mafia-ragdoll): a link of the hook chain (owner: the host) whose thunk books every call
   of a function (callers, registers, arguments, memory, the result) into fixed tables; `tap` on the bridge, startup
   taps from `<game>\mml\config.json`.
