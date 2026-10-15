@@ -226,6 +226,14 @@ What is done, what comes next and later, and what is known to be missing or wron
   building in front of it, under the HUD. On the way: a mod's fault is logged with where (`<module>+<offset>`),
   what it touched and the event (`docs/MODDING.md`, "Drawing in the 3D world").
 
+- **The graphics bridge** (2026-10-15; "Next" item 3, block 3b): one Direct3D 11 device beside the game's 9Ex shared
+  by every mod (`gfx_pass`, `MmlGfxFrame`, `mml/gfx/frame.hlsli`): the readable depth buffer, the frame's colour and
+  linear depth, the camera, the world's fog and sun (from the game's draw calls), the passes in order into one
+  effects target composited over the frame under the HUD, each pass's CPU and GPU time (`gfx.state`); the game's
+  device made without multisampling while a mod says `"gfx": true`; the loader's own shaders and the mods' share
+  `mml_shaders`. The example `mods/examples/depth_pulse` (a scanner's wave from the player) in the 1.2 and 1.0
+  labs, about 0.65 ms a frame for the bridge; 10 reloads of it: 0 MB, 0 handles, 0 threads.
+
 ## Next, by importance
 
 **The goal** (the owner, 2026-10-14): a toolkit strong enough for whatever mod a user can think of, written by another
@@ -243,8 +251,8 @@ V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselv
 1. *(Done 2026-10-15: a heavy mod's lifecycle, the loader's part and the build's part; see "Done". The number is
    kept so the items' numbers stay.)*
 2. *(Done 2026-10-15: a mod's own files in the game; see "Done".)*
-3. **Render events and the graphics bridge** (W S V; R for posing). In three blocks: *3a, the render events (done
-   2026-10-15, see "Done")*; **3b, the bridge**: the game's Direct3D 9Ex device (dxwrapper);
+3. **Render events and the graphics bridge** (W S V; R for posing). In three blocks: *3a, the render events* and *3b, the bridge* (done
+   2026-10-15, see "Done"; what 3b left: below); **3c**, the 2D pass, and the rest of 3b: the game's Direct3D 9Ex device (dxwrapper);
    one Direct3D 11 device beside it on the same adapter, shared by every mod: the frame's colour and depth (the depth
    buffer swapped for a readable one before the world is drawn), the frame's constants (camera, projection, the
    sun's direction and colour, the fog, the ambient light, read from the device), the mods' passes in order into one
@@ -409,6 +417,12 @@ merged, sorted by importance):
   is gone from the source (clean `build/x86/out` or the game's copy by hand). The presaved textures are recognised
   by their names' form as LS3DF 1.2 builds them (read in its decompile); 1.0's LS3DF asked the same name for the
   menu's picture (its code not read).
+- **The graphics bridge** (host/gfx.cpp): left of item 3 besides 3c: the scene's own light (LS3D lights its world
+  without Direct3D lights: the sun is a default from above, the ambient light a grey; mafia-ragdoll's `scene_light`
+  reads the scene's lights), antialiasing of our own (a mod with `"gfx": true` turns the game's multisampling off),
+  the frame's depth as a Direct3D 11 depth buffer for libraries that test against one (mafia-ragdoll's
+  `BuildSceneDsv`), the readback of a pixel's depth (its `Aim`). Plain Direct3D 8 (no wrapper) has no bridge. The
+  passes run in the mission's world only, not in a menu's scene. At most 64 passes. Measured on one NVIDIA RTX 3070.
 - **`menu.click` in 1.0** once did not close the freeride screen (its "Retour", clicked right after the screen was
   opened and a screenshot taken); clicked again later it did. Seen once, the cause not found (the screen's opening
   not finished?).

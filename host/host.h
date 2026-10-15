@@ -38,6 +38,8 @@ uintptr_t ModuleBase(const char *name);
 // "0x5762A0", "5762A0", "game+0x1762A0", "ls3d+1AAE0", "<module>+<hex>"; 0 when it cannot be parsed or resolved.
 uintptr_t ParseAddress(const std::string &text);
 std::string DescribeAddress(uintptr_t addr);   // "Game.exe+0x1762A0", "LS3DF.dll+0x1AAE0" or the hex value
+// One function a module imports pointed at another (its import table's slot), the old one in *old.
+bool PatchImport(HMODULE module, const char *dll, const char *fn, void *replacement, void **old);
 
 // ---- crash reports and the main thread (crash.cpp)
 void EnsureCrashFilter();      // ours first; called at start and every frame (others may install theirs later)
@@ -181,6 +183,7 @@ int FilesSource(const char *name, char *path, int size);
 int64_t FilesRead(const char *name, void *buf, size_t cap, int flags);
 bool FilesMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 void ModsEarlyFiles();                    // (mods.cpp) at the process's start: every enabled mod's files in the game
+std::vector<std::string> ModsWantingGfx();   // (mods.cpp) the enabled mods with "gfx": true in their mod.json
 
 // ---- the game's script machine (script.cpp): programs in the missions' language run by the game's interpreter;
 // script.run, script.state, script.stop, script.list
@@ -221,6 +224,18 @@ void *RenderDevice(int version);          // mml.h render_device
 int RenderCamera(MmlRenderCamera *out);   // mml.h render_camera
 bool RenderMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 bool Subscribed(MmlEventType type);       // (mods.cpp) a live mod subscribed to it
+
+// ---- the graphics bridge (gfx.cpp): Direct3D 11 passes of mods over the frame; gfx.state, gfx.reset
+void GfxInit();
+int GfxPassAdd(MmlMod *mod, int order, MmlGfxPassFn fn, void *user);
+void GfxPassRemove(MmlMod *mod, int handle);
+void GfxRemove(MmlMod *mod);              // its mod unloads: its passes go
+void GfxQuiet(bool on);                   // drawing that is not the game's (not tallied as the world's light)
+void GfxBeforeWorld();                    // (render.cpp) the world's Render begins: the readable depth buffer in
+void GfxTakeWorldLight();                 // stage 1: the fog and sun the world was drawn with
+void GfxStage1();                         // stage 1, after the mods' RENDER_WORLD: copies, passes, composite
+void GfxAfterWorld();                     // the world's Render ended: the game's depth buffer back
+bool GfxMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 
 // ---- screenshots (screenshot.cpp): the back buffer at Present; screenshot, screenshot.state
 bool ScreenshotHookPresent(std::string *err);   // the device's Present hooked (once; err may be null)

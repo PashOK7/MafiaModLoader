@@ -649,6 +649,9 @@ def main():
         r = b.call('render.state')
         check('render.state with no game: not hooked, nothing drawn, it says so',
               r['ok'] and r['result']['hooked'] is False and r['result']['renders'] == 0 and 'note' in r['result'], r)
+        r = b.call('gfx.state')
+        check('gfx.state with no game: idle, no device, no frame', r['ok'] and r['result']['frames'] == 0
+              and r['result']['generation'] == 0 and 'idle' in r['result']['state'], r)
         kit_tests(b)
         files_tests(b)
         heavy_tests(b)

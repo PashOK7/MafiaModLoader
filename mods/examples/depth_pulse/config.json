@@ -1,0 +1,11 @@
+{
+  // The defaults of depth_pulse's settings (config.set {"mod": "depth_pulse", "key": "color", "value": "#FF8040"}).
+  "color": "#4CD9FF",   // the wave's light
+  "strength": 1.2,
+  "period": 4,          // a new wave every this many seconds
+  "speed": 25,          // metres a second
+  "radius": 80,         // where it has faded out
+  "width": 1.2,         // the ring's width, metres
+  "cell": 2,            // the grid behind the front, metres
+  "hotkey": "F11"       // a wave now
+}

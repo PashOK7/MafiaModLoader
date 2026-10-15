@@ -8,7 +8,8 @@
 // (their mask, I3D_scene +0x144 in 1.2, is 6). So: RENDER_BEGIN and RENDER_END around the outermost Render (LS3D
 // draws other scenes from inside the world's: those are not told), RENDER_WORLD at its stage 1 (draw.cpp's hook of
 // the callback calls RenderStage), PRESENT in the device's Present (screenshot.cpp's hook calls RenderPresent,
-// before a screenshot is copied: what mods draw there is in it).
+// before a screenshot is copied: what mods draw there is in it). The graphics bridge (gfx.cpp) hangs on the same
+// points of the world's scene: its depth buffer swapped around Render, its passes at stage 1 after RENDER_WORLD.
 //
 // While mods draw with the game's device (RENDER_WORLD, PRESENT), the loader keeps the game's state: on Direct3D 9
 // (the game on a wrapper) a state block of everything (D3DSBT_ALL) is captured before and applied after, and the
@@ -136,7 +137,9 @@ int __stdcall hkRender(void *driver, void *scene) {
     void *dev = Device8();
     if (dev) ScreenshotHookPresent(nullptr);   // (PRESENT: the device's Present hooked once it exists)
     if (Subscribed(MML_EVENT_RENDER_BEGIN)) Dispatch(Ev(MML_EVENT_RENDER_BEGIN, dev));
+    if (g_world) GfxBeforeWorld();   // (gfx.cpp: the readable depth buffer, when a mod has a pass)
     int r = oRender(driver, scene);
+    if (g_world) GfxAfterWorld();
     if (Subscribed(MML_EVENT_RENDER_END)) Dispatch(Ev(MML_EVENT_RENDER_END, dev));
     g_lastScene = scene;
     g_lastWorld = g_world;
@@ -190,7 +193,11 @@ void RenderStage(int stage) {
     if (stage != 1 || g_depth != 1 || g_stage1ThisRender) return;   // the outermost scene's, once
     g_stage1ThisRender = true;
     g_stage1++;
+    if (g_world) GfxTakeWorldLight();   // the world's fog and sun: what was drawn up to here
+    GfxQuiet(true);                     // (the mods' drawing is not the world's light)
     DispatchDrawing(MML_EVENT_RENDER_WORLD, Device8());
+    GfxQuiet(false);
+    if (g_world) GfxStage1();           // the graphics bridge: the frame with the mods' drawing in it to the passes
 }
 
 void RenderPresent(void *dev8) {

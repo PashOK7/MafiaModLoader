@@ -1,0 +1,12 @@
+{
+  "id": "depth_pulse",
+  "name": "Depth pulse: a scanner's wave over the world (the graphics bridge's example)",
+  "version": "0.1.0",
+  "type": "native",
+  "entry": "depth_pulse.dll",
+  "enabled": true,
+  "builds": ["1.2", "1.0"],
+  "gfx": true,
+  "load_order": 100,
+  "depends": []
+}

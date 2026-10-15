@@ -151,6 +151,14 @@ except the intro videos), on the game thread, where `LoadLibrary` is safe.
   nothing at 1), `PRESENT` from `screenshot.cpp`'s Present hook (hooked at the first Render). Around the drawing
   events, on Direct3D 9 (a wrapper), a `D3DSBT_ALL` state block is captured and applied, the render target and the
   depth buffer put back, only in frames a mod subscribed.
+- **The graphics bridge** (`gfx.cpp`, after mafia-ragdoll's): one Direct3D 11 device on the game's adapter (by its
+  LUID; `d3d11.dll` loaded at the first frame with a pass), textures shared with the game's Direct3D 9Ex; around the
+  world's Render a readable (INTZ) depth buffer; at stage 1 after the mods' drawing: the colour and the linear depth
+  copied, the passes run in order (each in its mod's fault guard, GPU timestamps around each), the effects target
+  blended over the frame, every Direct3D 9 state put back; event queries make the devices wait for each other. The
+  world's fog and sun come from the game's own draw calls up to stage 1 (Direct3D 9's SetRenderState, SetLight,
+  LightEnable and draw calls hooked), the mods' and the bridge's own not counted. `Direct3DCreate8`'s import is
+  patched so that the device is made (and Reset) without multisampling while a mod with `"gfx": true` is enabled.
 - **Tap** (`tap.cpp`, from mafia-ragdoll): a link of the hook chain (owner: the host) whose thunk books every call
   of a function (callers, registers, arguments, memory, the result) into fixed tables; `tap` on the bridge, startup
   taps from `<game>\mml\config.json`.

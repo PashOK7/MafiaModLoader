@@ -34,6 +34,7 @@ void Init() {
     }
     FilesInit();        // (the game reads its first tables before the first frame: the mods' files are there already;
     ModsEarlyFiles();   // after the build is known: a mod made for another build gives none)
+    GfxInit();          // (the game's device is made after this: the bridge's mods are known from their manifests)
     BridgeStart();
 }
 } // namespace host

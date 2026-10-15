@@ -36,6 +36,7 @@ struct ModEntry {
     int order = 100;
     std::vector<std::string> depends;
     std::vector<std::string> builds;  // the game's builds it is made for ("1.2", "1.0"); empty: every build
+    bool gfx = false;                 // "gfx": true: it draws through the graphics bridge (the device made without multisampling)
     HMODULE dll = nullptr;
     MmlModUnloadFn unload = nullptr;
     MmlMod *current = nullptr;        // the live load, or null
@@ -272,6 +273,13 @@ int H_ActorSeat(MmlMod *m, void *human, void *car, int seat) {
 int H_FileAdd(MmlMod *m, const char *name, const char *path) { return Alive(m) ? FilesAdd(m, name, path) : 0; }
 int H_FileSource(const char *name, char *path, int size) { return FilesSource(name, path, size); }
 int64_t H_FileRead(MmlMod *, const char *name, void *buf, size_t cap, int flags) { return FilesRead(name, buf, cap, flags); }
+int H_GfxPass(MmlMod *m, int order, MmlGfxPassFn fn, void *user) {
+    if (!Alive(m)) return 0;
+    int h = GfxPassAdd(m, order, fn, user);
+    if (!h) Log(MML_LOG_WARN, Who(m), "gfx_pass refused (no function, or too many passes)");
+    return h;
+}
+void H_GfxPassRemove(MmlMod *m, int handle) { if (m && handle > 0) GfxPassRemove(m, handle); }
 
 // ---- manifests
 bool ReadManifest(const std::string &dir, const std::string &folder, ModEntry *e, std::string *err) {
@@ -289,6 +297,7 @@ bool ReadManifest(const std::string &dir, const std::string &folder, ModEntry *e
         e->depends.clear();
         if (j.contains("depends") && j["depends"].is_array())
             for (auto &d : j["depends"]) if (d.is_string()) e->depends.push_back(d.get<std::string>());
+        e->gfx = j.value("gfx", false);
         e->builds.clear();
         if (j.contains("builds") && j["builds"].is_array())
             for (auto &b : j["builds"]) if (b.is_string()) e->builds.push_back(b.get<std::string>());
@@ -426,6 +435,7 @@ bool UnloadMod(ModEntry *e, const char *why) {
     MenusRemove(m);
     ScriptsRemove(m);
     DrawRemove(m);
+    GfxRemove(m);
     ConfigForget(m);
     g_subs.erase(std::remove_if(g_subs.begin(), g_subs.end(), [&](const Sub &s) { return s.mod == m; }), g_subs.end());
     for (auto it = g_commands.begin(); it != g_commands.end();) it = it->second.mod == m ? g_commands.erase(it) : std::next(it);
@@ -519,7 +529,7 @@ void Scan() {
         }
         if (e->current) continue;
         e->name = tmp.name; e->version = tmp.version; e->type = tmp.type; e->entry = tmp.entry; e->enabled = tmp.enabled;
-        e->order = tmp.order; e->depends = tmp.depends; e->builds = tmp.builds; e->dir = tmp.dir;
+        e->order = tmp.order; e->depends = tmp.depends; e->builds = tmp.builds; e->gfx = tmp.gfx; e->dir = tmp.dir;
     } while (FindNextFileA(h, &fd));
     FindClose(h);
     std::stable_sort(g_mods.begin(), g_mods.end(), [](const std::unique_ptr<ModEntry> &a, const std::unique_ptr<ModEntry> &b) {
@@ -562,6 +572,7 @@ json ModValue(const ModEntry &e) {
               {"loaded", e.current != nullptr}, {"generation", e.generation}, {"load_order", e.order}, {"dir", e.dir},
               {"depends", e.depends}};
     if (!e.builds.empty()) j["builds"] = e.builds;
+    if (e.gfx) j["gfx"] = true;
     if (e.current && !e.liveDir.empty()) j["live_dir"] = e.liveDir;
     if (size_t n = FilesCount(e.id)) j["files"] = n;
     if (!e.error.empty()) j["error"] = e.error;
@@ -661,6 +672,8 @@ void ModsInit() {
     g_host.file_read = H_FileRead;
     g_host.render_device = RenderDevice;
     g_host.render_camera = RenderCamera;
+    g_host.gfx_pass = H_GfxPass;
+    g_host.gfx_pass_remove = H_GfxPassRemove;
     LiveCleanAll();
     Scan();
     LoadEnabled();
@@ -670,6 +683,13 @@ void ModsEarlyFiles() {
     Scan();
     for (auto &e : g_mods)
         if (e->enabled && (e->type == "native" || e->type == "files") && ForThisBuild(*e)) FilesModOn(e->id, e->dir, e->order, true);
+}
+
+std::vector<std::string> ModsWantingGfx() {
+    std::vector<std::string> ids;
+    for (auto &e : g_mods)
+        if (e->enabled && e->gfx && ForThisBuild(*e)) ids.push_back(e->id);
+    return ids;
 }
 
 void ModsShutdown() {
@@ -731,6 +751,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (WorldMethod(method, paramsJson, reply, &ok)) return ok;
     if (FilesMethod(method, paramsJson, reply, &ok)) return ok;
     if (RenderMethod(method, paramsJson, reply, &ok)) return ok;
+    if (GfxMethod(method, paramsJson, reply, &ok)) return ok;
     if (method == "mods.list") { *reply = ModsList(); return true; }
     if (method == "commands.list") { *reply = CommandsList(); return true; }
     if (method == "hooks.list") { *reply = HookList(); return true; }
@@ -824,7 +845,7 @@ std::string CommandsList() {
                           "input.seq", "input.release", "input.state", "text.get", "text.find", "screenshot", "screenshot.state",
                           "draw.text", "draw.rect", "draw.line", "draw.clear", "draw.state", "config.get", "config.set",
                           "menu.item", "menu.items", "menu.item.remove", "menu.page", "menu.page.set", "menu.page.close", "menu.def", "menu.click", "input.mouse", "input.text",
-                          "script.run", "script.state", "script.stop", "script.list", "files.list", "files.which", "files.read", "render.state"})
+                          "script.run", "script.state", "script.stop", "script.list", "files.list", "files.which", "files.read", "render.state", "gfx.state", "gfx.reset"})
         out.push_back({{"name", m}, {"owner", "host"}});
     for (auto &kv : g_commands) out.push_back({{"name", kv.first}, {"owner", Who(kv.second.mod)}, {"help", kv.second.help}});
     return out.dump();

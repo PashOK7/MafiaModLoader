@@ -323,29 +323,6 @@ HANDLE WINAPI hkCreateFileA(LPCSTR name, DWORD access, DWORD share, LPSECURITY_A
     return oCreateFileA(name, access, share, sa, disposition, flags, tmpl);
 }
 
-// One function of a module's imports pointed at another (its import table's slot), the old one in *old.
-bool PatchImport(HMODULE module, const char *dll, const char *fn, void *replacement, void **old) {
-    auto base = reinterpret_cast<uint8_t *>(module);
-    auto dos = reinterpret_cast<IMAGE_DOS_HEADER *>(base);
-    auto nt = reinterpret_cast<IMAGE_NT_HEADERS *>(base + dos->e_lfanew);
-    const IMAGE_DATA_DIRECTORY &dir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
-    if (!dir.VirtualAddress) return false;
-    for (auto d = reinterpret_cast<IMAGE_IMPORT_DESCRIPTOR *>(base + dir.VirtualAddress); d->Name; ++d) {
-        if (_stricmp(reinterpret_cast<const char *>(base + d->Name), dll) != 0 || !d->OriginalFirstThunk) continue;
-        auto names = reinterpret_cast<IMAGE_THUNK_DATA *>(base + d->OriginalFirstThunk);
-        auto slots = reinterpret_cast<IMAGE_THUNK_DATA *>(base + d->FirstThunk);
-        for (; names->u1.AddressOfData; ++names, ++slots) {
-            if (IMAGE_SNAP_BY_ORDINAL(names->u1.Ordinal)) continue;
-            auto ibn = reinterpret_cast<IMAGE_IMPORT_BY_NAME *>(base + names->u1.AddressOfData);
-            if (strcmp(reinterpret_cast<const char *>(ibn->Name), fn) != 0) continue;
-            *old = reinterpret_cast<void *>(slots->u1.Function);
-            uintptr_t v = reinterpret_cast<uintptr_t>(replacement);
-            return MemWrite(reinterpret_cast<uintptr_t>(&slots->u1.Function), &v, sizeof v);
-        }
-    }
-    return false;
-}
-
 // A file read through the game's file layer: by the chain (what the game reads) or under the loader's link (the
 // game's own). The whole size, or -1.
 int64_t ReadFile_(const std::string &name, bool gameOnly, uint64_t offset, std::vector<uint8_t> *out, size_t cap) {

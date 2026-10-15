@@ -16,7 +16,7 @@ makes `mods/my_mod/` and adds its line to `CMakeLists.txt`:
 | File | What |
 |---|---|
 | `my_mod.cpp` | a small working mod: an overlay line, a hotkey from its settings, a command. Cut what you do not need |
-| `mod.json` | the manifest: `id` (its folder, its DLL, its commands' prefix), `name`, `version`, `entry`, `enabled`, `load_order`, `depends`, `builds` (the game's builds it is made for, `["1.2", "1.0"]`: on another it is not loaded and gives the game none of its files, `mods.list` says why; absent: every build) |
+| `mod.json` | the manifest: `id` (its folder, its DLL, its commands' prefix), `name`, `version`, `entry`, `enabled`, `load_order`, `depends`, `gfx` (true: it draws through the graphics bridge: "Effects over the frame"), `builds` (the game's builds it is made for, `["1.2", "1.0"]`: on another it is not loaded and gives the game none of its files, `mods.list` says why; absent: every build) |
 | `config.json` | the defaults of its settings (optional) |
 
 A mod is a 32-bit DLL with three exports; `sdk/include/mml/mml.h` is the whole contract (read it once, it is short):
@@ -135,6 +135,57 @@ H->render_camera(&cam);          /* view, proj (the device's), eye, axes, fields
   stands in front (`world_marker.at {x, y, z}` puts it anywhere).
 - Mods that use `game.h` (the player, cars) call `game::Detect(H->module_base("LS3DF.dll"))` in `mml_mod_load`
   first: its helpers read the build's addresses.
+
+### Effects over the frame (the graphics bridge)
+
+For effects that need the frame's depth (water, smoke, fog volumes, outlines, a scanner's wave) a mod draws with
+Direct3D 11 on one device the loader shares between every mod, beside the game's Direct3D 9Ex (the labs' wrapper):
+
+```c
+#include <d3d11.h>
+#include "shaders/PsMine.h"      /* mml_add_mod(... SHADERS mine.hlsl:PsMine:ps_5_0) */
+void Pass(const MmlGfxFrame *f, void *user) {
+    ID3D11DeviceContext *ctx = (ID3D11DeviceContext *)f->context;
+    /* make your objects on f->device the first time, and again when f->generation changes */
+    ctx->PSSetShader(g_ps, NULL, 0);
+    ctx->Draw(3, 0);             /* the full-screen triangle: its vertex shader is bound */
+}
+H->gfx_pass(M, 100, Pass, NULL);   /* in mml_mod_load; lower orders run first; the unload takes it back */
+```
+
+```hlsl
+#include "mml/gfx/frame.hlsli"   // the frame's constants (b0), depth (t0), colour (t1), samplers, helpers
+float4 PsMine(float4 pos : SV_Position) : SV_Target {
+    float z = SceneDepth(pos.xy);
+    if (IsSky(z)) return 0;
+    float3 p = g_eye.xyz + ViewRay(pos.xy) * z;      // the world point this pixel shows
+    float a = (1 - FogAmount(z)) * 0.5;
+    return float4(float3(1, 0.5, 0) * a, a);         // premultiplied: rgb times alpha
+}
+```
+
+- **`"gfx": true` in `mod.json`.** A readable depth buffer cannot be multisampled, so while an enabled mod says so
+  the loader makes the game's device without multisampling (at its creation and at a Reset; the game's own setting
+  is left as it is). A pass registered by a mod without it, on a multisampled device, is not run: `gfx.state` says
+  why. Enabling such a mod takes a restart of the game.
+- **Each frame of the mission's world** (not the menus): the frame's depth buffer is a readable one while the world
+  is drawn; at the point where the world is drawn and the HUD not yet (after the mods' `RENDER_WORLD` drawing, so
+  their Direct3D 9 drawing is in the frame the passes see), the frame's colour and linear depth (metres along the
+  view, `g_depthProj.z` for the sky) are handed to the passes, which draw in order into one effects target
+  (premultiplied RGBA16F, cleared to 0); the target is blended over the frame (`frame * (1 - a) + rgb`), under the
+  HUD.
+- **The constants** (`MmlGfxConstants`, `cbuffer MmlFrame`): the camera (eye, axes, projection), the frame's size,
+  the time, the world's fog (as the world was drawn: start, end, mode, colour) and a sun (`w` 1 when the game's;
+  in the freeride the game draws its world with no Direct3D light, so it is a default from above: the scene's own
+  light is not read yet), the ambient light (a default). `frame.hlsli`: `ViewRay`, `ScenePoint`, `SceneDepth`,
+  `IsSky`, `FogAmount`, `ApplyFog`, `ToScreen`, `Lin`/`Enc` (the game's colours are gamma-encoded).
+- **State**: the bridge binds the target, the viewport, t0/t1, s0/s1, b0 and the full-screen vertex shader before
+  each pass; anything else a pass sets is cleared after the passes. A pass runs on the game thread behind its mod's
+  fault guard.
+- **Costs** are measured: `call gfx.state` gives each pass's CPU and GPU time (timestamps), the bridge's copy and
+  waits (about 0.65 ms of CPU a frame for the whole bridge at 1280x960 in the labs), the device, the frame's size,
+  the fog and sun found.
+- `mods/examples/depth_pulse`: a scanner's wave over the world from the player (`depth_pulse.now`, F11).
 
 ### The game's own menus: an item, a page
 

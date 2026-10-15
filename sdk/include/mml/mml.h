@@ -213,6 +213,39 @@ typedef struct MmlRenderCamera {
     int width, height;      /* the viewport, pixels */
 } MmlRenderCamera;
 
+/* The graphics bridge's frame (gfx_pass). Its constants are cbuffer MmlFrame of mml/gfx/frame.hlsli (b0), which a
+ * pass's shaders include. */
+typedef struct MmlGfxConstants {
+    float eye[4];           /* the camera's position, w: the time in seconds */
+    float right[4], up[4], fwd[4];   /* its axes in the world */
+    float proj[4];          /* the projection's _11, _22, _31, _32 */
+    float size[4];          /* width, height, 1/width, 1/height */
+    float sun[4];           /* towards the sun (unit), w: 1 the game's light */
+    float depth_proj[4];    /* the projection's _33, _43; the sky's linear depth */
+    float sun_color[4];     /* w: 1 the game's */
+    float fog[4];           /* start, end, density, mode (0 none, 1 exp, 2 exp2, 3 linear) */
+    float fog_color[4];     /* w: 1 when on */
+    float ambient[4];       /* w: 1 the game's */
+} MmlGfxConstants;
+typedef struct MmlGfxFrame {
+    uint32_t size;
+    void *device;           /* ID3D11Device* (the bridge's, shared by every mod) */
+    void *context;          /* ID3D11DeviceContext*: its immediate context (game thread only) */
+    unsigned generation;    /* changes when the device is made anew: whatever a mod made on the old one is gone */
+    const MmlGfxConstants *k;
+    void *constants;        /* ID3D11Buffer* holding k, bound to b0 (VS, PS, CS) */
+    void *depth;            /* ID3D11ShaderResourceView*: linear view depth, metres (t0) */
+    void *color;            /* ID3D11ShaderResourceView*: the frame so far (t1) */
+    void *point, *linear;   /* ID3D11SamplerState* (s0, s1) */
+    void *target;           /* ID3D11RenderTargetView*: the effects target, premultiplied RGBA16F, bound with the
+                               frame's viewport; cleared to 0 before the first pass */
+    void *full_screen;      /* ID3D11VertexShader*: VsFullScreen (bound): Draw(3) covers the frame */
+    unsigned width, height;
+    float view[16], proj[16];   /* the camera's (row vectors) */
+} MmlGfxFrame;
+/* A pass may change any Direct3D 11 state: the bridge binds what it hands out again before each pass. */
+typedef void (*MmlGfxPassFn)(const MmlGfxFrame *frame, void *user);
+
 typedef void (*MmlEventFn)(const MmlEvent *ev, void *user);
 
 /* A command, reachable through the bridge (and so by agents over MCP) as "<mod id>.<name>" or, for the core mod,
@@ -406,6 +439,17 @@ typedef struct MmlHost {
      * now (during RENDER_WORLD: the world's); 1: done, 0: no device yet. Game thread. */
     void *(*render_device)(int version);
     int (*render_camera)(MmlRenderCamera *out);
+
+    /* ---- effects over the frame: the graphics bridge (docs/MODDING.md "Effects over the frame"; both builds; the
+     * game on Direct3D 9Ex through a wrapper, as in the labs). One Direct3D 11 device on the game's adapter, shared
+     * by every mod. While a pass is registered, each frame of the mission's world: the frame's depth buffer is a
+     * readable one, and once the world is drawn (after RENDER_WORLD's mods) its colour and linear depth are handed to
+     * every pass, in `order` (lower first; the same: registration), all drawing into one effects target that is then
+     * composited over the frame, under the HUD. gfx_pass: a handle (> 0), 0 refused (no such fn; the log says why);
+     * gfx_pass_remove takes one back; a mod's passes go with its unload. A pass runs on the game thread behind the
+     * mod's fault guard; a fault unloads the mod. */
+    int (*gfx_pass)(MmlMod *mod, int order, MmlGfxPassFn fn, void *user);
+    void (*gfx_pass_remove)(MmlMod *mod, int handle);
 } MmlHost;
 
 #define MML_FILE_GAME 1              /* file_read: the game's own file, not a mod's of the same name */

@@ -746,3 +746,24 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **In the labs**: 1.2: the marker over the taxi; behind a building it is hidden whole, in front of the facade seen,
   the frame otherwise unchanged; 1.0: the same events and the marker under the HUD's tips. (A camera looking up in
   one shot was the owner's.) Both labs back on 1.2.
+
+## 2026-10-15: the graphics bridge (item 3, block 3b)
+
+- **Made**: `host/gfx.cpp` after mafia-ragdoll's `gfx.cpp` (its design: the INTZ swap, the shared textures made by
+  9Ex and opened by 11, the event queries, the state block of exactly the states it changes, the fog and sun tallied
+  from the game's draw calls), for any number of mods through `gfx_pass`, with GPU timestamps a pass, `gfx.state`;
+  `mml/gfx/frame.hlsli` for mods' shaders; `mml_shaders` (the loader's own shaders and the mods' compiled alike, the
+  SDK on the include path). `d3d11.dll` is loaded at the first frame with a pass: a game without effect mods never
+  loads it.
+- **Found in the lab**: the bridge's first frame refused: the lab's game asks for 4x multisampling, and a readable
+  depth buffer cannot be multisampled. mafia-ragdoll makes the device without it, always; the loader does it only
+  while an enabled mod says `"gfx": true` (its manifest is read before the device is made): `Direct3DCreate8`'s
+  import patched, `IDirect3D8::CreateDevice` (slot 15) and the device's `Reset` (slot 14) take the multisample type
+  out of the present parameters, the log says so.
+- **The example** `depth_pulse`: a wave from the player over the world's surfaces, a grid behind it, into the fog.
+  In the 1.2 lab: 0.65 ms of CPU a frame for the whole bridge (copy 0.23, passes and their wait 0.40), the pass
+  0.07..0.14 ms of GPU; the world's fog found linear 84..280 m; no directional light in the freeride's world (a
+  default sun). 10 reloads in a row: 0 MB, 0 handles, 0 threads, drawing after each. Fixed on the way: `gfx.state`
+  said "no pass" after a reload (its text was not set again when a pass came back).
+- **In the 1.0 lab**: the same (no address of the game's is used): the device made without multisampling, the wave
+  drawn, the same fog. Both labs back on 1.2.
