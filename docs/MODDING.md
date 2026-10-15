@@ -172,8 +172,9 @@ float4 PsMine(float4 pos : SV_Position) : SV_Target {
   is drawn; at the point where the world is drawn and the HUD not yet (after the mods' `RENDER_WORLD` drawing, so
   their Direct3D 9 drawing is in the frame the passes see), the frame's colour and linear depth (metres along the
   view, `g_depthProj.z` for the sky) are handed to the passes, which draw in order into one effects target
-  (premultiplied RGBA16F, cleared to 0); the target is blended over the frame (`frame * (1 - a) + rgb`), under the
-  HUD.
+  (premultiplied RGBA16F, cleared to 0), each laid over the ones before it (the blend state the bridge binds: ONE,
+  INV_SRC_ALPHA; a pass returning 0 leaves them); the target is blended over the frame (`frame * (1 - a) + rgb`),
+  under the HUD.
 - **The constants** (`MmlGfxConstants`, `cbuffer MmlFrame`): the camera (eye, axes, projection), the frame's size,
   the time, the world's fog (as the world was drawn: start, end, mode, colour) and a sun (`w` 1 when the game's;
   in the freeride the game draws its world with no Direct3D light, so it is a default from above: the scene's own
@@ -247,6 +248,43 @@ int view = H->scene_view(M, 640, 200, PlaceMirror, NULL);   /* 0, 0: the frame's
   its clip plane), `"spin"` (a mirror standing in the world, turning; `rear_mirror.spin {"at": [x, y, z]}`),
   `"check"` (the left half of the frame drawn again and compared: black when equal). `depth_pulse` runs its pass in
   the views: its wave is seen in the mirror.
+
+### The game's own geometry hidden or replaced (water, by its texture)
+
+LS3D draws its meshes face group by face group (a part of a mesh with one material); the loader stands where it
+draws each one, so a mod can leave the game's own geometry out of the picture and draw its own in its place, chosen
+by the file name of the group's texture:
+
+```c
+int h = H->geom_hide(M, "00test*", 0);          /* the city's river (00TEST01..20.BMP); 0: the frame and the views */
+H->geom_capture(M, "00test*", OnWater, NULL);   /* its triangles, the world's space, after the next frame */
+void OnWater(const MmlGeomCapture *c, void *user) {
+    /* c->tris: c->count triangles (9 floats each); c->groups: which face group each run came from */
+}
+```
+
+- **Finding the names**: `call geom.survey` (then `geom.survey {"id", "filter": "*test*"}`) lists every texture the
+  frame drew with its face groups, faces, the kinds of visual (`OBJ_` objects, `LMAP` lit, `SNGM` / `SMMR` people's
+  meshes) and the material's flags (`0x04000000`: an animated texture, matched by the frame it shows now:
+  `00test*`). Patterns: case-insensitive, `*` and `?`, the file name without folders.
+- **Hiding** touches nothing but LS3D's drawing: the face group's `m_RenderFGroup` is not run (in the frame, the
+  scene views or both: `MML_GEOM_FRAME`, `MML_GEOM_VIEWS`); the game's collision, logic and memory are as they were
+  (the river still drowns). No pointer into the game is kept between frames: a destroyed object cannot be written to.
+- **Capturing** reads what LS3D hands Direct3D for each matching group (its DrawIndexedPrimitive's buffers, base
+  vertex and world transform), so it is exact for any kind of visual. Only what the frame drew is in it: ask again as
+  the camera moves and keep the groups by `group`. The city's river is one plane of 54 triangles at y -9.99, drawn
+  always: one capture is all of it.
+- **Replacing**: draw the captured triangles in a pass with your own vertex shader (`mul(float4(p, 1), view x proj)`
+  from `MmlGfxFrame::view`, `proj`) and discard where `SceneDepth` is nearer (what stands in front); with the game's
+  water hidden, `SceneDepth` and `g_sceneColor` there are the riverbed, seen through your water. A planar reflection
+  is a scene view of the camera mirrored in the water's level with that plane as its clip plane.
+- `call geom.hide {"pattern", "where"}`, `geom.show {"handle"}`, `geom.state` (rules, groups and faces hidden last
+  frame), `geom.capture {"pattern"}` then `{"id"}` (the bounds, triangles by texture, the first few): the same from
+  the bridge.
+- `mods/examples/river_water` (not enabled by default): the river hidden, captured and drawn anew: waves (each
+  fading where it would be shorter than a few pixels), the reflection bent by them, the bed darker the deeper it
+  lies, the sun's glint, the fog. In the labs at 1280x960 its reflection (a second drawing of the city, with
+  `depth_pulse`'s pass in it) costs about 7.7 ms of CPU.
 
 ### The game's own menus: an item, a page
 
@@ -635,5 +673,4 @@ high-resolution timer if asked, and shows the frame rate and the game's clock st
 
 ## Not there yet
 
-LuaJIT script mods, a Rust crate, 64-bit sidecar mods, the game's own geometry hidden or replaced around a drawing
-(water's faces): `docs/ROADMAP.md`.
+LuaJIT script mods, a Rust crate, 64-bit sidecar mods: `docs/ROADMAP.md`.

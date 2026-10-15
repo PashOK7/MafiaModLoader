@@ -264,7 +264,8 @@ typedef struct MmlGfxFrame {
 #define MML_GFX_UI_OFF 0     /* gfx_ui: the 2D pass as the game draws it */
 #define MML_GFX_UI_TAKE 1    /* ... also into MmlGfxFrame::ui (the frame unchanged) */
 #define MML_GFX_UI_HIDE 2    /* ... into MmlGfxFrame::ui only: the HUD and the menus not on the frame (a VR panel) */
-/* A pass may change any Direct3D 11 state: the bridge binds what it hands out again before each pass. */
+/* A pass may change any Direct3D 11 state: the bridge binds what it hands out again before each pass, the blend
+ * state too (premultiplied over: each pass is laid over the passes before it). */
 typedef void (*MmlGfxPassFn)(const MmlGfxFrame *frame, void *user);
 
 /* The mission's scene drawn again, by LS3D itself, from another camera into a target of the bridge's (scene_view;
@@ -314,6 +315,25 @@ struct MmlGfxView {
     unsigned frames;        /* times it was drawn */
     int fresh;              /* 1: drawn for this frame; 0: the last one's (its function said 0, or it failed) */
 };
+
+/* The game's own geometry (geom_hide, geom_capture below). */
+#define MML_GEOM_FRAME 0x1          /* geom_hide: not drawn in the frame */
+#define MML_GEOM_VIEWS 0x2          /* ... not drawn in the scene views (mirrors, reflections) */
+typedef struct MmlGeomGroup {
+    const void *visual;     /* the LS3D visual drawn (its I3D_frame) */
+    const void *group;      /* the face group (with `visual`, the key to keep it by across captures) */
+    const char *texture;    /* its texture's file name, as matched */
+    unsigned first, count;  /* its triangles in MmlGeomCapture::tris */
+} MmlGeomGroup;
+typedef struct MmlGeomCapture {
+    uint32_t size;
+    const float *tris;      /* count triangles, three points of three floats each: the world (metres, y up) */
+    unsigned count;
+    const MmlGeomGroup *groups;
+    unsigned group_count;
+    unsigned unreadable;    /* face groups whose buffers could not be read (not in tris) */
+} MmlGeomCapture;
+typedef void (*MmlGeomFn)(const MmlGeomCapture *capture, void *user);
 
 typedef void (*MmlEventFn)(const MmlEvent *ev, void *user);
 
@@ -539,6 +559,22 @@ typedef struct MmlHost {
      * in the frame the view's; its target blended over the view's colour before any pass gets the view. Returns 1, 0
      * no such pass of the mod's. A pass that shows views (a mirror's) leaves this off. */
     int (*gfx_pass_views)(MmlMod *mod, int pass, int on);
+
+    /* ---- the game's own geometry, left out of LS3D's drawing or captured (both builds; docs/MODDING.md "The game's
+     * own geometry hidden or replaced"). A face group is a part of a mesh drawn with one material; it is matched by
+     * the file name of its material's texture as LS3D draws it now (the animation's frame of an animated one), without
+     * folders, case-insensitive, '*' any run and '?' one character: "00test*.bmp". geom.survey on the bridge lists
+     * what the game draws. Only LS3D's drawing is touched: the game's collision, its logic and its memory are not.
+     * geom_hide: every face group whose texture matches is not drawn in the drawings `where` names (MML_GEOM_*, 0:
+     * all); a handle (> 0), 0 refused. geom_show takes one back (0: all the mod's); a mod's go with its unload. */
+    int (*geom_hide)(MmlMod *mod, const char *pattern, int where);
+    void (*geom_show)(MmlMod *mod, int handle);
+    /* geom_capture: at the next frame of the mission's world, every face group the frame draws whose texture matches
+     * (hidden or not) is read from the buffers LS3D draws it from, in the world's space; fn gets them after that
+     * frame's drawing (game thread, behind the mod's fault guard), once. What LS3D did not draw that frame (out of
+     * view, culled) is not in it: ask again as the camera moves and keep the groups by their `group` key. 1: asked;
+     * 0 refused (no fn, an empty pattern). */
+    int (*geom_capture)(MmlMod *mod, const char *pattern, MmlGeomFn fn, void *user);
 } MmlHost;
 
 #define MML_FILE_GAME 1              /* file_read: the game's own file, not a mod's of the same name */

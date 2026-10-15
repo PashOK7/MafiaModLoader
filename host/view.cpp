@@ -344,6 +344,8 @@ void DrawOne(View &v, void *driver, void *scene, uint8_t *cam, RenderFn render) 
 
 } // namespace
 
+int ViewDrawingNow() { return g_drawing ? g_stageHandle : 0; }
+
 int ViewAdd(MmlMod *mod, int w, int h, MmlViewFn fn, void *user, std::string *err) {
     if (!fn) { *err = "no function"; return 0; }
     if (w < 0 || h < 0 || w > 8192 || h > 8192 || (!w) != (!h)) { *err = "a size of 1..8192 each, or 0, 0 (the frame's)"; return 0; }

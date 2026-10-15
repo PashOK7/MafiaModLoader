@@ -259,6 +259,17 @@ using RenderFn = int(__stdcall *)(void *driver, void *scene);
 void ViewsDraw(void *driver, void *scene, RenderFn render);   // (render.cpp) before the world's own Render
 void RenderViewWorld(int handle);         // (render.cpp) MML_EVENT_VIEW_WORLD sent, the device's state kept
 bool ViewMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+int ViewDrawingNow();                     // the scene view LS3D is drawing now (its handle), 0: none
+
+// ---- the game's own geometry (geom.cpp): face groups left out of LS3D's drawing, surveyed, captured by texture
+int GeomHide(MmlMod *mod, const char *pattern, int where, std::string *err);   // mml.h geom_hide
+void GeomShow(MmlMod *mod, int handle);   // handle 0: all the mod's
+bool GeomCapture(MmlMod *mod, const char *pattern, MmlGeomFn fn, void *user, std::string *err);
+void GeomRemove(MmlMod *mod);             // its mod unloads
+void GeomFrameBegin();                    // (render.cpp) a frame of the mission's world: before its scene views
+void GeomFrameDrawing(bool on);           // ... the frame's own Render drawing
+void GeomFrameEnd();                      // ... its end: captures and surveys done
+bool GeomMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 
 // ---- screenshots (screenshot.cpp): the back buffer at Present; screenshot, screenshot.state
 bool ScreenshotHookPresent(std::string *err);   // the device's Present hooked (once; err may be null)

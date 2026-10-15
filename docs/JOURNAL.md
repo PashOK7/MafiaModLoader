@@ -828,3 +828,33 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Both labs**: the mirror, the sky and the wave in it in 1.2 and 1.0 (the owner was playing in both); in 1.0 the
   frame-sized view with the wave in it costs 4.3 ms of CPU. Offline: `gfx_pass_views` on a pass and on no such pass,
   `in_views` in `gfx.state`. ALL PASSED.
+
+## 2026-10-15: the game's own geometry hidden or replaced (item 4, block 4b)
+
+- **Read**: mafia-ragdoll's `game_water.cpp` zeroes face groups' face counts around Render, keeping pointers to them
+  from scans every 2 s (a freed mesh would be written to) and finding textures' names by scanning memory for
+  strings. Read instead in the 1.2 decompile: every visual's `m_AddFGroups` (vtable +0x68) queues a 32-byte entry a
+  face group (+0x00 the visual, +0x10 the group, +0x18 its texture), Render sorts them and calls `m_RenderFGroup`
+  (vtable +0x6C), thiscall(visual, entry), ret 4; three functions draw every mesh (objects / morphs / single meshes,
+  lit objects, billboards). A face group: +0x04 material, +0x08 faces, +0x0C the next (a list: mEdit's header has a
+  faces pointer there, wrong), +0x14 index buffer, +0x18 first index; a material: +0x0C its texture (SetTexture);
+  a texture: +0x1C its file name (mEdit's ITexture, seen live: `SKY 5 5.BMP` after `Maps\`). The same in 1.0.
+- **Made**: `host/geom.cpp`: the three hooked; a group whose texture matches a rule is not drawn in the frame, the
+  views or both; `geom.survey` (what a frame draws by texture); captures read the group's own DrawIndexedPrimitive
+  (its buffers, base vertex, world transform), so any kind of visual comes out right. `mml.h` `geom_hide`,
+  `geom_show`, `geom_capture`; `geom.*` on the bridge.
+- **Found**: the city's river is one plane, 54 triangles at y -9.99 under the whole city (`00TEST01..20.BMP`),
+  drawn every frame. Teleported onto it, Tommy drowned twice; the owner drove to the embankment by Little Italy's
+  bridge (AGENTS.md has the place).
+- **A bridge fault fixed**: the passes were drawn with no blending, so a later pass replaced an earlier one even
+  where it returned 0 (`depth_pulse` would have erased any water drawn before it). The bridge binds a premultiplied
+  "over" blend state now; the shipped passes' outputs were already premultiplied.
+- **The example** `river_water`: the river hidden (frame and views), captured, a reflection view mirrored in its
+  level, the water drawn on its triangles (waves, the reflection bent, the bed through it, glint, fog). The first
+  waves aliased into stripes far off; each now fades where it is shorter than a few pixels. In the 1.2 lab: the
+  bridge, its piers, a passing train and the far trees in the water; the reflection's view 7.7 ms of CPU (with
+  `depth_pulse` in it). In the 1.0 lab the same (`00TEST16.BMP` read by the same offsets); five reloads with frames
+  between: one of -17 MB, +3 handles, +1 thread (the city streaming), then 0.
+- **Checks**: `check_builds.py` (the three at +0x6C of visuals' vtables, the entry's group and material read,
+  SetIndices, DrawIndexedPrimitive, ret 4: both builds), offline (`kit.geom`: refused with no game; `geom.*` say
+  why). ALL PASSED both.

@@ -137,12 +137,18 @@ int __stdcall hkRender(void *driver, void *scene) {
     if (dev) ScreenshotHookPresent(nullptr);   // (PRESENT: the device's Present hooked once it exists)
     if (Subscribed(MML_EVENT_RENDER_BEGIN)) Dispatch(Ev(MML_EVENT_RENDER_BEGIN, dev));
     if (g_world) {
+        GeomFrameBegin();   // (geom.cpp: the game's geometry hidden, surveyed, captured)
         GfxViewsNewFrame();
         ViewsDraw(driver, scene, oRender);   // (view.cpp: the scene from the mods' cameras, before the frame's own)
         GfxBeforeWorld();   // (gfx.cpp: the readable depth buffer, when a mod has a pass)
+        GeomFrameDrawing(true);
     }
     int r = oRender(driver, scene);
-    if (g_world) GfxAfterWorld();
+    if (g_world) {
+        GeomFrameDrawing(false);
+        GfxAfterWorld();
+        GeomFrameEnd();
+    }
     if (Subscribed(MML_EVENT_RENDER_END)) Dispatch(Ev(MML_EVENT_RENDER_END, dev));
     g_lastScene = scene;
     g_lastWorld = g_world;

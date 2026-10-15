@@ -89,6 +89,7 @@ IDirect3DStateBlock9 *g_block;     // exactly the states the bridge changes
 
 ID3D11Buffer *g_frameCB;
 ID3D11SamplerState *g_point, *g_linear;
+ID3D11BlendState *g_over;          // premultiplied "over": each pass is laid over what the passes before it drew
 ID3D11VertexShader *g_vsFull;
 ID3D11Query *g_event11;
 
@@ -450,7 +451,7 @@ void ReleaseAll() {
     ReleaseTimers();
     SafeRelease(g_vsQuad); SafeRelease(g_psDepth); SafeRelease(g_psComposite);
     SafeRelease(g_decl); SafeRelease(g_quad); SafeRelease(g_event9); SafeRelease(g_block);
-    SafeRelease(g_frameCB); SafeRelease(g_point); SafeRelease(g_linear); SafeRelease(g_vsFull);
+    SafeRelease(g_frameCB); SafeRelease(g_point); SafeRelease(g_linear); SafeRelease(g_vsFull); SafeRelease(g_over);
     SafeRelease(g_event11);
     if (g_ctx) { g_ctx->ClearState(); g_ctx->Flush(); }
     SafeRelease(g_ctx); SafeRelease(g_dev11);
@@ -525,6 +526,13 @@ bool MakeDevice11() {
     if (FAILED(g_dev11->CreateSamplerState(&sd, &g_point))) return Fail("the point sampler");
     sd.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
     if (FAILED(g_dev11->CreateSamplerState(&sd, &g_linear))) return Fail("the linear sampler");
+    D3D11_BLEND_DESC bl{};
+    bl.RenderTarget[0].BlendEnable = TRUE;
+    bl.RenderTarget[0].SrcBlend = bl.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+    bl.RenderTarget[0].DestBlend = bl.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
+    bl.RenderTarget[0].BlendOp = bl.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+    bl.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+    if (FAILED(g_dev11->CreateBlendState(&bl, &g_over))) return Fail("the passes' blend state");
     if (FAILED(g_dev11->CreateVertexShader(kVsFullScreen, sizeof kVsFullScreen, nullptr, &g_vsFull))) return Fail("the full-screen vertex shader");
     D3D11_QUERY_DESC qd{D3D11_QUERY_EVENT, 0};
     if (FAILED(g_dev11->CreateQuery(&qd, &g_event11))) return Fail("the Direct3D 11 event query");
@@ -758,7 +766,7 @@ bool RunPasses(MmlGfxConstants &k, const PassTarget &t) {
         D3D11_VIEWPORT vp{0, 0, static_cast<float>(t.w), static_cast<float>(t.h), 0, 1};
         g_ctx->RSSetViewports(1, &vp);
         g_ctx->OMSetRenderTargets(1, &t.rtv, nullptr);
-        g_ctx->OMSetBlendState(nullptr, nullptr, 0xFFFFFFFFu);
+        g_ctx->OMSetBlendState(g_over, nullptr, 0xFFFFFFFFu);   // (a pass's 0 leaves the passes before it as they are)
         g_ctx->OMSetDepthStencilState(nullptr, 0);
         g_ctx->RSSetState(nullptr);
         ID3D11ShaderResourceView *srv[2] = {t.depth, t.color};

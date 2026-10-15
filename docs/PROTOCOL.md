@@ -87,6 +87,11 @@ Taps can also start with the game, before its first frame: `"taps": ["5409D0 n=4
 | `gfx.state` | | the graphics bridge: `state` (on, off and why), `adapter`, `size`, `frames`, `generation`, `passes` (each: `mod`, `order`, `cpu_ms`, `gpu_ms`, `in_views`), `ms` (`copy_9`, `passes_11`, `wait_11`, `all`, `gpu_passes`), `multisampling` (off for which mods), `ui` (`mode`, `frames`: the 2D pass taken), `views` (each scene view's targets: `handle`, `size`, `frames`, `fresh`, `pass_runs`, `pass_fails`), `view_sky_sets` (the sky's view seen while a clipped view drew), `world` (`eye`, `fog`, `sun`) |
 | `gfx.reset` | | after a failure: try again at the next frame |
 | `view.state` | | the scene views (mods' `scene_view`): `hooked`, `views` (each: `mod`, `handle`, `size` (0, 0: the frame's), `drawn`, `skipped`, `faults`, `last` (drawn, or why not), `cpu_ms`, `eye`, `fwd`), `note` (why none is drawn) |
+| `geom.hide` | `pattern`, `where` (`frame`, `views`, `all`) | the game's face groups whose texture's file name matches (`*`, `?`, case-insensitive) left out of LS3D's drawing: `handle` |
+| `geom.show` | `handle` | a `geom.hide` taken back |
+| `geom.state` | | `hooked`, `rules` (each: `owner`, `pattern`, `where`, `groups_last_frame`, `faces_last_frame`), `capture_hooked`, `faults`, `capture_fails` |
+| `geom.survey` | `id`, `filter`, `limit` | none: the next frame is surveyed (`id`); with `id`: every texture it drew (`texture`, `groups`, `faces`, `visuals`, `material_flags`, `hidden`), the most faces first |
+| `geom.capture` | `pattern` or `id` | `pattern`: the next frame's matching face groups are read back (`id`); `id`: `groups`, `triangles`, `bounds`, `by_texture`, `first` (a few triangles, the world's space), `unreadable` |
 | `view.show` | `handle`, `rect` | a view copied onto the frame at `[x, y, w, h]` (800x600 units) each frame; no `rect`: not any more |
 | `<command>` | the command's | a mod's command: the core mod's without a prefix (`player`), others' as `<mod>.<name>` |
 

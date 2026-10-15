@@ -360,6 +360,19 @@ def main(a):
               f'{name} LS3DF queueVisual: a LENS onto the scene\'s list at +0x288')
         check(f'byte ptr [{gls.base + ls["camRecompute"]:#x}]' in ' '.join(ins(ls['render'], 0x600)),
               f'{name} LS3DF camRecompute read by Render')
+        # The face groups' drawing (host/geom.cpp): each fgRender* is at +0x6C of a visual's vtable (slot 0 the frames'
+        # Release), reads the entry's face group (+0x10) and its material (+0x04) at its start, returns with ret 4, and
+        # calls SetIndices (the device's +0x154) and DrawIndexedPrimitive (+0x11C); the object's is I3D_object's.
+        release = (gls.base + ls['frameRelease']).to_bytes(4, 'little')
+        vts = {s for s in range(0, len(code) - 0x70, 4) if code[s:s + 4] == release}
+        for f in ('fgRenderObject', 'fgRenderLit', 'fgRenderBillboard'):
+            fn = (gls.base + ls[f]).to_bytes(4, 'little')
+            body = ins(ls[f], 0x80)
+            whole = ' '.join(ins(ls[f], 0x1400))
+            check(any(code[s + 0x6C:s + 0x70] == fn for s in vts), f'{name} LS3DF {f}: at +0x6C of a visual\'s vtable')
+            check(any(s.endswith('+ 0x10]') for s in body) and any(s.endswith('+ 4]') for s in body) and 'ret 4' in whole and
+                  'call dword ptr [' in whole and '+ 0x154]' in whole and '+ 0x11c]' in whole,
+                  f'{name} LS3DF {f}: the entry\'s face group and material, SetIndices, DrawIndexedPrimitive, ret 4')
     # The frame rate's sites (fps_unlock): the limiter's minimum jump inside frameLimit, after `cmp eax, edi` and
     # before its Sleep; Present's yield: `mov reg, [Sleep]` then `push 0; call reg`.
     for name, (exe, ls, gexe, gls) in builds.items():

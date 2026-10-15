@@ -250,6 +250,14 @@ What is done, what comes next and later, and what is known to be missing or wron
   view's clip plane (LS3D draws it about the origin: the plane is off while its view is set), and passes run over
   the views when their mod asks (`gfx_pass_views`: `depth_pulse`'s wave in the mirror). `world_marker` and `boxes`
   ship disabled.
+- **The game's own geometry hidden or replaced** (2026-10-15; item 4, block 4b): LS3D's face groups chosen by the
+  file name of their texture (the animation's frame now), left out of the frame's drawing, the views' or both
+  (`geom_hide`; the three m_RenderFGroup functions that draw every mesh hooked, nothing in the game's memory changed,
+  no pointer kept between frames), surveyed (`geom.survey`: every texture a frame draws) and captured (`geom_capture`:
+  the triangles in the world's space, read from the buffers LS3D hands Direct3D); the passes now laid over each other
+  (premultiplied over: a pass's 0 leaves the ones before it). The example `mods/examples/river_water` (the city's
+  river hidden and drawn anew with waves, its reflection, the bed seen through it) in the 1.2 and 1.0 labs;
+  `check_builds.py` checks the three functions in both builds. With 4a, item 4 is done.
 
 ## Next, by importance
 
@@ -276,8 +284,8 @@ V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselv
    effects target, composited over the frame; GPU timers per pass; the 2D pass (HUD, menus) drawn into a target of a
    mod's when it asks (**3c**; a VR mod shows it on a panel). One owner for the depth swap and the composite: two mods doing
    them each would break each other, so it is the loader's. Reference: mafia-ragdoll `gfx.cpp`, `shaders/frame.hlsli`.
-4. **The scene drawn from another camera** (W V). *4a, the views, is done (2026-10-15, see "Done"); 4b, the game's
-   geometry hidden or replaced, is left.* The mission's scene drawn a second time into a target, with a
+4. *(Done 2026-10-15: 4a, the views, and 4b, the game's geometry hidden or replaced; see "Done". What is left: Known
+   gaps.)* **The scene drawn from another camera** (W V). The mission's scene drawn a second time into a target, with a
    camera and projection of the mod's (a mirrored camera and a clip plane for a reflection, two eyes with asymmetric
    projections for VR), everything the drawing touches put back after (the camera's sector held, the sound listener
    detached, lens flares kept out, the camera's bytes restored). The game's own geometry hidden or replaced around
@@ -450,6 +458,11 @@ merged, sorted by importance):
   matrix being the camera's backdrop view, bit for bit (it was, every drawing, in both labs). `MML_VIEW_OWN_SECTOR`
   (a camera in another room) was not tried. The first two or three reloads of `rear_mirror` added 2..13 handles each (taken to be
   Direct3D's own warming up: views made and taken back by mode changes added none); then 0.
+- **The game's own geometry** (host/geom.cpp): the meshes LS3D draws face group by face group (objects, lit
+  objects, morphs, single meshes, billboards) are covered; what it draws otherwise (particles, the sky's backdrop,
+  landscape patches, lens flares, the 2D) is not. A capture holds what the frame drew (a far or culled group is
+  not in it). Hidden by texture name only (not by frame name or position). The river was the only replacement seen;
+  replacing a texture's picture is the files' way (item 2).
 - **The 2D pass for mods** (host/gfx.cpp): the game's additive 2D (if any) comes back blended, not added, when it
   is put back over the frame (`take`); the menus' cursor is the screen's; the last frame's is what the passes get.
 - **`game_launch` in front**: once (2026-10-15, the 1.0 lab, `background` by default) it answered `"in_front": true`;

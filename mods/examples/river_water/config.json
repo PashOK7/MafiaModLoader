@@ -1,0 +1,10 @@
+{
+  // The defaults of river_water's settings (config.set {"mod": "river_water", "key": "waves", "value": 0.5}).
+  "texture": "00test*",        // the game's water by its texture's name (geom.survey lists what the game draws)
+  "waves": 1,                  // the waves' strength (0: a mirror)
+  "reflection": true,          // the scene reflected (a second drawing of the scene)
+  "deep": "0.06 0.16 0.17",    // the colour of deep water (r g b, 0..1)
+  "deep_metres": 4,            // metres of water that reach it
+  "shallow": "0.55 0.66 0.6",  // the riverbed's tint through shallow water
+  "bend": 18                   // how far the waves bend what is seen through them (pixels)
+}

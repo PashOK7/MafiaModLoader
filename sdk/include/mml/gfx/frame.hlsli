@@ -4,7 +4,9 @@
 //
 // World space is the game's (metres, y up). Linear view depth is the distance along the camera's forward axis. A pass
 // draws into the effects target: premultiplied RGBA (rgb already times alpha; alpha: how much of the frame it covers),
-// composited over the frame as frame * (1 - alpha) + rgb, where the world is drawn and the HUD is not yet.
+// composited over the frame as frame * (1 - alpha) + rgb, where the world is drawn and the HUD is not yet. The passes
+// are laid over each other in their order the same way (the bridge's blend state: ONE, INV_SRC_ALPHA), so a pass that
+// returns 0 leaves what the passes before it drew.
 
 cbuffer MmlFrame : register(b0) {
     float4 g_eye;         // the camera's position, w: the time in seconds

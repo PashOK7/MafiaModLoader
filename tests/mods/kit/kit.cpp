@@ -142,6 +142,19 @@ int PassViewsClear(const char *, MmlReply *r, void *) {
     return 0;
 }
 
+// The game's geometry with no game: geom_hide and geom_capture refused (0), geom_show of nothing harmless.
+void OnGeom(const MmlGeomCapture *, void *) {}
+int Geom(const char *, MmlReply *r, void *) {
+    if (!MML_HAS(H, geom_capture)) { H->reply_error(r, "the loader has no geom_capture"); return 1; }
+    char out[96];
+    int hide = H->geom_hide(M, "00test*", 0), capture = H->geom_capture(M, "00test*", OnGeom, nullptr),
+        empty = H->geom_hide(M, "", 0), nofn = H->geom_capture(M, "x", nullptr, nullptr);
+    H->geom_show(M, 0);
+    snprintf(out, sizeof out, "{\"hide\":%d,\"capture\":%d,\"empty\":%d,\"no_fn\":%d}", hide, capture, empty, nofn);
+    H->reply_append(r, out, static_cast<size_t>(-1));
+    return 0;
+}
+
 int Write(const char *, MmlReply *r, void *) {
     std::string path = std::string(H->mod_data_dir(M)) + "note.txt";
     FILE *f = fopen(path.c_str(), "w");
@@ -179,6 +192,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->command(mod, "views", "scene_view's refusals, its limit of eight, scene_view_remove (one view kept)", Views, nullptr);
     host->command(mod, "passviews", "a pass of its own, gfx_pass_views on it and on no such pass", PassViews, nullptr);
     host->command(mod, "passviews_clear", "takes that pass back", PassViewsClear, nullptr);
+    host->command(mod, "geom", "geom_hide, geom_capture with no game (refused), geom_show", Geom, nullptr);
     return 0;
 }
 

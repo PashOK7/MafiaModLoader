@@ -27,7 +27,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     # ---- the loader
     add_library(MafiaModLoader SHARED
         host/main.cpp host/log.cpp host/memory.cpp host/crash.cpp host/hooks.cpp host/mods.cpp host/game_hooks.cpp
-        host/bridge.cpp host/tap.cpp host/start.cpp host/input.cpp host/screenshot.cpp host/draw.cpp host/config.cpp host/menus.cpp host/menus10.cpp host/script.cpp host/world.cpp host/lifecycle.cpp host/files.cpp host/render.cpp host/gfx.cpp host/view.cpp)
+        host/bridge.cpp host/tap.cpp host/start.cpp host/input.cpp host/screenshot.cpp host/draw.cpp host/config.cpp host/menus.cpp host/menus10.cpp host/script.cpp host/world.cpp host/lifecycle.cpp host/files.cpp host/render.cpp host/gfx.cpp host/view.cpp host/geom.cpp)
     # ($<0:> keeps Visual Studio from adding a per-configuration folder)
     set_target_properties(MafiaModLoader PROPERTIES SUFFIX ".asi" RUNTIME_OUTPUT_DIRECTORY ${MML_OUT}/$<0:>)
     target_include_directories(MafiaModLoader PRIVATE third_party/json host)
@@ -185,6 +185,8 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
         SHADERS hud_panel.hlsl:PsPanel:ps_5_0)
     mml_add_mod(rear_mirror ${CMAKE_SOURCE_DIR}/mods/examples/rear_mirror mods/examples/rear_mirror/rear_mirror.cpp
         SHADERS rear_mirror.hlsl:PsMirror:ps_5_0)
+    mml_add_mod(river_water ${CMAKE_SOURCE_DIR}/mods/examples/river_water mods/examples/river_water/river_water.cpp
+        SHADERS river_water.hlsl:VsWater:vs_5_0 river_water.hlsl:PsWater:ps_5_0)
     mml_add_files_mod(freeride_picture ${CMAKE_SOURCE_DIR}/mods/examples/freeride_picture)
     # (tools/new_mod.py adds a mod's line above this one)
 

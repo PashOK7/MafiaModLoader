@@ -202,6 +202,16 @@ def kit_tests(b):
     mine = [p for p in r['result']['passes'] if p['mod'] == 'kit'] if r['ok'] else []
     check('gfx.state: the pass marked in_views', len(mine) == 1 and mine[0]['in_views'] is True, r)
     b.call('kit.passviews_clear')
+    # the game's own geometry with no game: refused, and the bridge says why
+    r = b.call('kit.geom')
+    check('geom_hide, geom_capture with no game (and an empty pattern, no function): refused',
+          r['ok'] and r['result'] == {'hide': 0, 'capture': 0, 'empty': 0, 'no_fn': 0}, r)
+    r = b.call('geom.state')
+    check('geom.state with no game: not hooked, no rules', r['ok'] and r['result']['hooked'] is False and r['result']['rules'] == [], r)
+    r = b.call('geom.hide', {'pattern': '00test*'})
+    check('geom.hide with no game: an error, saying why', not r['ok'] and 'no game' in str(r), r)
+    r = b.call('geom.survey')
+    check('geom.survey with no game: an error, saying why', not r['ok'] and 'no game' in str(r), r)
     r = b.call('world.spawn', {'car': 'Bolt Ace Tudor'})
     check('world.spawn with no game: an error, saying why', not r['ok'] and 'no car' in str(r), r)
     r = b.call('world.spawned')

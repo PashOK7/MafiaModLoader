@@ -350,6 +350,14 @@ struct Ls3dBuild {
     // found visible queued for drawing; a lens flare ('LENS' at the visual's +0x1D4) goes onto the scene's list at
     // +0x288 (count +0x290), whose fades Render works out at its end.
     uintptr_t cameraVtable, sceneVtable, sceneGetSector, queueVisual;
+    // The face groups LS3D draws (host/geom.cpp): a visual's m_AddFGroups (its vtable +0x68) queues a 32-byte entry
+    // for each face group of its mesh's LOD (+0x00 the visual, +0x10 the face group, +0x18 its material's texture),
+    // and Render calls the visual's m_RenderFGroup (vtable +0x6C), thiscall(visual, entry), ret 4: SetIndices(group
+    // +0x14, ...) and DrawIndexedPrimitive(..., group +0x18 first index, group +0x08 faces). Three of them draw every
+    // mesh: objects, morphs and single meshes share fgRenderObject; lit (lightmapped) objects fgRenderLit;
+    // billboards fgRenderBillboard. A face group: +0x04 material, +0x08 faces, +0x0C the next group; a material:
+    // +0x08 flags, +0x0C its texture (the animation's frame now); a texture: +0x1C its file name without folders.
+    uintptr_t fgRenderObject, fgRenderLit, fgRenderBillboard;
 };
 
 inline const ExeBuild kExe12 = {
@@ -491,7 +499,8 @@ inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1
                                   0x71E20, 0x1C56F0,
                                   0x72122, 0x6D592,
                                   0x2EE00, 0x2EC00, 0x2E070,
-                                  0x9B6D0, 0x9C8F8, 0x4A1D0, 0x65560};
+                                  0x9B6D0, 0x9C8F8, 0x4A1D0, 0x65560,
+                                  0x39280, 0x28D40, 0x083B0};
 // LS3D 3.84.5 (31.7.2002): the vertex buffer has no flags word, everything after +0x04 sits 4 bytes lower.
 inline const Ls3dBuild kLs3d10 = {"1.0", 0x5ED80, 0x1A8A0, 0x305B0, 0x5D070, 0x1C350, 0x6E580, 0, 0,
                                   0x1AE00, 0x1BD60, 0x1C030, 0x2B540, 0x04, 0x14, 0x18,
@@ -503,7 +512,8 @@ inline const Ls3dBuild kLs3d10 = {"1.0", 0x5ED80, 0x1A8A0, 0x305B0, 0x5D070, 0x1
                                   0x2E340, 0x2E140, 0x2D5B0,
                                   // (2026-10-15: the camera's constructor 0xAA20, the vtable holding GetSector,
                                   // Render's calls of QueueVisual)
-                                  0x97690, 0x98898, 0x47D20, 0x622D0};
+                                  0x97690, 0x98898, 0x47D20, 0x622D0,
+                                  0x37940, 0x28670, 0x07E50};   // (the vtables +0x6C of OBJ_, LMAP, billboards)
 
 // The builds found (null until Detect succeeds).
 inline const ExeBuild *g_exe;
