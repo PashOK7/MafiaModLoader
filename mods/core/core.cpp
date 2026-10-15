@@ -140,6 +140,28 @@ int CmdCar(const char *args, MmlReply *r, void *) {
     if (e.vehStateSize) j["state_bytes"] = game::CarStateSize(reinterpret_cast<void *>(car));   // (grows with the body's dents)
     float w[16];
     if (frame && H->mem_read(frame + game::kFrameWorld, w, sizeof w)) j["axes"] = {Vec(w), Vec(w + 4), Vec(w + 8)};
+    if (e.vehAxes) {   // the rigid body as the physics keeps it (game.h Car; knowledge/notes/vehicle_physics.md)
+        float ax[9], turn[3];
+        uint32_t flags = R<uint32_t>(v + e.vehicleFlags);
+        json body = {{"awake", (flags & game::kVehAwake) != 0}, {"calm", (flags & game::kVehCalm) != 0},
+                     {"flags", Hex(flags)}, {"step_s", R<float>(v + e.vehicleStepTime)}, {"substep_max_s", R<float>(v + e.vehSubstepMax)}};
+        if (H->mem_read(v + e.vehTurn, turn, sizeof turn)) body["angular_velocity"] = Vec(turn);
+        if (H->mem_read(v + e.vehAxes, ax, sizeof ax)) body["forward"] = Vec(ax), body["right"] = Vec(ax + 3), body["up"] = Vec(ax + 6);
+        j["body"] = body;
+        json wheels = json::array();
+        uintptr_t list = R<uintptr_t>(v + e.vehWheels);
+        for (int i = 0, n = R<int>(v + e.vehWheelCount); list && i < n && i < 16; i++) {
+            uintptr_t wh = R<uintptr_t>(list + 4 * i);
+            if (!wh) continue;
+            uint32_t wf = R<uint32_t>(wh + game::kWheelFlags);
+            wheels.push_back({{"wheel", Hex(wh)}, {"frame", Str(R<uintptr_t>(R<uintptr_t>(wh + game::kWheelFrame) + game::kFrameName))},
+                              {"on_ground", (wf & game::kWheelOnGround) != 0}, {"load_n", R<float>(wh + game::kWheelLoad)},
+                              {"force_n", R<float>(wh + game::kWheelForce)}, {"compression_m", R<float>(wh + game::kWheelCompression)},
+                              {"free_length_m", R<float>(wh + game::kWheelFreeLength)}, {"stiffness", R<float>(wh + game::kWheelStiffness)},
+                              {"flags", Hex(wf)}});
+        }
+        j["wheels"] = wheels;
+    }
     return Reply(r, j);
 }
 
@@ -293,7 +315,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->subscribe(mod, MML_EVENT_MISSION_CLOSE, OnEvent, nullptr);
     host->command(mod, "game", "the build, module bases, the mission (its name and state), the scene and the player", CmdGame, nullptr);
     host->command(mod, "player", "the player: position, facing, health, alive, the vehicle he is in", CmdPlayer, nullptr);
-    host->command(mod, "car", "the player's car (driven now, else driven last; params: car, an address): position, speed, steering, gear, rpm, fuel, damage", CmdCar, nullptr);
+    host->command(mod, "car", "the player's car (driven now, else driven last; params: car, an address): position, speed, steering, gear, rpm, fuel, damage; the rigid body (angular velocity, axes, calm, asleep) and each wheel", CmdCar, nullptr);
     host->command(mod, "car.save", "the car's whole state kept in memory, by the game's own SaveVehicleState (params: car)", CmdCarSave, nullptr);
     host->command(mod, "car.restore", "the kept state put back into the car (the same car or the same model): repaired, then LoadVehicleState", CmdCarRestore, nullptr);
     host->command(mod, "humans", "every C_human alive in memory (params: radius m round the player)", CmdHumans, nullptr);

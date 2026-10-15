@@ -19,6 +19,21 @@ inline V3 Norm(const V3 &a, const V3 &fallback = {0, 1, 0}) { float l = Len(a); 
 
 struct Q { float w, x, y, z; };
 
+// A unit quaternion's rotation as an engine 4x4 (row vectors), by LS3D's own formula (S_quat::RotationMatrix,
+// LS3DF 1.2 0x1002EC00) but for every quaternion: LS3D's gives the identity when |w| rounds to 1, which drops every
+// turn under about 0.00049 rad (game_build.h quatRotationMatrix). Where LS3D builds it, the same matrix to float
+// precision (fps_unlock checks it against the game's function at its load).
+inline void QuatMatrix(const Q &q, float out[16]) {
+    const float x2 = q.x + q.x, y2 = q.y + q.y, z2 = q.z + q.z;
+    const float xx = x2 * q.x, xy = y2 * q.x, xz = z2 * q.x, yy = y2 * q.y, yz = z2 * q.y, zz = z2 * q.z;
+    const float wx = x2 * q.w, wy = y2 * q.w, wz = z2 * q.w;
+    const float m[16] = {1.0f - (zz + yy), xy - wz, wy + xz, 0,
+                         wz + xy, 1.0f - (zz + xx), yz - wx, 0,
+                         xz - wy, wx + yz, 1.0f - (yy + xx), 0,
+                         0, 0, 0, 1.0f};
+    for (int i = 0; i < 16; i++) out[i] = m[i];
+}
+
 // 3x3 matrix stored as three rows.
 struct M3 {
     V3 r[3];

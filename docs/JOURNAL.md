@@ -598,3 +598,46 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   fields for the SDK (`game.h`, `check_builds.py`).
 - **Lab state**: the lab's `fps_unlock` changes put back to the defaults (`{}`); the freeride left running.
 
+## 2026-10-15: the car's physics in the SDK
+
+- **The owner**: commit the rotation fix locally (done: 9981de6, not pushed), then put the car's fields and
+  RotationMatrix into the SDK (`game_build.h`, `game.h`, `check_builds.py`) for both builds, so that other agents
+  need not read them again.
+- **Read in both builds' code**: Engine's substep loop (`+0xC24` / `+0xCA0`, the wheels `+0xC38` / `+0xCB4`,
+  their count `+0x4C4` / `+0x540`), Move's body turn (`lea` of the three axes, the angular velocity stored), its calls
+  of the wheels' collision and of RotationMatrix's thunk, the suspension's block (byte for byte the same in 1.0),
+  C_car's size in CreateActor (0x221C / 0x21F4), the wheel's new (0x1D4 in both), LS3DF's exports. 1.0's fields are
+  1.2's plus 0x7C here, each read, not assumed.
+- **Found on the way**: `S_matrix::SetRot3` and `SetRot` (about 90 callers) drop small rotations the same way
+  (`|w| >= 0.99999999`); in the notes and Known gaps, not fixed. A wheel's second frame is its dummy (`DWHL0`).
+  fps_unlock's step probe read 1.2's wheel offsets in 1.0 (it would have read garbage there): it now uses the SDK.
+- **Checked**: `check_builds.py` ALL PASSED, and eight wrong values put in by hand (an offset per build, a wheel
+  field, an export) each failed it; the core's `car` lists the body and each wheel, the same values in both labs
+  (68000 N/m, 0.2 m, 4488 N on the front wheels); fps_unlock's stop at rest 0.25 s (1.2) / 0.23 s (1.0) through
+  the SDK; offline tests ALL PASSED. Both games closed after; their `fps_unlock` settings at the defaults.
+
+## 2026-10-15: a person's step at curbs, the cause fixed
+
+- **The owner**: find the real cause of walking into curbs, no crutch (the earlier fix asked the sweep about a 16 ms
+  step); later: "running shows it too, the step only has to be a bit higher", and the freeride spawn's curb grows in
+  height along its length: a ready test.
+- **Read** (both builds' disassembly): the sweep starts its sphere 0.405 above the feet and returns its centre minus
+  0.4, aims 0.015 lower; its slide (TestPanak2, st0rm94's collision_test_character_proxy) is a 10-round collide-and-
+  slide that starts each round 0.01 off the contact. Three lengths once a call, plus the ground's fall restarted each
+  frame: balanced at 16 ms, a curb's edge slid down at short steps. Why scaling the 0.015 alone (tried before) made
+  Tommy climb walls: the start's lift and the skin's push stayed once a call.
+- **Measured with a new probe** (`fps_unlock.sweepprobe`: the game's sweep called from one place at any step and with
+  any lengths, everything put back): the bug reproduced without the game around it; each candidate compared at 1, 2.5,
+  4, 8 and 16 ms at the owner's curb, the shop's ledge, stairs, a 45-degree grind and the spawn's curb. Chosen: all
+  four as lengths of the time, the feet kept 1 cm up. Rejected: the aim alone (walls), keeping the skin (feet bobbing,
+  curbs climbed early and far).
+- **The fix**: 22 operands of the sweeps and slides pointed at four floats in the heap (as 1.0's menu camera),
+  holding the game's values but during a call; the result's immediate corrected after it. `Stepped` is gone.
+  `game_build.h` gained `humanSlide`, `humanSlideOwner` for both builds, `check_builds.py` checks the operands.
+- **In the game** (both labs, 190..730 fps against 62.5): the owner's curb walking and running, the ledge (stopped,
+  no climbing), down the curb, the stairs (unfixed: stopped before their last, higher step: the owner's report), the
+  spawn's curb at three heights (one too high for 62.5 fps: too high fixed too), 1.0's curb head on: the same within a
+  few cm and 0.02 s. Not the same: running up stairs about 7 % faster, fixed or not (another cause); 8 mm nearer walls.
+- A doubt of a tool, settled: the probe's 45-degree grind disagreed between steps by up to a second; the real game
+  there does not climb at any rate (the probe's fall is simpler than the game's); the real game is the measure.
+

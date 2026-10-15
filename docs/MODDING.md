@@ -257,6 +257,12 @@ H->hotkey(M, "Ctrl+F9", OnKey, NULL);            /* OnKey(user) on the game thre
 if (!game::Detect(H->module_base("LS3DF.dll"))) return 2;      // once, in mml_mod_load: which build is this
 game::Car car(game::PlayerCar());                               // the car the player sits in; game::LastCar(): drove last
 if (car) { car.Position(); car.Speed(); car.SpeedKmh(); car.Gear(); car.Rpm(); car.Steering(); car.Fuel(); car.Damage(); }
+// its rigid body: what C_Vehicle::Move integrates (knowledge/notes/vehicle_physics.md)
+car.AngularVelocity(); car.Forward(); car.Right(); car.Up(); car.Calm(); car.Awake(); car.StepTime();
+for (int i = 0; i < car.WheelCount(); i++)
+    if (void *w = car.Wheel(i)) { game::at<float>(w, game::kWheelLoad); game::at<uint32_t>(w, game::kWheelFlags) & game::kWheelOnGround; }
+// the car's functions to hook: game::Exe().vehicleTick, vehicleEngine, vehicleMove, vehicleWheelsColl; LS3D's
+// quaternions: H->module_base("LS3DF.dll") + game::Ls3d().quatRotationMatrix (QuatMatrix in mathx.h is its formula)
 game::MissionName();  game::Player();  game::ActorWorldPos(actor);  game::ListActors(&all);
 std::vector<uint8_t> state;  game::CarStateSave(car.car, &state);  game::CarStateLoad(car.car, state);   // the whole car
 ```
@@ -340,8 +346,8 @@ default checkpoints.
 away (MafiaD3D11's A132: two places in LS3D, the addresses from `game_build.h`, the bytes checked before they are
 written and put back at the unload, so a hot reload or the mod switched off leaves the game as it was), fixes a
 system that did once a frame what it should do by the time (the main menu's camera: a hook that calls the game's
-function and corrects its spring), keeps a decision that depends on the step's size the game's own (a person's step
-at a curb: the game's sweep asked about its 16 ms step, the frame given its share), fixes a function of the engine
+function and corrects its spring), gives a game function lengths of the time where it made them once a call (a
+person's step at a curb: the sweep's operands pointed at the mod's floats, set for each call from its step), fixes a function of the engine
 hooked in LS3DF.dll by its export name (`S_quat::RotationMatrix` dropped every turn under 0.00049 rad: with them
 kept, a stopped car comes to rest and steers as at 62.5 fps; the fix checked against the game's function at load,
 everything else handed to it), caps the frame rate on a

@@ -155,11 +155,15 @@ What is done, what comes next and later, and what is known to be missing or wron
   its freed DLL; `fps_unlock.camera` records the scene camera's frame in both builds.
 
 - **fps_unlock: a person's step at curbs** (2026-10-15; the owner's report: above 62.5 fps Tommy walks into a curb
-  instead of stepping up). The move's sweep aims 0.015 m low once a call, so its slide on a curb's edge goes down for
-  a short frame's short step. Fixed by asking the game's own sweep about the 16 ms step and moving the frame's share
-  of it (the game's code and constants untouched; `fix_walk`): at the owner's curb in 12-02 the climb, the stop at a
-  shop's ledge and the walk on flat ground measured the same as 62.5 fps at 400 fps (`knowledge/notes/game.md`);
-  `fps_unlock.path` records the player's path every frame. Both builds' four places in `game_build.h`, checked.
+  instead of stepping up; running, at a higher step). The cause: the person's collision sweep and its collide-and-
+  slide make four lengths once a call (the sphere's start 5 mm up, the aim 15 mm down, the skin 1 cm off each
+  contact, the ground's fall restarted each frame), balanced at 16 ms; at short steps a curb's edge is slid down. Fixed
+  there (`fix_walk`): the 22 operands that read them point at the mod's floats, set for each call to the lengths of its
+  step's time, the feet kept 1 cm above the ground as the game keeps them. Measured in both labs at 190..730 fps with
+  `fps_unlock.path` and `fps_unlock.sweepprobe` (the sweep called from one place at any step): the owner's curb, the
+  shop's ledge, stairs, the freeride spawn's curb of growing height climbed exactly where 62.5 fps climbs them, within
+  a few cm and 0.02 s (`knowledge/notes/game.md`). A first fix that asked the sweep about a 16 ms step is gone. Both
+  builds' functions in `game_build.h` (`humanSlide`, `humanSlideOwner`), the operands checked by `check_builds.py`.
 
 - **fps_unlock: a stopped car at rest, the steering's dead zone** (2026-10-15; the owner's report: above 300 fps a
   stopped car creeps by millimetres for seconds and a mission waiting for it to stop waits). The cause: LS3D's
@@ -170,6 +174,14 @@ What is done, what comes next and later, and what is known to be missing or wron
   0.161..0.167 rad/s for 0.15 of steering (62.5 fps: 0.161). A first fix that ticked slow cars in 16 ms steps hid
   the cause and is gone. `fps_unlock.path` records the car every frame, `fps_unlock.stepprobe` compares one step with
   several shorter ones from one state; `knowledge/notes/vehicle_physics.md` has the car's step, wheels and rest.
+
+- **The car's physics in the SDK** (2026-10-15): a car's rigid body and wheels for every mod, both builds:
+  `game::Car` gives the angular velocity, the body's axes, calm and asleep, the step, the wheels (`kWheel*`: frames,
+  load, suspension); `game_build.h` has Tick, Engine, Move and the wheels' collision to hook, and LS3DF's quaternion
+  functions (`quatRotationMatrix`...; `mathx.h` `QuatMatrix` is its formula without the loss). Each address and
+  offset is checked in both builds' code by `tools/check_builds.py` (wrong values put in by hand fail it); the core's
+  `car` lists the body and each wheel, seen the same in the 1.2 and 1.0 labs. `fps_unlock` uses them (its step probe
+  now reads 1.0's layout too).
 
 - **`car.restore` with dents** (2026-10-14): a car's state grows with its body's dents, and the restore refused a
   state of the same taxi taken before a crash (its size was the test of the model). `CarStateLoad` now repairs the
@@ -364,18 +376,16 @@ merged, sorted by importance):
 - **fps_unlock** (mods/examples/fps_unlock): the main menu's camera, a person's step at curbs and LS3D's small
   rotations are fixed. The rotation fix was measured on the player's taxi on flat ground in 1.2 (the stop, slow
   steering, acceleration) and in 1.0 (the stop; 1.0's lab reaches 185 fps only); handling at speed, crashes and
-  braking from speed were not compared, nor traffic. The car's physics fields (angular velocity, body axes, flags,
-  wheels) are in the notes only, not yet in `game.h`; `RotationMatrix` is found by its export name, not in
-  `game_build.h`. The other users of `RotationMatrix` that turn by a step's angle (the airplane, `C_PhThing`, bottles, the
+  braking from speed were not compared, nor traffic. LS3D's `S_matrix::SetRot3` / `SetRot` drop small rotations
+  the same way (about 90 callers, not read, not fixed). The other users of `RotationMatrix` that turn by a step's angle (the airplane, `C_PhThing`, bottles, the
   traffic's pedestrians and trams) were not watched. A car's wheel-spin fields change differently in one 16 ms step
   than in four of 4 ms (`vehicle_physics.md`: oscillation or a per-call integration, not known). The step at curbs is
-  still fixed by asking the game's sweep about a 16 ms step (`Stepped`): the cause in the sweep's slide is to be
-  found and fixed instead (the owner's wish). The other systems that may do once a frame what they should do by the
+  fixed at its cause (the sweep's lengths made once a call); running up a flight of stairs is still about 7 % faster
+  above 62.5 fps, fixed or not (another cause, not found), and a person stands 8 mm nearer a wall. The other systems that may do once a frame what they should do by the
   time are leads from a scan of the decompile (`knowledge/notes/game.md`, "The frame rate"), not checked in the
   game. Frames of 0 ms (above 1000 fps) reach every system (532 a second in 1.2's main menu at 1520 fps). The step's
-  fix was measured at one curb and one ledge, on the player only (other people use the same sweep: not watched), in
-  1.2; its 1.0 addresses are checked against the files, not run in the 1.0 lab. A sweep after a frame of 16 ms or
-  more is the game's own (above 62.5 fps those are the long frames only).
+  fix was measured on the player only (other people use the same sweep: not watched); a sweep after a frame of 16 ms
+  or more is the game's own (below 62.5 fps the game's own behaviour stays).
 
 - **A mod's unload** (host/lifecycle.cpp): a thread is found in a load's code by its EIP, the chain of saved EBPs and
   where it began; a thread inside a library compiled to use EBP as a plain register, between it and the mod's frame,

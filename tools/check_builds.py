@@ -190,6 +190,39 @@ def main(a):
                          [f'{b.mnemonic} {b.op_str}' for b in ins[k + 1:k + 6] if b.mnemonic == 'cmp'] == ['cmp eax, 3', 'cmp eax, 1']
                          for k, a in enumerate(ins))
                 check(ok, f'{name} humanMoveState loaded and compared with 3 and 1')
+    # The sweeps' lengths (fps_unlock's fix_walk finds the same operands): humanSweep calls humanSlide and holds one
+    # `fadd [0.405]` and one `fsub [0.015]`, its result the sphere's centre minus an immediate 0.4 (`mov [esp + 0x18],
+    # 0.4f`); humanSweepOwner calls humanSlideOwner and holds one `fadd [0.4]` and one `fsub [0.015]`; each slide nine
+    # `fmul [0.01]`, humanSlide ret 4, humanSlideOwner ret 8. The spans are the functions' lengths, as the mod reads them.
+    for name, (exe, ls, gexe, gls) in builds.items():
+        if not exe['humanSlide']:
+            continue
+        md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_32)
+        md.skipdata = True
+
+        def ops(va, span, opcode, value):
+            code = gexe.at(va - 0x400000, span)
+            n = 0
+            for i in range(len(code) - 6):
+                if code[i] == 0xD8 and code[i + 1] == opcode:
+                    c = int.from_bytes(code[i + 2:i + 6], 'little')
+                    v = gexe.at(c - 0x400000, 4)
+                    n += len(v) == 4 and struct.unpack('<f', v)[0] == struct.unpack('<f', struct.pack('<f', value))[0]
+            return n
+
+        calls = lambda va, span: {int(i.op_str, 16) for i in md.disasm(gexe.at(va - 0x400000, span), va)
+                                  if i.mnemonic == 'call' and i.op_str.startswith('0x')}
+        check(exe['humanSlide'] in calls(exe['humanSweep'], 0x480), f'{name} humanSweep calls humanSlide')
+        check(exe['humanSlideOwner'] in calls(exe['humanSweepOwner'], 0x200), f'{name} humanSweepOwner calls humanSlideOwner')
+        check(ops(exe['humanSweep'], 0x480, 0x05, 0.405) == 1 and ops(exe['humanSweep'], 0x480, 0x25, 0.015) == 1,
+              f'{name} humanSweep: one fadd [0.405], one fsub [0.015]')
+        check(b'\xc7\x44\x24\x18\xcd\xcc\xcc\x3e' in gexe.at(exe['humanSweep'] - 0x400000, 0x480), f'{name} humanSweep: its result 0.4 below')
+        check(ops(exe['humanSweepOwner'], 0x200, 0x05, 0.4) == 1 and ops(exe['humanSweepOwner'], 0x200, 0x25, 0.015) == 1,
+              f'{name} humanSweepOwner: one fadd [0.4], one fsub [0.015]')
+        for f, ret in (('humanSlide', 'ret 4'), ('humanSlideOwner', 'ret 8')):
+            body = list(md.disasm(gexe.at(exe[f] - 0x400000, 0xA80), exe[f]))
+            check(ops(exe[f], 0xA80, 0x0D, 0.01) == 9 and any(f'{i.mnemonic} {i.op_str}' == ret for i in body),
+                  f'{name} {f}: nine fmul [0.01], {ret}')
     # A car's tick (fps_unlock): vehicleTick is what C_car::AI calls on its C_Vehicle (`lea ecx, [esi + vehicle]`),
     # turns 0 ms into 1, ends by testing vehicleFlags for 2 and its counter for 1000 ms (ret 4); vehicleStepTime is
     # stored by the Engine that Tick calls (right before its `ret 0xc`) and added by SetBrake.
@@ -221,6 +254,86 @@ def main(a):
         brake = list(md.disasm(gexe.at(set_brake - 0x400000, 0x120), set_brake))
         check(stored and any(i.mnemonic == 'fld' and i.op_str.endswith(f'+ {exe["vehicleStepTime"]:#x}]') for i in brake),
               f'{name} vehicleStepTime: stored by the Engine Tick calls, read by SetBrake')
+    # The car's physics further (game.h Car, the wheel's layout): Tick calls Engine; Engine compares and divides its dt
+    # by vehSubstepMax, walks vehWheelCount wheels of vehWheels, calls Move, ret 0xC; Move turns the axes at vehAxes
+    # (forward, right, up: `lea` of the three before the turn), stores vehTurn, calls the wheels' collision and
+    # RotationMatrix (through Game.exe's thunk of LS3DF's export), ret 0x18; the wheels' collision runs the suspension
+    # on game.h's kWheel* fields; CreateActor news carSize bytes for C_car's constructor, the wheel's maker kWheelSize.
+    gh = open(os.path.join(ROOT, 'sdk', 'include', 'mml', 'game', 'game.h')).read()
+    wheel = {m.group(1): int(m.group(2), 0) for m in re.finditer(r'\b(kWheel\w+) = (0x[0-9A-Fa-f]+|\d+)', gh)}
+    phys = {'1.2': {'carCtor': 0x41BB80, 'wheelNew': 0x4D0DD0}, '1.0': {'carCtor': 0x462AF0, 'wheelNew': 0x51CCF0}}
+    rotmat = b'?RotationMatrix@S_quat@@QBG?AUS_matrix@@XZ'
+    for name, (exe, ls, gexe, gls) in builds.items():
+        if not exe['vehicleEngine']:
+            continue
+        md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_32)
+        md.skipdata = True
+        dis = lambda va, n: list(md.disasm(gexe.at(va - 0x400000, n), va))
+        txt = lambda ins: [f'{i.mnemonic} {i.op_str}' for i in ins]
+        calls = lambda ins: {int(i.op_str, 16) for i in ins if i.mnemonic == 'call' and i.op_str.startswith('0x')}
+        check(exe['vehicleEngine'] in calls(dis(exe['vehicleTick'], 0x1200)), f'{name} vehicleTick calls vehicleEngine')
+        eng = dis(exe['vehicleEngine'], 0x400)
+        e = txt(eng)
+        sub = f'dword ptr [ebx + {exe["vehSubstepMax"]:#x}]'
+        check(f'fcomp {sub}' in e and f'fdiv {sub}' in e, f'{name} vehSubstepMax: Engine compares and divides dt by it')
+        check(f'mov eax, dword ptr [ebx + {exe["vehWheelCount"]:#x}]' in e and f'mov ecx, dword ptr [ebx + {exe["vehWheels"]:#x}]' in e,
+              f'{name} vehWheelCount, vehWheels: Engine walks the wheels')
+        check(exe['vehicleMove'] in calls(eng) and 'ret 0xc' in e, f'{name} vehicleEngine calls vehicleMove, ret 0xc')
+        mv = dis(exe['vehicleMove'], 0x4A60)   # (to its ret 0x18: 0x4A54 in both builds)
+        m = txt(mv)
+        ax = exe['vehAxes']
+        k = next((k for k, s in enumerate(m) if s == f'lea ebx, [ebp + {ax:#x}]'), -1)
+        check(k >= 0 and f'lea esi, [ebp + {ax + 0xC:#x}]' in m[k:k + 4] and f'lea edi, [ebp + {ax + 0x18:#x}]' in m[k:k + 4],
+              f'{name} vehAxes: Move takes the forward, right and up axes')
+        check(f'fstp dword ptr [ebp + {exe["vehTurn"]:#x}]' in m, f'{name} vehTurn: Move stores the angular velocity')
+        check(exe['vehicleWheelsColl'] in calls(mv), f'{name} vehicleMove calls vehicleWheelsColl')
+        # RotationMatrix through its thunk: `jmp [IAT]`, the IAT entry the import of LS3DF's export
+        gexe.pe.parse_data_directories(directories=[pefile.DIRECTORY_ENTRY['IMAGE_DIRECTORY_ENTRY_IMPORT']])
+        iat = {imp.address for d in gexe.pe.DIRECTORY_ENTRY_IMPORT for imp in d.imports if imp.name == rotmat}
+        thunks = {c for c in calls(mv) if gexe.at(c - 0x400000, 2) == b'\xff\x25' and
+                  struct.unpack('<I', gexe.at(c - 0x400000 + 2, 4))[0] in iat}
+        check(len(thunks) == 1 and 'ret 0x18' in m, f'{name} vehicleMove calls RotationMatrix (its thunk), ret 0x18')
+        # the suspension: fld [r + free length]; fsub; fnstsw ax; fmul [r + stiffness] ... fst [r + force] ... the
+        # damper, the on-ground bit cleared from the flags, the compression stored
+        wc = txt(dis(exe['vehicleWheelsColl'], 0x2400))
+        regs = [s.split('[')[1].split(' ')[0] for s in wc if s.startswith('fmul dword ptr [e') and s.endswith(f'+ {wheel["kWheelStiffness"]:#x}]')]
+        ok = False
+        for r in set(regs):
+            f = lambda o: f'dword ptr [{r} + {wheel[o]:#x}]'
+            for j, s in enumerate(wc):
+                if s == f'fld {f("kWheelFreeLength")}' and f'fmul {f("kWheelStiffness")}' in wc[j:j + 4]:
+                    block = wc[j:j + 40]
+                    ok = (f'fst {f("kWheelForce")}' in block and f'fmul {f("kWheelDamper")}' in block and
+                          f'mov eax, {f("kWheelFlags")}' in block and 'and al, 0xf7' in block and
+                          any(s2.startswith(f'mov {f("kWheelCompression")}, e') for s2 in block) and
+                          f'mov al, byte ptr [{r} + {wheel["kWheelFlags"]:#x}]' in block and
+                          f'test al, {wheel["kWheelOnGround"]}' in block)
+                    if ok:
+                        break
+            if ok:
+                break
+        check(ok, f'{name} game.h kWheel*: the suspension in vehicleWheelsColl')
+        ca = txt(dis(exe['missionCreateActor'], 0x200))
+        j = next((j for j, s in enumerate(ca) if s == f'push {exe["carSize"]:#x}'), -1)
+        check(j >= 0 and f'call {phys[name]["carCtor"]:#x}' in ca[j:j + 12], f'{name} carSize: CreateActor news it for C_car')
+        check(f'push {wheel["kWheelSize"]:#x}' in txt(dis(phys[name]['wheelNew'], 0x10)), f'{name} game.h kWheelSize: the wheel\'s new')
+    # LS3DF's quaternions: each address is its export's (by name), Make returns with ret 0xC, and RotationMatrix and
+    # SetRot3 begin with their |w| test against 1.0 and 0.99999999 (the identity for a w rounded to 1)
+    names = {'quatMake': b'?Make@S_quat@@QAGXABUS_vector@@M@Z', 'quatRotationMatrix': rotmat,
+             'matrixSetRot3': b'?SetRot3@S_matrix@@QAGXABUS_quat@@@Z'}
+    for name, (exe, ls, gexe, gls) in builds.items():
+        if not ls['quatRotationMatrix']:
+            continue
+        gls.pe.parse_data_directories(directories=[pefile.DIRECTORY_ENTRY['IMAGE_DIRECTORY_ENTRY_EXPORT']])
+        exports = {e.name: e.address for e in gls.pe.DIRECTORY_ENTRY_EXPORT.symbols if e.name}
+        for f, n in names.items():
+            check(exports.get(n) == ls[f], f'{name} LS3DF {f} {ls[f]:#x}: the export {n.decode()}')
+        check(b'\xc2\x0c\x00' in gls.at(ls['quatMake'], 0x100), f'{name} LS3DF quatMake returns with ret 0xc')
+        for f, limit in (('quatRotationMatrix', 1.0), ('matrixSetRot3', 0.9999999900000001)):
+            head = list(gls.md.disasm(gls.at(ls[f], 0x20), gls.base + ls[f]))
+            fc = next((i for i in head if i.mnemonic == 'fcomp' and i.op_str.startswith('qword ptr [0x')), None)
+            c = struct.unpack('<d', gls.at(int(fc.op_str[11:-1], 16) - gls.base, 8))[0] if fc else None
+            check(any(i.mnemonic == 'fabs' for i in head) and c == limit, f'{name} LS3DF {f}: |w| compared with {limit}')
     # The frame rate's sites (fps_unlock): the limiter's minimum jump inside frameLimit, after `cmp eax, edi` and
     # before its Sleep; Present's yield: `mov reg, [Sleep]` then `push 0; call reg`.
     for name, (exe, ls, gexe, gls) in builds.items():

@@ -273,19 +273,57 @@ autosplitter; kept outside it, not ported). Checked against the above:
   depends on the step: walking (1.7 m/s) a 16 ms step is 0.027 m forward against 0.015 + 0.0025 down and slides up;
   a 2.5 ms step is 0.004 m against 0.015 and slides down: Tommy walks into the curb for good (running, 5 m/s, still
   climbs). `C_human::Update` (0x572B80, thiscall(ms)) sweeps an animation-driven move the same way (no fall in it).
-  Scaling the 0.015 by the time is not enough (measured): many small slides follow the sphere's curve up a 0.3 m
-  ledge under a shop window that a 16 ms step is stopped by, and Tommy climbed walls. `MovementIntern` also sweeps a
-  fixed 0.1 m probe whatever the time when a move is shorter than 0.1 m in states 1 and 3 (`+0x40C`).
-- **code** fps_unlock's fix: the sweep hooked; a frame shorter than 16 ms asks it about the game's own 16 ms step
-  from the same place (the move times 16 / ms, the fall a 16 ms frame has, the game's 0.015) and moves the frame's
-  share (ms / 16) of the way to where that step ends; a step that touches nothing is the frame's own move. Measured at
-  the curb of 12-02 "The Parking Lot" (Tommy from (-10.1, -0.029, -153.19) facing -z, Paulie and Sam moved away: at
-  first they stood by the curb and the walks into them looked like stalls), `fps_unlock.path` sampling every frame:
-  walking, 62.5 fps climbs from z -155.23 to -155.51 in 0.32 s; at 400 fps the game alone stays at -155.23; fixed,
-  the climb is at the same z, the height within 5 mm at each z, 2 cm behind at 3 s (from the first frame, not the
-  curb). Running into the shop's ledge: up the curb at 0.577 / 0.581 s, stopped at z -158.912 at 1.345 / 1.348 s,
-  sliding along it to x -10.083 / -10.084 (62.5 fps / fixed at 400 fps). On flat ground: 5.039 / 5.033 m walked in
-  3 s.
+  `MovementIntern` also sweeps a fixed 0.1 m probe whatever the time when a move is shorter than 0.1 m in states 1
+  and 3 (`+0x40C`).
+- **code** **The cause: three lengths made once a call** (2026-10-15, read in both builds' disassembly; the decompile
+  agrees). The slide `TestPanak2` (`g_collision`, 0x5D59C0, 1.0 0x590AC0; thiscall(query) ret 4; the vehicle sweep's
+  twin 0x5D6430, 1.0 0x591530, ret 8) is a collide-and-slide: up to 10 rounds, each sweeping the three spheres
+  (`TestSphereB` 0x5D39A0) along the move, stopping at the nearest touch, and going on with the rest projected on
+  the contact's plane plus 0.01 m along its normal (`fmul [0.01]`, nine: x, y, z for each sphere). In the sweep the
+  sphere starts at the feet + 0.405 (`fadd [0.405]`) and the result is its centre minus 0.4 (an immediate), the move
+  aimed 0.015 lower (`fsub [0.015]`); the vehicle sweep starts at + 0.4 (`fadd [0.4]`), returns minus 0.4 (`fsub
+  [0.4]`, the same constant) and aims 0.015 lower. So once a call: the start 0.005 above the last result, the aim
+  0.015 down, the skin 0.01 off each contact (which is also why a person stands 0.01 above the ground: everyone's y is
+  the ground's + 0.01). At 16 ms they balance as 0.31, 0.94 and 0.63 m/s; at 2.5 ms they are six times as much, and a
+  curb's edge (its normal tilted up, the slide's direction decided by the forward step against them) is slid down.
+  Scaling the aim alone left the start's lift and the skin's push (it has an upward part on any edge below the
+  sphere's centre) made once a call: Tommy climbed walls (measured again with the probe: up to 0.34 m up the shop's
+  ledge). The fall on the ground is a fourth such length: the fall's speed restarts every frame there, so a frame's
+  move goes down `9.81 t^2` (2.5 mm at 16 ms, 0.06 mm at 2.5 ms), a 0.16 m/s push at 62.5 fps that vanishes above.
+- **probe** `fps_unlock.sweepprobe` calls the sweep as a walk would (the move `v t`, the fall `9.81 t` a step, restarted
+  on a touch) from where the player stands, any step and any lengths, and puts everything back. At the owner's curb
+  (12-02, Tommy from (-10.1, -0.029, -153.19) facing -z, 1.7 m/s): 16 ms climbs at 1.312 s, 8 ms barely, 4 and 2.5 ms
+  never (stopped at z -155.227); all three lengths times k = ms / 16, with the feet kept 0.01 above the ground (the
+  result's reference 0.39 + skin), climb at 1.316 / 1.313 / 1.312 s (4 / 2.5 / 1 ms), 3 mm and 2..3 cm from 16 ms at
+  1.5 s, and agree with one another within 1 cm. Running into the shop's 0.3 m ledge (5 m/s): stopped at z -158.920
+  against 16 ms's -158.912 (the smaller skin stands 8 mm nearer the wall), not climbing it. Keeping the skin at
+  0.01 (only the start and the aim scaled): the wall's distance as at 16 ms, but the curb climbed 0.03 s early and 13
+  cm further on, and the feet bobbing 4..8 mm on flat ground. Counting the ground's fall too (its 16 ms share added to
+  the aim on a step whose move goes down exactly `9.81 t^2`): the curb about the same (running up at 0.448 / 0.450 s
+  against 0.448), the stairs much nearer (below: 3..5 cm behind 16 ms at 2 s instead of 13..16 cm ahead): taken.
+  Stairs in 12-02 (from (2.25, 0.01, -118.86) facing -z, running 4.6 m/s, up 2.2 m, the last step higher): 16 ms runs
+  up them, 2.5 ms with the game's lengths stops at the bottom, fixed it ends where 16 ms does (2.64, 2.21, -126.37).
+  The freeride's spawn curb (z 26.2, its height growing towards -x; faced from z 24.5): running, 16 ms climbs it from
+  x -1982.5 to -1960 (0.19..0.23 m at the high end) and not at -1985 and beyond; walking from -1975; the fixed 2.5 ms
+  climbs exactly there, the game's 2.5 ms nowhere from -1982.5 to -1970 running and -1975 to -1965 walking. Along a curb
+  at 45 degrees (1.0's freeride, 11 m from the start towards +x +z) the probe's
+  steps disagree by up to 1 s on when a slow grind climbs; the real game there (below) does not climb in 10 s at any
+  rate, all three paths within 5 mm.
+- **code** fps_unlock's fix (`fix_walk`): the 22 operands pointed at four floats of the mod's (the process's heap),
+  which hold the game's values but during a call of a sweep, when they are the lengths of the call's step (k = ms /
+  16; k = 1 at 16 ms and longer; the aim with the ground fall's share on a ground step of MovementIntern's: about 60 %
+  of the sweeps while running about); the result's 0.4 corrected after the call; the fixed 0.1 m probe keeps the game's.
+  Its previous fix (each short step asked about a 16 ms step) is gone. **game**, `fps_unlock.path` every frame,
+  62.5 fps / fixed at 190..410 fps: 1.2, the owner's curb walking: up at 1.407 / 1.404 s, both at z -155.281 (unfixed:
+  stopped at -155.23); running: up at 0.544 / 0.541..0.544 s, stopped by the ledge at z -158.912 / -158.920, sliding
+  along it to x -10.083 / -10.084; down the curb walking at 0.768 / 0.778 s, running at 0.383 / 0.397 s. 1.0, its
+  freeride's curb head on (from (-1973, -4.86, 24.5) facing +z): up between 1.2 and 1.5 s at both (y -4.828 / -4.829
+  at 1.2 s, -4.686 / -4.679 at 1.5 s; unfixed: stopped at z 26.17). 1.2 at 260..730 fps: the stairs running, up to y
+  2.211 / 2.207 (unfixed: stopped before the last step at 1.96); the spawn curb at x -1980 running and -1972.5
+  walking climbed at the same heights as 62.5 fps (unfixed: stopped), at -1985 running climbed by none.
+- **game** Still different above 62.5 fps: running up a flight of stairs is about 7 % faster (12-02's stairs: y 1.85
+  against 1.73 at 1.5 s), fixed or not (unfixed 1.89): not the sweep's lengths; not found yet. A person stands 8 mm
+  nearer a wall (the skin's distance, k times 0.01).
 - **game** **A stopped car creeps above 62.5 fps** (the owner's report: a mission waiting for the car to stop waits;
   2026-10-15, both builds' code, the 1.2 lab). `C_car::AI` (0x41F780) sets the controls (SetPower, SetBrake,
   SetSteer) and calls `C_Vehicle::Tick` (0x4DF9A0, thiscall(ms), 0 ms taken as 1) every frame; Tick runs the

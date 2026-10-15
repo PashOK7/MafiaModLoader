@@ -135,6 +135,23 @@ analysis failed in both: parameters are misnamed and uses of the step are missin
   phase difference from one state) is not known; the car's speed, stop and turn measured the same over seconds.
   Next to read: Move 0x4E3C00..0x4E3FA0, and their means over a drive (`fps_unlock.path` with `dump_wheel`).
 
+## In the SDK (2026-10-15)
+
+- `game_build.h`, both builds, each checked in their code by `tools/check_builds.py`: `vehicleTick`, `vehicleEngine`,
+  `vehicleMove`, `vehicleWheelsColl` (to hook or call), `vehicleFlags`, `vehicleStepTime`, `vehSubstepMax`,
+  `vehAxes`, `vehTurn` (the angular velocity), `vehWheels`, `vehWheelCount`, `carSize`; LS3DF's `quatMake`,
+  `quatRotationMatrix`, `matrixSetRot3` (each its export, and the two |w| tests).
+- `game.h`: `Car::Vehicle`, `AngularVelocity`, `Forward` / `Right` / `Up`, `Flags`, `Awake`, `Calm`, `StepTime`,
+  `SubstepMax`, `WheelCount`, `Wheel(i)`; the wheel's `kWheel*` fields (the suspension's checked in both builds' code;
+  the frames and the load seen in both games); `mathx.h` `QuatMatrix`, RotationMatrix's formula without its loss.
+- The core's `car` command lists the body (`body`: awake, calm, angular velocity, axes, step) and each wheel
+  (frame, on the ground, load, force, compression, spring): seen the same in the 1.2 and 1.0 labs on the
+  freeride's taxi.
+- **code** `S_matrix::SetRot3` (LS3DF 1.2 0x1002E070, about 90 callers, LS3DF's own frames among them) and `SetRot`
+  (it calls SetRot3) have the same loss: the identity when `|w| >= 0.99999999`, for a float `w == 1`. Their callers
+  were not read: where one builds a matrix from an absolute rotation, a rotation within 0.00049 rad of none is made
+  none at every frame rate; where one turns by a step's angle, it has the car's limit. Not fixed.
+
 ## Tools for this (fps_unlock)
 
 - `fps_unlock.path {"start": true, "vehicle_offset": n, "dump_wheel": i, "dump_bytes": n}`: the player's car

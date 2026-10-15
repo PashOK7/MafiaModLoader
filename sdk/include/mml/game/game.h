@@ -176,6 +176,9 @@ inline void *PlayerCar() {
 // The car the player drives or drove last (the one the HUD's speedometer is for); null before the first one.
 inline void *LastCar() { return Exe().hudCar ? at<void *>(reinterpret_cast<void *>(Exe().hud), Exe().hudCar) : nullptr; }
 
+// A C_Vehicle's flags (Car::Flags; read in Move's rest test and Tick's end, both builds).
+constexpr uint32_t kVehAwake = 1, kVehCalm = 2, kVehAirborne = 8;
+
 struct Car {
     void *car;
     explicit Car(void *c) : car(c) {}
@@ -200,7 +203,43 @@ struct Car {
     float EngineHealth() const { float m = v<float>(Exe().vehEngineHealthMax); return m > 1e-4f ? v<float>(Exe().vehEngineHealth) / m : 0.0f; }
     float Damage() const { return 1.0f - EngineHealth(); }
     void *Frame() const { return at<void *>(car, kActorFrame); }       // its model: WorldMatrix(Frame()) for its axes
+
+    // The rigid body (knowledge/notes/vehicle_physics.md). The physics' own axes and angular velocity: what
+    // C_Vehicle::Move integrates each substep (the model frame follows them).
+    void *Vehicle() const { return &at<uint8_t>(car, Exe().vehicle); }   // C_Vehicle*: what Tick, Engine, Move take
+    V3 AngularVelocity() const { return v<V3>(Exe().vehTurn); }        // rad/s
+    V3 Forward() const { return v<V3>(Exe().vehAxes); }                // the body's axes, unit vectors in the world
+    V3 Right() const { return v<V3>(Exe().vehAxes + 12); }
+    V3 Up() const { return v<V3>(Exe().vehAxes + 24); }
+    // Its flags (kVehAwake...): a calm car is one Move zeroed (slower than 0.01 m/s and 0.015 rad/s); Tick lets it
+    // sleep (clears awake) after 1 s calm or 4 s within 0.15 m.
+    uint32_t Flags() const { return v<uint32_t>(Exe().vehicleFlags); }
+    bool Awake() const { return (Flags() & kVehAwake) != 0; }
+    bool Calm() const { return (Flags() & kVehCalm) != 0; }
+    float StepTime() const { return v<float>(Exe().vehicleStepTime); }   // s: the last step Engine made (its dt)
+    float SubstepMax() const { return v<float>(Exe().vehSubstepMax); }   // s: Engine cuts its dt into substeps this long at most
+    int WheelCount() const { return v<int>(Exe().vehWheelCount); }
+    void *Wheel(int i) const {                                         // an S_wheel (the kWheel* fields), or null
+        void **w = v<void **>(Exe().vehWheels);
+        return w && i >= 0 && i < WheelCount() ? w[i] : nullptr;
+    }
 };
+
+// A car's wheel: S_wheel, 0x1D4 bytes, the same layout in both builds (C_Vehicle::DoWheelsCollision's suspension
+// reads and writes the suspension's fields with the same code in 1.2 and 1.0, checked by tools/check_builds.py; the
+// frames and the load were seen in both builds' games, the core's `car` lists them). Floats unless said. The suspension force is (free length - compression) * stiffness plus the damper (the compression's speed
+// times kWheelDamper or the next float, by direction), in N; a wheel whose force is not positive leaves the ground.
+constexpr int kWheelSize = 0x1D4;
+// I3D_frame*: the wheel ("<model>.WHL0") and its dummy ("<model>.DWHL0": UpdateSteeringWheels writes its rotation)
+constexpr int kWheelFrame = 0x04, kWheelSteerFrame = 0x08;
+constexpr int kWheelLoad = 0x38;                             // N: the weight on it (a quarter of the taxi's, standing)
+constexpr int kWheelStiffness = 0x88;                        // N/m (68000 for the taxi)
+constexpr int kWheelFreeLength = 0x8C;                       // m (0.2)
+constexpr int kWheelForce = 0x90;                            // N: the suspension's force this substep
+constexpr int kWheelCompression = 0x94;                      // m: the last compression
+constexpr int kWheelDamper = 0x98;                           // N s/m (1400; +0x9C 2600 the other way)
+constexpr int kWheelFlags = 0x120;                           // uint32: kWheelOnGround...
+constexpr uint32_t kWheelHandbrake = 4, kWheelOnGround = 8, kWheelTouched = 0x40;
 
 // A car repaired as the scripts' car_repair does: set on its wheels on the ground, its body undented, its engine
 // whole (C_car::RepairPosition(car, true)). Game thread only.

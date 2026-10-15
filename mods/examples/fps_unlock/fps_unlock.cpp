@@ -8,7 +8,7 @@
 // time, in whole milliseconds; a long frame is still cut to 83 ms), and Present's `push 0; call Sleep` is jumped
 // over. The game's time stays real: at 200 fps every system gets 5 ms a frame instead of 16 ms every 16 ms.
 // What the game did once a frame instead of by the time breaks then; three are fixed here (the main menu's camera,
-// CamTick and 1.0's Cam10; a person's step at a curb, Stepped; the small rotations LS3D drops, which left a car
+// CamTick and 1.0's Cam10; a person's step at a curb, Swept; the small rotations LS3D drops, which left a car
 // creeping and its steering with a dead zone, RotationMatrix) and the others found go to knowledge/notes/game.md,
 // "The frame rate".
 //
@@ -20,8 +20,8 @@
 //                              leave the game as it was)
 //   fixing a game function     CamTick       a hook (host->hook: chained, taken off with the mod) that calls the
 //                              game's own function and corrects what it did once a frame
-//   a decision made as at      Stepped       a function whose answer depends on the step's size asked about the
-//   16 ms                                    game's own 16 ms step, and the frame given its share of the answer
+//   lengths made once a call   Swept, Walk   the game's own function given, for each call, the lengths of its
+//   made lengths of the time                 step's time: its operands pointed at the mod's floats (in the heap)
 //   an engine function fixed   RotationMatrix   LS3DF.dll's export hooked by its name, the fix checked against the
 //                                            game's own function at load, everything else handed to it unchanged
 //   pacing frames precisely    Pace         a frame-rate cap of its own, on a high-resolution waitable timer (the
@@ -55,7 +55,7 @@ struct Settings {
     int maxFps = 0;          // 0: no cap of the mod's own
     bool show = true;        // the line at the top left
     bool fixCamera = true;   // the main menu's camera stepped by the time (menuCamTick)
-    bool fixWalk = true;     // a person's short steps swept as 16 ms ones (humanSweep): curbs as at 62.5 fps
+    bool fixWalk = true;     // a person's sweep made with lengths of its step's time (humanSweep): curbs as at 62.5 fps
     bool fixRotation = true; // LS3D's quaternion-to-matrix keeps rotations under 0.00049 rad (RotationMatrix)
     std::string hotkey = "F11";
 } S;
@@ -246,67 +246,151 @@ void StepCam10() {
     g_k10[1] = 1.0f - powf(1.0f - 0.002f, ms / 16.0f);
 }
 
-// ---- a person's step: a sweep made once a call, made to decide as a 16 ms step does
+// ---- a person's step: the sweep's lengths made once a call, made lengths of the time
 // A person on foot moves by sweeping three spheres along the frame's move (game_build.h humanSweep; humanSweepOwner
-// for one standing in a vehicle), aimed 0.015 m lower than the move once a call to keep the feet on the ground; where
-// the spheres touch something they slide along it, and that slide is what takes a person up a curb's edge. Every
-// such decision depends on the step's size: at 16 ms a walk's step is 0.024 m forward against those 0.015 down and
-// slides up a curb; at 2 ms it is 0.003 m against the same 0.015 and slides down instead (above 62.5 fps a walking
-// person stops at every curb). Scaling the 0.015 by the time is not enough: many small slides follow a sphere's
-// curve over an edge that one 16 ms step is stopped by, and Tommy then climbed a 0.3 m ledge under a shop window that
-// he cannot climb at 62.5 fps (measured at the owner's curb in 12-02 "The Parking Lot", docs/JOURNAL.md 2026-10-14).
-// So the sweep is asked what the game's own 16 ms step would do: the frame's move stretched to 16 ms (with the
-// gravity a 16 ms frame adds: on the ground the fall's speed starts from 0 each frame, so a frame's drop is 9.81 t^2)
-// and the game's own 0.015, and the frame takes its share, ms / 16, of where that step ends. When the 16 ms step
-// touches nothing, the frame's own move (the first ms / 16 of that same path) touches nothing either and is the
-// game's own result. humanMove and humanUpdate (the two callers, both given the frame's time) tell the sweeps the
-// time; the short fixed probe the game makes while falling or landing (states 1 and 3: 0.1 m whatever the time) is
-// left as it is.
+// for one standing in a vehicle) and sliding them along whatever they touch (humanSlide, humanSlideOwner: up to 10
+// slides, each one's rest projected on the contact's plane). Three lengths in it are made once a call, tuned for the
+// game's 16 ms step (knowledge/notes/game.md, "A person's step"):
+//   start   the sphere starts 0.005 m higher than the result's reference (0.405 above the feet, the result its centre
+//           minus 0.4); in the vehicle sweep 0 (0.4 and 0.4);
+//   aim     the move is aimed 0.015 m lower;
+//   skin    every slide starts again 0.01 m off the contact, along its normal; that also makes a person stand 0.01 m
+//           above the ground.
+// (and, outside the sweep, the fall on the ground: restarted every frame, a frame's move goes down 9.81 t^2: AimOf).
+// At 62.5 fps they are 0.31, 0.94 and 0.63 m/s; at 400 fps six times as much. A curb's edge is climbed when the slide
+// along it goes up, which the forward step decides against those lengths: in 2.5 ms steps it goes down and a walking
+// person stops at every curb. Made rates of the time, the three give the same motion at every step (measured with
+// fps_unlock.sweepprobe: 1, 2.5 and 4 ms steps agree within 1 cm and the 16 ms step within 3 cm at the owner's curb;
+// curbs, stairs and the freeride spawn's curb of growing height climbed exactly where 62.5 fps climbs them; scaling
+// the aim alone left the other two lifting a person up walls). So each call's lengths are k = ms / 16 of the
+// game's (k = 1 at 16 ms and longer: the game's own), and the feet are kept where the game's skin put them, 0.01 m
+// above the ground: the result's reference is 0.39 + skin, the start that plus k times 0.005 (the vehicle sweep's
+// start: the reference itself). The game's code is not changed beyond its operands: the 22 `fadd / fsub / fmul dword
+// [const]` that read these lengths point at a block of four floats of the mod's, which holds the game's values but
+// during a call of the sweep; the result's 0.4 (an immediate) is corrected after the call. The block lives in the
+// process's heap (a mod that faults is unloaded without its mml_mod_unload, and the game's code must not point into a
+// freed DLL); the operands' list is kept with state_put. humanMove and humanUpdate (the sweeps' two callers, both given
+// the frame's time) tell the sweeps the time; the fixed 0.1 m probe the game makes while falling or landing (states 1
+// and 3) is a probe, not a step: its call keeps the game's lengths.
 using HumanFn = void(__fastcall *)(void *, void *, unsigned);   // thiscall(C_human*, unsigned ms), ret 4
 using SweepFn = int(__fastcall *)(void *, void *, const float *, const float *, float *);   // (pos, move, out), ret 0xC
 HumanFn g_moveOriginal, g_updateOriginal;
 SweepFn g_sweepOriginal, g_sweepOwnerOriginal;
 bool g_stepHooked;
 unsigned g_stepMs;       // the time the sweeps are called with now (0: a caller that does not tell it)
-bool g_stepGravity;      // the move has the frame's gravity in it (humanMove's; humanUpdate's is an animation's)
-unsigned g_stepsStretched, g_stepsTouched;   // (fps_unlock.status: sweeps asked as 16 ms steps, of them touching)
+unsigned g_stepsScaled;  // (fps_unlock.status: sweeps made with lengths of a shorter step)
+enum { kWalkStart, kWalkAim, kWalkSkin, kWalkOwnerStart, kWalkFloats };
+constexpr float kWalkGame[kWalkFloats] = {0.405f, 0.015f, 0.01f, 0.4f};   // the game's values, slot by slot
+float *g_walkK;          // the block (the process's heap)
+Operand g_walkOps[24];
+int g_walkOpsN;
+bool g_walkOn;           // the operands point at g_walkK
+
+// The 22 operands, found by their constants in the four functions (tools/check_builds.py checks the same in both
+// builds): the sweep's fadd [0.405] and fsub [0.015], the vehicle sweep's fadd [0.4] (its start; its result's fsub
+// [0.4] is left alone) and fsub [0.015], the two slides' nine fmul [0.01].
+bool FindWalk() {
+    size_t n = H->state_get(M, "walkops", g_walkOps, sizeof g_walkOps);
+    if (n == sizeof g_walkOps) {   // an earlier load's: each must still be the game's constant or this block
+        g_walkOpsN = 22;
+        for (int i = 0; i < 22; i++) {
+            const Operand &o = g_walkOps[i];
+            uint32_t now = 0;
+            H->mem_read(o.at, &now, 4);
+            if (now != o.original && now != static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&g_walkK[o.slot]))) g_walkOpsN = 0;
+            else if (now != o.original) g_walkOn = true;
+        }
+        if (g_walkOpsN) return true;
+    }
+    const game::ExeBuild &e = game::Exe();
+    struct Where { uintptr_t fn; size_t span; uint8_t op; float value; int slot, want; };   // (span: the function's length)
+    const Where where[] = {{e.humanSweep, 0x480, 0x05, 0.405f, kWalkStart, 1}, {e.humanSweep, 0x480, 0x25, 0.015f, kWalkAim, 1},
+                           {e.humanSweepOwner, 0x200, 0x05, 0.4f, kWalkOwnerStart, 1},
+                           {e.humanSweepOwner, 0x200, 0x25, 0.015f, kWalkAim, 1},
+                           {e.humanSlide, 0xA80, 0x0D, 0.01f, kWalkSkin, 9}, {e.humanSlideOwner, 0xA80, 0x0D, 0.01f, kWalkSkin, 9}};
+    g_walkOpsN = 0;
+    for (const Where &w : where) {
+        uint8_t code[0xB00];
+        if (!w.fn || !H->mem_read(w.fn, code, w.span)) return false;
+        int found = 0;
+        for (size_t i = 0; i + 6 <= w.span; i++) {
+            if (code[i] != 0xD8 || code[i + 1] != w.op) continue;   // fadd / fsub / fmul dword ptr [abs32]
+            uint32_t c;
+            float v;
+            memcpy(&c, code + i + 2, 4);
+            if (!H->mem_read(c, &v, 4) || v != w.value) continue;
+            if (g_walkOpsN == 24) return false;
+            g_walkOps[g_walkOpsN++] = {w.fn + i + 2, c, w.slot};
+            found++;
+        }
+        if (found != w.want) return false;
+    }
+    if (g_walkOpsN != 22) return false;
+    H->state_put(M, "walkops", g_walkOps, sizeof g_walkOps);
+    return true;
+}
+
+void Walk(bool on) {
+    if (on == g_walkOn || !g_walkOpsN) return;
+    for (int i = 0; i < kWalkFloats; i++) g_walkK[i] = kWalkGame[i];
+    for (int i = 0; i < g_walkOpsN; i++) {
+        uint32_t want = on ? static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&g_walkK[g_walkOps[i].slot])) : g_walkOps[i].original;
+        H->mem_write(g_walkOps[i].at, &want, 4);   // (game thread: no person is being moved now)
+    }
+    g_walkOn = on;
+}
+
+bool g_stepFall;         // the move is MovementIntern's: its y is the fall (humanUpdate's is an animation's)
+unsigned g_stepsGround;  // (fps_unlock.status: of the scaled sweeps, those of a step on the ground)
 
 void __fastcall HumanMove(void *human, void *edx, unsigned ms) {
     const unsigned ms0 = g_stepMs;
-    const bool g0 = g_stepGravity;
-    g_stepMs = ms, g_stepGravity = true;
+    const bool f0 = g_stepFall;
+    g_stepMs = ms, g_stepFall = true;
     g_moveOriginal(human, edx, ms);
-    g_stepMs = ms0, g_stepGravity = g0;
+    g_stepMs = ms0, g_stepFall = f0;
 }
 void __fastcall HumanUpdate(void *human, void *edx, unsigned ms) {
     const unsigned ms0 = g_stepMs;
-    const bool g0 = g_stepGravity;
-    g_stepMs = ms, g_stepGravity = false;
+    const bool f0 = g_stepFall;
+    g_stepMs = ms, g_stepFall = false;
     g_updateOriginal(human, edx, ms);
-    g_stepMs = ms0, g_stepGravity = g0;
+    g_stepMs = ms0, g_stepFall = f0;
 }
 
-int Stepped(SweepFn sweep, void *human, void *edx, const float *pos, const float *move, float *out) {
+// The aim of a step of k * 16 ms. On the ground the fall's speed restarts every frame, so a frame's move goes down
+// 9.81 t^2 (the move's y is exactly that): 2.5 mm a 16 ms frame, a fourth length made once a call. Its 16 ms share
+// is added to the aim for such a step (in the air the fall goes on from frame to frame and is the time's already).
+float AimOf(float k, const float *move) {
+    const float t = k * 0.016f, drop = 9.81f * t * t;
+    if (!g_stepFall || fabsf(move[1] + drop) > 1e-6f + drop * 1e-3f) return 0.015f * k;
+    g_stepsGround++;
+    return 0.015f * k + (9.81f * 0.016f * 0.016f * k - drop);
+}
+
+// One sweep with the lengths of this call's step.
+int Swept(SweepFn sweep, void *human, void *edx, const float *pos, const float *move, float *out) {
     const unsigned ms = g_stepMs;
-    if (!S.enabled || !S.fixWalk || ms == 0 || ms >= 16) return sweep(human, edx, pos, move, out);
+    if (!g_walkOn || !S.enabled || !S.fixWalk || ms == 0 || ms >= 16) return sweep(human, edx, pos, move, out);
     const int state = *reinterpret_cast<const int *>(static_cast<const char *>(human) + game::Exe().humanMoveState);
     const float len = sqrtf(move[0] * move[0] + move[1] * move[1] + move[2] * move[2]);
     if ((state == 1 || state == 3) && fabsf(len - 0.1f) < 1e-4f) return sweep(human, edx, pos, move, out);
-    const float k = 16.0f / ms, t = ms * 0.001f;
-    float m16[3] = {move[0] * k, move[1] * k, move[2] * k}, o16[3];
-    if (g_stepGravity) m16[1] -= 9.81f * (0.016f * 0.016f - 0.016f * t);   // a 16 ms frame's fall, not k times this one's
-    const int hit = sweep(human, edx, pos, m16, o16);
-    const float f = ms / 16.0f;
-    g_stepsStretched++;
-    g_stepsTouched += hit != 0;
-    for (int i = 0; i < 3; i++) out[i] = hit ? pos[i] + (o16[i] - pos[i]) * f : pos[i] + move[i];
+    const float k = ms / 16.0f, skin = 0.01f * k, reference = 0.39f + skin;
+    g_walkK[kWalkStart] = reference + 0.005f * k;
+    g_walkK[kWalkAim] = AimOf(k, move);
+    g_walkK[kWalkSkin] = skin;
+    g_walkK[kWalkOwnerStart] = reference;
+    const int hit = sweep(human, edx, pos, move, out);
+    for (int i = 0; i < kWalkFloats; i++) g_walkK[i] = kWalkGame[i];
+    if (hit) out[1] += 0.4f - reference;   // (the game's result is the sphere's centre minus 0.4)
+    g_stepsScaled++;
     return hit;
 }
 int __fastcall HumanSweep(void *h, void *edx, const float *pos, const float *move, float *out) {
-    return Stepped(g_sweepOriginal, h, edx, pos, move, out);
+    return Swept(g_sweepOriginal, h, edx, pos, move, out);
 }
 int __fastcall HumanSweepOwner(void *h, void *edx, const float *pos, const float *move, float *out) {
-    return Stepped(g_sweepOwnerOriginal, h, edx, pos, move, out);
+    return Swept(g_sweepOwnerOriginal, h, edx, pos, move, out);
 }
 
 // The player's path, for measuring (fps_unlock.path): every frame, the player's car (its position and speed, as
@@ -314,7 +398,7 @@ int __fastcall HumanSweepOwner(void *h, void *edx, const float *pos, const float
 struct PathSample { float t, pos[3], speed, vel[3], extra[3]; bool car; };
 int g_pathExtra = -1;   // a C_Vehicle offset whose 3 floats are recorded too ({"start": true, "vehicle_offset": n})
 // A block of the car's memory copied every frame, for finding what depends on the step ({"start": true, "dump":
-// {"wheel": i} or {"offset": n}, "bytes": n}): one wheel's S_wheel (the vehicle's +0xC38 array, +0x4C4 wheels) or
+// {"wheel": i} or {"offset": n}, "bytes": n}): one wheel's S_wheel (game::Car::Wheel) or
 // the C_Vehicle from an offset. Read back as each float's mean |value| over a window ({"dump_from": s, "dump_to": s}).
 int g_dumpWheel = -1, g_dumpOffset = -1, g_dumpBytes = 0;
 std::vector<float> g_dump;     // g_dumpBytes / 4 floats per sample, the samples' times in g_dumpT
@@ -337,12 +421,11 @@ void TracePath() {
         s.vel[0] = v.x, s.vel[1] = v.y, s.vel[2] = v.z;
         if (g_pathExtra >= 0) memcpy(s.extra, &car.v<float>(g_pathExtra), sizeof s.extra);
         if (g_dumpBytes > 0 && g_dump.size() < (64u << 20) / sizeof(float)) {
-            char *veh = &car.v<char>(0);
-            char **wheels = *reinterpret_cast<char ***>(veh + 0xC38);
+            char *veh = static_cast<char *>(car.Vehicle());
             uintptr_t from = 0;
-            if (g_dumpWheel >= 0 && wheels && g_dumpWheel < *reinterpret_cast<int *>(veh + 0x4C4))
-                from = reinterpret_cast<uintptr_t>(wheels[g_dumpWheel]);
-            else if (g_dumpWheel < 0 && g_dumpOffset >= 0)
+            if (g_dumpWheel >= 0)
+                from = reinterpret_cast<uintptr_t>(car.Wheel(g_dumpWheel));
+            else if (g_dumpOffset >= 0)
                 from = reinterpret_cast<uintptr_t>(veh) + g_dumpOffset;
             const size_t n = g_dumpBytes / 4, at = g_dump.size();
             g_dump.resize(at + n);
@@ -361,31 +444,21 @@ void TracePath() {
 }
 
 // ---- small rotations: LS3D's quaternion-to-matrix made to keep them
-// S_quat::RotationMatrix (LS3DF's export, stdcall(const S_quat *q, S_matrix *out) -> out) builds the matrix only
-// when |w| < 1 and returns the identity otherwise. A rotation by a small angle a has w = cos(a/2), which is exactly
+// S_quat::RotationMatrix (LS3DF's export, game_build.h quatRotationMatrix: stdcall(const S_quat *q, S_matrix *out)
+// -> out) builds the matrix only when |w| < 1 and returns the identity otherwise. A rotation by a small angle a has w = cos(a/2), which is exactly
 // 1.0 as a float for any a under about 0.00049 rad, though its vector part is not zero: such a rotation is dropped
 // whole. Whoever turns something by a per-frame angle loses every turn slower than 0.00049 rad a frame: 0.03 rad/s
 // at 62.5 fps, 0.2 rad/s at 400 fps. A car's body (C_Vehicle::Move turns it each step this way) then cannot yaw a
 // little (a dead zone in the steering) nor rock on its springs, so its angular velocity is never answered and a
 // stopped car keeps creeping (knowledge/notes/vehicle_physics.md). The fix builds the matrix for |w| = 1 with a
-// vector part too, by the same formula (it is right for every unit quaternion); every other quaternion goes to the
-// game's own function, so all that worked before gives the same bits.
+// vector part too, by the same formula (mathx.h QuatMatrix: it is right for every unit quaternion); every other
+// quaternion goes to the game's own function, so all that worked before gives the same bits.
 using RotMatFn = float *(__stdcall *)(const float *, float *);
 RotMatFn g_rotMatOriginal;
 bool g_rotMatHooked;
 unsigned g_rotMatKept;   // (fps_unlock.status: rotations the game would have dropped)
 
-void BuildRotation(const float *q, float *out) {
-    const float w = q[0], x = q[1], y = q[2], z = q[3];
-    const float x2 = x + x, y2 = y + y, z2 = z + z;
-    const float xx = x2 * x, xy = y2 * x, xz = z2 * x, yy = y2 * y, yz = z2 * y, zz = z2 * z;
-    const float wx = x2 * w, wy = y2 * w, wz = z2 * w;
-    const float m[16] = {1.0f - (zz + yy), xy - wz, wy + xz, 0,   // (the game's own order and signs, 0x1002EC00)
-                         wz + xy, 1.0f - (zz + xx), yz - wx, 0,
-                         xz - wy, wx + yz, 1.0f - (yy + xx), 0,
-                         0, 0, 0, 1.0f};
-    memcpy(out, m, sizeof m);
-}
+void BuildRotation(const float *q, float *out) { QuatMatrix(Q{q[0], q[1], q[2], q[3]}, out); }
 
 // Only a unit quaternion whose w rounded to 1 is built here: |w| at most 2 float steps above 1 (a normalized one's
 // rounding), its vector part not zero and short (|v|^2 < 1e-6: a turn under 0.002 rad). Anything else (|w| < 1, the
@@ -424,8 +497,8 @@ TickFn g_vehicleTickOriginal;
 bool g_vehicleTickHooked;
 
 // ---- the step probe (fps_unlock.stepprobe): what one car's Tick does with one step against several shorter ones,
-// from the same state. At the player's car's next Tick: its state is copied (the C_Vehicle, 0x21AC bytes; each wheel,
-// 0x1D4; the body's and the wheels' frames, 0x10..0xB0: matrices, rotation, flags), Tick runs n times with ms, the
+// from the same state. At the player's car's next Tick: its state is copied (the C_Vehicle, to the C_car's end; each
+// wheel, 0x1D4; the body's and the wheels' frames, 0x10..0xB0: matrices, rotation, flags), Tick runs n times with ms, the
 // result is kept, the state is put back, Tick runs n2 times with ms2, the state is put back again, and the frame's own
 // Tick follows. A step's physics is right when both changes match (to the integration's error); the floats whose
 // changes differ most are listed. Crashes (dents), skid marks and sounds made during the probe are not undone: probe
@@ -436,42 +509,45 @@ struct ProbeReq {
     std::vector<unsigned> show, logVeh, logWheel;   // logged after every Tick of both runs: vehicle and wheel floats
     std::string result;
 } g_probe;
-constexpr size_t kVehBytes = 0x21AC, kWheelBytes = 0x1D4, kFrameFrom = 0x10, kFrameBytes = 0xA0;
+constexpr size_t kWheelBytes = game::kWheelSize, kFrameFrom = 0x10, kFrameBytes = 0xA0;
 
 struct CarCopy {
     std::vector<uint8_t> veh;
-    std::vector<std::vector<uint8_t>> wheels, frames;   // frames: the body's, then each wheel's +4 and +8
+    std::vector<std::vector<uint8_t>> wheels, frames;   // frames: the body's, then each wheel's two
     std::vector<char *> framePtrs;
 };
 
-void CarSave(char *veh, void *car, CarCopy *c) {
-    c->veh.assign(veh, veh + kVehBytes);
-    const int n = *reinterpret_cast<int *>(veh + 0x4C4);
-    char **w = *reinterpret_cast<char ***>(veh + 0xC38);
+void CarSave(game::Car car, size_t vehBytes, CarCopy *c) {
+    char *veh = static_cast<char *>(car.Vehicle());
+    c->veh.assign(veh, veh + vehBytes);
     c->wheels.clear(), c->frames.clear(), c->framePtrs.clear();
-    c->framePtrs.push_back(game::at<char *>(car, game::kActorFrame));
-    for (int i = 0; i < n && w; i++) {
-        c->wheels.emplace_back(w[i], w[i] + kWheelBytes);
-        c->framePtrs.push_back(*reinterpret_cast<char **>(w[i] + 4));
-        c->framePtrs.push_back(*reinterpret_cast<char **>(w[i] + 8));
+    c->framePtrs.push_back(static_cast<char *>(car.Frame()));
+    for (int i = 0; i < car.WheelCount(); i++) {
+        char *w = static_cast<char *>(car.Wheel(i));
+        if (!w) continue;
+        c->wheels.emplace_back(w, w + kWheelBytes);
+        c->framePtrs.push_back(game::at<char *>(w, game::kWheelFrame));
+        c->framePtrs.push_back(game::at<char *>(w, game::kWheelSteerFrame));
     }
     for (char *f : c->framePtrs)
         c->frames.push_back(f ? std::vector<uint8_t>(f + kFrameFrom, f + kFrameFrom + kFrameBytes) : std::vector<uint8_t>());
 }
 
-void CarLoad(char *veh, const CarCopy &c) {
-    memcpy(veh, c.veh.data(), kVehBytes);
-    char **w = *reinterpret_cast<char ***>(veh + 0xC38);
-    for (size_t i = 0; i < c.wheels.size() && w; i++) memcpy(w[i], c.wheels[i].data(), kWheelBytes);
+void CarLoad(game::Car car, const CarCopy &c) {
+    memcpy(car.Vehicle(), c.veh.data(), c.veh.size());
+    for (size_t i = 0, k = 0; i < static_cast<size_t>(car.WheelCount()) && k < c.wheels.size(); i++)
+        if (void *w = car.Wheel(static_cast<int>(i))) memcpy(w, c.wheels[k++].data(), kWheelBytes);
     for (size_t i = 0; i < c.framePtrs.size(); i++)
         if (c.framePtrs[i]) memcpy(c.framePtrs[i] + kFrameFrom, c.frames[i].data(), kFrameBytes);
 }
 
 void Probe(void *vehicle, void *edx) {
     char *veh = static_cast<char *>(vehicle);
-    void *car = veh - game::Exe().vehicle;
+    game::Car car{veh - game::Exe().vehicle};
+    // the C_Vehicle runs to the C_car's end (its last fields are C_car's own: put back with it)
+    const size_t kVehBytes = static_cast<size_t>(game::Exe().carSize - game::Exe().vehicle);
     CarCopy start, a, b;
-    CarSave(veh, car, &start);
+    CarSave(car, kVehBytes, &start);
     // the per-step log: [run, step, vehicle floats..., each wheel's floats...]
     std::string log;
     auto record = [&](int run, unsigned step) {
@@ -485,12 +561,11 @@ void Probe(void *vehicle, void *edx) {
             snprintf(s, sizeof s, ",%.6g", x);
             log += s;
         }
-        const int nw = *reinterpret_cast<int *>(veh + 0x4C4);
-        char **w = *reinterpret_cast<char ***>(veh + 0xC38);
-        for (int k = 0; k < nw && w; k++)
+        for (int k = 0; k < car.WheelCount(); k++)
             for (unsigned o : g_probe.logWheel) {
                 float x = 0;
-                if (o + 4 <= kWheelBytes) memcpy(&x, w[k] + o, 4);
+                const char *w = static_cast<const char *>(car.Wheel(k));
+                if (w && o + 4 <= kWheelBytes) memcpy(&x, w + o, 4);
                 snprintf(s, sizeof s, ",%.6g", x);
                 log += s;
             }
@@ -498,11 +573,11 @@ void Probe(void *vehicle, void *edx) {
     };
     record(0, 0);
     for (unsigned i = 0; i < g_probe.n; i++) g_vehicleTickOriginal(vehicle, edx, g_probe.ms), record(1, i + 1);
-    CarSave(veh, car, &a);
-    CarLoad(veh, start);
+    CarSave(car, kVehBytes, &a);
+    CarLoad(car, start);
     for (unsigned i = 0; i < g_probe.n2; i++) g_vehicleTickOriginal(vehicle, edx, g_probe.ms2), record(2, i + 1);
-    CarSave(veh, car, &b);
-    CarLoad(veh, start);
+    CarSave(car, kVehBytes, &b);
+    CarLoad(car, start);
     // every float of the vehicle and the wheels: its change in a and in b
     struct Diff { std::string where; float s, da, db; double score; };
     std::vector<Diff> diffs;
@@ -644,6 +719,7 @@ void ReadSettings() {
     if (S.enabled) Apply();
     else Restore();
     Cam10(S.enabled && S.fixCamera);
+    Walk(S.enabled && S.fixWalk && g_stepHooked);
 }
 
 void OnConfig(const MmlEvent *, void *) { ReadSettings(); }
@@ -654,16 +730,16 @@ int Status(const char *, MmlReply *r, void *) {
     snprintf(out, sizeof out,
              "{\"build\":\"%s\",\"known\":%s,\"enabled\":%s,\"unlocked\":\"%s\",\"why\":\"%s\",\"max_fps\":%d,"
              "\"fps\":%d,\"frame_ms\":%.2f,\"frame_ms_max\":%.2f,\"game_step_ms\":[%u,%u],\"game_steps_zero\":%u,"
-             "\"menu_camera\":\"%s\",\"walk\":\"%s\",\"walk_steps\":[%u,%u],\"car_tick\":\"%s\",\"rotation\":\"%s\",\"rotations_kept\":%u}",
+             "\"menu_camera\":\"%s\",\"walk\":\"%s\",\"walk_sweeps_scaled\":[%u,%u],\"car_tick\":\"%s\",\"rotation\":\"%s\",\"rotations_kept\":%u}",
              H->game_build(), g_known ? "true" : "false", S.enabled ? "true" : "false",
              g_owner == Owner::us ? "by this mod" : g_owner == Owner::other ? "by another tool" : "no", g_why, S.maxFps,
              g_last.frames, avg, g_last.maxMs, g_last.dtMin == ~0u ? 0 : g_last.dtMin, g_last.dtMax, g_last.dtZero,
              g_camHooked ? (S.enabled && S.fixCamera ? "fixed: TickCamera hooked" : "TickCamera hooked, fix off")
              : g_cam10 ? "fixed: the loop's operands on the mod's coefficients"
              : g_ops10N ? "found, fix off" : "not known for this build",
-             g_stepHooked ? (S.enabled && S.fixWalk ? "fixed: each short step decided as a 16 ms one" : "hooked, fix off")
-             : game::g_exe && game::Exe().humanSweep ? "could not be hooked" : "not known for this build",
-             g_stepsStretched, g_stepsTouched,
+             g_stepHooked && g_walkOpsN ? (g_walkOn ? "fixed: the sweep's lengths made of the step's time" : "hooked, fix off")
+             : game::g_exe && game::Exe().humanSweep ? "its code or hooks not as expected" : "not known for this build",
+             g_stepsScaled, g_stepsGround,
              g_vehicleTickHooked ? "hooked (the step probe only)" : "not known for this build",
              g_rotMatHooked ? (S.enabled && S.fixRotation ? "fixed: small rotations kept" : "hooked, fix off") : "not hooked",
              g_rotMatKept);
@@ -734,6 +810,78 @@ int StepProbe(const char *args, MmlReply *r, void *) {
     }
     const std::string &s = g_probe.result.empty() ? std::string(g_probe.pending ? "{\"pending\":true}" : "{}") : g_probe.result;
     H->reply_append(r, s.c_str(), s.size());
+    return 0;
+}
+
+// fps_unlock.sweepprobe {"ms": 4, "s": 1.5, "speed": 1.7}: the person's collision sweep (humanSweep) called as a walk
+// would call it, from where the player stands, facing where he faces, in steps of ms for s seconds, and everything put
+// back after (the player's frame and position): the feet's path [t, x, y, z] every 16 ms of it. The sweep's lengths
+// are the game's, or with "fix": true those fix_walk gives a step of ms, or any given: "start" (the sphere's start
+// above the feet, 0.405), "aim" (how much lower than the move it is aimed, 0.015), "skin" (how far off a contact each
+// slide starts again, 0.01), "out" (the result's offset below the sphere's centre, 0.4). The fall is the walk's: 9.81 t
+// a step added to the fall's speed, the speed restarted on every touch. How the fix was found (knowledge/notes/game.md).
+int SweepProbe(const char *args, MmlReply *r, void *) {
+    char *p = static_cast<char *>(game::Player());
+    if (!p || game::PlayerCar()) return H->reply_error(r, "the player on foot"), 0;
+    if (!g_walkOpsN || !g_stepHooked) return H->reply_error(r, "the sweep's lengths are not known for this build"), 0;
+    auto number = [&](const char *key, double otherwise) {
+        const char *at = args ? strstr(args, key) : nullptr;
+        return at ? atof(at + strlen(key)) : otherwise;
+    };
+    const float ms = static_cast<float>(number("\"ms\":", 16)), seconds = static_cast<float>(number("\"s\":", 1.5));
+    const float speed = static_cast<float>(number("\"speed\":", 1.7)), dt = ms * 0.001f;
+    if (ms <= 0 || seconds <= 0 || seconds / dt > 20000) return H->reply_error(r, "ms, s: at most 20000 steps"), 0;
+    const bool fix = args && strstr(args, "\"fix\":true");
+    const float k = fix && ms < 16 ? ms / 16.0f : 1.0f, reference = 0.39f + 0.01f * k;
+    float use[kWalkFloats] = {fix ? reference + 0.005f * k : 0.405f, 0.015f * k, 0.01f * k, reference};
+    use[kWalkStart] = static_cast<float>(number("\"start\":", use[kWalkStart]));
+    const bool aimGiven = args && strstr(args, "\"aim\":");   // (else with "fix": the fix's aim, step by step)
+    use[kWalkAim] = static_cast<float>(number("\"aim\":", use[kWalkAim]));
+    use[kWalkSkin] = static_cast<float>(number("\"skin\":", use[kWalkSkin]));
+    const float outK = static_cast<float>(number("\"out\":", fix ? reference : 0.4f));
+    const bool wasOn = g_walkOn;
+    Walk(true);
+    char *frame = game::at<char *>(p, game::kActorFrame);
+    uint8_t keep[0xA0], keepPos[12];
+    memcpy(keep, frame + 0x10, sizeof keep);
+    memcpy(keepPos, p + game::kActorPos, sizeof keepPos);
+    float feet[3];
+    memcpy(feet, frame + game::kFrameWorld + 48, sizeof feet);
+    const V3 facing = Norm(game::at<V3>(p, game::kActorFacing));
+    std::string out = "{\"path\":[";
+    char s[96];
+    float fall = 0, next = 0;
+    int hits = 0, n = 0;
+    for (float t = 0; t < seconds - 1e-6f; t += dt) {
+        if (t >= next - 1e-6f) {
+            snprintf(s, sizeof s, "%s[%.3f,%.4f,%.4f,%.4f]", n++ ? "," : "", t, feet[0], feet[1], feet[2]);
+            out += s, next += 0.016f;
+        }
+        fall += 9.81f * dt;
+        const float move[3] = {facing.x * speed * dt, -fall * dt, facing.z * speed * dt};
+        memcpy(frame + game::kFrameWorld + 48, feet, sizeof feet);   // (the sweep starts from the frame's world place)
+        game::at<uint32_t>(frame, game::kFrameFlags) |= game::kFlagWorldValid;
+        memcpy(p + game::kActorPos, feet, sizeof feet);
+        float to[3];
+        if (fix && !aimGiven) {
+            const bool f0 = g_stepFall;
+            g_stepFall = true;
+            use[kWalkAim] = AimOf(k, move);
+            g_stepFall = f0;
+        }
+        memcpy(g_walkK, use, sizeof use);
+        const int hit = g_sweepOriginal(p, nullptr, feet, move, to);
+        for (int i = 0; i < kWalkFloats; i++) g_walkK[i] = kWalkGame[i];
+        if (hit) hits++, fall = 0, to[1] += 0.4f - outK;
+        memcpy(feet, to, sizeof feet);
+    }
+    memcpy(frame + 0x10, keep, sizeof keep);
+    memcpy(p + game::kActorPos, keepPos, sizeof keepPos);
+    Walk(wasOn);
+    snprintf(s, sizeof s, "%s[%.3f,%.4f,%.4f,%.4f]],\"hits\":%d,\"steps\":%d}", n ? "," : "", seconds, feet[0], feet[1],
+             feet[2], hits, static_cast<int>(seconds / dt + 0.5f));
+    out += s;
+    H->reply_append(r, out.c_str(), out.size());
     return 0;
 }
 
@@ -864,9 +1012,10 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
             return host->hook(mod, at, reinterpret_cast<void *>(fn), reinterpret_cast<void **>(original)) != 0;
         };
         if (e.vehicleTick) g_vehicleTickHooked = hook(e.vehicleTick, VehicleTick, &g_vehicleTickOriginal);
-        // LS3D's quaternion-to-matrix, by its export's name (the same in both builds)
-        HMODULE ls3d = GetModuleHandleA("LS3DF.dll");
-        auto rotMat = ls3d ? reinterpret_cast<RotMatFn>(GetProcAddress(ls3d, "?RotationMatrix@S_quat@@QBG?AUS_matrix@@XZ")) : nullptr;
+        // LS3D's quaternion-to-matrix (an export of LS3DF: game_build.h has it for both builds)
+        const uintptr_t ls3d = host->module_base("LS3DF.dll");
+        auto rotMat = ls3d && game::g_ls3d && game::Ls3d().quatRotationMatrix
+                          ? reinterpret_cast<RotMatFn>(ls3d + game::Ls3d().quatRotationMatrix) : nullptr;
         if (rotMat && RotationFormulaMatches(rotMat))
             g_rotMatHooked = hook(reinterpret_cast<uintptr_t>(rotMat), RotationMatrix, &g_rotMatOriginal);
         else
@@ -876,6 +1025,16 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
                        hook(e.humanSweepOwner, HumanSweepOwner, &g_sweepOwnerOriginal) &&
                        hook(e.humanMove, HumanMove, &g_moveOriginal) && hook(e.humanUpdate, HumanUpdate, &g_updateOriginal);
         if (!g_stepHooked) host->log(mod, MML_LOG_WARN, "a person's step: its functions could not be hooked; left as it is");
+        host->state_get(mod, "walkk", &g_walkK, sizeof g_walkK);   // the sweep's lengths: the process's heap, as k10
+        if (!g_walkK) {
+            g_walkK = static_cast<float *>(HeapAlloc(GetProcessHeap(), 0, kWalkFloats * sizeof(float)));
+            if (g_walkK) memcpy(g_walkK, kWalkGame, sizeof kWalkGame);
+            host->state_put(mod, "walkk", &g_walkK, sizeof g_walkK);
+        }
+        if (g_stepHooked && (!g_walkK || !FindWalk())) {
+            g_walkOpsN = 0;
+            host->log(mod, MML_LOG_WARN, "a person's step: the sweep's lengths are not where expected; left as they are");
+        }
     }
     ReadSettings();
     if (game::g_exe && game::Exe().menuCamTick)
@@ -884,6 +1043,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->command(mod, "camera", "{start: true}: the main menu camera's eye recorded; then its path", Camera, nullptr);
     host->command(mod, "stepprobe", "{ms, n, ms2, n2}: the player's car stepped n x ms and n2 x ms2 from one state, put back; then {} reads what differed",
                   StepProbe, nullptr);
+    host->command(mod, "sweepprobe", "{ms, s, speed, fix, start, aim, skin, out}: the person's sweep called as a walk would from where the player stands, put back after; the feet's path", SweepProbe, nullptr);
     host->command(mod, "path","{start: true}: the player's (or his car's) position recorded every frame; then its path {every_ms}", Path, nullptr);
     host->subscribe(mod, MML_EVENT_FRAME, OnFrame, nullptr);
     host->subscribe(mod, MML_EVENT_CONFIG_CHANGED, OnConfig, nullptr);
@@ -892,7 +1052,8 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
 }
 
 MML_EXPORT void mml_mod_unload(MmlMod *) {
-    Cam10(false);   // (before the DLL goes: the game's code points into it)
+    Cam10(false);   // (the game's code back to its own constants)
+    Walk(false);
     Restore();   // the game as it was: a reload patches again, a mod switched off leaves the game's own pacing
     if (g_timer) CloseHandle(g_timer);
     g_timer = nullptr;

@@ -264,6 +264,13 @@ struct ExeBuild {
     // move is swept as a fixed 0.1 m probe).
     uintptr_t humanMove, humanUpdate, humanSweep, humanSweepOwner;
     int humanMoveState;
+    // The sweeps' slides (2026-10-15; knowledge/notes/game.md "A person's step"): humanSlide (g_collision::TestPanak2,
+    // thiscall(g_collision*, query*) -> the surface touched or 0, ret 4), what humanSweep calls: up to 10 sweeps of its
+    // three spheres, each one's rest projected on the contact's plane and started again 0.01 m off it along the normal
+    // (nine `fmul dword [0.01]`); humanSlideOwner, humanSweepOwner's twin of it (thiscall(g_collision*, the
+    // vehicle's collision, query*), ret 8). The sweep starts its sphere 0.405 above
+    // the feet (`fadd [0.405]`) and returns its centre minus 0.4; the vehicle sweep 0.4 and 0.4. Both aim 0.015 lower.
+    uintptr_t humanSlide, humanSlideOwner;
     // A car's physics (mods/examples/fps_unlock hooks vehicleTick for its step probe; knowledge/notes/
     // vehicle_physics.md has the rest). vehicleTick: C_Vehicle::Tick, thiscall(C_Vehicle*, unsigned ms) ->
     // its flags' low byte, ret 4 (0 ms is taken as 1), called each frame by C_car::AI after the controls are set, and
@@ -274,6 +281,18 @@ struct ExeBuild {
     // SetHandbrake and SetPower (in reverse) add to their ramps each call, so the ramps count that time once a call.
     uintptr_t vehicleTick;
     int vehicleFlags, vehicleStepTime;
+    // The car's physics further (game.h `Car`, `Wheel`; each read in both builds' code, 2026-10-15). vehicleEngine:
+    // C_Vehicle::Engine, thiscall(C_Vehicle*, float dt s, f1, f2), ret 0xC, what Tick calls: C_Vehicle::Move in equal
+    // substeps no longer than vehSubstepMax (a float, s; 0.028 for the taxi), then vehicleStepTime = dt. vehicleMove:
+    // C_Vehicle::Move, thiscall with 6 stack arguments (dt first), ret 0x18: one substep (Hex-Rays' decompile of it is
+    // wrong: read the disassembly). vehicleWheelsColl: C_Vehicle::DoWheelsCollision, what Move calls twice: each
+    // wheel's suspension and contact. vehAxes: the body's axes, three V3 (forward, right, up: the model frame's z, x
+    // and y rows), turned each substep by vehTurn (the angular velocity, rad/s) through S_quat::RotationMatrix
+    // (Ls3dBuild quatRotationMatrix: turns under 0.00049 rad a substep are lost there). vehWheels: the S_wheel*
+    // array, vehWheelCount its length (Engine walks them). carSize: a C_car's bytes (C_mission::CreateActor's new
+    // for type 4): the C_Vehicle runs from C_car + vehicle to its end.
+    uintptr_t vehicleEngine, vehicleMove, vehicleWheelsColl;
+    int vehSubstepMax, vehAxes, vehWheels, vehWheelCount, carSize;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -314,6 +333,14 @@ struct Ls3dBuild {
     // IGraph::Present, `push 0; call <reg = Sleep>` (6A 00 FF D3 in 1.2, FF D7 in 1.0) before the device's Present;
     // `jmp +2` (EB 02) skips it.
     uintptr_t limiterMinJump, presentYield;
+    // Quaternions (exports of LS3DF, S_quat = {w, x, y, z}; mods/examples/fps_unlock, knowledge/notes/
+    // vehicle_physics.md). quatMake: S_quat::Make(axis, angle), stdcall(q, const S_vector *axis, float angle) ret 0xC:
+    // w = cos(a/2), the axis times sin(a/2), normalized. quatRotationMatrix: S_quat::RotationMatrix, stdcall(const
+    // S_quat *q, S_matrix *out) -> out, ret 8. matrixSetRot3: S_matrix::SetRot3, stdcall(S_matrix *m, const S_quat *q)
+    // ret 8, the 3x3 part. Both give the identity when |w| is at least 1 (RotationMatrix) or 0.99999999 (SetRot3):
+    // for a float that is w == 1, which a turn under about 0.00049 rad has, though its vector part is not zero, so
+    // such a turn is lost whole (game.h QuatMatrix builds it).
+    uintptr_t quatMake, quatRotationMatrix, matrixSetRot3;
 };
 
 inline const ExeBuild kExe12 = {
@@ -365,8 +392,13 @@ inline const ExeBuild kExe12 = {
     // a person's step (2026-10-15: read in the disassembly; the curb in 12-02 measured in the lab)
     0x57B660, 0x572B80, 0x57CB60, 0x57D0E0,
     0x40C,
+    0x5D59C0, 0x5D6430,   // (the sweeps' calls at 0x57CF1F and 0x57D233)
     // a car's physics (2026-10-15: C_car::AI 0x41FA2A calls Tick; Tick's end and Move's zeroing at 0x4E6386 read)
     0x4DF9A0, 0x1A4, 0x4C8,
+    // the car's physics further (2026-10-15: Engine's substep loop and wheel walk, Move's body turn at 0x4E4A55,
+    // CreateActor's new 0x221C before C_car's constructor 0x41BB80)
+    0x4E1CE0, 0x4E2090, 0x4E6AF0,
+    0xC24, 0xC3C, 0xC38, 0x4C4, 0x221C,
 };
 
 inline const ExeBuild kExe10 = {
@@ -431,9 +463,15 @@ inline const ExeBuild kExe10 = {
     // read in the disassembly: the same code and the same 0.015 as 1.2's)
     0x49BBC0, 0x492FF0, 0x49D0C0, 0x49D640,
     0x40C,
+    0x590AC0, 0x591530,   // (st0rm94's collision_test_character_proxy and its twin; the sweeps' calls at 0x49D47F, 0x49D793)
     // a car's physics (2026-10-15: st0rm94's vehicle_tick_drivetrain, called by car_ai_tick 0x466AEA; the flags read
     // at its end, the step time where vehicle_substep_move 0x52E6D0 stores it and vehicle_set_brake reads it)
     0x52C3B0, 0x224, 0x544,
+    // the car's physics further (2026-10-15: st0rm94's vehicle_substep_move is Engine, its loop reads +0xCA0, +0x540,
+    // +0xCB4; Move 0x52EA80 turns the axes at 0x531431; CreateActor's new 0x21F4 before car_ctor 0x462AF0; 1.2's
+    // offsets plus 0x7C, each read here)
+    0x52E6D0, 0x52EA80, 0x5334E0,
+    0xCA0, 0xCB8, 0xCB4, 0x540, 0x21F4,
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,
@@ -442,7 +480,8 @@ inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1
                                   0xA93F0, 0x1C7D0,
                                   0x717F0, 0x1C5300, 0x1C597C,
                                   0x71E20, 0x1C56F0,
-                                  0x72122, 0x6D592};
+                                  0x72122, 0x6D592,
+                                  0x2EE00, 0x2EC00, 0x2E070};
 // LS3D 3.84.5 (31.7.2002): the vertex buffer has no flags word, everything after +0x04 sits 4 bytes lower.
 inline const Ls3dBuild kLs3d10 = {"1.0", 0x5ED80, 0x1A8A0, 0x305B0, 0x5D070, 0x1C350, 0x6E580, 0, 0,
                                   0x1AE00, 0x1BD60, 0x1C030, 0x2B540, 0x04, 0x14, 0x18,
@@ -450,7 +489,8 @@ inline const Ls3dBuild kLs3d10 = {"1.0", 0x5ED80, 0x1A8A0, 0x305B0, 0x5D070, 0x1
                                   0, 0,    // the scene camera: not looked for in 1.0 yet
                                   0x6DD40, 0x1C12A0, 0x1C167C,    // (twins by code; not run in a 1.0 game yet)
                                   0x6E2A0, 0x1C160C,
-                                  0x6E5A2, 0x69DC2};
+                                  0x6E5A2, 0x69DC2,
+                                  0x2E340, 0x2E140, 0x2D5B0};
 
 // The builds found (null until Detect succeeds).
 inline const ExeBuild *g_exe;
