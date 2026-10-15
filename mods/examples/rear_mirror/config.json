@@ -1,0 +1,11 @@
+{
+  // The defaults of rear_mirror's settings (config.set {"mod": "rear_mirror", "key": "mode", "value": "stereo"}).
+  "mode": "mirror",       // "mirror", "stereo", "check", "reflect", "spin" or "off"
+  "mirror_width": 0.42,   // the mirror's width, a part of the frame's
+  "mirror_fov": 50,       // the mirror's field of view across, degrees
+  "ipd": 0.064,           // "stereo": the distance between the eyes, metres
+  "puddle_radius": 6,     // "reflect": the puddle's radius around the player, metres
+  "spin_speed": 30,       // "spin": the turning mirror's speed, degrees a second
+  "spin_width": 2.4,      // its glass, metres
+  "spin_height": 1.8      // (its frame 8 cm around it; its foot 20 cm above the ground)
+}

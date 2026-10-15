@@ -30,7 +30,7 @@ struct Settings {
 } S;
 bool g_fixed;
 V3 g_at;
-unsigned g_drawn, g_noD3d9;
+unsigned g_drawn, g_noD3d9, g_inViews;
 V3 g_lastPos;
 MmlRenderCamera g_cam;
 
@@ -122,14 +122,18 @@ bool Where(V3 *pos) {
 
 void OnEvent(const MmlEvent *ev, void *) {
     if (ev->type == MML_EVENT_CONFIG_CHANGED) { ReadSettings(); return; }
-    if (ev->type != MML_EVENT_RENDER_WORLD || !MML_EVENT_HAS(ev, world) || !ev->world) return;
+    // in the frame's world, and in every scene view's (a mirror, a reflection shows it too): the device's
+    // transforms are the camera drawn from, so the drawing is the same
+    bool view = ev->type == MML_EVENT_VIEW_WORLD;
+    if (!view && (ev->type != MML_EVENT_RENDER_WORLD || !MML_EVENT_HAS(ev, world) || !ev->world)) return;
     auto *d = static_cast<IDirect3DDevice9 *>(H->render_device(9));
     if (!d) { g_noD3d9++; return; }
     V3 pos;
     if (!Where(&pos)) return;
+    Draw(d, pos, static_cast<float>(GetTickCount() % 4000) / 4000.0f * 6.2831853f);
+    if (view) { g_inViews++; return; }
     g_cam.size = sizeof g_cam;
     H->render_camera(&g_cam);
-    Draw(d, pos, static_cast<float>(GetTickCount() % 4000) / 4000.0f * 6.2831853f);
     g_lastPos = pos;
     g_drawn++;
 }
@@ -137,9 +141,9 @@ void OnEvent(const MmlEvent *ev, void *) {
 int Status(const char *, MmlReply *r, void *) {
     char out[512];
     snprintf(out, sizeof out,
-             "{\"drawn\":%u,\"no_direct3d9\":%u,\"fixed\":%s,\"at\":[%.2f,%.2f,%.2f],\"eye\":[%.2f,%.2f,%.2f],"
+             "{\"drawn\":%u,\"in_views\":%u,\"no_direct3d9\":%u,\"fixed\":%s,\"at\":[%.2f,%.2f,%.2f],\"eye\":[%.2f,%.2f,%.2f],"
              "\"fwd\":[%.3f,%.3f,%.3f],\"fov_y_deg\":%.1f,\"viewport\":[%d,%d]}",
-             g_drawn, g_noD3d9, g_fixed ? "true" : "false", g_lastPos.x, g_lastPos.y, g_lastPos.z, g_cam.eye.x, g_cam.eye.y,
+             g_drawn, g_inViews, g_noD3d9, g_fixed ? "true" : "false", g_lastPos.x, g_lastPos.y, g_lastPos.z, g_cam.eye.x, g_cam.eye.y,
              g_cam.eye.z, g_cam.fwd.x, g_cam.fwd.y, g_cam.fwd.z, g_cam.fov_y * 57.29578f, g_cam.width, g_cam.height);
     H->reply_append(r, out, static_cast<size_t>(-1));
     return 0;
@@ -171,6 +175,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     }
     ReadSettings();
     H->subscribe(M, MML_EVENT_RENDER_WORLD, OnEvent, nullptr);
+    if (MML_HAS(H, scene_view)) H->subscribe(M, MML_EVENT_VIEW_WORLD, OnEvent, nullptr);
     H->subscribe(M, MML_EVENT_CONFIG_CHANGED, OnEvent, nullptr);
     H->command(M, "status", "frames drawn, the camera, where the marker is", Status, nullptr);
     H->command(M, "at", "{x, y, z}: the marker at a fixed point; {}: over the player again", At, nullptr);

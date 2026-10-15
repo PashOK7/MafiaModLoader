@@ -131,8 +131,8 @@ H->render_camera(&cam);          /* view, proj (the device's), eye, axes, fields
   kept: draw through the Direct3D 8 interface and put back what you change.
 - Every frame of a mission draws the world once (`call render.state`: renders, world renders, stage 1, presents,
   the camera now).
-- `mods/examples/world_marker`: a diamond and a beam over the player, fixed-function Direct3D 9, hidden by what
-  stands in front (`world_marker.at {x, y, z}` puts it anywhere).
+- `mods/examples/world_marker` (not enabled by default): a diamond and a beam over the player, fixed-function
+  Direct3D 9, hidden by what stands in front (`world_marker.at {x, y, z}` puts it anywhere).
 - Mods that use `game.h` (the player, cars) call `game::Detect(H->module_base("LS3DF.dll"))` in `mml_mod_load`
   first: its helpers read the build's addresses.
 
@@ -193,6 +193,60 @@ float4 PsMine(float4 pos : SV_Position) : SV_Target {
   blended, not added. Input stays the screen's: a mod that shows the menus elsewhere maps the cursor itself.
   `mods/examples/hud_panel` (not enabled by default): the HUD on a panel in the world (`hud_panel.place`,
   `follow`, `mode`).
+
+### The scene from another camera (a reflection, a mirror, a headset's eyes)
+
+LS3D itself draws the mission's scene again, before the frame's own drawing, from a camera of the mod's, into
+targets of the graphics bridge: the whole scene as the game draws it (its rooms, lights, culling, the people and
+cars), so water reflects the street and a headset's eye sees what the screen would.
+
+```c
+int PlaceMirror(MmlViewCamera *c, void *user) {
+    /* c comes as the game camera: world (rows right, up, forward, eye), tan_left/right/down/up, near_z, far_z */
+    for (int i = 0; i < 3; i++) { c->world[i] = -c->world[i]; c->world[8 + i] = -c->world[8 + i]; }   /* look back */
+    return 1;                    /* 0: not this frame (the last picture stays) */
+}
+int view = H->scene_view(M, 640, 200, PlaceMirror, NULL);   /* 0, 0: the frame's size; "gfx": true in mod.json */
+/* in a pass: f->views[i] (MML_GFX_HAS(f, views)): color, depth (linear, metres), view, proj, eye, fresh */
+```
+
+- **The camera**: `world` is LS3D's frame matrix (row vectors; right x up = forward, left-handed); its rotation is made
+  orthonormal from forward and up (right is made again: a mirrored, improper basis becomes a proper one, so the picture
+  is flipped left to right: flip it back when it is shown). The frustum is four tangents, so asymmetric ones (a
+  headset's eyes, OpenXR's `XrFovf`, a part of the screen) are drawn as given; LS3D culls with a symmetric frustum
+  that holds them. `near_z`, `far_z` as given are the game camera's.
+- **A reflection**: the eye, forward and up mirrored in the plane, `MML_VIEW_CLIP` with the plane (`clip`: `a x + b
+  y + c z + d >= 0` is drawn; put it a few centimetres above the surface, so the ground itself is left out). Without
+  `MML_VIEW_OWN_SECTOR` the view sees from the game camera's room (LS3D's sector), which is what a mirrored eye under
+  the ground needs; with it, the room is looked up at the view's own eye (a security camera elsewhere in the city).
+  The plane is not applied to the sky: LS3D draws its backdrop with the camera's view without its position, so the
+  sky lies about the world's origin, and the loader turns the plane off while that view is set (`gfx.state`
+  `view_sky_sets`).
+- **A mirror in the world** (any plane, not the ground): the camera mirrored in it, the plane as the clip plane on
+  the camera's side; in the pass, intersect each pixel's ray (`ViewRay`) with the mirror, keep it where it is nearer
+  than `SceneDepth` (what stands in front hides the mirror), and sample the view where the hit point lands through
+  the view's own `view x proj` (`MmlGfxView`): exact for any frustum, and the flip of the mirrored basis does not
+  matter. Seen from behind, return 0 from the camera's function (no view drawn) and draw its back.
+- **Effects in the views**: `H->gfx_pass_views(M, pass, 1)` runs a pass also over each view's picture (at the
+  view's stage 1, `MmlGfxFrame::in_view` the view's handle; its depth, colour, constants and size are the view's;
+  its target blended over the view's colour), so a scanner's wave or water shows in mirrors too. Off by default; a
+  pass that shows views leaves it off (a mirror would draw itself in its reflection). Each view with such passes
+  waits for both devices once more (in the labs a frame-sized mirror with one such pass: about 4 ms of CPU).
+- **What is put back**: the game camera byte for byte (pose, projections, frustum, room), the scene's callback and
+  rectangle, its sound listener (detached while a view draws), its lens flares (kept out of the views: their fades
+  are the frame's). `check` mode of the example compares a view with the frame: the same pixels.
+- **Drawing into a view**: `MML_EVENT_VIEW_WORLD` (with `ev->view`) is `RENDER_WORLD` for each view's drawing: the
+  device's transforms and target are the view's, its state kept around the mods as there. A mod that draws in the
+  world subscribes to both, so its things are seen in mirrors and reflections (`world_marker` does).
+- **Costs**: each view is a whole second drawing of the scene: in the 1.2 lab at 1280x960, a 640x200 mirror about
+  1.5..1.7 ms of CPU, a reflection of the frame's size about 2.9 ms (`call view.state`: each view's CPU time, times
+  drawn, skipped and why, the camera). At most eight views. `call view.show {"handle", "rect": [x, y, w, h]}` copies
+  a view onto the frame (800x600 units; no rect: off), to look at one without a pass.
+- `mods/examples/rear_mirror` (not enabled by default; `rear_mirror.mode`): `"mirror"` (a rear-view mirror),
+  `"stereo"` (two eyes of a headset, asymmetric), `"reflect"` (a puddle around the player: a planar reflection with
+  its clip plane), `"spin"` (a mirror standing in the world, turning; `rear_mirror.spin {"at": [x, y, z]}`),
+  `"check"` (the left half of the frame drawn again and compared: black when equal). `depth_pulse` runs its pass in
+  the views: its wave is seen in the mirror.
 
 ### The game's own menus: an item, a page
 
@@ -486,7 +540,7 @@ if (H->file_source("maps\\crate.bmp", who, sizeof who)) { /* a mod's file answer
 
 ### A heavy mod's build: third-party libraries, shaders, a Direct3D 11 device
 
-`mods/examples/boxes` is the whole way in one mod: read it with this section.
+`mods/examples/boxes` (not enabled by default) is the whole way in one mod: read it with this section.
 
 - **A third-party library** is pinned in `tools/deps.py` (its URL and SHA-256) and built by `CMakeLists.txt` as a
   part of the loader's build, for x86 and with the mods' runtime (`/MT`): the first `cmake --preset x86` fetches it
@@ -581,5 +635,5 @@ high-resolution timer if asked, and shows the frame rate and the game's clock st
 
 ## Not there yet
 
-LuaJIT script mods, a Rust crate, 64-bit sidecar mods, a Direct3D 11 device shared with the game's frame (the
-graphics bridge): `docs/ROADMAP.md`.
+LuaJIT script mods, a Rust crate, 64-bit sidecar mods, the game's own geometry hidden or replaced around a drawing
+(water's faces): `docs/ROADMAP.md`.

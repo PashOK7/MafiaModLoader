@@ -1,0 +1,12 @@
+{
+  "id": "rear_mirror",
+  "name": "Rear mirror: the scene drawn again from other cameras (a mirror, a headset's eyes, a check)",
+  "version": "0.1.0",
+  "type": "native",
+  "entry": "rear_mirror.dll",
+  "enabled": false,
+  "builds": ["1.2", "1.0"],
+  "gfx": true,
+  "load_order": 100,
+  "depends": []
+}

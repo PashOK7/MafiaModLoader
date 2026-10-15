@@ -229,6 +229,7 @@ bool Subscribed(MmlEventType type);       // (mods.cpp) a live mod subscribed to
 void GfxInit();
 int GfxPassAdd(MmlMod *mod, int order, MmlGfxPassFn fn, void *user);
 void GfxPassRemove(MmlMod *mod, int handle);
+bool GfxPassViews(MmlMod *mod, int handle, bool on);   // mml.h gfx_pass_views
 void GfxRemove(MmlMod *mod);              // its mod unloads: its passes go
 void GfxQuiet(bool on);                   // drawing that is not the game's (not tallied as the world's light)
 void GfxBeforeWorld();                    // (render.cpp) the world's Render begins: the readable depth buffer in
@@ -239,6 +240,25 @@ void GfxUiAsk(MmlMod *mod, int mode);     // mml.h gfx_ui
 bool GfxUiBegin();                        // (draw.cpp) the 2D pass begins: true, it draws into the shared target
 void GfxUiEnd();                          // ... it ended: the frame's target back (GfxUiBegin said true)
 bool GfxMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+// scene views' targets (view.cpp draws into them): Begin binds the view's (*w, *h 0: the frame's size, written back;
+// clip: a world plane or null), Stage1 takes its linear depth, End puts the frame's target back and hands the view
+// to the passes
+bool GfxViewBegin(int handle, unsigned *w, unsigned *h, const float *clip, std::string *why);
+void GfxViewBackdrop(const float m[16]);  // the view's camera's backdrop (sky) view: no clip plane while it is set
+void GfxViewStage1();
+void GfxViewEnd(bool drawn, const float view[16], const float proj[16], const float eye[3]);
+void GfxViewsNewFrame();                  // a frame of the world begins: no view is fresh yet
+void GfxViewForget(int handle);           // the view went: its targets released
+bool GfxViewShow(int handle, const float rect[4]);   // view.show: copied onto the frame at its stage 1 (w 0: not)
+void GfxViewsShowNow();                   // (render.cpp) the frame's stage 1
+
+// ---- scene views (view.cpp): the mission's scene drawn again by LS3D from mods' cameras; view.state, view.show
+int ViewAdd(MmlMod *mod, int w, int h, MmlViewFn fn, void *user, std::string *err);   // mml.h scene_view
+void ViewRemove(MmlMod *mod, int handle);   // handle 0: all the mod's
+using RenderFn = int(__stdcall *)(void *driver, void *scene);
+void ViewsDraw(void *driver, void *scene, RenderFn render);   // (render.cpp) before the world's own Render
+void RenderViewWorld(int handle);         // (render.cpp) MML_EVENT_VIEW_WORLD sent, the device's state kept
+bool ViewMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 
 // ---- screenshots (screenshot.cpp): the back buffer at Present; screenshot, screenshot.state
 bool ScreenshotHookPresent(std::string *err);   // the device's Present hooked (once; err may be null)

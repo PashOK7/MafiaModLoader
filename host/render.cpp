@@ -30,8 +30,7 @@ using json = nlohmann::json;
 namespace host {
 namespace {
 
-using RenderFn = int(__stdcall *)(void *driver, void *scene);
-RenderFn oRender;
+RenderFn oRender;   // (host.h)
 bool g_hooked;
 int g_depth;                    // Render inside Render
 void *g_scene;                  // the outermost Render's scene, while it draws
@@ -137,7 +136,11 @@ int __stdcall hkRender(void *driver, void *scene) {
     void *dev = Device8();
     if (dev) ScreenshotHookPresent(nullptr);   // (PRESENT: the device's Present hooked once it exists)
     if (Subscribed(MML_EVENT_RENDER_BEGIN)) Dispatch(Ev(MML_EVENT_RENDER_BEGIN, dev));
-    if (g_world) GfxBeforeWorld();   // (gfx.cpp: the readable depth buffer, when a mod has a pass)
+    if (g_world) {
+        GfxViewsNewFrame();
+        ViewsDraw(driver, scene, oRender);   // (view.cpp: the scene from the mods' cameras, before the frame's own)
+        GfxBeforeWorld();   // (gfx.cpp: the readable depth buffer, when a mod has a pass)
+    }
     int r = oRender(driver, scene);
     if (g_world) GfxAfterWorld();
     if (Subscribed(MML_EVENT_RENDER_END)) Dispatch(Ev(MML_EVENT_RENDER_END, dev));
@@ -198,6 +201,20 @@ void RenderStage(int stage) {
     DispatchDrawing(MML_EVENT_RENDER_WORLD, Device8());
     GfxQuiet(false);
     if (g_world) GfxStage1();           // the graphics bridge: the frame with the mods' drawing in it to the passes
+    if (g_world) GfxViewsShowNow();     // view.show: views copied onto the frame
+}
+
+void RenderViewWorld(int handle) {
+    if (!Subscribed(MML_EVENT_VIEW_WORLD)) return;
+    void *dev8 = Device8();
+    IDirect3DDevice9 *d9 = Device9(dev8);
+    Kept k = Keep(d9);
+    MmlEvent ev = Ev(MML_EVENT_VIEW_WORLD, dev8);
+    ev.view = handle;
+    GfxQuiet(true);
+    Dispatch(ev);
+    GfxQuiet(false);
+    PutBack(d9, k);
 }
 
 void RenderPresent(void *dev8) {

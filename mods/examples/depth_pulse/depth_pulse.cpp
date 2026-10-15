@@ -138,6 +138,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     }
     ReadSettings();
     g_pass = H->gfx_pass(M, 100, Pass, nullptr);
+    if (g_pass && MML_HAS(H, gfx_pass_views)) H->gfx_pass_views(M, g_pass, 1);   // the wave in mirrors and reflections too
     H->subscribe(M, MML_EVENT_CONFIG_CHANGED, OnEvent, nullptr);
     H->hotkey(M, H->config_string(M, "hotkey", "F11"), OnHotkey, nullptr);
     H->command(M, "now", "a wave from where the player is now", Now_, nullptr);

@@ -78,6 +78,10 @@ typedef enum MmlEventType {
     MML_EVENT_RENDER_END = 17,       /* the scene is drawn (its 2D too) */
     MML_EVENT_PRESENT = 18,          /* the frame is complete, about to be shown: drawing here is over everything
                                         (the HUD, the menus) and in `screenshot`'s picture; states put back too */
+    MML_EVENT_VIEW_WORLD = 19,       /* a scene view's world is drawn (scene_view): RENDER_WORLD for that drawing.
+                                        view: its handle. The device's transforms and target are the view's: what a
+                                        mod draws here is in the view (a thing of the mod's seen in a reflection);
+                                        the device's state is kept around it as around RENDER_WORLD */
     MML_EVENT_COUNT_
 } MmlEventType;
 
@@ -198,6 +202,7 @@ typedef struct MmlEvent {
     void *scene;            /* RENDER_*: the I3D_scene drawn */
     int world;              /* RENDER_*: 1 the mission's world scene, 0 another (a menu's) */
     void *device;           /* RENDER_*, PRESENT: the game's IDirect3DDevice8 */
+    int view;               /* VIEW_WORLD: the scene view's handle; 0 in every other event */
 } MmlEvent;
 
 #define MML_EVENT_HAS(ev, member) ((size_t)(ev)->size >= offsetof(MmlEvent, member) + sizeof((ev)->member))
@@ -227,6 +232,7 @@ typedef struct MmlGfxConstants {
     float fog_color[4];     /* w: 1 when on */
     float ambient[4];       /* w: 1 the game's */
 } MmlGfxConstants;
+typedef struct MmlGfxView MmlGfxView;   /* a scene view as the passes get it (below) */
 typedef struct MmlGfxFrame {
     uint32_t size;
     void *device;           /* ID3D11Device* (the bridge's, shared by every mod) */
@@ -246,6 +252,13 @@ typedef struct MmlGfxFrame {
     void *ui;               /* ID3D11ShaderResourceView*: the frame's 2D pass (the HUD, the menus, draw_*) as the last
                                frame drew it, premultiplied RGBA8 (gfx_ui asked for; else NULL) */
     unsigned ui_frames;     /* 2D passes taken so far (0: none yet) */
+    /* (MML_GFX_HAS(frame, views)) */
+    const MmlGfxView *views;     /* every mod's scene views drawn so far (scene_view), in their order */
+    unsigned view_count;
+    /* (MML_GFX_HAS(frame, in_view)) */
+    int in_view;            /* 0: the frame. A scene view's handle: the pass runs over that view's picture
+                               (gfx_pass_views): depth, color, target, width, height, view, proj and the constants are
+                               the view's; views and ui are NULL */
 } MmlGfxFrame;
 #define MML_GFX_HAS(f, member) ((size_t)(f)->size >= offsetof(MmlGfxFrame, member) + sizeof((f)->member))
 #define MML_GFX_UI_OFF 0     /* gfx_ui: the 2D pass as the game draws it */
@@ -253,6 +266,54 @@ typedef struct MmlGfxFrame {
 #define MML_GFX_UI_HIDE 2    /* ... into MmlGfxFrame::ui only: the HUD and the menus not on the frame (a VR panel) */
 /* A pass may change any Direct3D 11 state: the bridge binds what it hands out again before each pass. */
 typedef void (*MmlGfxPassFn)(const MmlGfxFrame *frame, void *user);
+
+/* The mission's scene drawn again, by LS3D itself, from another camera into a target of the bridge's (scene_view;
+ * docs/MODDING.md "The scene from another camera"): a planar reflection (a mirrored camera and a clip plane), the
+ * eyes of a headset (asymmetric frusta), a rear-view mirror, a security camera. Before the frame's own drawing, each
+ * frame of the mission's world, each view's function says where its camera is; LS3D draws the whole scene from there
+ * (its rooms, its lights, its culling for that camera) and the view's colour and linear depth go to the passes of the
+ * same frame (MmlGfxFrame::views). The game's camera, its sound listener and its lens flares are as if nothing had
+ * happened. */
+#define MML_VIEW_CLIP 0x1           /* clip: only what lies on the plane's positive side is drawn (a reflection: what
+                                       is above the water) */
+#define MML_VIEW_OWN_SECTOR 0x2     /* the room (LS3D's sector) the view sees from is looked up at its own eye; without
+                                       it the game camera's is kept (a mirrored eye is under the water, outside every
+                                       room: what is seen in the water is what the game camera's room sees) */
+typedef struct MmlViewCamera {
+    uint32_t size;
+    float world[16];        /* the camera's pose as LS3D keeps a frame's (row vectors): row 0 right, 1 up, 2 forward
+                               (a left-handed basis, as the game camera's: right x up = forward), row 3 the eye
+                               (metres, y up); _14, _24, _34 0, _44 1. Rows 0..2 are made orthonormal from forward
+                               and up before use */
+    float tan_left, tan_right;   /* the frustum's sides: a point is in view where x/z (the view's axes) is between
+                                    -tan_left and tan_right ... */
+    float tan_down, tan_up;      /* ... and y/z between -tan_down and tan_up. Equal pairs: a symmetric frustum.
+                                    OpenXR's XrFovf: tan(-angleLeft), tan(angleRight), tan(-angleDown), tan(angleUp) */
+    float near_z, far_z;    /* metres; as given: the game camera's (change them only when the view needs to) */
+    float clip[4];          /* MML_VIEW_CLIP: a plane in the world, a x + b y + c z + d = 0; what has it below 0 is
+                               not drawn */
+    uint32_t flags;         /* MML_VIEW_* */
+} MmlViewCamera;
+/* Called before the view is drawn, each frame of the mission's world (game thread, behind the mod's fault guard):
+ * `camera` comes filled with the game camera's pose, frustum and range (the view drawn as it is would be the frame);
+ * change what differs. Return 0 to leave the view out of this frame (its last picture stays in MmlGfxFrame). */
+typedef int (*MmlViewFn)(MmlViewCamera *camera, void *user);
+
+/* A scene view as the passes get it (MmlGfxFrame::views). */
+struct MmlGfxView {
+    uint32_t size;
+    int handle;             /* scene_view's */
+    void *color;            /* ID3D11ShaderResourceView*: what LS3D drew, RGBA8 (the game's gamma-encoded colours; its
+                               alpha is whatever the game left there: not coverage) */
+    void *depth;            /* ID3D11ShaderResourceView*: linear depth along the view's forward, metres, R32F; where
+                               nothing was drawn, k->depth_proj.z (the sky) */
+    void *color_texture;    /* ID3D11Texture2D* of `color` (to copy it: a headset's swap chain) */
+    unsigned width, height;
+    float view[16], proj[16];   /* the matrices it was drawn with (row vectors): a world point p is at p * view * proj */
+    float eye[4];           /* the eye it was drawn from; w 0 */
+    unsigned frames;        /* times it was drawn */
+    int fresh;              /* 1: drawn for this frame; 0: the last one's (its function said 0, or it failed) */
+};
 
 typedef void (*MmlEventFn)(const MmlEvent *ev, void *user);
 
@@ -462,6 +523,22 @@ typedef struct MmlHost {
      * MML_GFX_UI_TAKE or _HIDE (the strongest any mod asks for counts), _OFF taken back (and at the unload). The 2D
      * pass is drawn after the passes, so they get the last frame's. In the mission's world only, like the passes. */
     void (*gfx_ui)(MmlMod *mod, int mode);
+
+    /* ---- the scene from another camera (see MmlViewCamera above; both builds; the graphics bridge's Direct3D 9Ex).
+     * scene_view: a view of the mission's scene into a target of width x height pixels (0, 0: the frame's size),
+     * drawn each frame of the mission's world before the frame itself, in the order views were made; fn(camera,
+     * user) places it. Its colour and depth reach the passes (MmlGfxFrame::views; a mod with views has a pass and
+     * says "gfx": true in its mod.json). Each view is a whole second drawing of the scene by LS3D: about the frame's
+     * own cost. Returns a handle (> 0), 0 refused (no fn, a size over 8192, eight views already; the log says why).
+     * scene_view_remove takes one back; a mod's views go with its unload. MML_EVENT_VIEW_WORLD is sent inside each
+     * view's drawing. */
+    int (*scene_view)(MmlMod *mod, int width, int height, MmlViewFn fn, void *user);
+    void (*scene_view_remove)(MmlMod *mod, int handle);
+    /* A pass of the mod's (gfx_pass's handle) also run over every scene view's picture, so its effect is seen in
+     * mirrors and reflections (on 1, off 0): at the view's stage 1, with MmlGfxFrame::in_view its handle and everything
+     * in the frame the view's; its target blended over the view's colour before any pass gets the view. Returns 1, 0
+     * no such pass of the mod's. A pass that shows views (a mirror's) leaves this off. */
+    int (*gfx_pass_views)(MmlMod *mod, int pass, int on);
 } MmlHost;
 
 #define MML_FILE_GAME 1              /* file_read: the game's own file, not a mod's of the same name */

@@ -281,6 +281,15 @@ int H_GfxPass(MmlMod *m, int order, MmlGfxPassFn fn, void *user) {
 }
 void H_GfxPassRemove(MmlMod *m, int handle) { if (m && handle > 0) GfxPassRemove(m, handle); }
 void H_GfxUi(MmlMod *m, int mode) { if (Alive(m)) GfxUiAsk(m, mode); }
+int H_GfxPassViews(MmlMod *m, int pass, int on) { return Alive(m) && GfxPassViews(m, pass, on != 0) ? 1 : 0; }
+int H_SceneView(MmlMod *m, int w, int h, MmlViewFn fn, void *user) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    int handle = ViewAdd(m, w, h, fn, user, &err);
+    if (!handle) Log(MML_LOG_WARN, Who(m), "scene_view refused: %s", err.c_str());
+    return handle;
+}
+void H_SceneViewRemove(MmlMod *m, int handle) { if (m && handle > 0) ViewRemove(m, handle); }
 
 // ---- manifests
 bool ReadManifest(const std::string &dir, const std::string &folder, ModEntry *e, std::string *err) {
@@ -437,6 +446,7 @@ bool UnloadMod(ModEntry *e, const char *why) {
     ScriptsRemove(m);
     DrawRemove(m);
     GfxRemove(m);
+    ViewRemove(m, 0);
     ConfigForget(m);
     g_subs.erase(std::remove_if(g_subs.begin(), g_subs.end(), [&](const Sub &s) { return s.mod == m; }), g_subs.end());
     for (auto it = g_commands.begin(); it != g_commands.end();) it = it->second.mod == m ? g_commands.erase(it) : std::next(it);
@@ -676,6 +686,9 @@ void ModsInit() {
     g_host.gfx_pass = H_GfxPass;
     g_host.gfx_pass_remove = H_GfxPassRemove;
     g_host.gfx_ui = H_GfxUi;
+    g_host.scene_view = H_SceneView;
+    g_host.scene_view_remove = H_SceneViewRemove;
+    g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();
     LoadEnabled();
@@ -754,6 +767,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (FilesMethod(method, paramsJson, reply, &ok)) return ok;
     if (RenderMethod(method, paramsJson, reply, &ok)) return ok;
     if (GfxMethod(method, paramsJson, reply, &ok)) return ok;
+    if (ViewMethod(method, paramsJson, reply, &ok)) return ok;
     if (method == "mods.list") { *reply = ModsList(); return true; }
     if (method == "commands.list") { *reply = CommandsList(); return true; }
     if (method == "hooks.list") { *reply = HookList(); return true; }
@@ -847,7 +861,7 @@ std::string CommandsList() {
                           "input.seq", "input.release", "input.state", "text.get", "text.find", "screenshot", "screenshot.state",
                           "draw.text", "draw.rect", "draw.line", "draw.clear", "draw.state", "config.get", "config.set",
                           "menu.item", "menu.items", "menu.item.remove", "menu.page", "menu.page.set", "menu.page.close", "menu.def", "menu.click", "input.mouse", "input.text",
-                          "script.run", "script.state", "script.stop", "script.list", "files.list", "files.which", "files.read", "render.state", "gfx.state", "gfx.reset"})
+                          "script.run", "script.state", "script.stop", "script.list", "files.list", "files.which", "files.read", "render.state", "gfx.state", "gfx.reset", "view.state", "view.show"})
         out.push_back({{"name", m}, {"owner", "host"}});
     for (auto &kv : g_commands) out.push_back({{"name", kv.first}, {"owner", Who(kv.second.mod)}, {"help", kv.second.help}});
     return out.dump();

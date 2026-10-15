@@ -236,6 +236,20 @@ What is done, what comes next and later, and what is known to be missing or wron
 - **The 2D pass for mods** (2026-10-15; item 3, block 3c): `gfx_ui` takes the HUD and the menus into a shared target
   for the passes (`MmlGfxFrame::ui`), off the screen or also on it; `mods/examples/hud_panel` showed the HUD and the
   pause menu on a panel in the world in the 1.2 and 1.0 labs, and the HUD unchanged on the screen with `take`.
+- **The scene from another camera** (2026-10-15; item 4, block 4a): `scene_view` (up to eight views a process): LS3D
+  draws the mission's scene again before the frame, from a mod's camera (a pose, an asymmetric frustum of four
+  tangents, a clip plane, the game camera's room or its own), into targets of the graphics bridge that the passes
+  get (`MmlGfxFrame::views`: colour, linear depth, matrices); the game camera, the scene's callback, its listener and
+  its lens flares put back; `MML_EVENT_VIEW_WORLD` for mods drawing into the views (`world_marker` does);
+  `view.state`, `view.show`. The example `mods/examples/rear_mirror` (mirror, stereo, reflect, check) in the 1.2
+  and 1.0 labs: the left half of the frame drawn again equal to the frame, a puddle reflecting the taxi, a lamp post
+  and the street with the ground clipped out, two eyes of a headset; a 640x200 mirror 1.5..1.7 ms of CPU, a
+  reflection of the frame's size 2.9 ms; reloads: 0 MB, 0 handles, 0 threads once warm. `check_builds.py` checks
+  the camera's and the scene's addresses in both builds. The same day, the owner's test: a turning mirror standing
+  in the world (`rear_mirror` `spin`) in both labs, the player and the street in it; the sky is no longer cut by a
+  view's clip plane (LS3D draws it about the origin: the plane is off while its view is set), and passes run over
+  the views when their mod asks (`gfx_pass_views`: `depth_pulse`'s wave in the mirror). `world_marker` and `boxes`
+  ship disabled.
 
 ## Next, by importance
 
@@ -262,7 +276,8 @@ V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselv
    effects target, composited over the frame; GPU timers per pass; the 2D pass (HUD, menus) drawn into a target of a
    mod's when it asks (**3c**; a VR mod shows it on a panel). One owner for the depth swap and the composite: two mods doing
    them each would break each other, so it is the loader's. Reference: mafia-ragdoll `gfx.cpp`, `shaders/frame.hlsli`.
-4. **The scene drawn from another camera** (W V). The mission's scene drawn a second time into a target, with a
+4. **The scene drawn from another camera** (W V). *4a, the views, is done (2026-10-15, see "Done"); 4b, the game's
+   geometry hidden or replaced, is left.* The mission's scene drawn a second time into a target, with a
    camera and projection of the mod's (a mirrored camera and a clip plane for a reflection, two eyes with asymmetric
    projections for VR), everything the drawing touches put back after (the camera's sector held, the sound listener
    detached, lens flares kept out, the camera's bytes restored). The game's own geometry hidden or replaced around
@@ -426,6 +441,15 @@ merged, sorted by importance):
   the frame's depth as a Direct3D 11 depth buffer for libraries that test against one (mafia-ragdoll's
   `BuildSceneDsv`), the readback of a pixel's depth (its `Aim`). Plain Direct3D 8 (no wrapper) has no bridge. The
   passes run in the mission's world only, not in a menu's scene. At most 64 passes. Measured on one NVIDIA RTX 3070.
+- **Scene views** (host/view.cpp): the lens flares kept out of a view and the sound listener detached while it
+  draws are done as LS3D's code reads (QueueVisual, the scene's +0x284), not seen in the game: no flare was on screen
+  in the freeride where the views were tried, and the sound was not listened to. A view is drawn only in the mission's
+  world (not a menu's scene), on the game thread, before the frame (its passes get it at once). A pass run over a
+  view (`gfx_pass_views`) costs a wait for each device more per view (a frame-sized mirror with `depth_pulse` in it:
+  4.3 ms of CPU in the 1.0 lab): one wait for all the views of a frame is not done. The sky is told by its view
+  matrix being the camera's backdrop view, bit for bit (it was, every drawing, in both labs). `MML_VIEW_OWN_SECTOR`
+  (a camera in another room) was not tried. The first two or three reloads of `rear_mirror` added 2..13 handles each (taken to be
+  Direct3D's own warming up: views made and taken back by mode changes added none); then 0.
 - **The 2D pass for mods** (host/gfx.cpp): the game's additive 2D (if any) comes back blended, not added, when it
   is put back over the frame (`take`); the menus' cursor is the screen's; the last frame's is what the passes get.
 - **`game_launch` in front**: once (2026-10-15, the 1.0 lab, `background` by default) it answered `"in_front": true`;

@@ -334,6 +334,32 @@ def main(a):
             fc = next((i for i in head if i.mnemonic == 'fcomp' and i.op_str.startswith('qword ptr [0x')), None)
             c = struct.unpack('<d', gls.at(int(fc.op_str[11:-1], 16) - gls.base, 8))[0] if fc else None
             check(any(i.mnemonic == 'fabs' for i in head) and c == limit, f'{name} LS3DF {f}: |w| compared with {limit}')
+    # The scene drawn from another camera (host/view.cpp): I3D_camera's vtable is written by its constructor; its
+    # update (+0x44) asks the scene's GetSector (+0xB4) for the sector it keeps at +0x3F8 and makes the view (+0x164),
+    # the view x projection (+0x1E4) and the backdrop's and the near pass' (+0x324, +0x3A4); the field of view's
+    # setters (+0x50, +0x54) take one float, the range's (+0x58) two; the scene's vtable holds GetSector at +0xB4;
+    # QueueVisual puts a 'LENS' (its type at +0x1D4) onto the scene's list at +0x288 (count +0x290); Render reads
+    # camRecompute.
+    for name, (exe, ls, gexe, gls) in builds.items():
+        if not ls['cameraVtable']:
+            continue
+        vt, code = ls['cameraVtable'], bytes(gls.mem)
+        slot = lambda v, o: struct.unpack('<I', gls.at(v + o, 4))[0] - gls.base
+        ins = lambda rva, n: [f'{i.mnemonic} {i.op_str}' for i in gls.md.disasm(gls.at(rva, n), gls.base + rva)]
+        imm = (gls.base + vt).to_bytes(4, 'little')
+        check(any(b'\xc7' + bytes([r]) + imm in code for r in range(8)), f'{name} LS3DF cameraVtable written by a constructor')
+        up = ins(slot(vt, 0x44), 0x200)
+        check('call dword ptr [ecx + 0xb4]' in up and any(s.endswith('+ 0x3f8], eax') for s in up) and
+              all(f'+ {o:#x}]' in ' '.join(up) for o in (0x164, 0x1E4, 0x324, 0x3A4)),
+              f'{name} LS3DF cameraVtable+0x44: the update (GetSector, the sector at +0x3F8, the matrices)')
+        for o, first in ((0x50, 'fld dword ptr [esp + 8]'), (0x54, 'fld dword ptr [esp + 8]'), (0x58, 'fld dword ptr [esp + 0xc]')):
+            check(ins(slot(vt, o), 8)[:1] == [first], f'{name} LS3DF cameraVtable+{o:#x}: a setter ({first})')
+        check(slot(ls['sceneVtable'], 0xB4) == ls['sceneGetSector'], f'{name} LS3DF sceneVtable+0xB4 is sceneGetSector')
+        qv = ' '.join(ins(ls['queueVisual'], 0x1C0))
+        check('mov eax, dword ptr [edi + 0x1d4]' in qv and 'cmp eax, 0x534e454c' in qv and '+ 0x288]' in qv and '+ 0x290]' in qv,
+              f'{name} LS3DF queueVisual: a LENS onto the scene\'s list at +0x288')
+        check(f'byte ptr [{gls.base + ls["camRecompute"]:#x}]' in ' '.join(ins(ls['render'], 0x600)),
+              f'{name} LS3DF camRecompute read by Render')
     # The frame rate's sites (fps_unlock): the limiter's minimum jump inside frameLimit, after `cmp eax, edi` and
     # before its Sleep; Present's yield: `mov reg, [Sleep]` then `push 0; call reg`.
     for name, (exe, ls, gexe, gls) in builds.items():

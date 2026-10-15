@@ -106,6 +106,42 @@ int World(const char *, MmlReply *r, void *) {
     return 0;
 }
 
+// Scene views: refusals (no function, a size out of range, one side 0), then as many as the host takes (eight), all
+// taken back but the first, which stays for view.state.
+int PlaceView(MmlViewCamera *, void *) { return 1; }
+int Views(const char *, MmlReply *r, void *) {
+    if (!MML_HAS(H, scene_view_remove)) { H->reply_error(r, "the loader has no scene views"); return 1; }
+    int noFn = H->scene_view(M, 64, 32, nullptr, nullptr), tooBig = H->scene_view(M, 9000, 32, PlaceView, nullptr),
+        half = H->scene_view(M, 64, 0, PlaceView, nullptr);
+    int made[10] = {}, n = 0;
+    for (int i = 0; i < 10; i++) if ((made[i] = H->scene_view(M, i ? 64 : 0, i ? 32 : 0, PlaceView, nullptr)) > 0) n++;
+    for (int i = 1; i < 10; i++) if (made[i] > 0) H->scene_view_remove(M, made[i]);
+    char out[160];
+    snprintf(out, sizeof out, "{\"no_fn\":%d,\"too_big\":%d,\"half\":%d,\"made\":%d,\"first\":%d}", noFn, tooBig, half, n, made[0]);
+    H->reply_append(r, out, static_cast<size_t>(-1));
+    return 0;
+}
+
+// gfx_pass_views: on for a pass of the mod's (1), for no such pass (0); the pass kept for gfx.state, taken back by
+// passviews_clear.
+void NoPass(const MmlGfxFrame *, void *) {}
+int g_viewPass;
+int PassViews(const char *, MmlReply *r, void *) {
+    if (!MML_HAS(H, gfx_pass_views)) { H->reply_error(r, "the loader has no gfx_pass_views"); return 1; }
+    g_viewPass = H->gfx_pass(M, 500, NoPass, nullptr);
+    char out[96];
+    snprintf(out, sizeof out, "{\"pass\":%d,\"on\":%d,\"none\":%d}", g_viewPass, H->gfx_pass_views(M, g_viewPass, 1),
+             H->gfx_pass_views(M, 99999, 1));
+    H->reply_append(r, out, static_cast<size_t>(-1));
+    return 0;
+}
+int PassViewsClear(const char *, MmlReply *r, void *) {
+    if (g_viewPass) H->gfx_pass_remove(M, g_viewPass);
+    g_viewPass = 0;
+    H->reply_append(r, "{}", 2);
+    return 0;
+}
+
 int Write(const char *, MmlReply *r, void *) {
     std::string path = std::string(H->mod_data_dir(M)) + "note.txt";
     FILE *f = fopen(path.c_str(), "w");
@@ -140,6 +176,9 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->command(mod, "write", "writes note.txt into the mod's data folder; its path", Write, nullptr);
     host->command(mod, "script", "tries script_run (no game: refused) and script_state", Script, nullptr);
     host->command(mod, "world", "tries actor_spawn, actor_remove, actor_teleport, item_id, give_item, actor_seat (no game: refused)", World, nullptr);
+    host->command(mod, "views", "scene_view's refusals, its limit of eight, scene_view_remove (one view kept)", Views, nullptr);
+    host->command(mod, "passviews", "a pass of its own, gfx_pass_views on it and on no such pass", PassViews, nullptr);
+    host->command(mod, "passviews_clear", "takes that pass back", PassViewsClear, nullptr);
     return 0;
 }
 

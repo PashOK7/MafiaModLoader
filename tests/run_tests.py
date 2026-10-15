@@ -180,6 +180,28 @@ def kit_tests(b):
     r = b.call('kit.world')
     check('actor_spawn, actor_remove, actor_teleport, item_id, give_item, actor_seat with no game: refused',
           r['ok'] and r['result'] == {'spawn': 0, 'remove': 0, 'teleport': 0, 'item': -1, 'give': 0, 'seat': 0}, r)
+    # scene views: refusals, at most eight, taken back; with no game none is drawn and view.state says why
+    r = b.call('kit.views')
+    res = r.get('result') or {}
+    check('scene_view: no function, a size over 8192, one side 0 refused; eight made, the ninth and tenth refused',
+          r['ok'] and res['no_fn'] == 0 and res['too_big'] == 0 and res['half'] == 0 and res['made'] == 8 and res['first'] > 0, r)
+    r = b.call('view.state')
+    views = r['result']['views'] if r['ok'] else []
+    check('view.state: the kit\'s one view kept (the frame\'s size), not drawn, and why',
+          len(views) == 1 and views[0]['mod'] == 'kit' and views[0]['handle'] == res.get('first') and views[0]['size'] == [0, 0]
+          and views[0]['drawn'] == 0 and 'no game' in r['result'].get('note', ''), r)
+    r = b.call('view.show', {'handle': 99999, 'rect': [0, 0, 100, 100]})
+    check('view.show of no such view: an error', not r['ok'], r)
+    b.call('mod.reload', {'id': 'kit'})
+    r = b.call('view.state')
+    check('a mod\'s views go with its unload', r['ok'] and r['result']['views'] == [], r)
+    r = b.call('kit.passviews')
+    res = r.get('result') or {}
+    check('gfx_pass_views: 1 for the mod\'s pass, 0 for no such pass', r['ok'] and res['pass'] > 0 and res['on'] == 1 and res['none'] == 0, r)
+    r = b.call('gfx.state')
+    mine = [p for p in r['result']['passes'] if p['mod'] == 'kit'] if r['ok'] else []
+    check('gfx.state: the pass marked in_views', len(mine) == 1 and mine[0]['in_views'] is True, r)
+    b.call('kit.passviews_clear')
     r = b.call('world.spawn', {'car': 'Bolt Ace Tudor'})
     check('world.spawn with no game: an error, saying why', not r['ok'] and 'no car' in str(r), r)
     r = b.call('world.spawned')
@@ -519,6 +541,12 @@ def main():
     for mod in ('core', 'hello_c', 'boxes'):
         shutil.rmtree(os.path.join(mods, mod), ignore_errors=True)
         shutil.copytree(os.path.join(OUT, 'mml', 'mods', mod), os.path.join(mods, mod))
+    # boxes ships disabled; the harness loads it from the start (its world kept across the loads boxes_tests makes)
+    manifest = os.path.join(mods, 'boxes', 'mod.json')
+    with open(manifest) as f:
+        text = f.read()
+    with open(manifest, 'w') as f:
+        f.write(text.replace('"enabled": false', '"enabled": true'))
     # a mod's own files: files_a (files alone), files_b's files\ folder, the stand-in rw_data's "archive"
     src = os.path.join(ROOT, 'tests', 'mods')
     shutil.rmtree(os.path.join(mods, 'files_a'), ignore_errors=True)

@@ -341,6 +341,15 @@ struct Ls3dBuild {
     // for a float that is w == 1, which a turn under about 0.00049 rad has, though its vector part is not zero, so
     // such a turn is lost whole (game.h QuatMatrix builds it).
     uintptr_t quatMake, quatRotationMatrix, matrixSetRot3;
+    // The scene drawn from another camera (host/view.cpp; 0: not known). The layouts are the same in both builds
+    // (read in each build's Render, the camera's constructor, update and setters). cameraVtable: I3D_camera's (its
+    // update +0x44 thiscall: the view, the frustum, the sector from the world matrix; SetFOV +0x50, SetNearFOV +0x54,
+    // SetRange +0x58, SetAspect +0x68, stdcall(this, ...): each works the projections out again). sceneVtable:
+    // I3D_scene's; its +0xB4 is sceneGetSector, stdcall(scene, const S_vector *pos, sector *hint) -> the sector a
+    // point is in (the camera's update asks it for its eye, cam + 0x40). queueVisual: thiscall(visual), a visual
+    // found visible queued for drawing; a lens flare ('LENS' at the visual's +0x1D4) goes onto the scene's list at
+    // +0x288 (count +0x290), whose fades Render works out at its end.
+    uintptr_t cameraVtable, sceneVtable, sceneGetSector, queueVisual;
 };
 
 inline const ExeBuild kExe12 = {
@@ -481,16 +490,20 @@ inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1
                                   0x717F0, 0x1C5300, 0x1C597C,
                                   0x71E20, 0x1C56F0,
                                   0x72122, 0x6D592,
-                                  0x2EE00, 0x2EC00, 0x2E070};
+                                  0x2EE00, 0x2EC00, 0x2E070,
+                                  0x9B6D0, 0x9C8F8, 0x4A1D0, 0x65560};
 // LS3D 3.84.5 (31.7.2002): the vertex buffer has no flags word, everything after +0x04 sits 4 bytes lower.
 inline const Ls3dBuild kLs3d10 = {"1.0", 0x5ED80, 0x1A8A0, 0x305B0, 0x5D070, 0x1C350, 0x6E580, 0, 0,
                                   0x1AE00, 0x1BD60, 0x1C030, 0x2B540, 0x04, 0x14, 0x18,
                                   0, 0, 0, 0, 0,
-                                  0, 0,    // the scene camera: not looked for in 1.0 yet
+                                  0xA5628, 0x1C570,   // (2026-10-15: Render's test of the camera's serial, its calls)
                                   0x6DD40, 0x1C12A0, 0x1C167C,    // (twins by code; not run in a 1.0 game yet)
                                   0x6E2A0, 0x1C160C,
                                   0x6E5A2, 0x69DC2,
-                                  0x2E340, 0x2E140, 0x2D5B0};
+                                  0x2E340, 0x2E140, 0x2D5B0,
+                                  // (2026-10-15: the camera's constructor 0xAA20, the vtable holding GetSector,
+                                  // Render's calls of QueueVisual)
+                                  0x97690, 0x98898, 0x47D20, 0x622D0};
 
 // The builds found (null until Detect succeeds).
 inline const ExeBuild *g_exe;

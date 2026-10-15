@@ -32,6 +32,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <vector>
 #include "json.hpp"
 #include "shaders/VsQuad.h"
@@ -64,6 +65,7 @@ struct Pass {
     MmlGfxPassFn fn;
     void *user;
     double cpuMs = 0, gpuMs = 0;   // smoothed
+    bool inViews = false;          // gfx_pass_views: also over each scene view's picture
 };
 std::vector<Pass> g_passes;        // in order
 int g_nextHandle = 1;
@@ -111,6 +113,38 @@ D3DVIEWPORT9 g_uiViewport;
 DWORD g_uiSep, g_uiSrcA, g_uiDstA, g_uiOpA;
 int g_uiMode;                      // this 2D pass's
 
+// scene views (view.cpp draws them into these): colour (A8R8G8B8, shared), its readable depth buffer (INTZ), linear
+// depth (R32F, shared), at the view's size
+struct ViewTargets {
+    int handle = 0;
+    UINT w = 0, h = 0;
+    IDirect3DTexture9 *color9 = nullptr, *intz = nullptr, *depth9 = nullptr;
+    IDirect3DSurface9 *colorSurf = nullptr, *intzSurf = nullptr, *depthSurf = nullptr;
+    ID3D11Texture2D *color11 = nullptr, *depth11 = nullptr;
+    ID3D11ShaderResourceView *colorSRV = nullptr, *depthSRV = nullptr;
+    IDirect3DTexture9 *fx9 = nullptr;          // its effects target (gfx_pass_views; made when a pass asks)
+    ID3D11Texture2D *fx11 = nullptr;
+    ID3D11RenderTargetView *fxRTV = nullptr;
+    unsigned passRuns = 0, passFails = 0;      // times the passes ran over it, failed
+    unsigned generation = 0;       // the device they were made on
+    MmlGfxView info{};
+    bool depthDone = false;
+    float show[4] = {};            // view.show: where it is copied onto the frame (800x600 units; w 0: not shown)
+};
+std::vector<std::unique_ptr<ViewTargets>> g_views;
+ViewTargets *g_viewNow;            // the view being drawn (GfxViewBegin .. GfxViewEnd)
+IDirect3DSurface9 *g_viewGameRT, *g_viewGameDS;
+D3DVIEWPORT9 g_viewGameVp;
+DWORD g_viewClipOn;
+float g_viewClip[4];
+// A view's clip plane is in world space, as the fixed-function pipeline takes it; LS3D draws its backdrop (the sky)
+// with the camera's view without its position (cam + 0x264), so the sky's vertices lie about the world's origin and
+// the plane would cut them as if they were there. The sky is infinitely far: while the backdrop's view is set the
+// plane is off (SetTransform followed).
+bool g_viewClipWanted;
+float g_viewBackdrop[16];
+unsigned g_viewSkySets;            // the backdrop's view set while a clipped view drew (gfx.state)
+
 // the frame in flight
 IDirect3DSurface9 *g_gameDS;       // the game's depth buffer while ours is bound
 bool g_swapped;
@@ -142,9 +176,11 @@ using DrawIndexedPrimitiveFn = HRESULT(STDMETHODCALLTYPE *)(IDirect3DDevice9 *, 
 using DrawPrimitiveUPFn = HRESULT(STDMETHODCALLTYPE *)(IDirect3DDevice9 *, D3DPRIMITIVETYPE, UINT, const void *, UINT);
 using DrawIndexedPrimitiveUPFn = HRESULT(STDMETHODCALLTYPE *)(IDirect3DDevice9 *, D3DPRIMITIVETYPE, UINT, UINT, UINT, const void *,
                                                              D3DFORMAT, const void *, UINT);
+using SetTransformFn = HRESULT(STDMETHODCALLTYPE *)(IDirect3DDevice9 *, D3DTRANSFORMSTATETYPE, const D3DMATRIX *);
 // IDirect3DDevice9's vtable slots (d3d9.h's order)
-constexpr int kVtSetLight = 51, kVtLightEnable = 53, kVtSetRenderState = 57, kVtDrawPrimitive = 81,
+constexpr int kVtSetTransform = 44, kVtSetLight = 51, kVtLightEnable = 53, kVtSetRenderState = 57, kVtDrawPrimitive = 81,
               kVtDrawIndexedPrimitive = 82, kVtDrawPrimitiveUP = 83, kVtDrawIndexedPrimitiveUP = 84;
+SetTransformFn oSetTransform;
 SetRenderStateFn oSetRenderState;
 SetLightFn oSetLight;
 LightEnableFn oLightEnable;
@@ -219,6 +255,15 @@ HRESULT STDMETHODCALLTYPE hkSetRenderState(IDirect3DDevice9 *d, D3DRENDERSTATETY
     }
     return hr;
 }
+HRESULT STDMETHODCALLTYPE hkSetTransform(IDirect3DDevice9 *d, D3DTRANSFORMSTATETYPE s, const D3DMATRIX *m) {
+    HRESULT hr = oSetTransform(d, s, m);
+    if (g_viewClipWanted && !g_quiet && s == D3DTS_VIEW && m && SUCCEEDED(hr)) {   // (see g_viewClipWanted)
+        bool sky = !memcmp(m, g_viewBackdrop, sizeof g_viewBackdrop);
+        if (sky) g_viewSkySets++;
+        oSetRenderState(d, D3DRS_CLIPPLANEENABLE, sky ? 0 : D3DCLIPPLANE0);
+    }
+    return hr;
+}
 HRESULT STDMETHODCALLTYPE hkSetLight(IDirect3DDevice9 *d, DWORD i, const D3DLIGHT9 *l) {
     HRESULT hr = oSetLight(d, i, l);
     if (!g_quiet && SUCCEEDED(hr) && l && i < 8) { g_lights[i].light = *l; g_lights[i].set = true; }
@@ -269,6 +314,7 @@ void HookState(IDirect3DDevice9 *d) {
     void **vt = *reinterpret_cast<void ***>(d);
     struct { int slot; void *hook; void **orig; } hooks[] = {
         {kVtSetRenderState, reinterpret_cast<void *>(&hkSetRenderState), reinterpret_cast<void **>(&oSetRenderState)},
+        {kVtSetTransform, reinterpret_cast<void *>(&hkSetTransform), reinterpret_cast<void **>(&oSetTransform)},
         {kVtSetLight, reinterpret_cast<void *>(&hkSetLight), reinterpret_cast<void **>(&oSetLight)},
         {kVtLightEnable, reinterpret_cast<void *>(&hkLightEnable), reinterpret_cast<void **>(&oLightEnable)},
         {kVtDrawPrimitive, reinterpret_cast<void *>(&hkDrawPrimitive), reinterpret_cast<void **>(&oDrawPrimitive)},
@@ -367,6 +413,16 @@ void EndTimers(TimerFrame *t) {
 }
 
 // ---- set up and tear down
+void ReleaseView(ViewTargets &v) {
+    SafeRelease(v.colorSRV); SafeRelease(v.depthSRV); SafeRelease(v.color11); SafeRelease(v.depth11);
+    SafeRelease(v.colorSurf); SafeRelease(v.color9); SafeRelease(v.intzSurf); SafeRelease(v.intz);
+    SafeRelease(v.depthSurf); SafeRelease(v.depth9);
+    SafeRelease(v.fxRTV); SafeRelease(v.fx11); SafeRelease(v.fx9);
+    v.w = v.h = 0;
+    v.info.frames = 0;
+    v.info.fresh = 0;
+}
+
 void ReleaseSized() {
     SafeRelease(g_colorSRV); SafeRelease(g_depthSRV); SafeRelease(g_fxRTV);
     SafeRelease(g_color11); SafeRelease(g_depth11); SafeRelease(g_fx11);
@@ -390,6 +446,7 @@ void ReleaseAll() {
     SafeRelease(g_gameDS);
     g_swapped = false;
     ReleaseSized();
+    for (auto &v : g_views) ReleaseView(*v);
     ReleaseTimers();
     SafeRelease(g_vsQuad); SafeRelease(g_psDepth); SafeRelease(g_psComposite);
     SafeRelease(g_decl); SafeRelease(g_quad); SafeRelease(g_event9); SafeRelease(g_block);
@@ -590,7 +647,9 @@ void FullScreen9(IDirect3DPixelShader9 *ps, IDirect3DBaseTexture9 *tex, const fl
     g_dev9->SetTexture(0, nullptr);
 }
 
-void FillConstants(MmlGfxConstants &k) {
+// The constants of the picture drawn now (the frame's or a view's: its size; the device's transforms are its camera);
+// its view and projection to viewOut, projOut.
+void FillConstants(MmlGfxConstants &k, UINT w, UINT h, float *viewOut, float *projOut) {
     D3DMATRIX v{}, p{};
     g_dev9->GetTransform(D3DTS_VIEW, &v);
     g_dev9->GetTransform(D3DTS_PROJECTION, &p);
@@ -605,7 +664,7 @@ void FillConstants(MmlGfxConstants &k) {
     k.eye[3] = static_cast<float>(NowMs() / 1000.0);
     k.right[3] = k.up[3] = k.fwd[3] = 0;
     k.proj[0] = p._11; k.proj[1] = p._22; k.proj[2] = p._31; k.proj[3] = p._32;
-    k.size[0] = static_cast<float>(g_w); k.size[1] = static_cast<float>(g_h); k.size[2] = 1.0f / g_w; k.size[3] = 1.0f / g_h;
+    k.size[0] = static_cast<float>(w); k.size[1] = static_cast<float>(h); k.size[2] = 1.0f / w; k.size[3] = 1.0f / h;
     // the sun: the light the world was drawn with (Tally); none: a default from above
     float s[3] = {0.35f, 0.85f, 0.4f}, sc[3] = {1, 1, 1};
     bool fromGame = false;
@@ -642,9 +701,18 @@ void FillConstants(MmlGfxConstants &k) {
     k.fog_color[1] = ((color >> 8) & 255) / 255.0f;
     k.fog_color[2] = (color & 255) / 255.0f;
     k.fog_color[3] = on && mode != D3DFOG_NONE ? 1.0f : 0.0f;
-    memcpy(g_viewM, &v, sizeof g_viewM);
-    memcpy(g_projM, &p, sizeof g_projM);
+    memcpy(viewOut, &v, sizeof v);
+    memcpy(projOut, &p, sizeof p);
 }
+
+// What the passes draw over: the frame (view 0, every pass, timed) or a scene view (only gfx_pass_views' passes).
+struct PassTarget {
+    ID3D11ShaderResourceView *depth, *color;
+    ID3D11RenderTargetView *rtv;
+    UINT w, h;
+    int view;
+    const float *viewM, *projM;
+};
 
 struct PassCall { const Pass *pass; const MmlGfxFrame *frame; };
 void CallPass(void *p) {
@@ -652,10 +720,11 @@ void CallPass(void *p) {
     c->pass->fn(c->frame, c->pass->user);
 }
 
-bool RunPasses(MmlGfxConstants &k) {
-    ReadTimers();
+bool RunPasses(MmlGfxConstants &k, const PassTarget &t) {
+    bool frame = t.view == 0;
+    if (frame) ReadTimers();
     const float clear[4] = {0, 0, 0, 0};
-    g_ctx->ClearRenderTargetView(g_fxRTV, clear);
+    g_ctx->ClearRenderTargetView(t.rtv, clear);
     g_ctx->UpdateSubresource(g_frameCB, 0, nullptr, &k, 0, 0);
     MmlGfxFrame f{};
     f.size = sizeof f;
@@ -664,30 +733,35 @@ bool RunPasses(MmlGfxConstants &k) {
     f.generation = g_generation;
     f.k = &k;
     f.constants = g_frameCB;
-    f.depth = g_depthSRV;
-    f.color = g_colorSRV;
+    f.depth = t.depth;
+    f.color = t.color;
     f.point = g_point;
     f.linear = g_linear;
-    f.target = g_fxRTV;
+    f.target = t.rtv;
     f.full_screen = g_vsFull;
-    f.width = g_w;
-    f.height = g_h;
-    memcpy(f.view, g_viewM, sizeof f.view);
-    memcpy(f.proj, g_projM, sizeof f.proj);
-    if (UiMode() != MML_GFX_UI_OFF && g_uiFrames) f.ui = g_uiSRV;
-    f.ui_frames = g_uiFrames;
-    TimerFrame *tf = BeginTimers();
-    Mark(tf, 0);
+    f.width = t.w;
+    f.height = t.h;
+    memcpy(f.view, t.viewM, sizeof f.view);
+    memcpy(f.proj, t.projM, sizeof f.proj);
+    if (frame && UiMode() != MML_GFX_UI_OFF && g_uiFrames) f.ui = g_uiSRV;
+    f.ui_frames = frame ? g_uiFrames : 0;
+    std::vector<MmlGfxView> views;   // (a view's passes get no views)
+    if (frame) for (auto &v : g_views) if (v->info.frames && v->colorSRV) views.push_back(v->info);
+    f.views = views.empty() ? nullptr : views.data();
+    f.view_count = static_cast<unsigned>(views.size());
+    f.in_view = t.view;
+    TimerFrame *tf = frame ? BeginTimers() : nullptr;
+    if (tf) Mark(tf, 0);
     std::vector<Pass> passes = g_passes;   // (a pass may add or take back passes)
     for (const Pass &p : passes) {
-        if (!ModAlive(p.mod)) continue;
-        D3D11_VIEWPORT vp{0, 0, static_cast<float>(g_w), static_cast<float>(g_h), 0, 1};
+        if (!ModAlive(p.mod) || (!frame && !p.inViews)) continue;
+        D3D11_VIEWPORT vp{0, 0, static_cast<float>(t.w), static_cast<float>(t.h), 0, 1};
         g_ctx->RSSetViewports(1, &vp);
-        g_ctx->OMSetRenderTargets(1, &g_fxRTV, nullptr);
+        g_ctx->OMSetRenderTargets(1, &t.rtv, nullptr);
         g_ctx->OMSetBlendState(nullptr, nullptr, 0xFFFFFFFFu);
         g_ctx->OMSetDepthStencilState(nullptr, 0);
         g_ctx->RSSetState(nullptr);
-        ID3D11ShaderResourceView *srv[2] = {g_depthSRV, g_colorSRV};
+        ID3D11ShaderResourceView *srv[2] = {t.depth, t.color};
         ID3D11SamplerState *smp[2] = {g_point, g_linear};
         g_ctx->PSSetShaderResources(0, 2, srv);
         g_ctx->PSSetSamplers(0, 2, smp);
@@ -701,13 +775,14 @@ bool RunPasses(MmlGfxConstants &k) {
         g_ctx->IASetInputLayout(nullptr);
         PassCall call{&p, &f};
         double t0 = NowMs();
-        ModCall(p.mod, CallPass, &call, "its graphics pass");
+        ModCall(p.mod, CallPass, &call, frame ? "its graphics pass" : "its graphics pass (in a scene view)");
         double ms = NowMs() - t0;
+        if (!frame) continue;
         for (Pass &q : g_passes)
             if (q.handle == p.handle) q.cpuMs = q.cpuMs <= 0 ? ms : q.cpuMs * 0.9 + ms * 0.1;
         Mark(tf, p.handle);
     }
-    EndTimers(tf);
+    if (tf) EndTimers(tf);
     g_ctx->ClearState();   // the shared textures are Direct3D 9's again
     double t0 = NowMs();
     bool ok = Wait11();
@@ -793,8 +868,8 @@ bool DoStage1() {
     double t1 = NowMs();
     // 2. the passes
     if (ok) {
-        FillConstants(g_k);
-        ok = RunPasses(g_k);
+        FillConstants(g_k, g_w, g_h, g_viewM, g_projM);
+        ok = RunPasses(g_k, {g_depthSRV, g_colorSRV, g_fxRTV, g_w, g_h, 0, g_viewM, g_projM});
     }
     double t2 = NowMs();
     // 3. the effects over the frame, then everything back
@@ -910,6 +985,12 @@ int GfxPassAdd(MmlMod *mod, int order, MmlGfxPassFn fn, void *user) {
     });
     if (!g_failed) g_state = g_dev11 ? "on" : "waiting for the mission's world";
     return p.handle;
+}
+
+bool GfxPassViews(MmlMod *mod, int handle, bool on) {
+    for (Pass &p : g_passes)
+        if (p.mod == mod && p.handle == handle) { p.inViews = on; return true; }
+    return false;
 }
 
 void GfxPassRemove(MmlMod *mod, int handle) {
@@ -1034,6 +1115,224 @@ void GfxAfterWorld() {
     g_swapped = false;
 }
 
+// ---- scene views: LS3D draws the scene into a view's targets (view.cpp), the passes get them
+namespace {
+ViewTargets *FindView(int handle) {
+    for (auto &v : g_views) if (v->handle == handle) return v.get();
+    return nullptr;
+}
+bool ViewTex(ViewTargets &v, D3DFORMAT f, IDirect3DTexture9 **t9, IDirect3DSurface9 **s9, ID3D11Texture2D **t11,
+             ID3D11ShaderResourceView **srv, const char *what, std::string *why) {
+    HANDLE h = nullptr;
+    HRESULT hr = g_dev9->CreateTexture(v.w, v.h, 1, D3DUSAGE_RENDERTARGET, f, D3DPOOL_DEFAULT, t9, &h);
+    if (FAILED(hr) || !h) { *why = Fmt("its %s target could not be made (0x%08X)", what, static_cast<unsigned>(hr)); return false; }
+    (*t9)->GetSurfaceLevel(0, s9);
+    hr = g_dev11->OpenSharedResource(h, __uuidof(ID3D11Texture2D), reinterpret_cast<void **>(t11));
+    if (FAILED(hr) || FAILED(hr = g_dev11->CreateShaderResourceView(*t11, nullptr, srv))) {
+        *why = Fmt("Direct3D 11 could not open its %s target (0x%08X)", what, static_cast<unsigned>(hr));
+        return false;
+    }
+    return true;
+}
+bool ViewTargetsFor(ViewTargets &v, UINT w, UINT h, std::string *why) {
+    if (v.w == w && v.h == h && v.colorSRV && v.generation == g_generation) return true;
+    ReleaseView(v);
+    v.w = w;
+    v.h = h;
+    v.generation = g_generation;
+    HRESULT hr = g_dev9->CreateTexture(w, h, 1, D3DUSAGE_DEPTHSTENCIL, kFmtIntz, D3DPOOL_DEFAULT, &v.intz, nullptr);
+    if (FAILED(hr)) { *why = Fmt("its depth buffer could not be made (0x%08X)", static_cast<unsigned>(hr)); ReleaseView(v); return false; }
+    v.intz->GetSurfaceLevel(0, &v.intzSurf);
+    if (!ViewTex(v, D3DFMT_A8R8G8B8, &v.color9, &v.colorSurf, &v.color11, &v.colorSRV, "colour", why) ||
+        !ViewTex(v, D3DFMT_R32F, &v.depth9, &v.depthSurf, &v.depth11, &v.depthSRV, "linear depth", why)) {
+        ReleaseView(v);
+        return false;
+    }
+    HLOG("gfx: scene view %d: %ux%u (colour, a readable depth buffer, linear depth)", v.handle, w, h);
+    return true;
+}
+} // namespace
+
+bool GfxViewBegin(int handle, unsigned *pw, unsigned *ph, const float *clip, std::string *why) {
+    unsigned w = *pw, h = *ph;
+    if (g_viewNow) { *why = "another view is being drawn"; return false; }
+    if (!Acquire(Device8())) { *why = "the graphics bridge is " + g_state; return false; }
+    IDirect3DSurface9 *rt = nullptr;
+    if (FAILED(g_dev9->GetRenderTarget(0, &rt)) || !rt) { *why = "the device has no render target"; return false; }
+    if (!w || !h) {   // the frame's size: the target the frame is drawn into
+        D3DSURFACE_DESC d{};
+        rt->GetDesc(&d);
+        w = d.Width;
+        h = d.Height;
+    }
+    *pw = w;
+    *ph = h;
+    ViewTargets *v = FindView(handle);
+    if (!v) {
+        g_views.push_back(std::make_unique<ViewTargets>());
+        v = g_views.back().get();
+        v->handle = handle;
+    }
+    g_quiet++;
+    if (!ViewTargetsFor(*v, w, h, why)) { g_quiet--; SafeRelease(rt); return false; }
+    g_viewGameRT = rt;
+    g_dev9->GetDepthStencilSurface(&g_viewGameDS);
+    g_dev9->GetViewport(&g_viewGameVp);
+    g_dev9->GetRenderState(D3DRS_CLIPPLANEENABLE, &g_viewClipOn);
+    g_dev9->GetClipPlane(0, g_viewClip);
+    g_dev9->SetRenderTarget(0, v->colorSurf);
+    g_dev9->SetDepthStencilSurface(v->intzSurf);
+    D3DVIEWPORT9 vp{0, 0, w, h, 0, 1};   // (LS3D's Render sets the same from the scene's rectangle)
+    g_dev9->SetViewport(&vp);
+    g_dev9->Clear(0, nullptr, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER | D3DCLEAR_STENCIL, 0, 1.0f, 0);
+    if (clip) {   // the fixed-function pipeline takes the plane in world space (not for the sky: g_viewClipWanted)
+        g_dev9->SetClipPlane(0, clip);
+        g_dev9->SetRenderState(D3DRS_CLIPPLANEENABLE, D3DCLIPPLANE0);
+    } else {
+        g_dev9->SetRenderState(D3DRS_CLIPPLANEENABLE, 0);
+    }
+    g_viewClipWanted = clip != nullptr;
+    memset(g_viewBackdrop, 0, sizeof g_viewBackdrop);
+    g_quiet--;
+    v->depthDone = false;
+    g_viewNow = v;
+    return true;
+}
+
+void GfxViewBackdrop(const float m[16]) { memcpy(g_viewBackdrop, m, sizeof g_viewBackdrop); }
+
+namespace {
+// The passes that asked (gfx_pass_views) over a view's picture, as over the frame's: its colour and depth to them,
+// its effects target blended over its colour. Inside GfxViewStage1 (the bridge's states saved, its depth taken).
+void ViewPasses(ViewTargets &v, const float c[8]) {
+    bool any = false;
+    for (const Pass &p : g_passes) any = any || (p.inViews && ModAlive(p.mod));
+    if (!any || g_failed) return;
+    if (!v.fx9) {
+        HANDLE h = nullptr;
+        if (FAILED(g_dev9->CreateTexture(v.w, v.h, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F, D3DPOOL_DEFAULT, &v.fx9, &h)) || !h ||
+            FAILED(g_dev11->OpenSharedResource(h, __uuidof(ID3D11Texture2D), reinterpret_cast<void **>(&v.fx11))) ||
+            FAILED(g_dev11->CreateRenderTargetView(v.fx11, nullptr, &v.fxRTV))) {
+            SafeRelease(v.fxRTV); SafeRelease(v.fx11); SafeRelease(v.fx9);
+            v.passFails++;
+            return;
+        }
+    }
+    g_frameError.clear();
+    MmlGfxConstants k{};
+    float vm[16], pm[16];
+    bool ok = Wait9();   // (its colour and depth written)
+    if (ok) {
+        FillConstants(k, v.w, v.h, vm, pm);
+        ok = RunPasses(k, {v.depthSRV, v.colorSRV, v.fxRTV, v.w, v.h, v.handle, vm, pm});
+    }
+    if (!ok) { v.passFails++; return; }
+    g_dev9->SetRenderTarget(0, v.colorSurf);
+    g_dev9->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+    g_dev9->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_ONE);
+    g_dev9->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    g_dev9->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD);
+    FullScreen9(g_psComposite, v.fx9, c);
+    v.passRuns++;
+}
+} // namespace
+
+// The view's world is drawn (its scene's stage 1; after the mods' VIEW_WORLD): its depth as linear view depth, the
+// passes that asked over it. The near pass that follows clears the depth buffer, so it is taken here.
+void GfxViewStage1() {
+    ViewTargets *v = g_viewNow;
+    if (!v || v->depthDone) return;
+    g_quiet++;
+    Saved9 saved;
+    SaveAndNeutral9(saved);
+    D3DMATRIX proj{};
+    g_dev9->GetTransform(D3DTS_PROJECTION, &proj);
+    const float c[8] = {static_cast<float>(v->w), static_cast<float>(v->h), 1.0f / v->w, 1.0f / v->h, proj._33, proj._43, kFarDepth, 0};
+    g_dev9->SetRenderTarget(0, v->depthSurf);
+    g_dev9->SetDepthStencilSurface(nullptr);
+    FullScreen9(g_psDepth, v->intz, c);
+    ViewPasses(*v, c);
+    g_dev9->SetRenderTarget(0, v->colorSurf);
+    g_dev9->SetDepthStencilSurface(v->intzSurf);
+    Restore9(saved);
+    g_quiet--;
+    v->depthDone = true;
+}
+
+void GfxViewEnd(bool drawn, const float view[16], const float proj[16], const float eye[3]) {
+    ViewTargets *v = g_viewNow;
+    if (!v) return;
+    g_viewNow = nullptr;
+    g_viewClipWanted = false;
+    g_quiet++;
+    g_dev9->SetRenderState(D3DRS_CLIPPLANEENABLE, g_viewClipOn);
+    g_dev9->SetClipPlane(0, g_viewClip);
+    g_dev9->SetRenderTarget(0, g_viewGameRT);
+    g_dev9->SetDepthStencilSurface(g_viewGameDS);
+    g_dev9->SetViewport(&g_viewGameVp);
+    g_quiet--;
+    SafeRelease(g_viewGameRT);
+    SafeRelease(g_viewGameDS);
+    if (!drawn || !v->depthDone) { v->info.fresh = 0; return; }
+    MmlGfxView &i = v->info;
+    i.size = sizeof i;
+    i.handle = v->handle;
+    i.color = v->colorSRV;
+    i.depth = v->depthSRV;
+    i.color_texture = v->color11;
+    i.width = v->w;
+    i.height = v->h;
+    memcpy(i.view, view, sizeof i.view);
+    memcpy(i.proj, proj, sizeof i.proj);
+    i.eye[0] = eye[0]; i.eye[1] = eye[1]; i.eye[2] = eye[2]; i.eye[3] = 0;
+    i.frames++;
+    i.fresh = 1;
+}
+
+void GfxViewsNewFrame() {
+    for (auto &v : g_views) v->info.fresh = 0;
+}
+
+void GfxViewForget(int handle) {
+    for (auto it = g_views.begin(); it != g_views.end(); ++it) {
+        if ((*it)->handle != handle) continue;
+        if (g_viewNow == it->get()) return;   // (not while it is drawn: the next frame's forget takes it)
+        ReleaseView(**it);
+        g_views.erase(it);
+        return;
+    }
+}
+
+bool GfxViewShow(int handle, const float rect[4]) {
+    ViewTargets *v = FindView(handle);
+    if (!v) {
+        g_views.push_back(std::make_unique<ViewTargets>());
+        v = g_views.back().get();
+        v->handle = handle;
+    }
+    memcpy(v->show, rect, sizeof v->show);
+    return true;
+}
+
+// The frame's stage 1 (render.cpp): the views asked for by view.show copied onto the frame (agents' eyes for a view).
+void GfxViewsShowNow() {
+    if (!g_dev9 || g_failed) return;
+    IDirect3DSurface9 *rt = nullptr;
+    for (auto &v : g_views) {
+        if (v->show[2] <= 0 || !v->colorSurf || !v->info.frames) continue;
+        if (!rt && (FAILED(g_dev9->GetRenderTarget(0, &rt)) || !rt)) return;
+        D3DSURFACE_DESC d{};
+        rt->GetDesc(&d);
+        float sx = d.Width / 800.0f, sy = d.Height / 600.0f;
+        RECT r{static_cast<LONG>(v->show[0] * sx), static_cast<LONG>(v->show[1] * sy), static_cast<LONG>((v->show[0] + v->show[2]) * sx),
+               static_cast<LONG>((v->show[1] + v->show[3]) * sy)};
+        r.right = std::min<LONG>(r.right, d.Width);
+        r.bottom = std::min<LONG>(r.bottom, d.Height);
+        if (r.right > r.left && r.bottom > r.top) g_dev9->StretchRect(v->colorSurf, nullptr, rt, &r, D3DTEXF_LINEAR);
+    }
+    SafeRelease(rt);
+}
+
 bool GfxMethod(const std::string &method, const std::string &, std::string *reply, bool *ok) {
     if (method != "gfx.state" && method != "gfx.reset") return false;
     if (method == "gfx.reset") {
@@ -1042,13 +1341,20 @@ bool GfxMethod(const std::string &method, const std::string &, std::string *repl
     auto r2 = [](double v) { return std::round(v * 1000) / 1000; };
     json passes = json::array();
     for (const Pass &p : g_passes)
-        passes.push_back({{"mod", ModIdOf(p.mod)}, {"handle", p.handle}, {"order", p.order}, {"cpu_ms", r2(p.cpuMs)}, {"gpu_ms", r2(p.gpuMs)}});
+        passes.push_back({{"mod", ModIdOf(p.mod)}, {"handle", p.handle}, {"order", p.order}, {"cpu_ms", r2(p.cpuMs)}, {"gpu_ms", r2(p.gpuMs)},
+                          {"in_views", p.inViews}});
     json out = {{"state", g_state}, {"adapter", g_adapter}, {"size", {g_w, g_h}}, {"frames", g_frames}, {"generation", g_generation},
                 {"passes", passes}, {"skipped", g_skipped}, {"not_our_depth", g_notOurDepth},
                 {"ms", {{"copy_9", r2(g_ms9)}, {"passes_11", r2(g_ms11)}, {"wait_11", r2(g_wait11)}, {"all", r2(g_msAll)},
                         {"gpu_passes", r2(g_gpuPasses)}}},
                 {"following_state", g_stateHooked}, {"multisampling", g_msaa},
                 {"ui", {{"mode", UiMode()}, {"frames", g_uiFrames}}}};
+    json views = json::array();
+    for (auto &v : g_views)
+        views.push_back({{"handle", v->handle}, {"size", {v->w, v->h}}, {"frames", v->info.frames}, {"fresh", v->info.fresh != 0},
+                         {"pass_runs", v->passRuns}, {"pass_fails", v->passFails}});
+    out["views"] = views;
+    out["view_sky_sets"] = g_viewSkySets;
     if (g_frames) {
         const MmlGfxConstants &k = g_k;
         out["world"] = {{"eye", {k.eye[0], k.eye[1], k.eye[2]}}, {"sun", {k.sun[0], k.sun[1], k.sun[2]}}, {"sun_from_game", k.sun[3] > 0.5f},

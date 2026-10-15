@@ -777,3 +777,54 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **The example** `hud_panel` (off by default): the HUD on a turned panel ahead and right of the camera, hidden by
   the world in front; seen in the 1.2 lab (the HUD, the mods' overlays, the pause menu on it; with `take` the HUD on
   the screen as before) and in the 1.0 lab. Both labs back on 1.2.
+
+## 2026-10-15: the scene from another camera (item 4, block 4a)
+
+- **Item 4 split**: 4a the views (the scene drawn again from a mod's camera), 4b the game's geometry hidden or
+  replaced around a drawing (water's faces). An earlier session had written `host/view.cpp`, the bridge's targets
+  for views (`gfx.cpp`), `scene_view` and `MML_EVENT_VIEW_WORLD` in `mml.h`, 1.0's addresses and the example
+  `rear_mirror`, built but not run nor written down.
+- **Read** (both builds' LS3DF, `tools/check_builds.py` now checks each): I3D_camera's vtable written by its
+  constructor; its update (+0x44) asks the scene's GetSector (+0xB4) and keeps the sector at +0x3F8, makes the view
+  (+0x164) and the products (+0x1E4, +0x324, +0x3A4); its setters (+0x50, +0x54, +0x58); QueueVisual sends a
+  `'LENS'` visual (type at +0x1D4) to the scene's list at +0x288 (count +0x290), every other type to its vtable
+  +0x68; Render reads `camRecompute`. The same offsets in 1.2 and 1.0.
+- **In the 1.2 lab**: `check` (the left half of the game camera's frustum drawn again, half the frame wide, compared
+  pixel for pixel): black, so the asymmetric frustum and the camera put back are exact. `mirror` first showed a brown
+  blur: the camera stood against a wall behind it (the owner confirmed); 11 m forward it showed the facade behind.
+  `stereo`: two eyes, the street whole. A new mode `reflect` (the camera mirrored in the plane at the player's car,
+  `MML_VIEW_CLIP` 5 cm above it, the frame's size; the pass lays it on the ground within 6 m of the player): the taxi
+  upside down meeting its wheels, the lamp post from its base, the facade, the world marker's diamond (drawn in the
+  views by `VIEW_WORLD`). Costs: mirror 1.5..1.7 ms of CPU, reflection 2.9 ms. Reloads with frames between: +2 handles
+  for the first few, then 0; mode changes (views made and taken back) 0. `mod.unload`: the frame as before.
+- **In the 1.0 lab** (profile `Run`: 1.0's lab has no profile 4): `check` black, `reflect` and `stereo` drawn,
+  reloads 0 once warm, no fault. The lab put back on 1.2.
+- **Offline**: the kit's `views` (refusals, eight at most, taken back), `view.state` with no game, `view.show` of no
+  such view, a mod's views gone with its reload. ALL PASSED.
+- **Not seen**: a lens flare kept out of a view, the listener detached (Known gaps).
+
+## 2026-10-15: a turning mirror in the world (the owner's test of 4a)
+
+- **The owner**: a mirror turning in the world that draws what it reflects; the diamond (`world_marker`) and the
+  falling boxes' overlay (`boxes`) out of the picture, the scanner's wave (`depth_pulse`) kept. `world_marker` and
+  `boxes` now ship disabled (`"enabled": false`; the harness turns `boxes` on in its copy).
+- **Made**: `rear_mirror` mode `spin`: a 2.4 x 1.8 m mirror with a wooden frame turning at 30 degrees a second; the
+  game camera mirrored in its plane, the plane as the clip plane; the pass intersects each pixel's ray with the
+  mirror, behind what the frame's depth shows in front of it, and samples the view through the view's own
+  `view x proj`. Seen from behind: no view, a grey back.
+- **The owner, watching**: no sky in the mirror. The cause: LS3D draws the backdrop with the camera's view without
+  its position (`cam + 0x264`), so the sky's vertices lie about the origin and the world-space clip plane
+  (`-n . at`, about 1984 sin a here) cut them away for half of each turn (the puddle's level plane kept them). Fixed
+  in the bridge: `SetTransform` followed while a clipped view draws; the plane is off while the backdrop's view is
+  set (matched bit for bit once a drawing, every drawing, in both labs: `view_sky_sets`).
+- **The owner**: the scanner's wave is not in the reflection. The passes ran over the frame only; now a mod may ask
+  (`gfx_pass_views`) for its pass over every view too: at the view's stage 1, the view's depth, colour, constants and
+  size, its own effects target blended over the view's colour (`MmlGfxFrame::in_view`). `depth_pulse` asks; a pass
+  that shows views does not. Its wave is seen on the reflected player and buildings.
+- **The owner**: the reflection moves as if at 10 fps. My mod's fault: a mirror placed by `rear_mirror.spin {at}`
+  kept a start time of 0, so the angle was the machine's uptime in seconds times 0.52, cast to a float: in steps of
+  about 0.03 rad, some 15 a second. The start time is set at every placing, the angle wrapped in double. The owner:
+  smooth now.
+- **Both labs**: the mirror, the sky and the wave in it in 1.2 and 1.0 (the owner was playing in both); in 1.0 the
+  frame-sized view with the wave in it costs 4.3 ms of CPU. Offline: `gfx_pass_views` on a pass and on no such pass,
+  `in_views` in `gfx.state`. ALL PASSED.
