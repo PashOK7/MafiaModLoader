@@ -4,6 +4,7 @@ address,kind,name,source,note
 004087E0,function,modelOpen,game_build.h,
 004123F0,function,PhysStep,mafia-ragdoll,
 0041E690,function,carRepair,game_build.h,
+0041FA2A,site,C_car::AI calls Tick,mml,"the car's Tick each frame, after the controls are set (notes/vehicle_physics.md)"
 004216D8,label,carWater,mafia-ragdoll,
 00422EE0,function,carReset,mafia-ragdoll,
 0042658A,label,carIn,mafia-ragdoll,
@@ -47,14 +48,25 @@ address,kind,name,source,note
 004CD590,function,C_Vehicle::GetRotations,mml,rpm: turns a second +0x548 times 60 when the engine is on (+0xC2C)
 004CDE90,function,C_Vehicle::CalcSpeed,mml,"position +0x320 from the car frame +0x34C, speed +0x59C = |velocity +0x1F90| (m/s)"
 004CE960,function,vehicleCalm,game_build.h,
+004CE960,function,C_Vehicle::CalmVehicle,mml,"thiscall(vehicle, ms limit): Tick(83) in a loop until the calm flag 2, then velocities zeroed"
 004CEB30,function,C_Vehicle::GetVehicleStateSize,mml,thiscall -> bytes of a saved state (1525 for the freeride taxi)
 004CEB30,function,vehStateSize,game_build.h,
 004CEE00,function,C_Vehicle::SaveVehicleState,mml,"thiscall(vehicle, buffer) ret 4; {u32 9, u32 size, position, rotation, velocities, ...}; tried in the lab"
 004CEE00,function,vehStateSave,game_build.h,
 004CFAB0,function,C_Vehicle::LoadVehicleState,mml,"thiscall(vehicle, buffer) -> bool, ret 4; puts a saved state back (the car returned to the last digit)"
 004CFAB0,function,vehStateLoad,game_build.h,
+004D0DD0,function,S_wheel create,mml,"new 0x1D4 bytes: a wheel, linked into a list by +0x1D0 (notes/vehicle_physics.md)"
 004D6720,function,C_Vehicle::DamageEngine,mml,"lowers the engine health +0x1B4 (of +0x1B8), then the gearbox +0x1EC; at 0 the engine stops"
 004DEE90,function,VehicleExhaust,mafia-ragdoll,
+004DF9A0,function,C_Vehicle::Tick,mml,"thiscall(vehicle, ms) -> flags' low byte, ret 4; 0 ms taken as 1; drivetrain, then Engine (notes/vehicle_physics.md)"
+004E09A0,site,C_Vehicle::Tick rest counters,mml,"within 0.15 m: +4 += ms; calm (flag 2): +0x1A8 += ms; 1000 / 4000 ms: the awake flag 1 cleared"
+004E1CE0,function,C_Vehicle::Engine,mml,"thiscall(vehicle, dt s, f1, f2), ret 0xC; Move in equal substeps up to +0xC24 (0.028 s), then +0x4C8 = dt"
+004E2090,function,C_Vehicle::Move,mml,"thiscall, 6 stack args (dt first), ret 0x18: one physics substep; its decompile is wrong, read the disassembly"
+004E2FEE,site,C_Vehicle::Move tyre side force,mml,"per wheel: slip across the rolling direction, sin(slip)/9 degrees capped at 1, times the side limit +0xA4"
+004E6386,site,C_Vehicle::Move rest test,mml,"|v| < 0.01 m/s and |w| < 0.015 rad/s: velocities zeroed, calm flag 2 in +0x1A4"
+004E6AF0,function,C_Vehicle::DoWheelsCollision,mml,"thiscall(vehicle, up, dt, down, bool), ret 0x10: suspension and contact per wheel; dt read once (the damper)"
+004E7D37,site,C_Vehicle::DoWheelsCollision damper,mml,"the compression's speed = (last +0x94 - now) / dt"
+004E8AF0,function,C_Vehicle::BodyCollision,mml,"thiscall, 7 args; the body against the world, called from Move at 0x4E552F; returns whether it touched"
 004EFDB0,function,C_controls::SetMouseRange,mml,"thiscall(controls, x, y, z): 400 each at the start; a mouse axis' value is its counts / range"
 004F01A0,function,C_controls::GetArray,mml,"thiscall(controls, float **out, char which) -> count: 0 held, 1 pressed this frame"
 004F0240,function,C_controls::GetValue,mml,"thiscall(controls, slot, char which) -> float (the cameras read slots 18, 19: the mouse axes)"

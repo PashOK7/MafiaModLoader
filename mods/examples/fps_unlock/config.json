@@ -6,5 +6,7 @@
   "max_fps": 0,      // a cap of the mod's own, frames a second (0: none; the game's time stays real either way)
   "show": true,      // the line at the top left: frames a second, the frame's time, the game's clock step
   "fix_menu_camera": true,   // the main menu camera's spring stepped by the time, not once a frame (1.2)
+  "fix_walk": true,  // a person's short steps swept as the game's 16 ms ones: curbs and ledges as at 62.5 fps (1.2)
+  "fix_rotation": true,   // LS3D's turns under 0.00049 rad kept: a stopped car comes to rest and steers as at 62.5 fps
   "hotkey": "F11"    // switches "enabled"
 }

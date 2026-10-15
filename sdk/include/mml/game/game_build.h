@@ -254,6 +254,26 @@ struct ExeBuild {
     // their targets (`* 0.002`, six more), with no time in it: the camera is 16 times as fast at 1000 fps. (1.2: 0;
     // its camera is menuCamTick's spring.)
     uintptr_t menuCamLoop, menuCamLoopEnd;
+    // A person's step on foot (mods/examples/fps_unlock). humanSweep: the move's collision sweep
+    // (C_human::DynSetNextCollOwnerMult, three spheres from the feet up), thiscall(C_human*, const float pos[3], const
+    // float move[3], float out[3]) -> the surface touched or 0, ret 0xC; out is where the person ends (pos + move when
+    // nothing is touched). humanSweepOwner: its twin for a person standing in a vehicle (TestMoveCollInOwner), the
+    // same contract. Both aim the move 0.015 m lower once a call (`fsub dword [0.015]`). Their two callers get the
+    // frame's time: humanMove (C_human::MovementIntern) and humanUpdate (C_human::Update), both thiscall(C_human*,
+    // unsigned ms), ret 4. humanMoveState: the person's movement state (int; 1 and 3 on the ground, where a short
+    // move is swept as a fixed 0.1 m probe).
+    uintptr_t humanMove, humanUpdate, humanSweep, humanSweepOwner;
+    int humanMoveState;
+    // A car's physics (mods/examples/fps_unlock hooks vehicleTick for its step probe; knowledge/notes/
+    // vehicle_physics.md has the rest). vehicleTick: C_Vehicle::Tick, thiscall(C_Vehicle*, unsigned ms) ->
+    // its flags' low byte, ret 4 (0 ms is taken as 1), called each frame by C_car::AI after the controls are set, and
+    // by C_Vehicle::CalmVehicle with 83 ms; it runs the drivetrain and calls C_Vehicle::Engine (0x4E1CE0), which
+    // moves the car by C_Vehicle::Move in equal substeps no longer than the vehicle's +0xC24 (0.028 s). vehicleFlags:
+    // the vehicle's flags (+0x1A4: 1 awake, 2 calm: set by Move when it zeroed a car slower than 0.01 m/s and
+    // 0.015 rad/s; 8 off the ground). vehicleStepTime: float, the last step Engine made (s); what SetBrake,
+    // SetHandbrake and SetPower (in reverse) add to their ramps each call, so the ramps count that time once a call.
+    uintptr_t vehicleTick;
+    int vehicleFlags, vehicleStepTime;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -342,6 +362,11 @@ inline const ExeBuild kExe12 = {
     0x5EC8A0, 0x6BD83C,
     0x41E690,   // (CAR_REPAIR, case 0x178 of C_program::Process)
     0, 0,
+    // a person's step (2026-10-15: read in the disassembly; the curb in 12-02 measured in the lab)
+    0x57B660, 0x572B80, 0x57CB60, 0x57D0E0,
+    0x40C,
+    // a car's physics (2026-10-15: C_car::AI 0x41FA2A calls Tick; Tick's end and Move's zeroing at 0x4E6386 read)
+    0x4DF9A0, 0x1A4, 0x4C8,
 };
 
 inline const ExeBuild kExe10 = {
@@ -402,6 +427,13 @@ inline const ExeBuild kExe10 = {
     0, 0,   // the menu's camera: inlined into gui_menu_execute_modal 0x56CCC0, not looked for yet
     0x465760,   // (st0rm94's car_repair_position_on_ground)
     0x56D858, 0x56DABC,   // (2026-10-14: read in st0rm94's annotated decompile and the disassembly)
+    // a person's step (2026-10-15: st0rm94's human_movement_intern, human_update, human_test_move_coll(_in_owner),
+    // read in the disassembly: the same code and the same 0.015 as 1.2's)
+    0x49BBC0, 0x492FF0, 0x49D0C0, 0x49D640,
+    0x40C,
+    // a car's physics (2026-10-15: st0rm94's vehicle_tick_drivetrain, called by car_ai_tick 0x466AEA; the flags read
+    // at its end, the step time where vehicle_substep_move 0x52E6D0 stores it and vehicle_set_brake reads it)
+    0x52C3B0, 0x224, 0x544,
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,

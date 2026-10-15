@@ -154,6 +154,23 @@ What is done, what comes next and later, and what is known to be missing or wron
   to 62.5 fps at 1284 fps. The coefficients live in the process's heap, so a mod that faults leaves no pointer into
   its freed DLL; `fps_unlock.camera` records the scene camera's frame in both builds.
 
+- **fps_unlock: a person's step at curbs** (2026-10-15; the owner's report: above 62.5 fps Tommy walks into a curb
+  instead of stepping up). The move's sweep aims 0.015 m low once a call, so its slide on a curb's edge goes down for
+  a short frame's short step. Fixed by asking the game's own sweep about the 16 ms step and moving the frame's share
+  of it (the game's code and constants untouched; `fix_walk`): at the owner's curb in 12-02 the climb, the stop at a
+  shop's ledge and the walk on flat ground measured the same as 62.5 fps at 400 fps (`knowledge/notes/game.md`);
+  `fps_unlock.path` records the player's path every frame. Both builds' four places in `game_build.h`, checked.
+
+- **fps_unlock: a stopped car at rest, the steering's dead zone** (2026-10-15; the owner's report: above 300 fps a
+  stopped car creeps by millimetres for seconds and a mission waiting for it to stop waits). The cause: LS3D's
+  `S_quat::RotationMatrix` gives the identity for any turn under 0.00049 rad, so a car's body cannot turn slower than
+  0.2 rad/s at 400 fps (0.03 at 62.5): its rocking is never answered and it creeps, its slow yaw is lost. Fixed in
+  the engine's function (`fix_rotation`: the export hooked by name, the matrix built for those quaternions); the car
+  runs the frame's own steps: at rest 0.23..0.43 s after slowing down (62.5 fps: 0.07..1.47 s), a yaw rate of
+  0.161..0.167 rad/s for 0.15 of steering (62.5 fps: 0.161). A first fix that ticked slow cars in 16 ms steps hid
+  the cause and is gone. `fps_unlock.path` records the car every frame, `fps_unlock.stepprobe` compares one step with
+  several shorter ones from one state; `knowledge/notes/vehicle_physics.md` has the car's step, wheels and rest.
+
 - **`car.restore` with dents** (2026-10-14): a car's state grows with its body's dents, and the restore refused a
   state of the same taxi taken before a crash (its size was the test of the model). `CarStateLoad` now repairs the
   car first (the scripts' `car_repair`: the game's load writes only the vertices a state lists) and checks the model
@@ -344,10 +361,21 @@ merged, sorted by importance):
 
 ## Known gaps
 
-- **fps_unlock** (mods/examples/fps_unlock): only the main menu's camera is fixed; the other systems that may do once
-  a frame what they should do by the time are leads from a scan of the decompile (`knowledge/notes/game.md`, "The
-  frame rate"), not checked in the game; the owner remembers more breakages above 62.5 fps that are not found yet.
-  Frames of 0 ms (above 1000 fps) reach every system (532 a second in 1.2's main menu at 1520 fps).
+- **fps_unlock** (mods/examples/fps_unlock): the main menu's camera, a person's step at curbs and LS3D's small
+  rotations are fixed. The rotation fix was measured on the player's taxi on flat ground in 1.2 (the stop, slow
+  steering, acceleration) and in 1.0 (the stop; 1.0's lab reaches 185 fps only); handling at speed, crashes and
+  braking from speed were not compared, nor traffic. The car's physics fields (angular velocity, body axes, flags,
+  wheels) are in the notes only, not yet in `game.h`; `RotationMatrix` is found by its export name, not in
+  `game_build.h`. The other users of `RotationMatrix` that turn by a step's angle (the airplane, `C_PhThing`, bottles, the
+  traffic's pedestrians and trams) were not watched. A car's wheel-spin fields change differently in one 16 ms step
+  than in four of 4 ms (`vehicle_physics.md`: oscillation or a per-call integration, not known). The step at curbs is
+  still fixed by asking the game's sweep about a 16 ms step (`Stepped`): the cause in the sweep's slide is to be
+  found and fixed instead (the owner's wish). The other systems that may do once a frame what they should do by the
+  time are leads from a scan of the decompile (`knowledge/notes/game.md`, "The frame rate"), not checked in the
+  game. Frames of 0 ms (above 1000 fps) reach every system (532 a second in 1.2's main menu at 1520 fps). The step's
+  fix was measured at one curb and one ledge, on the player only (other people use the same sweep: not watched), in
+  1.2; its 1.0 addresses are checked against the files, not run in the 1.0 lab. A sweep after a frame of 16 ms or
+  more is the game's own (above 62.5 fps those are the long frames only).
 
 - **A mod's unload** (host/lifecycle.cpp): a thread is found in a load's code by its EIP, the chain of saved EBPs and
   where it began; a thread inside a library compiled to use EBP as a plain register, between it and the mod's frame,

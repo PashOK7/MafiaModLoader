@@ -166,6 +166,61 @@ def main(a):
         check(ins[-1].mnemonic == 'jne' and int(ins[-1].op_str, 16) == lo + 5, f'{name} menuCamLoopEnd: the loop jumps back')
         check(len(consts.get(0.001, [])) == 6 and len(consts.get(0.002, [])) == 6 and len(consts) == 2,
               f'{name} menuCamLoop: six fmul [0.001], six fmul [0.002]')
+    # A person's step (fps_unlock): each sweep holds one `fsub dword [0.015]` and returns with ret 0xC; humanMove and
+    # humanUpdate call both sweeps and return with ret 4; humanMove compares humanMoveState with 3 and 1.
+    for name, (exe, ls, gexe, gls) in builds.items():
+        if not exe['humanMove']:
+            continue
+        md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_32)
+        md.detail = True
+        for f in ('humanSweep', 'humanSweepOwner'):
+            ins = list(md.disasm(gexe.at(exe[f] - 0x400000, 0x480), exe[f]))
+            subs = [i for i in ins if bytes(i.bytes[:2]) == b'\xd8\x25' and abs(struct.unpack(
+                '<f', gexe.at(int.from_bytes(bytes(i.bytes[2:6]), 'little') - 0x400000, 4))[0] - 0.015) < 1e-7]
+            check(len(subs) == 1, f'{name} {f}: one fsub dword [0.015]')
+            check(any(i.mnemonic == 'ret' and i.op_str == '0xc' for i in ins), f'{name} {f}: ret 0xc')
+        for f, size in (('humanMove', 0x1500), ('humanUpdate', 0x2000)):
+            ins = list(md.disasm(gexe.at(exe[f] - 0x400000, size), exe[f]))
+            calls = {int(i.op_str, 16) for i in ins if i.mnemonic == 'call' and i.op_str.startswith('0x')}
+            check(exe['humanSweep'] in calls and exe['humanSweepOwner'] in calls, f'{name} {f}: calls both sweeps')
+            check(any(i.mnemonic == 'ret' and i.op_str == '4' for i in ins), f'{name} {f}: ret 4')
+            if f == 'humanMove':   # the probe's test: `mov eax, [esi + state]`, then `cmp eax, 3` and `cmp eax, 1`
+                ok = any(a.mnemonic == 'mov' and a.op_str.startswith('eax, dword ptr [esi + ')
+                         and a.op_str.endswith(f'+ {exe["humanMoveState"]:#x}]') and
+                         [f'{b.mnemonic} {b.op_str}' for b in ins[k + 1:k + 6] if b.mnemonic == 'cmp'] == ['cmp eax, 3', 'cmp eax, 1']
+                         for k, a in enumerate(ins))
+                check(ok, f'{name} humanMoveState loaded and compared with 3 and 1')
+    # A car's tick (fps_unlock): vehicleTick is what C_car::AI calls on its C_Vehicle (`lea ecx, [esi + vehicle]`),
+    # turns 0 ms into 1, ends by testing vehicleFlags for 2 and its counter for 1000 ms (ret 4); vehicleStepTime is
+    # stored by the Engine that Tick calls (right before its `ret 0xc`) and added by SetBrake.
+    ai = {'1.2': (0x41F780, 0x4CB2D0), '1.0': (0x466840, 0x517600)}
+    for name, (exe, ls, gexe, gls) in builds.items():
+        if not exe['vehicleTick']:
+            continue
+        md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_32)
+        md.skipdata = True
+        car_ai, set_brake = ai[name]
+        ins = list(md.disasm(gexe.at(car_ai - 0x400000, 0x400), car_ai))
+        k = next((k for k, i in enumerate(ins) if i.mnemonic == 'call' and i.op_str == hex(exe['vehicleTick'])), -1)
+        check(k > 0 and ins[k - 1].op_str == f'ecx, [esi + {exe["vehicle"]:#x}]', f'{name} vehicleTick: called by C_car::AI on its vehicle')
+        tick = list(md.disasm(gexe.at(exe['vehicleTick'] - 0x400000, 0x1200), exe['vehicleTick']))
+        check([f'{i.mnemonic} {i.op_str}' for i in tick[:12]].count('mov ecx, 1') == 1, f'{name} vehicleTick: 0 ms taken as 1')
+        flags = f'dword ptr [esi + {exe["vehicleFlags"]:#x}]'
+        end = max((k for k, i in enumerate(tick) if i.mnemonic == 'cmp' and i.op_str == 'ecx, 0x3e8'), default=-1)
+        check(end > 0 and any(i.mnemonic == 'mov' and i.op_str == f'eax, {flags}' for i in tick[end - 16:end]) and
+              any(i.mnemonic == 'test' and i.op_str == 'al, 2' for i in tick[end - 16:end]),
+              f'{name} vehicleFlags: Tick tests it for 2 before its last 1000 ms')
+        calls = [int(i.op_str, 16) for i in tick if i.mnemonic == 'call' and i.op_str.startswith('0x')]
+        stored = False
+        for c in set(calls):
+            body = list(md.disasm(gexe.at(c - 0x400000, 0x400), c))
+            for j, i in enumerate(body):
+                if i.mnemonic == 'ret' and i.op_str == '0xc':
+                    stored |= any(b.mnemonic == 'mov' and b.op_str.endswith(f'+ {exe["vehicleStepTime"]:#x}], edx') for b in body[max(0, j - 6):j])
+                    break
+        brake = list(md.disasm(gexe.at(set_brake - 0x400000, 0x120), set_brake))
+        check(stored and any(i.mnemonic == 'fld' and i.op_str.endswith(f'+ {exe["vehicleStepTime"]:#x}]') for i in brake),
+              f'{name} vehicleStepTime: stored by the Engine Tick calls, read by SetBrake')
     # The frame rate's sites (fps_unlock): the limiter's minimum jump inside frameLimit, after `cmp eax, edi` and
     # before its Sleep; Present's yield: `mov reg, [Sleep]` then `push 0; call reg`.
     for name, (exe, ls, gexe, gls) in builds.items():

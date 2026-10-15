@@ -519,3 +519,82 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   the stack in 1.0: the method was first run on 1.2 (1.1 / 3.8 / 9.4 s there, not comparable with the eye's own
   numbers: the frame carries the sway). The 1.0 lab driven through `MML_GAME_DIR` (a scratch bridge client), the
   user's config untouched; the mod's settings put back to their defaults and the 1.0 game closed by its pid after.
+
+## 2026-10-15: a person's step at curbs above 62.5 fps
+
+- **The owner**: the breakage they remembered is Tommy walking into a curb instead of stepping up (not the bending
+  plants, which a first look went to: `bendable_plant_ai` stays a lead in the notes). They showed the curb (12-02 "The
+  Parking Lot", Tommy at (-8.49, -0.03, -153.19) facing -z) and asked that the movement's results stay the game's
+  own: the logic may be rewritten, the outcome may not change.
+- **Found in the code**: the move's sweep (`C_human::DynSetNextCollOwnerMult`, three spheres) is aimed 0.015 m lower
+  than the move once a call; a curb is climbed by the slide on its edge, and a 2.5 ms walking step slides down where
+  a 16 ms one slides up (`knowledge/notes/game.md`, "The frame rate"). Proved in the lab by pointing the one
+  operand at the game's 0.004: walking climbed.
+- **A first fix was wrong**: the push scaled by the time (then with the fall a 16 ms frame has) climbed the curb, and
+  also a 0.3 m ledge under a shop window that Tommy cannot climb at 62.5 fps; the owner saw him climb walls. Many
+  small slides follow a sphere's curve where one 16 ms step is stopped. The fix now asks the game's own sweep about
+  the 16 ms step from the same place and moves the frame's share of it.
+- **A doubt of a measurement, settled**: the first 62.5 fps walks stalled 0.7 s before the curb and drifted sideways,
+  differently each time; a per-frame trace (`fps_unlock.path`) showed the stall 0.6 m before the edge, and `humans`
+  showed Paulie and Sam standing there (they follow Tommy to where the last walk ended). With both moved away first,
+  62.5 fps walks straight up, and the fix matches it (the numbers in the notes). End points alone (`input`'s answer)
+  could not have told the two apart.
+- A power cut closed the game midway; the curb's place was kept in a scratch file and reached again by `teleport`.
+- 1.0's twins found by st0rm94's names and the disassembly (the same code, the same `+0x40C`), checked by
+  `check_builds.py` (a wrong state offset put in by hand fails it), not run in the 1.0 lab.
+
+## 2026-10-15: a stopped car at rest above 300 fps
+
+- **The owner**: above 300 fps a stopped car keeps drifting by millimetres and comes to rest late, which stalls
+  missions whose scripts wait for the car to stop; at 62.5 fps it is still at once.
+- **Measured first** (`fps_unlock.path` now records the player's car: position, speed, velocity and any vehicle field
+  by offset): at 400 fps the taxi stopped, then circled at 0.01..0.03 m/s in a 4 x 3 cm loop for 8 s; at 62.5 fps its
+  residual speed fell x0.89 a frame and the game zeroed it 0.07..0.75 s after the stop. The game's rest logic was read
+  (Move's zeroing under 0.01 m/s and 0.015 rad/s, Tick's sleep after 1 s calm or 4 s within 0.15 m): all in m/s and
+  ms. What differs is the physics' step: Engine runs Move in substeps up to 28 ms, so one 16 ms step a frame at
+  62.5 fps and one 2.5 ms step at 400 fps, and the small motions are damped less in short steps.
+- **Two wrong turns, each measured**: stepping only Engine in 16 ms braked harder; so did stepping the whole Tick.
+  Both because SetBrake's ramp adds the vehicle's last step time each call, and the controls are set every frame:
+  16 ms a frame ramped the brake 6 times as fast. Leaving the frame's own time there after each frame fixed it.
+- **The fix**: a car slower than 1 m/s is ticked in whole 16 ms steps. Those steps reproduce 62.5 fps to the digit
+  (a teleported car's settling, read at 4 decimals). The threshold keeps faster cars in the frame's steps: a car
+  ticked at 62.5 Hz at speed would stutter on screen (nothing draws it between steps yet; Known gaps).
+- Both builds' addresses in `game_build.h` (1.0's offsets read in its code: the flags `+0x224`, the step `+0x544`),
+  checked by `check_builds.py` (wrong offsets put in by hand fail it).
+
+## 2026-10-15: a car's physics above 62.5 fps, the cause fixed: LS3D's small rotations
+
+- **The owner**: no 16 ms ticks or other hiding: fix the cause so the physics is right at any step and gives the
+  original's results; the same for walking (the curb fix that asks a 16 ms sweep is to be replaced too). Everything
+  reversed goes to the knowledge base / SDK so other agents need not redo it.
+- **Found**: LS3D's `S_quat::RotationMatrix` (0x1002EC00) returns the identity whenever `|w| >= 1`, and a turn under
+  ~0.00049 rad has `w == 1.0f`: the car's body cannot turn slower than 0.03 rad/s at 62.5 fps, 0.2 rad/s at 400 fps
+  (the steering's dead zone, the stopped car's creep). Proved with `fps_unlock.stepprobe` (axes frozen bit for bit).
+  All of it, with the C_Vehicle step pipeline, S_wheel layout and rest logic: `knowledge/notes/vehicle_physics.md`.
+- **The fix**: `fps_unlock` hooks the export by its name (`fix_rotation`): a unit quaternion whose `w` rounded to 1
+  gets its matrix by the game's formula, everything else is the game's. Measured in the 1.2 lab at 330..380 fps with
+  a scratch bridge client (each test five or more runs): at rest 0.23..0.43 s after slowing down (62.5 fps:
+  0.07..1.47; unfixed: still creeping at 7.8 s); 0.15 of steering, a yaw rate of 0.161..0.167 rad/s (62.5 fps: 0.161;
+  unfixed: 0.019..0.055). The 16 ms car ticks (`fix_car`, `car_fixed_below`) are gone: the frame's own steps give
+  those results. `vehicleTick` stays hooked for the step probe; its fields in `game_build.h` stay as knowledge.
+- **At 62.5 fps** the fix changes the original a little: it keeps 200..230 turns a stop test that the game drops
+  (under 0.03 rad/s); the stop's time and the steering stayed inside 62.5 fps's own spread. Said so in the notes.
+- **A measurement's doubt, settled**: the plan's steering numbers (-1.86 against -0.49 m/s "sideways") did not come
+  back; read along the body's right axis the sideways velocity is near zero at both rates. By their size they were
+  the world's x velocity, the heading more than the slip. The body's axes were also told apart on the way: `+0xC3C`
+  is forward, `+0xC48` right, `+0xC54` up (read against the frame's world matrix).
+- **Other users**: 26 call sites in 1.2 (35 in 1.0), listed by function in the notes. Watched with `tap`: driving
+  calls it from `Move` only, walking adds `C_human::PoseInterpolate` (a bone's absolute rotation: the fix makes a
+  near-identity one exact). The airplane, `C_PhThing`, bottles and the traffic turn by a step's angle and were not
+  watched.
+- **1.0, run** (the owner: "check it on 1.0"): the 1.0 lab driven through `MML_GAME_DIR` (the repository's MCP
+  server started by a scratch client, `mml.config.json` untouched), the 1.2 game closed first so the two did not
+  share the machine. 140..185 fps there. A stopped taxi at rest 0.23..0.29 s after slowing down (62.5 fps:
+  0.37..2.19 s; unfixed 3.9..7.6 s); steering hardly differs at that rate (the lost turns are under 0.07 rad/s at
+  150 fps). The test's first 1.0 runs read 1.2's offsets (the angular velocity a constant 0.78); 1.0's body axes and
+  angular velocity are 1.2's plus 0x7C, found by matching the frame's world matrix in the vehicle's memory.
+- **Still open**: the wheels' spin fields change differently in one 16 ms step and four of 4 ms (oscillation or a
+  per-call integration: not known); walking (`Stepped`, the 16 ms sweep) is still the next real fix; the car's
+  fields for the SDK (`game.h`, `check_builds.py`).
+- **Lab state**: the lab's `fps_unlock` changes put back to the defaults (`{}`); the freeride left running.
+

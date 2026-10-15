@@ -262,6 +262,65 @@ autosplitter; kept outside it, not ported). Checked against the above:
   frame to `1 - (1 - a)^(ms/16)`. The camera frame both builds' menus move: the scene's `+0x17C` (`GameCamera`).
   Measured in the 1.0 lab by that frame (its sway included, so the 90 % mark is noise): 10 / 50 % of one flight at
   0.74 / 2.66 s at 62.5 fps, 0.04 / 0.16 s at 1315 fps, 0.76 / 2.79 s fixed at 1284 fps.
+- **game** **A person's step stops at curbs above 62.5 fps** (the owner's report; 2026-10-15, both builds' code, the
+  1.2 lab). `C_human::MovementIntern` (0x57B660, thiscall(ms)) builds the frame's move from the speed times the time,
+  adds the fall (`fall += 9.81 t`, `move.y -= fall t`; on the ground the fall restarts from 0 each frame, so a
+  frame's drop is `9.81 t^2`) and hands it to the sweep `C_human::DynSetNextCollOwnerMult` (0x57CB60,
+  thiscall(pos, move, out), ret 0xC; `TestMoveCollInOwner` 0x57D0E0 for one standing in a vehicle): three spheres
+  (radius 0.4 at the feet + 0.405, 0.25 and 0.35 above it) swept by `TestPanak2` along the move aimed 0.015 m lower
+  (`fsub [0.015]`, a constant per call), and where they touch, `out` is where the sliding sphere ends minus 0.4;
+  touching nothing, `out` is `pos + move`. A curb is climbed by that slide on its edge, and the slide's direction
+  depends on the step: walking (1.7 m/s) a 16 ms step is 0.027 m forward against 0.015 + 0.0025 down and slides up;
+  a 2.5 ms step is 0.004 m against 0.015 and slides down: Tommy walks into the curb for good (running, 5 m/s, still
+  climbs). `C_human::Update` (0x572B80, thiscall(ms)) sweeps an animation-driven move the same way (no fall in it).
+  Scaling the 0.015 by the time is not enough (measured): many small slides follow the sphere's curve up a 0.3 m
+  ledge under a shop window that a 16 ms step is stopped by, and Tommy climbed walls. `MovementIntern` also sweeps a
+  fixed 0.1 m probe whatever the time when a move is shorter than 0.1 m in states 1 and 3 (`+0x40C`).
+- **code** fps_unlock's fix: the sweep hooked; a frame shorter than 16 ms asks it about the game's own 16 ms step
+  from the same place (the move times 16 / ms, the fall a 16 ms frame has, the game's 0.015) and moves the frame's
+  share (ms / 16) of the way to where that step ends; a step that touches nothing is the frame's own move. Measured at
+  the curb of 12-02 "The Parking Lot" (Tommy from (-10.1, -0.029, -153.19) facing -z, Paulie and Sam moved away: at
+  first they stood by the curb and the walks into them looked like stalls), `fps_unlock.path` sampling every frame:
+  walking, 62.5 fps climbs from z -155.23 to -155.51 in 0.32 s; at 400 fps the game alone stays at -155.23; fixed,
+  the climb is at the same z, the height within 5 mm at each z, 2 cm behind at 3 s (from the first frame, not the
+  curb). Running into the shop's ledge: up the curb at 0.577 / 0.581 s, stopped at z -158.912 at 1.345 / 1.348 s,
+  sliding along it to x -10.083 / -10.084 (62.5 fps / fixed at 400 fps). On flat ground: 5.039 / 5.033 m walked in
+  3 s.
+- **game** **A stopped car creeps above 62.5 fps** (the owner's report: a mission waiting for the car to stop waits;
+  2026-10-15, both builds' code, the 1.2 lab). `C_car::AI` (0x41F780) sets the controls (SetPower, SetBrake,
+  SetSteer) and calls `C_Vehicle::Tick` (0x4DF9A0, thiscall(ms), 0 ms taken as 1) every frame; Tick runs the
+  drivetrain and calls `C_Vehicle::Engine` (0x4E1CE0, thiscall(dt s, ...)), which runs `C_Vehicle::Move` in equal
+  substeps no longer than the vehicle's `+0xC24` (0.028 s): at 62.5 fps one Move of 16 ms a frame, at 400 fps one of
+  2.5 ms, and at the end stores the step at `+0x4C8`. Move zeroes the velocity (`+0x1F90`), the angular velocity
+  (`+0x420`) and the speed and sets the calm flag 2 in `+0x1A4` when the speed is under 0.01 m/s and the angular
+  speed under 0.015 rad/s (0x4E6386..0x4E676A); Tick's end lets a calm car sleep after 1000 ms of its counter
+  (`+0x1A8`), or after 4000 ms within 0.15 m (`+4`, the place `+8`: dist^2 < 0.0225). Those thresholds are in
+  m/s; what is not is the damping of the car's small motions, much weaker in short steps: measured at the freeride's
+  start (the taxi from (-1984.86, -4.74, 22.63) facing -z, 2 s of throttle, 1 s of brake), at 62.5 fps the residual
+  speed falls x0.89 a frame (0.053, 0.032, 0.020, 0.013 m/s every 64 ms) and is zeroed at 4.42 s (the car stopped at
+  4.35 s); at 300..400 fps it keeps circling at 0.01..0.03 m/s, the velocity and the angular velocity turning
+  slowly together (a period of 4..5 s), a loop of about 4 x 3 cm, and the car sleeps at 12.5 s.
+- **code** **The cause: LS3D drops small rotations** (`knowledge/notes/vehicle_physics.md`, "Small rotations are
+  lost"): `S_quat::RotationMatrix` returns the identity for `|w| >= 1`, and a turn under 0.00049 rad has `w == 1.0f`,
+  so the car's body cannot turn slower than 0.00049 rad a step (0.03 rad/s at 62.5 fps, 0.2 rad/s at 400 fps): its
+  rocking on the springs is never answered and it creeps; its slow yaw has a dead zone. fps_unlock's fix
+  (`fix_rotation`) hooks the export and builds the matrix of such a quaternion by the game's own formula. Measured
+  in the 1.2 lab at 330..380 fps, with the frame's own steps (the same test as above, five or more runs each): at rest
+  (zeroed) 0.23..0.43 s after slowing under 0.1 m/s, against 0.07..1.47 s at 62.5 fps (unfixed: still creeping after
+  7.8 s); 0.15 of steering for 3 s: a yaw rate of 0.161..0.167 rad/s and a sideways velocity of -0.02..-0.01 m/s,
+  against 0.161 and -0.002 at 62.5 fps (unfixed: 0.019..0.055 rad/s, +0.15 m/s). At 62.5 fps the fix keeps 200..230
+  turns in a stop test that the game drops; its stops and steering stayed inside 62.5 fps's run-to-run spread.
+  **1.0** (its lab runs at 140..185 fps unlocked; the same test, its fields at 1.2's plus 0x7C): at rest 0.23..0.29 s
+  after slowing down, against 0.37..2.19 s at 62.5 fps and 3.9..7.6 s unfixed (creeping 6..13 cm); the steering's
+  yaw rate 0.180..0.183 rad/s fixed, 0.169..0.175 unfixed, 0.174..0.178 at 62.5 fps (at 150 fps the lost turns are
+  those under 0.07 rad/s: this yaw is mostly above it). Standing, 1.0's `Move` hands `RotationMatrix` about 200
+  quaternions a second with `w` exactly 1 (seen by `tap` with the fix off).
+- **code** Replaced: a first fix (`fix_car`) ticked a car slower than 1 m/s in whole 16 ms steps. It reproduced
+  62.5 fps to the digit (a teleported taxi settling read 1.4291, 0.2371, 0.7913 m/s at 400 fps as at 62.5) but hid
+  the cause. What it taught: the controls' ramps (SetBrake, SetHandbrake, SetPower in reverse: `+0x3CC += +0x4C8` a
+  call) are fed every frame and count the step Engine left, so ticking a car in other steps than the frame's must put
+  the frame's time back at `+0x4C8` (left at 16 ms they braked 6 times as hard: 7 m/s^2 in the first 0.25 s
+  against 3).
 - **code** A scan of the decompile for what is done once a call instead of by the time (decay `x *= c`, smoothing
   `x += (y - x) * c`, a fixed step `x += c`, in functions that get the frame's time), each hit read (2026-10-14):
   - `bendable_plant_ai` 0x58EAD0 (st0rm94's name; the bushes and trees that bend): the force is integrated by the

@@ -340,8 +340,12 @@ default checkpoints.
 away (MafiaD3D11's A132: two places in LS3D, the addresses from `game_build.h`, the bytes checked before they are
 written and put back at the unload, so a hot reload or the mod switched off leaves the game as it was), fixes a
 system that did once a frame what it should do by the time (the main menu's camera: a hook that calls the game's
-function and corrects its spring), caps the frame rate on a high-resolution timer if asked, and shows the frame
-rate and the game's clock step. `call fps_unlock.status`; `config.set {"mod": "fps_unlock", "key": "enabled",
+function and corrects its spring), keeps a decision that depends on the step's size the game's own (a person's step
+at a curb: the game's sweep asked about its 16 ms step, the frame given its share), fixes a function of the engine
+hooked in LS3DF.dll by its export name (`S_quat::RotationMatrix` dropped every turn under 0.00049 rad: with them
+kept, a stopped car comes to rest and steers as at 62.5 fps; the fix checked against the game's function at load,
+everything else handed to it), caps the frame rate on a
+high-resolution timer if asked, and shows the frame rate and the game's clock step. `call fps_unlock.status`; `config.set {"mod": "fps_unlock", "key": "enabled",
 "value": false}` (or F11) compares with the game's own pacing at once.
 
 ## Rules
