@@ -298,6 +298,7 @@ int H_GeomHide(MmlMod *m, const char *pattern, int where) {
     return h;
 }
 void H_GeomShow(MmlMod *m, int handle) { if (m && handle >= 0) GeomShow(m, handle); }
+int H_FrameStats(MmlMod *m, MmlFrameStats *out) { return Alive(m) && ProfFrameStats(m, out) ? 1 : 0; }
 int H_GeomCapture(MmlMod *m, const char *pattern, MmlGeomFn fn, void *user) {
     if (!Alive(m)) return 0;
     std::string err;
@@ -427,7 +428,11 @@ bool LoadModDll(ModEntry *e, std::string *err) {
     e->liveDir = liveDir;
     e->faulted = false;
     int rc = 0;
-    DWORD ex = SafeLoad(load, &g_host, m, &rc);
+    DWORD ex;
+    {
+        ProfScope ps(m, "mml_mod_load");
+        ex = SafeLoad(load, &g_host, m, &rc);
+    }
     if (ex || rc != 0) {
         *err = ex ? "mml_mod_load faulted at " + DescribeAddress(t_faultAt) : "mml_mod_load returned " + std::to_string(rc);
         e->unload = nullptr;   // (a failed load is not unloaded by the mod; what it registered goes all the same)
@@ -451,7 +456,11 @@ bool UnloadMod(ModEntry *e, const char *why) {
     MmlMod *m = e->current;
     if (!m) return false;
     if (e->unload && !e->faulted) {
-        DWORD ex = SafeUnload(e->unload, m);
+        DWORD ex;
+        {
+            ProfScope ps(m, "mml_mod_unload");
+            ex = SafeUnload(e->unload, m);
+        }
         if (ex) Log(MML_LOG_ERROR, "host", "mod %s faulted in mml_mod_unload (%08X at %s)", e->id.c_str(), static_cast<unsigned>(ex), DescribeAddress(t_faultAt).c_str());
     }
     m->alive = false;
@@ -632,7 +641,12 @@ std::vector<MmlMod *> ModsLoaded() {
 }
 bool ModCall(MmlMod *mod, void (*fn)(void *), void *user, const char *where) {
     if (!Alive(mod) || mod->entry->faulted) return false;
-    if (DWORD ex = SafePosted(fn, user)) { Faulted(mod, where, ex); return false; }
+    DWORD ex;
+    {
+        ProfScope ps(mod, where);
+        ex = SafePosted(fn, user);
+    }
+    if (ex) { Faulted(mod, where, ex); return false; }
     return true;
 }
 
@@ -707,6 +721,7 @@ void ModsInit() {
     g_host.geom_hide = H_GeomHide;
     g_host.geom_show = H_GeomShow;
     g_host.geom_capture = H_GeomCapture;
+    g_host.frame_stats = H_FrameStats;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();
@@ -741,7 +756,12 @@ void Dispatch(const MmlEvent &ev) {
     std::vector<Sub> subs = g_subs;   // a handler may subscribe; a faulted mod is unloaded only at the next frame
     for (const Sub &s : subs) {
         if (s.type != ev.type || !Alive(s.mod) || s.mod->entry->faulted) continue;
-        if (DWORD ex = SafeEvent(s.fn, &ev, s.user)) Faulted(s.mod, ("its handler of event " + std::to_string(ev.type)).c_str(), ex);
+        DWORD ex;
+        {
+            ProfScope ps(s.mod, ProfEventSite(ev.type));
+            ex = SafeEvent(s.fn, &ev, s.user);
+        }
+        if (ex) Faulted(s.mod, ("its handler of event " + std::to_string(ev.type)).c_str(), ex);
     }
 }
 
@@ -749,7 +769,12 @@ void DispatchTo(MmlMod *mod, const MmlEvent &ev) {
     std::vector<Sub> subs = g_subs;
     for (const Sub &s : subs) {
         if (s.mod != mod || s.type != ev.type || !Alive(s.mod) || s.mod->entry->faulted) continue;
-        if (DWORD ex = SafeEvent(s.fn, &ev, s.user)) Faulted(s.mod, ("its handler of event " + std::to_string(ev.type)).c_str(), ex);
+        DWORD ex;
+        {
+            ProfScope ps(s.mod, ProfEventSite(ev.type));
+            ex = SafeEvent(s.fn, &ev, s.user);
+        }
+        if (ex) Faulted(s.mod, ("its handler of event " + std::to_string(ev.type)).c_str(), ex);
     }
 }
 
@@ -761,7 +786,12 @@ void RunPosted() {
     }
     for (const Posted &p : run) {
         if (p.mod && (!Alive(p.mod) || p.mod->entry->faulted)) continue;
-        if (DWORD ex = SafePosted(p.fn, p.user)) Faulted(p.mod, "a posted call", ex);
+        DWORD ex;
+        {
+            ProfScope ps(p.mod, "a posted call");
+            ex = SafePosted(p.fn, p.user);
+        }
+        if (ex) Faulted(p.mod, "a posted call", ex);
     }
     for (auto &e : g_mods)
         if (e->current && e->faulted) UnloadMod(e.get(), "it faulted");
@@ -788,6 +818,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (GfxMethod(method, paramsJson, reply, &ok)) return ok;
     if (ViewMethod(method, paramsJson, reply, &ok)) return ok;
     if (GeomMethod(method, paramsJson, reply, &ok)) return ok;
+    if (ProfMethod(method, paramsJson, reply, &ok)) return ok;
     if (method == "mods.list") { *reply = ModsList(); return true; }
     if (method == "commands.list") { *reply = CommandsList(); return true; }
     if (method == "hooks.list") { *reply = HookList(); return true; }
@@ -858,7 +889,13 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     MmlReply r;
     int rc = 0;
     std::string args = paramsJson.empty() ? "null" : paramsJson;
-    if (DWORD ex = SafeCommand(c.fn, args.c_str(), &r, c.user, &rc)) {
+    DWORD cex;
+    {
+        std::string site = "command " + method;
+        ProfScope ps(c.mod, site.c_str());
+        cex = SafeCommand(c.fn, args.c_str(), &r, c.user, &rc);
+    }
+    if (DWORD ex = cex) {
         Faulted(c.mod, method.c_str(), ex);
         *reply = "the command faulted (exception " + std::to_string(ex) + "); its mod is unloaded at the next frame";
         return false;
@@ -881,7 +918,7 @@ std::string CommandsList() {
                           "input.seq", "input.release", "input.state", "text.get", "text.find", "screenshot", "screenshot.state",
                           "draw.text", "draw.rect", "draw.line", "draw.clear", "draw.state", "config.get", "config.set",
                           "menu.item", "menu.items", "menu.item.remove", "menu.page", "menu.page.set", "menu.page.close", "menu.def", "menu.click", "input.mouse", "input.text",
-                          "script.run", "script.state", "script.stop", "script.list", "files.list", "files.which", "files.read", "render.state", "gfx.state", "gfx.reset", "view.state", "view.show", "geom.hide", "geom.show", "geom.state", "geom.survey", "geom.capture"})
+                          "script.run", "script.state", "script.stop", "script.list", "files.list", "files.which", "files.read", "render.state", "gfx.state", "gfx.reset", "view.state", "view.show", "geom.hide", "geom.show", "geom.state", "geom.survey", "geom.capture", "prof.state", "prof.reset", "prof.sample"})
         out.push_back({{"name", m}, {"owner", "host"}});
     for (auto &kv : g_commands) out.push_back({{"name", kv.first}, {"owner", Who(kv.second.mod)}, {"help", kv.second.help}});
     return out.dump();

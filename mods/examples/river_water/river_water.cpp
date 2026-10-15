@@ -196,12 +196,16 @@ void OnEvent(const MmlEvent *ev, void *) {
 }
 
 int Status(const char *, MmlReply *r, void *) {
-    char out[384];
+    MmlFrameStats fs{};
+    fs.size = sizeof fs;
+    if (!MML_HAS(H, frame_stats) || !H->frame_stats(M, &fs)) fs.frames = 0;
+    char out[640];
     snprintf(out, sizeof out,
              "{\"texture\":\"%s\",\"hidden\":%d,\"have\":%s,\"triangles\":%u,\"groups\":%u,\"level\":%.3f,\"captures\":%u,"
-             "\"reflection_view\":%d,\"drawn\":%u}",
+             "\"reflection_view\":%d,\"drawn\":%u,\"frame\":{\"avg_ms\":%.2f,\"p95_ms\":%.2f,\"mod_ms\":%.3f,\"views_ms\":%.2f,"
+             "\"bridge_ms\":%.2f}}",
              S.texture.c_str(), g_hide, g_have ? "true" : "false", static_cast<unsigned>(g_tris.size() / 9), g_groups, g_level,
-             g_captures, g_view, g_drawn);
+             g_captures, g_view, g_drawn, fs.avg_ms, fs.p95_ms, fs.mod_ms, fs.views_ms, fs.bridge_ms);
     H->reply_append(r, out, static_cast<size_t>(-1));
     return 0;
 }

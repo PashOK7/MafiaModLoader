@@ -335,6 +335,17 @@ typedef struct MmlGeomCapture {
 } MmlGeomCapture;
 typedef void (*MmlGeomFn)(const MmlGeomCapture *capture, void *user);
 
+/* The frame's measures (frame_stats below): the frames Present to Present, the last 600 of them. */
+typedef struct MmlFrameStats {
+    uint32_t size;
+    float avg_ms, median_ms, p95_ms, last_ms;   /* the frame's time */
+    float mod_ms;           /* the asking mod's own time a frame (every entry into it: events, passes, its views'
+                               functions, commands...), a moving average over about 60 frames */
+    float views_ms;         /* the host drawing the scene views a frame (every mod's), the same average */
+    float bridge_ms;        /* the graphics bridge a frame (copies, every mod's passes, waits), the same average */
+    unsigned frames;        /* frames measured (0: none yet) */
+} MmlFrameStats;
+
 typedef void (*MmlEventFn)(const MmlEvent *ev, void *user);
 
 /* A command, reachable through the bridge (and so by agents over MCP) as "<mod id>.<name>" or, for the core mod,
@@ -575,6 +586,11 @@ typedef struct MmlHost {
      * view, culled) is not in it: ask again as the camera moves and keep the groups by their `group` key. 1: asked;
      * 0 refused (no fn, an empty pattern). */
     int (*geom_capture)(MmlMod *mod, const char *pattern, MmlGeomFn fn, void *user);
+
+    /* ---- measuring the frame (docs/MODDING.md "Measuring the frame"): the frame's times and the mod's own cost, so
+     * a heavy mod can lower its quality when the frame runs over its budget. Fills `out` (set out->size first); 1 done.
+     * prof.state, prof.sample and MCP's `profile` show every mod and the game thread's time. */
+    int (*frame_stats)(MmlMod *mod, MmlFrameStats *out);
 } MmlHost;
 
 #define MML_FILE_GAME 1              /* file_read: the game's own file, not a mod's of the same name */

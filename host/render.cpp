@@ -139,11 +139,19 @@ int __stdcall hkRender(void *driver, void *scene) {
     if (g_world) {
         GeomFrameBegin();   // (geom.cpp: the game's geometry hidden, surveyed, captured)
         GfxViewsNewFrame();
-        ViewsDraw(driver, scene, oRender);   // (view.cpp: the scene from the mods' cameras, before the frame's own)
+        {
+            ProfScope ps(nullptr, "scene views");
+            ProfPhaseScope ph(2);
+            ViewsDraw(driver, scene, oRender);   // (view.cpp: the scene from the mods' cameras, before the frame's own)
+        }
         GfxBeforeWorld();   // (gfx.cpp: the readable depth buffer, when a mod has a pass)
         GeomFrameDrawing(true);
     }
-    int r = oRender(driver, scene);
+    int r;
+    {
+        ProfPhaseScope ph(1);
+        r = oRender(driver, scene);
+    }
     if (g_world) {
         GeomFrameDrawing(false);
         GfxAfterWorld();
@@ -206,7 +214,11 @@ void RenderStage(int stage) {
     GfxQuiet(true);                     // (the mods' drawing is not the world's light)
     DispatchDrawing(MML_EVENT_RENDER_WORLD, Device8());
     GfxQuiet(false);
-    if (g_world) GfxStage1();           // the graphics bridge: the frame with the mods' drawing in it to the passes
+    if (g_world) {                      // the graphics bridge: the frame with the mods' drawing in it to the passes
+        ProfScope ps(nullptr, "graphics bridge");
+        ProfPhaseScope ph(3);
+        GfxStage1();
+    }
     if (g_world) GfxViewsShowNow();     // view.show: views copied onto the frame
 }
 
@@ -225,6 +237,7 @@ void RenderViewWorld(int handle) {
 
 void RenderPresent(void *dev8) {
     g_presents++;
+    ProfFrame();
     DispatchDrawing(MML_EVENT_PRESENT, dev8);
 }
 

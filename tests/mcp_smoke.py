@@ -68,7 +68,7 @@ def main():
     tools = {t['name'] for t in c.request('tools/list')['tools']}
     want = {'game_status', 'call', 'commands_list', 'mem_read', 'mem_write', 'log_tail', 'mods_list', 'mod_reload',
             'where', 'game_launch', 'game_close', 'crash_list', 'crash_inspect', 'deploy', 'kb_search', 'kb_function', 'tap',
-            'screenshot', 'input', 'script', 'script_commands', 'spawn', 'teleport', 'give'}
+            'screenshot', 'input', 'script', 'script_commands', 'spawn', 'teleport', 'give', 'profile'}
     check('tools/list has every tool', want <= tools, want - tools)
 
     ok, text = c.tool('kb_search', {'query': 'scene.i3d', 'module': 'game.exe'})
@@ -92,6 +92,9 @@ def main():
         check('game_status: running, with the mods', ok and '"running": true' in text and 'hook_a' in text, text)
         ok, text = c.tool('call', {'method': 'hook_a.call', 'params': {'a': 2, 'b': 3}})
         check('call: a mod command through the bridge (30)', ok and text.strip() == '30', text)
+        ok, text = c.tool('profile', {'seconds': 0.5})
+        check('profile: the game thread sampled, the mods\' costs by site', ok and '"samples"' in text and '"by_module"' in text
+              and '"mods"' in text and 'hook_a.call' in text, text[:600])
         ok, text = c.tool('mem_read', {'addr': 'mml_harness.exe+0', 'size': 2})
         check('mem_read', ok and '4d5a' in text, text)
         ok, text = c.tool('mod_reload', {'id': 'hello_c'})

@@ -858,3 +858,28 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Checks**: `check_builds.py` (the three at +0x6C of visuals' vtables, the entry's group and material read,
   SetIndices, DrawIndexedPrimitive, ret 4: both builds), offline (`kit.geom`: refused with no game; `geom.*` say
   why). ALL PASSED both.
+
+## 2026-10-16: measuring the frame (item 5)
+
+- **The owner left me working overnight**: the roadmap in order (with items 20 and 21, the agent's own tools, moved
+  up), a local commit a block, no push; a check that needs something found in the vanilla game is left for the
+  owner rather than searched for at length.
+- **Read**: mafia-ragdoll's `prof.h` (scopes summed a frame) and `sampler.cpp` (a thread stopping the game thread
+  every half millisecond, by phase).
+- **Made** `host/prof.cpp`: every entry the host makes into a mod is timed where it makes it (Dispatch by event
+  name, ModCall by its `where`, commands, posted calls, load and unload), and the host's heavy parts (the scene
+  views, the graphics bridge); frames Present to Present in a ring of 600; hitches (2.5 times the median and 8 ms
+  more) kept with what took them. The sampler adds to ragdoll's: the mod whose call the thread is in, the phase
+  from the host (game, frame drawing, scene views, graphics bridge), and for a sample in Direct3D, the driver or the
+  system the first return address into Game.exe or LS3DF.dll on the stack (a call checked before it). The report is
+  made on the sampler's own thread; the thread is detached (a live std::thread at the process's end would abort it).
+  `frame_stats` for mods; MCP `profile` waits for the run and names the functions (`kb::annotate`).
+- **In the 1.2 lab**: the small freeride 5.1 ms a frame (194 fps), the bridge 0.87 ms, the mods thousandths. The
+  city with `river_water` at the embankment: 7.8 ms (p95 10.3), the views 3.3 ms a frame, 41 % of the game thread
+  in the views, 26 % in the frame's drawing, `I3D_frame::SetVisibleRecMainPass` the hottest in both; LS3D's render
+  (`render+0x2BF6`) the main caller of the driver. Names added to `knowledge/ls3df.dll/names.csv`: the face
+  groups' `m_RenderFGroup` and `m_AddFGroups` of five classes (read in 4b).
+- **In the 1.0 lab**: the same (3768 samples, the views 35 %), Game.exe named through its 1.2 twins, LS3DF not.
+- **Tests**: offline `prof.state` (an event and a command by site) and `prof.sample` (the harness's thread sleeps
+  between its frames: all ntdll, so the check asks for samples, not modules); `mcp_smoke.py` calls `profile`.
+  ALL PASSED both.

@@ -49,3 +49,11 @@ address,kind,name,source,note
 101C56F0,label,mouseState,game_build.h,
 101C597C,label,Device,mafia-ragdoll,
 101C597C,label,d3dDevice,game_build.h,
+10039280,function,I3D_object::m_RenderFGroup,MafiaModLoader,"thiscall(visual, entry), ret 4: SetIndices, DrawIndexedPrimitive of entry+0x10's face group (objects, morphs, single meshes); game_build.h fgRenderObject"
+10028D40,function,I3D_lit_object::m_RenderFGroup,MafiaModLoader,"the lightmapped objects' face group drawing; game_build.h fgRenderLit"
+100083B0,function,I3D_billboard::m_RenderFGroup,MafiaModLoader,"game_build.h fgRenderBillboard"
+10038020,function,I3D_object::m_AddFGroups,MafiaModLoader,"vtable +0x68: a 32-byte entry a face group of its LOD into the render list (+0x00 visual, +0x10 group, +0x18 texture)"
+10027880,function,I3D_lit_object::m_AddFGroups,MafiaModLoader,"vtable +0x68"
+100354F0,function,I3D_morph::m_AddFGroups,MafiaModLoader,"vtable +0x68"
+10055930,function,I3D_singlemesh::m_AddFGroups,MafiaModLoader,"vtable +0x68"
+100073C0,function,I3D_billboard::m_AddFGroups,MafiaModLoader,"vtable +0x68"

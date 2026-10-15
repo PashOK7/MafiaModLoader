@@ -261,6 +261,31 @@ void RenderViewWorld(int handle);         // (render.cpp) MML_EVENT_VIEW_WORLD s
 bool ViewMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 int ViewDrawingNow();                     // the scene view LS3D is drawing now (its handle), 0: none
 
+// ---- measuring the frame (prof.cpp): each entry into a mod timed by its site, the host's parts, the frames, a
+// sampling profiler of the game thread; prof.state, prof.reset, prof.sample
+void ProfEnter(const MmlMod *mod, const char *site);
+void ProfLeave(const MmlMod *mod, const char *site, double ms);
+double ProfNow();
+const char *ProfEventSite(int type);      // an event's name ("RENDER_WORLD")
+void ProfPhase(int phase);                // what the game thread does now, for the sampler (1 drawing the frame, 2 the
+                                          // scene views, 3 the graphics bridge); 0: back to the one before
+void ProfFrame();                         // (render.cpp) Present: a frame complete
+bool ProfFrameStats(const MmlMod *mod, MmlFrameStats *out);   // mml.h frame_stats
+bool ProfMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+struct ProfScope {                        // times a call into a mod (mod null: a part of the host's own)
+    const MmlMod *mod;
+    const char *site;
+    double t0;
+    ProfScope(const MmlMod *m, const char *s) : mod(m), site(s), t0(ProfNow()) { ProfEnter(mod, site); }
+    ~ProfScope() { ProfLeave(mod, site, ProfNow() - t0); }
+    ProfScope(const ProfScope &) = delete;
+    ProfScope &operator=(const ProfScope &) = delete;
+};
+struct ProfPhaseScope {
+    explicit ProfPhaseScope(int phase) { ProfPhase(phase); }
+    ~ProfPhaseScope() { ProfPhase(0); }
+};
+
 // ---- the game's own geometry (geom.cpp): face groups left out of LS3D's drawing, surveyed, captured by texture
 int GeomHide(MmlMod *mod, const char *pattern, int where, std::string *err);   // mml.h geom_hide
 void GeomShow(MmlMod *mod, int handle);   // handle 0: all the mod's

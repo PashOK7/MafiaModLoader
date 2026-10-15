@@ -258,6 +258,11 @@ What is done, what comes next and later, and what is known to be missing or wron
   (premultiplied over: a pass's 0 leaves the ones before it). The example `mods/examples/river_water` (the city's
   river hidden and drawn anew with waves, its reflection, the bed seen through it) in the 1.2 and 1.0 labs;
   `check_builds.py` checks the three functions in both builds. With 4a, item 4 is done.
+- **Measuring the frame** (2026-10-16; item 5): every entry into a mod timed by its site, the loader's heavy parts,
+  the frames (Present to Present: average, median, p95, worst, hitches with what took them) on `prof.state`; the
+  game thread sampled every 0.5 ms with its phase, its mod and the game's caller of the driver (`prof.sample`,
+  MCP `profile` naming the game's functions); `frame_stats` for mods (`river_water.status` shows it). Seen in the
+  1.2 and 1.0 labs (the river's reflection: 41 % of the game thread in 1.2); offline tests and `mcp_smoke.py`.
 
 ## Next, by importance
 
@@ -291,7 +296,7 @@ V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselv
    detached, lens flares kept out, the camera's bytes restored). The game's own geometry hidden or replaced around
    Render (the water's face groups; materials found by their textures' names). Reference: `reflection.cpp`,
    `scene_camera.cpp`, `game_water.cpp` (hiding).
-5. **Measuring the frame** (W S V R P; from Later). Each mod's time in each event and pass (CPU), the GPU timers of
+5. *(Done 2026-10-16: see "Done"; what is left: Known gaps.)* **Measuring the frame** (W S V R P; from Later). Each mod's time in each event and pass (CPU), the GPU timers of
    item 3, the game thread's sampling profiler, on the bridge and MCP: water and VR live within a frame's budget
    (11 ms at 90 Hz). Reference: `prof.h`, `gpu_timer.h`, `sampler.cpp`.
 
@@ -458,6 +463,11 @@ merged, sorted by importance):
   matrix being the camera's backdrop view, bit for bit (it was, every drawing, in both labs). `MML_VIEW_OWN_SECTOR`
   (a camera in another room) was not tried. The first two or three reloads of `rear_mirror` added 2..13 handles each (taken to be
   Direct3D's own warming up: views made and taken back by mode changes added none); then 0.
+- **Measuring the frame** (host/prof.cpp): the passes' GPU times are in `gfx.state`, not in `prof.state`; a mod's
+  own hooks (its detours inside the game's functions) count as the game's time (the sampler shows them under the
+  mod's DLL). A scene view with passes in it waits for both devices once more each (in the 1.2 lab about 4 % of the
+  game thread with `river_water`): one wait for all of a frame's views is not done. MCP's `profile` names 1.0's
+  Game.exe through its 1.2 twins; 1.0's LS3DF has no names (the knowledge base for 1.0, Later).
 - **The game's own geometry** (host/geom.cpp): the meshes LS3D draws face group by face group (objects, lit
   objects, morphs, single meshes, billboards) are covered; what it draws otherwise (particles, the sky's backdrop,
   landscape patches, lens flares, the 2D) is not. A capture holds what the frame drew (a far or culled group is

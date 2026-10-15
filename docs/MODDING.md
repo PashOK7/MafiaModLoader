@@ -551,6 +551,31 @@ if (H->file_source("maps\\crate.bmp", who, sizeof who)) { /* a mod's file answer
 - `H->service_publish` / `service_find`: a versioned table of functions other mods call; find it again after
   `MML_EVENT_SERVICES_CHANGED`. `H->post`: run something on the game thread from another thread.
 
+### Measuring the frame
+
+Every entry the loader makes into a mod is timed (each event by name, its passes, its views' functions, commands,
+hotkeys, menus' and scripts' callbacks, posted calls), and so are the loader's heavy parts (the scene views, the
+graphics bridge); a frame is Present to Present.
+
+```c
+MmlFrameStats fs = {sizeof fs};
+if (MML_HAS(H, frame_stats) && H->frame_stats(M, &fs) && fs.p95_ms > 11.1f)
+    LowerQuality();             /* 90 Hz: 11.1 ms a frame; fs.mod_ms is this mod's own, fs.views_ms the views' */
+```
+
+- `call prof.state`: the frame's average, median, 95th percentile and worst (the last 600 frames), each mod's time
+  a frame by site with its worst frame and its calls a frame, the hitches (a frame 2.5 times the median and 8 ms
+  longer: what took its time); `prof.reset` starts them over.
+- **The game thread sampled** (`prof.sample {"seconds"}`, then `{"id"}`; MCP: `profile {seconds}`, which waits and
+  names the game's functions from the knowledge base): every half millisecond its address, its phase (the game's
+  own work, LS3D drawing the frame, the scene views, the graphics bridge) and the mod whose call it is in; by
+  module, by mod, by phase, the hot spots, and for samples in Direct3D or the driver the game's code that called
+  them. In the 1.2 lab, the city's freeride with `river_water`: the views 41 % of the game thread, the frame's
+  drawing 26 %, LS3D's visibility recursion (`I3D_frame::SetVisibleRecMainPass`) the hottest function in both.
+- What the mods hook themselves (a hook's detour inside the game's function) is the game's time in these
+  measures, not the mod's: it shows in the sampler under the mod's DLL.
+- `river_water.status` shows the frame's numbers as the mod sees them.
+
 ### A heavy mod: its own libraries, its threads, a clean unload
 
 - **Libraries beside the DLL.** Put every DLL your mod needs (PhysX, Jolt, OpenVR, a runtime) in the mod's folder,

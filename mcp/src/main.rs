@@ -308,6 +308,16 @@ struct TapArgs {
 }
 
 #[derive(Deserialize, JsonSchema)]
+struct ProfileArgs {
+    /// How long the game thread is sampled (seconds, default 3, 0.5..30): let the game do the thing meanwhile.
+    seconds: Option<f64>,
+    /// Also the frame's measures since the last reset (prof.state: each mod's time by site, the frame times, the
+    /// hitches); default true. `reset: true` starts them over first.
+    state: Option<bool>,
+    reset: Option<bool>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 struct ShotArgs {
     /// How many frames (default 1, at most 8): several show motion.
     #[serde(default)]
@@ -709,6 +719,29 @@ impl Server {
         let v = self.bridge.call("tap", json!({"cmd": a.cmd}), 5000).await?;
         let text = v.as_str().map(String::from).unwrap_or_else(|| pretty(&v));
         if text.starts_with("error") { Err(text) } else { Ok(kb::annotate_tap(&text)) }
+    }
+
+    /// Where the game thread's time goes: samples it every half millisecond for `seconds` (the phase: the game's own
+    /// work, LS3D drawing the frame, the scene views, the graphics bridge; inside which mod's call; the address, and
+    /// for samples in Direct3D or the driver the game's code that called them), with the game's functions named
+    /// from the knowledge base; and what each mod costs a frame by site (events, passes, views, commands), the frame
+    /// times and the hitches since the last reset.
+    #[tool(annotations(read_only_hint = true))]
+    async fn profile(&self, Parameters(a): Parameters<ProfileArgs>) -> Out {
+        if a.reset == Some(true) { self.call_value("prof.reset", Value::Null, None).await?; }
+        let secs = a.seconds.unwrap_or(3.0).clamp(0.5, 30.0);
+        let start = self.call_value("prof.sample", json!({"seconds": secs}), None).await?;
+        let id = start["id"].as_u64().ok_or("prof.sample gave no id")?;
+        let begun = std::time::Instant::now();
+        let report = loop {
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            let r = self.call_value("prof.sample", json!({"id": id}), None).await?;
+            if r["done"].as_bool() == Some(true) { break r; }
+            if begun.elapsed().as_secs_f64() > secs + 20.0 { return Err("the sampler did not finish (the game thread paused or hung?)".into()); }
+        };
+        let mut out = json!({"sample": report});
+        if a.state.unwrap_or(true) { out["frame"] = self.call_value("prof.state", Value::Null, None).await?; }
+        Ok(kb::annotate(&pretty(&out)))
     }
 
     /// Run a program on the game's own script machine (the mission scripts' language, compiled and run by the game's

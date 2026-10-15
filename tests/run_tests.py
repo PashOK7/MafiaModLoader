@@ -690,6 +690,23 @@ def main():
         r = b.call('gfx.state')
         check('gfx.state with no game: idle, no device, no frame', r['ok'] and r['result']['frames'] == 0
               and r['result']['generation'] == 0 and 'idle' in r['result']['state'], r)
+        # measuring the frame: each entry into a mod by its site; the game thread sampled
+        b.call('prof.reset')
+        time.sleep(0.3)
+        b.call('kit.status')
+        time.sleep(0.2)
+        r = b.call('prof.state')
+        mods = {m['mod']: {s['site'] for s in m['sites']} for m in r['result']['mods']} if r['ok'] else {}
+        check('prof.state: the frames counted, each mod by site (an event, a command)',
+              r['ok'] and 'FRAME' in mods.get('hello_c', set()) and 'command kit.status' in mods.get('kit', set()), r)
+        r = b.call('prof.sample', {'seconds': 0.5})
+        sid = r['result']['id'] if r['ok'] else 0
+        time.sleep(1.0)
+        r = b.call('prof.sample', {'id': sid})
+        res = r.get('result') or {}
+        check('prof.sample: the game thread sampled (samples, modules, phases)',
+              r['ok'] and res.get('done') and res.get('samples', 0) > 100 and res['by_module']   # (the harness's thread sleeps between frames: ntdll)
+              and 'game' in res['phases'], {k: res.get(k) for k in ('done', 'samples', 'by_module')})
         kit_tests(b)
         files_tests(b)
         heavy_tests(b)
