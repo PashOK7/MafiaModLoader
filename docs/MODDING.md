@@ -332,6 +332,61 @@ H->config_set(M, "finish", "{\"x\": 1.5, \"z\": -2}");           /* any JSON val
   1.2 lab). A 32-bit game has 2 to 4 GB of address space: a mod that leaks a few MB a reload ends the game's life
   after some dozens of reloads.
 
+### A heavy mod's build: third-party libraries, shaders, a Direct3D 11 device
+
+`mods/examples/boxes` is the whole way in one mod: read it with this section.
+
+- **A third-party library** is pinned in `tools/deps.py` (its URL and SHA-256) and built by `CMakeLists.txt` as a
+  part of the loader's build, for x86 and with the mods' runtime (`/MT`): the first `cmake --preset x86` fetches it
+  (and fetches it again when its pin changes). Jolt Physics 5.6.0 is there (target `Jolt`: upstream's 32-bit SSE2
+  configuration, without the GPU compute back ends, the profiler, the debug renderer and object streams); a mod links
+  it and gets its definitions with it:
+
+  ```cmake
+  target_link_libraries(mod_my_mod PRIVATE Jolt)
+  ```
+
+  It is a static library: Jolt lives inside your DLL, its globals too, so each load sets them up and each unload
+  takes them down (`JPH::RegisterDefaultAllocator`, `Factory::sInstance`, `RegisterTypes` in `mml_mod_load`;
+  `UnregisterTypes` and the factory deleted in `mml_mod_unload`). Call `JPH::VerifyJoltVersionID()` once: it catches
+  headers compiled with other definitions than the library. Jolt is built without exceptions and RTTI (its choice);
+  your mod keeps its own. Another library: pin it in `deps.py`, add it to `CMakeLists.txt` the same way (its own
+  CMake when it has one, `add_subdirectory` with its options set), with a line in `third_party/README.md`.
+- **Shaders** are compiled in your mod's build, an option of `mml_add_mod`:
+
+  ```cmake
+  mml_add_mod(my_mod ${CMAKE_SOURCE_DIR}/mods/my_mod mods/my_mod/my_mod.cpp
+      SHADERS fx.hlsl:VsMain:vs_5_0 fx.hlsl:PsMain:ps_5_0 fx.hlsl:CsBlur:cs_5_0:kBlurCs)
+  ```
+
+  Each `<file>:<entry>:<profile>[:<name>]` (the file relative to the mod's folder) becomes a header
+  `shaders/<name>.h` (the entry's name by default) holding `const BYTE k<name>[]` (dxc's: `const unsigned char`):
+  include `<windows.h>`, then
+  `#include "shaders/VsMain.h"`, and give `kVsMain, sizeof kVsMain` to `CreateVertexShader`. Shader model 5 and lower
+  (Direct3D 9 to 11) go through the Windows SDK's `fxc`, 6 and up (Direct3D 12) through its `dxc`; optimised, a
+  warning fails the build, an `.hlsli` beside the file compiles it again when it changes. The bytecode is in your
+  DLL, so a shader's change is one build and one `deploy` away.
+- **A Direct3D 11 device of your own** (until the loader's graphics bridge gives one shared device beside the game's:
+  `docs/ROADMAP.md`, Tier 1, item 3): make it in `mml_mod_load` (`D3D11CreateDevice`; WARP when the hardware refuses),
+  use it in `MML_EVENT_FRAME`, release it in `mml_mod_unload`: `ClearState`, `Flush`, every object made from it, the
+  context, the device last. The count the device's last `Release` returns must be 0 (`boxes` logs it and tells the
+  next load): a reference left keeps the device and its memory in the process after your DLL is gone. Two things that
+  cost time:
+  - a device with no swap chain has no `Present` to send its commands: `Flush` once a frame, or a read-back that does
+    not wait (`D3D11_MAP_FLAG_DO_NOT_WAIT`) finds them never done;
+  - `GetDeviceRemovedReason` every frame: a device can be lost (a driver reset, a hung GPU); release everything and
+    make it again later, not in every frame.
+- **Measured in the 1.2 lab** (2026-10-15, `boxes`: 48 Jolt bodies on 2 job threads, a 256x256 picture drawn and its
+  pixels counted every frame): 20 reloads with frames between them and 100 more in a row (`mod.reload {"times":
+  100}`), 143 devices made: each drew after its reload, none lost, every one released to its last reference, 0.0 MB
+  of address space, 0 handles and 0 threads lost a reload. A reload with a device takes about 125 ms (the device 25
+  ms of it). In the stand-in game (no game holding Direct3D) each unload takes `d3d11.dll` and the driver out of the
+  process again, and NVIDIA's driver keeps a section and a mutex of each device it made (2 handles a device; WARP
+  none): a driver's own, not the mod's. mafia-ragdoll lost its device after 22 reloads of its core in one game
+  (removed after a 671 ms frame, then no address space left for a thread's stack; its core leaked about 1 MB of
+  address space a reload; what each reload left was never measured there): the measure is the address space, and a
+  device made and given back as above costs none.
+
 ## 4. A complete example
 
 `mods/examples/telemetry/telemetry.cpp`: a speed, gear and lap-time overlay between two checkpoints, a hotkey that
@@ -341,6 +396,14 @@ box and a switch that change settings, Back). It uses each part above once, in 3
 where. In the freeride it works as it is:
 `input {"steps": [{"action": "Accelerate", "ms": 5000}], "screenshot": true}` drives the taxi through its two
 default checkpoints.
+
+`mods/examples/boxes/boxes.cpp`: a heavy mod. A pile of boxes falls onto a floor and a plank in a Jolt world of the
+mod's own (pinned, built with the loader, 2 job threads); a Direct3D 11 device draws them every frame with the mod's
+HLSL (`boxes.hlsl`, compiled by its build) and counts the pixels on the GPU; the overlay draws the pile from the side
+with the game's 2D lines. The world goes on across a reload (its bodies in `state_put`), the device is made anew
+each load and given back whole. `call boxes.status` (the world, the device, the counts across loads),
+`boxes.drop` (or F10), `boxes.snapshot` (the GPU's picture as a BMP in the data folder); `mod.reload {"id": "boxes",
+"times": 20}` measures it.
 
 `mods/examples/fps_unlock/fps_unlock.cpp`: a mod that changes the game itself. It takes the game's 62.5 fps limit
 away (MafiaD3D11's A132: two places in LS3D, the addresses from `game_build.h`, the bytes checked before they are
@@ -366,4 +429,5 @@ high-resolution timer if asked, and shows the frame rate and the game's clock st
 
 ## Not there yet
 
-LuaJIT script mods, a Rust crate, 64-bit sidecar mods: `docs/ROADMAP.md`.
+LuaJIT script mods, a Rust crate, 64-bit sidecar mods, a Direct3D 11 device shared with the game's frame (the
+graphics bridge): `docs/ROADMAP.md`.

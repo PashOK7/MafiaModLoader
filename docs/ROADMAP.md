@@ -191,6 +191,17 @@ What is done, what comes next and later, and what is known to be missing or wron
   whole one (1237) back into a crashed taxi (1437, engine 86 %: back to 1237, 100 %), the state into another taxi of
   the model, a Bolt-Thrower refused.
 
+- **A heavy mod's lifecycle, the build's part** (2026-10-15; "Next" item 1): third-party libraries for mods pinned
+  by `tools/deps.py` and built with the loader (Jolt Physics 5.6.0 first: target `Jolt`, x86 SSE2, `/MT`; fetched by
+  the first configure, again when its pin changes), shaders compiled in a mod's build (`mml_add_mod(... SHADERS
+  <file>:<entry>:<profile>)`: the Windows SDK's fxc for shader model 5 and lower, dxc for 6; a header of bytecode a
+  shader), and the first heavy example, `mods/examples/boxes` (a Jolt world on its own job threads, a Direct3D 11
+  device drawing it with the mod's HLSL and counting its pixels on the GPU, its world kept across reloads). Built from a
+  clean copy of the repository (`cmake --preset x86`, `cmake --build --preset x86-release`); offline tests
+  (`boxes_tests`: the world, the device, a BMP of its picture, reloads, 20 in a row, settings); in the 1.2 lab 20
+  reloads with frames between and 100 in a row: 143 devices made, each drew, none lost, each released to its last
+  reference, 0.0 MB, 0 handles, 0 threads lost a reload (`docs/MODDING.md`, "A heavy mod's build").
+
 ## Next, by importance
 
 **The goal** (the owner, 2026-10-14): a toolkit strong enough for whatever mod a user can think of, written by another
@@ -205,11 +216,8 @@ V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselv
 
 ### Tier 1: foundations every large mod stands on
 
-1. **A heavy mod's lifecycle, the build's part** (all; small). The loader's part is done (a mod's libraries, threads
-   left in its code, leaks measured: "Done"). Left: third-party libraries for mods pinned by `tools/deps.py` (Jolt
-   first, built for x86) and shaders compiled in a mod's build (fxc or dxc in CMake, a `mml_add_mod` option); then
-   the first heavy example mod using both, reloaded 20 times in the lab (mafia-ragdoll lost its Direct3D 11 device
-   after about 20 reloads: measure whether a mod's device survives).
+1. *(Done 2026-10-15: a heavy mod's lifecycle, the loader's part and the build's part; see "Done". The number is
+   kept so the items' numbers stay.)*
 2. **A mod's own files in the game** (F K P C S W, any mod with new content). Models (`.4ds`), textures, animations
    (`.5ds`), sounds, tables and menu definitions shipped in the mod's folder and opened by the game by name, as if
    they were in its archives (the archives' open in `rw_data.dll`, `dtaOpen`, answered from the mods' folders first);
@@ -393,6 +401,16 @@ merged, sorted by importance):
   library a mod loads later by a bare name is not searched in its load's folder (load by the full path). Objects of
   the game that point into a mod's code (a callback it gave the game without the loader) are not found. The
   `since_load` numbers are the whole process's over the load's life: the game's own changes are in them.
+
+- **A heavy mod's build** (CMakeLists.txt, tools/deps.py, mods/examples/boxes): only Jolt is pinned for mods (PhysX
+  2.8.4, OpenVR and the like when a mod needs them). The first configure needs the network (a library already in
+  `third_party/_deps` is not fetched again). Jolt is built as a part of the loader's build in its configuration
+  (RelWithDebInfo: CMake's `/O2 /Ob1`, not Jolt's own Release flags); its unit tests are not built here (577 pass on
+  the same source and options in mafia-ragdoll's Release build); the x86-debug preset was not built. A shader's
+  `#include` of a file outside its own folder does not compile it again when that file changes (only `.hlsli` beside
+  it are watched). A mod's own Direct3D 11 device is on the default adapter, not looked up as the game's (two GPUs:
+  not tried); measured on one NVIDIA RTX 3070 and WARP (the stand-in game), not on AMD or Intel. `boxes` needs no
+  game address and was not run in the 1.0 lab.
 
 - **The script machine** (docs/SCRIPTS.md): programs step only in the mission's tick (not in the menus, not while
   paused). Of the ~390 commands a handful were run (`let`, `if`, `goto`, `wait`, `findactor`, `findnearactor`,

@@ -1,6 +1,7 @@
 """deps.py: download the pinned third-party archives, check their SHA-256, unpack them into third_party/_deps/.
 
     python tools/deps.py            # everything missing
+    python tools/deps.py jolt       # only these (the build asks for its libraries so: CMakeLists.txt)
     python tools/deps.py --force    # again, from scratch
 
 Only standard library. A hash that does not match stops everything: the archive is not used.
@@ -22,12 +23,18 @@ PINNED = {
     # LuaJIT, branch v2.1 at commit 634daf2453559fd5e0ec282f3b7aedaa09e9f344 (2026-10-13), MIT
     'luajit': ('https://github.com/LuaJIT/LuaJIT/archive/634daf2453559fd5e0ec282f3b7aedaa09e9f344.zip',
                '48f9fabc6c58d610044df1b460083fbf5842f642e3a7c367545990f94da4d002'),
+    # Jolt Physics v5.6.0, commit e77f175595e64cb44218cc9d9d56fc365ad0e36a (2026-07-11), MIT: the rigid bodies for
+    # mods, built for x86 by CMakeLists.txt (target Jolt). The archive's 1250 files were compared with a clone of
+    # the tag (mafia-ragdoll's, whose 577 unit tests pass on the 32-bit build): all identical.
+    'jolt': ('https://github.com/jrouwe/JoltPhysics/archive/e77f175595e64cb44218cc9d9d56fc365ad0e36a.zip',
+             'ff13202d21a7a09efea72534a0a041cd4971cb9ac66b53262275881387cc6871'),
 }
 
 
 def fetch(name, url, sha, force):
     dest = os.path.join(DEPS, name)
-    if os.path.isdir(dest) and not force:
+    mark = os.path.join(dest, '.pinned')   # the hash it was unpacked from: a changed pin or a broken unpack is fetched anew
+    if not force and os.path.exists(mark) and open(mark).read().strip() == sha:
         print('%-7s present' % name)
         return
     os.makedirs(DEPS, exist_ok=True)
@@ -50,12 +57,19 @@ def fetch(name, url, sha, force):
         for e in os.listdir(top):
             shutil.move(os.path.join(top, e), dest)
         os.rmdir(top)
+    with open(mark, 'w') as f:
+        f.write(sha + '\n')
     print('%-7s ok (sha256 %s)' % (name, sha[:16]))
 
 
 def main():
     force = '--force' in sys.argv
-    for name, (url, sha) in PINNED.items():
+    names = [a for a in sys.argv[1:] if not a.startswith('--')] or list(PINNED)
+    unknown = [n for n in names if n not in PINNED]
+    if unknown:
+        sys.exit('not pinned: %s (pinned: %s)' % (', '.join(unknown), ', '.join(PINNED)))
+    for name in names:
+        url, sha = PINNED[name]
         fetch(name, url, sha, force)
 
 

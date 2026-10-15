@@ -641,3 +641,44 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - A doubt of a tool, settled: the probe's 45-degree grind disagreed between steps by up to a second; the real game
   there does not climb at any rate (the probe's fall is simpler than the game's); the real game is the measure.
 
+## 2026-10-15: a heavy mod's build: Jolt pinned, shaders in a mod's build, the `boxes` example
+
+- **The task** (the roadmap's "Next" item 1, the build's part): libraries for mods pinned by `tools/deps.py`, Jolt
+  first, built for x86; shaders compiled in a mod's build; a heavy example using both, reloaded 20 times in the lab,
+  measuring whether a mod's Direct3D 11 device survives (mafia-ragdoll lost its device after 22 reloads).
+- **Jolt**: v5.6.0, the commit mafia-ragdoll uses. The GitHub archive's 1250 files were compared with that clone (a
+  clean checkout of the tag): all identical; its SHA-256 pinned. `deps.py` takes names (`deps.py jolt`) and keeps the
+  hash it unpacked from (`.pinned`), so a changed pin or a broken unpack is fetched again; the configure runs it for
+  Jolt (and again when `deps.py` changes). Jolt's own CMake as a subdirectory (it is written for that: only the
+  library, its definitions on the target), its options set before: SSE2 only, no GPU compute back ends, profiler,
+  debug renderer, object streams, `/WX` or LTO; `/Zc:__cplusplus` given to its users.
+- **Shaders**: `mml_add_mod(... SHADERS <file>:<entry>:<profile>[:<name>])`, fxc for shader model 5 and lower, dxc for
+  6, both found in the Windows SDK the build targets (its root read from the registry; `CMAKE_WINDOWS_KITS_10_DIR`
+  is not set for the Visual Studio generator). A header of bytecode a shader, in the mod's own include folder.
+- **`mods/examples/boxes`**: 48 boxes fall onto a floor and a plank in a Jolt world on 2 job threads; a Direct3D 11
+  device draws the world every frame with the mod's HLSL (instanced, a structured buffer of the bodies' matrices) into
+  a 256x256 target, and a compute shader counts the pixels drawn, read back two frames later without waiting; the
+  overlay draws the pile from the side; `boxes.snapshot` writes the picture as a BMP (looked at: the pile, the floor,
+  the plank). Its world is kept across reloads with `state_put`.
+- **Found on the way**: the counter was never read back in the stand-in game until a snapshot came: a device with no
+  swap chain has no Present, its commands wait in the driver's buffer and a `DO_NOT_WAIT` map never sees them done;
+  a `Flush` a frame. The first picture was mirrored and then upside down: Jolt is right-handed, the projection
+  left-handed; the camera's right is forward x up there.
+- **Measured, the stand-in game** (`tests/run_tests.py` `boxes_tests`, and scratch probes that read the harness's
+  threads by the module they began in, its modules and handles from outside): each unload takes `d3d11.dll`, `dxgi`
+  and NVIDIA's driver (16 threads) out of the process; Jolt's 2 threads end with the pool's destruction; a reload
+  loses 0 MB and 0 threads, and 2 handles: NVIDIA's driver keeps a section and a mutex of each device made (2 a device
+  made and released inside one load, d3d11 staying loaded; WARP 0). The first unload's `since_load` showed -118 MB,
+  +123 handles, +2 threads: that load's life held every other test (the `heavy` test's leaks on purpose) and the
+  process's first device; not the host's fault, the test reads the next load's life instead.
+- **Measured, the 1.2 lab** (the running freeride, 250 fps with fps_unlock): `mod.reload {"times": 20}`: 0.0 MB,
+  0 handles, 0 threads a reload; 20 reloads with half a second of frames between, each followed by `boxes.status`:
+  every device drew (about 137 frames, 53.4 % of its pixels), none lost, every one released to its last reference,
+  the game's threads 37 -> 37, handles 632 -> 632, its modules the same; then `times: 100` (0.0 MB, -0.04 handles,
+  0 threads a reload): 143 devices in one game, the last drawing. A reload with a device takes about 125 ms, the
+  device 25 ms (the game keeps Direct3D's DLLs and NVIDIA's 16 threads loaded, so they are not made again). F10 and
+  `boxes.drop` drop the pile again. A `since_load` of +2 threads seen once was the system's thread pool (its workers
+  begin in ntdll and come and go).
+- So a mod's own device survives reloads when it is released whole; what ends a 32-bit game is address space, and
+  `mod.reload {"times"}` measures it. The device shared by every mod is still the graphics bridge (item 3).
+

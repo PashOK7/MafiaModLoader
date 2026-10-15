@@ -1,0 +1,11 @@
+{
+  // The defaults of the boxes example's settings (a deploy replaces this file: change them with
+  // `config.set {"mod": "boxes", "key": "boxes", "value": 100}` or in <game>\mml\data\boxes\config.json).
+  "boxes": 48,            // how many fall (1..400); a change drops them anew
+  "threads": 2,           // Jolt's job threads beside the game thread (0..8; 0: the game thread steps alone)
+  "gpu": true,            // the Direct3D 11 device: the boxes drawn by the mod's shaders, their pixels counted
+  "gpu_size": 256,        // the side of its picture, in pixels
+  "warp": false,          // the software device (WARP) instead of the GPU (it is also the fallback)
+  "hotkey_drop": "F10",   // the boxes dropped again
+  "overlay": { "show": true, "x": 20, "y": 150, "scale": 1.0 }   // the pile seen from the side, in 800x600 units
+}

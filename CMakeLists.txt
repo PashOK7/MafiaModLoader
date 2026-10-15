@@ -33,10 +33,57 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     target_include_directories(MafiaModLoader PRIVATE third_party/json host)
     target_link_libraries(MafiaModLoader PRIVATE minhook mml_sdk ws2_32 psapi user32)
 
-    # mml_add_mod(<id> <dir> <sources...>): a native mod: <out>/mml/mods/<id>/<id>.dll, its mod.json and, when it
-    # has one, its config.json (the defaults of its settings), both from <dir>
+    # ---- third-party libraries for mods: pinned by tools/deps.py (downloaded at the first configure, hash checked),
+    # built here for x86 with the mods' runtime (/MT). A mod links the target: target_link_libraries(mod_<id> PRIVATE Jolt)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tools/deps.py)   # a new pin: fetched
+    function(mml_dep name)
+        execute_process(COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/deps.py ${name} RESULT_VARIABLE rc)
+        if(NOT rc EQUAL 0)
+            message(FATAL_ERROR "tools/deps.py ${name} failed: the library is not there")
+        endif()
+    endfunction()
+
+    # Jolt Physics (rigid bodies, joints, ragdolls): upstream's own CMake, as a part of this build. Its 32-bit
+    # configuration (SSE2: any x86 CPU), without what mods do not need (the GPU compute back ends, the profiler, the
+    # debug renderer, object streams). Its definitions reach a mod through the target (a mismatch is caught by
+    # JPH::VerifyJoltVersionID()). Jolt is compiled without exceptions and RTTI, its own choice; a mod keeps its own.
+    option(MML_JOLT "Jolt Physics for mods (third_party/_deps/jolt)" ON)
+    if(MML_JOLT)
+        mml_dep(jolt)
+        foreach(o USE_SSE4_1 USE_SSE4_2 USE_AVX USE_AVX2 USE_AVX512 USE_LZCNT USE_TZCNT USE_F16C USE_FMADD
+                  JPH_USE_DX12 JPH_USE_VK JPH_USE_MTL INTERPROCEDURAL_OPTIMIZATION FLOATING_POINT_EXCEPTIONS_ENABLED
+                  PROFILER_IN_DEBUG_AND_RELEASE DEBUG_RENDERER_IN_DEBUG_AND_RELEASE ENABLE_OBJECT_STREAM ENABLE_INSTALL
+                  ENABLE_ALL_WARNINGS)
+            set(${o} OFF)
+        endforeach()
+        set(USE_STATIC_MSVC_RUNTIME_LIBRARY ON)
+        add_subdirectory(${CMAKE_SOURCE_DIR}/third_party/_deps/jolt/Build ${CMAKE_BINARY_DIR}/jolt EXCLUDE_FROM_ALL)
+        target_compile_options(Jolt PUBLIC /Zc:__cplusplus)   # (Jolt's headers read __cplusplus)
+    endif()
+
+    # ---- shaders compiled in a mod's build: fxc (shader model 5 and lower: Direct3D 9 to 11) or dxc (6 and up:
+    # Direct3D 12), both from the Windows SDK this build uses
+    cmake_host_system_information(RESULT kits QUERY WINDOWS_REGISTRY
+        "HKLM/SOFTWARE/Microsoft/Windows Kits/Installed Roots" VALUE KitsRoot10 VIEW BOTH)
+    if(NOT kits)
+        set(kits "C:/Program Files (x86)/Windows Kits/10")
+    endif()
+    set(MML_SDK_BIN "${kits}/bin/${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}/x64")
+    find_program(MML_FXC fxc HINTS ${MML_SDK_BIN} NO_DEFAULT_PATH)
+    find_program(MML_FXC fxc)
+    find_program(MML_DXC dxc HINTS ${MML_SDK_BIN} NO_DEFAULT_PATH)
+    find_program(MML_DXC dxc)
+
+    # mml_add_mod(<id> <dir> <sources...> [SHADERS <file>:<entry>:<profile>[:<name>] ...]): a native mod:
+    # <out>/mml/mods/<id>/<id>.dll, its mod.json and, when it has one, its config.json (the defaults of its settings),
+    # both from <dir>. SHADERS: each entry point compiled at build time (optimised, warnings as errors) into a header
+    # `shaders/<name>.h` holding the bytecode as `k<name>[]` (fxc: const BYTE, so <windows.h> first; dxc: const
+    # unsigned char) (<name>: the entry's name by default);
+    # <file> is relative to <dir>, and changes to it or to any .hlsli beside it compile it again.
     function(mml_add_mod id dir)
-        add_library(mod_${id} SHARED ${ARGN})
+        cmake_parse_arguments(PARSE_ARGV 2 arg "" "" "SHADERS")
+        add_library(mod_${id} SHARED ${arg_UNPARSED_ARGUMENTS})
         set(dest ${MML_OUT}/mml/mods/${id})
         set_target_properties(mod_${id} PROPERTIES OUTPUT_NAME ${id} RUNTIME_OUTPUT_DIRECTORY ${dest}/$<0:>)
         target_link_libraries(mod_${id} PRIVATE mml_sdk)
@@ -46,6 +93,44 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
             add_custom_command(TARGET mod_${id} POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different ${dir}/config.json ${dest}/config.json)
         endif()
+        if(arg_SHADERS)
+            set(gen ${CMAKE_BINARY_DIR}/shaders/${id})
+            set(headers)
+            foreach(spec ${arg_SHADERS})
+                string(REPLACE ":" ";" parts "${spec}")
+                list(LENGTH parts n)
+                if(n LESS 3)
+                    message(FATAL_ERROR "mml_add_mod(${id}) SHADERS ${spec}: <file>:<entry>:<profile>[:<name>]")
+                endif()
+                list(GET parts 0 file)
+                list(GET parts 1 entry)
+                list(GET parts 2 profile)
+                set(name ${entry})
+                if(n GREATER 3)
+                    list(GET parts 3 name)
+                endif()
+                cmake_path(ABSOLUTE_PATH file BASE_DIRECTORY ${dir} NORMALIZE OUTPUT_VARIABLE src)
+                cmake_path(GET src PARENT_PATH srcdir)
+                file(GLOB includes ${srcdir}/*.hlsli)
+                set(out ${gen}/shaders/${name}.h)
+                if(profile MATCHES "_6_")
+                    if(NOT MML_DXC)
+                        message(FATAL_ERROR "mml_add_mod(${id}): ${profile} needs dxc (the Windows SDK's), not found")
+                    endif()
+                    set(cmd ${MML_DXC} -nologo -O3 -WX -T ${profile} -E ${entry} -I ${srcdir} -Vn k${name} -Fh ${out} ${src})
+                else()
+                    if(NOT MML_FXC)
+                        message(FATAL_ERROR "mml_add_mod(${id}): ${profile} needs fxc (the Windows SDK's), not found")
+                    endif()
+                    set(cmd ${MML_FXC} /nologo /O3 /WX /T ${profile} /E ${entry} /I ${srcdir} /Vn k${name} /Fh ${out} ${src})
+                endif()
+                add_custom_command(OUTPUT ${out} COMMAND ${CMAKE_COMMAND} -E make_directory ${gen}/shaders
+                    COMMAND ${cmd} DEPENDS ${src} ${includes} COMMENT "${id}: ${file} ${entry} (${profile})" VERBATIM)
+                list(APPEND headers ${out})
+            endforeach()
+            target_sources(mod_${id} PRIVATE ${headers})
+            target_include_directories(mod_${id} PRIVATE ${gen})
+        endif()
     endfunction()
 
     mml_add_mod(core ${CMAKE_SOURCE_DIR}/mods/core mods/core/core.cpp)
@@ -53,6 +138,11 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     mml_add_mod(hello_c ${CMAKE_SOURCE_DIR}/mods/examples/hello_c mods/examples/hello_c/hello.c)
     mml_add_mod(telemetry ${CMAKE_SOURCE_DIR}/mods/examples/telemetry mods/examples/telemetry/telemetry.cpp)
     mml_add_mod(fps_unlock ${CMAKE_SOURCE_DIR}/mods/examples/fps_unlock mods/examples/fps_unlock/fps_unlock.cpp)
+    if(MML_JOLT)   # a heavy mod: a pinned library, its own shaders, a Direct3D 11 device
+        mml_add_mod(boxes ${CMAKE_SOURCE_DIR}/mods/examples/boxes mods/examples/boxes/boxes.cpp
+            SHADERS boxes.hlsl:VsBox:vs_5_0 boxes.hlsl:PsBox:ps_5_0 boxes.hlsl:CsCoverage:cs_5_0)
+        target_link_libraries(mod_boxes PRIVATE Jolt d3d11)
+    endif()
     # (tools/new_mod.py adds a mod's line above this one)
 
     # ---- offline tests: a stand-in game that loads the loader and pumps its frames (tests/run_tests.py)

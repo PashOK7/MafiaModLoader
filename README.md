@@ -21,7 +21,7 @@ missing.
 | Part | What it is |
 |---|---|
 | `MafiaModLoader.asi` (`host/`) | A 32-bit DLL loaded into the game by [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader). It is never unloaded: it turns the game's functions into events, keeps the hook chains mods share, loads the mods, isolates their faults, writes crash dumps, runs the bridge (TCP on 127.0.0.1) and the start. |
-| Mods (`mml\mods\<id>\`) | DLLs with a `mod.json`, written against one C header (`sdk/include/mml/mml.h`): C, C++, Rust, anything with a C ABI. Each is rebuilt and reloaded while the game runs. `core` gives the game's live state (player, car, people, actors, frames); `mods/examples/telemetry` (a speed and lap-time overlay) is the complete example of a mod; `mods/examples/fps_unlock` frees the frame rate (the game's 62.5 fps limit taken away, what breaks above it fixed). |
+| Mods (`mml\mods\<id>\`) | DLLs with a `mod.json`, written against one C header (`sdk/include/mml/mml.h`): C, C++, Rust, anything with a C ABI. Each is rebuilt and reloaded while the game runs. `core` gives the game's live state (player, car, people, actors, frames); `mods/examples/telemetry` (a speed and lap-time overlay) is the complete example of a mod; `mods/examples/fps_unlock` frees the frame rate (the game's 62.5 fps limit taken away, what breaks above it fixed); `mods/examples/boxes` is a heavy mod (Jolt Physics, a Direct3D 11 device of its own, shaders compiled in its build) that hot-reloads cleanly. |
 | `mml-mcp.exe` (`mcp/`) | The MCP server (Rust, 64-bit), outside the game: it launches and closes the game, talks to the bridge, reads the log and the crash dumps, deploys builds, and answers questions about the game's code from the knowledge base. |
 | `knowledge/` | What is known about the game's code: every function of the 1.2 `Game.exe` and `LS3DF.dll` (names, classes, signatures, calls), our own names, notes. Imported from the MafiaReverse decompiles (facts only; the code itself is never committed). |
 
@@ -30,7 +30,7 @@ missing.
 Needs Windows, Visual Studio 2022 (C++ x86 tools), CMake 3.24+, Rust (stable), Python 3.10+, a Mafia 1.2 install.
 
 ```bat
-python tools/deps.py                                  :: pinned downloads: Ultimate ASI Loader, LuaJIT (hashes checked)
+python tools/deps.py                                  :: pinned downloads: Ultimate ASI Loader, LuaJIT, Jolt (hashes checked; the build fetches Jolt by itself)
 copy mml.config.example.json mml.config.json          :: then set game_dir (and reverse_dir, if you have MafiaReverse)
 cmake --preset x86
 cmake --build --preset x86-release                    :: the loader and the mods
@@ -76,6 +76,6 @@ python tools/start.py freeride --profile 4            :: the game, straight into
 
 ## Third-party
 
-MinHook 1.3.4 and nlohmann/json 3.12.0 (vendored, `third_party/README.md`), Ultimate ASI Loader 9.7.4 and LuaJIT 2.1
-(downloaded and hash-checked by `tools/deps.py`), Rust crates (`mcp/Cargo.lock`). No game files are in the
+MinHook 1.3.4 and nlohmann/json 3.12.0 (vendored, `third_party/README.md`), Ultimate ASI Loader 9.7.4, LuaJIT 2.1 and
+Jolt Physics 5.6.0 (downloaded and hash-checked by `tools/deps.py`), Rust crates (`mcp/Cargo.lock`). No game files are in the
 repository.

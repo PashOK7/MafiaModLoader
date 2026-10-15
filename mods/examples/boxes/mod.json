@@ -1,0 +1,10 @@
+{
+  "id": "boxes",
+  "name": "Boxes: a heavy mod's example (Jolt Physics, a Direct3D 11 device, the mod's own shaders)",
+  "version": "0.1.0",
+  "type": "native",
+  "entry": "boxes.dll",
+  "enabled": true,
+  "load_order": 100,
+  "depends": []
+}

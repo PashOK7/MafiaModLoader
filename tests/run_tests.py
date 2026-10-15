@@ -1,12 +1,13 @@
 """run_tests.py: the loader's offline tests, through the real bridge (Python standard library only).
 
 Starts build/x86/harness/mml_harness.exe (a stand-in game that loads MafiaModLoader.asi and pumps its frames), with
-the test mods (hook_a, hook_b, kit, heavy) and the shipped ones (core, hello_c) in its mml/mods, and checks over the bridge:
+the test mods (hook_a, hook_b, kit, heavy) and the shipped ones (core, hello_c, boxes) in its mml/mods, and checks over the bridge:
 hello and the token, ping, the mods' list, hook chains in every load and unload order, services, memory read and
 write (a write-protected page), a mod faulting in a command (unloaded, the game goes on), state kept across a hot
 reload, the core mod with no game, the log; the mod author's kit (kit_tests: the drawing queue, keys and
 hotkeys through injected keys, a mod's settings changed by the host, by the bridge and on disk, its data folder);
-and a heavy mod's lifecycle (heavy_tests: its libraries in each load's folder, threads left in its code, leaks).
+and a heavy mod's lifecycle (heavy_tests: its libraries in each load's folder, threads left in its code, leaks; boxes_tests:
+the heavy example, Jolt and its own shaders on a Direct3D 11 device, reloaded 20 times).
 Exit code 0: all passed.
 
     cmake --build --preset x86-release && python tests/run_tests.py
@@ -299,10 +300,86 @@ def heavy_tests(b):
     check('heavy: the library back: it loads', r['ok'] and b.call('heavy.status')['result']['lib'] == 4242, r)
 
 
+def boxes_tests(b):
+    """The heavy example (mods/examples/boxes): a pinned library (Jolt) and shaders built with it, a Direct3D 11 device
+    of its own (the GPU, or WARP where there is none), all of it given back at each reload."""
+    status = lambda: b.call('boxes.status')['result']
+    r = b.call('mod.load', {'id': 'boxes'})
+    check('boxes: loaded again (its world kept from the first load)', r['ok'], r)
+    time.sleep(0.3)
+    s = status()
+    check('boxes: Jolt\'s world holds its 48 boxes and steps them with its job threads',
+          s['boxes'] == 48 and s['threads'] == 2 and s['steps'] > 0, s)
+    check('boxes: the Direct3D 11 device was made and runs the mod\'s shaders (frames drawn, read back)',
+          s['gpu']['device'] and s['gpu']['frames'] > 0 and s['gpu']['removed_reason'] == '0x00000000', s)
+    time.sleep(0.5)
+    s2 = status()
+    check('boxes: the boxes fall (awake, steps go on) and the GPU sees them (pixels covered, counted by its compute shader)',
+          s2['steps'] > s['steps'] and s2['awake'] > 0 and s2['gpu']['read_frame'] > 0 and s2['gpu']['covered_px'] > 0, s2)
+
+    r = b.call('boxes.snapshot')
+    path = r['result']['path'] if r['ok'] else ''
+    data = open(path, 'rb').read() if path and os.path.exists(path) else b''
+    side = int.from_bytes(data[18:22], 'little') if len(data) > 54 else 0
+    pixels = data[54:]
+    background = bytes(pixels[0:4]) if pixels else b''
+    lit = sum(1 for i in range(0, len(pixels), 4) if pixels[i:i + 4] != background)
+    check('boxes.snapshot: the GPU\'s picture as a BMP in the data folder, the boxes on it',
+          r['ok'] and data[:2] == b'BM' and side == 256 and lit > 500, (r, side, lit))
+
+    # a reload: the device released to its last reference, the job threads joined, the world kept
+    before = status()
+    r = b.call('mod.reload', {'id': 'boxes'})
+    u = r['result'].get('last_unload', {}) if r['ok'] else {}
+    s = status()
+    check('boxes: a reload keeps nothing mapped, no library of its folder stays loaded',
+          r['ok'] and 'kept' not in u and 'stays_loaded' not in u, r)
+    check('boxes: ... the world goes on from its bodies (restored, the same pile), a new device made, the old one released whole',
+          s['restored'] and s['boxes'] == before['boxes'] and s['drops'] == before['drops'] and s['load'] == before['load'] + 1
+          and s['history']['devices_made'] == before['history']['devices_made'] + 1 and s['history']['last_unload_refs_left'] == 0
+          and s['gpu']['device'], (before, s))
+    # (that load's life held the tests above, and the harness's start the process's first device: their numbers are
+    # theirs. The next load lives only for this reload: its own cost. A GPU's driver may keep a little per device:
+    # NVIDIA's a section and a mutex, measured; WARP nothing)
+    time.sleep(0.5)
+    r = b.call('mod.reload', {'id': 'boxes'})
+    since = r['result']['last_unload'].get('since_load', {}) if r['ok'] else {}
+    check('boxes: one load\'s life: no thread, no address space, at most a driver\'s few handles not given back',
+          r['ok'] and since.get('threads') == 0 and since.get('free_mb', -9) > -1 and since.get('handles', 9) <= 4, r)
+    s = status()
+
+    r = b.call('mod.reload', {'id': 'boxes', 'times': 20, 'timeout_ms': 120000})
+    res = r.get('result', {})
+    per = res.get('per_reload', {})
+    check('boxes: 20 reloads in a row: no thread, no address space and few handles lost a reload',
+          r['ok'] and len(res['rounds']) == 20 and per['threads'] == 0 and per['free_mb'] > -1 and per['handles'] <= 4, r)
+    time.sleep(0.3)
+    s2 = status()
+    check('boxes: ... after them the device is the 23rd and it draws (frames, pixels), none lost',
+          s2['history']['devices_made'] == s['history']['devices_made'] + 20 and s2['history']['devices_lost'] == 0
+          and s2['gpu']['device'] and s2['gpu']['frames'] > 0 and s2['gpu']['covered_px'] > 0
+          and s2['history']['last_unload_refs_left'] == 0, s2)
+
+    # settings: the pool made again with another count, the device switched off and on
+    b.call('config.set', {'mod': 'boxes', 'key': 'threads', 'value': 0})
+    time.sleep(0.4)
+    s3 = status()
+    time.sleep(0.3)
+    check('boxes: threads 0: the game thread steps alone', s3['threads'] == 0 and status()['steps'] > s3['steps'], s3)
+    b.call('config.set', {'mod': 'boxes', 'key': 'gpu', 'value': False})
+    time.sleep(0.3)
+    check('boxes: gpu false: the device released', not status()['gpu']['device'], status())
+    b.call('config.set', {'mod': 'boxes', 'key': 'gpu', 'value': None})
+    b.call('config.set', {'mod': 'boxes', 'key': 'threads', 'value': None})
+    time.sleep(0.4)
+    s4 = status()
+    check('boxes: back to the defaults: a device again, two threads', s4['gpu']['device'] and s4['threads'] == 2, s4)
+
+
 def main():
     # the harness's game folder: the loader, the test mods and the shipped ones
     mods = os.path.join(HARNESS, 'mml', 'mods')
-    for mod in ('core', 'hello_c'):
+    for mod in ('core', 'hello_c', 'boxes'):
         shutil.rmtree(os.path.join(mods, mod), ignore_errors=True)
         shutil.copytree(os.path.join(OUT, 'mml', 'mods', mod), os.path.join(mods, mod))
     for stale in ('bridge.json',):
@@ -326,8 +403,9 @@ def main():
         time.sleep(0.2)
         r = b.call('mods.list')
         loaded = {m['id']: m['loaded'] for m in r['result']}
-        check('mods loaded: core, hello_c, hook_a, hook_b, kit, heavy',
-              all(loaded.get(m) for m in ('core', 'hello_c', 'hook_a', 'hook_b', 'kit', 'heavy')), loaded)
+        check('mods loaded: core, hello_c, hook_a, hook_b, kit, heavy, boxes',
+              all(loaded.get(m) for m in ('core', 'hello_c', 'hook_a', 'hook_b', 'kit', 'heavy', 'boxes')), loaded)
+        b.call('mod.unload', {'id': 'boxes'})   # (its overlay's 500 items a frame would count in the kit's; boxes_tests loads it)
 
         add = lambda: b.call('hook_a.call', {'a': 2, 'b': 3})
         r = add()
@@ -418,6 +496,7 @@ def main():
         check('menu.value: says plainly the menus are not known', not r['ok'] and 'not known' in str(r), r)
         kit_tests(b)
         heavy_tests(b)
+        boxes_tests(b)
         r = b.call('nonexistent.method')
         check('an unknown method: an error', not r['ok'])
         tail = '\n'.join(b.call('log.tail', {'lines': 400})['result'])
