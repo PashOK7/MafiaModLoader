@@ -16,6 +16,62 @@ Status: in development, before its first release (2026-10). Everything listed he
 1.0, each part seen in both games before it was called done; [docs/ROADMAP.md](docs/ROADMAP.md) has what is next
 and what is known to be missing.
 
+## What you can do with it
+
+These are the building blocks. A fishing mini-game, a plane or an achievements screen is put together from them.
+Each block is there for a mod (a function in one C header) and, for most, for an agent too, through the MCP server
+without writing a mod at all.
+
+**Drive the game without hands.** Start the game straight into a profile, the freeride or a chapter of the story,
+skipping the logos. Walk, run, turn, shoot, drive and use things through the game's own controls. Click and type
+in its menus. Take screenshots of what the game draws, also while its window is in the background. Close it again.
+
+**Put things into the world and take them out.** Make cars and people of any model the game has, put a person
+into a car's seat, arm them, move them anywhere, remove them. Place any model as a prop: on the ground, or fixed to a
+bone (a bat on the back), a car or another prop. Move, turn, scale, show and hide it. Run the game's own mission
+scripts: every command the real missions use.
+
+**Read and change what is going on.** Get the player, his car (speed, gear, fuel, the whole state saved and put
+back), every person and their skeleton, and the mission. Read and change money, health, weapons and ammo, the
+scene's lights and sun, the rain and the particles. Get told what happens: shots, hits, deaths and who killed whom,
+explosions, cars entered and left, missions loaded.
+
+**Take control.** Read keys and the game's actions (the mouse's movement among them), and add hotkeys. Keep a key or an action away from the
+game so your mod has it alone. Lock the player and move him yourself. Replace a car's physics with your own.
+
+**Let the player do things.** Add zones the player walks or drives into. Add places where the player's Action key
+offers your own choice, in the game's own menu, next to "Get in the car". Add timers that run on the mission's
+clock and stop when the game is paused.
+
+**Change the interface.** Draw text, lines, rectangles and pictures on the screen in the game's own fonts: turned,
+tinted, cut from a sheet. Write lines into the game's console and help line. Put markers on places and people:
+on the screen (at its edge when they are behind you, with the distance), on the radar, and as the compass' target.
+Add items to the game's own menus (the pause menu) and whole pages of your own, built from the game's real buttons,
+lists, sliders and switches. Read and click any menu the game has open.
+
+**Draw in 3D and with shaders.** Draw into the 3D world with the game's own Direct3D device. Run your own
+Direct3D 11 shaders over the frame, with its colour, depth, camera, fog and sun: post effects, water, a world drawn
+anew. Hide the game's own meshes by their texture and draw your own in their place.
+
+**More cameras and viewports.** Move the game camera anywhere, or let a mod drive it every frame. Have the game draw
+its scene again from other cameras: a mirror, a reflection, a security camera, a headset's two eyes. Each view
+comes back as a picture with its depth that you can show anywhere.
+
+**Sound.** Play the game's sounds or your own: flat, or in 3D at a place or on a car, with live volume and pitch.
+Stream music. Pause the city's music.
+
+**Ship your own files.** Put textures, models, sounds and tables in your mod's folder. The game loads them by name
+in place of its own, or as new ones. Nothing in the game's folder is changed.
+
+**Ask the world.** Cast a ray (what is the crosshair on?), sweep a sphere, find the ground under a point, list the
+actors near a place, read the collision shapes.
+
+**Develop fast.** Rebuild a mod and reload it while the game runs, in a second. A mod that crashes is switched off
+and the game goes on; the log says where. Every mod gets its own data folder and settings that an agent can change
+live. Measure what each mod costs per frame. Watch any game function or memory field and see who calls or writes
+it. Look up any of the game's functions in a knowledge base of the game's code. Read crash dumps with names in them.
+Write mods in C, C++, Rust or anything else that speaks C.
+
 ## What a mod gets
 
 One C header, `sdk/include/mml/mml.h`, every function of it in both builds:
