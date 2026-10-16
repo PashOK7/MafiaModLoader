@@ -260,6 +260,13 @@ void ViewsDraw(void *driver, void *scene, RenderFn render);   // (render.cpp) be
 void RenderViewWorld(int handle);         // (render.cpp) MML_EVENT_VIEW_WORLD sent, the device's state kept
 bool ViewMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 int ViewDrawingNow();                     // the scene view LS3D is drawing now (its handle), 0: none
+// the frame's camera overridden (view.cpp): camera_override; camera.state, camera.set, camera.release
+int CameraOverride(MmlMod *mod, MmlViewFn fn, void *user);
+void FrameCameraBegin(void *scene);       // (render.cpp) before the views and the frame's own drawing
+void FrameCameraEnd();                    // ... after the frame's drawing: the game's camera back
+int RenderProject(const float world[3], float screen[3]);   // mml.h camera_project (render.cpp)
+int RenderRay(float x, float y, float origin[3], float dir[3]);   // mml.h camera_ray
+bool CameraMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 
 // ---- what happens (happen.cpp): shots, explosions, cars blown up, deaths, vehicles entered and left
 void HappenInit();                        // (game_hooks.cpp) once the build is known

@@ -41,6 +41,9 @@ Taps can also start with the game, before its first frame: `"taps": ["5409D0 n=4
 | `humans.list` | | every person (`actor`, `model`, `pos`, `health`, `alive`, `player`, `vehicle`), `count` |
 | `human.skeleton` | `actor` (default `"player"`) | `bones`: `name`, `frame`, `world_pos`, `rot` (w x y z), `pos` (local), `x_axis`, `y_axis`, `z_axis` |
 | `human.pose` | `actor`, `bones` (`{"r_arm": {"rot": [w, x, y, z], "pos": [x, y, z]}}`), `ms` (default 3000), `clear` | the bones held in that pose, drawn every frame for `ms` |
+| `camera.state` | | the frame's camera: `override` (a mod's id, `the bridge (camera.set)`, `none`), `frames_overridden`, `declined` (the mod's function returned 0), `skipped`, `last` (drawn, or why not), `frame_camera` (`eye`, `fwd` of the last frame drawn) |
+| `camera.set` | `eye`, `at` or `dir`, `up` (default `[0, 1, 0]`), `fov` (vertical degrees; default the game's), `ms` (default 10000) | the frame drawn from that camera from the next frame for `ms` (over a mod's `camera_override` while held); only the drawing |
+| `camera.release` | | the bridge's camera given back |
 | `watch.set` | `addr`, `mode` (`write`: changes only; `access`: reads too), `len` (1, 2, 4; aligned) | a hardware watchpoint on the game thread (four at most): `id` |
 | `watch.show` | `id` | `hits`, `sites` (each piece of code: `at`, `count`, `stack` (the game's return addresses), `before`, `after`), `value` |
 | `watch.clear` | `id` or `all` | `cleared` |

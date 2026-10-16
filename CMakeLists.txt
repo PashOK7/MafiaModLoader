@@ -190,6 +190,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     mml_add_files_mod(freeride_picture ${CMAKE_SOURCE_DIR}/mods/examples/freeride_picture)
     mml_add_mod(puppet ${CMAKE_SOURCE_DIR}/mods/examples/puppet mods/examples/puppet/puppet.cpp)
     mml_add_mod(tally ${CMAKE_SOURCE_DIR}/mods/examples/tally mods/examples/tally/tally.cpp)
+    mml_add_mod(orbit_cam ${CMAKE_SOURCE_DIR}/mods/examples/orbit_cam mods/examples/orbit_cam/orbit_cam.cpp)
     # (tools/new_mod.py adds a mod's line above this one)
 
     # ---- offline tests: a stand-in game that loads the loader and pumps its frames (tests/run_tests.py)

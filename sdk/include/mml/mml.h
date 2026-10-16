@@ -645,6 +645,19 @@ typedef struct MmlHost {
     int (*human_skeleton)(MmlMod *mod, void *human, MmlBone *out, int max);
     int (*bone_set)(MmlMod *mod, void *frame, const float *rot, const float *pos);
     void *(*human_player)(MmlMod *mod);   /* the player (his C_human), NULL with no mission */
+
+    /* ---- the camera (both builds; docs/MODDING.md "The camera").
+     * camera_override: the frame drawn from a camera of the mod's: fn(camera, user) is called each frame of the
+     * mission's world before anything is drawn, `camera` filled as the game's (as a scene view's function gets it);
+     * change it and return 1 to draw this frame from it (0: the game's). One override at a time, the last mod's that
+     * asked; fn NULL gives it back (and the mod's unload). Only the drawing: the game's camera logic, the aim and the
+     * sound's listener stay the game's; the scene views start from the overridden camera.
+     * camera_project: a world point on the screen of the last frame drawn (800x600 units; screen[2] its linear
+     * depth): 0 behind the camera or no frame yet. camera_ray: the ray through a screen point (800x600 units), from
+     * the eye, its direction a unit vector. */
+    int (*camera_override)(MmlMod *mod, MmlViewFn fn, void *user);
+    int (*camera_project)(MmlMod *mod, const float world[3], float screen[3]);
+    int (*camera_ray)(MmlMod *mod, float x, float y, float origin[3], float dir[3]);
 } MmlHost;
 
 #define MML_FILE_GAME 1              /* file_read: the game's own file, not a mod's of the same name */

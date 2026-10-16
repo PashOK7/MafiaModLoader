@@ -140,6 +140,7 @@ int __stdcall hkRender(void *driver, void *scene) {
     if (g_world) HumansFlushPoses();
     if (g_world) {
         GeomFrameBegin();   // (geom.cpp: the game's geometry hidden, surveyed, captured)
+        FrameCameraBegin(scene);   // (view.cpp: the frame drawn from a mod's camera; the views start from it)
         GfxViewsNewFrame();
         {
             ProfScope ps(nullptr, "scene views");
@@ -155,6 +156,7 @@ int __stdcall hkRender(void *driver, void *scene) {
         r = oRender(driver, scene);
     }
     if (g_world) {
+        FrameCameraEnd();   // (the game's camera back)
         GeomFrameDrawing(false);
         GfxAfterWorld();
         GeomFrameEnd();
@@ -198,7 +200,39 @@ bool Camera(void *dev8, MmlRenderCamera *c) {
 DWORD SafeCamera(void *dev8, MmlRenderCamera *c, bool *ok) {
     __try { *ok = Camera(dev8, c); return 0; } __except (EXCEPTION_EXECUTE_HANDLER) { *ok = false; return GetExceptionCode(); }
 }
+
+// The camera the last frame of the mission's world was drawn with (taken at its stage 1): camera_project, camera_ray.
+MmlRenderCamera g_frameCamera{sizeof(MmlRenderCamera)};
+bool g_haveFrameCamera;
 } // namespace
+
+int RenderProject(const float w[3], float out[3]) {
+    if (!g_haveFrameCamera) return 0;
+    const MmlRenderCamera &c = g_frameCamera;
+    float d[3] = {w[0] - c.eye.x, w[1] - c.eye.y, w[2] - c.eye.z};
+    float z = d[0] * c.fwd.x + d[1] * c.fwd.y + d[2] * c.fwd.z;
+    if (!(z > c.near_z * 0.5f)) return 0;   // behind the camera
+    float x = d[0] * c.right.x + d[1] * c.right.y + d[2] * c.right.z, y = d[0] * c.up.x + d[1] * c.up.y + d[2] * c.up.z;
+    // NDC from the projection (row vectors): x' = x _11 + z _31, w' = z
+    float nx = (x * c.proj[0] + z * c.proj[8]) / z, ny = (y * c.proj[5] + z * c.proj[9]) / z;
+    out[0] = (nx + 1) * 400.0f;
+    out[1] = (1 - ny) * 300.0f;
+    out[2] = z;
+    return 1;
+}
+
+int RenderRay(float x, float y, float origin[3], float dir[3]) {
+    if (!g_haveFrameCamera) return 0;
+    const MmlRenderCamera &c = g_frameCamera;
+    float nx = x / 400.0f - 1, ny = 1 - y / 300.0f;
+    float vx = (nx - c.proj[8]) / c.proj[0], vy = (ny - c.proj[9]) / c.proj[5];
+    float d[3] = {c.right.x * vx + c.up.x * vy + c.fwd.x, c.right.y * vx + c.up.y * vy + c.fwd.y, c.right.z * vx + c.up.z * vy + c.fwd.z};
+    float l = std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+    if (!(l > 0)) return 0;
+    origin[0] = c.eye.x; origin[1] = c.eye.y; origin[2] = c.eye.z;
+    dir[0] = d[0] / l; dir[1] = d[1] / l; dir[2] = d[2] / l;
+    return 1;
+}
 
 void RenderInit() {
     if (!game::g_ls3d || !game::Ls3d().render) return;
@@ -213,6 +247,7 @@ void RenderStage(int stage) {
     g_stage1ThisRender = true;
     g_stage1++;
     if (g_world) GfxTakeWorldLight();   // the world's fog and sun: what was drawn up to here
+    if (g_world) { bool ok = false; SafeCamera(Device8(), &g_frameCamera, &ok); g_haveFrameCamera = g_haveFrameCamera || ok; }
     GfxQuiet(true);                     // (the mods' drawing is not the world's light)
     DispatchDrawing(MML_EVENT_RENDER_WORLD, Device8());
     GfxQuiet(false);

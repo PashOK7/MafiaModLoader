@@ -951,3 +951,19 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   before them). A killer was not seen: the player's shots missed the person (Known gaps).
 - **The example** `tally`: a panel of the player's shots and kills, deaths, explosions, cars blown up, rides, a
   note for the last thing ("a car blew up"), counts kept across reloads.
+
+## 2026-10-16: the camera (item 9, block 9a)
+
+- **Made**: the scene view's camera change (`PutCamera`: the pose made orthonormal, LS3D's symmetric frustum and
+  its update, the sides of the three projections) taken out of `view.cpp`'s `Put` and used for the frame's own
+  camera too: `FrameCameraBegin` before the views and the frame's drawing (a mod's `camera_override` function, or
+  the bridge's held `camera.set`), `FrameCameraEnd` after LS3D's Render puts the camera's bytes back. The scene
+  views start from the overridden camera. `camera_project` / `camera_ray` use the camera taken at the world's stage
+  1 (`render_camera`'s reading), so they agree with what was drawn.
+- **In the labs**: `camera.set` from 10 m above the taxi in the 1.2 and 1.0 labs (the parking lot from above, the
+  HUD as it was, `depth_pulse`'s wave on the ground); `orbit_cam` circling Tommy in both (F8 in 1.0, the command in
+  1.2), its label over his head through `camera_project`; unloading it gave the camera back (`override: none`).
+  The crosshair stays in the screen's middle: the aim is the game camera's (Known gaps).
+- `camera.state` counted the frames the mod's function declined (returned 0) as skipped: now `declined`.
+- **Tests**: offline the override taken and given back, project and ray with no frame, `camera.set` held, released,
+  refused without an eye or with the point at the eye. ALL PASSED.

@@ -760,6 +760,22 @@ def main():
         check('humans.list with no game: none', r['ok'] and r['result']['count'] == 0, r)
         r = b.call('human.skeleton', {'actor': 'player'})
         check('human.skeleton with no game: an error, saying why', not r['ok'] and 'no such person' in str(r), r)
+        # the camera with no game: an override taken and given back, nothing to project; the bridge's camera held
+        r = b.call('kit.camera')
+        check('camera_override taken and given back; camera_project, camera_ray with no frame: 0',
+              r['ok'] and r['result'] == {'override': 1, 'project': 0, 'ray': 0, 'back': 1}, r)
+        r = b.call('camera.set', {'eye': [0, 5, 0], 'at': [0, 0, 10], 'ms': 5000})
+        check('camera.set: held', r['ok'] and r['result']['held'], r)
+        r = b.call('camera.state')
+        check('camera.state: the bridge holds it, no frame drawn from it (no game), no frame camera',
+              r['ok'] and r['result']['override'].startswith('the bridge') and r['result']['frames_overridden'] == 0
+              and 'frame_camera' not in r['result'], r)
+        r = b.call('camera.release')
+        check('camera.release: nothing held', r['ok'] and not r['result']['held'] and b.call('camera.state')['result']['override'] == 'none', r)
+        r = b.call('camera.set', {'eye': [1, 1, 1], 'at': [1, 1, 1]})
+        check('camera.set with the point at the eye: refused', not r['ok'], r)
+        r = b.call('camera.set', {'at': [1, 1, 1]})
+        check('camera.set with no eye: refused, saying what it takes', not r['ok'] and 'eye' in str(r), r)
         # a hardware watchpoint: the field the kit's command writes on the game thread, found with the code that wrote it
         addr = b.call('kit.poke', {'addr': 1})['result']
         r = b.call('watch.set', {'addr': addr, 'mode': 'write'})

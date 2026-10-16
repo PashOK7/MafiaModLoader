@@ -249,6 +249,36 @@ int view = H->scene_view(M, 640, 200, PlaceMirror, NULL);   /* 0, 0: the frame's
   `"check"` (the left half of the frame drawn again and compared: black when equal). `depth_pulse` runs its pass in
   the views: its wave is seen in the mirror.
 
+### The camera: the frame drawn from a mod's, a world point on the screen
+
+```c
+int Place(MmlViewCamera *c, void *user) {      /* each frame of the mission's world, before anything is drawn */
+    /* c comes as the game camera (as a scene view's function gets it): change its pose, frustum, range */
+    c->world[12] += 0; c->world[13] += 5; c->world[14] += 0;     /* the eye 5 m higher */
+    return 1;                                  /* 0: this frame from the game's camera */
+}
+H->camera_override(M, Place, NULL);            /* the last mod that asked owns it; fn NULL (or the unload) gives it back */
+float s[3];
+if (H->camera_project(M, world, s)) { /* s[0], s[1]: 800x600 units on the last frame drawn; s[2]: its depth */ }
+float o[3], d[3];
+H->camera_ray(M, 400, 300, o, d);              /* the ray through the screen's middle: an aim, a pick */
+```
+
+- **Only the drawing moves**: the game's camera logic, the player's aim and crosshair, the sound's listener stay
+  the game's; the camera's bytes are put back after the frame is drawn (as a scene view's). The scene views start
+  from the overridden camera (a mirror shows what the overridden eye would see in it). A chase camera, a free
+  camera, a skateboard's or a plane's: the mod moves its eye each frame from whatever it follows.
+- `MML_VIEW_OWN_SECTOR` in `c->flags` looks the room up at the new eye (the game camera's room otherwise: wrong for
+  an eye far from it, right for one beside it).
+- **Projecting**: `camera_project` and `camera_ray` use the camera the last frame of the world was drawn with
+  (overridden or not), so a label over a person's head lands on him whatever drew the frame. 0 before the first
+  frame or behind the camera.
+- `call camera.set {"eye": [x, y, z], "at": [x, y, z] | "dir": [...], "up", "fov": 60, "ms": 10000}` holds a
+  camera from the bridge (an agent's look at a place: then `screenshot`), `camera.release` gives it back,
+  `camera.state` (who owns it, frames drawn, declined, skipped and why, the last frame's eye and forward).
+- `mods/examples/orbit_cam` (not enabled by default; F8, `orbit_cam.on {"on": true}`): the camera circles the
+  player while he is played as usual; a label over his head through `camera_project`.
+
 ### What happens (shots, explosions, deaths, vehicles)
 
 | Event | When | `actor` | more |

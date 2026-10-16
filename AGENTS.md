@@ -62,7 +62,8 @@ The other freerides (`"kind": "city-night"`, `"countryside"`... with `"place": "
 night is a kind), a chapter of the story (`"go": "load", "save": "Old Prison"` or its number), `"new"`, `"extreme"`.
 The same from a terminal: `python tools/start.py freeride --profile 4 --police 0`. Other menus: `call menu.state`,
 `call menu.command {command}`, `call menu.value {id, value}`.
-**Eyes and hands**: `screenshot` returns the game's own frame as a picture (the window may be hidden or behind
+**Eyes and hands**: `screenshot` returns the game's own frame as a picture (`call camera.set {"eye", "at", "ms"}` first:
+from any place; the window may be hidden or behind
 others); `input` plays a timed sequence inside the game: the game's actions by name, whatever they are bound to
 (`{"action": "Forwards", "ms": 2000}`, `"Accelerate"`, `"Fire"`, `"Action"`), an exact turn on foot
 (`{"turn": 90}`), keys for the menus (`{"key": "Esc"}`), the menus' mouse (`{"click": [x, y]}`, `{"wheel": -3}`);

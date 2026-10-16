@@ -159,11 +159,81 @@ void GameCamera(uint8_t *cam, MmlViewCamera *c) {
     c->far_z = At<float>(cam, kCamFar);
 }
 
-// What a view changes, kept to be put back.
-struct Saved {
+// What the camera's change touches, kept to be put back: its world matrix, flags, serial and everything from its
+// field of view to its end (the projections, the view, the frustum's planes, the sector).
+struct CamSaved {
     uint8_t world[64];
     uint32_t flags, serial;
     uint8_t params[kCamEnd - kCamParams];
+};
+void SaveCam(uint8_t *cam, CamSaved *s) {
+    memcpy(s->world, cam + kCamWorld, sizeof s->world);
+    s->flags = At<uint32_t>(cam, kCamFlags);
+    s->serial = At<uint32_t>(cam, kCamSerial);
+    memcpy(s->params, cam + kCamParams, sizeof s->params);
+}
+void RestoreCam(uint8_t *cam, const CamSaved &s) {
+    memcpy(cam + kCamWorld, s.world, sizeof s.world);
+    At<uint32_t>(cam, kCamFlags) = s.flags;
+    At<uint32_t>(cam, kCamSerial) = s.serial;
+    memcpy(cam + kCamParams, s.params, sizeof s.params);
+    *reinterpret_cast<uint8_t *>(g_ls3d + game::Ls3d().camRecompute) = 1;   // the camera's lights, sectors again
+}
+
+// The camera turned into `c` (made orthonormal; the frustum LS3D culls with, the projections' sides, the sector held
+// at the camera's or looked up at the new eye). False with why: nothing changed. `saved` gets what was there first.
+bool PutCamera(uint8_t *cam, const MmlViewCamera &c, CamSaved *saved, std::string *why) {
+    float m[16];
+    memcpy(m, c.world, sizeof m);
+    float *r = m, *u = m + 4, *f = m + 8;
+    if (!Normalize(f)) { *why = "its forward is zero"; return false; }
+    Cross(u, f, r);   // right = up x forward (left-handed)
+    if (!Normalize(r)) { *why = "its up is along its forward"; return false; }
+    Cross(f, r, u);
+    m[3] = m[7] = m[11] = 0;
+    m[15] = 1;
+    float tl = c.tan_left, tr = c.tan_right, td = c.tan_down, tu = c.tan_up;
+    if (!(tl + tr > 1e-4f) || !(td + tu > 1e-4f) || !std::isfinite(tl + tr + td + tu)) { *why = "its frustum is empty"; return false; }
+    if (At<uint8_t>(cam, kCamOrtho)) { *why = "the game camera is orthographic"; return false; }
+    SaveCam(cam, saved);
+    // the symmetric frustum LS3D culls with: it holds the view's
+    float tx = std::max(std::max(tl, tr), 1e-3f), ty = std::max(std::max(td, tu), 1e-3f);
+    float fov = std::min(2.0f * std::atan(tx), 3.1f), aspect = std::min(std::max(tx / ty, 0.011f), 99.0f);
+    Slot<SetFloatFn>(cam, kVtSetFov)(cam, fov);
+    Slot<SetFloatFn>(cam, kVtSetNearFov)(cam, fov);
+    Slot<SetFloatFn>(cam, kVtSetAspect)(cam, aspect);
+    float nearZ = c.near_z, farZ = c.far_z;
+    if ((nearZ != At<float>(cam, kCamNear) || farZ != At<float>(cam, kCamFar)) && nearZ > 0.001f && farZ > nearZ + 0.01f)
+        Slot<SetRangeFn>(cam, kVtSetRange)(cam, nearZ, farZ);
+    // the pose, its view, frustum and sector
+    memcpy(cam + kCamWorld, m, sizeof m);
+    At<uint32_t>(cam, kCamFlags) = saved->flags | kWorldValid;
+    At<uint32_t>(cam, kCamSerial) = g_serial++;
+    if (g_serial < 0xB0000000u || g_serial >= 0xC0000000u) g_serial = 0xB0000000u;
+    if (!(c.flags & MML_VIEW_OWN_SECTOR)) {
+        g_holdPos = reinterpret_cast<const float *>(cam + kCamWorld + 48);
+        g_holdSector = At<void *>(cam, 0x3F8);   // the camera's
+    }
+    Slot<UpdateFn>(cam, kVtUpdate)(cam, nullptr);
+    g_holdSector = nullptr;
+    // the sides in each projection, their depth kept: NDC x = _11 x/z + _31 is -1 at -tl and 1 at tr
+    for (int off : {kCamProj, kCamBackProj, kCamNearProj}) {
+        float *p = reinterpret_cast<float *>(cam + off);
+        p[0] = 2.0f / (tl + tr);
+        p[8] = (tl - tr) / (tl + tr);
+        p[5] = 2.0f / (td + tu);
+        p[9] = (td - tu) / (td + tu);
+    }
+    auto M = [&](int o) { return reinterpret_cast<float *>(cam + o); };
+    Mul44(M(kCamView), M(kCamProj), M(kCamViewProj));
+    Mul44(M(kCamBackView), M(kCamBackProj), M(kCamBackViewProj));
+    Mul44(M(kCamView), M(kCamNearProj), M(kCamNearViewProj));
+    return true;
+}
+
+// What a view changes, kept to be put back: the camera's, and the scene's callback, listener, flares and rectangle.
+struct Saved {
+    CamSaved cam;
     void *callback, *listener;
     uint32_t mask, lensCount;
     int32_t rect[4];
@@ -178,16 +248,12 @@ void Restore() {
     g_put = false;
     void *scene = g_putScene;
     uint8_t *cam = At<uint8_t *>(scene, kSceneCamera);
-    memcpy(cam + kCamWorld, g_saved.world, sizeof g_saved.world);
-    At<uint32_t>(cam, kCamFlags) = g_saved.flags;
-    At<uint32_t>(cam, kCamSerial) = g_saved.serial;
-    memcpy(cam + kCamParams, g_saved.params, sizeof g_saved.params);
+    RestoreCam(cam, g_saved.cam);
     At<void *>(scene, kSceneCallback) = g_saved.callback;
     At<uint32_t>(scene, kSceneMask) = g_saved.mask;
     At<void *>(scene, kSceneListener) = g_saved.listener;
     At<uint32_t>(scene, kSceneLensCount) = g_saved.lensCount;
     memcpy(static_cast<uint8_t *>(scene) + kSceneRect, g_saved.rect, sizeof g_saved.rect);
-    *reinterpret_cast<uint8_t *>(g_ls3d + game::Ls3d().camRecompute) = 1;   // the game camera's lights, sectors again
 }
 DWORD SafeRestore() { __try { Restore(); return 0; } __except (EXCEPTION_EXECUTE_HANDLER) { g_put = false; return GetExceptionCode(); } }
 
@@ -196,23 +262,7 @@ int g_stageHandle;
 
 // The scene's camera turned into the view's (see the top). False with why: nothing is left changed.
 bool Put(void *scene, uint8_t *cam, const MmlViewCamera &c, int w, int h, std::string *why) {
-    float m[16];
-    memcpy(m, c.world, sizeof m);
-    float *r = m, *u = m + 4, *f = m + 8;
-    if (!Normalize(f)) { *why = "its forward is zero"; return false; }
-    Cross(u, f, r);   // right = up x forward (left-handed)
-    if (!Normalize(r)) { *why = "its up is along its forward"; return false; }
-    Cross(f, r, u);
-    m[3] = m[7] = m[11] = 0;
-    m[15] = 1;
-    float tl = c.tan_left, tr = c.tan_right, td = c.tan_down, tu = c.tan_up;
-    if (!(tl + tr > 1e-4f) || !(td + tu > 1e-4f) || !std::isfinite(tl + tr + td + tu)) { *why = "its frustum is empty"; return false; }
-    if (At<uint8_t>(cam, kCamOrtho)) { *why = "the game camera is orthographic"; return false; }
-    // kept
-    memcpy(g_saved.world, cam + kCamWorld, sizeof g_saved.world);
-    g_saved.flags = At<uint32_t>(cam, kCamFlags);
-    g_saved.serial = At<uint32_t>(cam, kCamSerial);
-    memcpy(g_saved.params, cam + kCamParams, sizeof g_saved.params);
+    if (!PutCamera(cam, c, &g_saved.cam, why)) return false;
     g_saved.callback = At<void *>(scene, kSceneCallback);
     g_saved.mask = At<uint32_t>(scene, kSceneMask);
     g_saved.listener = At<void *>(scene, kSceneListener);
@@ -220,38 +270,6 @@ bool Put(void *scene, uint8_t *cam, const MmlViewCamera &c, int w, int h, std::s
     memcpy(g_saved.rect, static_cast<uint8_t *>(scene) + kSceneRect, sizeof g_saved.rect);
     g_put = true;
     g_putScene = scene;
-    // the symmetric frustum LS3D culls with: it holds the view's
-    float tx = std::max(std::max(tl, tr), 1e-3f), ty = std::max(std::max(td, tu), 1e-3f);
-    float fov = std::min(2.0f * std::atan(tx), 3.1f), aspect = std::min(std::max(tx / ty, 0.011f), 99.0f);
-    Slot<SetFloatFn>(cam, kVtSetFov)(cam, fov);
-    Slot<SetFloatFn>(cam, kVtSetNearFov)(cam, fov);
-    Slot<SetFloatFn>(cam, kVtSetAspect)(cam, aspect);
-    float nearZ = c.near_z, farZ = c.far_z;
-    if ((nearZ != At<float>(cam, kCamNear) || farZ != At<float>(cam, kCamFar)) && nearZ > 0.001f && farZ > nearZ + 0.01f)
-        Slot<SetRangeFn>(cam, kVtSetRange)(cam, nearZ, farZ);
-    // the pose, its view, frustum and sector
-    memcpy(cam + kCamWorld, m, sizeof m);
-    At<uint32_t>(cam, kCamFlags) = g_saved.flags | kWorldValid;
-    At<uint32_t>(cam, kCamSerial) = g_serial++;
-    if (g_serial < 0xB0000000u || g_serial >= 0xC0000000u) g_serial = 0xB0000000u;
-    if (!(c.flags & MML_VIEW_OWN_SECTOR)) {
-        g_holdPos = reinterpret_cast<const float *>(cam + kCamWorld + 48);
-        g_holdSector = At<void *>(cam, 0x3F8);   // the game camera's
-    }
-    Slot<UpdateFn>(cam, kVtUpdate)(cam, nullptr);
-    g_holdSector = nullptr;
-    // the view's sides in each projection, their depth kept: NDC x = _11 x/z + _31 is -1 at -tl and 1 at tr
-    for (int off : {kCamProj, kCamBackProj, kCamNearProj}) {
-        float *p = reinterpret_cast<float *>(cam + off);
-        p[0] = 2.0f / (tl + tr);
-        p[8] = (tl - tr) / (tl + tr);
-        p[5] = 2.0f / (td + tu);
-        p[9] = (td - tu) / (td + tu);
-    }
-    auto M = [&](int o) { return reinterpret_cast<float *>(cam + o); };
-    Mul44(M(kCamView), M(kCamProj), M(kCamViewProj));
-    Mul44(M(kCamBackView), M(kCamBackProj), M(kCamBackViewProj));
-    Mul44(M(kCamView), M(kCamNearProj), M(kCamNearViewProj));
     // the scene: the loader's callback, no listener, no lens flares on its list, the view's rectangle
     At<void *>(scene, kSceneCallback) = reinterpret_cast<void *>(&ViewStage);
     At<uint32_t>(scene, kSceneMask) = 1u << 1;
@@ -346,6 +364,124 @@ void DrawOne(View &v, void *driver, void *scene, uint8_t *cam, RenderFn render) 
 
 int ViewDrawingNow() { return g_drawing ? g_stageHandle : 0; }
 
+// ---- the frame's own camera overridden: one owner (the last mod that asked, or the bridge's camera.set)
+namespace {
+struct Override { MmlMod *mod; MmlViewFn fn; void *user; } g_ov;
+struct HeldCam { bool on; float eye[3], fwd[3], up[3], fovY; DWORD until; } g_heldCam;
+CamSaved g_frameSaved;
+uint8_t *g_frameCam;
+bool g_framePut;
+unsigned g_ovFrames, g_ovSkipped, g_ovDeclined;
+std::string g_ovLast = "none";
+
+struct OvCall { MmlViewCamera *c; int r; };
+void CallOv(void *p) {
+    auto *oc = static_cast<OvCall *>(p);
+    oc->r = g_ov.fn(oc->c, g_ov.user);
+}
+// The bridge's held camera into c: its pose; its field of view scaling both sides (the game's aspect kept).
+void ApplyHeld(MmlViewCamera *c) {
+    float f[3] = {g_heldCam.fwd[0], g_heldCam.fwd[1], g_heldCam.fwd[2]}, u[3] = {g_heldCam.up[0], g_heldCam.up[1], g_heldCam.up[2]}, r[3];
+    Normalize(f);
+    Cross(u, f, r);
+    Normalize(r);
+    Cross(f, r, u);
+    float *w = c->world;
+    for (int i = 0; i < 3; i++) { w[i] = r[i]; w[4 + i] = u[i]; w[8 + i] = f[i]; w[12 + i] = g_heldCam.eye[i]; }
+    if (g_heldCam.fovY > 1 && g_heldCam.fovY < 170) {
+        float t = std::tan(g_heldCam.fovY * 0.5f * 0.0174533f), k = t / std::max(c->tan_up, 1e-4f);
+        c->tan_left *= k; c->tan_right *= k; c->tan_up = c->tan_down = t;
+    }
+    c->flags |= MML_VIEW_OWN_SECTOR;   // (anywhere in the city: its own room)
+}
+DWORD SafePutFrame(uint8_t *cam, const MmlViewCamera &c, std::string *why, bool *ok) {
+    __try { *ok = PutCamera(cam, c, &g_frameSaved, why); return 0; } __except (EXCEPTION_EXECUTE_HANDLER) { *ok = false; return GetExceptionCode(); }
+}
+DWORD SafeRestoreFrame() {
+    __try { RestoreCam(g_frameCam, g_frameSaved); return 0; } __except (EXCEPTION_EXECUTE_HANDLER) { return GetExceptionCode(); }
+}
+} // namespace
+
+int CameraOverride(MmlMod *mod, MmlViewFn fn, void *user) {
+    if (!fn) { if (g_ov.mod == mod) g_ov = Override{}; return 1; }
+    g_ov = Override{mod, fn, user};
+    return 1;
+}
+
+void FrameCameraBegin(void *scene) {
+    if (g_heldCam.on && static_cast<int>(g_heldCam.until - GetTickCount()) <= 0) g_heldCam.on = false;
+    if (g_ov.fn && !ModAlive(g_ov.mod)) g_ov = Override{};
+    if ((!g_ov.fn && !g_heldCam.on) || !game::g_ls3d || !game::g_exe || g_framePut) return;
+    if (!EnsureHooks()) { g_ovLast = "skipped: " + g_hookWhy; return; }
+    uint8_t *cam = nullptr;
+    if (SafeCamera(scene, &cam) || !cam) { g_ovSkipped++; g_ovLast = "skipped: the scene's camera is not LS3D's I3D_camera"; return; }
+    MmlViewCamera c;
+    GameCamera(cam, &c);
+    if (g_heldCam.on) {
+        ApplyHeld(&c);
+    } else {
+        OvCall oc{&c, 0};
+        if (!ModCall(g_ov.mod, CallOv, &oc, "its camera override's function")) { g_ovSkipped++; g_ovLast = "its function faulted"; return; }
+        if (!oc.r) { g_ovDeclined++; g_ovLast = "the game's (its function returned 0)"; return; }
+    }
+    c.size = sizeof c;
+    std::string why;
+    bool ok = false;
+    DWORD code = SafePutFrame(cam, c, &why, &ok);
+    if (!ok) { g_ovSkipped++; g_ovLast = code ? "a fault while the camera was set" : "skipped: " + why; return; }
+    g_frameCam = cam;
+    g_framePut = true;
+    g_ovFrames++;
+    g_ovLast = "drawn";
+}
+
+void FrameCameraEnd() {
+    if (!g_framePut) return;
+    g_framePut = false;
+    if (SafeRestoreFrame()) g_ovLast = "a fault while the game's camera was put back";
+}
+
+bool CameraMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok) {
+    if (method != "camera.state" && method != "camera.set" && method != "camera.release") return false;
+    *ok = true;
+    json p = json::parse(paramsJson.empty() ? "null" : paramsJson, nullptr, false);
+    if (!p.is_object()) p = json::object();
+    auto v3 = [&](const char *k, float *out) {
+        if (!p.contains(k) || !p[k].is_array() || p[k].size() != 3) return false;
+        for (int i = 0; i < 3; i++) out[i] = p[k][i].get<float>();
+        return true;
+    };
+    if (method == "camera.release") {
+        g_heldCam.on = false;
+        *reply = json({{"held", false}, {"override", g_ov.fn ? ModIdOf(g_ov.mod) : "none"}}).dump();
+        return true;
+    }
+    if (method == "camera.set") {
+        HeldCam h{};
+        if (!v3("eye", h.eye)) { *ok = false; *reply = "camera.set {eye: [x, y, z], at: [x, y, z] | dir: [x, y, z], up, fov (degrees, vertical), ms}"; return true; }
+        float at[3];
+        if (v3("at", at)) { for (int i = 0; i < 3; i++) h.fwd[i] = at[i] - h.eye[i]; }
+        else if (!v3("dir", h.fwd)) { *ok = false; *reply = "camera.set: `at` (a point to look at) or `dir`"; return true; }
+        if (!v3("up", h.up)) { h.up[0] = 0; h.up[1] = 1; h.up[2] = 0; }
+        h.fovY = p.value("fov", 0.0f);
+        h.until = GetTickCount() + static_cast<DWORD>(std::min(std::max(p.value("ms", 10000), 0), 3600000));
+        h.on = true;
+        float f[3] = {h.fwd[0], h.fwd[1], h.fwd[2]};
+        if (!Normalize(f)) { *ok = false; *reply = "camera.set: the eye and the point are the same"; return true; }
+        g_heldCam = h;
+        *reply = json({{"held", true}, {"ms", static_cast<int>(h.until - GetTickCount())}, {"note", "drawn from the next frame; camera.release gives it back"}}).dump();
+        return true;
+    }
+    json out = {{"override", g_ov.fn ? ModIdOf(g_ov.mod) : (g_heldCam.on ? "the bridge (camera.set)" : "none")}, {"frames_overridden", g_ovFrames},
+                {"skipped", g_ovSkipped}, {"declined", g_ovDeclined}, {"last", g_ovLast}};
+    float o[3], d[3];
+    if (RenderRay(400, 300, o, d)) {
+        out["frame_camera"] = {{"eye", {o[0], o[1], o[2]}}, {"fwd", {d[0], d[1], d[2]}}};
+    }
+    *reply = out.dump(-1, ' ', false, json::error_handler_t::replace);
+    return true;
+}
+
 int ViewAdd(MmlMod *mod, int w, int h, MmlViewFn fn, void *user, std::string *err) {
     if (!fn) { *err = "no function"; return 0; }
     if (w < 0 || h < 0 || w > 8192 || h > 8192 || (!w) != (!h)) { *err = "a size of 1..8192 each, or 0, 0 (the frame's)"; return 0; }
@@ -356,6 +492,7 @@ int ViewAdd(MmlMod *mod, int w, int h, MmlViewFn fn, void *user, std::string *er
 }
 
 void ViewRemove(MmlMod *mod, int handle) {
+    if (handle == 0 && g_ov.mod == mod) g_ov = Override{};   // (its unload: its camera override goes)
     for (auto it = g_views.begin(); it != g_views.end();) {
         if (it->mod == mod && (handle == 0 || it->handle == handle)) {
             GfxViewForget(it->handle);

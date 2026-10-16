@@ -288,6 +288,12 @@ What is done, what comes next and later, and what is known to be missing or wron
   on `events.since` and MCP `wait`. Both builds' addresses checked by `check_builds.py`. The example
   `mods/examples/tally`; seen in the 1.2 and 1.0 labs (the player's shots, his leaving the taxi, a person killed by
   a script, a car blown up with its explosion and the hit it gave the player).
+- **The camera** (2026-10-16; item 9, block 9a): `camera_override` (the frame of the mission's world drawn from a
+  mod's camera: its pose, an asymmetric frustum, its range, its room; the camera's bytes put back after the frame,
+  the scene views starting from it), `camera_project` and `camera_ray` (the last frame's camera, overridden or not,
+  800x600 units); `camera.set` (an agent's camera held for a time), `camera.release`, `camera.state`. The example
+  `mods/examples/orbit_cam` (an orbit around the player while he is played, a label over his head) seen in the 1.2
+  and 1.0 labs; `camera.set` from above the taxi in both; offline tests with no game.
 - **People, skeletons, poses** (2026-10-16; item 6, block 6a): the host keeps every `C_human` (`humans_list`,
   `human_player`), a person's skeleton by the bones' names (`human_skeleton`: 18 joints, the pelvis, the root), a
   pose written for the frame's drawing (`bone_set` in `RENDER_BEGIN`, each posed model updated once after);
@@ -354,7 +360,9 @@ V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselv
    every mod. Questions in `mml.h` (not only C++'s `game.h`): a ray, a sweep, what overlaps a box or sphere, the
    ground's and the water's height under a point, the actors near a point. Reference: `scenery.cpp`,
    `visual_meshes.cpp`, `collision.cpp`, `game_collision.cpp`, `model_index.cpp`, `model4ds.cpp`, `car_meshes.cpp`.
-9. **The camera** (V R K P). The game's camera read and set (position, orientation, field of view, near/far), its
+9. *(9a done 2026-10-16: the frame drawn from a mod's camera, a world point on the screen and back; see "Done".
+   Left: the game's own camera logic changed (its distance, its field of view kept by the game, its aim), see Known
+   gaps.)* **The camera** (V R K P). The game's camera read and set (position, orientation, field of view, near/far), its
    projection replaced after the camera's own update (VR's per-eye frusta), the view decoupled from the aim, a camera
    of a mod's own following its own rules (a skateboard's, a plane's chase camera), a free camera; a world point to
    the screen and a screen point to a ray (markers, aiming). Reference: `freecam.cpp`, `ragcam.cpp`,
@@ -496,6 +504,11 @@ merged, sorted by importance):
   matrix being the camera's backdrop view, bit for bit (it was, every drawing, in both labs). `MML_VIEW_OWN_SECTOR`
   (a camera in another room) was not tried. The first two or three reloads of `rear_mirror` added 2..13 handles each (taken to be
   Direct3D's own warming up: views made and taken back by mode changes added none); then 0.
+- **The camera** (host/view.cpp, item 9a): only the drawing is the mod's: the game's camera logic (its spring
+  behind the player, its distance, its collision with walls, the car's cameras), the player's aim and crosshair (it
+  stays in the screen's middle, now pointing where the game's camera looks) and the sound's listener are the game's.
+  A camera the game itself follows (a field of view it keeps, an aim from the drawn camera) needs the camera's
+  update hooked (mafia-ragdoll `freecam.cpp`, `ragcam.cpp`). Drawn only in the mission's world, not a menu's scene.
 - **What happens** (host/happen.cpp): the killer of `HUMAN_DIED` (the last attacker of `HUMAN_HIT` in 3 s) was
   not seen in a lab (the player's shots missed the target); a death the game queues with no hit (a script's) has
   none. `SHOT`'s direction is not a unit vector (its length is the weapon's reach). Deaths and vehicles come from

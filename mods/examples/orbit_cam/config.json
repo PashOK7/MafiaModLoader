@@ -1,0 +1,6 @@
+{
+  // The defaults of orbit_cam's settings.
+  "radius": 6,    // metres around the player
+  "height": 2.5,  // metres above his chest
+  "speed": 25     // degrees a second
+}
