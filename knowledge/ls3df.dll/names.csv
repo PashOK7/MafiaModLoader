@@ -57,3 +57,4 @@ address,kind,name,source,note
 100354F0,function,I3D_morph::m_AddFGroups,MafiaModLoader,"vtable +0x68"
 10055930,function,I3D_singlemesh::m_AddFGroups,MafiaModLoader,"vtable +0x68"
 100073C0,function,I3D_billboard::m_AddFGroups,MafiaModLoader,"vtable +0x68"
+10034010,function,humanAnimApply,MafiaModLoader,"a person's animation applied to his model's frames: C_human::Update (0x572B80) calls it in the tick (found with watch.set on a bone's quaternion)"

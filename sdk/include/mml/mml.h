@@ -335,6 +335,23 @@ typedef struct MmlGeomCapture {
 } MmlGeomCapture;
 typedef void (*MmlGeomFn)(const MmlGeomCapture *capture, void *user);
 
+/* A person's skeleton (human_skeleton below): the bones in this order, each an LS3D frame. */
+enum {
+    MML_BONE_PELVIS, MML_BONE_BACK1, MML_BONE_BACK2, MML_BONE_BACK3, MML_BONE_NECK,   /* (the head moves with the neck) */
+    MML_BONE_R_SHOULDER, MML_BONE_R_ARM, MML_BONE_R_ELBOW, MML_BONE_R_HAND,
+    MML_BONE_L_SHOULDER, MML_BONE_L_ARM, MML_BONE_L_ELBOW, MML_BONE_L_HAND,
+    MML_BONE_R_THIGH, MML_BONE_R_SHIN, MML_BONE_R_FOOT, MML_BONE_L_THIGH, MML_BONE_L_SHIN, MML_BONE_L_FOOT,
+    MML_BONE_ROOT,          /* the model's root frame: the pelvis's parent */
+    MML_BONE_COUNT
+};
+typedef struct MmlBone {
+    const char *name;       /* "pelvis", "back1"... "root" (the frame's name in the model, but pelvis and root) */
+    void *frame;            /* its I3D_frame; NULL: this model has no such bone */
+    float world[16];        /* its world matrix now (row vectors: rows 0..2 its axes, row 3 its origin; metres) */
+    float rot[4];           /* its local rotation, w x y z, in its parent's space */
+    float pos[3];           /* its local position, in its parent's space */
+} MmlBone;
+
 /* The frame's measures (frame_stats below): the frames Present to Present, the last 600 of them. */
 typedef struct MmlFrameStats {
     uint32_t size;
@@ -591,6 +608,18 @@ typedef struct MmlHost {
      * a heavy mod can lower its quality when the frame runs over its budget. Fills `out` (set out->size first); 1 done.
      * prof.state, prof.sample and MCP's `profile` show every mod and the game thread's time. */
     int (*frame_stats)(MmlMod *mod, MmlFrameStats *out);
+
+    /* ---- people and their skeletons (both builds; docs/MODDING.md "People, skeletons, poses").
+     * humans_list: every person the game made and has not destroyed (C_human: the player, the mission's people, those
+     * spawned), up to `max` into out; returns how many there are. human_skeleton: his bones (MML_BONE_COUNT of them,
+     * in MML_BONE_* order) into out (max at least MML_BONE_COUNT); 0: not a person known, or no skeleton.
+     * bone_set: a bone's local rotation (w x y z; NULL: as it is) and position (NULL: as it is) written, its world
+     * matrix and its children's made again. The game's animation sets the bones every frame: a pose a mod wants drawn
+     * is written in MML_EVENT_RENDER_BEGIN, every frame (the game's logic and collision are not moved by it). */
+    int (*humans_list)(MmlMod *mod, void **out, int max);
+    int (*human_skeleton)(MmlMod *mod, void *human, MmlBone *out, int max);
+    int (*bone_set)(MmlMod *mod, void *frame, const float *rot, const float *pos);
+    void *(*human_player)(MmlMod *mod);   /* the player (his C_human), NULL with no mission */
 } MmlHost;
 
 #define MML_FILE_GAME 1              /* file_read: the game's own file, not a mod's of the same name */

@@ -249,6 +249,33 @@ int view = H->scene_view(M, 640, 200, PlaceMirror, NULL);   /* 0, 0: the frame's
   `"check"` (the left half of the frame drawn again and compared: black when equal). `depth_pulse` runs its pass in
   the views: its wave is seen in the mirror.
 
+### People, skeletons, poses
+
+```c
+void *list[512];
+int n = H->humans_list(M, list, 512);           /* every C_human made and not destroyed; the player: human_player */
+MmlBone b[MML_BONE_COUNT];
+if (H->human_skeleton(M, H->human_player(M), b, MML_BONE_COUNT)) {
+    const float out[4] = {1, 0, 0, 0};           /* w x y z: the identity, the bone along its parent */
+    H->bone_set(M, b[MML_BONE_R_ARM].frame, out, NULL);   /* in MML_EVENT_RENDER_BEGIN, every frame */
+}
+```
+
+- **The skeleton** is the 18 joint frames of the game's human models found by name (`back1`..`back3`, `neck`,
+  `r_shoulder`, `r_arm`, `r_elbow`, `r_hand`, the left ones, `r_thigh`, `r_shin`, `r_foot`, the left ones; the head
+  moves with the neck), the pelvis (the thighs' parent) and the model's root, in `MML_BONE_*` order: each one's
+  frame, world matrix, local rotation (w x y z) and position. An arm bone's x axis runs along it; the identity puts
+  a bone along its parent (both arms: a T-pose).
+- **Poses**: the game's animation sets the bones in its tick (`C_human::Update` runs LS3D's animation, found with
+  `watch`), so a pose written in `RENDER_BEGIN` is what this frame draws, the screen and the scene views alike;
+  the next tick sets the animation again (write it every frame). The loader updates each posed model once after
+  `RENDER_BEGIN`'s mods. The game's logic, collision and aim stay the animation's.
+- `call humans.list` (actor, model, position, health, alive, the player, a vehicle), `human.skeleton {"actor"}`,
+  `human.pose {"actor", "bones": {"r_arm": {"rot": [w, x, y, z], "pos": [x, y, z]}}, "ms"}` (held for `ms`, drawn
+  every frame: an agent's test of a pose).
+- `mods/examples/puppet` (not enabled by default): the player waves (`"wave"`) or holds a T-pose (`"tpose"`), any
+  person with `puppet.target {"actor"}`.
+
 ### The game's own geometry hidden or replaced (water, by its texture)
 
 LS3D draws its meshes face group by face group (a part of a mesh with one material); the loader stands where it

@@ -261,6 +261,21 @@ void RenderViewWorld(int handle);         // (render.cpp) MML_EVENT_VIEW_WORLD s
 bool ViewMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 int ViewDrawingNow();                     // the scene view LS3D is drawing now (its handle), 0: none
 
+// ---- people and their skeletons (humans.cpp): humans.list, human.skeleton, human.pose
+void HumansCreated(void *human);          // (game_hooks.cpp) C_human's constructor
+void HumansGone(void *actor);             // ... an actor's destructor
+void HumansMissionClosed();
+int HumansList(void **out, int max);      // mml.h humans_list
+int HumanSkeleton(void *human, MmlBone *out, int max);
+int BoneSet(void *frame, const float *rot, const float *pos);
+void *HumanPlayer();                      // mml.h human_player
+void HumansBeforeRender();                // (render.cpp) RENDER_BEGIN of the world, before the mods: the held poses
+void HumansFlushPoses();                  // ... after the mods' RENDER_BEGIN: the posed models updated once each
+bool HumansMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+
+// ---- hardware watchpoints on the game thread (watch.cpp): watch.set, watch.show, watch.clear
+bool WatchMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+
 // ---- native.call (native.cpp): any function called from the bridge by its address and convention
 bool NativeMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 

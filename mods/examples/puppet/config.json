@@ -1,0 +1,5 @@
+{
+  // The defaults of puppet's settings (config.set {"mod": "puppet", "key": "mode", "value": "tpose"}).
+  "mode": "wave",   // "wave", "tpose" or "off"
+  "speed": 1.2      // "wave": waves a second
+}

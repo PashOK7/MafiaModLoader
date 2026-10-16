@@ -181,6 +181,32 @@ int Natives(const char *, MmlReply *r, void *) {
     return 0;
 }
 
+// People with no game: none, no skeleton, bone_set refused, no player.
+int Humans(const char *, MmlReply *r, void *) {
+    if (!MML_HAS(H, human_player)) { H->reply_error(r, "the loader has no human_player"); return 1; }
+    void *list[4];
+    MmlBone b[MML_BONE_COUNT];
+    char out[128];
+    snprintf(out, sizeof out, "{\"count\":%d,\"skeleton\":%d,\"bone_set\":%d,\"player\":%d}", H->humans_list(M, list, 4),
+             H->human_skeleton(M, nullptr, b, MML_BONE_COUNT), H->bone_set(M, nullptr, nullptr, nullptr), H->human_player(M) ? 1 : 0);
+    H->reply_append(r, out, static_cast<size_t>(-1));
+    return 0;
+}
+
+// A field written on the game thread (a command): what a hardware watchpoint finds.
+volatile uint32_t g_watched;
+int Poke(const char *args, MmlReply *r, void *) {
+    char out[96];
+    if (args && strstr(args, "\"addr\"")) {
+        snprintf(out, sizeof out, "\"0x%08X\"", static_cast<unsigned>(reinterpret_cast<uintptr_t>(&g_watched)));
+    } else {
+        g_watched = g_watched + 7;
+        snprintf(out, sizeof out, "%u", static_cast<unsigned>(g_watched));
+    }
+    H->reply_append(r, out, static_cast<size_t>(-1));
+    return 0;
+}
+
 int Write(const char *, MmlReply *r, void *) {
     std::string path = std::string(H->mod_data_dir(M)) + "note.txt";
     FILE *f = fopen(path.c_str(), "w");
@@ -219,7 +245,9 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->command(mod, "passviews", "a pass of its own, gfx_pass_views on it and on no such pass", PassViews, nullptr);
     host->command(mod, "passviews_clear", "takes that pass back", PassViewsClear, nullptr);
     host->command(mod, "geom", "geom_hide, geom_capture with no game (refused), geom_show", Geom, nullptr);
-    host->command(mod, "natives", "the addresses of native.call's test functions (each convention, floats, a buffer, a fault)", Natives, nullptr);
+    host->command(mod, "humans", "humans_list, human_skeleton, bone_set, human_player with no game", Humans, nullptr);
+    host->command(mod, "poke", "{}: adds 7 to a field on the game thread; {\"addr\": 1}: the field's address", Poke, nullptr);
+    host->command(mod, "natives","the addresses of native.call's test functions (each convention, floats, a buffer, a fault)", Natives, nullptr);
     return 0;
 }
 

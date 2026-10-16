@@ -302,6 +302,12 @@ int H_GeomHide(MmlMod *m, const char *pattern, int where) {
 }
 void H_GeomShow(MmlMod *m, int handle) { if (m && handle >= 0) GeomShow(m, handle); }
 int H_FrameStats(MmlMod *m, MmlFrameStats *out) { return Alive(m) && ProfFrameStats(m, out) ? 1 : 0; }
+int H_HumansList(MmlMod *m, void **out, int max) { return Alive(m) ? HumansList(out, max) : 0; }
+int H_HumanSkeleton(MmlMod *m, void *human, MmlBone *out, int max) {
+    return Alive(m) && out && max >= MML_BONE_COUNT ? HumanSkeleton(human, out, max) : 0;
+}
+int H_BoneSet(MmlMod *m, void *frame, const float *rot, const float *pos) { return Alive(m) ? BoneSet(frame, rot, pos) : 0; }
+void *H_HumanPlayer(MmlMod *m) { return Alive(m) ? HumanPlayer() : nullptr; }
 int H_GeomCapture(MmlMod *m, const char *pattern, MmlGeomFn fn, void *user) {
     if (!Alive(m)) return 0;
     std::string err;
@@ -727,6 +733,10 @@ void ModsInit() {
     g_host.geom_show = H_GeomShow;
     g_host.geom_capture = H_GeomCapture;
     g_host.frame_stats = H_FrameStats;
+    g_host.humans_list = H_HumansList;
+    g_host.human_skeleton = H_HumanSkeleton;
+    g_host.bone_set = H_BoneSet;
+    g_host.human_player = H_HumanPlayer;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();
@@ -826,6 +836,8 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (GeomMethod(method, paramsJson, reply, &ok)) return ok;
     if (ProfMethod(method, paramsJson, reply, &ok)) return ok;
     if (NativeMethod(method, paramsJson, reply, &ok)) return ok;
+    if (HumansMethod(method, paramsJson, reply, &ok)) return ok;
+    if (WatchMethod(method, paramsJson, reply, &ok)) return ok;
     if (method == "mods.list") { *reply = ModsList(); return true; }
     if (method == "commands.list") { *reply = CommandsList(); return true; }
     if (method == "hooks.list") { *reply = HookList(); return true; }
@@ -925,7 +937,7 @@ std::string CommandsList() {
                           "input.seq", "input.release", "input.state", "text.get", "text.find", "screenshot", "screenshot.state",
                           "draw.text", "draw.rect", "draw.line", "draw.clear", "draw.state", "config.get", "config.set",
                           "menu.item", "menu.items", "menu.item.remove", "menu.page", "menu.page.set", "menu.page.close", "menu.def", "menu.click", "input.mouse", "input.text",
-                          "script.run", "script.state", "script.stop", "script.list", "files.list", "files.which", "files.read", "render.state", "gfx.state", "gfx.reset", "view.state", "view.show", "geom.hide", "geom.show", "geom.state", "geom.survey", "geom.capture", "prof.state", "prof.reset", "prof.sample", "native.call"})
+                          "script.run", "script.state", "script.stop", "script.list", "files.list", "files.which", "files.read", "render.state", "gfx.state", "gfx.reset", "view.state", "view.show", "geom.hide", "geom.show", "geom.state", "geom.survey", "geom.capture", "prof.state", "prof.reset", "prof.sample", "native.call", "humans.list", "human.skeleton", "human.pose", "watch.set", "watch.show", "watch.clear"})
         out.push_back({{"name", m}, {"owner", "host"}});
     for (auto &kv : g_commands) out.push_back({{"name", kv.first}, {"owner", Who(kv.second.mod)}, {"help", kv.second.help}});
     return out.dump();

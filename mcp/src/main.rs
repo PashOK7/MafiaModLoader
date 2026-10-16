@@ -308,6 +308,21 @@ struct TapArgs {
 }
 
 #[derive(Deserialize, JsonSchema)]
+struct WatchArgs {
+    /// Start a watch on this address ("0x0EB9F024", "game+0x2D8714"): the game thread's every write of it (or every
+    /// access with `mode: "access"`) is caught by a debug register (four at most).
+    set: Option<String>,
+    /// "write" (default: only writes that change it) or "access" (reads too).
+    mode: Option<String>,
+    /// Bytes watched: 1, 2 or 4 (default 4; the address aligned to it).
+    len: Option<u32>,
+    /// Show what a watch caught: each piece of code (named), how often, its callers on the stack, the values.
+    show: Option<u32>,
+    /// Take a watch off (its id), or "all".
+    clear: Option<Value>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 struct WaitArgs {
     /// The event types to wait for, comma-separated: MISSION_LOADED, MISSION_OPEN, MISSION_CLOSE, GAME_PAUSED,
     /// GAME_RESUMED, HUMAN_CREATED, HUMAN_HIT, ACTOR_DESTROYED, MOD_LOADED, MOD_UNLOADED, MOD_FAULTED, SCRIPT_ENDED,
@@ -735,6 +750,26 @@ impl Server {
         let v = self.bridge.call("tap", json!({"cmd": a.cmd}), 5000).await?;
         let text = v.as_str().map(String::from).unwrap_or_else(|| pretty(&v));
         if text.starts_with("error") { Err(text) } else { Ok(kb::annotate_tap(&text)) }
+    }
+
+    /// Who writes (or reads) a field: a hardware watchpoint on the game thread. {"set": "0x0EB9F024"} starts one
+    /// (its id), let the game do the thing, {"show": id} gives every piece of code that wrote it (named from the
+    /// knowledge base), how often, its callers and the values before and after; {"clear": id | "all"}.
+    #[tool]
+    async fn watch(&self, Parameters(a): Parameters<WatchArgs>) -> Out {
+        let v = if let Some(addr) = &a.set {
+            let mut p = json!({"addr": addr, "mode": a.mode.clone().unwrap_or_else(|| "write".into())});
+            if let Some(l) = a.len { p["len"] = json!(l); }
+            self.call_value("watch.set", p, None).await?
+        } else if let Some(id) = a.show {
+            self.call_value("watch.show", json!({"id": id}), None).await?
+        } else if let Some(c) = &a.clear {
+            let p = if c.as_str() == Some("all") { json!({"all": true}) } else { json!({"id": c}) };
+            self.call_value("watch.clear", p, None).await?
+        } else {
+            return Err("watch: {\"set\": addr} | {\"show\": id} | {\"clear\": id | \"all\"}".into());
+        };
+        Ok(kb::annotate(&pretty(&v)))
     }
 
     /// Wait for something to happen in the game: until an event of `types` (with `filter`'s fields) comes, or

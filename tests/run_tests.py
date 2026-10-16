@@ -752,6 +752,35 @@ def main():
               and 'game' in res['phases'], {k: res.get(k) for k in ('done', 'samples', 'by_module')})
         kit_tests(b)
         native_tests(b)
+        # people with no game: none, refused; the bridge says so
+        r = b.call('kit.humans')
+        check('humans_list, human_skeleton, bone_set, human_player with no game: none, 0, 0, null',
+              r['ok'] and r['result'] == {'count': 0, 'skeleton': 0, 'bone_set': 0, 'player': 0}, r)
+        r = b.call('humans.list')
+        check('humans.list with no game: none', r['ok'] and r['result']['count'] == 0, r)
+        r = b.call('human.skeleton', {'actor': 'player'})
+        check('human.skeleton with no game: an error, saying why', not r['ok'] and 'no such person' in str(r), r)
+        # a hardware watchpoint: the field the kit's command writes on the game thread, found with the code that wrote it
+        addr = b.call('kit.poke', {'addr': 1})['result']
+        r = b.call('watch.set', {'addr': addr, 'mode': 'write'})
+        wid = r['result']['id'] if r['ok'] else 0
+        check('watch.set: a write watch on the field', r['ok'] and wid > 0, r)
+        b.call('kit.poke')
+        b.call('kit.poke')
+        r = b.call('watch.show', {'id': wid})
+        sites = r['result']['sites'] if r['ok'] else []
+        check('watch.show: the kit\'s code found, twice, the value before and after',
+              len(sites) == 1 and 'mod_kit' in sites[0]['at'] and sites[0]['count'] == 2 and sites[0]['before'] != sites[0]['after'], r)
+        r = b.call('watch.set', {'addr': addr, 'mode': 'access', 'len': 4})
+        aid = r['result']['id'] if r['ok'] else 0
+        b.call('kit.poke')
+        r = b.call('watch.show', {'id': aid})
+        check('watch.set access: the read and the write of the field found (the handler reads nothing)',
+              r['ok'] and r['result']['hits'] >= 2 and r['result']['sites'], r)
+        r = b.call('watch.clear', {'all': True})
+        check('watch.clear: every watch off, the game goes on', r['ok'] and r['result']['cleared'] == 2 and b.call('ping')['ok'], r)
+        r = b.call('watch.set', {'addr': '0x00000010'})
+        check('watch.set on memory that is not readable: refused', not r['ok'], r)
         files_tests(b)
         heavy_tests(b)
         boxes_tests(b)

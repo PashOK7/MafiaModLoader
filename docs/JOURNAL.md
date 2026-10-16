@@ -910,3 +910,26 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   11 checks, a cdecl function called as stdcall reported as such. **In the labs**: the text lookup (`textGet`,
   thiscall on `textDb`) gave "Game Over" in 1.2 and "Fin de partie" in the French 1.0.
 - The session's usage limit ran out in the middle of the 1.0 check; resumed after it reset.
+
+## 2026-10-16: hardware watchpoints (item 22) and people's skeletons (item 6, block 6a)
+
+- **6a first**: the host keeps every `C_human` (its constructor and the actors' destructor, cleared at a mission's
+  close), the skeleton by name (LS3D's FindChildFrame on the model: mafia-ragdoll's 18 joints, the pelvis, the
+  root; a `head` asked for too was not there: the head moves with the neck), `bone_set` and the bridge's
+  `human.pose` (held, written at RENDER_BEGIN).
+- **A pose that did not show**: the bones held the pose (read back on a pause) but the arms hung down in the mirror.
+  Rather than guess, item 22 was made first: `host/watch.cpp` after mafia-ragdoll's `hwwatch.cpp`, four debug
+  registers, write or access, the sites recorded once with their stacks and values, nothing read in access mode.
+  A write watch on the bone's quaternion: 2536 writes by LS3D (`+0x1DB4E`, `+0x301C7`) from `C_human::Update`
+  (`C_game::Tick` > `C_actor::Tick` > `C_player::AI`): the animation is the tick's, before RENDER_BEGIN, so the
+  write there wins. The pose itself was at fault: 90 degrees about the upper arm's z keeps it pointing down (its x
+  axis runs along the arm; the elbow measured 27 cm under the shoulder); the identity (a T-pose) showed at once on
+  the screen and in the mirror. Each posed model is updated once after RENDER_BEGIN's mods (as mafia-ragdoll updates
+  its posed models; not measured to be needed).
+- **The example** `puppet`: a wave (the arm out sideways and swung up: negative about z) and a T-pose, seen in the
+  1.2 and 1.0 labs on the screen and in `rear_mirror`'s turning mirror placed before Tommy.
+- `human_player` added to the C ABI (a first draft of the example took the list's first person as the player).
+- **Found**: 36 pooled people (`road_bl_E`, at the origin) in a freeride's list in both builds (Known gaps).
+- **Tests**: offline people with no game, a watch on a kit field written by a command (found twice, its before and
+  after), access mode, clear, refusals; `mcp_smoke.py` has `watch`. ALL PASSED both. One `native.call` of an
+  arbitrary address made by mistake in the 1.0 lab faulted inside its guard; the game went on.

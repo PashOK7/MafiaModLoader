@@ -277,6 +277,16 @@ What is done, what comes next and later, and what is known to be missing or wron
   Offline: every convention, floats, a buffer, a wrong convention, a fault (11 checks); in the 1.2 lab the game's
   text 1403 ("Game Over") by its text lookup (thiscall on the text database), in the 1.0 lab the same ("Fin de
   partie").
+- **Hardware watchpoints** (2026-10-16; item 22): up to four on the game thread (DR0..DR3), write (changes) or
+  access, 1, 2 or 4 bytes; each piece of code recorded once with its count, the game's return addresses on the
+  stack and the values; the handler reads nothing in access mode and allocates nothing. `watch.set`, `watch.show`,
+  `watch.clear`; MCP `watch` names the code. Offline (a kit field written by a command: found twice, access mode,
+  refusals); in both labs it found what writes a person's bone (`C_human::Update` running LS3D's animation).
+- **People, skeletons, poses** (2026-10-16; item 6, block 6a): the host keeps every `C_human` (`humans_list`,
+  `human_player`), a person's skeleton by the bones' names (`human_skeleton`: 18 joints, the pelvis, the root), a
+  pose written for the frame's drawing (`bone_set` in `RENDER_BEGIN`, each posed model updated once after);
+  `humans.list`, `human.skeleton`, `human.pose` (held for a time). The example `mods/examples/puppet` (a wave, a
+  T-pose) seen in both labs on the screen and in a scene view's mirror; offline tests with no game.
 
 ## Next, by importance
 
@@ -316,7 +326,8 @@ V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselv
 
 ### Tier 2: the game's world as data, read and changed
 
-6. **People, skeletons, animations** (R K F; S W as pushers). Every `C_human`, the traffic system's pooled ones too,
+6. *(6a done 2026-10-16: the list, the skeleton, poses; see "Done". Left: traffic pedestrians' elements and their
+   Hit as events, getting up, animations played, 1.0's fields.)* **People, skeletons, animations** (R K F; S W as pushers). Every `C_human`, the traffic system's pooled ones too,
    as a list (the constructor's hook already sends `HUMAN_CREATED`; no list is kept); traffic pedestrians' elements
    and their own Hit (`0x4588D0`) as events; the bones by name, a pose read in one call (the 18 joints, the model
    root), written back before Render (item 3); handing a body back to the game (getting up); the game's animations
@@ -389,7 +400,7 @@ V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselv
     timeout_ms}`, MCP `wait` ("until the mission is loaded", "until he dies").
 21. *(Done 2026-10-16: see "Done".)* **`native.call`** (A). Any game function called from the bridge by its address and convention (thiscall,
     stdcall, cdecl, fastcall; integer, float, pointer and string arguments; a fault guarded): a hypothesis in one call.
-22. **Hardware watchpoints** (A; from Later). Who writes or reads a field, on the bridge and MCP; the handler never
+22. *(Done 2026-10-16: see "Done".)* **Hardware watchpoints** (A; from Later). Who writes or reads a field, on the bridge and MCP; the handler never
     reads the watched address (a recursion crashed the game once). Reference: `hwwatch.cpp`.
 23. **Tests in the real game, as scripts of steps** (A). Python over the bridge (`tests/game/`): start, spawn,
     teleport, input, wait for an event, check a value, screenshot; pass or fail. First cases from the measuring mods:
@@ -477,6 +488,11 @@ merged, sorted by importance):
   matrix being the camera's backdrop view, bit for bit (it was, every drawing, in both labs). `MML_VIEW_OWN_SECTOR`
   (a camera in another room) was not tried. The first two or three reloads of `rear_mirror` added 2..13 handles each (taken to be
   Direct3D's own warming up: views made and taken back by mode changes added none); then 0.
+- **People** (host/humans.cpp): a freeride lists 36 people besides the player with the model name `road_bl_E` at
+  the origin (both builds): the traffic system's pool, not placed yet, whose actor + 0x68 is not a person's model
+  (no skeleton). Traffic pedestrians walking the streets were not checked against the list. A pose is drawn only:
+  the game's logic, collision and aim keep the animation's. Animations played by a mod, getting up and 1.0's fields
+  are 6's other blocks.
 - **Measuring the frame** (host/prof.cpp): the passes' GPU times are in `gfx.state`, not in `prof.state`; a mod's
   own hooks (its detours inside the game's functions) count as the game's time (the sampler shows them under the
   mod's DLL). A scene view with passes in it waits for both devices once more each (in the 1.2 lab about 4 % of the

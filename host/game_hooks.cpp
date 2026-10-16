@@ -102,6 +102,7 @@ int __fastcall hkMissionClose(void *self, void *edx) {
     g_missionLoaded = false;
     g_missionName.clear();
     int r = oMissionClose(self, edx);
+    HumansMissionClosed();   // (its people went with it)
     if (g_inOpen && !g_openSent) SendOpen();
     return r;
 }
@@ -109,12 +110,14 @@ void __fastcall hkActorDtor(void *self, void *edx) {
     MmlEvent ev = Event(MML_EVENT_ACTOR_DESTROYED);
     ev.actor = self;
     Dispatch(ev);
+    HumansGone(self);
     ScriptActorGone(self);
     WorldActorGone(self);
     oActorDtor(self, edx);
 }
 void *__fastcall hkHumanCtor(void *self, void *edx) {
     void *r = oHumanCtor(self, edx);
+    HumansCreated(self);
     MmlEvent ev = Event(MML_EVENT_HUMAN_CREATED);
     ev.actor = self;
     Dispatch(ev);
