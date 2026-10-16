@@ -516,6 +516,28 @@ typedef struct MmlMeshPiece {
     uint32_t version;       /* changes when its mesh or its place changed */
     int moving;             /* 1: it moved within the last second (a door, a gate) */
 } MmlMeshPiece;
+/* shader_add's rule: which of the game's draws take a mod's shaders, and the shaders (Direct3D 9) */
+typedef struct MmlShaderRule {
+    uint32_t size;          /* sizeof(MmlShaderRule) */
+    const char *pattern;    /* the draws' textures' names ("2kolo*.bmp"; * and ?, without regard to case); NULL: every one */
+    uint32_t kinds;         /* MML_SHADE_OBJECT | _LIGHTMAPPED | _BILLBOARD; 0: every kind */
+    uint32_t classes;       /* MML_SHADE_OPAQUE | _ALPHATEST | _TRANSLUCENT | _ADDITIVE (the draw's blending); 0: every class */
+    uint32_t where;         /* MML_GEOM_FRAME | MML_GEOM_VIEWS; 0: both */
+    uint32_t flags;         /* MML_SHADE_ALL_PASSES: a face group's further passes too (else its first draw only) */
+    const char *source;     /* HLSL the host compiles (#include "mml/game.hlsli": the constants), or NULL */
+    const char *vs_entry, *ps_entry;     /* its entry points; NULL: that stage stays the game's fixed one */
+    const char *vs_target, *ps_target;   /* NULL: "vs_3_0", "ps_3_0" */
+    const void *vs_code; size_t vs_size; /* or compiled shaders (fxc's bytecode; mml_shaders() in a mod's build) */
+    const void *ps_code; size_t ps_size;
+} MmlShaderRule;
+#define MML_SHADE_OBJECT      0x1u   /* objects, morphs, people (LS3D's object drawing) */
+#define MML_SHADE_LIGHTMAPPED 0x2u
+#define MML_SHADE_BILLBOARD   0x4u
+#define MML_SHADE_OPAQUE      0x1u
+#define MML_SHADE_ALPHATEST   0x2u
+#define MML_SHADE_TRANSLUCENT 0x4u
+#define MML_SHADE_ADDITIVE    0x8u
+#define MML_SHADE_ALL_PASSES  0x1u
 /* game_files' function: one file's name (as the game opens it) and where it comes from ("a2.dta", "folder", a mod's
    id); return nonzero to stop */
 typedef int (*MmlFileFn)(const char *name, const char *source, void *user);
@@ -1300,6 +1322,17 @@ typedef struct MmlHost {
     int (*scene_focus)(MmlMod *mod, const float lo[3], const float hi[3]);
     int (*scene_pieces)(MmlMod *mod, MmlMeshPiece *out, int max);
     int (*actor_meshes)(MmlMod *mod, void *actor, MmlMeshPiece *out, int max);
+
+    /* ---- shaders on the game's own drawing (both builds, under a Direct3D 9 wrapper such as dxwrapper; docs/MODDING.md
+     * "Shaders on the game's own drawing"; sdk/include/mml/shaders/game.hlsli the constants). shader_add: the draws
+     * the rule picks are drawn with its vertex and/or pixel shader on the game's device, the frame's constants set
+     * in game.hlsli's registers, the game's fixed pipeline (its textures, blending, depth) around them; the game's
+     * own state is put back after each draw. The last rule added that matches a draw takes it. Returns its handle, 0:
+     * refused (error, cap bytes, says why: a compiler's message too). shader_remove: one (0: every one of the mod's);
+     * a mod's go at its unload. sdk/include/mml/shaders/reference.hlsl draws every kind as the game does: the
+     * starting point to copy. Game thread. */
+    int (*shader_add)(MmlMod *mod, const MmlShaderRule *rule, char *error, int cap);
+    int (*shader_remove)(MmlMod *mod, int handle);
 } MmlHost;
 
 #define MML_ZONE_PLAYER 0x1u

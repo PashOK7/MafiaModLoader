@@ -160,6 +160,7 @@ int __stdcall hkRender(void *driver, void *scene) {
         GeomFrameDrawing(false);
         GfxAfterWorld();
         GeomFrameEnd();
+        ShadersFrameEnd();   // (shaders.cpp: the survey done)
     }
     if (Subscribed(MML_EVENT_RENDER_END)) Dispatch(Ev(MML_EVENT_RENDER_END, dev));
     g_lastScene = scene;

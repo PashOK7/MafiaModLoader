@@ -178,9 +178,15 @@ bool ReadDraw(IDirect3DDevice9 *d, D3DPRIMITIVETYPE type, INT base, UINT start, 
     return ok;
 }
 
+HRESULT DrawOn(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex, UINT verts, UINT start, UINT n) {
+    HRESULT hr;
+    if (ShadersDraw(d, t, base, minIndex, verts, start, n, reinterpret_cast<void *>(oDip), &hr)) return hr;   // (shaders.cpp)
+    return oDip(d, t, base, minIndex, verts, start, n);
+}
+
 HRESULT STDMETHODCALLTYPE hkDip(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex, UINT verts, UINT start, UINT n) {
     Now *now = g_now;
-    if (!now) return oDip(d, t, base, minIndex, verts, start, n);
+    if (!now) return DrawOn(d, t, base, minIndex, verts, start, n);
     if (!now->read) {   // (its first draw: a group's further passes draw the same triangles)
         now->read = true;
         std::vector<float> tris;
@@ -195,7 +201,7 @@ HRESULT STDMETHODCALLTYPE hkDip(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT bas
             c->tris.insert(c->tris.end(), tris.begin(), tris.end());
         }
     }
-    return now->suppress ? D3D_OK : oDip(d, t, base, minIndex, verts, start, n);
+    return now->suppress ? D3D_OK : DrawOn(d, t, base, minIndex, verts, start, n);
 }
 
 bool EnsureDip() {
@@ -268,16 +274,27 @@ DWORD SafeDecide(void *visual, uint8_t *entry, Now *now, bool *hide) {
 }
 
 unsigned g_faults;
-template <RenderFgFn *orig>
+// The group drawn through LS3D, the mods' shaders told which it is (shaders.cpp): kind 1 an object (objects, morphs,
+// single meshes), 2 a lightmapped object, 3 a billboard.
+template <RenderFgFn *orig, int kind>
+void DrawGroup(void *visual, void *edx, uint8_t *entry) {
+    if (!ShadersWanted()) { (*orig)(visual, edx, entry); return; }
+    int view = ViewDrawingNow();
+    ShadersGroupBegin(kind, visual, entry, view ? MML_GEOM_VIEWS : (g_inFrame ? MML_GEOM_FRAME : 0));
+    (*orig)(visual, edx, entry);
+    ShadersGroupEnd();
+}
+
+template <RenderFgFn *orig, int kind>
 void __fastcall hkRenderFg(void *visual, void *edx, uint8_t *entry) {
-    if (g_rules.empty() && !g_surveyWanted && g_captures.empty()) { (*orig)(visual, edx, entry); return; }
+    if (g_rules.empty() && !g_surveyWanted && g_captures.empty()) { DrawGroup<orig, kind>(visual, edx, entry); return; }
     Now now{};
     bool hide = false;
     if (SafeDecide(visual, entry, &now, &hide)) g_faults++;
     if (hide) return;
-    if (now.caps.empty()) { (*orig)(visual, edx, entry); return; }
+    if (now.caps.empty()) { DrawGroup<orig, kind>(visual, edx, entry); return; }
     g_now = &now;
-    (*orig)(visual, edx, entry);
+    DrawGroup<orig, kind>(visual, edx, entry);
     g_now = nullptr;
 }
 
@@ -289,9 +306,9 @@ bool EnsureHooks() {
     if (!l.fgRenderObject || !l.fgRenderLit || !l.fgRenderBillboard) { g_hookWhy = "not known for this LS3DF.dll"; return false; }
     uintptr_t base = ModuleBase("LS3DF.dll");
     struct { uintptr_t at; void *detour; RenderFgFn *orig; } hooks[] = {
-        {base + l.fgRenderObject, reinterpret_cast<void *>(&hkRenderFg<&oObject>), &oObject},
-        {base + l.fgRenderLit, reinterpret_cast<void *>(&hkRenderFg<&oLit>), &oLit},
-        {base + l.fgRenderBillboard, reinterpret_cast<void *>(&hkRenderFg<&oBillboard>), &oBillboard},
+        {base + l.fgRenderObject, reinterpret_cast<void *>(&hkRenderFg<&oObject, 1>), &oObject},
+        {base + l.fgRenderLit, reinterpret_cast<void *>(&hkRenderFg<&oLit, 2>), &oLit},
+        {base + l.fgRenderBillboard, reinterpret_cast<void *>(&hkRenderFg<&oBillboard, 3>), &oBillboard},
     };
     std::string err;
     for (auto &h : hooks) {
@@ -349,6 +366,17 @@ void CallDeliver(void *p) {
 
 } // namespace
 
+bool GeomEnsureHooks(std::string *why) {
+    if (EnsureHooks()) return true;
+    *why = g_hookWhy;
+    return false;
+}
+bool GeomEnsureDip(std::string *why) {
+    if (EnsureDip()) return true;
+    *why = g_dipWhy;
+    return false;
+}
+
 int GeomHide(MmlMod *mod, const char *pattern, int where, std::string *err) { return AddRule(mod, pattern, where, err); }
 void GeomShow(MmlMod *mod, int handle) { RemoveRules(mod, handle); }
 
@@ -370,7 +398,7 @@ void GeomRemove(MmlMod *mod) {
 void GeomFrameBegin() {
     g_match.clear();
     for (Rule &r : g_rules) { r.groupsNow = r.facesNow = 0; }
-    if (!g_captures.empty()) EnsureDip();
+    if (!g_captures.empty() || ShadersWanted()) EnsureDip();
 }
 void GeomFrameDrawing(bool on) { g_inFrame = on; }
 void GeomFrameEnd() {

@@ -897,6 +897,15 @@ def main():
               m['materials'] == 0 and m['file'] == 0 and m['untouched'] == 1, r)
         check('scene_focus with no game: taken (and let go); scene_pieces none; actor_meshes of no actor: -1',
               r['ok'] and m['focus'] == 1 and m['pieces'] == 0 and m['actor'] == -1 and m['off'] == 1, r)
+        ref = open(os.path.join(ROOT, 'sdk', 'include', 'mml', 'shaders', 'reference.hlsl')).read()
+        r = b.call('shader.add', {'source': ref.replace('mml_ps(', 'mml_ps_broken(', 1), 'vs': 'mml_vs', 'ps': 'mml_ps'})
+        check('shader.add of HLSL that does not compile: refused with the compiler\'s message',
+              not r['ok'] and 'pixel shader' in str(r) and 'mml_ps' in str(r), r)
+        r = b.call('shader.add', {'source': ref, 'vs': 'mml_vs', 'ps': 'mml_ps'})
+        check('shader.add of the reference shaders with no game: compiled (game.hlsli included), refused for want of the game',
+              not r['ok'] and 'no game' in str(r), r)
+        r = b.call('shader.survey')
+        check('shader.survey with no game: an error, saying why', not r['ok'] and 'no game' in str(r), r)
         r = b.call('scene.pieces')
         check('scene.pieces with no game: none, saying there is no focus', r['ok'] and r['result']['pieces'] == 0 and 'scene.focus' in str(r), r)
         r = b.call('files.game', {'match': '*', 'limit': 3})

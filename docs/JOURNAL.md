@@ -1346,3 +1346,18 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   car is the car's child): the walk now stops at another model (type 9) and below a hidden frame.
 - **In both labs** alike (ROADMAP "Done").
 - **Tests**: offline ALL PASSED; check_builds ALL PASSED.
+
+## 2026-10-17: shaders on the game's own drawing (blocks 7a and 7b of the new order)
+
+- **The owner's decision**: the base for "real" shaders (per-object, on the game's device) before the camera and
+  control; the roadmap's order changed (item 27, order 7).
+- **Measured first** (`shader.survey`, both builds): the game's draws carry lit colours and no normals, Direct3D's
+  lighting off, a handful of stage set-ups (knowledge/notes/game.md).
+- **Made** `host/shaders.cpp` (rules, the constants, HLSL through d3dcompiler_47, the survey), geom.cpp's hooks
+  calling in, `sdk/include/mml/shaders/game.hlsli` (made into the host by the build) and `reference.hlsl`.
+- **A first version corrected, by the owner's eye**: the reference showed a shop's sign the game hides; the owner
+  drove there and found it behind the wall. The position computed with World x View x Proj multiplied first lost
+  the depth's last bits; the game's order (World, then View, then Proj) hides it as the game does.
+- **In both labs** alike (ROADMAP "Done"): the reference on every draw, the frame the game's.
+- **Tests**: offline ALL PASSED (a shader that does not compile refused with the compiler's message; the reference
+  compiled with its header).

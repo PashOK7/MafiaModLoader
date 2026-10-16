@@ -530,3 +530,17 @@ autosplitter; kept outside it, not ported). Checked against the above:
   `SMMR`...), +0x1E0 its mesh, +0x19C its world bounding sphere's centre, +0x1A8 its radius; the mesh's LODs and
   face groups as host/meshes.cpp says, the same in both builds. At the freeride's start, 140 m around the player: 109
   to 127 `OBJ_` and 12 `LMAP` visuals touch the box, 26 of them actors'.
+
+## How the game's world reaches Direct3D (measured 2026-10-17, both labs; host/shaders.cpp shader.survey)
+
+- **ls3d** Every face group LS3D draws (the freeride's start: 362 to 497 draws a frame) goes with Direct3D's
+  lighting off, no light set: LS3D lights the vertices on the CPU and hands their colour. FVF 0x142 (position,
+  colour, one uv) or 0x242 (two uv). Stage 0: `modulate2x(texture, diffuse)`, alpha `modulate`; lightmapped
+  objects: stage 0 `add(texture, diffuse)`, alpha `selectarg1`, stage 1 `modulate2x(lightmap, current)`; a car's
+  paint: stage 1 `blendfactoralpha(reflection, current)` with the texture factor 0x26000000 (its alpha 0.15). Vertex
+  fog, linear (FOGVERTEXMODE 3, no table fog). Blending SRCALPHA / INVSRCALPHA (translucent) or SRCALPHA / ONE
+  (additive); alpha test GREATEREQUAL with 200 or 1. Skinned people come the same way (skinned on the CPU). One
+  pass a face group.
+- **ours** The depth's last bits matter: a sign behind a wall of the building across the street from the
+  freeride's start is hidden from the parking lot by the fixed pipeline's arithmetic and shows through the wall
+  when a shader computes the position with the matrices multiplied together first.

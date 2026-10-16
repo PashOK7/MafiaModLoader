@@ -1,0 +1,2 @@
+// Made by the build from sdk/include/mml/shaders/game.hlsli (CMakeLists.txt): the host's copy of the header.
+static const char kGameHlsli[] = R"MMLHLSLI(@MML_GAME_HLSLI@)MMLHLSLI";

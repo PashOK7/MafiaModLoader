@@ -828,6 +828,48 @@ H->human_get_up(M, paulie, 600);          /* a body the mod posed handed back to
 - `call human.anim {"actor", "play" | "stop" | "replace" with "with"}`, `human.anim_state {"actor"}`,
   `human.get_up {"actor", "blend_ms"}`.
 
+### Shaders on the game's own drawing (per-object shading)
+
+```c
+/* the game's whole world drawn by your shaders: start from the reference, which draws it as the game does */
+static const char kSource[] = "#include \"mml/game.hlsli\"\n ...";   /* or read sdk/include/mml/shaders/reference.hlsl */
+MmlShaderRule r = {sizeof r};
+r.pattern = "*";                         /* the textures' names: "2kolo*.bmp" the wheels, "^*" the lightmapped... */
+r.kinds = MML_SHADE_OBJECT | MML_SHADE_LIGHTMAPPED;
+r.classes = MML_SHADE_OPAQUE | MML_SHADE_ALPHATEST;
+r.source = kSource; r.vs_entry = "mml_vs"; r.ps_entry = "mml_ps";
+char err[512];
+int h = H->shader_add(M, &r, err, sizeof err);   /* 0: refused, err says why (the compiler's message too) */
+```
+
+- **What it is**: item 3's passes see the finished frame; these shaders draw the game's own surfaces. The game draws
+  with Direct3D 8's fixed pipeline; under a Direct3D 9 wrapper (dxwrapper in the labs) the host sets a rule's vertex
+  and pixel shaders on each draw the rule picks (LS3D's face groups: the texture's name, the kind, the draw's
+  blending), with the frame's constants, and puts the game's fixed pipeline back after it. The game's blending,
+  alpha test and depth stay its own around them. The last rule added that matches takes a draw; a mod's rules go at
+  its unload.
+- **The contract**: `sdk/include/mml/shaders/game.hlsli` (`#include "mml/game.hlsli"` in source the host compiles;
+  the host keeps its own copy). The matrices (`mml_World`, `mml_View`, `mml_Proj`), the eye and the time, the fog,
+  the texture stages' operations, the texture factor; `mml_Tex0`, `mml_Tex1` the textures the game set.
+- **What the game hands its draws** (measured, `call shader.survey`, alike in both builds): LS3D lights the
+  vertices on the CPU, so a vertex carries its lit colour and **no normal** (FVF 0x142: position, colour, uv; 0x242
+  a second uv: a lightmap's, or a car's reflection's); Direct3D's lighting is off. Stage 0 is `modulate2x(texture,
+  colour)` (lightmapped: `add`, then `modulate2x(lightmap)`; a car's paint: then `blendfactoralpha(reflection)`
+  by the texture factor's alpha); the fog is the vertex fog, linear. `mml_FixedStage` does a stage as Direct3D
+  does; `mml_FaceNormal` gives a pixel the face's normal from its world position's derivatives; `mml_FogFactor`.
+- **The reference** (`sdk/include/mml/shaders/reference.hlsl`, `mml_vs` and `mml_ps`) draws every kind as the
+  game does: switched on for every draw, the frame was the game's (a mean difference of 0.25 of 255 in a JPEG, the
+  car's moving exhaust aside, in both labs). Copy it and change it.
+- **Compute the position as the game does**: `mul(mul(mul(pos, mml_World), mml_View), mml_Proj)`, not
+  `mml_WorldViewProj` in one step. The game's models hide things inside one another: a shop's sign stands just
+  behind a wall; from 80 m the depth buffer cannot tell them apart, and only the last bits of the arithmetic decide
+  which wins. In the game's order the wall wins (as the game shows it); in another, the sign shows through the wall.
+- Shaders compiled in a mod's build: `mml_shaders()` (fxc, `vs_3_0` / `ps_3_0`), the bytecode in `vs_code` /
+  `ps_code`; `sdk/include` on fxc's include path (`#include "mml/shaders/game.hlsli"`).
+- `call shader.add {"source", "vs", "ps", "pattern", "kinds", "classes", "where", "all_passes"}` (an agent tries a
+  shader in the running game without building anything), `shader.remove`, `shader.state` (each rule's draws in the
+  last frame), `shader.survey`.
+
 ### The game's own geometry hidden or replaced (water, by its texture)
 
 LS3D draws its meshes face group by face group (a part of a mesh with one material); the loader stands where it

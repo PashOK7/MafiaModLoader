@@ -343,6 +343,17 @@ What is done, what comes next and later, and what is known to be missing or wron
   `model_nodes`, `model_mesh`, `model_materials`, `model_close` (a .4ds parser after mafia-ragdoll's);
   `files.game`, `model.file`, `model.info`. Seen alike in the 1.2 and 1.0 labs: 3223 models listed, 3220 parsed (two
   scenes of version 27, one model of 58 refused), the player's and the taxi's files named.
+- **Shaders on the game's own drawing** (2026-10-17; item 27, blocks 7a and 7b of the order): `shader_add`,
+  `shader_remove` (a mod's Direct3D 9 shaders set on the game's draws a rule picks, through geom.cpp's face group
+  and DrawIndexedPrimitive hooks, the game's state put back after each; HLSL compiled by d3dcompiler_47 with the
+  contract's header answered from the host), `sdk/include/mml/shaders/game.hlsli` (the constants and the fixed
+  pipeline's stages, fog, a face's normal), `sdk/include/mml/shaders/reference.hlsl` (the game's picture);
+  `shader.add`, `shader.remove`, `shader.state`, `shader.survey`. Measured first: the game's draws carry lit
+  colours, no normals, Direct3D's lighting off, a handful of stage set-ups (both builds alike). Seen alike in the 1.2
+  and 1.0 labs: the reference on all 362 draws of the freeride's start, the frame the game's (a mean difference of
+  0.25 of 255; 0.08 % of the pixels over 8: the car's moving exhaust); no cost seen at the game's 62.5 frames a
+  second. The owner found the one difference of a first version: a sign behind a wall showing through it, the
+  position computed in another order than the game's (now its order).
 - **The meshes the game draws** (2026-10-17; item 8, block 6d of the order): `scene_focus`, `scene_pieces` (the
   scene walked a little each frame, scanned every 0.25 s around every mod's box: the objects' meshes read once from
   LS3D's buffers, their space found by the engine's bounding sphere; after mafia-ragdoll's scenery and
@@ -503,14 +514,20 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
    "Done".)* The world and its geometry
    (item 8's rest: the water's height, each model's file, the drawn triangles, cars'
    meshes, the `.4ds` index; item 12's rest: a prop's collision shape and animations; zones for people and cars).
-7. The camera and control (item 9's rest: the game's own camera logic; item 14's rest: a mod's actions in the
+7. *(7a and 7b done 2026-10-17; see "Done".)* Shaders on the game's own drawing (item 27; the owner, 2026-10-17:
+   put first, the base agents build "real" shaders on). In blocks: *7a* the service (a mod's Direct3D 9 shaders set on the game's draws it chooses, with the
+   frame's constants under one documented contract), *7b* reference shaders that draw every kind of the game's draw
+   as its fixed pipeline does (the same picture, checked by screenshots in both labs: the starting point a mod
+   copies and changes), *7c* what per-object shading needs further (a shadow map from the sun through the scene
+   views; the lights near an object).
+8. The camera and control (item 9's rest: the game's own camera logic; item 14's rest: a mod's actions in the
    controls menu, another kind of vehicle).
-8. The agent's tools (items 24, 25 and the snapshots in Later: structures by name, crash triage in one call,
+9. The agent's tools (items 24, 25 and the snapshots in Later: structures by name, crash triage in one call,
    restore points).
-9. Mod languages (Later: the Rust crate; LuaJIT script mods).
-10. Orders for the people made (item 26).
-11. Tests in the real game, as scripts of steps (item 23).
-12. The tuning panel (item 18).
+10. Mod languages (Later: the Rust crate; LuaJIT script mods).
+11. Orders for the people made (item 26).
+12. Tests in the real game, as scripts of steps (item 23).
+13. The tuning panel (item 18).
 
 ### Tier 1: foundations every large mod stands on
 
@@ -535,6 +552,19 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
 5. *(Done 2026-10-16: see "Done"; what is left: Known gaps.)* **Measuring the frame** (W S V R P; from Later). Each mod's time in each event and pass (CPU), the GPU timers of
    item 3, the game thread's sampling profiler, on the bridge and MCP: water and VR live within a frame's budget
    (11 ms at 90 Hz). Reference: `prof.h`, `gpu_timer.h`, `sampler.cpp`.
+27. **Shaders on the game's own drawing** (W S V and every mod that changes the look: per-pixel light, normal maps,
+    reflections on cars, wet streets, shadows; the owner, 2026-10-17). Item 3's passes see the finished frame (its
+    colour, depth, camera): what a surface is made of, its normal, its light are gone by then. The game draws with
+    Direct3D 8's fixed pipeline (no shaders of its own: the lights, the lightmaps' second texture, alpha test, fog are
+    device states), through dxwrapper's Direct3D 9 in both labs. The loader already sees each of its draws
+    (`host/geom.cpp`'s DrawIndexedPrimitive hook: the visual, the face group, the texture) and the world's lights and
+    fog (`host/gfx.cpp`). The service: a mod gives Direct3D 9 vertex and pixel shaders (compiled by the build, as
+    `boxes`' HLSL) for the draws a rule picks (a texture's name, the visual's kind, the draw's class); the host sets
+    them on those draws with the frame's constants (the world, view and projection, the camera, the lights, the fog,
+    the material, the time) in registers one header documents (`mml/shaders/game.hlsli`), and puts the device's state
+    back after each. The draws' classes (vertex-lit, lightmapped, alpha-tested, translucent, additive, fogged or not)
+    each get a reference shader that draws them as the game does: switched on, the picture stays the game's (screenshots
+    compared in both labs); a mod copies one and changes it. Plain Direct3D 8 (no wrapper) is not served.
 
 ### Tier 2: the game's world as data, read and changed
 
@@ -781,6 +811,18 @@ merged, sorted by importance):
   river has no bed in the collision (a mod's own depth is its to choose). A
   traffic pedestrian's objects are owned by the pedestrian system (`actor` is it, not a person), and `world_near`
   lists actors only.
+- **Shaders on the game's own drawing** (host/shaders.cpp, blocks 7a, 7b): only under a Direct3D 9 wrapper (plain
+  Direct3D 8: no service); shader model 3 is assumed by the contract (ps_2_0 sees 32 of its 76 registers). Only
+  what LS3D draws face group by face group (objects, people, lightmapped objects, billboards) is offered: the sky's
+  backdrop, particles, the HUD and the menus are drawn otherwise. The draws carry no normals (a face's normal from
+  derivatives is flat); the meshes' own normals (block 6d's buffers) are not handed to the shaders. The texture
+  stages' arguments are taken as the game sets them (texture, then what came before): another argument (the texture
+  factor's colour, the specular) is not followed by `mml_FixedStage`. Compared on one view of the freeride's start in
+  each lab (the city by day); the night, the rain, the countryside, the interiors and a mission were not compared;
+  the scene views (mirrors) take rules too but were not looked at. The constants are read from the device at each
+  draw a rule takes (Get* calls: on a pure device they would fail; dxwrapper's is not pure). The cost was not
+  measured above the game's 62.5 frames a second. 7c (a shadow map from the sun, the lights near an object) is
+  not done.
 - **The meshes the game draws** (host/meshes.cpp, block 6d): the finest LOD only; plain and lightmapped objects
   only (billboards, particles, skinned people, morphs, mirrors are left out); a piece is told by its bounding sphere
   touching a box (a long piece may hold far triangles). Frames LS3D frees during a mission are not followed (each

@@ -283,6 +283,18 @@ void MeshesFrame();                       // every frame of a loaded mission: th
 void MeshesMissionClose();
 void MeshesModGone(MmlMod *mod);
 bool MeshesMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+// shaders on the game's own drawing (shaders.cpp; geom.cpp's face group and draw hooks call in)
+bool GeomEnsureHooks(std::string *why);   // (geom.cpp) the face groups' drawing hooked
+bool GeomEnsureDip(std::string *why);     // (geom.cpp) the device's DrawIndexedPrimitive hooked
+bool ShadersWanted();
+void ShadersGroupBegin(int kind, void *visual, uint8_t *entry, int where);   // kind 1 object, 2 lightmapped, 3 billboard
+void ShadersGroupEnd();
+bool ShadersDraw(void *device9, int type, int base, unsigned minIndex, unsigned verts, unsigned start, unsigned n, void *dip, long *hr);
+int ShaderAdd(MmlMod *mod, const MmlShaderRule *rule, std::string *err);
+bool ShaderRemove(MmlMod *mod, int handle);   // handle 0: every one of the mod's
+void ShadersModGone(MmlMod *mod);
+void ShadersFrameEnd();                   // (render.cpp) the frame drawn: the survey done
+bool ShadersMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 void *ActorFrame(void *actor);
 int FrameWorld(void *frame, float out[16]);
 bool PropsMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
