@@ -992,3 +992,21 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **The example** `probe`: what the crosshair looks at, the ground under the player, a sweep ahead, the people
   near, the static collision around him drawn as lines; seen in both labs.
 - **Tests**: offline the four functions with no game, the bridge's refusals. ALL PASSED; check_builds ALL PASSED.
+
+## 2026-10-16: the game's state (item 10, block 10a)
+
+- **Read**: the scripts' `FREERIDE_SCOREGET` reads `C_game +0x3640` (0x47B6B0), `FREERIDE_SCORESET` calls
+  `C_game::SetScore` (1.2 0x5B9FE0, 1.0 0x5F5C30: the value written, the HUD told when +0x363E shows the money).
+  The inventory at C_human +0x480 from MafiaOnline's `native_inventory.h` (1.2) and st0rm94's
+  `structs/inventory.md` (1.0), confirmed by the scripts' `HUMAN_DELWEAPON` taking `[edi + 0x480]` in both builds.
+  The HUD's health number is set by `G_IndicatorsClass::PlayerSetLives` (1.2 0x5F88E0, 1.0 0x54A9D0, st0rm94's
+  `hud_set_player_health_value`; ecx the HUD, `Exe().hud`), which C_player::Hit calls with health / maximum * 100.
+- **Made** `host/state.cpp` and seven functions in the C ABI; five bridge methods.
+- **In the labs**: the freeride's Tommy holds a Thompson (50 + 100), a Colt (7 + 21), a Magnum (6 + 18) and the
+  sawn-off in the coat (2 + 20) in both builds; money set to $1234 / $777 shown at once; rounds written (the HUD's
+  3/7, 4/9); the Magnum and the shotgun taken; health 120 of 200: the HUD kept 100 until PlayerSetLives was added,
+  then 60 (1.2) and 45 for 90 (1.0).
+- **The killer seen**: Paulie spawned 6 m ahead, `world.ray {"from": "camera"}` hitting him, the Thompson fired:
+  `HUMAN_DIED` with the player as the killer in both builds, and `bounty` paid $50 (the HUD's $50, 827$). The 7a
+  gap is closed.
+- **Tests**: offline the seven functions with no game, the bridge's refusals. ALL PASSED; check_builds ALL PASSED.

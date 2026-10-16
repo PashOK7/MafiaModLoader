@@ -46,6 +46,11 @@ Taps can also start with the game, before its first frame: `"taps": ["5409D0 n=4
 | `world.ground` | `at` (`[x, y, z]` or an actor, 0.5 m up; default the player), `depth` (100) | the static world straight below: `height`, `normal`, `surface`... |
 | `world.near` | `at`, `radius` (30), `type` (0 any, 2 people, 4 cars), `max` (50) | the actors within `radius`, nearest first: `actor`, `type`, `name`, `pos`, `distance`; `count` |
 | `world.shapes` | `at` and `radius` (3), or `lo`, `hi`; `what`, `max` (100) | the collision shapes there: `count`, `kinds` (counts), `shapes` (`kind`, `corners` and `normal`, or `center`, `half`, `axes`, `radius`; `surface` or `actor`, `classes`) |
+| `state.money` | `set` or `add` | the freeride's money (`money`, null with no game; `shown`: the HUD shows it), set through the game's `C_game::SetScore` |
+| `human.health` | `actor` (default `"player"`), `set` | `health`, `max`; `set` above 0, at most `max` (the player's HUD number told) |
+| `human.items` | `actor` | `items`: `slot` (0 the hand, 1..5 the belt, 6 the coat, 7..10 extra, 11 put away in a car), `where`, `id`, `name`, `loaded`, `reserve` |
+| `human.ammo` | `actor`, `slot` (0), `loaded`, `reserve` (-1 or absent: as it is) | the rounds of the item in that slot written; `items` after |
+| `human.take` | `actor`, `item` (an id or a name) | the item taken (the scripts' `human_delweapon`); `items` after |
 | `camera.state` | | the frame's camera: `override` (a mod's id, `the bridge (camera.set)`, `none`), `frames_overridden`, `declined` (the mod's function returned 0), `skipped`, `last` (drawn, or why not), `frame_camera` (`eye`, `fwd` of the last frame drawn) |
 | `camera.set` | `eye`, `at` or `dir`, `up` (default `[0, 1, 0]`), `fov` (vertical degrees; default the game's), `ms` (default 10000) | the frame drawn from that camera from the next frame for `ms` (over a mod's `camera_override` while held); only the drawing |
 | `camera.release` | | the bridge's camera given back |

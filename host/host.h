@@ -210,6 +210,7 @@ void *WorldSpawn(MmlMod *mod, int kind, const char *model, const MmlVec3 *pos, c
 bool WorldRemove(void *actor, std::string *err);
 bool WorldTeleport(void *actor, const MmlVec3 &pos, const MmlVec3 *dir, bool repair, std::string *err);
 int WorldItemId(const char *name, std::string *err);      // -1: none (err tells why, with the candidates)
+std::string WorldItemName(int id);                         // "" for none
 bool WorldGive(void *human, int item, int loaded, int reserve, std::string *err);   // loaded/reserve < 0: the item's own
 bool WorldSeat(void *human, void *car, int seat, std::string *err);                 // human_force_settocar
 void WorldActorGone(void *actor);         // (game_hooks.cpp) out of the spawned list
@@ -221,6 +222,15 @@ int WorldRay(const float from[3], const float to[3], uint32_t what, void *ignore
 int WorldSweep(const float from[3], const float to[3], float radius, uint32_t what, void *ignore, MmlHit *hit);
 int WorldNear(const float at[3], float radius, int type, void **out, int max);
 int WorldShapes(const float lo[3], const float hi[3], uint32_t what, MmlShape *out, int max);
+// the game's state (state.cpp): the freeride's money, a person's health and inventory; state.*, human.items...
+int StateMoney();                         // INT32_MIN: no game
+bool StateMoneySet(int value, std::string *err);
+float StateHealth(void *human, float *max);   // -1: not a person
+bool StateHealthSet(void *human, float health, std::string *err);
+int StateItems(void *human, MmlItem *out, int max);
+bool StateAmmoSet(void *human, int slot, int loaded, int reserve, std::string *err);
+bool StateTakeItem(void *human, int item, std::string *err);
+bool StateMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 bool CollideMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 
 // ---- the frame's drawing (render.cpp): I3D_driver::Render hooked; MML_EVENT_RENDER_*, PRESENT; render.state

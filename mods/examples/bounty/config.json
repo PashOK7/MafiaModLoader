@@ -1,0 +1,7 @@
+{
+  // The defaults of bounty's settings.
+  "reward": 50,         // dollars a person the player kills
+  "regen": 2,           // health points a second come back...
+  "regen_after": 8,     // ...once nothing has hit him for this many seconds
+  "endless_ammo": 0     // 1: the weapon in his hand never runs out of reserve rounds
+}

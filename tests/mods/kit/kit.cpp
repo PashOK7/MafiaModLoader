@@ -210,6 +210,19 @@ int WorldAsk(const char *, MmlReply *r, void *) {
     return 0;
 }
 
+// The game's state with no game: no money, no person, nothing set.
+int State(const char *, MmlReply *r, void *) {
+    if (!MML_HAS(H, human_take_item)) { H->reply_error(r, "the loader has no game state"); return 1; }
+    MmlItem items[4];
+    float max = 0;
+    char out[160];
+    snprintf(out, sizeof out, "{\"money\":%d,\"money_set\":%d,\"health\":%.0f,\"health_set\":%d,\"items\":%d,\"ammo\":%d,\"take\":%d}",
+             H->money(M) == INT32_MIN ? -1 : 0, H->money_set(M, 5), H->human_health(M, nullptr, &max), H->human_health_set(M, nullptr, 50),
+             H->human_items(M, nullptr, items, 4), H->item_ammo_set(M, nullptr, 0, 1, 1), H->human_take_item(M, nullptr, 10));
+    H->reply_append(r, out, static_cast<size_t>(-1));
+    return 0;
+}
+
 // People with no game: none, no skeleton, bone_set refused, no player.
 int Humans(const char *, MmlReply *r, void *) {
     if (!MML_HAS(H, human_player)) { H->reply_error(r, "the loader has no human_player"); return 1; }
@@ -275,7 +288,8 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->command(mod, "passviews_clear", "takes that pass back", PassViewsClear, nullptr);
     host->command(mod, "geom", "geom_hide, geom_capture with no game (refused), geom_show", Geom, nullptr);
     host->command(mod, "humans", "humans_list, human_skeleton, bone_set, human_player with no game", Humans, nullptr);
-    host->command(mod, "ask", "world_ray, world_sweep, world_near, world_shapes with no game", WorldAsk, nullptr);
+    host->command(mod, "state", "money, money_set, human_health(_set), human_items, item_ammo_set, human_take_item with no game", State, nullptr);
+    host->command(mod, "ask","world_ray, world_sweep, world_near, world_shapes with no game", WorldAsk, nullptr);
     host->command(mod, "camera","camera_override taken and given back, camera_project and camera_ray with no frame", Camera, nullptr);
     host->command(mod, "poke","{}: adds 7 to a field on the game thread; {\"addr\": 1}: the field's address", Poke, nullptr);
     host->command(mod, "natives","the addresses of native.call's test functions (each convention, floats, a buffer, a fault)", Natives, nullptr);

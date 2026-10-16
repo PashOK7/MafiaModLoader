@@ -409,6 +409,21 @@ typedef struct MmlShape {
     const void *prim;       /* the game's primitive or object */
 } MmlShape;
 
+/* A person's inventory (human_items below): the slots as the game keeps them. */
+enum {
+    MML_SLOT_HAND = 0,      /* the item in his hand */
+    MML_SLOT_BELT = 1,      /* 1..5: the belt's five weapon slots */
+    MML_SLOT_COAT = 6,      /* a big weapon (a Thompson, a shotgun) */
+    MML_SLOT_EXTRA = 7,     /* 7..10: four other items */
+    MML_SLOT_CAR = 11,      /* the item put away while he sits in a car */
+    MML_SLOT_COUNT = 12
+};
+typedef struct MmlItem {
+    int slot;               /* MML_SLOT_* */
+    int id;                 /* the item (world.items: 9 Colt 1911, 10 Thompson 1928...) */
+    int loaded, reserve;    /* rounds in it, in reserve */
+} MmlItem;
+
 /* The frame's measures (frame_stats below): the frames Present to Present, the last 600 of them. */
 typedef struct MmlFrameStats {
     uint32_t size;
@@ -705,6 +720,23 @@ typedef struct MmlHost {
     /* the collision shapes in a box (the world's axes): the static world's primitives and the moving objects, as
      * the game keeps them in its grids; returns how many there are (more than `max`: the first max given) */
     int (*world_shapes)(MmlMod *mod, const float lo[3], const float hi[3], uint32_t what, MmlShape *out, int max);
+
+    /* ---- the game's state (both builds; docs/MODDING.md "The game's state: money, health, the inventory").
+     * money: the freeride's money (the HUD's $; the story has none), INT32_MIN with no game; money_set: through the
+     * game's own setter, the HUD told when it shows it. */
+    int (*money)(MmlMod *mod);
+    int (*money_set)(MmlMod *mod, int value);
+    /* a person's health (the player: 0..200 in the freeride, his maximum in *max), -1 for no person; health_set
+     * writes it (above 0, at most his maximum: the game's hits and deaths stay the game's) */
+    float (*human_health)(MmlMod *mod, void *human, float *max);
+    int (*human_health_set)(MmlMod *mod, void *human, float health);
+    /* a person's inventory, slot by slot (MmlItem: the slot, the item's id in world.items' table, rounds in it and in
+     * reserve); returns how many slots hold something */
+    int (*human_items)(MmlMod *mod, void *human, MmlItem *out, int max);
+    /* the rounds of the item in a slot (loaded, reserve; -1 leaves one as it is) */
+    int (*item_ammo_set)(MmlMod *mod, void *human, int slot, int loaded, int reserve);
+    /* an item taken from a person (the scripts' human_delweapon: every slot with it; his weapon model changed) */
+    int (*human_take_item)(MmlMod *mod, void *human, int item);
 } MmlHost;
 
 #define MML_FILE_GAME 1              /* file_read: the game's own file, not a mod's of the same name */

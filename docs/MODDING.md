@@ -315,6 +315,34 @@ int k = H->world_shapes(M, lo, hi, MML_WORLD_STATIC, s, 256);  /* triangles, box
 - `mods/examples/probe` (not enabled by default): what the crosshair looks at, the ground under the player, a
   sphere swept ahead of him, the people near him, and the static world's collision around him drawn as lines.
 
+### The game's state: money, health, the inventory
+
+```c
+int money = H->money(M);                         /* the freeride's money (the HUD's $); INT32_MIN: no game */
+H->money_set(M, money + 50);                     /* the game's own setter: the HUD shows it at once */
+void *p = H->human_player(M);
+float max, hp = H->human_health(M, p, &max);     /* 200 of 200 for the freeride's Tommy */
+H->human_health_set(M, p, hp + 10);              /* above 0, at most max; the player's HUD number told */
+MmlItem items[MML_SLOT_COUNT];
+int n = H->human_items(M, p, items, MML_SLOT_COUNT);   /* slot, id, loaded, reserve */
+H->item_ammo_set(M, p, MML_SLOT_HAND, -1, 100);  /* the reserve of the weapon in his hand (-1: as it is) */
+H->human_take_item(M, p, 12);                    /* the scripts' human_delweapon; give_item gives */
+```
+
+- **The money** is the freeride's (`C_game +0x3640`, what the scripts' `freeride_scoreget` reads); the story has
+  none. It is set through the game's `C_game::SetScore`, so the HUD shows the new sum.
+- **Health**: a person's current and maximal health (`C_human +0x644`, `+0x604`); a write changes the number the
+  game's hits subtract from, and for the player the HUD's number is told as a hit tells it (the percentage of the
+  maximum). A death is not written: it is the game's (a hit, a fall, a script's `human_death`).
+- **The inventory** is the game's `G_Inventory` (`C_human +0x480`): the hand, five belt slots, the coat's big weapon,
+  four extra items, the one put away in a car (`MML_SLOT_*`). Rounds are written in place (the HUD shows them);
+  items are given and taken by the scripts' own commands (`give_item`, `human_take_item`), so the weapon models,
+  the cycle and the HUD follow. Item ids are `world.items`'s.
+- `call state.money {"set": 1000}` (or `"add"`), `human.health {"actor", "set"}`, `human.items {"actor"}`,
+  `human.ammo {"actor", "slot", "loaded", "reserve"}`, `human.take {"actor", "item": 12 | "Saw off shotgun"}`.
+- `mods/examples/bounty` (not enabled by default): each person the player kills pays `reward` dollars, his health
+  comes back once nothing has hit him for a while, `endless_ammo` keeps the hand's weapon's reserve full.
+
 ### What happens (shots, explosions, deaths, vehicles)
 
 | Event | When | `actor` | more |

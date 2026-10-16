@@ -311,6 +311,11 @@ struct ExeBuild {
     // objects the next tests pass (+0x2B8 the array, +0x2BC its count, +0x2B0 the third), as the game sets its own
     // shooter's and puts (0, 0, 0) back after.
     uintptr_t testLineAll, collExclude;
+    // The game's state (host/state.cpp). gameSetScore: C_game::SetScore, thiscall(C_game*, int), ret 4: the
+    // freeride's money (C_game +0x3640) set and, when it is shown (+0x363E), the HUD told (FREERIDE_SCORESET's call).
+    // hudSetLives: G_IndicatorsClass::PlayerSetLives, thiscall(hud, unsigned value), ret 4: the HUD's health number,
+    // which C_player::Hit sets to health +0x644 / maximum +0x604 * 100 rounded (at least 1 while alive).
+    uintptr_t gameSetScore, hudSetLives;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -440,6 +445,8 @@ inline const ExeBuild kExe12 = {
     // questions to the world (2026-10-16: st0rm94's and MafiaOnline's names, both read in the disassembly: ret 0x18,
     // ret 0xC)
     0x5C8770, 0x5C3D60,
+    // the game's state (2026-10-16: FREERIDE_SCOREGET reads C_game +0x3640 through 0x47B6B0, FREERIDE_SCORESET calls it)
+    0x5B9FE0, 0x5F88E0,   // (PlayerSetLives: C_player::Hit's call at 0x5942AD, ecx = the HUD)
 };
 
 inline const ExeBuild kExe10 = {
@@ -519,6 +526,8 @@ inline const ExeBuild kExe10 = {
     // questions to the world (2026-10-16: st0rm94's collision_test_line_horizontal and
     // collision_dyn_set_next_multiple_owners, the same code as 1.2's: ret 0x18, ret 0xC)
     0x5838A0, 0x57EE90,
+    // the game's state (2026-10-16: the scripts' FREERIDE_SCORESET at 0x5C6915 calls it; the same code as 1.2's)
+    0x5F5C30, 0x54A9D0,   // (st0rm94's hud_set_player_health_value; its calls at 0x49C00C... with ecx = the HUD)
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,

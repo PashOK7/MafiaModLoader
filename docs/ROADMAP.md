@@ -288,6 +288,13 @@ What is done, what comes next and later, and what is known to be missing or wron
   on `events.since` and MCP `wait`. Both builds' addresses checked by `check_builds.py`. The example
   `mods/examples/tally`; seen in the 1.2 and 1.0 labs (the player's shots, his leaving the taxi, a person killed by
   a script, a car blown up with its explosion and the hit it gave the player).
+- **The game's state** (2026-10-16; item 10, block 10a): `money` / `money_set` (the freeride's money, C_game
+  +0x3640, through the game's `C_game::SetScore`: the HUD shows it), `human_health` / `human_health_set` (+0x644 of
+  +0x604; the player's HUD number told through `G_IndicatorsClass::PlayerSetLives` as a hit tells it),
+  `human_items` (the G_Inventory at C_human +0x480 slot by slot), `item_ammo_set`, `human_take_item` (the scripts'
+  `human_delweapon`); `state.money`, `human.health`, `human.items`, `human.ammo`, `human.take`. Both builds' setters
+  checked by `check_builds.py`. The example `mods/examples/bounty` (money for kills, health back, endless ammo)
+  seen in the 1.2 and 1.0 labs: a spawned Paulie shot by the player paid $50 on the HUD.
 - **Questions to the world** (2026-10-16; item 8, block 8a): `world_ray` (g_collision::_TestLineH, the bullets'
   and the AI's test: the static world and the moving objects), `world_sweep` (TestSphereB, the moves' sphere test),
   an actor ignored the game's way (its objects on the tests' exclusion list, DynSetNextCollOwnerMult, the list put
@@ -378,7 +385,9 @@ V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselv
    of a mod's own following its own rules (a skateboard's, a plane's chase camera), a free camera; a world point to
    the screen and a screen point to a ray (markers, aiming). Reference: `freecam.cpp`, `ragcam.cpp`,
    `scene_camera.cpp`.
-10. **The game's state and progress** (C F P). Money, health, the inventory and ammo (read and changed), the
+10. *(10a done 2026-10-16: the freeride's money, health, the inventory and its rounds, items taken; see "Done".
+    Left: the mission's objectives and outcome, the statistics, the profile's progress, a mod's own items; Known
+    gaps.)* **The game's state and progress** (C F P). Money, health, the inventory and ammo (read and changed), the
     mission's objectives and its outcome, the game's statistics (kills, cars stolen, distance), the profile's
     progress (chapters, freeride unlocks); a mod's own items in the items' table (a fishing rod, a fish).
 11. **The game's effects as data** (S W P). Particle emitters and the car exhaust (`0x4DEE90`) read, moved or
@@ -515,6 +524,12 @@ merged, sorted by importance):
   matrix being the camera's backdrop view, bit for bit (it was, every drawing, in both labs). `MML_VIEW_OWN_SECTOR`
   (a camera in another room) was not tried. The first two or three reloads of `rear_mirror` added 2..13 handles each (taken to be
   Direct3D's own warming up: views made and taken back by mode changes added none); then 0.
+- **The game's state** (host/state.cpp, item 10a): the money is the freeride's only (the story keeps none); health
+  written does not pass the game's hit (no wound, no sound), and a death is not written. Not done of item 10: the
+  mission's objectives (the scripts' `mission_objectives` shows a text; what is current was not looked for), the
+  mission's outcome (failed or done: only MISSION_CLOSED today), the game's statistics, the profile's progress
+  (chapters, the freeride's unlocks), a mod's own items in the items' table. The owner may know where the game
+  keeps the objectives and the statistics.
 - **Questions to the world** (host/collide.cpp, item 8a): the static mask is 0 (every primitive the game does not
   always pass, 0x20): the bits the bullets pass besides (0x200000 half the time, 0x400000) are not named. The water's
   height is not answered: the river's drawn plane (y -9.99) is not in the collision the rays were cast at, and where
@@ -527,9 +542,9 @@ merged, sorted by importance):
   stays in the screen's middle, now pointing where the game's camera looks) and the sound's listener are the game's.
   A camera the game itself follows (a field of view it keeps, an aim from the drawn camera) needs the camera's
   update hooked (mafia-ragdoll `freecam.cpp`, `ragcam.cpp`). Drawn only in the mission's world, not a menu's scene.
-- **What happens** (host/happen.cpp): the killer of `HUMAN_DIED` (the last attacker of `HUMAN_HIT` in 3 s) was
-  not seen in a lab (the player's shots missed the target); a death the game queues with no hit (a script's) has
-  none. `SHOT`'s direction is not a unit vector (its length is the weapon's reach). Deaths and vehicles come from
+- **What happens** (host/happen.cpp): the killer of `HUMAN_DIED` is the last attacker of `HUMAN_HIT` in 3 s (seen
+  2026-10-16 in both labs: the player's Thompson killing a spawned Paulie, aimed by `world.ray` from the camera); a
+  death the game queues with no hit (a script's) has none. `SHOT`'s direction is not a unit vector (its length is the weapon's reach). Deaths and vehicles come from
   the people the loader knows (C_human), a frame late at most.
 - **People** (host/humans.cpp): a freeride lists 36 people besides the player with the model name `road_bl_E` at
   the origin (both builds): the traffic system's pool, not placed yet, whose actor + 0x68 is not a person's model

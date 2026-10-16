@@ -351,6 +351,18 @@ def main(a):
         for name, (exe, ls, gexe, gls) in builds.items():
             first = next((i for i in gexe.md.disasm(gexe.at(exe[f] - 0x400000, 0x2000), exe[f]) if i.mnemonic == 'ret'), None)
             check(first is not None and first.op_str == ret, f'{name} {f}: its first ret is ret {ret}')
+    # The game's state (host/state.cpp): SetScore writes C_game +0x3640, reads +0x363E, ends with ret 4.
+    for name, (exe, ls, gexe, gls) in builds.items():
+        sc = [f'{i.mnemonic} {i.op_str}' for i in gexe.md.disasm(gexe.at(exe['gameSetScore'] - 0x400000, 0x30), exe['gameSetScore'])]
+        check('mov dword ptr [ecx + 0x3640], eax' in sc and 'mov dl, byte ptr [ecx + 0x363e]' in sc and 'ret 4' in sc,
+              f'{name} gameSetScore: +0x3640 written, +0x363E read, ret 4')
+        hl = [f'{i.mnemonic} {i.op_str}' for i in gexe.md.disasm(gexe.at(exe['hudSetLives'] - 0x400000, 0x30), exe['hudSetLives'])]
+        imm = b'\xb9' + exe['hud'].to_bytes(4, 'little') + b'\xe8'
+        code = bytes(gexe.mem)
+        called = any(k + 10 + struct.unpack('<i', code[k + 6:k + 10])[0] == exe['hudSetLives'] - 0x400000
+                     for k in (m.start() for m in re.finditer(re.escape(imm), code)))
+        check(hl[0] == 'mov eax, dword ptr [esp + 4]' and hl[1].startswith('mov dword ptr [ecx + 0x') and called,
+              f'{name} hudSetLives: stores its value, called with ecx = the HUD')
     for name, (exe, ls, gexe, gls) in builds.items():
         ce = ' '.join(f'{i.mnemonic} {i.op_str}' for i in gexe.md.disasm(gexe.at(exe['collExclude'] - 0x400000, 0x30), exe['collExclude']))
         check(all(f'[ecx + {o:#x}]' in ce for o in (0x2B8, 0x2BC, 0x2B0)), f'{name} collExclude writes +0x2B8, +0x2BC, +0x2B0')

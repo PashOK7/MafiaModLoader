@@ -320,6 +320,11 @@ bool WorldTeleport(void *actor, const MmlVec3 &pos, const MmlVec3 *dir, bool rep
     return ScriptExec(code.c_str(), nullptr, &actor, 1, flts, 3, nullptr, nullptr, err);
 }
 
+std::string WorldItemName(int id) {
+    std::vector<ItemRec> items = Items();
+    return id >= 0 && id < static_cast<int>(items.size()) ? items[static_cast<size_t>(id)].name : std::string();
+}
+
 int WorldItemId(const char *name, std::string *err) {
     std::vector<ItemRec> items = Items();
     if (items.empty()) { *err = "the items are not known for this build (or not loaded)"; return -1; }

@@ -788,6 +788,16 @@ def main():
         check('world.ray with no end: refused, saying what it takes', not r['ok'] and 'dir' in str(r), r)
         r = b.call('world.shapes', {'lo': [-5, -5, -5], 'hi': [5, 5, 5]})
         check('world.shapes with no game: none', r['ok'] and r['result']['count'] == 0, r)
+        # the game's state with no game: no money, no person; the bridge says why
+        r = b.call('kit.state')
+        check('money, health, items, ammo, take with no game: none, refused',
+              r['ok'] and r['result'] == {'money': -1, 'money_set': 0, 'health': -1, 'health_set': 0, 'items': 0, 'ammo': 0, 'take': 0}, r)
+        r = b.call('state.money')
+        check('state.money with no game: null', r['ok'] and r['result']['money'] is None, r)
+        r = b.call('state.money', {'set': 100})
+        check('state.money set with no game: refused', not r['ok'], r)
+        r = b.call('human.items')
+        check('human.items with no game: an error, saying why', not r['ok'] and 'no actors' in str(r), r)
         # a hardware watchpoint: the field the kit's command writes on the game thread, found with the code that wrote it
         addr = b.call('kit.poke', {'addr': 1})['result']
         r = b.call('watch.set', {'addr': addr, 'mode': 'write'})

@@ -221,3 +221,4 @@ address,kind,name,source,note
 006D8714,label,textDb,game_build.h,
 005C8770,function,testLineAll,MafiaModLoader,"g_collision::_TestLineH: thiscall(g_collision*, from, delta, hit, normal, uint movingMask (-1 none), uint staticMask (-1 none)) -> the primitive or moving object hit, ret 0x18; host/collide.cpp world_ray"
 005C3D60,function,collExclude,MafiaModLoader,"g_collision::DynSetNextCollOwnerMult: the moving objects the next tests pass (+0x2B8 array, +0x2BC count, +0x2B0), ret 0xC; host/collide.cpp's ignore"
+005B9FE0,function,gameSetScore,MafiaModLoader,"C_game::SetScore: thiscall(C_game*, int), ret 4: the freeride's money +0x3640, the HUD told when +0x363E; host/state.cpp money_set"

@@ -37,11 +37,17 @@ constexpr int kActorAlive = 0x5D;
 constexpr int kActorDead  = 0x5E;
 constexpr int kActorFrame = 0x68;
 constexpr int kHumanHealth = 0x644;
+constexpr int kHumanHealthMax = 0x604;   // (the properties' maxima: +0x600..; the current ones +0x640..)
+// G_Inventory, embedded at C_human +0x480 (both builds): +0x08 the extra items' count, +0x20 the item in the hand,
+// +0x30 five belt slots, +0x80 the coat's (a big weapon), +0x90 four extra items, +0xD0 the one put away in a car;
+// each an S_GameItem of 0x10 bytes: u16 id (0: empty), u16, u32 rounds in it, u32 in reserve, u32.
+constexpr int kHumanInventory = 0x480;
 
 // C_mission / C_game
 constexpr int kMissionGame = 0x24;
 constexpr int kMissionScene = 0x10;   // I3D_scene* the game renders each frame (found with `rstat`)
 constexpr int kGamePlayer  = 0xE4;
+constexpr int kGameScore = 0x3640, kGameScoreShown = 0x363E;   // the freeride's money (int), and whether the HUD shows it
 
 template <class T> inline T &at(void *p, int off) { return *reinterpret_cast<T *>(reinterpret_cast<uint8_t *>(p) + off); }
 

@@ -320,6 +320,37 @@ int H_WorldSweep(MmlMod *m, const float f[3], const float t[3], float r, uint32_
 int H_WorldNear(MmlMod *m, const float at[3], float radius, int type, void **out, int max) {
     return Alive(m) && at ? WorldNear(at, radius, type, out, out ? max : 0) : 0;
 }
+int H_Money(MmlMod *m) { return Alive(m) ? StateMoney() : INT32_MIN; }
+int H_MoneySet(MmlMod *m, int v) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    if (StateMoneySet(v, &err)) return 1;
+    Log(MML_LOG_WARN, Who(m), "money_set: %s", err.c_str());
+    return 0;
+}
+float H_HumanHealth(MmlMod *m, void *h, float *max) { return Alive(m) ? StateHealth(h, max) : -1.0f; }
+int H_HumanHealthSet(MmlMod *m, void *h, float v) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    if (StateHealthSet(h, v, &err)) return 1;
+    Log(MML_LOG_WARN, Who(m), "human_health_set: %s", err.c_str());
+    return 0;
+}
+int H_HumanItems(MmlMod *m, void *h, MmlItem *out, int max) { return Alive(m) ? StateItems(h, out, out ? max : 0) : 0; }
+int H_ItemAmmoSet(MmlMod *m, void *h, int slot, int loaded, int reserve) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    if (StateAmmoSet(h, slot, loaded, reserve, &err)) return 1;
+    Log(MML_LOG_WARN, Who(m), "item_ammo_set: %s", err.c_str());
+    return 0;
+}
+int H_HumanTakeItem(MmlMod *m, void *h, int item) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    if (StateTakeItem(h, item, &err)) return 1;
+    Log(MML_LOG_WARN, Who(m), "human_take_item: %s", err.c_str());
+    return 0;
+}
 int H_WorldShapes(MmlMod *m, const float lo[3], const float hi[3], uint32_t what, MmlShape *out, int max) {
     return Alive(m) && lo && hi ? WorldShapes(lo, hi, what, out, out ? max : 0) : 0;
 }
@@ -759,6 +790,13 @@ void ModsInit() {
     g_host.world_sweep = H_WorldSweep;
     g_host.world_near = H_WorldNear;
     g_host.world_shapes = H_WorldShapes;
+    g_host.money = H_Money;
+    g_host.money_set = H_MoneySet;
+    g_host.human_health = H_HumanHealth;
+    g_host.human_health_set = H_HumanHealthSet;
+    g_host.human_items = H_HumanItems;
+    g_host.item_ammo_set = H_ItemAmmoSet;
+    g_host.human_take_item = H_HumanTakeItem;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();
@@ -851,6 +889,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (MenusMethod(method, paramsJson, reply, &ok)) return ok;
     if (ScriptMethod(method, paramsJson, reply, &ok)) return ok;
     if (CollideMethod(method, paramsJson, reply, &ok)) return ok;
+    if (StateMethod(method, paramsJson, reply, &ok)) return ok;
     if (WorldMethod(method, paramsJson, reply, &ok)) return ok;
     if (FilesMethod(method, paramsJson, reply, &ok)) return ok;
     if (RenderMethod(method, paramsJson, reply, &ok)) return ok;
@@ -961,7 +1000,7 @@ std::string CommandsList() {
                           "input.seq", "input.release", "input.state", "text.get", "text.find", "screenshot", "screenshot.state",
                           "draw.text", "draw.rect", "draw.line", "draw.clear", "draw.state", "config.get", "config.set",
                           "menu.item", "menu.items", "menu.item.remove", "menu.page", "menu.page.set", "menu.page.close", "menu.def", "menu.click", "input.mouse", "input.text",
-                          "script.run", "script.state", "script.stop", "script.list", "files.list", "files.which", "files.read", "render.state", "gfx.state", "gfx.reset", "view.state", "view.show", "geom.hide", "geom.show", "geom.state", "geom.survey", "geom.capture", "prof.state", "prof.reset", "prof.sample", "native.call", "humans.list", "human.skeleton", "human.pose", "watch.set", "watch.show", "watch.clear", "camera.state", "camera.set", "camera.release", "world.ray", "world.sweep", "world.ground", "world.near", "world.shapes"})
+                          "script.run", "script.state", "script.stop", "script.list", "files.list", "files.which", "files.read", "render.state", "gfx.state", "gfx.reset", "view.state", "view.show", "geom.hide", "geom.show", "geom.state", "geom.survey", "geom.capture", "prof.state", "prof.reset", "prof.sample", "native.call", "humans.list", "human.skeleton", "human.pose", "watch.set", "watch.show", "watch.clear", "camera.state", "camera.set", "camera.release", "world.ray", "world.sweep", "world.ground", "world.near", "world.shapes", "state.money", "human.health", "human.items", "human.ammo", "human.take"})
         out.push_back({{"name", m}, {"owner", "host"}});
     for (auto &kv : g_commands) out.push_back({{"name", kv.first}, {"owner", Who(kv.second.mod)}, {"help", kv.second.help}});
     return out.dump();
