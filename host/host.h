@@ -186,6 +186,7 @@ size_t FilesCount(const std::string &id);
 void FilesFrame();                        // every frame: changes on disk looked at, MML_EVENT_FILE_CHANGED sent
 int FilesAdd(MmlMod *mod, const char *name, const char *path);
 int FilesSource(const char *name, char *path, int size);
+void FilesNames(std::vector<std::pair<std::string, std::string>> *out);   // every name the mods answer (lower case), its mod
 int64_t FilesRead(const char *name, void *buf, size_t cap, int flags);
 bool FilesMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 void ModsEarlyFiles();                    // (mods.cpp) at the process's start: every enabled mod's files in the game
@@ -264,6 +265,16 @@ bool PropPhysics(void *prop, const MmlPropPhysics *p, std::string *err);   // p 
 bool PropPush(void *prop, const float impulse[3], const float *at, std::string *err);
 void *PropBody(void *prop);
 void PropsFrame();                        // every frame of a loaded mission: physics asked again made
+// the game's files and models (models.cpp): the archives' names, a model frame's file, .4ds read and parsed
+int GameFiles(const char *pattern, MmlFileFn fn, void *user);
+int ModelFile(void *frame, std::string *out);
+int ModelOpen(MmlMod *mod, const char *file, std::string *err);
+int ModelNodes(int model, MmlModelNode *out, int max);
+int ModelMesh(int model, int node, int lod, MmlModelMesh *out);
+int ModelMaterials(int model, MmlModelMaterial *out, int max);
+void ModelClose(MmlMod *mod, int model);
+void ModelsModGone(MmlMod *mod);          // (its unload) its models closed
+bool ModelsMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 void *ActorFrame(void *actor);
 int FrameWorld(void *frame, float out[16]);
 bool PropsMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);

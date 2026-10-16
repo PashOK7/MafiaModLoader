@@ -473,6 +473,37 @@ typedef struct MmlPropPhysics {
     float mass;             /* kg (1 at least) */
     float velocity[3];      /* at the start, m/s ({0, 0, 0}: it lies still until something strikes or pushes it) */
 } MmlPropPhysics;
+/* a .4ds model read (model_open): its nodes, their meshes, its materials */
+typedef struct MmlModelNode {
+    char name[64];
+    int parent;             /* the index of its parent node, -1: the model's root */
+    int frame_type;         /* the .4ds frame type: 1 a visual, 2 a light, 5 a sector, 6 a dummy, 7 a target, 10 a joint
+                               (a bone), 12 an occluder */
+    int visual_type;        /* a visual's: 0 object, 1 lit object, 2 single mesh (skinned), 3 single morph, 4 billboard,
+                               5 morph, 6 lens flare, 7 projector, 8 mirror, 9 emitter; -1 none */
+    float pos[3], scale[3], rot[4];   /* in its parent; rot w x y z */
+    int lods;               /* its own meshes (0: none, or another node's: instance_of) */
+    int instance_of;        /* the node whose mesh it shows, -1: its own */
+} MmlModelNode;
+typedef struct MmlModelMesh {
+    const float *pos;       /* 3 floats a vertex, in its node's space */
+    const float *normal;    /* 3 a vertex */
+    const float *uv;        /* 2 a vertex */
+    int vertices;
+    const uint16_t *index;  /* 3 a triangle */
+    const uint16_t *material;   /* a triangle's material, 1-based (model_materials' index + 1), 0 none */
+    int triangles;
+} MmlModelMesh;
+typedef struct MmlModelMaterial {
+    uint32_t flags;         /* the .4ds material flags (0x40000 a diffuse texture, 0x40000000 an opacity texture...) */
+    float ambient[3], diffuse[3], emissive[3];
+    float opacity;
+    char texture[64];       /* its diffuse picture (maps\ implied), "" none */
+    char opacity_texture[64];
+} MmlModelMaterial;
+/* game_files' function: one file's name (as the game opens it) and where it comes from ("a2.dta", "folder", a mod's
+   id); return nonzero to stop */
+typedef int (*MmlFileFn)(const char *name, const char *source, void *user);
 enum { MML_SHAPE_TRIANGLE = 1, MML_SHAPE_BOX = 2, MML_SHAPE_SPHERE = 3, MML_SHAPE_POLE = 4 };
 typedef struct MmlShape {
     uint32_t kind;          /* MML_SHAPE_* */
@@ -1224,6 +1255,25 @@ typedef struct MmlHost {
     int (*prop_physics)(MmlMod *mod, void *prop, const MmlPropPhysics *physics);
     int (*prop_push)(MmlMod *mod, void *prop, const float impulse[3], const float at[3]);
     void *(*prop_body)(MmlMod *mod, void *prop);
+
+    /* ---- the game's files and models (both builds; docs/MODDING.md "The game's files and models"). game_files: every
+     * file the game can open whose name matches pattern ("models\\*.4ds", "*.5ds"; * and ? within a name, without
+     * regard to case; NULL every one): the archives' (their directories read, each name once, from the archive the
+     * game looks in first), the game's folder's own (which the game opens before the archives) and the mods'; fn told
+     * of each in order of the names; returns how many matched. model_file: the file a model frame came from (the
+     * nearest model above any frame: a bone, a car's part), as LS3D keeps it: the name its model was opened by
+     * ("Models\\Tommy.i3d"); the name's length, 0 none (a frame of the mission's scene, no model). model_open: a .4ds
+     * read through the game's file layer (a mod's own too) and parsed: "Tommy", "Tommy.i3d", "models\\Tommy.4ds";
+     * its handle, 0 none (the log says why). model_nodes, model_materials: how many it has, filling out up to max;
+     * model_mesh: a node's mesh (lod 0 the finest; an instance's: the node it shows), 1 filled (the arrays the host's
+     * until model_close), 0 none. A mod's models are closed at its unload. Game thread. */
+    int (*game_files)(MmlMod *mod, const char *pattern, MmlFileFn fn, void *user);
+    int (*model_file)(MmlMod *mod, void *frame, char *out, int cap);
+    int (*model_open)(MmlMod *mod, const char *file);
+    int (*model_nodes)(MmlMod *mod, int model, MmlModelNode *out, int max);
+    int (*model_mesh)(MmlMod *mod, int model, int node, int lod, MmlModelMesh *out);
+    int (*model_materials)(MmlMod *mod, int model, MmlModelMaterial *out, int max);
+    void (*model_close)(MmlMod *mod, int model);
 } MmlHost;
 
 #define MML_ZONE_PLAYER 0x1u

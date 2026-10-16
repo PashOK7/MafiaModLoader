@@ -409,6 +409,29 @@ int H_PropPush(MmlMod *m, void *prop, const float impulse[3], const float at[3])
     return Alive(m) && impulse && PropPush(prop, impulse, at, &err) ? 1 : 0;
 }
 void *H_PropBody(MmlMod *m, void *prop) { return Alive(m) ? PropBody(prop) : nullptr; }
+int H_GameFiles(MmlMod *m, const char *pattern, MmlFileFn fn, void *user) { return Alive(m) ? GameFiles(pattern, fn, user) : 0; }
+int H_ModelFile(MmlMod *m, void *frame, char *out, int cap) {
+    if (!Alive(m) || !frame) return 0;
+    std::string f;
+    int n = ModelFile(frame, &f);
+    if (out && cap > 0) {
+        size_t k = std::min<size_t>(f.size(), static_cast<size_t>(cap - 1));
+        memcpy(out, f.data(), k);
+        out[k] = 0;
+    }
+    return n;
+}
+int H_ModelOpen(MmlMod *m, const char *file) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    int id = ModelOpen(m, file, &err);
+    if (!id) Log(MML_LOG_WARN, Who(m), "model_open: %s", err.c_str());
+    return id;
+}
+int H_ModelNodes(MmlMod *m, int model, MmlModelNode *out, int max) { return Alive(m) ? ModelNodes(model, out, max) : 0; }
+int H_ModelMesh(MmlMod *m, int model, int node, int lod, MmlModelMesh *out) { return Alive(m) ? ModelMesh(model, node, lod, out) : 0; }
+int H_ModelMaterials(MmlMod *m, int model, MmlModelMaterial *out, int max) { return Alive(m) ? ModelMaterials(model, out, max) : 0; }
+void H_ModelClose(MmlMod *m, int model) { if (Alive(m)) ModelClose(m, model); }
 void *H_ActorFrame(MmlMod *m, void *actor) { return Alive(m) ? ActorFrame(actor) : nullptr; }
 int H_FrameWorld(MmlMod *m, void *frame, float out[16]) { return Alive(m) && out ? FrameWorld(frame, out) : 0; }
 int H_SoundPlay(MmlMod *m, const char *file, void *frame, const float pos[3], float volume, float pitch, float rangeNear, float rangeFar, uint32_t flags) {
@@ -720,6 +743,7 @@ bool UnloadMod(ModEntry *e, const char *why) {
     GeomRemove(m);
     EffectsModGone(m);
     PropsModGone(m);
+    ModelsModGone(m);
     SoundModGone(m);
     ControlModGone(m);
     InteractModGone(m);
@@ -1061,6 +1085,13 @@ void ModsInit() {
     g_host.prop_physics = H_PropPhysics;
     g_host.prop_push = H_PropPush;
     g_host.prop_body = H_PropBody;
+    g_host.game_files = H_GameFiles;
+    g_host.model_file = H_ModelFile;
+    g_host.model_open = H_ModelOpen;
+    g_host.model_nodes = H_ModelNodes;
+    g_host.model_mesh = H_ModelMesh;
+    g_host.model_materials = H_ModelMaterials;
+    g_host.model_close = H_ModelClose;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();
@@ -1158,6 +1189,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (LightsMethod(method, paramsJson, reply, &ok)) return ok;
     if (EffectsMethod(method, paramsJson, reply, &ok)) return ok;
     if (PropsMethod(method, paramsJson, reply, &ok)) return ok;
+    if (ModelsMethod(method, paramsJson, reply, &ok)) return ok;
     if (SoundMethod(method, paramsJson, reply, &ok)) return ok;
     if (ControlMethod(method, paramsJson, reply, &ok)) return ok;
     if (InteractMethod(method, paramsJson, reply, &ok)) return ok;

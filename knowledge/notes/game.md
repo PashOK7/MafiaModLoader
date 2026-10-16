@@ -511,3 +511,15 @@ autosplitter; kept outside it, not ported). Checked against the above:
   z): a physical object taken out puts its frame back where it was made, into the scene, even one unlinked since.
   Written before the removal, they decide where it is left. C_actor::Init clears +0x6C, the byte that makes the
   destructor release the frame; the frame's reference count is its +4.
+
+## The archives' names, a model's file (read and seen 2026-10-17, both labs; host/models.cpp)
+
+- **ls3d** I3D_model::Open (the model's vtable +0x50: 1.2 0x100335A0, 1.0 0x100327B0) loads through the model loader
+  (1.2 ls3d+0x603E0, fastcall(file, flags, callback, ctx, model)) and keeps a copy of the name it was given at the
+  model's +0x154 (a counted string: the count at -4). A tap on the loader over the freeride's load (1.2) saw 756
+  opens, 754 from model Open, 2 from the scene's Open: every model of the game carries its file ("Models\Tommy.i3d",
+  the player's and the taxi's in both builds). LS3D names models `.i3d`; their files are `.4ds`.
+- **rw_data** The same archive keys open both builds' archives (1.0 ships A0 and AB, 1.2 not): 3223 distinct
+  `.4ds` names (a2 3045, a8 the patch's 98, a1 80); `models\` names are in a2 and a8 (`MODELS\` upper case in a8).
+- **ours** The .4ds parser read 3220 of 3223 (4.38 million triangles at LOD 0); the others are version 27
+  (`missions\CARCYCLOPEDIA\scene.4ds` and one more) and 58 (`models\tvoda01.4DS`).

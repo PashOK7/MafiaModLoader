@@ -1324,3 +1324,15 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   prop is, or no parent for a prop removed, which would otherwise come back into the scene).
 - **In both labs** alike (ROADMAP "Done").
 - **Tests**: offline ALL PASSED; check_builds ALL PASSED.
+
+## 2026-10-17: the game's files, a model's file, .4ds read (block 6c of the order)
+
+- **Read and measured**: a model keeps its file's name at +0x154 (its Open's copy); every model opens through it
+  (a tap on LS3D's model loader: 754 of 756 calls from the models' Open). The roadmap's "hooked from the process's
+  start" was not needed. The archive keys of the game's table open both builds' archives.
+- **Made** `host/models.cpp`: `game_files`, `model_file`, `model_open`, `model_nodes`, `model_mesh`,
+  `model_materials`, `model_close`; `files.game`, `model.file`, `model.info`; files.cpp's `FilesNames`.
+- **Found**: the 1.0 lab has another project's `scripts\MafiaRagdolls.asi`, loaded beside the loader (a tap on
+  LS3D's model loader in 1.0 named it as every caller): left as it is, written into the Known gaps.
+- **In both labs** alike (ROADMAP "Done"): every `.4ds` listed and parsed through the bridge (3220 of 3223).
+- **Tests**: offline ALL PASSED.

@@ -436,6 +436,24 @@ int PropMore(const char *, MmlReply *r, void *) {
     return 0;
 }
 
+// The game's files and models with no game: no archives (the mods' files only), no model.
+int Models(const char *, MmlReply *r, void *) {
+    if (!MML_HAS(H, model_close)) { H->reply_error(r, "the loader has no model_close"); return 1; }
+    int seen = 0;
+    int all = H->game_files(M, "*", [](const char *, const char *, void *u) { ++*static_cast<int *>(u); return 0; }, &seen);
+    char file[32] = "untouched";
+    MmlModelNode n{};
+    MmlModelMesh mesh{};
+    int open = H->model_open(M, "nothing_here"), nodes = H->model_nodes(M, 12345, &n, 1), got = H->model_mesh(M, 12345, 0, 0, &mesh),
+        mats = H->model_materials(M, 12345, nullptr, 0), mf = H->model_file(M, nullptr, file, sizeof file);
+    H->model_close(M, 12345);
+    char out[200];
+    snprintf(out, sizeof out, "{\"files\":%d,\"told\":%d,\"open\":%d,\"nodes\":%d,\"mesh\":%d,\"materials\":%d,\"file\":%d,\"untouched\":%d}", all, seen,
+             open, nodes, got, mats, mf, strcmp(file, "untouched") == 0 ? 1 : 0);
+    H->reply_append(r, out, static_cast<size_t>(-1));
+    return 0;
+}
+
 // People with no game: none, no skeleton, bone_set refused, no player.
 int Humans(const char *, MmlReply *r, void *) {
     if (!MML_HAS(H, human_player)) { H->reply_error(r, "the loader has no human_player"); return 1; }
@@ -510,6 +528,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->command(mod, "stats", "stats_get, profile_progress, profile_saves with no game", Stats, nullptr);
     host->command(mod, "water", "world_water, zone_watch with no game", Water, nullptr);
     host->command(mod, "prop_more", "a prop's animation and physics with no game", PropMore, nullptr);
+    host->command(mod, "models", "the game's files and models with no game", Models, nullptr);
     host->command(mod, "control", "key_capture, action_capture, player_lock, vehicle_hook, vehicle_body with no game", Control, nullptr);
     host->command(mod, "sound", "sound_play and the rest, music_play and the rest with no game", Sound, nullptr);
     host->command(mod, "effects","car_exhaust, exhaust_hook, particle_def(_set) with no game", Effects, nullptr);

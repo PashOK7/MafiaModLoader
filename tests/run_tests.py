@@ -890,6 +890,16 @@ def main():
         r = b.call('kit.prop_more')
         check('prop_anim_*, prop_physics, prop_push, prop_body with no game: not a prop, refused',
               r['ok'] and r['result'] == {'play': -1, 'stop': 0, 'state': 0, 'untouched': 1, 'physics': 0, 'push': 0, 'body': 0}, r)
+        r = b.call('kit.models')
+        m = r.get('result', {})
+        check('game_files with no game: the mods\' files only, each told; model_open, _nodes, _mesh, _materials, _file: none',
+              r['ok'] and m['files'] == m['told'] and m['files'] > 0 and m['open'] == 0 and m['nodes'] == 0 and m['mesh'] == 0 and
+              m['materials'] == 0 and m['file'] == 0 and m['untouched'] == 1, r)
+        r = b.call('files.game', {'match': '*', 'limit': 3})
+        check('files.game with no game: the mods\' files, from their mods', r['ok'] and r['result']['count'] > 0 and
+              all(f['from'] not in ('folder',) and not f['from'].endswith('.dta') for f in r['result']['files']), r)
+        r = b.call('model.info', {'file': 'nothing_here'})
+        check('model.info of no file: an error, saying why', not r['ok'] and 'no file' in str(r), r)
         for method, params in (('prop.anim', {'prop': '0x1000', 'play': 'walk1'}), ('prop.physics', {'prop': '0x1000'}),
                                ('prop.push', {'prop': '0x1000', 'impulse': [0, 1, 0]})):
             r = b.call(method, params)

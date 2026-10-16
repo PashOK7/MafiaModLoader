@@ -279,6 +279,37 @@ H->camera_ray(M, 400, 300, o, d);              /* the ray through the screen's m
 - `mods/examples/orbit_cam` (not enabled by default; F8, `orbit_cam.on {"on": true}`): the camera circles the
   player while he is played as usual; a label over his head through `camera_project`.
 
+### The game's files and models (the archives' names, a model's file, .4ds read)
+
+```c
+static int OnFile(const char *name, const char *source, void *user) { /* "models\\taxi00.4ds", "a2.dta" */ return 0; }
+H->game_files(M, "models\\*.4ds", OnFile, NULL);           /* every model the game has: 3223 */
+char file[128];
+H->model_file(M, H->actor_frame(M, car), file, sizeof file); /* "Models\\taxi00.i3d" */
+int m = H->model_open(M, file);                             /* models\taxi00.4ds, parsed */
+MmlModelNode nodes[128];
+int n = H->model_nodes(M, m, nodes, 128);
+MmlModelMesh mesh;
+for (int i = 0; i < n && i < 128; i++)
+    if (H->model_mesh(M, m, i, 0, &mesh)) { /* mesh.pos (3 a vertex, in nodes[i]'s space), mesh.index (3 a triangle) */ }
+H->model_close(M, m);
+```
+
+- **`game_files`** lists every file the game can open: the archives' directories read (the same keys open both
+  builds' archives; each name once, from the archive the game looks in first: a8, the patch, before a2...), the
+  game's folder's own under the same folders (the game opens those first) and the mods' (before both). The pattern
+  takes `*` and `?` without regard to case. Read once, at the first question (a few tenths of a second).
+- **`model_file`**: LS3D keeps the name every model was opened by in the model frame (`+0x154`: the game's model
+  cache, the scenes' actors, a prop alike), so any frame under a model (a bone, a car's door) tells its file. The
+  mission's scene's own frames are under no model: none.
+- **`model_open`** reads a `.4ds` (version 29: 3220 of the game's 3223; two scenes of version 27 and one of 58 are
+  refused, said why) through the game's file layer, a mod's own `files\models\` too: its nodes (their parent, frame
+  and visual type, local placement), each visual's meshes per LOD (positions, normals, uv, triangles with their
+  material) and its materials (textures). Skinned meshes and morphs give their base mesh; the weights and morph
+  targets are skipped. The arrays live until `model_close` (or the mod's unload).
+- `call files.game {"match": "models\\tommy*"}`, `model.file {"actor": "car" | "frame" | "prop"}`, `model.info
+  {"file": "taxi00", "meshes"}`.
+
 ### Questions to the world (rays, sweeps, the ground, the water, what is near, the collision's shapes)
 
 ```c

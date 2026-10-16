@@ -25,6 +25,7 @@ constexpr int kFrameFlags  = 0xAC;
 constexpr int kFrameName   = 0x100;
 constexpr int kFrameParent = 0x120;
 constexpr int kFrameType   = 0x110;
+constexpr int kModelFile   = 0x154;  // a model frame's (type 9) file, as its Open was given it ("Models\\Tommy.i3d"), or null
 constexpr uint32_t kFlagScaled = 0x4, kFlagRotValid = 0x8, kFlagLocalBuilt = 0x10, kFlagWorldValid = 0x20,
                    kFlagBoundValid = 0x100, kFlagConstructed = 0x40000000;
 constexpr int kVtFindChild = 0x38;   // stdcall(I3D_frame* this, const char* name, uint flags) -> I3D_frame*

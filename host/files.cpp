@@ -500,6 +500,12 @@ int FilesAdd(MmlMod *mod, const char *name, const char *path) {
     return 1;
 }
 
+void FilesNames(std::vector<std::pair<std::string, std::string>> *out) {
+    AcquireSRWLockShared(&g_lock);
+    for (auto &kv : g_all) out->push_back({kv.first, kv.second.back().mod});
+    ReleaseSRWLockShared(&g_lock);
+}
+
 int FilesSource(const char *name, char *path, int size) {
     std::string n, file;
     if (!GameName(name, &n)) return 0;
