@@ -1225,3 +1225,25 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   MISSION_LOADED). A save made by calling SaveGameSave from the bridge at the start of 1.2's "Old Prison" loaded
   into a Game Over (Known gaps); both labs' saves were restored from copies and the test's `.mml` files deleted.
 - **Tests**: offline ALL PASSED; check_builds ALL PASSED.
+
+## 2026-10-16: animations, getting up, the pedestrians' hits (item 6, block 6b)
+
+- **Read**: the scripts' PERSON_PLAYANIM calls C_human::Do_PlayAnim(name, simple, load), which hands the file to the
+  person's animations machine (C_human +0xBC: SetAnim with a cross-fade, GetActiveAnimTime for its time and length)
+  and returns the length; PERSON_STOPANIM Do_StopAnim; HUMAN_CHANGEANIM ChangeAnim(own, with). The game's table of
+  animations ({file, number}, 576 records, numbers above 511 a set's variants) is the same in both builds; the
+  get-ups are 111 (from the back) and 338 (from the front). Do_ShockDown shows the action queue (+0x23C, 0x14 bytes
+  an entry), its index (+0x2A0) and the state 6 (+0x40C), the same offsets in 1.0. The traffic walkers' Hit (pedHit)
+  is byte for byte the same code in both builds.
+- **Made** `host/anims.cpp` (play, stop, replace, state, get up, PEDESTRIAN_HIT) and the last drawn pose kept in
+  `host/humans.cpp`; five functions in the C ABI, four bridge methods. 1.0's fields for bullets, getting up and
+  trams found as twins of 1.2's functions (the same first instructions) and checked by `check_builds.py`.
+- **Two wrong first guesses, measured**: (1) the chest's z axis is not "out of the chest" (a standing Paulie's
+  `back3` z points down): lying on the back or the front is now the front from right x spine (the model's x x y is
+  its z, the facing; checked on a standing body); (2) between frames the game's animation has the bones again, so a
+  pose a mod drew in RENDER_BEGIN cannot be read later: humans.cpp keeps each posed person's last drawn bones.
+- **A slip of the reference**: mafia-ragdoll masks +0x74 with 0x1FF; the table's numbers go above 511 (4097 is the
+  player's standing), so the loader reports them whole and finds the file by the whole number, then by its base.
+- **In both labs**: details in ROADMAP "Done". Hitting a walking pedestrian with the player's Thompson took too long
+  to aim from here; a scripted explosion beside them gave the events.
+- **Tests**: offline ALL PASSED; check_builds ALL PASSED.

@@ -497,6 +497,48 @@ def main(a):
         check('mov ebx, dword ptr [edi + eax + 8]' in pd and 'ret 4' in pd, f'{name} profileDelete: the profile\'s number read, ret 4')
         first = next((i for i in gexe.md.disasm(gexe.at(exe['saveGameSave'] - 0x400000, 0x800), exe['saveGameSave']) if i.mnemonic == 'ret'), None)
         check(first is not None and first.op_str == '4', f'{name} saveGameSave: ret 4')
+    # People (host/humans.cpp). The scripts' animation commands call humanPlayAnim, humanStopAnim, humanChangeAnim;
+    # the animation table's records name .i3d files with their numbers (111 the get-up from the back, 338 from the
+    # front). Do_ShockDown (1.2 0x587C20, 1.0 0x4A8190) fills the action queue: humanActs, the state humanState 6,
+    # humanActIndex 0. The fields mafia-ragdoll's code uses (bullets, getting up, trams): twins of 1.2's functions
+    # with the same first instructions (addresses aside), bulletRay right after a call of collRayTest,
+    # pedSystemVtable + 0x7C holding pedBulletHit, and the C_human offsets in the code that reads them.
+    handlers = {'1.2': (0x47032E, 0x4703BF, 0x46F586), '1.0': (0x5BE122, 0x5BE1B3, 0x5BD38F)}
+    shock = {'1.2': 0x587C20, '1.0': 0x4A8190}
+    for name, (exe, ls, gexe, gls) in builds.items():
+        for h, f in zip(handlers[name], ('humanPlayAnim', 'humanStopAnim', 'humanChangeAnim')):
+            ins = [f'{i.mnemonic} {i.op_str}' for i in gexe.md.disasm(gexe.at(h - 0x400000, 0xA0), h)]
+            check(f'call {exe[f]:#x}' in ins, f'{name} {f}: called by the scripts\' command')
+        recs = [struct.unpack_from('<II', bytes(gexe.at(exe['animTable'] - 0x400000 + 8 * k, 8))) for k in range(exe['animCount'])]
+        names = {}
+        for p, n in recs:
+            s = bytes(gexe.at(p - 0x400000, 64)).split(b'\0')[0]
+            names.setdefault(n, s.lower())
+        check(all(bytes(gexe.at(p - 0x400000, 64)).split(b'\0')[0].lower().endswith(b'.i3d') for p, n in recs)
+              and names.get(111) == b'smrt pad end vstavani.i3d' and names.get(338) == b'x panika leh nahoru.i3d',
+              f'{name} animTable: {exe["animCount"]} records of .i3d files, 111 and 338 the get-ups')
+        pa = [f'{i.mnemonic} {i.op_str}' for i in gexe.md.disasm(gexe.at(exe['humanPlayAnim'] - 0x400000, 0xC0), exe['humanPlayAnim'])]
+        check(f'lea edi, [esi + {exe["humanAnimMachine"]:#x}]' in pa and f'call {exe["animTime"]:#x}' in pa,
+              f'{name} humanPlayAnim: its animations machine at +{exe["humanAnimMachine"]:#x}, animTime called on it')
+        sd = [f'{i.mnemonic} {i.op_str}' for i in gexe.md.disasm(gexe.at(shock[name] - 0x400000, 0x90), shock[name])]
+        check(f'mov dword ptr [ecx + {exe["humanActs"]:#x}], esi' in sd and f'mov dword ptr [ecx + {exe["humanState"]:#x}], 6' in sd
+              and f'mov dword ptr [ecx + {exe["humanActIndex"]:#x}], edx' in sd, f'{name} Do_ShockDown: the action queue, its state and index')
+    def first14(g, a):   # (up to its first ret: a short function's padding differs)
+        out = []
+        for i in list(g.md.disasm(g.at(a - 0x400000, 0xC8), a))[:14]:
+            out.append(i.mnemonic + ' ' + re.sub(r'0x[0-9a-f]{5,}', 'A', i.op_str))
+            if i.mnemonic == 'ret':
+                break
+        return out
+    for f in ('collRayTest', 'humanBoneRayTest', 'pedBulletHit', 'pedAnimStart', 'collGridAdd', 'collGridMove', 'humanPlatform',
+              'tramCarOf', 'pedHit', 'humanPlayAnim', 'humanStopAnim', 'humanChangeAnim'):
+        check(first14(g12, e12[f]) == first14(g10, e10[f]), f'{f}: the same first instructions in both builds')
+    for name, (exe, ls, gexe, gls) in builds.items():
+        before = list(gexe.md.disasm(gexe.at(exe['bulletRay'] - 5 - 0x400000, 5), exe['bulletRay'] - 5))
+        check(len(before) == 1 and before[0].mnemonic == 'call' and int(before[0].op_str, 16) == exe['collRayTest'],
+              f'{name} bulletRay: right after a call of collRayTest')
+        slot = struct.unpack('<I', bytes(gexe.at(exe['pedSystemVtable'] + 0x7C - 0x400000, 4)))[0]
+        check(slot == exe['pedBulletHit'], f'{name} pedSystemVtable + 0x7C: pedBulletHit')
     # The using objects (host/interact.cpp): the player's Action on foot calls FindNearObjects on C_game + 0x29EC, then
     # ExecuteMenu (`xor dl, dl` before it) and compares its result with 0xA8; AddObject and DelObject end ret 4,
     # FindNearObjects ret 0x10, ExecuteMenu ret 4.

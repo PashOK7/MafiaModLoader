@@ -81,7 +81,7 @@ const char *EventName(int type) {
                                   "SERVICES_CHANGED", "MOD_LOADED", "MISSION_OPEN", "MISSION_LOADED", "GAME_PAUSED", "GAME_RESUMED",
                                   "CONFIG_CHANGED", "FILE_CHANGED", "RENDER_BEGIN", "RENDER_WORLD", "RENDER_END", "PRESENT", "VIEW_WORLD",
                                   "SHOT", "EXPLOSION", "HUMAN_DIED", "VEHICLE_ENTERED", "VEHICLE_LEFT", "CAR_EXPLODED",
-                                  "GAME_SAVING", "GAME_LOADED"};
+                                  "GAME_SAVING", "GAME_LOADED", "PEDESTRIAN_HIT"};
     return type >= 0 && type < static_cast<int>(sizeof names / sizeof names[0]) ? names[type] : "event";
 }
 

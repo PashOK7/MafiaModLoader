@@ -311,6 +311,19 @@ What is done, what comes next and later, and what is known to be missing or wron
   it back when removed, the compass hidden again and the HUD's flags as they were when the last went; a marker on
   Paulie gone with him; the scope's `2sight.bmp` with its `+` twin (the circle clear), `1numbers.tga` tinted red
   and turned; console and help lines; markers hidden under the pause menu; leaving to the main menu left none.
+- **Animations, getting up, the pedestrians' hits** (2026-10-16; item 6, block 6b; host/anims.cpp, humans.cpp):
+  `human_anim_play` (C_human::Do_PlayAnim, a file of anims\, its length), `human_anim_stop` (Do_StopAnim),
+  `human_anim_replace` (ChangeAnim; given back at the mod's unload), `human_anim_state` (the animations machine's
+  time and length by GetActiveAnimTime, his state, the playing number and its file in the game's table, lying on
+  the back or the front), `human_get_up` (the pose last drawn, the person put where it lies and turned, the game's
+  get-up 111 or 338 queued as Do_ShockDown queues one, the host blending into it); MML_EVENT_PEDESTRIAN_HIT from a
+  hook on the traffic walkers' Hit. `human.anim`, `human.anim_state`, `human.get_up`, `human.anims`. 1.0's fields
+  for bullets, getting up and trams filled (twins with the same code, offsets read; `check_builds.py`). Seen in both
+  labs alike: "boj box kombo" (640 ms) and "x panika drep stativ" (1000 ms) played on Paulie, the machine's time
+  moving; the player's standing (`breath05a.i3d`) replaced by the panic crouch and given back; Paulie laid on his
+  back and on his front by a held pose, `lying` 1 and -1, and getting up from each at the same place (the back's
+  get-up sitting up, the front's pushing up on all fours); a scripted explosion killing two (1.0) and one (1.2)
+  traffic pedestrians: PEDESTRIAN_HIT with their place, damage, type 2 and model frame.
 - **A mod's state in the saves** (2026-10-16; item 17; host/saves.cpp): `save_put`, `save_get` by scope
   (`MML_SAVE_SLOT`, `MML_SAVE_PROFILE`); MML_EVENT_GAME_SAVING before the game writes a save, MML_EVENT_GAME_LOADED
   after it loads one or starts a new game (slot -1); the slot's state written beside the game's save
@@ -414,7 +427,7 @@ V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselv
 **The order of work** (the owner, 2026-10-16; one block at a time, each seen in both labs): the functions themselves
 matter, not example mods for them (no "fishing" example for items 15 and 16).
 1. Item 17, a mod's state in the game's saves.
-2. People and animations (item 6's rest: animations played and blended, getting up, traffic pedestrians' hits,
+2. *(Done 2026-10-16.)* People and animations (item 6's rest: animations played and blended, getting up, traffic pedestrians' hits,
    1.0's fields).
 3. The events still missing (item 7's rest: what a bullet struck, a car striking a person or a thing, falls, items
    picked up, money, objectives, a mission won or failed).
@@ -458,8 +471,8 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
 
 ### Tier 2: the game's world as data, read and changed
 
-6. *(6a done 2026-10-16: the list, the skeleton, poses; see "Done". Left: traffic pedestrians' elements and their
-   Hit as events, getting up, animations played, 1.0's fields.)* **People, skeletons, animations** (R K F; S W as pushers). Every `C_human`, the traffic system's pooled ones too,
+6. *(Done 2026-10-16: 6a the list, the skeleton, poses; 6b animations, getting up, the pedestrians' hits, 1.0's
+   fields; see "Done". What is left: a model's (a prop's) animations, in block 6 of the order; Known gaps.)* **People, skeletons, animations** (R K F; S W as pushers). Every `C_human`, the traffic system's pooled ones too,
    as a list (the constructor's hook already sends `HUMAN_CREATED`; no list is kept); traffic pedestrians' elements
    and their own Hit (`0x4588D0`) as events; the bones by name, a pose read in one call (the 18 joints, the model
    root), written back before Render (item 3); handing a body back to the game (getting up); the game's animations
@@ -707,6 +720,14 @@ merged, sorted by importance):
   2026-10-16 in both labs: the player's Thompson killing a spawned Paulie, aimed by `world.ray` from the camera); a
   death the game queues with no hit (a script's) has none. `SHOT`'s direction is not a unit vector (its length is the weapon's reach). Deaths and vehicles come from
   the people the loader knows (C_human), a frame late at most.
+- **Animations, getting up** (host/anims.cpp, item 6b): an animation human_anim_play starts is in the animations
+  machine, not in the person's +0x70 (which stays his own life's: `human_anim_state`'s `playing`); his state turns 4
+  only for an animation with a track (.tck) of its own. A mod's own animation file in `files\anims\` was not tried
+  (the game opens it by name as it opens its own). Getting up was tried on people posed by the bridge, not on a body
+  the game itself knocked down (its own queue then plays: the mod's call replaces it). Traffic pedestrians cannot be
+  handed a get-up (they are not C_humans: mafia-ragdoll's getup.cpp shows their way, pedAnimStart), and they are not
+  listed (only their hits are told). `world.ray` with MML_WORLD_MOVING did not hit a walking pedestrian's box that
+  `world.shapes` showed (not looked into).
 - **People** (host/humans.cpp): a freeride lists 36 people besides the player with the model name `road_bl_E` at
   the origin (both builds): the traffic system's pool, not placed yet, whose actor + 0x68 is not a person's model
   (no skeleton). Traffic pedestrians walking the streets were not checked against the list. A pose is drawn only:

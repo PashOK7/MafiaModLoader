@@ -866,6 +866,12 @@ def main():
         check('save.put, save.get, save.state with no game: the bridge\'s key kept, not hooked',
               r['ok'] and r2['ok'] and r2['result']['value'] == 'kept' and r3['ok'] and r3['result']['hooked'] is False
               and {'mod': 'bridge', 'key': 'note', 'size': 4} in r3['result']['slot_keys'], (r, r2, r3))
+        r = b.call('kit.anims')
+        check('human_anim_play, _stop, _replace, _state, human_get_up with no game: refused, nothing faults',
+              r['ok'] and r['result'] == {'play': -1, 'stop': 0, 'replace': 0, 'state': 0, 'untouched': 1, 'get_up': 0}, r)
+        for method in ('human.anim', 'human.anim_state', 'human.get_up'):
+            r = b.call(method, {'actor': '0x1000', 'play': 'walk'})
+            check(f'{method} with no game: an error, saying why', not r['ok'] and ('not a person' in str(r) or 'no actors' in str(r)), r)
         r = b.call('save.put', {'key': 'note', 'value': 'x', 'scope': 'profile'})
         check('save.put to the profile with no game: an error, saying why', not r['ok'] and 'no profile' in str(r), r)
         r = b.call('hud.list')

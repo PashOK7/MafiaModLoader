@@ -630,6 +630,7 @@ H->save_put(M, MML_SAVE_PROFILE, "record", &best, sizeof best);   /* the profile
 | `MML_EVENT_CAR_EXPLODED` | a car blows up | the car | |
 | `MML_EVENT_HUMAN_DIED` | a person's life goes out, however (a hit, a fall, the water, a script) | him | `other`: the last who hit him in the 3 s before, or NULL |
 | `MML_EVENT_VEHICLE_ENTERED`, `_LEFT` | a person starts or stops using a vehicle (a car, a tram) | him | `other`: the vehicle |
+| `MML_EVENT_PEDESTRIAN_HIT` | the game hits a traffic pedestrian (the city's walkers are the traffic system's elements, not actors) | its element | `hit` (`pos` where it stands, alive by its health), `other`: its model frame |
 
 Deaths and vehicles are read every frame from each person the loader knows (a frame late at most); shots and
 explosions are the game's own functions hooked. Every one of them also reaches agents (`events.since`, MCP
@@ -662,6 +663,34 @@ if (H->human_skeleton(M, H->human_player(M), b, MML_BONE_COUNT)) {
   every frame: an agent's test of a pose).
 - `mods/examples/puppet` (not enabled by default): the player waves (`"wave"`) or holds a T-pose (`"tpose"`), any
   person with `puppet.target {"actor"}`.
+
+### Animations, getting up
+
+```c
+int ms = H->human_anim_play(M, paulie, "x panika drep stativ", 0);   /* anims\...: its length, 0 no such file */
+H->human_anim_stop(M, paulie);                                       /* his own again at once */
+H->human_anim_replace(M, H->human_player(M), "breath05a.i3d", "x panika drep stativ.i3d");  /* NULL: his own */
+MmlHumanAnim s = {sizeof s};
+H->human_anim_state(M, paulie, &s);       /* s.time_ms, s.length_ms, s.lying, s.state, s.playing, s.name */
+H->human_get_up(M, paulie, 600);          /* a body the mod posed handed back to the game */
+```
+
+- **Playing** is the game's own way, as a mission plays an animation (`person_playanim`): a file of `anims\` (the
+  archives', or the mod's `files\anims\`; with or without `.i3d`), cross-faded from what he does; at its end he
+  goes back to his own life (an NPC to his AI). `MML_ANIM_SIMPLE` is the scripts' `SIMPLE`. The game's own
+  animations are named in its table: `call human.anims {"query": "panika"}` lists them from the running game
+  (walking, running, panics, deaths, fights, getting into cars...).
+- **Replacing** one of his own animations (`human_changeanim`): the game plays the other wherever it would play
+  his (his standing, walking...), until it is given back (NULL), the mod unloads or he is destroyed.
+- **The state**: `time_ms` and `length_ms` are his animations machine's active animation (the one played, or his
+  own); `lying` 1 on the back, -1 on the front (his front from his shoulders, hips and spine, as last drawn);
+  `state` 1 his own life, 6 his action queue (a knock-down, a get-up).
+- **Getting up**: a mod that posed a body (a ragdoll) stops posing it and calls `human_get_up`. The loader takes
+  the pose last drawn, puts the person where the body lies (the pelvis over the ground) and turned the way it lies,
+  and queues the game's own get-up from the back or the front, as a knock-down queues it; for `blend_ms` the host
+  draws each bone from the body's pose into the animation's. He then lives on as the game's again.
+- `call human.anim {"actor", "play" | "stop" | "replace" with "with"}`, `human.anim_state {"actor"}`,
+  `human.get_up {"actor", "blend_ms"}`.
 
 ### The game's own geometry hidden or replaced (water, by its texture)
 

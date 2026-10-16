@@ -334,7 +334,7 @@ struct WaitArgs {
     /// GAME_RESUMED, HUMAN_CREATED, HUMAN_HIT, HUMAN_DIED, SHOT, EXPLOSION, CAR_EXPLODED, VEHICLE_ENTERED,
     /// VEHICLE_LEFT, ACTOR_DESTROYED, MOD_LOADED, MOD_UNLOADED, MOD_FAULTED, SCRIPT_ENDED, CONFIG_CHANGED,
     /// FILE_CHANGED, SERVICES_CHANGED, ZONE_ENTERED, ZONE_LEFT, USED, TIMER (the bridge's zones, use-points and
-    /// timers), GAME_SAVING, GAME_LOADED (a save written or loaded, a new game: `slot`, `profile`)
+    /// timers), GAME_SAVING, GAME_LOADED (a save written or loaded, a new game: `slot`, `profile`), PEDESTRIAN_HIT
     /// (`call events.since` lists the recent ones).
     types: String,
     /// Fields the event's data must have, equal (strings without regard to case): {"name": "freeitaly"},
@@ -969,7 +969,8 @@ The world without a program: `spawn {car | human, at, in}` makes a car or a pers
 The game's own script machine: `script {code, act, flt}` runs a program in the missions' language (teleport, spawn, weapons, kill, cars, weather, camera: every command the missions have), `script_commands {query}` tells the commands' arguments, docs/SCRIPTS.md has recipes; a mod does the same with script_run. What a game function does, where a thing lives: kb_search, then kb_function (facts, calls, decompiled code); \
 knowledge/notes/ holds the hand-written findings. \
 More through `call` (commands_list {query} gives each one's params and result; docs/PROTOCOL.md has them all): \
-people: `humans.list`, `human.skeleton {actor}`, `human.pose {actor, bones, ms}`; the camera: `camera.set {eye, at, \
+people: `humans.list`, `human.skeleton {actor}`, `human.pose {actor, bones, ms}`, `human.anim {actor, play | stop | \
+replace, with}`, `human.anim_state`, `human.get_up {actor, blend_ms}`, `human.anims {query}`; the camera: `camera.set {eye, at, \
 fov, ms}` (look at any place, then screenshot), `camera.state`, `camera.release`; questions to the world: \
 `world.ray {from: \"camera\"}` (what the crosshair looks at), `world.sweep`, `world.ground {at}`, `world.near {at, \
 radius}`, `world.shapes`; the game's state: `state.money {set}`, `human.health {set}`, `human.items`, \

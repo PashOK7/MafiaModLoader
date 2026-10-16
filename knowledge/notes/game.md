@@ -406,3 +406,20 @@ autosplitter; kept outside it, not ported). Checked against the above:
   +0x18 released), +0x1C an actor, +0x20 an owner frame (0: any), +0x28 the S_GameItem the menu lists: {type 1, the
   action's id, 0, the record}. The menu's line is the game's text of the action's id: the loader's use-points give
   it a text id of their own (host/interact.cpp) and are listed with the car's seats ("2. Fish here").
+
+## People's animations (read and seen 2026-10-16, both labs; host/anims.cpp)
+
+- **game** C_human::Do_PlayAnim (1.2 0x585E80, 1.0 0x4A63F0): thiscall(name, bool simple, bool load) ret 0xC ->
+  the length in ms; it calls SetAnim on the animations machine at C_human +0xBC (a cross-fade of 4.0) and, only when
+  the machine found a track (.tck: machine +0x2C != -1), sets the state +0x40C to 4. GetActiveAnimTime (1.2
+  0x40E890, 1.0 0x5AB3A0) thiscall(machine, int *time, int *length) ret 8. Do_StopAnim (1.2 0x57D2E0, 1.0 0x49D840):
+  the state back to 1 and his own animation. ChangeAnim (1.2 0x57DD00, 1.0 0x49E260): (own, with | null).
+- **game** The table of animations (1.2 0x62E488, 1.0 0x647808): 576 records {const char *file, int number}, the
+  numbers not consecutive, those above 511 a set's variants (513 of 1, 4097 the player's standing `breath05a`).
+  C_human +0x70 is the number playing in his own life (an animation Do_PlayAnim started is not there), +0x74 asked.
+- **game** The action queue (Do_ShockDown 1.2 0x587C20, 1.0 0x4A8190): entries of 0x14 bytes from +0x23C ({1, an
+  animation's number, ?, a byte, ?}, then {3}), the index +0x2A0, the state +0x40C = 6; the get-ups are 111 and 338.
+- **ours** A person's bones' axes do not tell the body's front: a standing Paulie's `back3` z points down. Right is
+  the model's x (x x y = z, the facing): front = (right shoulder - left + right thigh - left) x (neck - pelvis).
+- **ours** Lying on the back, a person's pelvis's local rotation relative to his model frame (the pelvis's parent) is
+  (w x y z) (0, 0, 0.7071, 0.7071) and on the front (0.7071, -0.7071, 0, 0), the pelvis 0.15 m up (both builds).

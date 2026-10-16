@@ -384,6 +384,20 @@ struct ExeBuild {
     // deleted.
     uintptr_t saveGameSave, saveGameLoad, saveGameNew, profileDelete;
     int saveProfile, saveSlot;
+    // People's animations (host/humans.cpp), thiscall on a C_human: humanPlayAnim, C_human::Do_PlayAnim(const char
+    // *name, bool simple, bool load) -> its length in ms (the scripts' PERSON_PLAYANIM: the animations machine's
+    // SetAnim with a cross-fade; anims\<name>; the human's state +0x40C becomes 4 and goes back to 1 at the end);
+    // humanStopAnim, Do_StopAnim() (PERSON_STOPANIM: the state back to 1, his own animation); humanChangeAnim,
+    // ChangeAnim(const char *own, const char *with) (HUMAN_CHANGEANIM: one of his own animations played as another;
+    // with null: his own again). animTable: the game's animations, animCount records {const char *file, int number}
+    // (the number C_human +0x70 plays, +0x74 is asked for, and the action queue's entries take).
+    uintptr_t humanPlayAnim, humanStopAnim, humanChangeAnim, animTable;
+    int animCount;
+    // humanAnimMachine: C_human + this, his animations machine (C_animations_machine_de_luxe; Do_PlayAnim's SetAnim
+    // and GetActiveAnimTime are called on it). animTime, GetActiveAnimTime(int *a, int *b) ret 8: the active
+    // animation's time and length in ms (Do_PlayAnim returns the second as the length).
+    uintptr_t animTime;
+    int humanAnimMachine;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -553,6 +567,10 @@ inline const ExeBuild kExe12 = {
     0x47A080, 0x47A0A0, 0x40A4, 0x4278,
     // the saves (2026-10-16: st0rm94's names; the sprintf arguments read in SaveGameSave and SaveGameLoad)
     0x606EA0, 0x606150, 0x605FF0, 0x605740, 0x28, 0x7C,
+    // people's animations (2026-10-16: the calls of PERSON_PLAYANIM, PERSON_STOPANIM, HUMAN_CHANGEANIM; the table
+    // found by its records, "smrt pad end vstavani.I3D" 111 among them)
+    0x585E80, 0x57D2E0, 0x57DD00, 0x62E488, 576,
+    0x40E890, 0xBC,
 };
 
 inline const ExeBuild kExe10 = {
@@ -568,11 +586,14 @@ inline const ExeBuild kExe10 = {
     // 1.0's C_Vehicle differs from 1.2's (most fields up to +0xD00 sit 0x7C higher, the velocity 0x84 lower); each
     // offset here is read from the 1.0 code that uses it (docs/VERSIONS.md). C_car's own fields sit 0xC0 lower.
     0x70, 0x414, 0x49C, 0x670, 0x1F0C, 0x4B4, 0xD64, 0xDA4, 0x2159,
-    0, 0, 0, 0, 0,   // bullets: not looked for in 1.0 yet
-    0, 0, 0,
-    0, 0, 0, 0, 0,   // getting up: not looked for in 1.0 yet
-    0,
-    0, 0,            // trams: not looked for in 1.0 yet
+    // bullets, getting up, trams (2026-10-16: the twins of 1.2's functions, their first instructions the same;
+    // bulletRay the return of collRayTest's call in the bullets' tick 0x5E47C0, pedSystemVtable where pedBulletHit
+    // sits at +0x7C; the C_human offsets read in Do_ShockDown, the bullets' tick and humanBoneRayTest's callers)
+    0x583570, 0x5E4CAC, 0x592350, 0x63C6D8, 0x4B1500,
+    0x688, 0x690, 0x2DC,
+    0x4BDC50, 0x57E7F0, 0x23C, 0x2A0, 0x40C,
+    0x57EBF0,
+    0x492000, 0x4E3FB0,
     // the start (2026-10-14, read in 1.0's code): no Bink logos (the AVI ones: m10CdFind); the active screen; the
     // profile manager (+4/+8 the profiles, 0x54 bytes each, as in 1.2); the profile, main and freeride screens'
     // vtables (their Ticks take the same ids as 1.2's handlers: 100 + i, 990105, 201)
@@ -654,6 +675,9 @@ inline const ExeBuild kExe10 = {
     0x424E20, 0x5C7DB0, 0x90A4, 0x9270,   // (the compass' target is not 0x5000 further: 8 less)
     // the saves (2026-10-16: st0rm94's twins; the same code and the same manager offsets as 1.2's)
     0x558ED0, 0x558180, 0x558020, 0x5577D0, 0x28, 0x7C,
+    // people's animations (2026-10-16: the same three handlers' calls; the same table, its numbers the same)
+    0x4A63F0, 0x49D840, 0x49E260, 0x647808, 576,
+    0x5AB3A0, 0xBC,
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,

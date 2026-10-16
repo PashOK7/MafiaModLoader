@@ -102,7 +102,8 @@ int __fastcall hkMissionClose(void *self, void *edx) {
     SoundMissionClose();    // (the 3D sounds, likewise)
     ControlMissionClose();
     InteractMissionClose();
-    HudMissionClose();      // (the radar's marks and the compass given back while the HUD knows the mission's frames)
+    HudMissionClose();
+    AnimsMissionClose();      // (the radar's marks and the compass given back while the HUD knows the mission's frames)
     SetPaused(false);
     Dispatch(Event(MML_EVENT_MISSION_CLOSE));
     g_missionLoaded = false;
@@ -125,6 +126,7 @@ void __fastcall hkActorDtor(void *self, void *edx) {
     PropsActorGone(self);
     InteractActorGone(self);
     HudActorGone(self);
+    AnimsActorGone(self);
     oActorDtor(self, edx);
 }
 void *__fastcall hkHumanCtor(void *self, void *edx) {

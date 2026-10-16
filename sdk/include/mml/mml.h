@@ -95,6 +95,9 @@ typedef enum MmlEventType {
     MML_EVENT_GAME_SAVING = 26,      /* the game is about to write a save (slot, profile): save_put the state now */
     MML_EVENT_GAME_LOADED = 27,      /* a save was loaded (slot, profile), or a new game or a freeride began (slot -1):
                                         save_get (MML_SAVE_SLOT) gives that save's state now */
+    MML_EVENT_PEDESTRIAN_HIT = 28,   /* a traffic pedestrian took a hit (after the game's): actor its element (the
+                                        traffic system's walker, not a C_actor), other its model frame, hit (pos
+                                        where it stands, was_alive / alive by its health) */
     MML_EVENT_COUNT_
 } MmlEventType;
 
@@ -552,6 +555,20 @@ typedef int (*MmlVehicleFn)(MmlVehicleStep *step, void *user);
 typedef void (*MmlZoneFn)(int zone, int inside, void *actor, void *user);
 typedef void (*MmlUseFn)(int point, void *user);
 typedef void (*MmlTimerFn)(int timer, void *user);
+
+/* What a person plays (human_anim_state). */
+typedef struct MmlHumanAnim {
+    uint32_t size;          /* sizeof(MmlHumanAnim) */
+    int playing;            /* the game's number of the animation playing (C_human +0x70), 0: none */
+    int asked;              /* the one asked for (+0x74) */
+    const char *name;       /* the file the game's table gives for `playing` ("" when none or not in the table) */
+    int state;              /* his state (+0x40C): 1 his own life (an animation human_anim_play started plays in it
+                               too), 4 an animation with a track of its own (.tck), 6 his action queue (a knock-down,
+                               a get-up), others the game's */
+    int lying;              /* 1 on the back, -1 on the front, 0 neither: from his chest's axis as drawn now */
+    int time_ms, length_ms; /* his animations machine's active animation (the one human_anim_play started, or his
+                               own): where it is and how long it is (GetActiveAnimTime); 0 0 with none */
+} MmlHumanAnim;
 
 /* A marker on the HUD (hud_marker_add): a place in the world shown on the screen, the radar or the compass. */
 typedef struct MmlHudMarker {
@@ -1022,7 +1039,25 @@ typedef struct MmlHost {
      * the game deleting a profile deletes them too. */
     int (*save_put)(MmlMod *mod, int scope, const char *key, const void *data, size_t n);
     size_t (*save_get)(MmlMod *mod, int scope, const char *key, void *data, size_t cap);
+
+    /* ---- people's animations and getting up (both builds; docs/MODDING.md "Animations, getting up"). human_anim_play:
+     * an animation played as a mission plays one (C_human::Do_PlayAnim, the scripts' person_playanim): a file of
+     * anims\ (the archives', or a mod's files\anims\; "x.i3d" or "x"), cross-faded from what he does; at its end he
+     * goes back to his own. flags MML_ANIM_SIMPLE: the scripts' SIMPLE. Returns its length in ms (0: no such file),
+     * -1: refused (not a person). human_anim_stop: his own animation again at once. human_anim_replace: one of his own
+     * animations (walking, standing...: "ssss.i3d") played as another from now on (C_human::ChangeAnim); with NULL his
+     * own again (also at the mod's unload). human_anim_state: what he plays. human_get_up: a body a mod posed handed
+     * back to the game: he is put where it lies and turned the way it lies, and plays the game's own get-up from the
+     * back or the front (his action queue, as a knock-down queues it); the host draws from the body's pose into the
+     * animation over blend_ms (0: at once). A mod stops posing him before. Game thread. */
+    int (*human_anim_play)(MmlMod *mod, void *human, const char *anim, int flags);
+    int (*human_anim_stop)(MmlMod *mod, void *human);
+    int (*human_anim_replace)(MmlMod *mod, void *human, const char *own, const char *with);
+    int (*human_anim_state)(MmlMod *mod, void *human, MmlHumanAnim *out);
+    int (*human_get_up)(MmlMod *mod, void *human, int blend_ms);
 } MmlHost;
+
+#define MML_ANIM_SIMPLE 0x1
 
 #define MML_SAVE_SLOT 0
 #define MML_SAVE_PROFILE 1

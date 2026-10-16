@@ -74,7 +74,7 @@ void EventsFromDispatch(const MmlEvent &ev) {
     json d = json::object();
     if (ev.actor) d["actor"] = Hex(ev.actor);
     if (ev.name) d["name"] = ev.name;
-    if (ev.type == MML_EVENT_HUMAN_HIT && ev.hit) {
+    if ((ev.type == MML_EVENT_HUMAN_HIT || ev.type == MML_EVENT_PEDESTRIAN_HIT) && ev.hit) {
         const MmlHumanHit &h = *ev.hit;
         d["hit_type"] = h.type;
         d["damage"] = h.damage;
@@ -98,7 +98,7 @@ void EventsFromDispatch(const MmlEvent &ev) {
         d["radius"] = x.radius;
         d["damage"] = x.damage;
     }
-    if (ev.other) d[ev.type == MML_EVENT_HUMAN_DIED ? "killer" : "vehicle"] = Hex(ev.other);
+    if (ev.other) d[ev.type == MML_EVENT_HUMAN_DIED ? "killer" : ev.type == MML_EVENT_PEDESTRIAN_HIT ? "model" : "vehicle"] = Hex(ev.other);
     if (ev.type == MML_EVENT_GAME_SAVING || ev.type == MML_EVENT_GAME_LOADED) { d["slot"] = ev.slot; d["profile"] = ev.profile; }
     Push(ProfEventSite(ev.type), std::move(d));
 }

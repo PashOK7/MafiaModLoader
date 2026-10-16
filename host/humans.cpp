@@ -125,6 +125,11 @@ void *ModelOfBone(void *frame) {
     return nullptr;
 }
 
+// The pose each person was last drawn in by a mod or the bridge (the bones' world matrices once his model is updated
+// after RENDER_BEGIN): what human_get_up hands back (between frames the game's own animation has the bones again).
+struct LastPose { void *human; DWORD tick; float w[MML_BONE_COUNT][16]; };
+std::vector<LastPose> g_lastPoses;
+
 // the bridge's held poses
 struct Held { void *human; void *frame; float rot[4]; float pos[3]; bool hasRot, hasPos; DWORD until; };
 std::vector<Held> g_held;
@@ -170,8 +175,9 @@ void HumansCreated(void *h) { if (h && !Alive(h)) g_humans.push_back(h); }
 void HumansGone(void *actor) {
     g_humans.erase(std::remove(g_humans.begin(), g_humans.end(), actor), g_humans.end());
     g_held.erase(std::remove_if(g_held.begin(), g_held.end(), [&](const Held &x) { return x.human == actor; }), g_held.end());
+    g_lastPoses.erase(std::remove_if(g_lastPoses.begin(), g_lastPoses.end(), [&](const LastPose &x) { return x.human == actor; }), g_lastPoses.end());
 }
-void HumansMissionClosed() { g_humans.clear(); g_held.clear(); g_dirty.clear(); }
+void HumansMissionClosed() { g_humans.clear(); g_held.clear(); g_dirty.clear(); g_lastPoses.clear(); }
 
 void *HumanPlayer() {
     if (!game::g_exe) return nullptr;
@@ -209,14 +215,40 @@ int BoneSet(void *frame, const float *rot, const float *pos) {
     return 1;
 }
 
+bool HumanBones(void *human, void **frames) { return game::g_exe && Alive(human) && FindBones(human, frames); }
+bool HumanLastPose(void *human, float world[][16], unsigned maxAgeMs) {
+    for (const LastPose &p : g_lastPoses)
+        if (p.human == human && GetTickCount() - p.tick <= maxAgeMs) { memcpy(world, p.w, sizeof p.w); return true; }
+    return false;
+}
+bool HumanKnown(void *human) { return Alive(human); }
+
 // (render.cpp) after RENDER_BEGIN's mods: every model whose bones were written, updated once.
 void HumansFlushPoses() {
-    for (void *m : g_dirty) UpdateModel(m);
+    for (void *m : g_dirty) {
+        UpdateModel(m);
+        void *h = nullptr;
+        for (void *x : g_humans) if (ModelOf(x) == m) h = x;
+        void *f[MML_BONE_COUNT];
+        if (!h || !FindBones(h, f)) continue;
+        LastPose p{h, GetTickCount(), {}};
+        bool ok = true;
+        for (int i = 0; i < MML_BONE_COUNT && ok; i++) {
+            if (!f[i]) continue;
+            MmlBone b{};
+            ok = ReadBone(f[i], &b);
+            memcpy(p.w[i], b.world, sizeof p.w[i]);
+        }
+        if (!ok) continue;
+        g_lastPoses.erase(std::remove_if(g_lastPoses.begin(), g_lastPoses.end(), [&](const LastPose &x) { return x.human == h; }), g_lastPoses.end());
+        g_lastPoses.push_back(p);
+    }
     g_dirty.clear();
 }
 
 // (render.cpp) RENDER_BEGIN of the mission's world, before the mods': the poses the bridge holds.
 void HumansBeforeRender() {
+    AnimsBeforeRender();   // (anims.cpp: a get-up drawn from the body's pose into the game's animation)
     if (g_held.empty()) return;
     DWORD now = GetTickCount();
     g_held.erase(std::remove_if(g_held.begin(), g_held.end(), [&](const Held &x) { return static_cast<int>(x.until - now) <= 0; }), g_held.end());

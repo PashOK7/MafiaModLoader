@@ -476,6 +476,29 @@ int H_SavePut(MmlMod *m, int scope, const char *key, const void *data, size_t n)
     return 0;
 }
 size_t H_SaveGet(MmlMod *m, int scope, const char *key, void *data, size_t cap) { return Alive(m) ? SaveGet(m, scope, key, data, cap) : 0; }
+int H_HumanAnimPlay(MmlMod *m, void *human, const char *anim, int flags) {
+    if (!Alive(m)) return -1;
+    std::string err;
+    int ms = HumanAnimPlay(human, anim, flags, &err);
+    if (ms < 0) Log(MML_LOG_WARN, Who(m), "human_anim_play: %s", err.c_str());
+    return ms;
+}
+int H_HumanAnimStop(MmlMod *m, void *human) { std::string err; return Alive(m) && HumanAnimStop(human, &err) ? 1 : 0; }
+int H_HumanAnimReplace(MmlMod *m, void *human, const char *own, const char *with) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    if (HumanAnimReplace(m, human, own, with, &err)) return 1;
+    Log(MML_LOG_WARN, Who(m), "human_anim_replace: %s", err.c_str());
+    return 0;
+}
+int H_HumanAnimState(MmlMod *m, void *human, MmlHumanAnim *out) { return Alive(m) ? HumanAnimState(human, out) : 0; }
+int H_HumanGetUp(MmlMod *m, void *human, int blend_ms) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    int r = HumanGetUp(human, blend_ms, &err);
+    if (!r) Log(MML_LOG_WARN, Who(m), "human_get_up: %s", err.c_str());
+    return r ? 1 : 0;
+}
 int H_WorldShapes(MmlMod *m, const float lo[3], const float hi[3], uint32_t what, MmlShape *out, int max) {
     return Alive(m) && lo && hi ? WorldShapes(lo, hi, what, out, out ? max : 0) : 0;
 }
@@ -658,6 +681,7 @@ bool UnloadMod(ModEntry *e, const char *why) {
     ControlModGone(m);
     InteractModGone(m);
     HudModGone(m);
+    AnimsModGone(m);
     CapturesRemove(m);
     ConfigForget(m);
     g_subs.erase(std::remove_if(g_subs.begin(), g_subs.end(), [&](const Sub &s) { return s.mod == m; }), g_subs.end());
@@ -976,6 +1000,11 @@ void ModsInit() {
     g_host.hud_marker_remove = H_HudMarkerRemove;
     g_host.save_put = H_SavePut;
     g_host.save_get = H_SaveGet;
+    g_host.human_anim_play = H_HumanAnimPlay;
+    g_host.human_anim_stop = H_HumanAnimStop;
+    g_host.human_anim_replace = H_HumanAnimReplace;
+    g_host.human_anim_state = H_HumanAnimState;
+    g_host.human_get_up = H_HumanGetUp;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();
@@ -1077,6 +1106,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (InteractMethod(method, paramsJson, reply, &ok)) return ok;
     if (HudMethod(method, paramsJson, reply, &ok)) return ok;
     if (SavesMethod(method, paramsJson, reply, &ok)) return ok;
+    if (AnimsMethod(method, paramsJson, reply, &ok)) return ok;
     if (WorldMethod(method, paramsJson, reply, &ok)) return ok;
     if (FilesMethod(method, paramsJson, reply, &ok)) return ok;
     if (RenderMethod(method, paramsJson, reply, &ok)) return ok;

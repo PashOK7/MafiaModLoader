@@ -357,6 +357,23 @@ int Saves(const char *, MmlReply *r, void *) {
     return 0;
 }
 
+// Animations with no game: every call refused (no person is known), the state not filled.
+int Anims(const char *, MmlReply *r, void *) {
+    if (!MML_HAS(H, human_get_up)) { H->reply_error(r, "the loader has no human_get_up"); return 1; }
+    void *nobody = reinterpret_cast<void *>(static_cast<uintptr_t>(0x1000));
+    MmlHumanAnim s{};
+    s.size = sizeof s;
+    s.playing = 7;
+    int play = H->human_anim_play(M, nobody, "walk", 0), stop = H->human_anim_stop(M, nobody);
+    int replace = H->human_anim_replace(M, nobody, "walk", "run"), state = H->human_anim_state(M, nobody, &s);
+    int up = H->human_get_up(M, nobody, 500);
+    char out[200];
+    snprintf(out, sizeof out, "{\"play\":%d,\"stop\":%d,\"replace\":%d,\"state\":%d,\"untouched\":%d,\"get_up\":%d}", play, stop, replace, state,
+             s.playing == 7 ? 1 : 0, up);
+    H->reply_append(r, out, static_cast<size_t>(-1));
+    return 0;
+}
+
 // People with no game: none, no skeleton, bone_set refused, no player.
 int Humans(const char *, MmlReply *r, void *) {
     if (!MML_HAS(H, human_player)) { H->reply_error(r, "the loader has no human_player"); return 1; }
@@ -426,6 +443,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->command(mod, "interact", "zone_add, use_point_add, timer_add, interact_remove with no game", Interact, nullptr);
     host->command(mod, "hud", "picture_load and the rest, hud_console, hud_help, the markers with no game", Hud, nullptr);
     host->command(mod, "saves", "save_put, save_get with no game", Saves, nullptr);
+    host->command(mod, "anims", "human_anim_play and the rest, human_get_up with no game", Anims, nullptr);
     host->command(mod, "control", "key_capture, action_capture, player_lock, vehicle_hook, vehicle_body with no game", Control, nullptr);
     host->command(mod, "sound", "sound_play and the rest, music_play and the rest with no game", Sound, nullptr);
     host->command(mod, "effects","car_exhaust, exhaust_hook, particle_def(_set) with no game", Effects, nullptr);

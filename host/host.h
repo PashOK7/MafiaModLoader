@@ -322,6 +322,21 @@ void SavesInit();                         // (after the game's hooks) SaveGameSa
 int SavePut(MmlMod *mod, int scope, const char *key, const void *data, size_t n, std::string *err);   // null mod: the bridge's
 size_t SaveGet(MmlMod *mod, int scope, const char *key, void *data, size_t cap);
 bool SavesMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+// people's animations, getting up, the traffic pedestrians' hits (anims.cpp)
+bool HumanBones(void *human, void **frames);   // (humans.cpp) the skeleton's frames of a person the host keeps
+bool HumanKnown(void *human);
+bool HumanLastPose(void *human, float world[][16], unsigned maxAgeMs);   // the bones' world matrices last drawn by a mod or the bridge
+void AnimsInit();                         // (after the game's hooks) the pedestrians' Hit
+int HumanAnimPlay(void *human, const char *anim, int flags, std::string *err);   // its length (ms), -1 refused
+int HumanAnimStop(void *human, std::string *err);
+int HumanAnimReplace(MmlMod *mod, void *human, const char *own, const char *with, std::string *err);
+int HumanAnimState(void *human, MmlHumanAnim *out);
+int HumanGetUp(void *human, int blendMs, std::string *err);   // 1 from the back, 2 from the front, 0 refused
+void AnimsBeforeRender();                 // (humans.cpp, RENDER_BEGIN) the get-ups' blends
+void AnimsModGone(MmlMod *mod);
+void AnimsActorGone(void *actor);
+void AnimsMissionClose();
+bool AnimsMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 // the scene's lights (lights.cpp): LS3D's light frames listed and changed through its setters; lights.list, light.set
 void LightsMissionClosed();
 int SceneLights(MmlLight *out, int max);
