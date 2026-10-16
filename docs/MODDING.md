@@ -370,7 +370,7 @@ H->scene_sun(M, toSun, sunColor, ambient);       /* the level's sun and the ambi
 - `mods/examples/dusk` (not enabled by default): the sun and the ambient lights tinted towards a dusk, put back
   when it is turned off or unloaded.
 
-### The game's effects: the car exhaust, particles.def, the particles
+### The game's effects: the car exhaust, particles.def, the particles, the weather
 
 ```c
 int OnExhaust(const MmlExhaust *e, void *user) {   /* every tick, every car whose exhaust the game is about to make */
@@ -403,9 +403,18 @@ H->particle_def_set(M, 12, &d);                     /* in MML_EVENT_MISSION_OPEN
   the particle visuals' vtables (Update, SetParent): only particles pay. In the freeride's city: some 10 000 moves
   a second.
 - `call particles.state {"patch": true}` (moves counted by kind without a mod, a few tracked particles' places).
+- **The weather** is LS3D's weather system of the mission's scene (the rain's drops), what the scripts'
+  `weather_setparam` changes: `weather_get` / `weather_set` with `MML_WEATHER_*` (on, the drops' colours, speed,
+  length, width, how far and how high they are made, how many, the way they fall), values as doubles (a flag 0/1,
+  a count, a colour 0xAARRGGBB, a float); `weather_reset` the scene's preset (`on` is left as it is). As the scripts
+  do, `on` and `max_count` are applied again for the player's detail setting (fewer drops at a low one). The fog
+  and the sky are not the weather: the fog is the scene's (the graphics bridge's `g_fog`), the sky a model.
+- `call weather.state`, `weather.set {"on": true, "max_count": 20000, "speed": 30}`, `weather.reset`.
 - `mods/examples/exhaust_fx` (not enabled by default): the game's exhaust replaced by the mod's own puffs (drawn as
   squares over the frame: an example of the data, not of drawing smoke), or with `game_tint` the game's own tinted.
   `mods/examples/wind` (not enabled by default): every particle of the game blown by a gusty wind.
+  `mods/examples/storm` (not enabled by default): rain over the city slanted by a turning wind, the scene's own
+  weather put back when it is off or unloaded.
 
 ### What happens (shots, explosions, deaths, vehicles)
 

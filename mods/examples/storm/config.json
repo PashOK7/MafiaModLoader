@@ -1,0 +1,6 @@
+{
+  // The defaults of storm's settings.
+  "drops": 20000,   // the most drops (the player's detail setting scales it down)
+  "speed": 30,      // how fast they fall
+  "slant": 0.4      // how far the wind slants them
+}

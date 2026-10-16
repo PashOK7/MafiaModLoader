@@ -249,6 +249,12 @@ int Effects(const char *, MmlReply *r, void *) {
              H->particle_hook(M, NoParticle, nullptr));
     H->exhaust_hook(M, nullptr, nullptr);
     H->particle_hook(M, nullptr, nullptr);
+    double w = 0;
+    if (H->weather_get(M, MML_WEATHER_ON, &w) || H->weather_set(M, MML_WEATHER_ON, 1) || H->weather_reset(M) ||
+        H->weather_get(M, MML_WEATHER_PARAMS, &w)) {
+        H->reply_error(r, "the weather answered with no game");
+        return 1;
+    }
     H->reply_append(r, out, static_cast<size_t>(-1));
     return 0;
 }

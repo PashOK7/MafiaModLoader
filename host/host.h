@@ -236,6 +236,9 @@ int ExhaustHook(MmlMod *mod, MmlExhaustFn fn, void *user);
 void EffectsModGone(MmlMod *mod);         // (its unload) its exhaust and particle hooks taken out
 void EffectsMissionClosed();              // the particles' tracks forgotten
 int ParticleHook(MmlMod *mod, MmlParticleFn fn, void *user);
+int WeatherGet(int param, double *value);
+int WeatherSet(int param, double value);
+int WeatherReset();
 int ParticleDef(int index, MmlParticleDef *out);   // index -1: the count
 int ParticleDefSet(int index, const MmlParticleDef *def);
 bool EffectsMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);

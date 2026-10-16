@@ -329,6 +329,13 @@ struct ExeBuild {
     // puff's velocity at death (that share of jet + carry, plus the emitter's own).
     uintptr_t vehExhaust, emitterTable, particleDefs, exEndShare;
     int vehState, vehExMaxSpeed, vehExType, vehExPipes, vehExJet, vehRpsMax, vehMatrix;
+    // The weather (host/effects.cpp): LS3D's weather system is the mission scene's (its vtable +0xE8
+    // SetWeatherParam, stdcall(scene, param, dword): a flag, an int or a float's bits by the parameter; +0xEC
+    // GetWeatherParam, stdcall(scene, param) -> dword; +0xF0 its reset, stdcall(scene)), as the scripts'
+    // WEATHER_SETPARAM and WEATHER_RESET call it. weatherSave: C_game::OsefujPocasi, thiscall(C_game*, bool save,
+    // int param), ret 8, what WEATHER_SETPARAM calls after On (0) or MaxCount (10): both kept and applied again
+    // scaled by the detail setting.
+    uintptr_t weatherSave;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -476,6 +483,7 @@ inline const ExeBuild kExe12 = {
     // the exhaust and the particles (2026-10-16: mafia-ragdoll's addresses; C_Vehicle::Update calls the exhaust at 0x4E1271)
     0x4DEE90, 0x63D8A4, 0x6D4C1C, 0x6234BC,
     0xC68, 0x468, 0x460, 0x454, 0x46C, 0x1F9C, 0xCE8,
+    0x5B9540,   // (WEATHER_SETPARAM's call at 0x474417)
 };
 
 inline const ExeBuild kExe10 = {
@@ -561,6 +569,7 @@ inline const ExeBuild kExe10 = {
     // instruction, every offset shifted as the C_Vehicle is; the table read by car_load_particle_effects 0x463A30)
     0x52B8A0, 0x6561FC, 0x6EFB9C, 0x63B2D0,
     0xCE4, 0x4E4, 0x4DC, 0x4D0, 0x4E8, 0x1F18, 0xD64,
+    0x5F51C0,   // (st0rm94's game_apply_weather_detail_level: the same code as 1.2's)
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,

@@ -288,6 +288,12 @@ What is done, what comes next and later, and what is known to be missing or wron
   on `events.since` and MCP `wait`. Both builds' addresses checked by `check_builds.py`. The example
   `mods/examples/tally`; seen in the 1.2 and 1.0 labs (the player's shots, his leaving the taxi, a person killed by
   a script, a car blown up with its explosion and the hit it gave the player).
+- **The weather** (2026-10-16; item 11, block 11d): `weather_get` / `weather_set` / `weather_reset` (the mission
+  scene's LS3D weather: its 15 parameters, read and set through its own getter and setter, a flag, an int, a colour
+  or a float's bits each, as the scripts' `weather_setparam`, with `C_game::OsefujPocasi` after `on` and
+  `max_count` as they call it); `weather.state`, `weather.set`, `weather.reset`. The scene's vtable slots and the
+  game's function checked in both builds. The example `mods/examples/storm` seen in both labs (rain on, slanted,
+  everything put back exactly at its unload). With it, item 11 is done.
 - **The game's particles** (2026-10-16; item 11, block 11c): `particle_hook` (every move of every particle the game
   shows, the emitters' puffs and the pooled effects: where the game put it, how far it moved it, since when; the mod
   may put it elsewhere, and it goes on from there), the particle visuals' vtables (PRTB, PRTE) patched at Update and
@@ -409,9 +415,8 @@ V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselv
     gaps.)* **The game's state and progress** (C F P). Money, health, the inventory and ammo (read and changed), the
     mission's objectives and its outcome, the game's statistics (kills, cars stolen, distance), the profile's
     progress (chapters, freeride unlocks); a mod's own items in the items' table (a fishing rod, a fish).
-11. *(11a done 2026-10-16: the scene's lights read and changed, the sun and ambient light for the bridge; 11b: the
-    car exhaust read and replaced, `particles.def` read and written; 11c: the game's particles moved; see "Done".
-    Left: the weather's parameters; Known gaps.)* **The game's effects as data** (S W P). Particle emitters and the car exhaust (`0x4DEE90`) read, moved or
+11. *(Done 2026-10-16: 11a the scene's lights, 11b the car exhaust and `particles.def`, 11c the game's particles
+    moved, 11d the weather; see "Done"; what is left: Known gaps.)* **The game's effects as data** (S W P). Particle emitters and the car exhaust (`0x4DEE90`) read, moved or
     replaced; `tables\particles.def`'s records; the weather's parameters; the scene's lights. Reference:
     `smoke_game.cpp`, `effects.cpp`, `frame_life.cpp`, `scene_light.cpp`.
 
@@ -544,6 +549,9 @@ merged, sorted by importance):
   matrix being the camera's backdrop view, bit for bit (it was, every drawing, in both labs). `MML_VIEW_OWN_SECTOR`
   (a camera in another room) was not tried. The first two or three reloads of `rear_mirror` added 2..13 handles each (taken to be
   Direct3D's own warming up: views made and taken back by mode changes added none); then 0.
+- **The weather** (host/effects.cpp, item 11d): the 16th parameter of LS3D's switch (a flag, bit 0x200) has no
+  keyword in the scripts and is left out; `weather_reset` leaves `on` as it was (the scene's own reset). The rain's
+  sound is not reached (whether the scene's weather plays one was not looked at).
 - **The particles** (host/effects.cpp, item 11c): one hook at a time; a particle unlinked by one of LS3D's direct
   calls of SetParent (five in LS3DF, not through the vtable) has its end found only by a five seconds' silence (its
   frame may be reused before: `first` is then missed); a pinned particle (frame flag 0x80) is not told. The pooled

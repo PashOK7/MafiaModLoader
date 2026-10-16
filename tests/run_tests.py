@@ -842,6 +842,10 @@ def main():
               r['ok'] and r['result'] == {'exhaust': 0, 'hook': 0, 'defs': 0, 'def': 0, 'set': 0, 'particles': 0}, r)
         r = b.call('particles.defs')
         check('particles.defs with no game: an error, saying why', not r['ok'] and 'not known' in str(r), r)
+        r = b.call('weather.state')
+        check('weather.state with no game: an error, saying why', not r['ok'] and 'no mission' in str(r), r)
+        r = b.call('weather.set', {})
+        check('weather.set with nothing to set: refused, naming the parameters', not r['ok'] and 'max_count' in str(r), r)
         # the scene's lights with no game: none; light.set refused
         r = b.call('kit.lights')
         check('scene_lights, light_set, scene_sun with no game: none, refused', r['ok'] and r['result'] == {'lights': 0, 'set': 0, 'sun': 0}, r)

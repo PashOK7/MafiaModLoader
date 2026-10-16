@@ -1,0 +1,11 @@
+{
+  "id": "storm",
+  "name": "Storm: rain over the city through the scene's own weather, slanted by a turning wind (the weather)",
+  "version": "0.1.0",
+  "type": "native",
+  "entry": "storm.dll",
+  "enabled": false,
+  "builds": ["1.2", "1.0"],
+  "load_order": 100,
+  "depends": []
+}

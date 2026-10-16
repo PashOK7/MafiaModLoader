@@ -1070,3 +1070,16 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **In the labs**: 1.0 with the vtables patched and no mod: 27 239 emitted and 9 409 pooled moves in a few seconds,
   337 lives begun or ended; `wind` pushed 54 020 moves, no fault. 1.2: the taxi's puffs born at x -1985.3 were at
   -1977.8 when they died (4 m/s for about 1.8 s), the pooled effects' too.
+
+## 2026-10-16: the weather (item 11, block 11d)
+
+- **Read**: the scripts' WEATHER_SETPARAM (1.2 0x474380, 1.0 0x5C2170) calls the mission scene's vtable +0xE8 with
+  the parameter and a dword, and C_game::OsefujPocasi after On and MaxCount; WEATHER_RESET calls +0xF0. LS3D's
+  setter and getter (+0xEC) switch on 16 parameters; each case of the setter reads its dword as a flag, an int or a
+  float's bits (speed, length, width, distance, height, direction). MafiaOnline's native_environment.h named the
+  first 15 by the scripts' keyword table. A literal in a script passes its float's bits; a register is truncated
+  to an int first (a float parameter set from a register is wrong in the game itself: not the loader's).
+- **In the labs**: the freeride's weather in both builds: off, 1000 drops, speed 25, length 1.5, width 0.06,
+  25 m around and 12 m above, falling (0.199, -0.980, 0). `storm` rained over the city (the 1.0 lab's detail
+  setting showed fewer drops) and put every value back at its unload; `weather.set` round-tripped 12.5, 0.2 and
+  0xFFFF2020; `weather.reset` restored the preset but left the rain on.

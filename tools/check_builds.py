@@ -400,6 +400,21 @@ def main(a):
             check(ok, f'{name} LS3DF {f}: written before a {code.decode()} store at +0x1D4')
             for o in (0x18, 0x2C):
                 check(gls.at(vt + o, 4) == gls.at(ls['lightVtable'] + o, 4), f'{name} LS3DF {f}+{o:#x}: the frame\'s own (as I3D_light\'s)')
+    # The weather (host/effects.cpp): OsefujPocasi begins the same in both builds and ends with ret 8; the scene's
+    # vtable +0xE8 / +0xEC / +0xF0 are the weather's setter (a switch on 16 parameters), getter (the same) and reset
+    # (the same code in both builds).
+    a, b = norm(g12.insn(e12['weatherSave'] - 0x400000)), norm(g10.insn(e10['weatherSave'] - 0x400000))
+    check(a == b, f'weatherSave: 1.2 "{a}" vs 1.0 "{b}"')
+    for name, (exe, ls, gexe, gls) in builds.items():
+        first = next((i for i in gexe.md.disasm(gexe.at(exe['weatherSave'] - 0x400000, 0x200), exe['weatherSave']) if i.mnemonic == 'ret'), None)
+        check(first is not None and first.op_str == '8', f'{name} weatherSave: its first ret is ret 8')
+    sv = lambda g, vt, o: struct.unpack('<I', g.at(vt + o, 4))[0] - g.base
+    for o in (0xE8, 0xEC):
+        for name, (exe, ls, gexe, gls) in builds.items():
+            head = ' '.join(f'{i.mnemonic} {i.op_str}' for i in gls.md.disasm(gls.at(sv(gls, ls['sceneVtable'], o), 0x20), 0))
+            check('cmp eax, 0xf' in head, f'{name} LS3DF sceneVtable+{o:#x}: the weather\'s switch on 16 parameters')
+    check(gl12.at(sv(gl12, builds['1.2'][1]['sceneVtable'], 0xF0), 16) == gl10.at(sv(gl10, builds['1.0'][1]['sceneVtable'], 0xF0), 16),
+          'LS3DF sceneVtable+0xF0: the weather\'s reset, the same code in both builds')
     # The game's state (host/state.cpp): SetScore writes C_game +0x3640, reads +0x363E, ends with ret 4.
     for name, (exe, ls, gexe, gls) in builds.items():
         sc = [f'{i.mnemonic} {i.op_str}' for i in gexe.md.disasm(gexe.at(exe['gameSetScore'] - 0x400000, 0x30), exe['gameSetScore'])]

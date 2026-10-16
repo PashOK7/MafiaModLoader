@@ -299,6 +299,69 @@ bool EnsureParticles(std::string *err) {
     return true;
 }
 
+// ---- the weather: LS3D's weather system of the mission's scene (C_mission +0x10), its getter and setter through the
+// scene's vtable, a dword a parameter: a flag, an int or a float's bits (as each case of the setter reads it).
+constexpr int kVtWeatherSet = 0xE8, kVtWeatherGet = 0xEC, kVtWeatherReset = 0xF0;
+enum WType { kFlag, kInt, kColor, kFloat };
+const WType kWeatherTypes[MML_WEATHER_PARAMS] = {kFlag, kFlag, kFlag, kColor, kColor, kFloat, kFloat, kFloat, kFloat, kFloat,
+                                                 kInt, kFloat, kFloat, kFloat, kFlag};
+const char *const kWeatherNames[MML_WEATHER_PARAMS] = {"on", "sectors", "dummies", "color_high", "color_low", "speed", "length", "width",
+                                                       "max_dist", "max_height", "max_count", "dir_x", "dir_y", "dir_z", "mode"};
+using WeatherSetFn = void(__stdcall *)(void *scene, int param, uint32_t value);
+using WeatherGetFn = uint32_t(__stdcall *)(void *scene, int param);
+using WeatherResetFn = void(__stdcall *)(void *scene);
+using WeatherSaveFn = void(__thiscall *)(void *game, bool save, int param);
+
+void *Scene() {
+    void *m = game::Mission();
+    return m ? game::at<void *>(m, game::kMissionScene) : nullptr;
+}
+bool SceneIsLs3d(void *scene) {
+    return scene && game::g_ls3d && game::Ls3d().sceneVtable && game::at<uintptr_t>(scene, 0) == ModuleBase("LS3DF.dll") + game::Ls3d().sceneVtable;
+}
+bool SafeWeatherGet(int param, double *out) {
+    __try {
+        void *s = Scene();
+        if (!SceneIsLs3d(s)) return false;
+        uint32_t v = reinterpret_cast<WeatherGetFn>((*reinterpret_cast<void ***>(s))[kVtWeatherGet / 4])(s, param);
+        float f;
+        memcpy(&f, &v, 4);
+        switch (kWeatherTypes[param]) {
+        case kFlag: *out = v ? 1 : 0; break;
+        case kInt: *out = static_cast<int32_t>(v); break;
+        case kColor: *out = v; break;
+        case kFloat: *out = f; break;
+        }
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
+bool SafeWeatherSet(int param, double value) {
+    __try {
+        void *s = Scene();
+        if (!SceneIsLs3d(s)) return false;
+        uint32_t v = 0;
+        switch (kWeatherTypes[param]) {
+        case kFlag: v = value != 0 ? 1 : 0; break;
+        case kInt: v = static_cast<uint32_t>(static_cast<int32_t>(value)); break;
+        case kColor: v = static_cast<uint32_t>(static_cast<int64_t>(value)); break;
+        case kFloat: { float f = static_cast<float>(value); memcpy(&v, &f, 4); break; }
+        }
+        reinterpret_cast<WeatherSetFn>((*reinterpret_cast<void ***>(s))[kVtWeatherSet / 4])(s, param, v);
+        // (as WEATHER_SETPARAM: On and MaxCount kept and applied again scaled by the detail setting)
+        if ((param == MML_WEATHER_ON || param == MML_WEATHER_MAX_COUNT) && E().weatherSave && game::Game())
+            reinterpret_cast<WeatherSaveFn>(E().weatherSave)(game::Game(), true, param);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
+bool SafeWeatherReset() {
+    __try {
+        void *s = Scene();
+        if (!SceneIsLs3d(s)) return false;
+        reinterpret_cast<WeatherResetFn>((*reinterpret_cast<void ***>(s))[kVtWeatherReset / 4])(s);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
+
 std::string HexOf(const void *p) {
     char b[16];
     snprintf(b, sizeof b, "0x%08X", static_cast<unsigned>(reinterpret_cast<uintptr_t>(p)));
@@ -338,6 +401,16 @@ void EffectsModGone(MmlMod *mod) {
 }
 void EffectsMissionClosed() { g_tracks.clear(); }
 
+int WeatherGet(int param, double *value) {
+    if (!game::g_exe || param < 0 || param >= MML_WEATHER_PARAMS || !value) return 0;
+    return SafeWeatherGet(param, value) ? 1 : 0;
+}
+int WeatherSet(int param, double value) {
+    if (!game::g_exe || param < 0 || param >= MML_WEATHER_PARAMS || !std::isfinite(value)) return 0;
+    return SafeWeatherSet(param, value) ? 1 : 0;
+}
+int WeatherReset() { return game::g_exe && SafeWeatherReset() ? 1 : 0; }
+
 int ParticleHook(MmlMod *mod, MmlParticleFn fn, void *user) {
     if (!fn) { if (g_prtHook.mod == mod) g_prtHook = PrtHook{}; return 1; }
     std::string err;
@@ -356,14 +429,40 @@ int ParticleDef(int index, MmlParticleDef *out) {
 int ParticleDefSet(int index, const MmlParticleDef *d) { return Known() && d && SafeDefSet(index, d) ? 1 : 0; }
 
 bool EffectsMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok) {
-    if (method != "exhaust.state" && method != "particles.defs" && method != "particles.def.set" && method != "particles.state") return false;
+    if (method != "exhaust.state" && method != "particles.defs" && method != "particles.def.set" && method != "particles.state" &&
+        method != "weather.state" && method != "weather.set" && method != "weather.reset") return false;
     *ok = false;
     json p = json::parse(paramsJson.empty() ? "null" : paramsJson, nullptr, false);
     if (!p.is_object()) p = json::object();
     auto dump = [](const json &j) { return j.dump(-1, ' ', false, json::error_handler_t::replace); };
     std::string err;
     try {
-        if (!Known()) { *reply = method + ": this build's effects are not known"; return true; }
+        if (!Known() && method.compare(0, 8, "weather.") != 0) { *reply = method + ": this build's effects are not known"; return true; }
+        if (method == "weather.state" || method == "weather.set" || method == "weather.reset") {
+            if (method == "weather.reset" && !WeatherReset()) { *reply = "weather.reset: no mission's scene"; return true; }
+            if (method == "weather.set") {
+                int set = 0;
+                for (int i = 0; i < MML_WEATHER_PARAMS; i++) {
+                    if (!p.contains(kWeatherNames[i])) continue;
+                    const json &v = p[kWeatherNames[i]];
+                    double d = v.is_boolean() ? (v.get<bool>() ? 1.0 : 0.0) : v.is_string() ? static_cast<double>(ParseAddress(v.get<std::string>())) : v.get<double>();
+                    if (!WeatherSet(i, d)) { *reply = std::string("weather.set: ") + kWeatherNames[i] + ": no mission's scene"; return true; }
+                    set++;
+                }
+                if (!set) { *reply = "weather.set: any of on, sectors, dummies, color_high, color_low, speed, length, width, max_dist, max_height, max_count, dir_x, dir_y, dir_z, mode"; return true; }
+            }
+            json out = json::object();
+            for (int i = 0; i < MML_WEATHER_PARAMS; i++) {
+                double v;
+                if (!WeatherGet(i, &v)) { *reply = method + ": no mission's scene"; return true; }
+                if (kWeatherTypes[i] == kColor) { char b[16]; snprintf(b, sizeof b, "0x%08X", static_cast<unsigned>(static_cast<int64_t>(v))); out[kWeatherNames[i]] = b; }
+                else if (kWeatherTypes[i] == kFloat) out[kWeatherNames[i]] = std::round(v * 10000) / 10000;
+                else out[kWeatherNames[i]] = static_cast<int64_t>(v);
+            }
+            *reply = dump(out);
+            *ok = true;
+            return true;
+        }
         if (method == "particles.state") {
             if (p.value("patch", false) && !EnsureParticles(&err)) { *reply = "particles.state: " + err; return true; }
             *reply = dump({{"patched", g_prtPatched}, {"why", g_prtWhy}, {"hook", g_prtHook.fn ? ModIdOf(g_prtHook.mod) : "none"},

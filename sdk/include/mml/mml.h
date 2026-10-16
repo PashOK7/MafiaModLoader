@@ -477,6 +477,25 @@ typedef struct MmlParticle {
 } MmlParticle;
 typedef int (*MmlParticleFn)(MmlParticle *particle, void *user);
 
+/* The weather's parameters (weather_get, weather_set below): LS3D's weather system of the mission's scene, in the
+ * order of the scripts' WEATHER_SETPARAM keywords (ON, SECTORS, DUMMIES, COLOR_HIGH...). */
+enum {
+    MML_WEATHER_ON,         /* 0 or 1: rain (the drops) on */
+    MML_WEATHER_SECTORS,    /* 0 or 1 */
+    MML_WEATHER_DUMMIES,    /* 0 or 1 */
+    MML_WEATHER_COLOR_HIGH, /* the drops' colour, 0xAARRGGBB, at their top */
+    MML_WEATHER_COLOR_LOW,  /* ... at their bottom */
+    MML_WEATHER_SPEED,      /* how fast they fall */
+    MML_WEATHER_LENGTH,     /* a drop's length */
+    MML_WEATHER_WIDTH,      /* its width */
+    MML_WEATHER_MAX_DIST,   /* how far from the camera drops are made */
+    MML_WEATHER_MAX_HEIGHT, /* how high above it */
+    MML_WEATHER_MAX_COUNT,  /* how many drops at most (scaled by the player's detail setting) */
+    MML_WEATHER_DIR_X, MML_WEATHER_DIR_Y, MML_WEATHER_DIR_Z,   /* the way they fall (a slant: wind) */
+    MML_WEATHER_MODE,       /* 0 or 1: the reset's other preset */
+    MML_WEATHER_PARAMS
+};
+
 /* A record of tables\particles.def (particle_def below): how an emitter of the game puffs. */
 typedef struct MmlParticleDef {
     uint32_t size;
@@ -833,6 +852,12 @@ typedef struct MmlHost {
      * (fn NULL: no more; the last mod that asked replaces the one before): a wind, PhysX smoke moving the game's own
      * particles, a particle counter */
     int (*particle_hook)(MmlMod *mod, MmlParticleFn fn, void *user);
+    /* the weather (MML_WEATHER_*): a parameter read (a flag 0/1, an int, a colour 0xAARRGGBB or a float, as a double)
+     * and set through LS3D's own weather functions, as the scripts' weather_setparam does (On and MaxCount applied
+     * again for the detail setting, as it does); weather_reset: the scene's weather back to its preset. 0: no mission */
+    int (*weather_get)(MmlMod *mod, int param, double *value);
+    int (*weather_set)(MmlMod *mod, int param, double value);
+    int (*weather_reset)(MmlMod *mod);
 } MmlHost;
 
 #define MML_FILE_GAME 1              /* file_read: the game's own file, not a mod's of the same name */
