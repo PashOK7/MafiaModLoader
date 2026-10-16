@@ -21,10 +21,14 @@ cbuffer MmlFrame : register(b0) {
     float4 g_fog;         // the world's fog: start, end (linear), density (exp), mode (0 none, 1 exp, 2 exp2, 3 linear)
     float4 g_fogColor;    // its colour, w: 1 when on
     float4 g_ambient;     // the ambient light, w: 1 the scene's (else a default grey)
+    // the shadow map from the sun (mml.h shader_shadows: while a mod wants it), g_sunShadow
+    row_major float4x4 g_sunShadowViewProj;   // the world to the map's clip space (x, y -1..1, z 0..1 its depth)
+    float4 g_sunShadowInfo;   // x 1 when the map was drawn for this frame, y one texel (1 / size), z the depth's bias, w size
 };
 
 Texture2D<float> g_sceneDepth : register(t0);    // linear view depth, metres (the sky: g_depthProj.z)
 Texture2D<float4> g_sceneColor : register(t1);   // the frame as drawn so far (the world, no HUD)
+Texture2D<float> g_sunShadow : register(t2);     // the sun's depth (1 nothing); unbound when g_sunShadowInfo.x is 0
 SamplerState g_point : register(s0);
 SamplerState g_linear : register(s1);
 
@@ -69,4 +73,41 @@ float3 ToScreen(float3 p) {
     float z = dot(d, g_fwd.xyz);
     float2 ndc = float2(dot(d, g_right.xyz) * g_proj.x / z + g_proj.z, dot(d, g_up.xyz) * g_proj.y / z + g_proj.w);
     return float3((ndc.x + 1) * 0.5 * g_size.x, (1 - ndc.y) * 0.5 * g_size.y, z);
+}
+
+// The sun's shadow map at a world point: xy the map's uv, z the depth to compare with (the bias taken off).
+float3 SunShadowCoord(float3 world) {
+    float4 p = mul(float4(world, 1), g_sunShadowViewProj);
+    return float3(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5, p.z - g_sunShadowInfo.z);
+}
+
+// Whether the sun reaches a world point, one texel: 1 lit, 0 in a shadow (1 off the map, or with no map). For many
+// samples a pixel: a ray marched through the air.
+float SunLit(float3 world) {
+    if (g_sunShadowInfo.x < 0.5) return 1;
+    float3 c = SunShadowCoord(world);
+    if (any(c.xy <= 0) || any(c.xy >= 1)) return 1;
+    return g_sunShadow.Load(int3(c.xy * g_sunShadowInfo.w, 0)) >= c.z ? 1 : 0;
+}
+
+// The same for a surface, filtered: a box of 3x3 texels around the point, the texels it covers in part weighted by
+// how much (16 compared), so the shadow's edge is soft and does not crawl as the point moves.
+float SunShadow(float3 world) {
+    if (g_sunShadowInfo.x < 0.5) return 1;
+    float3 c = SunShadowCoord(world);
+    if (any(c.xy <= 0) || any(c.xy >= 1)) return 1;
+    float size = g_sunShadowInfo.w;
+    float2 t = c.xy * size - 0.5;   // texel space (texel centres at whole numbers)
+    int2 i0 = int2(floor(t));
+    float2 f = t - i0;
+    float wx[4] = {1 - f.x, 1, 1, f.x};
+    float wy[4] = {1 - f.y, 1, 1, f.y};
+    int last = int(size) - 1;
+    float lit = 0;
+    [unroll] for (int y = 0; y < 4; y++)
+        [unroll] for (int x = 0; x < 4; x++) {
+            int2 at = clamp(i0 + int2(x - 1, y - 1), 0, last);
+            lit += (g_sunShadow.Load(int3(at, 0)) >= c.z ? 1 : 0) * wx[x] * wy[y];
+        }
+    return lit / 9;
 }

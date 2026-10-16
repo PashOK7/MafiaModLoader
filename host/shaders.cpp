@@ -548,7 +548,7 @@ bool ShadersMethod(const std::string &method, const std::string &paramsJson, std
             if (!p.value("on", true)) {
                 ShaderShadows(nullptr, nullptr);
             } else {
-                MmlShadowSettings ss{p.value("size", 2048), p.value("extent", 60.0f), p.value("bias", 0.002f)};
+                MmlShadowSettings ss{p.value("size", 2048), p.value("extent", 60.0f), p.value("bias", 0.0f)};
                 ShaderShadows(nullptr, &ss);
             }
             std::string sh;

@@ -103,6 +103,13 @@ ID3D11Texture2D *g_color11, *g_depth11, *g_fx11;
 ID3D11ShaderResourceView *g_colorSRV, *g_depthSRV;
 ID3D11RenderTargetView *g_fxRTV;
 
+// the sun's shadow map (shadows.cpp makes it shared; opened here while a mod wants it), t2 of every pass
+ID3D11Texture2D *g_sun11;
+ID3D11ShaderResourceView *g_sunSRV;
+void *g_sunHandle;           // the handle it was opened from
+unsigned g_sunMade, g_sunGen;   // shadows.cpp's count of maps and the device generation it was opened on
+std::string g_sunError;
+
 // the 2D pass for mods (gfx_ui): the HUD and the menus drawn into a shared target (premultiplied RGBA8)
 std::vector<std::pair<MmlMod *, int>> g_uiAsk;   // each mod's mode
 IDirect3DTexture9 *g_ui9; IDirect3DSurface9 *g_uiSurf9;
@@ -438,6 +445,8 @@ void ReleaseSized() {
     SafeRelease(g_uiSRV); SafeRelease(g_ui11); SafeRelease(g_uiSurf9); SafeRelease(g_ui9);
     g_uiFrames = 0;
     g_w = g_h = 0;
+    SafeRelease(g_sunSRV); SafeRelease(g_sun11);
+    g_sunHandle = nullptr;
 }
 
 int UiMode() {
@@ -745,9 +754,36 @@ void CallPass(void *p) {
     c->pass->fn(c->frame, c->pass->user);
 }
 
+// The sun's shadow map for this frame's passes (shadows.cpp drew it before the world, on Direct3D 9: done by the time
+// stage 1 has waited for Direct3D 9), opened again when shadows.cpp made a new one or the device is new; its matrix
+// and size into the constants. Null: none this frame.
+ID3D11ShaderResourceView *SunShadow(MmlGfxConstants &k) {
+    void *h = nullptr;
+    unsigned made = 0;
+    if (!ShadowsShared(&h, &made, k.sun_shadow_view_proj, k.sun_shadow_info)) {
+        memset(k.sun_shadow_view_proj, 0, sizeof k.sun_shadow_view_proj);
+        memset(k.sun_shadow_info, 0, sizeof k.sun_shadow_info);
+        return nullptr;
+    }
+    if (!g_sunSRV || h != g_sunHandle || made != g_sunMade || g_sunGen != g_generation) {
+        SafeRelease(g_sunSRV);
+        SafeRelease(g_sun11);
+        g_sunHandle = h;
+        g_sunMade = made;
+        g_sunGen = g_generation;
+        HRESULT hr = g_dev11->OpenSharedResource(h, __uuidof(ID3D11Texture2D), reinterpret_cast<void **>(&g_sun11));
+        if (SUCCEEDED(hr)) hr = g_dev11->CreateShaderResourceView(g_sun11, nullptr, &g_sunSRV);
+        g_sunError = FAILED(hr) ? Fmt("Direct3D 11 could not open the sun's shadow map (0x%08X)", static_cast<unsigned>(hr)) : "";
+        if (FAILED(hr)) { SafeRelease(g_sunSRV); SafeRelease(g_sun11); }
+    }
+    if (!g_sunSRV) k.sun_shadow_info[0] = 0;
+    return g_sunSRV;
+}
+
 bool RunPasses(MmlGfxConstants &k, const PassTarget &t) {
     bool frame = t.view == 0;
     if (frame) ReadTimers();
+    ID3D11ShaderResourceView *sun = SunShadow(k);
     const float clear[4] = {0, 0, 0, 0};
     g_ctx->ClearRenderTargetView(t.rtv, clear);
     g_ctx->UpdateSubresource(g_frameCB, 0, nullptr, &k, 0, 0);
@@ -775,6 +811,7 @@ bool RunPasses(MmlGfxConstants &k, const PassTarget &t) {
     f.views = views.empty() ? nullptr : views.data();
     f.view_count = static_cast<unsigned>(views.size());
     f.in_view = t.view;
+    f.sun_shadow = sun;
     TimerFrame *tf = frame ? BeginTimers() : nullptr;
     if (tf) Mark(tf, 0);
     std::vector<Pass> passes = g_passes;   // (a pass may add or take back passes)
@@ -786,12 +823,12 @@ bool RunPasses(MmlGfxConstants &k, const PassTarget &t) {
         g_ctx->OMSetBlendState(g_over, nullptr, 0xFFFFFFFFu);   // (a pass's 0 leaves the passes before it as they are)
         g_ctx->OMSetDepthStencilState(nullptr, 0);
         g_ctx->RSSetState(nullptr);
-        ID3D11ShaderResourceView *srv[2] = {t.depth, t.color};
+        ID3D11ShaderResourceView *srv[3] = {t.depth, t.color, sun};
         ID3D11SamplerState *smp[2] = {g_point, g_linear};
-        g_ctx->PSSetShaderResources(0, 2, srv);
+        g_ctx->PSSetShaderResources(0, 3, srv);
         g_ctx->PSSetSamplers(0, 2, smp);
         g_ctx->PSSetConstantBuffers(0, 1, &g_frameCB);
-        g_ctx->CSSetShaderResources(0, 2, srv);
+        g_ctx->CSSetShaderResources(0, 3, srv);
         g_ctx->CSSetSamplers(0, 2, smp);
         g_ctx->CSSetConstantBuffers(0, 1, &g_frameCB);
         g_ctx->VSSetConstantBuffers(0, 1, &g_frameCB);
@@ -1380,6 +1417,8 @@ bool GfxMethod(const std::string &method, const std::string &, std::string *repl
                          {"pass_runs", v->passRuns}, {"pass_fails", v->passFails}});
     out["views"] = views;
     out["view_sky_sets"] = g_viewSkySets;
+    out["sun_shadow"] = {{"bound", g_sunSRV != nullptr && g_k.sun_shadow_info[0] > 0.5f}, {"size", g_k.sun_shadow_info[3]}};
+    if (!g_sunError.empty()) out["sun_shadow"]["error"] = g_sunError;
     if (g_frames) {
         const MmlGfxConstants &k = g_k;
         out["world"] = {{"eye", {k.eye[0], k.eye[1], k.eye[2]}}, {"sun", {k.sun[0], k.sun[1], k.sun[2]}}, {"sun_from_game", k.sun[3] > 0.5f},

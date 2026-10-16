@@ -1,1 +1,8 @@
-{ "id": "kit", "name": "test: the mod author's kit", "version": "1", "entry": "kit.dll", "builds": ["1.2", "1.0"], "load_order": 30 }
+{ "id": "kit", "name": "test: the mod author's kit", "version": "1", "entry": "kit.dll", "builds": ["1.2", "1.0"], "load_order": 30,
+  "settings": { "title": "Kit", "controls": [
+    { "key": "speed", "label": "Speed", "min": 0, "max": 100 },
+    { "key": "overlay.x", "label": "Overlay x", "min": 0, "max": 100, "step": 5, "unit": "px" },
+    { "key": "overlay.on", "label": "Overlay" },
+    { "key": "name", "label": "Name", "options": ["kit", { "value": "other", "label": "Another" }] },
+    { "key": "broken", "label": "No max", "min": 0 }
+  ] } }

@@ -30,6 +30,8 @@ struct Config {
     json defaults = json::object(), changes = json::object(), merged = json::object();
     uint64_t timeDefaults = 0, timeChanges = 0;
     bool read = false, changed = false;   // changed: its mod is told at the next frame
+    bool unwritten = false;               // changes made live, not in the file yet
+    DWORD editedAt = 0;
     std::map<std::string, std::string> handed;   // strings handed to the mod (config_string, config_json), by key
 };
 std::map<std::string, Config> g_configs;   // by mod id
@@ -139,9 +141,9 @@ void Prune(json *j) {
     }
 }
 
-bool Set(const std::string &id, Config *c, const char *key, const json &value, std::string *err) {
-    if (!key || !*key) { *err = "key: a setting's name (a path: \"overlay.x\")"; return false; }
-    json changes = c->changes;
+// The changes with `value` at the key (null: the key back to its default).
+json Patched(const json &from, const char *key, const json &value) {
+    json changes = from;
     // back to the default: the key leaves the changes (a null in a merge patch would remove the default too)
     if (value.is_null()) {
         std::string k = key;
@@ -152,6 +154,10 @@ bool Set(const std::string &id, Config *c, const char *key, const json &value, s
     } else {
         changes.merge_patch(PatchFor(key, value));
     }
+    return changes;
+}
+
+bool WriteChanges(const std::string &id, const json &changes, std::string *err) {
     std::string path = DataDirOf(id) + "config.json", tmp = path + ".tmp";
     {
         std::ofstream f(tmp, std::ios::trunc);
@@ -159,8 +165,38 @@ bool Set(const std::string &id, Config *c, const char *key, const json &value, s
         f << changes.dump(2, ' ', false, json::error_handler_t::replace) << "\n";
     }
     if (!MoveFileExA(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING)) { *err = "cannot write " + path; return false; }
+    return true;
+}
+
+bool Set(const std::string &id, Config *c, const char *key, const json &value, std::string *err) {
+    if (!key || !*key) { *err = "key: a setting's name (a path: \"overlay.x\")"; return false; }
+    if (!WriteChanges(id, Patched(c->changes, key, value), err)) return false;
+    c->unwritten = false;
     if (Read(id, c)) c->changed = true;
     return true;
+}
+
+// A change made live (panel.cpp: a slider dragged): the mod sees it at the next frame, the file is written once the
+// changes have stopped for a moment (ConfigFrame) or at once with ConfigFlush.
+void SetLive(Config *c, const char *key, const json &value) {
+    json changes = Patched(c->changes, key, value);
+    json merged = c->defaults;
+    merged.merge_patch(changes);
+    if (merged == c->merged && changes == c->changes) return;
+    c->changes = changes;
+    c->merged = merged;
+    c->handed.clear();
+    c->changed = true;
+    c->unwritten = true;
+    c->editedAt = GetTickCount();
+}
+
+void Flush(const std::string &id, Config *c) {
+    if (!c->unwritten) return;
+    std::string err;
+    if (!WriteChanges(id, c->changes, &err)) { Log(MML_LOG_WARN, id.c_str(), "config: %s", err.c_str()); return; }
+    c->unwritten = false;
+    c->timeChanges = FileTime(DataDirOf(id) + "config.json");   // (our own write: not a change on disk)
 }
 
 } // namespace
@@ -204,6 +240,31 @@ bool ConfigSet(MmlMod *mod, const char *key, const char *valueJson) {
     return false;
 }
 
+bool ConfigSetLive(MmlMod *mod, const char *key, const std::string &valueJson) {
+    Config *c = Of(mod);
+    if (!c || !key || !*key) return false;
+    json value = json::parse(valueJson, nullptr, false);
+    if (value.is_discarded()) return false;
+    SetLive(c, key, value);
+    return true;
+}
+
+void ConfigFlush(MmlMod *mod) {
+    if (Config *c = Of(mod)) Flush(ModIdOf(mod), c);
+}
+
+std::string ConfigDefaultJson(MmlMod *mod, const char *key) {
+    Config *c = Of(mod);
+    const json *j = c ? At(c->defaults, key) : nullptr;
+    return j ? j->dump() : std::string();
+}
+
+std::string ConfigValueJson(MmlMod *mod, const char *key) {
+    Config *c = Of(mod);
+    const json *j = c ? At(c->merged, key) : nullptr;
+    return j ? j->dump() : std::string();
+}
+
 void ConfigFrame() {
     DWORD now = GetTickCount();
     bool look = now - g_lastLook >= 500;
@@ -213,7 +274,8 @@ void ConfigFrame() {
         auto it = g_configs.find(id);
         if (it == g_configs.end() || !it->second.read) continue;   // a mod that never asked has no config to watch
         Config &c = it->second;
-        if (look && (FileTime(c.dir + "config.json") != c.timeDefaults || FileTime(DataDirOf(id) + "config.json") != c.timeChanges)) {
+        if (c.unwritten && now - c.editedAt >= 400) Flush(id, &c);   // (live changes: written once they stop)
+        if (look && !c.unwritten && (FileTime(c.dir + "config.json") != c.timeDefaults || FileTime(DataDirOf(id) + "config.json") != c.timeChanges)) {
             if (Read(id, &c)) {
                 c.changed = true;
                 Log(MML_LOG_INFO, "host", "config: %s's settings changed on disk", id.c_str());
@@ -233,6 +295,7 @@ void ConfigFrame() {
 void ConfigForget(MmlMod *mod) {
     auto it = g_configs.find(ModIdOf(mod));
     if (it == g_configs.end()) return;
+    Flush(it->first, &it->second);   // (what was changed live is kept)
     it->second.read = false;
     it->second.changed = false;
     it->second.handed.clear();

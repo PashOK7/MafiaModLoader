@@ -182,6 +182,20 @@ def kit_tests(b):
     r = b.call('config.get', {'mod': 'nobody'})
     check('config.get of an unknown mod: an error', not r['ok'], r)
 
+    # the settings panel (Options > Mods): the manifest's "settings" read into controls
+    r = b.call('panel.state')
+    kit = [m for m in r.get('result', {}).get('mods', []) if m['mod'] == 'kit']
+    c = {k['key']: k for k in kit[0]['controls']} if kit else {}
+    check('panel.state: the kit\'s page titled from its settings (no Mods row with no game: the menus are the game\'s)',
+          r['ok'] and r['result']['item'] == 0 and kit and kit[0]['title'] == 'Kit', r)
+    check('panel.state: a slider (its value as % of its range), one with a unit, a check box from a boolean default, a choice',
+          c.get('speed', {}).get('kind') == 'slider' and c['speed']['shown'] == '77%' and
+          c.get('overlay.x', {}).get('shown') == '10 px' and c.get('overlay.on', {}).get('kind') == 'check' and
+          c.get('name', {}).get('kind') == 'choice' and c['name']['shown'] == 'kit', c)
+    check('panel.state: a slider with no max is left out (the log says why)', 'broken' not in c, c)
+    r = b.call('panel.open', {'mod': 'kit'})
+    check('panel.open with no game: refused, saying why', not r['ok'] and 'page' in str(r), r)
+
     # the data folder
     r = b.call('kit.write')
     want = os.path.join(HARNESS, 'mml', 'data', 'kit', 'note.txt')

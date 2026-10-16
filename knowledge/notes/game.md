@@ -533,6 +533,16 @@ autosplitter; kept outside it, not ported). Checked against the above:
 
 ## How the game's world reaches Direct3D (measured 2026-10-17, both labs; host/shaders.cpp shader.survey)
 
+- **ours** A texture shared from Direct3D 9Ex to Direct3D 11 (R32F, a render target) drawn with
+  `D3DRS_COLORWRITEENABLE` red only: Direct3D 11 read it as its clear value and none of the draws, while Direct3D 9
+  read the draws (an NVIDIA RTX 3070 under dxwrapper's 9Ex, 2026-10-17). Written with every channel, both see it.
+  The device the loader's Direct3D 9 and 9Ex interfaces come from is one object (QueryInterface of the d3d8 device
+  for either gives the same pointer).
+- **ls3d** LS3D's camera has an orthographic projection of its own: I3D_camera `+0x15C` (a byte: on), `+0x160` the
+  scale (SetOrthoScale `1000B8D0` in 1.2's LS3DF: "Invalid ortho scale"), the projection made by `1000B400` (the
+  ortho branch: `1/(far - near)` and `-near/(far - near)` for z, the scale for x and y times the aspect at `+0x158`).
+  The lead for a shadow map drawn by the game itself (ROADMAP Known gaps).
+
 - **ls3d** Every face group LS3D draws (the freeride's start: 362 to 497 draws a frame) goes with Direct3D's
   lighting off, no light set: LS3D lights the vertices on the CPU and hands their colour. FVF 0x142 (position,
   colour, one uv) or 0x242 (two uv). Stage 0: `modulate2x(texture, diffuse)`, alpha `modulate`; lightmapped

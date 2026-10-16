@@ -16,7 +16,7 @@ makes `mods/my_mod/` and adds its line to `CMakeLists.txt`:
 | File | What |
 |---|---|
 | `my_mod.cpp` | a small working mod: an overlay line, a hotkey from its settings, a command. Cut what you do not need |
-| `mod.json` | the manifest: `id` (its folder, its DLL, its commands' prefix), `name`, `version`, `entry`, `enabled`, `load_order`, `depends`, `gfx` (true: it draws through the graphics bridge: "Effects over the frame"), `builds` (the game's builds it is made for, `["1.2", "1.0"]`: on another it is not loaded and gives the game none of its files, `mods.list` says why; absent: every build) |
+| `mod.json` | the manifest: `id` (its folder, its DLL, its commands' prefix), `name`, `version`, `entry`, `enabled`, `load_order`, `depends`, `gfx` (true: it draws through the graphics bridge: "Effects over the frame"), `settings` (its page in the game's Options > Mods: "Settings in the game's Options"), `builds` (the game's builds it is made for, `["1.2", "1.0"]`: on another it is not loaded and gives the game none of its files, `mods.list` says why; absent: every build) |
 | `config.json` | the defaults of its settings (optional) |
 
 A mod is a 32-bit DLL with three exports; `sdk/include/mml/mml.h` is the whole contract (read it once, it is short):
@@ -176,10 +176,18 @@ float4 PsMine(float4 pos : SV_Position) : SV_Target {
   INV_SRC_ALPHA; a pass returning 0 leaves them); the target is blended over the frame (`frame * (1 - a) + rgb`),
   under the HUD.
 - **The constants** (`MmlGfxConstants`, `cbuffer MmlFrame`): the camera (eye, axes, projection), the frame's size,
-  the time, the world's fog (as the world was drawn: start, end, mode, colour) and a sun (`w` 1 when the game's;
-  in the freeride the game draws its world with no Direct3D light, so it is a default from above: the scene's own
-  light is not read yet), the ambient light (a default). `frame.hlsli`: `ViewRay`, `ScenePoint`, `SceneDepth`,
-  `IsSky`, `FogAmount`, `ApplyFog`, `ToScreen`, `Lin`/`Enc` (the game's colours are gamma-encoded).
+  the time, the world's fog (as the world was drawn: start, end, mode, colour) and a sun (`w` 1 when the game's: its
+  Direct3D light, else the scene's own sun from LS3D's light frames; a default from above when there is none), the
+  ambient light (the scene's). `frame.hlsli`: `ViewRay`, `ScenePoint`, `SceneDepth`, `IsSky`, `FogAmount`,
+  `ApplyFog`, `ToScreen`, `Lin`/`Enc` (the game's colours are gamma-encoded).
+- **The sun's shadow map** (while a mod asks for it with `shader_shadows`, the same map the shaders on the game's
+  drawing get, below): bound to t2 (`g_sunShadow`, R32F: the depth from the sun, 1 where nothing is), its matrix and
+  size in the constants (`g_sunShadowViewProj`, `g_sunShadowInfo`; `MmlGfxFrame::sun_shadow` NULL when there is
+  none this frame: no sun above the horizon). `SunLit(world)` (one texel: for many samples a pixel, a ray marched
+  through the air), `SunShadow(world)` (filtered: a surface's). The map covers `extent` metres around the camera.
+- `mods/examples/sun_shafts`: the sun's light in the air where the sun reaches it (volumetric light, god rays): each
+  pixel's ray marched through the shadow map at half the frame's size, a blur and an upsample that keep depth edges;
+  its settings on the game's Options > Mods page (below, "Settings in the game's Options"), F7 on and off.
 - **State**: the bridge binds the target, the viewport, t0/t1, s0/s1, b0 and the full-screen vertex shader before
   each pass; anything else a pass sets is cleared after the passes. A pass runs on the game thread behind its mod's
   fault guard.
@@ -866,7 +874,8 @@ int h = H->shader_add(M, &r, err, sizeof err);   /* 0: refused, err says why (th
   which wins. In the game's order the wall wins (as the game shows it); in another, the sign shows through the wall.
 - **The sun's shadow and the game's lights** (`shader_shadows`): a mod that asks for it gets a shadow map from the
   scene's sun drawn before each frame of the mission's world (`MmlShadowSettings`: its size, 2048 texels; its
-  extent, 60 m from the camera; the depth's bias), its casters the scene's meshes around the camera and the cars
+  extent, 60 m from the camera; the bias, metres along the sun's ray on top of the slope-scaled one the map is drawn
+  with), its casters the scene's meshes around the camera and the cars
   near it (block 6d's `scene_pieces` and `actor_meshes`: people are not among them, nor billboards). The rules'
   shaders read it with `mml_Shadow(worldPos)` (1 lit, 0 in the shadow, 1 when there is no map); the sun is
   `mml_SunDir`, `mml_SunColor`, `mml_SunAmbient`. Always there, asked for or not: the game's own point and spot
@@ -1115,6 +1124,40 @@ H->config_set(M, "finish", "{\"x\": 1.5, \"z\": -2}");           /* any JSON val
 - Agents change settings with `call config.set {"mod": "<id>", "key": "units", "value": "mph"}` and read them with
   `config.get`: no settings window is needed.
 - Never write into the mod's own folder: a deploy replaces it.
+
+### Settings in the game's Options (a page with no code)
+
+The game's Options (`optionsb`, opened from the pause menu: seen in both builds) has a row **Mods** under Audio and
+Video: it lists every
+loaded mod whose `mod.json` has a `"settings"` block, and each opens a page of the game's own controls made from it,
+as the freeride's density sliders and the Options' own are made. A change is made at once: the mod gets
+`MML_EVENT_CONFIG_CHANGED` at the next frame (read your settings there, as for any change), so what a slider does is
+seen while it is dragged; the file in the data folder is written once the changes stop, and at Back.
+
+```json
+"settings": {
+  "title": "God rays",
+  "controls": [
+    {"key": "on", "label": "On"},
+    {"key": "density", "label": "Haze", "min": 0, "max": 0.05},
+    {"key": "distance", "label": "Reach", "min": 30, "max": 200, "step": 10, "unit": "m"},
+    {"key": "steps", "label": "Samples", "min": 8, "max": 64, "step": 8, "show": "value"},
+    {"key": "mode", "label": "Mode", "options": [{"value": 0, "label": "Soft"}, {"value": 1, "label": "Hard"}]}
+  ]
+}
+```
+
+- **The kinds** follow the default in `config.json` (or `"kind"`: `slider`, `check`, `choice`): a boolean is a check
+  box; a number a slider, `min` to `max` (both needed), snapped to `step`, a whole number when the step and the ends
+  are whole; `options` a selector of those values (`{"value", "label"}`, or plain values shown as they are).
+- **The value beside a slider**: its place in the range in % by default; with `unit` (or `"show": "value"`) the
+  value itself.
+- **The page**: the title (`title`, else the mod's `name` up to a colon), a row a control, **Defaults** (every key on
+  the page back to `config.json`'s) and **Back**. Esc on the page returns to the list, and on the list to Options,
+  as the game's own pages do. A key is a path (`"overlay.x"`), as for `config_number`.
+- `call panel.state` shows what the panel made of every mod's block (each control's kind, value and what is shown);
+  `call panel.open {"mod": "<id>"}` opens a page without the clicks. A control the panel cannot make (a slider with
+  no `max`, a choice with no `options`) is left out, and the log says why.
 
 ### A mod's own files in the game
 

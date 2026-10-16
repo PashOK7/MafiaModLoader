@@ -363,6 +363,20 @@ What is done, what comes next and later, and what is known to be missing or wron
   (the map 0.5 ms a frame, 140 to 250 casters, 8 to 17 thousand triangles); at night a car's headlights (its own
   spots) and the street lamps lighting the street through `mml_GameLight`. Found on the way: `mml_FaceNormal`
   (block 7b) gave the normal pointing away (the street's y down): corrected and measured.
+- **The sun's shadow map in the frame's passes; volumetric light** (2026-10-17; item 27 and item 3, after 7c, the
+  owner's demonstration): the map made shared (Direct3D 9Ex) and opened by the graphics bridge, bound to t2 of every
+  pass with its matrix in `cbuffer MmlFrame` (`MmlGfxFrame::sun_shadow`, frame.hlsli `SunLit`, `SunShadow`); the map
+  drawn with a slope-scaled bias, `MmlShadowSettings::bias` in metres. `mods/examples/sun_shafts`: god rays, each
+  pixel's ray marched through the map at half size (single scattering, Henyey-Greenstein, Beer-Lambert), a blur and
+  an upsample that keep depth edges, about 0.2 ms of GPU at 1280x960. Seen alike in the 1.2 and 1.0 labs (the
+  shadows in the air under the trees and behind the buildings; the owner saw the rays from the buildings). Found:
+  with only red written to the R32F map, Direct3D 11 saw the map as cleared (knowledge/notes/game.md).
+- **A tuning panel** (2026-10-17; item 18, the owner put it before the order's 8): Options > Mods (`optionsb`, both
+  builds) lists the loaded mods whose `mod.json` has `"settings"`; each opens a page of the game's own controls
+  (sliders, check boxes, selectors) made from it, changes made live (config.cpp `ConfigSetLive`: the mod told at the
+  next frame, the file written once the changes stop), Defaults and Back; Esc returns to the list as the game's pages
+  do. The menus got the loader as an owner (two: the list, a mod's page over it). `panel.state`, `panel.open`.
+  `sun_shafts` the first user. Seen alike in the 1.2 and 1.0 labs (the owner moved the sliders and watched the haze).
 - **The meshes the game draws** (2026-10-17; item 8, block 6d of the order): `scene_focus`, `scene_pieces` (the
   scene walked a little each frame, scanned every 0.25 s around every mod's box: the objects' meshes read once from
   LS3D's buffers, their space found by the engine's bounding sphere; after mafia-ragdoll's scenery and
@@ -536,7 +550,7 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
 10. Mod languages (Later: the Rust crate; LuaJIT script mods).
 11. Orders for the people made (item 26).
 12. Tests in the real game, as scripts of steps (item 23).
-13. The tuning panel (item 18).
+13. *(Done 2026-10-17, before 8 at the owner's wish; see "Done".)* The tuning panel (item 18).
 
 ### Tier 1: foundations every large mod stands on
 
@@ -640,7 +654,7 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
     with a mod's own texts), markers at world positions, the compass's and the map's target.
 17. *(Done 2026-10-16: see "Done"; what is left: Known gaps.)* **A mod's state in the game's saves** (C F). A mod's data written with each save slot and read back when that
     slot loads (and per profile), so its state follows the player's game, not only its data folder.
-18. **A tuning panel** (all). A mod's settings shown and changed live in the game: a page made from its
+18. *(Done 2026-10-17: see "Done".)* **A tuning panel** (all). A mod's settings shown and changed live in the game: a page made from its
     `config.json` (sliders, check boxes, selectors from the menus' constructor), so dozens of parameters need no page
     written by hand.
 
@@ -831,8 +845,21 @@ merged, sorted by importance):
   the scene views (mirrors) take rules too but were not looked at. The constants are read from the device at each
   draw a rule takes (Get* calls: on a pure device they would fail; dxwrapper's is not pure). The cost was not
   measured above the game's 62.5 frames a second.
-- **The sun's shadow and the game's lights** (host/shadows.cpp, block 7c): people cast no shadow (the casters are
-  block 6d's meshes: no skinned people, billboards, particles); one map of a fixed extent around the camera (no
+- **Doubles on the game thread are float-precise where x87 computes them** (found 2026-10-17 by the settings panel:
+  `round(x * 1e6) / 1e6` on the game thread came out as the nearest float, `7.519532` as `7.519532203674316`): the
+  game's Direct3D is most likely made without `D3DCREATE_FPU_PRESERVE`, leaving the x87 in 24-bit precision, and
+  32-bit MSVC computes what the CRT's maths functions return (through ST0) on the x87. The GPU is not touched (the
+  shaders' constants are floats anyway); what is: the loader's and the mods' double maths on the game thread (a
+  physics step's accumulations, long time counters, far coordinates), and a mod that is exact in the offline tests
+  and not in the game. To do: the control word measured in both builds, then the loader's own work and the mods'
+  callbacks on the game thread run with 53-bit precision (`_controlfp_s`) and the game's mode given back after.
+- **The sun's shadow and the game's lights** (host/shadows.cpp, block 7c): the casters are block 6d's meshes drawn
+  by the host, not what the game draws: people cast no shadow (skinned on the CPU at their draw), billboards (the
+  countryside's far forest) none, and alpha-tested faces (leaves, fences) cast as whole quads (a tree's shadow is a
+  solid star: seen 2026-10-17). The proper way, to be measured first: the map drawn by LS3D itself through a scene
+  view from the sun, its camera orthographic (LS3D's own: I3D_camera +0x15C the flag, +0x160 the scale, its projection
+  made by 1000B400 in 1.2's LS3DF), so everything is drawn as the game draws it; what LS3D's LOD choice and its
+  sectors' culling make of a camera above the scene decides it. One map of a fixed extent around the camera (no
   cascades: past it, lit); the box of the scene's meshes moves when the camera has gone a quarter of it, and a mesh
   first met is in the map from meshes.cpp's next scan (0.25 s). The scene views (mirrors) sample the frame's map
   (drawn around the game camera, not the view's eye); not looked at in a view. The lights a draw gets are the eight
@@ -841,6 +868,14 @@ merged, sorted by importance):
   interiors or a mission. **The headlights' cone on the street** the game draws at night is not one of the face
   groups LS3D draws (the night's survey has every face group at pass 0, no second pass), so no rule takes it: what
   draws it was not found (left for later).
+- **The sun's shafts** (mods/examples/sun_shafts): no rays past `distance` (the map's extent; the haze beyond is
+  even); the rays through trees are as solid as their shadows (above); single scattering only; translucent things
+  (glass) get the haze of what is behind them. Looked at in the city by day in both labs; the countryside's sun was
+  found once its lights were read (the first query, before the scene's lights were scanned, had none).
+- **The tuning panel** (host/panel.cpp): sliders, check boxes and selectors only (no colour, text or key fields: a
+  `tint` is set with `config.set`); the slider's arrows step as the game's own do (a click held repeats); the list of
+  mods is made when it opens (a mod loaded while it is open is there at its next opening); the Options reached from
+  the main menu were not looked at.
 - **The meshes the game draws** (host/meshes.cpp, block 6d): the finest LOD only; plain and lightmapped objects
   only (billboards, particles, skinned people, morphs, mirrors are left out); a piece is told by its bounding sphere
   touching a box (a long piece may hold far triangles). Frames LS3D frees during a mission are not followed (each

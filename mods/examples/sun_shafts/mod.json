@@ -1,0 +1,24 @@
+{
+  "id": "sun_shafts",
+  "name": "Sun shafts: the sun's light in the air, where it reaches (volumetric light from the sun's shadow map)",
+  "version": "0.1.0",
+  "type": "native",
+  "entry": "sun_shafts.dll",
+  "enabled": false,
+  "builds": ["1.2", "1.0"],
+  "gfx": true,
+  "load_order": 100,
+  "depends": [],
+  "settings": {
+    "title": "God rays",
+    "controls": [
+      {"key": "on", "label": "On"},
+      {"key": "density", "label": "Haze", "min": 0, "max": 0.05},
+      {"key": "intensity", "label": "Light", "min": 0, "max": 10},
+      {"key": "anisotropy", "label": "Glow to the sun", "min": 0, "max": 0.95},
+      {"key": "dimming", "label": "Haze dims", "min": 0, "max": 1},
+      {"key": "distance", "label": "Reach", "min": 30, "max": 200, "step": 10, "unit": "m"},
+      {"key": "steps", "label": "Samples", "min": 8, "max": 64, "step": 8, "show": "value"}
+    ]
+  }
+}

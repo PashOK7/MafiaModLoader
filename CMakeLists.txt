@@ -27,7 +27,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     # ---- the loader
     add_library(MafiaModLoader SHARED
         host/main.cpp host/log.cpp host/memory.cpp host/crash.cpp host/hooks.cpp host/mods.cpp host/game_hooks.cpp
-        host/bridge.cpp host/tap.cpp host/start.cpp host/input.cpp host/screenshot.cpp host/draw.cpp host/config.cpp host/menus.cpp host/menus10.cpp host/script.cpp host/world.cpp host/lifecycle.cpp host/files.cpp host/render.cpp host/gfx.cpp host/view.cpp host/geom.cpp host/prof.cpp host/events.cpp host/native.cpp host/humans.cpp host/watch.cpp host/happen.cpp host/collide.cpp host/state.cpp host/lights.cpp host/effects.cpp host/props.cpp host/sound.cpp host/control.cpp host/interact.cpp host/hud.cpp host/saves.cpp host/anims.cpp host/items.cpp host/stats.cpp host/models.cpp host/meshes.cpp host/shaders.cpp host/shadows.cpp)
+        host/bridge.cpp host/tap.cpp host/start.cpp host/input.cpp host/screenshot.cpp host/draw.cpp host/config.cpp host/menus.cpp host/menus10.cpp host/script.cpp host/world.cpp host/lifecycle.cpp host/files.cpp host/render.cpp host/gfx.cpp host/view.cpp host/geom.cpp host/prof.cpp host/events.cpp host/native.cpp host/humans.cpp host/watch.cpp host/happen.cpp host/collide.cpp host/state.cpp host/lights.cpp host/effects.cpp host/props.cpp host/sound.cpp host/control.cpp host/interact.cpp host/hud.cpp host/saves.cpp host/anims.cpp host/items.cpp host/stats.cpp host/models.cpp host/meshes.cpp host/shaders.cpp host/shadows.cpp host/panel.cpp)
     # ($<0:> keeps Visual Studio from adding a per-configuration folder)
     set_target_properties(MafiaModLoader PROPERTIES SUFFIX ".asi" RUNTIME_OUTPUT_DIRECTORY ${MML_OUT}/$<0:>)
     target_include_directories(MafiaModLoader PRIVATE third_party/json host ${CMAKE_BINARY_DIR}/gen)
@@ -191,6 +191,9 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
         SHADERS rear_mirror.hlsl:PsMirror:ps_5_0)
     mml_add_mod(river_water ${CMAKE_SOURCE_DIR}/mods/examples/river_water mods/examples/river_water/river_water.cpp
         SHADERS river_water.hlsl:VsWater:vs_5_0 river_water.hlsl:PsWater:ps_5_0)
+    mml_add_mod(sun_shafts ${CMAKE_SOURCE_DIR}/mods/examples/sun_shafts mods/examples/sun_shafts/sun_shafts.cpp
+        SHADERS sun_shafts.hlsl:PsMarch:ps_5_0 sun_shafts.hlsl:PsBlurX:ps_5_0 sun_shafts.hlsl:PsBlurY:ps_5_0
+        sun_shafts.hlsl:PsComposite:ps_5_0)
     mml_add_files_mod(freeride_picture ${CMAKE_SOURCE_DIR}/mods/examples/freeride_picture)
     mml_add_mod(puppet ${CMAKE_SOURCE_DIR}/mods/examples/puppet mods/examples/puppet/puppet.cpp)
     mml_add_mod(tally ${CMAKE_SOURCE_DIR}/mods/examples/tally mods/examples/tally/tally.cpp)

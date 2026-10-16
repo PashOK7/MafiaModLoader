@@ -71,6 +71,8 @@ bool ModAlive(const MmlMod *mod);
 MmlMod *ModById(const std::string &id);   // the live load, or null
 bool ModDirById(const std::string &id, std::string *dir);   // any mod found in mml\mods, loaded or not
 std::vector<MmlMod *> ModsLoaded();
+std::string ModSettingsJson(const MmlMod *mod);   // its manifest's "settings" (panel.cpp), "": none
+std::string ModNameOf(const MmlMod *mod);
 void DispatchTo(MmlMod *mod, const MmlEvent &ev);            // to one mod's subscribers
 // fn(user) called behind the mod's fault guard (a fault: the mod is unloaded at the next frame); false: it faulted.
 bool ModCall(MmlMod *mod, void (*fn)(void *), void *user, const char *where);
@@ -175,6 +177,15 @@ const char *ConfigJson(MmlMod *mod, const char *key);
 bool ConfigSet(MmlMod *mod, const char *key, const char *valueJson);
 void ConfigFrame();                       // every frame: files changed are read again, the mods told
 void ConfigForget(MmlMod *mod);           // the mod unloads: what was handed to it is dropped
+// panel.cpp's: a change made live (the mod told at the next frame, the file written once the changes stop; "null":
+// back to the default), written now, a key's default and its value now (JSON text, "": none)
+bool ConfigSetLive(MmlMod *mod, const char *key, const std::string &valueJson);
+void ConfigFlush(MmlMod *mod);
+std::string ConfigDefaultJson(MmlMod *mod, const char *key);
+std::string ConfigValueJson(MmlMod *mod, const char *key);
+// the mods' settings in the game's Options > Mods (panel.cpp)
+void PanelInit();
+bool PanelMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 bool ConfigMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 
 // ---- a mod's own files in the game (files.cpp): rw_data's dtaOpen answered from the mods' files\ folders and
@@ -305,6 +316,9 @@ void ShadowsBeforeWorld();                // (render.cpp) the pass, before the m
 void ShadowsMissionClose();
 void ShadowsConstants(const void *visual, float *c);   // game.hlsli's c76..c116 for a draw of this visual
 ::IDirect3DBaseTexture9 *ShadowsTexture();  // the map drawn this frame, or null
+// the map drawn this frame as gfx.cpp opens it in Direct3D 11: its shared handle, a count of the maps made (a new
+// map, a new handle), its matrix and mml.h's sun_shadow_info; false: none this frame, or it is not shared
+bool ShadowsShared(void **handle, unsigned *made, float viewProj[16], float info[4]);
 void ShadowsState(std::string *json);
 void *ActorFrame(void *actor);
 int FrameWorld(void *frame, float out[16]);
@@ -328,6 +342,10 @@ bool SoundMethod(const std::string &method, const std::string &paramsJson, std::
 // replaced (control.cpp)
 // (the owner of what the loader itself takes, a capture: not a mod, not the bridge)
 inline MmlMod *const kLoaderOwner = reinterpret_cast<MmlMod *>(static_cast<uintptr_t>(1));
+// a second owner of the loader's for the game's menus: its pages go one an owner, and the mods' settings (panel.cpp)
+// put a mod's page over the list of mods as the game puts Audio and Video over Options
+inline MmlMod *const kLoaderPage = reinterpret_cast<MmlMod *>(static_cast<uintptr_t>(2));
+inline bool LoaderOwned(const MmlMod *m) { return m == kLoaderOwner || m == kLoaderPage; }
 bool KeyCapture(MmlMod *mod, int key, bool on);
 bool ActionCapture(MmlMod *mod, int slot, bool on);
 void CapturesRemove(MmlMod *mod);

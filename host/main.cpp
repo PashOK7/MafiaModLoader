@@ -30,6 +30,7 @@ void Init() {
         InputInit();
         DrawInit();
         MenusInit();
+        PanelInit();    // (the mods' settings in Options > Mods)
         RenderInit();
         SavesInit();
         AnimsInit();

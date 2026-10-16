@@ -37,6 +37,7 @@ struct ModEntry {
     std::vector<std::string> depends;
     std::vector<std::string> builds;  // the game's builds it is made for ("1.2", "1.0"); empty: every build
     bool gfx = false;                 // "gfx": true: it draws through the graphics bridge (the device made without multisampling)
+    json settings;                    // "settings": its page in the game's Options > Mods (panel.cpp); null: none
     HMODULE dll = nullptr;
     MmlModUnloadFn unload = nullptr;
     MmlMod *current = nullptr;        // the live load, or null
@@ -610,6 +611,7 @@ bool ReadManifest(const std::string &dir, const std::string &folder, ModEntry *e
         if (j.contains("depends") && j["depends"].is_array())
             for (auto &d : j["depends"]) if (d.is_string()) e->depends.push_back(d.get<std::string>());
         e->gfx = j.value("gfx", false);
+        e->settings = j.contains("settings") && j["settings"].is_object() ? j["settings"] : json();
         e->builds.clear();
         if (j.contains("builds") && j["builds"].is_array())
             for (auto &b : j["builds"]) if (b.is_string()) e->builds.push_back(b.get<std::string>());
@@ -863,6 +865,7 @@ void Scan() {
             e = g_mods.back().get();
             e->id = tmp.id;
         }
+        e->settings = tmp.settings;   // (metadata only: a loaded mod's page follows its manifest too)
         if (e->current) continue;
         e->name = tmp.name; e->version = tmp.version; e->type = tmp.type; e->entry = tmp.entry; e->enabled = tmp.enabled;
         e->order = tmp.order; e->depends = tmp.depends; e->builds = tmp.builds; e->gfx = tmp.gfx; e->dir = tmp.dir;
@@ -921,7 +924,7 @@ json ModValue(const ModEntry &e) {
 std::string ModJson(const ModEntry &e) { return ModValue(e).dump(); }
 } // namespace
 
-const char *ModIdOf(const MmlMod *mod) { return mod ? mod->entry->id.c_str() : "host"; }
+const char *ModIdOf(const MmlMod *mod) { return LoaderOwned(mod) ? "mml" : mod ? mod->entry->id.c_str() : "host"; }
 bool ModAlive(const MmlMod *mod) { return Alive(mod); }
 MmlMod *ModById(const std::string &id) {
     ModEntry *e = ById(id);
@@ -934,6 +937,11 @@ bool ModDirById(const std::string &id, std::string *dir) {
     *dir = e->dir;
     return true;
 }
+std::string ModSettingsJson(const MmlMod *mod) {
+    if (!Alive(mod) || mod->entry->settings.is_null()) return std::string();
+    return mod->entry->settings.dump();
+}
+std::string ModNameOf(const MmlMod *mod) { return Alive(mod) ? mod->entry->name : std::string(); }
 std::vector<MmlMod *> ModsLoaded() {
     std::vector<MmlMod *> out;
     for (auto &e : g_mods) if (e->current && !e->faulted) out.push_back(e->current);
@@ -1209,6 +1217,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (DrawMethod(method, paramsJson, reply, &ok)) return ok;
     if (ConfigMethod(method, paramsJson, reply, &ok)) return ok;
     if (MenusMethod(method, paramsJson, reply, &ok)) return ok;
+    if (PanelMethod(method, paramsJson, reply, &ok)) return ok;
     if (ScriptMethod(method, paramsJson, reply, &ok)) return ok;
     if (CollideMethod(method, paramsJson, reply, &ok)) return ok;
     if (StateMethod(method, paramsJson, reply, &ok)) return ok;

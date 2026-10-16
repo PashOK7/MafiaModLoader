@@ -38,10 +38,15 @@ IDirect3DVertexShader9 *g_vs;
 IDirect3DPixelShader9 *g_ps;
 IDirect3DVertexDeclaration9 *g_decl;
 IDirect3DStateBlock9 *g_block;
+HANDLE g_shared;         // the map's handle for the graphics bridge's Direct3D 11 (gfx.cpp), when the device is 9Ex
+unsigned g_mapMade;      // counts the maps made: a new one is a new handle
 int g_size;
 bool g_valid;            // drawn this frame: the rules' shaders may sample it
 float g_lightVP[16];     // world to the map's clip space (row vectors)
-float g_extent, g_bias;
+float g_extent, g_bias;   // g_bias: in the map's depth (0..1 over kDepth metres)
+float g_biasM;            // the same in metres along the sun's ray
+constexpr float kBack = 400.0f, kDepth = 800.0f;   // the map's depth: casters up to 400 m towards the sun
+constexpr float kDefaultBiasM = 0.05f;
 unsigned g_casters, g_triangles, g_frames;
 double g_passMs;
 std::string g_why;
@@ -53,7 +58,13 @@ const char kDepthHlsl[] = R"(
 row_major float4x4 m : register(c0);
 struct O { float4 pos : POSITION; float2 z : TEXCOORD0; };
 O vs(float3 p : POSITION) { O o; o.pos = mul(float4(p, 1), m); o.z = o.pos.zw; return o; }
-float4 ps(O i) : COLOR0 { return float4(i.z.x / i.z.y, 0, 0, 1); }
+float4 ps(O i) : COLOR0 {
+    // a slope-scaled bias: the depth's own change across a texel added (a face the sun grazes is pushed back more,
+    // one it faces square hardly), so the receivers' constant bias stays small and no shadow comes loose
+    float z = i.z.x / i.z.y;
+    float slope = max(abs(ddx(z)), abs(ddy(z)));
+    return float4(z + slope * 1.5, 0, 0, 1);
+}
 )";
 
 using CompileFn = HRESULT(WINAPI *)(LPCVOID, SIZE_T, LPCSTR, const D3D_SHADER_MACRO *, ID3DInclude *, LPCSTR, LPCSTR, UINT, UINT, ID3DBlob **, ID3DBlob **);
@@ -79,6 +90,7 @@ void ReleaseAll() {
     g_block = nullptr;
     g_dev = nullptr;
     g_size = 0;
+    g_shared = nullptr;
 }
 
 bool Make(IDirect3DDevice9 *d, int size) {
@@ -96,10 +108,23 @@ bool Make(IDirect3DDevice9 *d, int size) {
     }
     g_dev = d;
     g_size = size;
-    if (FAILED(d->CreateTexture(size, size, 1, D3DUSAGE_RENDERTARGET, D3DFMT_R32F, D3DPOOL_DEFAULT, &g_map, nullptr)) || !g_map) {
+    g_shared = nullptr;
+    g_mapMade++;
+    // shared when the device is 9Ex (the labs' dxwrapper): the graphics bridge's passes read it in Direct3D 11
+    IDirect3DDevice9Ex *ex = nullptr;
+    bool canShare = SUCCEEDED(d->QueryInterface(__uuidof(IDirect3DDevice9Ex), reinterpret_cast<void **>(&ex))) && ex;
+    if (ex) ex->Release();
+    HANDLE shared = nullptr;
+    HRESULT hr = d->CreateTexture(size, size, 1, D3DUSAGE_RENDERTARGET, D3DFMT_R32F, D3DPOOL_DEFAULT, &g_map, canShare ? &shared : nullptr);
+    if (FAILED(hr) && canShare) {   // (a device that shares nothing: the rules' shaders still get the map)
+        shared = nullptr;
+        hr = d->CreateTexture(size, size, 1, D3DUSAGE_RENDERTARGET, D3DFMT_R32F, D3DPOOL_DEFAULT, &g_map, nullptr);
+    }
+    if (FAILED(hr) || !g_map) {
         g_why = "the device makes no R32F render target";
         return false;
     }
+    g_shared = shared;
     g_map->GetSurfaceLevel(0, &g_mapSurface);
     if (FAILED(d->CreateDepthStencilSurface(size, size, D3DFMT_D24X8, D3DMULTISAMPLE_NONE, 0, TRUE, &g_mapDepth, nullptr))) {
         g_why = "the device makes no depth buffer for the map";
@@ -171,7 +196,7 @@ void LightMatrix(const float eye[3], const float toSun[3], float extent, int siz
     V3 c{eye[0], eye[1], eye[2]};
     float texel = 2 * extent / static_cast<float>(size);
     float cx = std::floor(Dot(c, x) / texel) * texel, cy = std::floor(Dot(c, y) / texel) * texel, cz = Dot(c, z);
-    const float back = 400.0f, depth = 800.0f;   // (casters up to 400 m towards the sun)
+    const float back = kBack, depth = kDepth;
     float view[16] = {x.x, y.x, z.x, 0, x.y, y.y, z.y, 0, x.z, y.z, z.z, 0, -cx, -cy, -(cz - back), 1};
     float proj[16] = {1 / extent, 0, 0, 0, 0, 1 / extent, 0, 0, 0, 0, 1 / depth, 0, 0, 0, 0, 1};
     MulM(view, proj, out);
@@ -191,7 +216,8 @@ void Pass(IDirect3DDevice9 *d) {
     }
     int size = s.size >= 4096 ? 4096 : s.size >= 2048 ? 2048 : s.size >= 1024 ? 1024 : 512;
     g_extent = s.extent > 1 ? s.extent : 60.0f;
-    g_bias = s.bias > 0 ? s.bias : 0.002f;
+    g_biasM = s.bias > 0 ? s.bias : kDefaultBiasM;
+    g_bias = g_biasM / kDepth;
     float toSun[3], col[3], amb[3];
     if (!SceneSun(toSun, col, amb) || toSun[1] < 0.05f) { g_why = "no sun above the horizon"; return; }
     MmlRenderCamera cam{};
@@ -240,7 +266,9 @@ void Pass(IDirect3DDevice9 *d) {
     d->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
     d->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);
     d->SetRenderState(D3DRS_FOGENABLE, FALSE);
-    d->SetRenderState(D3DRS_COLORWRITEENABLE, D3DCOLORWRITEENABLE_RED);
+    // every channel written: with only red written (the map is R32F), Direct3D 11 saw the map as cleared and none of
+    // the draws (an NVIDIA RTX 3070 under dxwrapper's 9Ex, measured), while Direct3D 9 saw them
+    d->SetRenderState(D3DRS_COLORWRITEENABLE, 0xF);
     d->SetRenderState(D3DRS_STENCILENABLE, FALSE);
     d->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
     g_casters = 0;
@@ -377,12 +405,25 @@ void ShadowsConstants(const void *visual, float *c) {
 
 IDirect3DBaseTexture9 *ShadowsTexture() { return g_valid ? g_map : nullptr; }
 
+bool ShadowsShared(void **handle, unsigned *made, float viewProj[16], float info[4]) {
+    if (!g_valid || !g_shared) return false;
+    *handle = g_shared;
+    *made = g_mapMade;
+    memcpy(viewProj, g_lightVP, 64);
+    info[0] = 1;
+    info[1] = 1.0f / static_cast<float>(g_size);
+    info[2] = g_bias;
+    info[3] = static_cast<float>(g_size);
+    return true;
+}
+
 void ShadowsState(std::string *json) {
-    char b[400];
+    char b[600];
     snprintf(b, sizeof b,
-             "{\"wanted\":%s,\"drawn\":%s,\"size\":%d,\"extent\":%.1f,\"bias\":%.4f,\"casters\":%u,\"triangles\":%u,\"pass_ms\":%.2f,"
+             "{\"shared\":%s,\"wanted\":%s,\"drawn\":%s,\"size\":%d,\"extent\":%.1f,\"bias\":%.4f,\"casters\":%u,\"triangles\":%u,\"pass_ms\":%.2f,"
              "\"meshes_uploaded\":%zu,\"lights\":%zu,\"sun\":%s,\"why\":\"%s\"}",
-             g_wants.empty() ? "false" : "true", g_valid ? "true" : "false", g_size, g_extent, g_bias, g_casters, g_triangles, g_passMs,
+             g_shared ? "true" : "false",
+             g_wants.empty() ? "false" : "true", g_valid ? "true" : "false", g_size, g_extent, g_biasM, g_casters, g_triangles, g_passMs,
              g_buffers.size(), g_lights.size(), g_haveSun ? "true" : "false",
              !g_wants.empty() && !g_valid && g_why.empty() ? "no frame of the mission's world drawn since" : g_why.c_str());
     *json = b;

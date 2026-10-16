@@ -118,6 +118,11 @@ known here: **pet1kk** (his notes only), **game** (also checked in our running 1
   0x18): the control `id` cloned by its kind's clone, put right under it with `newId`; `growId` grows by its height
   and the three others move down by it. The game grows its profile and save lists with it; the loader adds mods'
   items with it (the pause menu `gamemenu`: window 1, rows 102, 103, 108, 111 as `item`s, 30 high).
+- **game** Options is `optionsb` in both builds (the string at `0x5E0900` in 1.2): window 2, rows 100 Controls, 101
+  Audio and Video, 400 Back (`butt` in 1.2, `item` in 1.0); the loader's Mods row goes under 101 (host/panel.cpp).
+  Audio and Video is `optionsa` (its sliders `scrl` in 1.0, `slid` in 1.2). A window's controls start about 44 units
+  under its top (the title's band), and the game's pages leave about 25 under their last row (seen on both builds'
+  pages, 2026-10-17).
 
 ### 1.0's menus (2026-10-14; st0rm94's annotated 1.0 decompile and its `structs/gui_*.md`, each address read in 1.0's code; used by `host/menus10.cpp`)
 

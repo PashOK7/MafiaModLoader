@@ -1380,3 +1380,26 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Not found**: what draws the headlights' cone on the street (Known gaps).
 - **Tests**: offline ALL PASSED (the shadows asked for and let go by a mod and the bridge; a shader using
   `mml_Shadow` and `mml_GameLight` compiled).
+
+## 2026-10-17: the sun's shadow map in the frame's passes, god rays, the tuning panel
+
+- **The owner's demonstration**: god rays. A first try marched the haze inside the shaders on the game's draws; the
+  owner asked for the proper way every time ("the correct, thought-out, optimised variant"), so it became a pass of
+  the graphics bridge over the frame's depth: one march a pixel at half size, not one per drawn surface.
+- **Made**: the map shared from Direct3D 9Ex and opened by the bridge (t2, its matrix in `cbuffer MmlFrame`,
+  frame.hlsli `SunLit`, `SunShadow`); the map drawn with a slope-scaled bias, the bias in metres;
+  `mods/examples/sun_shafts` (single scattering, Henyey-Greenstein normalised, Beer-Lambert, a soft curve over LDR,
+  a depth-aware blur and upsample); host/panel.cpp, the tuning panel (item 18): Options > Mods, pages from the
+  manifests' `settings`, live changes (config.cpp's in-memory set, the file written once the changes stop).
+- **Measured, not guessed**: Direct3D 11 saw the shared map as only its clear value. A debug view of the map
+  through Direct3D 11 (red where it held 1) showed it empty; the device interfaces were one object (their pointers
+  printed); the cause was the draws' colour write mask (red only): with every channel written, both APIs see it.
+  A first debug view was wrong itself (frac of depth x 4 near 0.5 is 0) and was replaced before drawing conclusions.
+- **Found**: the casters of 7c are not what the game draws (leaves as whole quads, no billboards, no people): the
+  proper way, LS3D drawing the map through an orthographic camera of its own, is in Known gaps with its leads.
+- **Found**: doubles on the game thread come out float-precise where x87 computes them (the panel's rounded values
+  as the nearest floats): the game's Direct3D leaves the FPU at 24 bits. Known gaps (the owner: later).
+- **In both labs** alike: the shadows in the air, the rays, Options > Mods > God rays with the game's sliders, a
+  change seen by the mod at once, Back to the list, the file written.
+- **Tests**: offline ALL PASSED (the panel read from a test mod's manifest: a slider in %, one with a unit, a check
+  box, a choice, a slider with no max left out; panel.open refused with no game).

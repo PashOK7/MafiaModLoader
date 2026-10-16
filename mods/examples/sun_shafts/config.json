@@ -1,0 +1,14 @@
+{
+  // The defaults of sun_shafts' settings (config.set {"mod": "sun_shafts", "key": "density", "value": 0.02}).
+  "on": true,
+  "hotkey": "F7",         // on and off
+  "intensity": 3.0,       // the scattered light's strength (times the sun's colour)
+  "tint": "#FFFFFF",      // its colour over the sun's
+  "density": 0.012,       // the air's: how much it scatters and dims a metre (1/m)
+  "anisotropy": 0.5,      // 0 the air scatters evenly; towards 1 the haze glows mostly looking towards the sun
+  "steps": 32,            // samples along each ray (at half the frame's size)
+  "distance": 100,        // metres a ray goes (the shadow map is made as large)
+  "dimming": 0.4,         // how much the haze dims what lies behind it (0 none, 1 all of its density)
+  "shadow_map": 2048,     // the map's texels a side
+  "debug": false          // true: the part of each ray the sun reaches, in grey (the shadows in the air)
+}

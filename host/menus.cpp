@@ -214,7 +214,14 @@ void CallTramp(void *p) {
     CallArgs *a = static_cast<CallArgs *>(p);
     a->fn(a->id, a->user);
 }
+// An owner whose items and pages are live: a loaded mod, or the loader's own (panel.cpp: the mods' settings).
+bool OwnerAlive(MmlMod *mod) { return LoaderOwned(mod) || ModAlive(mod); }
+
 void Deliver(MmlMod *mod, MmlMenuFn fn, void *user, int id, const std::string &what) {
+    if (LoaderOwned(mod)) {   // the loader's own: its code, called as it is
+        if (fn) fn(id, user);
+        return;
+    }
     if (!mod) {   // the bridge's own: told in the log, kept for menu.items
         HLOG("menu: %s clicked (id %d)", what.c_str(), id);
         g_clicks.push_back({id, what, GetTickCount()});
@@ -268,7 +275,7 @@ void AddItems(uintptr_t menu, LiveMenu *live) {
     std::map<int, int> placed;   // the control an item was asked after -> the item put there last
     for (size_t k = 0; k < g_items.size(); k++) {
         ItemReg reg = g_items[k];
-        if (reg.menu != live->name || (reg.mod && !ModAlive(reg.mod))) continue;
+        if (reg.menu != live->name || (reg.mod && !OwnerAlive(reg.mod))) continue;
         std::vector<uintptr_t> controls = Controls(menu);
         int afterId = placed.count(reg.after) ? placed[reg.after] : reg.after;
         uintptr_t src = 0;
@@ -871,7 +878,7 @@ void MenuDeliver(MmlMod *mod, MmlMenuFn fn, void *user, int id, const std::strin
 std::vector<MenuItemInfo> MenuItemsFor(const std::string &menu) {
     std::vector<MenuItemInfo> out;
     for (const ItemReg &r : g_items)
-        if (r.menu == menu && (!r.mod || ModAlive(r.mod))) out.push_back({r.handle, r.mod, r.menu, r.after, r.text, r.fn, r.user});
+        if (r.menu == menu && (!r.mod || OwnerAlive(r.mod))) out.push_back({r.handle, r.mod, r.menu, r.after, r.text, r.fn, r.user});
     return out;
 }
 bool MenuItemByHandle(int handle, MenuItemInfo *out) {
@@ -929,7 +936,7 @@ void MenusFrame() {
 }
 
 int MenuItemAdd(MmlMod *mod, const char *menu, int afterId, const char *text, MmlMenuFn fn, void *user) {
-    if (!menu || !*menu || !text || !*text || (mod && (!ModAlive(mod) || !fn))) return 0;
+    if (!menu || !*menu || !text || !*text || (mod && (!OwnerAlive(mod) || !fn))) return 0;
     std::string name = Lower(menu);
     if (mod)
         for (ItemReg &r : g_items)
@@ -955,7 +962,7 @@ int MenuItemAdd(MmlMod *mod, const char *menu, int afterId, const char *text, Mm
 }
 
 int MenuPageOpen(MmlMod *mod, const char *name, const MmlMenuControl *controls, int count, MmlMenuFn fn, void *user) {
-    if (!ModAlive(mod) || !fn) return 0;
+    if (!OwnerAlive(mod) || !fn) return 0;
     std::string err;
     if (m10::Known() ? m10::PageOpen(mod, false, name, controls, count, fn, user, &err) != 0 : OpenPage(mod, false, name, controls, count, fn, user, &err) != 0)
         return 1;

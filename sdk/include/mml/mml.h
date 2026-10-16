@@ -310,6 +310,10 @@ typedef struct MmlGfxConstants {
     float fog[4];           /* start, end, density, mode (0 none, 1 exp, 2 exp2, 3 linear) */
     float fog_color[4];     /* w: 1 when on */
     float ambient[4];       /* w: 1 the scene's ambient light */
+    /* the shadow map from the sun (shader_shadows, while a mod wants it): MmlGfxFrame::sun_shadow */
+    float sun_shadow_view_proj[16];   /* the world to the map's clip space (row vectors; x, y -1..1, z 0..1 its depth) */
+    float sun_shadow_info[4];   /* x 1 when the map was drawn for this frame, y one texel (1 / size), z the depth's
+                                   bias, w its size */
 } MmlGfxConstants;
 typedef struct MmlGfxView MmlGfxView;   /* a scene view as the passes get it (below) */
 typedef struct MmlGfxFrame {
@@ -338,6 +342,12 @@ typedef struct MmlGfxFrame {
     int in_view;            /* 0: the frame. A scene view's handle: the pass runs over that view's picture
                                (gfx_pass_views): depth, color, target, width, height, view, proj and the constants are
                                the view's; views and ui are NULL */
+    /* (MML_GFX_HAS(frame, sun_shadow)) */
+    void *sun_shadow;       /* ID3D11ShaderResourceView*: the sun's shadow map (R32_FLOAT, its depth; 1 nothing),
+                               bound to t2, while a mod wants it (shader_shadows) and it was drawn for this frame; else
+                               NULL. Its matrix and size: k->sun_shadow_view_proj, k->sun_shadow_info (frame.hlsli
+                               SunShadow, SunLit). The same map in a scene view's passes (drawn around the frame's
+                               camera) */
 } MmlGfxFrame;
 #define MML_GFX_HAS(f, member) ((size_t)(f)->size >= offsetof(MmlGfxFrame, member) + sizeof((f)->member))
 #define MML_GFX_UI_OFF 0     /* gfx_ui: the 2D pass as the game draws it */
@@ -542,7 +552,8 @@ typedef struct MmlShaderRule {
 typedef struct MmlShadowSettings {
     int size;               /* its texels a side: 512, 1024, 2048 (the default), 4096 */
     float extent;           /* metres from the camera to the map's edge (default 60) */
-    float bias;             /* the depth's bias (default 0.002 of the map's 800 m depth) */
+    float bias;             /* metres along the sun's ray a receiver is taken to be nearer the sun than it is, on top
+                               of the slope-scaled bias the map is drawn with (0: the default, 0.05) */
 } MmlShadowSettings;
 /* game_files' function: one file's name (as the game opens it) and where it comes from ("a2.dta", "folder", a mod's
    id); return nonzero to stop */
