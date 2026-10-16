@@ -329,7 +329,7 @@ agent. The measuring cases span the range: engine-deep mods (**a ragdoll, shader
 gameplay mods (**fishing, skateboarding, a working airplane, achievements**). None of them is written here, and
 mafia-ragdoll is not ported: it already has a ragdoll (Jolt), water and smoke (a Direct3D 11 bridge, PhysX 2.8.4,
 NVIDIA Flow) on a host of its own, and its code is the reference for what several services below must do
-(`W:\github\mafia-ragdoll\src`, read only). Every service lands with an example mod (`mods/examples`), a section in
+(its `src/`, read only). Every service lands with an example mod (`mods/examples`), a section in
 `docs/MODDING.md` and its offline test, and is seen working in both labs, 1.2 and 1.0, before it is done (the
 builds' decision; AGENTS.md "Builds"). Each item names who needs it (R ragdoll, W water, S smoke,
 V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselves) and its reference.
