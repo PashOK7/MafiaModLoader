@@ -1144,3 +1144,18 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   dropped it when off.
 - **Tests**: offline the five functions and the bridge's refusals with no game. ALL PASSED; check_builds ALL PASSED
   (the rest counters, the matrices' copy in each build's Engine).
+
+## 2026-10-16: interaction (item 15)
+
+- **Read**: the game has no prompt of its own for using things; its help line (G_IndicatorsClass::MissionHelpAdd, the
+  objectives' lines) takes a text id, and the loader already answers ids of its own in the game's text database
+  (menus.cpp, for the selectors' options): a mod's prompt gets one. MissionHelpAdd, ConsoleAddText,
+  CompassSetDestination, RadarAddObject / RemoveObject paired in both builds (`check_builds.py`).
+- **Made** `host/interact.cpp`: zones, use-points (the help line; Action captured by the loader while the player
+  stands in one), timers on the mission's clock; four functions in the C ABI, five bridge methods, four event types.
+- **In the 1.0 lab**: "Fish here: press Action" at the top in the game's font; an Action beside the taxi: USED and no
+  car entered; the point removed, the next Action entered the taxi; a zone entered at 2.46 m of a 2.5 m sphere; a
+  2 s timer fired.
+- **A trap in a test**: MSVC evaluates a call's arguments right to left: two `interact_remove` calls as snprintf's
+  arguments ran in the other order (the test now calls them first).
+- **Tests**: offline the four functions and the bridge with no game. ALL PASSED; check_builds ALL PASSED.

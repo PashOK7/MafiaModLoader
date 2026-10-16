@@ -300,6 +300,23 @@ int Control(const char *, MmlReply *r, void *) {
     return 0;
 }
 
+// Interaction with no game: zones and use-points refused, a timer kept (the mission's clock: it never runs) and
+// removed.
+void KitZone(int, int, void *, void *) {}
+void KitUse(int, void *) {}
+void KitTimer(int, void *) {}
+int Interact(const char *, MmlReply *r, void *) {
+    if (!MML_HAS(H, interact_remove)) { H->reply_error(r, "the loader has no interaction"); return 1; }
+    const float pos[3] = {0, 0, 0};
+    int t = H->timer_add(M, 1000, 0, KitTimer, nullptr);
+    int zone = H->zone_add(M, pos, 3, nullptr, KitZone, nullptr), use = H->use_point_add(M, pos, 2, nullptr, "Fish", KitUse, nullptr);
+    int removed = H->interact_remove(M, t), again = H->interact_remove(M, t);   // (in this order: not as arguments)
+    char out[160];
+    snprintf(out, sizeof out, "{\"zone\":%d,\"use\":%d,\"timer\":%s,\"removed\":%d,\"again\":%d}", zone, use, t > 0 ? "true" : "false", removed, again);
+    H->reply_append(r, out, static_cast<size_t>(-1));
+    return 0;
+}
+
 // People with no game: none, no skeleton, bone_set refused, no player.
 int Humans(const char *, MmlReply *r, void *) {
     if (!MML_HAS(H, human_player)) { H->reply_error(r, "the loader has no human_player"); return 1; }
@@ -366,6 +383,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->command(mod, "geom", "geom_hide, geom_capture with no game (refused), geom_show", Geom, nullptr);
     host->command(mod, "humans", "humans_list, human_skeleton, bone_set, human_player with no game", Humans, nullptr);
     host->command(mod, "props", "prop_create and the rest with no game", Props, nullptr);
+    host->command(mod, "interact", "zone_add, use_point_add, timer_add, interact_remove with no game", Interact, nullptr);
     host->command(mod, "control", "key_capture, action_capture, player_lock, vehicle_hook, vehicle_body with no game", Control, nullptr);
     host->command(mod, "sound", "sound_play and the rest, music_play and the rest with no game", Sound, nullptr);
     host->command(mod, "effects","car_exhaust, exhaust_hook, particle_def(_set) with no game", Effects, nullptr);

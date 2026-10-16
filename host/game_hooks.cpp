@@ -92,6 +92,7 @@ int __fastcall hkMissionTick(void *self, void *edx, int ms) {
     ev.dt = ms > 0 && ms < 200 ? ms / 1000.0f : 1.0f / 60.0f;
     Dispatch(ev);
     ScriptTick(ms);   // the programs of agents and mods, after the mission's own
+    InteractTick(ms);   // the timers on the mission's clock
     return r;
 }
 int __fastcall hkMissionClose(void *self, void *edx) {
@@ -100,6 +101,7 @@ int __fastcall hkMissionClose(void *self, void *edx) {
     PropsMissionClose();    // (the props unlinked and released while their scene is there)
     SoundMissionClose();    // (the 3D sounds, likewise)
     ControlMissionClose();
+    InteractMissionClose();
     SetPaused(false);
     Dispatch(Event(MML_EVENT_MISSION_CLOSE));
     g_missionLoaded = false;
@@ -190,6 +192,7 @@ void Frame() {
         if (menu) SetPaused(true);
     }
     if (g_missionLoaded) HappenFrame();   // (happen.cpp: deaths, vehicles entered and left)
+    if (g_missionLoaded) InteractFrame();   // (interact.cpp: zones crossed, use-points)
     MmlEvent ev = Event(MML_EVENT_FRAME);
     ev.dt = dt;
     Dispatch(ev);

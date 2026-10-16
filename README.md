@@ -40,7 +40,8 @@ One C header, `sdk/include/mml/mml.h`, every function of it in both builds:
 - **The world without a program**: cars and people of any model made, moved, seated, armed; props (any model, not
   an actor) placed in the world or attached to a bone, a car or another prop; sounds in 2D or 3D (on a car, at a
   place) with their pitch and volume changed live, music streamed, the city's music paused; keys and actions
-  kept from the game, the player's control locked, a car's physics replaced by a mod's; the game's own script machine (every
+  kept from the game, the player's control locked, a car's physics replaced by a mod's; zones, use-points with the game's own help line, timers on the
+  mission's clock; the game's own script machine (every
   command the missions have).
 - **Input and menus**: the game's actions by name, keys, hotkeys; items and whole pages in the game's own menus,
   made of its real controls.

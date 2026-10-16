@@ -834,6 +834,12 @@ bool MenuTextsHook() {
     if (!g_textsOk) HWARN("menus: cannot hook the text database (no options for switches and selectors): %s", err.c_str());
     return g_textsOk;
 }
+// A text of the loader's own in the game's text database (UTF-8 in, the game's ANSI kept): its id, 0 when the
+// database is not hooked. The same text again: the same id (interact.cpp's prompts, hud.cpp's help lines).
+uint32_t GameTextId(const std::string &utf8) {
+    if (!MenuTextsHook()) return 0;
+    return TextIds({Ansi(utf8)});
+}
 std::string MenuUtf8(const char *ansi) { return Utf8(ansi); }
 std::string MenuAnsi(const std::string &utf8) { return Ansi(utf8); }
 std::vector<std::string> MenuSplitOptions(const std::string &text) { return SplitOptions(text); }

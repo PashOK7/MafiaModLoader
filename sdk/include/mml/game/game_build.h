@@ -351,6 +351,13 @@ struct ExeBuild {
     // 0x40 after it), into which C_Vehicle::Engine copies vehMatrix and its inverse before its substeps. 1.2 keeps it
     // after vehMatrix's pair, 1.0 at the C_Vehicle's start (both read in each build's Engine).
     int vehMatrixPrev;
+    // The HUD's own lines and marks (host/interact.cpp, host/hud.cpp), thiscall on the HUD (`hud`):
+    // hudHelpAdd, G_IndicatorsClass::MissionHelpAdd(text id) ret 4 -> ms it shows: a line of the game's help (the
+    // objectives' lines at the top, wrapped, 2500 ms + 40 a character); hudConsoleAdd, ConsoleAddText(const char *,
+    // argb) ret 8: a line of the console (top left); hudCompassSet, CompassSetDestination(frame) ret 4: the compass'
+    // target (a frame; null: none); hudRadarAdd, RadarAddObject(frame, argb) ret 8 and hudRadarRemove,
+    // RadarRemoveObject(frame) ret 4: a mark on the radar (the map's corner).
+    uintptr_t hudHelpAdd, hudConsoleAdd, hudCompassSet, hudRadarAdd, hudRadarRemove;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -512,6 +519,8 @@ inline const ExeBuild kExe12 = {
     // the player's control (2026-10-16: PLAYER_LOCKCONTROLS 0x4702C8 calls them at 0x47030B and 0x470324)
     0x595F00, 0x57D310,
     0xDE8,   // (Engine's rep movsd at 0x4E1DC0 and 0x4E1DDD)
+    // the HUD's lines and marks (2026-10-16: st0rm94's names, MafiaOnline's ConsoleAddText contract; rets read)
+    0x5F9A00, 0x5F9D50, 0x5FA020, 0x5FA780, 0x5FA990,
 };
 
 inline const ExeBuild kExe10 = {
@@ -604,6 +613,9 @@ inline const ExeBuild kExe10 = {
     // the player's control (2026-10-16: PLAYER_LOCKCONTROLS 0x5BE0BC calls them at 0x5BE0FF and 0x5BE118)
     0x4CD890, 0x49D870,
     0x68,    // (Engine's rep movsd at 0x52E7AD and 0x52E7CA)
+    // the HUD's lines and marks (2026-10-16: st0rm94's hud_mission_help_add, hud_console_push_message,
+    // hud_compass_set_destination_frame, hud_radar_add_object_with_color, hud_radar_remove_object; the same code)
+    0x54BB20, 0x54BE80, 0x54C150, 0x54C8A0, 0x54CAB0,
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,

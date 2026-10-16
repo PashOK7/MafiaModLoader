@@ -452,6 +452,14 @@ def main(a):
         check('mov byte ptr [ecx + 0x2fc0], al' in ins and 'ret 4' in ins, f'{name} cityMusicPaused writes C_game +0x2FC0, ret 4')
         imm = b'\xd9\x05' + exe['musicVolume'].to_bytes(4, 'little') + b'\xd8\x4c'
         check(bytes(gexe.mem).count(imm) >= 1, f'{name} musicVolume: loaded and multiplied (IShowSetVolume)')
+    # The HUD's lines and marks (host/interact.cpp, host/hud.cpp): each begins as its twin does (the HUD's fields
+    # and globals told apart) and ends with the ret game_build.h gives.
+    for f, ret in (('hudHelpAdd', '4'), ('hudConsoleAdd', '8'), ('hudCompassSet', '4'), ('hudRadarAdd', '8'), ('hudRadarRemove', '4')):
+        mn = lambda g, a: [i.mnemonic for i in list(g.md.disasm(g.at(a - 0x400000, 0x40), a))[:6]]
+        check(mn(g12, e12[f]) == mn(g10, e10[f]), f'{f}: the same first instructions in both builds')
+        for name, (exe, ls, gexe, gls) in builds.items():
+            first = next((i for i in gexe.md.disasm(gexe.at(exe[f] - 0x400000, 0x400), exe[f]) if i.mnemonic == 'ret'), None)
+            check(first is not None and first.op_str == ret, f'{name} {f}: its first ret is ret {ret}')
     # The game's state (host/state.cpp): SetScore writes C_game +0x3640, reads +0x363E, ends with ret 4.
     for name, (exe, ls, gexe, gls) in builds.items():
         sc = [f'{i.mnemonic} {i.op_str}' for i in gexe.md.disasm(gexe.at(exe['gameSetScore'] - 0x400000, 0x30), exe['gameSetScore'])]

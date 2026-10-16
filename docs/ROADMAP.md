@@ -288,6 +288,14 @@ What is done, what comes next and later, and what is known to be missing or wron
   on `events.since` and MCP `wait`. Both builds' addresses checked by `check_builds.py`. The example
   `mods/examples/tally`; seen in the 1.2 and 1.0 labs (the player's shots, his leaving the taxi, a person killed by
   a script, a car blown up with its explosion and the hit it gave the player).
+- **Interaction** (2026-10-16; item 15): `zone_add` (spheres the player crosses, on foot or in his car, in the world
+  or following a frame), `use_point_add` (on foot, a prompt as the game's own help line, G_IndicatorsClass::
+  MissionHelpAdd with a text id of the loader's in the game's database; the game's Action kept from the game there
+  and given to the mod), `timer_add` (the mission's clock), `interact_remove`. `interact.list`, `zone.add`,
+  `use.add`, `timer.add`, `interact.remove`; ZONE_ENTERED, ZONE_LEFT, USED, TIMER in `events.since`. The HUD's
+  functions checked in both builds by `check_builds.py`; seen in the 1.0 lab: the prompt at the top in the game's
+  font, an Action beside the taxi was the mod's (no car entered), the next one, the point removed, entered it; a
+  zone entered, a timer at 2 s.
 - **Control** (2026-10-16; item 14, block 14a): `key_capture` (a key kept from the game: LS3D's keyboard state
   cleared after mods read it), `action_capture` (an action's slots written 0 after the update, the player's values
   kept for `action_held`), `player_lock` (C_player::LockControls and Do_Breath, as PLAYER_LOCKCONTROLS),
@@ -461,7 +469,7 @@ V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselv
     moves him, the game's walking stands aside) and given back; a vehicle's physics replaced by a mod's (a plane's
     flight on a car's or an airplane actor's body: `C_airplane` exists); entering, leaving and seats of a mod's
     vehicle (the game's using-objects).
-15. **Interaction** (F P C). Use-points with the game's own prompt ("Fish" at the water's edge), zones with enter and
+15. *(Done 2026-10-16: see "Done"; what is left: Known gaps.)* **Interaction** (F P C). Use-points with the game's own prompt ("Fish" at the water's edge), zones with enter and
     leave events, timers of the game's clock (they stop with the pause).
 16. **The HUD** (C F P V). Pictures and textures in the 2D layer (an achievement's icon, a plane's instruments:
     drawing has text, lines and rectangles only), notifications in the game's style (its console, `console_addtext`,
@@ -577,6 +585,10 @@ merged, sorted by importance):
   matrix being the camera's backdrop view, bit for bit (it was, every drawing, in both labs). `MML_VIEW_OWN_SECTOR`
   (a camera in another room) was not tried. The first two or three reloads of `rear_mirror` added 2..13 handles each (taken to be
   Direct3D's own warming up: views made and taken back by mode changes added none); then 0.
+- **Interaction** (host/interact.cpp, item 15): the game has no prompt of its own for using things (no "press E"):
+  the help line is the nearest of its own. Zones watch the player only (not other people or cars), as spheres. The
+  help line queues behind the game's own (an objective shown at the same time waits). Not seen in the 1.2 lab yet
+  at the block's commit (with item 16's).
 - **Control** (host/control.cpp, input.cpp, item 14a): **actions of a mod's own in the game's controls menu**
   are not made: the menu's rows are fixed binding slots the profile saves (60 in 1.2); growing them means the
   bindings' vector, the held/pressed arrays and the profile's copy (`G_LoadSaveClass + 0x1F4`), not read yet. A mod

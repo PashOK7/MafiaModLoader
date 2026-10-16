@@ -416,6 +416,23 @@ int H_ActionCapture(MmlMod *m, int slot, int on) { return Alive(m) && ActionCapt
 int H_PlayerLock(MmlMod *m, int on) { return Alive(m) ? PlayerLock(m, on) : 0; }
 int H_VehicleHook(MmlMod *m, MmlVehicleFn fn, void *user) { return Alive(m) ? VehicleHook(m, fn, user) : 0; }
 int H_VehicleBody(MmlMod *m, void *car, MmlVehicleBody *read, const MmlVehicleBody *write) { return Alive(m) ? VehicleBody(car, read, write) : 0; }
+int H_ZoneAdd(MmlMod *m, const float pos[3], float radius, void *frame, MmlZoneFn fn, void *user) {
+    std::string err;
+    int id = Alive(m) && fn ? ZoneAdd(m, pos, radius, frame, fn, user, &err) : 0;
+    if (Alive(m) && !id) Log(MML_LOG_WARN, Who(m), "zone_add: %s", fn ? err.c_str() : "no function");
+    return id;
+}
+int H_UseAdd(MmlMod *m, const float pos[3], float radius, void *frame, const char *prompt, MmlUseFn fn, void *user) {
+    std::string err;
+    int id = Alive(m) && fn ? UseAdd(m, pos, radius, frame, prompt, fn, user, &err) : 0;
+    if (Alive(m) && !id) Log(MML_LOG_WARN, Who(m), "use_point_add: %s", fn ? err.c_str() : "no function");
+    return id;
+}
+int H_TimerAdd(MmlMod *m, int ms, int repeat, MmlTimerFn fn, void *user) {
+    std::string err;
+    return Alive(m) && fn ? TimerAdd(m, ms, repeat != 0, fn, user, &err) : 0;
+}
+int H_InteractRemove(MmlMod *m, int id) { return Alive(m) && InteractRemove(m, id) ? 1 : 0; }
 int H_WorldShapes(MmlMod *m, const float lo[3], const float hi[3], uint32_t what, MmlShape *out, int max) {
     return Alive(m) && lo && hi ? WorldShapes(lo, hi, what, out, out ? max : 0) : 0;
 }
@@ -596,6 +613,7 @@ bool UnloadMod(ModEntry *e, const char *why) {
     PropsModGone(m);
     SoundModGone(m);
     ControlModGone(m);
+    InteractModGone(m);
     CapturesRemove(m);
     ConfigForget(m);
     g_subs.erase(std::remove_if(g_subs.begin(), g_subs.end(), [&](const Sub &s) { return s.mod == m; }), g_subs.end());
@@ -899,6 +917,10 @@ void ModsInit() {
     g_host.player_lock = H_PlayerLock;
     g_host.vehicle_hook = H_VehicleHook;
     g_host.vehicle_body = H_VehicleBody;
+    g_host.zone_add = H_ZoneAdd;
+    g_host.use_point_add = H_UseAdd;
+    g_host.timer_add = H_TimerAdd;
+    g_host.interact_remove = H_InteractRemove;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();
@@ -997,6 +1019,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (PropsMethod(method, paramsJson, reply, &ok)) return ok;
     if (SoundMethod(method, paramsJson, reply, &ok)) return ok;
     if (ControlMethod(method, paramsJson, reply, &ok)) return ok;
+    if (InteractMethod(method, paramsJson, reply, &ok)) return ok;
     if (WorldMethod(method, paramsJson, reply, &ok)) return ok;
     if (FilesMethod(method, paramsJson, reply, &ok)) return ok;
     if (RenderMethod(method, paramsJson, reply, &ok)) return ok;

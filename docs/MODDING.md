@@ -525,6 +525,31 @@ H->vehicle_hook(M, OnStep, NULL);
 - `mods/examples/hover` (not enabled by default): F8 and the player's car floats `height` metres over the ground
   under it (the game's own ray), Accelerate and Brake push it, the steering turns it; F8 again and it drops back.
 
+### Interaction: zones, use-points, timers
+
+```c
+void OnZone(int zone, int inside, void *player, void *user) { /* 1 entered, 0 left (on foot or in his car) */ }
+void OnUse(int point, void *user) { /* he pressed Action in it */ }
+void OnTimer(int timer, void *user) { /* the mission's time went by */ }
+const float dock[3] = {-1598.5f, -6.2f, -30.8f};
+H->zone_add(M, dock, 10, NULL, OnZone, NULL);
+H->use_point_add(M, dock, 2, NULL, "Fish here: press Action", OnUse, NULL);
+H->timer_add(M, 5000, 0, OnTimer, NULL);          /* once, 5 s of the mission's clock (the pause stands it still) */
+```
+
+- **Zones** are spheres in the world, or following a frame (`frame`: a bone, an actor's model, a prop; `pos` in
+  its space); the player is in one when his model is (in a car: the car's place).
+- **Use-points** are zones he stands in on foot, with a prompt shown as **the game's own help line** (the line the
+  objectives use, top centre, in its font: the loader gives the text an id in the game's text database), shown
+  again while he stays. There the game's `Action` is the mod's: pressed, the mod's function is called and the game
+  does not also act (he does not get into the car beside him). Elsewhere `Action` is the game's.
+- **Timers** run on the mission's clock (`MML_EVENT_MISSION_TICK`'s time): they stand while the game is paused or
+  loads. `repeat` calls again every `ms`.
+- `interact_remove` takes any of them; a mod's go with its unload, every one with the mission.
+- `call interact.list`, `zone.add {"at" | "on", "bone", "pos", "radius"}`, `use.add {..., "prompt"}`, `timer.add
+  {"ms", "repeat"}`, `interact.remove {"id" | "all"}`; the crossings, uses and timers of the bridge's go to
+  `events.since` (`ZONE_ENTERED`, `ZONE_LEFT`, `USED`, `TIMER`) and MCP `wait`.
+
 ### What happens (shots, explosions, deaths, vehicles)
 
 | Event | When | `actor` | more |

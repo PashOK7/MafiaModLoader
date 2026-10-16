@@ -69,6 +69,11 @@ Taps can also start with the game, before its first frame: `"taps": ["5409D0 n=4
 | `music.game` | `on` (false: the game's city music faded out and kept off) | `city_music` |
 | `player.lock` | `on` (default true) | the player's own control locked (the scripts' PLAYER_LOCKCONTROLS) or given back: `locked` |
 | `vehicle.body` | `car` (`"car"` default, `"0x..."`), and to write: `pos`, `velocity`, `turn` ([x, y, z]) | the car's body: `pos`, `velocity`, `turn`, `forward`, `right`, `up` |
+| `interact.list` | | `items` (each `id`, `kind` zone, use or timer, `by`; a zone's and a use-point's `at`, `radius`, `inside`, `prompt`; a timer's `ms`, `left`, `repeat`, `fired`), `player`, `on_foot`, `action_kept` |
+| `zone.add` | `at` [x, y, z] (default: where the player is), or `on` an actor and `bone`, `pos`; `radius` (3) | `id`, `at`: the player's crossings go to `events.since` (ZONE_ENTERED, ZONE_LEFT) |
+| `use.add` | as `zone.add`, `radius` (2), `prompt` (the game's help line shown while he is in it) | `id`, `at`: an Action pressed there goes to `events.since` (USED) |
+| `timer.add` | `ms`, `repeat` | `id`: TIMER in `events.since` after ms of the mission's time |
+| `interact.remove` | `id` or `all` (the bridge's) | removed |
 | `control.state` | | `lock_known`, `locked`, `locked_by`, `vehicle_hook` (a mod or `none`), `engine` (the step's hook), `steps`, `skipped` (steps a mod made), `faults` |
 | `lights.list` | `type` (`point`, `spot`, `directional`, `ambient`, `fog`), `all` (the lights that are off too), `max` (100), `rescan` | the scene's light frames: `count`, `kinds`, `lights` (`light`, `name`, `type`, `on`, `color`, `power`, `range`, `cone`, `pos`, `dir`, `sectors`), `sun` (`to_sun`, `color`, `ambient`) |
 | `light.set` | `light` (from `lights.list`), `color`, `power`, `range` ([near, far]), `on` | the light changed through LS3D's setters; the light after |

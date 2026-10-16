@@ -653,7 +653,8 @@ void CapturesRemove(MmlMod *mod) {
 }
 json CapturesJson() {
     json out = json::array();
-    for (const Capture &c : g_captures) out.push_back({{"by", c.mod ? ModIdOf(c.mod) : "bridge"}, {c.key ? "key" : "slot", c.code}});
+    for (const Capture &c : g_captures)
+        out.push_back({{"by", c.mod == kLoaderOwner ? "loader" : c.mod ? ModIdOf(c.mod) : "bridge"}, {c.key ? "key" : "slot", c.code}});
     return out;
 }
 

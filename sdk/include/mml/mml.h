@@ -543,6 +543,11 @@ typedef struct MmlVehicleStep {
 /* Return 1: the game's physics skipped for this car's step, `body` is where the car is after it; 0: the game steps. */
 typedef int (*MmlVehicleFn)(MmlVehicleStep *step, void *user);
 
+/* Interaction (zone_add, use_point_add, timer_add below). inside: 1 entered, 0 left; actor: the player. */
+typedef void (*MmlZoneFn)(int zone, int inside, void *actor, void *user);
+typedef void (*MmlUseFn)(int point, void *user);
+typedef void (*MmlTimerFn)(int timer, void *user);
+
 /* The frame's measures (frame_stats below): the frames Present to Present, the last 600 of them. */
 typedef struct MmlFrameStats {
     uint32_t size;
@@ -948,6 +953,18 @@ typedef struct MmlHost {
     int (*vehicle_hook)(MmlMod *mod, MmlVehicleFn fn, void *user);
     /* a car's body read (read, may be NULL) and/or written (write, may be NULL) now */
     int (*vehicle_body)(MmlMod *mod, void *car, MmlVehicleBody *read, const MmlVehicleBody *write);
+
+    /* ---- interaction (both builds; docs/MODDING.md "Interaction"). zone_add: a sphere (pos in the world, or in a
+     * frame's space when frame is given: it follows the frame) the player enters and leaves, on foot or in his car:
+     * fn at each crossing (game thread, a frame's). use_point_add: the same on foot, with a prompt shown as the
+     * game's own help line (UTF-8; NULL: none) while he is in it; there the game's "Action" is the mod's (fn when
+     * it is pressed), not the game's. timer_add: fn after ms of the mission's time (it stands while the game is
+     * paused or loads), again every ms when repeat. Each returns its id (0: refused, the log says why);
+     * interact_remove takes any of them away. A mod's go with its unload, every one with the mission's close. */
+    int (*zone_add)(MmlMod *mod, const float pos[3], float radius, void *frame, MmlZoneFn fn, void *user);
+    int (*use_point_add)(MmlMod *mod, const float pos[3], float radius, void *frame, const char *prompt, MmlUseFn fn, void *user);
+    int (*timer_add)(MmlMod *mod, int ms, int repeat, MmlTimerFn fn, void *user);
+    int (*interact_remove)(MmlMod *mod, int id);
 } MmlHost;
 
 #define MML_FILE_GAME 1              /* file_read: the game's own file, not a mod's of the same name */

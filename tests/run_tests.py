@@ -845,6 +845,13 @@ def main():
         r = b.call('kit.props')
         check('prop_create, prop_place, prop_attach, prop_show, prop_remove, actor_frame, frame_world with no game: none',
               r['ok'] and r['result'] == {'create': 0, 'place': 0, 'attach': 0, 'show': 0, 'remove': 0, 'actor_frame': 0, 'frame_world': 0}, r)
+        r = b.call('kit.interact')
+        check('zone_add and use_point_add with no game: refused; a timer kept, removed once',
+              r['ok'] and r['result'] == {'zone': 0, 'use': 0, 'timer': True, 'removed': 1, 'again': 0}, r)
+        r = b.call('interact.list')
+        check('interact.list with no game: nothing', r['ok'] and r['result']['items'] == [], r)
+        r = b.call('zone.add', {'at': [0, 0, 0]})
+        check('zone.add with no game: an error, saying why', not r['ok'] and 'no game' in str(r), r)
         r = b.call('kit.control')
         check('key_capture, action_capture, player_lock, vehicle_hook, vehicle_body with no game: none (letting a hook go: done)',
               r['ok'] and r['result'] == {'key': 0, 'action': 0, 'lock': 0, 'hook': 0, 'unhook': 1, 'body': 0}, r)
