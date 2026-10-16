@@ -430,10 +430,11 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
 2. *(Done 2026-10-16.)* People and animations (item 6's rest: animations played and blended, getting up, traffic pedestrians' hits,
    1.0's fields).
 3. The events still missing (item 7's rest: what a bullet struck, a car striking a person or a thing, falls, items
-   picked up, money, objectives, a mission won or failed).
+   picked up, money). No "mission won or failed" and no objectives: the story is linear, a mission's script loads
+   the next one when it is done (CHANGE_MISSION: MISSION_CLOSE, MISSION_OPEN already tell it), a failure is the
+   player's death (HUMAN_DIED), and the objectives are texts the scripts show (`mission_objectives`), read in them.
 4. A mod's own items in the inventory (item 10's rest).
-5. The statistics and the profile's progress (item 10's rest: kills, cars stolen, distance, chapters, unlocks;
-   the mission's objectives and outcome).
+5. The statistics and the profile's progress (item 10's rest: kills, cars stolen, distance, chapters, unlocks).
 6. The world and its geometry (item 8's rest: the water's height, each model's file, the drawn triangles, cars'
    meshes, the `.4ds` index; item 12's rest: a prop's collision shape and animations; zones for people and cars).
 7. The camera and control (item 9's rest: the game's own camera logic; item 14's rest: a mod's actions in the
@@ -480,8 +481,7 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
    bullets, getting up and trams (zeros today). Reference: the host's `listHumans`, `ragdoll.cpp` (`PoseSnap`),
    `getup.cpp`, `hits.cpp`; the scripts' `human_playanim`, `model_playanim`.
 7. *(7a done 2026-10-16: shots, explosions, cars blown up, deaths with their killer, vehicles entered and left; see
-   "Done". Left: what a bullet struck, a car striking a person or a thing, falls, items, money, objectives, a
-   mission won or failed.)* **What happens, as events** (R W S C). A bullet's path and what it struck (the game's shot queue, `NewShoot`
+   "Done". Left: what a bullet struck, a car striking a person or a thing, falls, items, money.)* **What happens, as events** (R W S C). A bullet's path and what it struck (the game's shot queue, `NewShoot`
    0x5A84A0), explosions (place, radius, force), a car striking a person or a thing, falls, deaths with who killed
    whom, a car entered, left or stolen, an item picked up, money changed, a mission's objective done, the mission
    won or failed: today only a hit on a `C_human` and the missions' opening and closing are told. Reference:
@@ -503,7 +503,7 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
    the screen and a screen point to a ray (markers, aiming). Reference: `freecam.cpp`, `ragcam.cpp`,
    `scene_camera.cpp`.
 10. *(10a done 2026-10-16: the freeride's money, health, the inventory and its rounds, items taken; see "Done".
-    Left: the mission's objectives and outcome, the statistics, the profile's progress, a mod's own items; Known
+    Left: the statistics, the profile's progress, a mod's own items; Known
     gaps.)* **The game's state and progress** (C F P). Money, health, the inventory and ammo (read and changed), the
     mission's objectives and its outcome, the game's statistics (kills, cars stolen, distance), the profile's
     progress (chapters, freeride unlocks); a mod's own items in the items' table (a fishing rod, a fish).
@@ -700,10 +700,8 @@ merged, sorted by importance):
   `tables\particles.def`, the weather's parameters.
 - **The game's state** (host/state.cpp, item 10a): the money is the freeride's only (the story keeps none); health
   written does not pass the game's hit (no wound, no sound), and a death is not written. Not done of item 10: the
-  mission's objectives (the scripts' `mission_objectives` shows a text; what is current was not looked for), the
-  mission's outcome (failed or done: only MISSION_CLOSED today), the game's statistics, the profile's progress
-  (chapters, the freeride's unlocks), a mod's own items in the items' table. The owner may know where the game
-  keeps the objectives and the statistics.
+  game's statistics, the profile's progress (chapters, the freeride's unlocks), a mod's own items in the items'
+  table. (A mission's objectives and outcome were dropped: the story is linear, see "The order of work".)
 - **Questions to the world** (host/collide.cpp, item 8a): the static mask is 0 (every primitive the game does not
   always pass, 0x20): the bits the bullets pass besides (0x200000 half the time, 0x400000) are not named. The water's
   height is not answered: the river's drawn plane (y -9.99) is not in the collision the rays were cast at, and where
