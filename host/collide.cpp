@@ -19,7 +19,9 @@
 //     kind (0x40 a box, 0x42, 0x44 spheres), [2] its class bits (0x100 a person, 0x200 a car), [4..6] its centre,
 //     [7] its bounding radius, [9..11] local min, [12..14] local max, [15] -> its world matrix, [17] its owner.
 //
-// Bridge methods (game thread): world.ray, world.sweep, world.ground, world.near, world.shapes.
+// The water: the static faces of the water's surfaces under a point (WorldWater).
+//
+// Bridge methods (game thread): world.ray, world.sweep, world.ground, world.water, world.near, world.shapes.
 #include "host.h"
 #include <algorithm>
 #include <cmath>
@@ -470,6 +472,39 @@ bool Ends(const json &p, V3 *from, V3 *to, void **ignore, std::string *err) {
 
 } // namespace
 
+// The water under a point: rays down the static world, from 2 m above it, each one going on below the face the last
+// one met, until a face of a water surface (31 deep, 44 shallow; materials.def: what the game's walk and its cars
+// test) or 200 m; the water's bed the next face under it within 100 m.
+int WorldWater(const float at[3], MmlWater *out) {
+    if (!out || out->size < offsetof(MmlWater, prim) + sizeof out->prim) return 0;
+    V3 from{at[0], at[1] + 2.0f, at[2]};
+    const float bottom = at[1] - 200.0f;
+    bool covered = false;
+    for (int i = 0; i < 32 && from.y > bottom; i++) {
+        MmlHit h{};
+        std::string why;
+        if (!Ray(from, V3{from.x, bottom, from.z}, MML_WORLD_STATIC, nullptr, &h, &why)) return 0;
+        int s = static_cast<int>(h.flags >> 24);
+        if (s == 31 || s == 44) {
+            MmlWater w{};
+            w.size = out->size;
+            w.height = h.pos[1];
+            w.surface = s;
+            w.covered = covered ? 1 : 0;
+            w.prim = h.prim;
+            w.depth = -1;
+            MmlHit b{};
+            V3 under{from.x, h.pos[1] - 0.01f, from.z};
+            if (Ray(under, under - V3{0, 100, 0}, MML_WORLD_STATIC, nullptr, &b, &why)) w.depth = h.pos[1] - b.pos[1];
+            std::memcpy(out, &w, std::min<size_t>(out->size, sizeof w));
+            return 1;
+        }
+        covered = true;
+        from.y = h.pos[1] - 0.01f;
+    }
+    return 0;
+}
+
 int WorldRay(const float from[3], const float to[3], uint32_t what, void *ignore, MmlHit *hit) {
     std::string why;
     MmlHit h{};
@@ -495,7 +530,9 @@ int WorldShapes(const float lo[3], const float hi[3], uint32_t what, MmlShape *o
 }
 
 bool CollideMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok) {
-    if (method != "world.ray" && method != "world.sweep" && method != "world.ground" && method != "world.near" && method != "world.shapes") return false;
+    if (method != "world.ray" && method != "world.sweep" && method != "world.ground" && method != "world.near" && method != "world.shapes" &&
+        method != "world.water")
+        return false;
     *ok = false;
     json p = json::parse(paramsJson.empty() ? "null" : paramsJson, nullptr, false);
     if (!p.is_object()) p = json::object();
@@ -534,6 +571,19 @@ bool CollideMethod(const std::string &method, const std::string &paramsJson, std
                 out["at"] = Arr(at);
                 *reply = dump(out);
             }
+        } else if (method == "world.water") {
+            V3 at{};
+            json a = p.contains("at") ? p["at"] : json("player");
+            if (!Point(a, 0, &at, nullptr, &err)) { *reply = "at: " + err; return true; }
+            if (!Known() || !game::Mission() || !StaticGrid()) { *reply = "world.water: no mission (no collision loaded)"; return true; }
+            MmlWater w{};
+            w.size = sizeof w;
+            float f[3] = {at.x, at.y, at.z};
+            if (!WorldWater(f, &w)) *reply = dump({{"water", false}, {"at", Arr(at)}});
+            else
+                *reply = dump({{"water", true}, {"at", Arr(at)}, {"height", std::round(w.height * 1000) / 1000}, {"surface", w.surface},
+                               {"deep", w.surface == 31}, {"depth", std::round(w.depth * 1000) / 1000}, {"covered", w.covered != 0},
+                               {"below", std::round((w.height - at.y) * 1000) / 1000}, {"prim", HexOf(w.prim)}});
         } else if (method == "world.near") {
             V3 at{};
             json a = p.contains("at") ? p["at"] : json("player");

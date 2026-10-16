@@ -404,6 +404,20 @@ int Stats(const char *, MmlReply *r, void *) {
     return 0;
 }
 
+// The water and zone_watch with no game: none, refused.
+int Water(const char *, MmlReply *r, void *) {
+    if (!MML_HAS(H, zone_watch)) { H->reply_error(r, "the loader has no world_water"); return 1; }
+    const float at[3] = {0, 0, 0};
+    MmlWater w{};
+    w.size = sizeof w;
+    w.height = 7;
+    int water = H->world_water(M, at, &w), watch = H->zone_watch(M, 12345, MML_ZONE_PEOPLE, nullptr);
+    char out[120];
+    snprintf(out, sizeof out, "{\"water\":%d,\"untouched\":%d,\"watch\":%d}", water, w.height == 7 ? 1 : 0, watch);
+    H->reply_append(r, out, static_cast<size_t>(-1));
+    return 0;
+}
+
 // People with no game: none, no skeleton, bone_set refused, no player.
 int Humans(const char *, MmlReply *r, void *) {
     if (!MML_HAS(H, human_player)) { H->reply_error(r, "the loader has no human_player"); return 1; }
@@ -476,6 +490,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->command(mod, "anims", "human_anim_play and the rest, human_get_up with no game", Anims, nullptr);
     host->command(mod, "items", "item_define, item_find with no game", Items, nullptr);
     host->command(mod, "stats", "stats_get, profile_progress, profile_saves with no game", Stats, nullptr);
+    host->command(mod, "water", "world_water, zone_watch with no game", Water, nullptr);
     host->command(mod, "control", "key_capture, action_capture, player_lock, vehicle_hook, vehicle_body with no game", Control, nullptr);
     host->command(mod, "sound", "sound_play and the rest, music_play and the rest with no game", Sound, nullptr);
     host->command(mod, "effects","car_exhaust, exhaust_hook, particle_def(_set) with no game", Effects, nullptr);

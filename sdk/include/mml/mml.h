@@ -449,6 +449,15 @@ typedef struct MmlHit {
     uint32_t classes;       /* a moving object's class bits (0x100 a person, 0x200 a car), 0 for the static world */
     const void *prim;       /* the game's primitive or object */
 } MmlHit;
+typedef struct MmlWater {
+    uint32_t size;          /* sizeof(MmlWater) */
+    float height;           /* the water's surface (y) there */
+    int surface;            /* 31: deep water (the river, the sea: deadly to a person on foot and to a car's crew), 44:
+                               shallow water */
+    float depth;            /* metres from the surface down to the next static face (the bed), -1: none within 100 m */
+    int covered;            /* 1: something of the static world between the point and the water (a bridge, a pier) */
+    const void *prim;       /* the water's face */
+} MmlWater;
 enum { MML_SHAPE_TRIANGLE = 1, MML_SHAPE_BOX = 2, MML_SHAPE_SPHERE = 3, MML_SHAPE_POLE = 4 };
 typedef struct MmlShape {
     uint32_t kind;          /* MML_SHAPE_* */
@@ -644,7 +653,8 @@ typedef struct MmlVehicleStep {
 /* Return 1: the game's physics skipped for this car's step, `body` is where the car is after it; 0: the game steps. */
 typedef int (*MmlVehicleFn)(MmlVehicleStep *step, void *user);
 
-/* Interaction (zone_add, use_point_add, timer_add below). inside: 1 entered, 0 left; actor: the player. */
+/* Interaction (zone_add, use_point_add, timer_add below). inside: 1 entered, 0 left; actor: who crossed (the player,
+ * or one zone_watch watches). */
 typedef void (*MmlZoneFn)(int zone, int inside, void *actor, void *user);
 typedef void (*MmlUseFn)(int point, void *user);
 typedef void (*MmlTimerFn)(int timer, void *user);
@@ -1171,7 +1181,22 @@ typedef struct MmlHost {
     int (*stats_get)(MmlMod *mod, int scope, MmlStats *out);
     int (*profile_progress)(MmlMod *mod, MmlProgress *out);
     int (*profile_saves)(MmlMod *mod, int *slots, int max);
+
+    /* ---- the water, zones for everyone (both builds; docs/MODDING.md "Questions to the world", "Interaction").
+     * world_water: the game's water under a point (x, z; looked for down from 2 m above at's y): the static world's
+     * faces of the water's surfaces (31 the river and the sea: deadly, 44 shallow water a car drives through), as
+     * the game finds them under a person and a car. 1: found, filled; 0: none within 200 m down (or no mission).
+     * zone_watch: who a zone watches (zone_add: the player): MML_ZONE_PLAYER, _PEOPLE (every person the loader knows,
+     * the player too), _CARS (every car), _ACTOR (that actor alone); the zone's function is told of each one's
+     * crossing with that actor. 1: done. Game thread. */
+    int (*world_water)(MmlMod *mod, const float at[3], MmlWater *out);
+    int (*zone_watch)(MmlMod *mod, int zone, uint32_t who, void *actor);
 } MmlHost;
+
+#define MML_ZONE_PLAYER 0x1u
+#define MML_ZONE_PEOPLE 0x2u
+#define MML_ZONE_CARS   0x4u
+#define MML_ZONE_ACTOR  0x8u
 
 /* predmety.def's flags (MmlItemDef.flags; tables\predmety.def's +0x20 word, read in the game's code) */
 #define MML_ITEM_MELEE      0x4u        /* a melee weapon (struck with) */

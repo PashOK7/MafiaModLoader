@@ -72,7 +72,7 @@ coordinates), `call input.text {"text": "Tommy"}` types. **In the world**: `spaw
 `{"human": "Paulie", "in": "car"}` makes a car or a person of any model (the game's own functions), `teleport {actor,
 to}` moves one, `give {actor, item: "Thompson 1928"}` arms by name (`call world.cars`, `world.items` list the names;
 `world.seat`, `world.remove`). **Ask the world**: `call world.ray {"from": "camera"}` (what the crosshair looks at),
-`world.ground {"at"}`, `world.near {"radius"}`, `world.shapes` (the game's own collision tests and grids).
+`world.ground {"at"}`, `world.water {"at"}`, `world.near {"radius"}`, `world.shapes` (the game's own collision tests and grids).
 **The game's state**: `call state.money {"set": 500}` (the freeride's money, the HUD shows it), `human.health
 {"set"}`, `human.items`, `human.ammo {"slot", "loaded", "reserve"}`, `human.take {"item"}`, a mod's own items `items.define {"name", "label", "like"}`, `stats.state`, `profile.progress`. **People**:
 `humans.list`, `human.skeleton {actor}`, `human.pose {actor, bones, ms}`, `human.anim {actor, play | stop | replace}`, `human.anim_state`, `human.get_up {actor, blend_ms}`, `human.anims {query}`. **The scene's lights**: `lights.list`,
@@ -81,7 +81,7 @@ to}` moves one, `give {actor, item: "Thompson 1928"}` arms by name (`call world.
 "th_1.wav", "on": "car", "loop": true}` (3D on a car), `sound.set {sound, volume, pitch}`, `music.play {"file": "13 -
 Game Over.ogg"}`, `music.game {"on": false}`; nobody hears them: check `sounds.list` (`playing`, `ms`). **Control**: `input.capture {"action": "Accelerate"}`
 (the game reads 0), `player.lock {"on": true}`, `vehicle.body {"car"}`, `control.state`. **Interaction**: `use.add {"label": "Fish here"}` (at the
-player), `zone.add {"at", "radius"}`, `timer.add {"ms"}`, then `wait {"types": "USED,ZONE_ENTERED,TIMER"}`.
+player), `zone.add {"at", "radius", "who"}`, `timer.add {"ms"}`, then `wait {"types": "USED,ZONE_ENTERED,TIMER"}`.
 **The HUD**: `hud.marker {"on": "car", "label": "Taxi", "compass": true}` (on the screen, at its edge when off it, the
 compass pointing; `"at"` a place), `hud.console {"text"}`, `hud.help {"text"}`, `draw.picture {"file": "2sight.bmp",
 "alpha": "2sight+.bmp"}` (the game's `maps\` or a mod's `files\Maps\`), `hud.list`. **Saves**: `save.state`,

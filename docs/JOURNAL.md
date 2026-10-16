@@ -1299,3 +1299,14 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Not found**: a car stolen (Known gaps).
 - **In both labs** alike (ROADMAP "Done").
 - **Tests**: offline ALL PASSED; check_builds ALL PASSED.
+
+## 2026-10-16: the water, zones for people and cars (block 6a of the order)
+
+- **Measured**: the city's river is in the static collision after all (a face of surface 31 at y -9.99), lying
+  under the whole city; the gap written at 8a ("not in the collision") was wrong: the rays then were cast where the
+  ground covers it. materials.def: 31 deadly water, 44 shallow, 40 and 41 death volumes.
+- **Made**: `world_water` (host/collide.cpp: rays down going on below what covers the water, the bed under it),
+  `zone_watch` (host/interact.cpp: people, cars, one actor; the crossings with the actor, an actor destroyed inside
+  dropped); `world.water`, `zone.add {who}`.
+- **In both labs** alike (ROADMAP "Done").
+- **Tests**: offline ALL PASSED.

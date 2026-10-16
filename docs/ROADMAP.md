@@ -320,6 +320,13 @@ What is done, what comes next and later, and what is known to be missing or wron
   (chapter 20, 105 saves, "ABCDEFGHIJPR" bonus cars) and the 1.0 lab's "Run" (chapter 6, French save names); a kill
   with the Thompson (and its hits and shots), a fall of 8 m, a crash into a wall, items given, money set; the
   profile's totals kept after a restart, the freeride's game counts back at 0.
+- **The water, zones for everyone** (2026-10-16; items 8 and 15, block 6a of the order): `world_water` (the static
+  world's faces of the water's surfaces 31 and 44 under a point, rays going on below what is above them: its
+  height, the bed, covered), `zone_watch` (a zone watching every person, every car, or one actor; the crossings with
+  the actor, on `events.since` too); `world.water`, `zone.add {who}`. Seen alike in the 1.2 and 1.0 labs: the river
+  by Little Italy's bridge at y -9.99 (surface 31, no bed in the collision; covered under the embankment), the taxi
+  and the player crossing a zone of cars and people, Paulie entering one and leaving it as he fell into the river,
+  a zone watching the taxi alone.
 - **Interaction** (2026-10-16; item 15): `zone_add` (spheres the player crosses, on foot or in his car, in the world
   or following a frame), `use_point_add` (a record of the loader's in the game's own using objects, C_game +
   0x29EC: what Action finds on foot, offered alone or in the game's own choice menu with a label that is a text id
@@ -468,7 +475,8 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
 4. *(Done 2026-10-16.)* A mod's own items in the inventory (item 10's rest).
 5. *(Done 2026-10-16.)* The statistics and the profile's progress (item 10's rest: kills, cars stolen, distance,
    chapters, unlocks).
-6. The world and its geometry (item 8's rest: the water's height, each model's file, the drawn triangles, cars'
+6. *(6a done 2026-10-16: the water's height, zones for people and cars; see "Done".)* The world and its geometry
+   (item 8's rest: the water's height, each model's file, the drawn triangles, cars'
    meshes, the `.4ds` index; item 12's rest: a prop's collision shape and animations; zones for people and cars).
 7. The camera and control (item 9's rest: the game's own camera logic; item 14's rest: a mod's actions in the
    controls menu, another kind of vehicle).
@@ -675,7 +683,8 @@ merged, sorted by importance):
   matrix being the camera's backdrop view, bit for bit (it was, every drawing, in both labs). `MML_VIEW_OWN_SECTOR`
   (a camera in another room) was not tried. The first two or three reloads of `rear_mirror` added 2..13 handles each (taken to be
   Direct3D's own warming up: views made and taken back by mode changes added none); then 0.
-- **Interaction** (host/interact.cpp, item 15): zones watch the player only (not other people or cars), as spheres.
+- **Interaction** (host/interact.cpp, item 15): zones are spheres; the traffic's pedestrians (not C_humans) are not
+  watched by them.
   A use-point is on foot only (the game's using objects are; nothing offers one in a car), its reach a horizontal
   circle with the game's own 1.5 m up or down; the menu's line is the label as it is (no icon, no hint of what
   comes). A label's text id stays for the game's life (one a distinct text: the same label gets the same id).
@@ -735,9 +744,9 @@ merged, sorted by importance):
   game's statistics, the profile's progress (chapters, the freeride's unlocks), a mod's own items in the items'
   table. (A mission's objectives and outcome were dropped: the story is linear, see "The order of work".)
 - **Questions to the world** (host/collide.cpp, item 8a): the static mask is 0 (every primitive the game does not
-  always pass, 0x20): the bits the bullets pass besides (0x200000 half the time, 0x400000) are not named. The water's
-  height is not answered: the river's drawn plane (y -9.99) is not in the collision the rays were cast at, and where
-  the game keeps its water (a car's sinking, a person's drowning) was not looked for (the owner may know where). A
+  always pass, 0x20): the bits the bullets pass besides (0x200000 half the time, 0x400000) are not named. The water
+  (world_water) is the collision's faces of surfaces 31 and 44: shallow water (44) was not met in a test, and the
+  river has no bed in the collision (a mod's own depth is its to choose). A
   traffic pedestrian's objects are owned by the pedestrian system (`actor` is it, not a person), and `world_near`
   lists actors only. Not done of item 8: the file each loaded model came from, the drawn triangles around a point
   cached (geom_capture gives a frame's), cars' meshes posed, an index and parser of the archives' `.4ds`.

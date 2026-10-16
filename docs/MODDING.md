@@ -279,7 +279,7 @@ H->camera_ray(M, 400, 300, o, d);              /* the ray through the screen's m
 - `mods/examples/orbit_cam` (not enabled by default; F8, `orbit_cam.on {"on": true}`): the camera circles the
   player while he is played as usual; a label over his head through `camera_project`.
 
-### Questions to the world (rays, sweeps, the ground, what is near, the collision's shapes)
+### Questions to the world (rays, sweeps, the ground, the water, what is near, the collision's shapes)
 
 ```c
 MmlHit h;
@@ -302,6 +302,11 @@ int k = H->world_shapes(M, lo, hi, MML_WORLD_STATIC, s, 256);  /* triangles, box
 - **`ignore`**: an actor's own objects are passed the game's way (its exclusion list, as a shooter's own body is
   passed by his bullets), and the list is put back after. A ray that starts inside a person does not hit him.
 - **The ground**: a ray straight down with `MML_WORLD_STATIC` (`call world.ground {"at"}` does that).
+- **The water** (`world_water`): the static world's faces of the water's surfaces under a point, as the game finds
+  them under a person and a car (31: the river and the sea, deadly; 44: shallow water a car drives through): its
+  `height`, the `depth` to the bed (the city's river has none in the collision: -1), and `covered` when the static
+  world is between the point and the water. The city's river is one plane under the whole city (y -9.99), so the
+  ground everywhere stands over it, `covered`: open water is the one not covered.
 - **The shapes** (`world_shapes`): what the game keeps in its grids, in the world's space: the static world's
   triangles (normal out of the solid), boxes (centre, half sizes, axes), spheres and poles (vertical cylinders);
   the moving objects' boxes and spheres with their owner. What a physics library builds its world from near a
@@ -311,7 +316,7 @@ int k = H->world_shapes(M, lo, hi, MML_WORLD_STATIC, s, 256);  /* triangles, box
 - `call world.ray {"from": "camera"}` (what the crosshair looks at; `"screen": [x, y]`), `{"from": "player", "to":
   "car"}`, `{"from": [x, y, z], "dir": [x, y, z], "length": 50, "what": "static", "ignore": ""}`; `world.sweep`
   (the same and `radius`), `world.ground {"at"}`, `world.near {"at", "radius", "type"}`, `world.shapes {"at",
-  "radius"}` or `{"lo", "hi"}` (counts by kind, the first `max` shapes).
+  "radius"}` or `{"lo", "hi"}` (counts by kind, the first `max` shapes), `world.water {"at"}`.
 - `mods/examples/probe` (not enabled by default): what the crosshair looks at, the ground under the player, a
   sphere swept ahead of him, the people near him, and the static world's collision around him drawn as lines.
 
@@ -573,7 +578,7 @@ H->vehicle_hook(M, OnStep, NULL);
 ### Interaction: zones, use-points, timers
 
 ```c
-void OnZone(int zone, int inside, void *player, void *user) { /* 1 entered, 0 left (on foot or in his car) */ }
+void OnZone(int zone, int inside, void *actor, void *user) { /* 1 entered, 0 left: the player (on foot or in his car) */ }
 void OnUse(int point, void *user) { /* he took it (Action, or its line in the game's choice menu) */ }
 void OnTimer(int timer, void *user) { /* the mission's time went by */ }
 const float dock[3] = {-1598.5f, -6.2f, -30.8f};
@@ -583,7 +588,10 @@ H->timer_add(M, 5000, 0, OnTimer, NULL);          /* once, 5 s of the mission's 
 ```
 
 - **Zones** are spheres in the world, or following a frame (`frame`: a bone, an actor's model, a prop; `pos` in
-  its space); the player is in one when his model is (in a car: the car's place).
+  its space); the player is in one when his model is (in a car: the car's place). `zone_watch(M, zone,
+  MML_ZONE_PEOPLE | MML_ZONE_CARS, NULL)` makes one watch every person the loader knows (the player too) and every
+  car, or `MML_ZONE_ACTOR` one actor: its function is told each one's crossing with that actor; an actor destroyed
+  inside leaves without a crossing. `call zone.add {"who": "people" | "cars" | "all" | "car" | "0x..."}`.
 - **Use-points** are **the game's own using objects**, what `Action` finds on foot (doors, the cars' seats, a weapon
   on the ground): within `radius` (horizontal; 1.5 m up or down) the game offers it as it offers a door. Alone, his
   `Action` takes it at once; with others near, the game shows its own choice menu ("Pickup/Use": "1. Get in the

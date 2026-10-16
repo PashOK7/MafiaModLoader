@@ -422,6 +422,14 @@ int H_ZoneAdd(MmlMod *m, const float pos[3], float radius, void *frame, MmlZoneF
     if (Alive(m) && !id) Log(MML_LOG_WARN, Who(m), "zone_add: %s", fn ? err.c_str() : "no function");
     return id;
 }
+int H_ZoneWatch(MmlMod *m, int zone, uint32_t who, void *actor) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    if (ZoneWatch(m, zone, who, actor, &err)) return 1;
+    Log(MML_LOG_WARN, Who(m), "zone_watch: %s", err.c_str());
+    return 0;
+}
+int H_WorldWater(MmlMod *m, const float at[3], MmlWater *out) { return Alive(m) && at && out ? WorldWater(at, out) : 0; }
 int H_UseAdd(MmlMod *m, const float pos[3], float radius, void *frame, const char *label, MmlUseFn fn, void *user) {
     std::string err;
     int id = Alive(m) && fn ? UseAdd(m, pos, radius, frame, label, fn, user, &err) : 0;
@@ -1024,6 +1032,8 @@ void ModsInit() {
     g_host.stats_get = H_StatsGet;
     g_host.profile_progress = H_ProfileProgress;
     g_host.profile_saves = H_ProfileSaves;
+    g_host.world_water = H_WorldWater;
+    g_host.zone_watch = H_ZoneWatch;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();

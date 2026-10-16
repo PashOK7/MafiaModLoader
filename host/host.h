@@ -295,6 +295,8 @@ int ZoneAdd(MmlMod *mod, const float *pos, float radius, void *frame, MmlZoneFn 
 int UseAdd(MmlMod *mod, const float *pos, float radius, void *frame, const char *label, MmlUseFn fn, void *user, std::string *err);
 int TimerAdd(MmlMod *mod, int ms, bool repeat, MmlTimerFn fn, void *user, std::string *err);
 bool InteractRemove(MmlMod *mod, int id);
+bool ZoneWatch(MmlMod *mod, int zone, uint32_t who, void *actor, std::string *err);   // null mod: the bridge's zones
+int WorldWater(const float at[3], MmlWater *out);       // (collide.cpp) the water under a point
 void InteractFrame();                     // every frame of a loaded mission: crossings, prompts, presses
 void InteractTick(int ms);                // the mission's tick: the timers
 void InteractModGone(MmlMod *mod);

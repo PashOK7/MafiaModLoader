@@ -393,6 +393,14 @@ autosplitter; kept outside it, not ported). Checked against the above:
   already freed (memory reserved, not committed). Then `LS3DF.dll+0x5AC2E`: the index buffer manager's `FreeAll`
   writing to owners already gone (24 stale slices made before anything of ours ran).
 
+## The water (seen 2026-10-16, both labs; host/collide.cpp world_water)
+
+- **game** The city's river is in the static collision: a face of surface 31 at y -9.99 under the ray at (-1590,
+  -34), in both builds (the drawn plane's height); nothing under it within 100 m. The same plane lies under the
+  whole city: at the embankment (-1598.2, -31.2) the ray meets the ground 3.9 m above it first. materials.def (the
+  1.0 reverse's `def-files-docs/materialy.md`): 31 deadly water, 44 shallow water for cars, 40 and 41 scripted death
+  volumes. A person put at a place with no ground over the water falls into it (Paulie, 5.5 m).
+
 ## The profile's progress (read and seen 2026-10-16, both labs; host/stats.cpp)
 
 - **code** `G_LoadSaveClass::ProfileSave` (0x6059F0; 1.0 0x557A20) writes `savegame\mafia%03d.sav` through G_Stream

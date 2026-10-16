@@ -2,7 +2,9 @@
 //
 // Zones: spheres in the world (or following a frame) the player enters and leaves, on foot or in his car (his
 // model's world position: in a car it is the car's); the mod's function is told of each crossing, the bridge's
-// zones go to events.since (ZONE_ENTERED, ZONE_LEFT).
+// zones go to events.since (ZONE_ENTERED, ZONE_LEFT, with the actor). zone_watch makes a zone watch more than the
+// player: every person the loader knows (humans.cpp), every car (the game's actors of type 4), or one actor, each
+// one's crossings told with it; an actor destroyed inside leaves it without a crossing.
 // Use-points: the game's own using objects, what the player's Action finds on foot (doors, the cars' seats, a body,
 // a weapon on the ground: game_build.h uoAdd). A use-point is a record of the loader's in the game's registry
 // (C_game + 0x29EC), its action's id a text id of the loader's in the game's text database (the label): the game
@@ -66,6 +68,9 @@ struct Item {
     MmlTimerFn timerFn;
     void *user;
     bool inside;
+    uint32_t who = MML_ZONE_PLAYER;   // a zone's (zone_watch)
+    void *watched;            // MML_ZONE_ACTOR's actor
+    std::vector<void *> in;   // a zone's actors inside (other than for the player alone)
     int ms, left;             // a timer's period and what is left of it (mission ms)
     bool repeat;
     int fired;
@@ -124,10 +129,30 @@ struct UseCall { Item *it; };
 void CallUse(void *p) { auto *c = static_cast<UseCall *>(p); c->it->useFn(c->it->id, c->it->user); }
 void CallTimer(void *p) { auto *c = static_cast<UseCall *>(p); c->it->timerFn(c->it->id, c->it->user); }
 
-void Tell(Item &it, const char *type) {
+void Tell(Item &it, const char *type, void *actor = nullptr) {
     json d = {{"id", it.id}, {"by", it.mod ? ModIdOf(it.mod) : "bridge"}};
     if (it.kind == kUse) d["label"] = it.label;
+    if (actor) {
+        char b[16];
+        snprintf(b, sizeof b, "0x%08X", static_cast<unsigned>(reinterpret_cast<uintptr_t>(actor)));
+        d["actor"] = b;
+    }
     EventsRecord(type, d.dump());
+}
+
+// An actor's model's world position (in a car: the car's place for its crew, as for the player).
+bool ActorPlace(void *actor, V3 *out) {
+    void *model = actor ? ActorFrame(actor) : nullptr;
+    float w[16];
+    if (!model || !FrameWorld(model, w)) return false;
+    *out = {w[12], w[13], w[14]};
+    return true;
+}
+int TypeOf(void *a) {
+    int t = 0;
+    auto f = [&] { t = game::at<int>(a, game::kActorType); };
+    Guarded(f);
+    return t;
 }
 
 void Unregister(Item &it) {
@@ -267,6 +292,26 @@ int TimerAdd(MmlMod *mod, int ms, bool repeat, MmlTimerFn fn, void *user, std::s
     return it.id;
 }
 
+bool ZoneWatch(MmlMod *mod, int id, uint32_t who, void *actor, std::string *err) {
+    auto it = std::find_if(g_items.begin(), g_items.end(), [&](const Item &i) { return i.id == id && i.kind == kZone && (!mod || i.mod == mod); });
+    if (it == g_items.end()) { *err = "no such zone of this mod's"; return false; }
+    who &= MML_ZONE_PLAYER | MML_ZONE_PEOPLE | MML_ZONE_CARS | MML_ZONE_ACTOR;
+    if (!who) { *err = "who: MML_ZONE_PLAYER, _PEOPLE, _CARS, _ACTOR"; return false; }
+    if ((who & MML_ZONE_ACTOR) && !actor) { *err = "MML_ZONE_ACTOR: an actor"; return false; }
+    bool wasPlayerOnly = it->who == MML_ZONE_PLAYER;
+    it->who = who;
+    it->watched = who & MML_ZONE_ACTOR ? actor : nullptr;
+    if (wasPlayerOnly && it->inside && who != MML_ZONE_PLAYER) {   // (the player inside: kept as inside, no crossing)
+        if (void *p = game::Player()) it->in.assign(1, p);
+    }
+    if (who == MML_ZONE_PLAYER) {
+        void *p = game::Player();
+        it->inside = p && std::find(it->in.begin(), it->in.end(), p) != it->in.end();
+        it->in.clear();
+    }
+    return true;
+}
+
 bool InteractRemove(MmlMod *mod, int id) {
     auto it = std::find_if(g_items.begin(), g_items.end(), [&](const Item &i) { return i.id == id && (!mod || i.mod == mod); });
     if (it == g_items.end()) return false;
@@ -281,16 +326,61 @@ void InteractFrame() {
     V3 p;
     bool foot = false;
     bool have = PlayerPlace(&p, &foot);
+    // who the zones that watch more than the player watch: read once a frame, when one asks
+    std::vector<void *> people, cars;
+    bool listed = false;
+    auto list = [&] {
+        if (listed) return;
+        listed = true;
+        void *buf[1024];
+        int n = std::min(HumansList(buf, 1024), 1024);
+        people.assign(buf, buf + n);
+        std::vector<void *> all;
+        auto f = [&] { game::ListActors(&all); };
+        Guarded(f);
+        for (void *a : all) if (TypeOf(a) == game::kActorTypeCar) cars.push_back(a);
+    };
     for (size_t i = 0; i < g_items.size(); i++) {
         Item &it = g_items[i];
         if (it.kind == kTimer) continue;
+        if (it.kind == kZone && it.who != MML_ZONE_PLAYER) {
+            V3 c;
+            if (!Centre(it, &c)) continue;
+            std::vector<void *> now;
+            auto consider = [&](void *a) {
+                V3 q;
+                if (a && std::find(now.begin(), now.end(), a) == now.end() && ActorPlace(a, &q) && Len(q - c) <= it.radius) now.push_back(a);
+            };
+            if (it.who & (MML_ZONE_PEOPLE | MML_ZONE_CARS)) list();
+            if (it.who & MML_ZONE_PLAYER) consider(game::Player());
+            if (it.who & MML_ZONE_PEOPLE) for (void *a : people) consider(a);
+            if (it.who & MML_ZONE_CARS) for (void *a : cars) consider(a);
+            if (it.who & MML_ZONE_ACTOR) consider(it.watched);
+            int id = it.id;
+            std::vector<std::pair<void *, int>> crossings;
+            for (void *a : now) if (std::find(it.in.begin(), it.in.end(), a) == it.in.end()) crossings.push_back({a, 1});
+            for (void *a : it.in) if (std::find(now.begin(), now.end(), a) == now.end()) crossings.push_back({a, 0});
+            it.in = now;
+            it.inside = !now.empty();
+            for (const auto &x : crossings) {
+                auto self = std::find_if(g_items.begin(), g_items.end(), [&](const Item &z) { return z.id == id; });
+                if (self == g_items.end()) break;   // (removed by its own function)
+                Tell(*self, x.second ? "ZONE_ENTERED" : "ZONE_LEFT", x.first);
+                if (self->zoneFn && (!self->mod || ModAlive(self->mod))) {
+                    ZoneCall zc{&*self, x.second, x.first};
+                    ModCall(self->mod, CallZone, &zc, "its zone function");
+                }
+            }
+            if (i >= g_items.size() || g_items[i].id != id) i--;
+            continue;
+        }
         V3 c;
         bool in = have && Centre(it, &c) && Len(p - c) <= it.radius && (it.kind == kZone || foot);
         if (in == it.inside) continue;
         it.inside = in;
         if (it.kind != kZone) continue;
         int id = it.id;
-        Tell(it, in ? "ZONE_ENTERED" : "ZONE_LEFT");
+        Tell(it, in ? "ZONE_ENTERED" : "ZONE_LEFT", game::Player());
         if (it.zoneFn && (!it.mod || ModAlive(it.mod))) {
             ZoneCall zc{&it, in ? 1 : 0, game::Player()};
             ModCall(it.mod, CallZone, &zc, "its zone function");
@@ -335,6 +425,11 @@ void InteractMissionClose() {   // (before the game's: its registry is still the
 // An actor's destructor (before the game's): what follows a frame of its model goes (a use-point's record would
 // read the frame's matrix after it is freed).
 void InteractActorGone(void *actor) {
+    for (Item &it : g_items) {   // (gone from the zones it was in without a crossing; a zone watching it alone stops)
+        if (it.kind != kZone) continue;
+        it.in.erase(std::remove(it.in.begin(), it.in.end(), actor), it.in.end());
+        if (it.watched == actor) { it.watched = nullptr; it.who &= ~MML_ZONE_ACTOR; }
+    }
     void *model = actor ? game::at<void *>(actor, game::kActorFrame) : nullptr;
     if (!model) return;
     for (size_t i = 0; i < g_items.size();) {
@@ -365,6 +460,16 @@ bool InteractMethod(const std::string &method, const std::string &paramsJson, st
                     if (Centre(it, &c)) j["at"] = r3(c);
                     j["radius"] = it.radius;
                     j["inside"] = it.inside;
+                    if (it.kind == kZone && it.who != MML_ZONE_PLAYER) {
+                        json ins = json::array();
+                        for (void *a : it.in) {
+                            char b[16];
+                            snprintf(b, sizeof b, "0x%08X", static_cast<unsigned>(reinterpret_cast<uintptr_t>(a)));
+                            ins.push_back(b);
+                        }
+                        j["who"] = it.who;
+                        j["in"] = ins;
+                    }
                     if (it.kind == kUse) { j["label"] = it.label; j["text_id"] = it.rec ? it.rec->id : 0; }
                 }
                 list.push_back(j);
@@ -422,7 +527,15 @@ bool InteractMethod(const std::string &method, const std::string &paramsJson, st
         int id = method == "zone.add" ? ZoneAdd(nullptr, f, p.value("radius", 3.0f), frame, nullptr, nullptr, &err)
                                       : UseAdd(nullptr, f, p.value("radius", 2.0f), frame, p.value("label", "").c_str(), nullptr, nullptr, &err);
         if (!id) { *reply = method + ": " + err; return true; }
-        *reply = dump({{"id", id}, {"at", r3(pos)}});
+        // zone.add's `who`: "player" (default), "people", "cars", "all" (the three), or an actor ("car", "0x...")
+        std::string who = method == "zone.add" ? p.value("who", "player") : "player";
+        if (who != "player") {
+            uint32_t w = who == "people" ? MML_ZONE_PEOPLE : who == "cars" ? MML_ZONE_CARS : who == "all" ? MML_ZONE_PEOPLE | MML_ZONE_CARS : MML_ZONE_ACTOR;
+            void *actor = nullptr;
+            if (w == MML_ZONE_ACTOR && !ParseActor(who, &actor, &err)) { InteractRemove(nullptr, id); *reply = "who: " + err; return true; }
+            if (!ZoneWatch(nullptr, id, w, actor, &err)) { InteractRemove(nullptr, id); *reply = "who: " + err; return true; }
+        }
+        *reply = dump({{"id", id}, {"at", r3(pos)}, {"who", who}});
         *ok = true;
     } catch (const json::exception &e) {
         *reply = e.what();

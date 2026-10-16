@@ -883,6 +883,10 @@ def main():
         r2 = b.call('profile.progress')
         check('stats.state with no game: the game\'s counts, no profile; profile.progress: an error, saying why',
               r['ok'] and r['result']['game']['kills'] == 0 and r['result']['profile_number'] == -1 and not r2['ok'] and 'no profile' in str(r2), (r, r2))
+        r = b.call('kit.water')
+        check('world_water, zone_watch with no game: none, refused', r['ok'] and r['result'] == {'water': 0, 'untouched': 1, 'watch': 0}, r)
+        r = b.call('world.water', {'at': [0, 0, 0]})
+        check('world.water with no game: an error, saying why', not r['ok'] and 'no mission' in str(r), r)
         for method in ('human.anim', 'human.anim_state', 'human.get_up'):
             r = b.call(method, {'actor': '0x1000', 'play': 'walk'})
             check(f'{method} with no game: an error, saying why', not r['ok'] and ('not a person' in str(r) or 'no actors' in str(r)), r)
