@@ -254,6 +254,21 @@ void PropsActorGone(void *actor);         // (an actor's destructor) props on it
 void *ActorFrame(void *actor);
 int FrameWorld(void *frame, float out[16]);
 bool PropsMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+// sound and music (sound.cpp): LS3D's I3D_sound in 2D and 3D, IShow for music
+int SoundPlay(MmlMod *mod, const char *file, void *follow, const float *pos, float volume, float pitch, float rangeNear, float rangeFar, uint32_t flags,
+              std::string *err);
+bool SoundSet(int id, float volume, float pitch, std::string *err);
+bool SoundMove(int id, void *follow, const float *pos, std::string *err);
+bool SoundStop(int id, std::string *err);
+int SoundState(int id, MmlSoundState *out);
+int MusicPlay(MmlMod *mod, const char *file, float volume, uint32_t flags, std::string *err);
+bool MusicSet(int id, float volume, std::string *err);
+bool MusicStop(int id, std::string *err);
+int MusicGame(MmlMod *mod, int on);
+void SoundFrame();                        // every frame: sounds that follow frames moved, ended ones released, loops
+void SoundModGone(MmlMod *mod);           // (its unload) its sounds and music stopped, the city's music given back
+void SoundMissionClose();                 // (before the mission closes) the 3D sounds released
+bool SoundMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 // the scene's lights (lights.cpp): LS3D's light frames listed and changed through its setters; lights.list, light.set
 void LightsMissionClosed();
 int SceneLights(MmlLight *out, int max);

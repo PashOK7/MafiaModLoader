@@ -59,6 +59,14 @@ Taps can also start with the game, before its first frame: `"taps": ["5409D0 n=4
 | `prop.attach` | `prop`, a parent as `prop.create`'s (`"world"`: none), `keep` (default true: it stays where it is in the world; false: then `pos`, `rot`, `scale` in the new parent) | given another parent |
 | `prop.show` | `prop`, `on` | shown or hidden (the frame's SetOn) |
 | `prop.remove` | `prop` or `all` | taken out of the scene and released |
+| `sounds.list` | | `known`, `music_known`, `sounds` (`sound`, `file`, `by`, `playing`, `looped`, `in_world`, `ms`, `length_ms`, `volume`, `pitch`, `held`, `pos`, `follows`, `frame`: its I3D_sound), `music` (`music`, `file`, `by`, `volume`, `looped`, `pos`), `music_volume_option`, `city_music_paused` |
+| `sound.play` | `file` (`"sounds\\menuopen.wav"`, `"x.wav"`: under `sounds\`), where: none (2D), `at` [x, y, z], or `on` an actor (`"player"`, `"car"`, `"0x..."`) and `bone`, or `frame`, with `pos` in its space; `volume` (0..1), `pitch` (a factor), `range` (far, or [near, far]), `loop`, `pausable` | the sound as in `sounds.list` (`sound`: its id) |
+| `sound.set` | `sound`, `volume`, `pitch`; a new place as `sound.play`'s (`at`, `on`, `bone`, `frame`, `pos`) | the sound after |
+| `sound.stop` | `sound` or `all` | stopped and released |
+| `music.play` | `file` (an .ogg or .mp3; `"x.ogg"`: under `sounds\music\`), `volume`, `loop` | `music` (its id), `file` |
+| `music.set` | `music`, `volume` | the volume (times the options' music volume) |
+| `music.stop` | `music` or `all` | stopped and released |
+| `music.game` | `on` (false: the game's city music faded out and kept off) | `city_music` |
 | `lights.list` | `type` (`point`, `spot`, `directional`, `ambient`, `fog`), `all` (the lights that are off too), `max` (100), `rescan` | the scene's light frames: `count`, `kinds`, `lights` (`light`, `name`, `type`, `on`, `color`, `power`, `range`, `cone`, `pos`, `dir`, `sectors`), `sun` (`to_sun`, `color`, `ambient`) |
 | `light.set` | `light` (from `lights.list`), `color`, `power`, `range` ([near, far]), `on` | the light changed through LS3D's setters; the light after |
 | `state.money` | `set` or `add` | the freeride's money (`money`, null with no game; `shown`: the HUD shows it), set through the game's `C_game::SetScore` |

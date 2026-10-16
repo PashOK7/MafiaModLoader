@@ -273,6 +273,21 @@ int Props(const char *, MmlReply *r, void *) {
     return 0;
 }
 
+// Sound with no game: nothing played, nothing known, the city's music not there.
+int Sound(const char *, MmlReply *r, void *) {
+    if (!MML_HAS(H, music_game)) { H->reply_error(r, "the loader has no sound"); return 1; }
+    const float pos[3] = {0, 0, 0};
+    MmlSoundState st{};
+    st.size = sizeof st;
+    char out[200];
+    snprintf(out, sizeof out, "{\"play2d\":%d,\"play3d\":%d,\"set\":%d,\"move\":%d,\"stop\":%d,\"state\":%d,\"music\":%d,\"music_set\":%d,\"music_stop\":%d,\"music_game\":%d}",
+             H->sound_play(M, "menuopen.wav", nullptr, nullptr, 1, 1, 0, 0, 0), H->sound_play(M, "menuopen.wav", nullptr, pos, 1, 1, 0, 0, MML_SOUND_LOOP),
+             H->sound_set(M, 1, 0.5f, 1), H->sound_move(M, 1, nullptr, pos), H->sound_stop(M, 1), H->sound_state(M, 1, &st),
+             H->music_play(M, "x.ogg", 1, 0), H->music_set(M, 1, 1), H->music_stop(M, 1), H->music_game(M, 0));
+    H->reply_append(r, out, static_cast<size_t>(-1));
+    return 0;
+}
+
 // People with no game: none, no skeleton, bone_set refused, no player.
 int Humans(const char *, MmlReply *r, void *) {
     if (!MML_HAS(H, human_player)) { H->reply_error(r, "the loader has no human_player"); return 1; }
@@ -339,6 +354,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->command(mod, "geom", "geom_hide, geom_capture with no game (refused), geom_show", Geom, nullptr);
     host->command(mod, "humans", "humans_list, human_skeleton, bone_set, human_player with no game", Humans, nullptr);
     host->command(mod, "props", "prop_create and the rest with no game", Props, nullptr);
+    host->command(mod, "sound", "sound_play and the rest, music_play and the rest with no game", Sound, nullptr);
     host->command(mod, "effects","car_exhaust, exhaust_hook, particle_def(_set) with no game", Effects, nullptr);
     host->command(mod, "lights","scene_lights, light_set, scene_sun with no game", Lights, nullptr);
     host->command(mod, "state","money, money_set, human_health(_set), human_items, item_ammo_set, human_take_item with no game", State, nullptr);

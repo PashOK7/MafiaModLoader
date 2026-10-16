@@ -390,6 +390,27 @@ int H_PropShow(MmlMod *m, void *prop, int on) { std::string err; return Alive(m)
 int H_PropRemove(MmlMod *m, void *prop) { std::string err; return Alive(m) && PropRemove(prop, &err) ? 1 : 0; }
 void *H_ActorFrame(MmlMod *m, void *actor) { return Alive(m) ? ActorFrame(actor) : nullptr; }
 int H_FrameWorld(MmlMod *m, void *frame, float out[16]) { return Alive(m) && out ? FrameWorld(frame, out) : 0; }
+int H_SoundPlay(MmlMod *m, const char *file, void *frame, const float pos[3], float volume, float pitch, float rangeNear, float rangeFar, uint32_t flags) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    int id = SoundPlay(m, file, frame, pos, volume, pitch, rangeNear, rangeFar, flags, &err);
+    if (!id) Log(MML_LOG_WARN, Who(m), "sound_play: %s", err.c_str());
+    return id;
+}
+int H_SoundSet(MmlMod *m, int sound, float volume, float pitch) { std::string err; return Alive(m) && SoundSet(sound, volume, pitch, &err) ? 1 : 0; }
+int H_SoundMove(MmlMod *m, int sound, void *frame, const float pos[3]) { std::string err; return Alive(m) && SoundMove(sound, frame, pos, &err) ? 1 : 0; }
+int H_SoundStop(MmlMod *m, int sound) { std::string err; return Alive(m) && SoundStop(sound, &err) ? 1 : 0; }
+int H_SoundState(MmlMod *m, int sound, MmlSoundState *out) { return Alive(m) ? SoundState(sound, out) : 0; }
+int H_MusicPlay(MmlMod *m, const char *file, float volume, uint32_t flags) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    int id = MusicPlay(m, file, volume, flags, &err);
+    if (!id) Log(MML_LOG_WARN, Who(m), "music_play: %s", err.c_str());
+    return id;
+}
+int H_MusicSet(MmlMod *m, int music, float volume) { std::string err; return Alive(m) && MusicSet(music, volume, &err) ? 1 : 0; }
+int H_MusicStop(MmlMod *m, int music) { std::string err; return Alive(m) && MusicStop(music, &err) ? 1 : 0; }
+int H_MusicGame(MmlMod *m, int on) { return Alive(m) ? MusicGame(m, on) : -1; }
 int H_WorldShapes(MmlMod *m, const float lo[3], const float hi[3], uint32_t what, MmlShape *out, int max) {
     return Alive(m) && lo && hi ? WorldShapes(lo, hi, what, out, out ? max : 0) : 0;
 }
@@ -568,6 +589,7 @@ bool UnloadMod(ModEntry *e, const char *why) {
     GeomRemove(m);
     EffectsModGone(m);
     PropsModGone(m);
+    SoundModGone(m);
     ConfigForget(m);
     g_subs.erase(std::remove_if(g_subs.begin(), g_subs.end(), [&](const Sub &s) { return s.mod == m; }), g_subs.end());
     for (auto it = g_commands.begin(); it != g_commands.end();) it = it->second.mod == m ? g_commands.erase(it) : std::next(it);
@@ -856,6 +878,15 @@ void ModsInit() {
     g_host.prop_remove = H_PropRemove;
     g_host.actor_frame = H_ActorFrame;
     g_host.frame_world = H_FrameWorld;
+    g_host.sound_play = H_SoundPlay;
+    g_host.sound_set = H_SoundSet;
+    g_host.sound_move = H_SoundMove;
+    g_host.sound_stop = H_SoundStop;
+    g_host.sound_state = H_SoundState;
+    g_host.music_play = H_MusicPlay;
+    g_host.music_set = H_MusicSet;
+    g_host.music_stop = H_MusicStop;
+    g_host.music_game = H_MusicGame;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();
@@ -952,6 +983,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (LightsMethod(method, paramsJson, reply, &ok)) return ok;
     if (EffectsMethod(method, paramsJson, reply, &ok)) return ok;
     if (PropsMethod(method, paramsJson, reply, &ok)) return ok;
+    if (SoundMethod(method, paramsJson, reply, &ok)) return ok;
     if (WorldMethod(method, paramsJson, reply, &ok)) return ok;
     if (FilesMethod(method, paramsJson, reply, &ok)) return ok;
     if (RenderMethod(method, paramsJson, reply, &ok)) return ok;

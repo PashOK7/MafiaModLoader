@@ -288,6 +288,15 @@ What is done, what comes next and later, and what is known to be missing or wron
   on `events.since` and MCP `wait`. Both builds' addresses checked by `check_builds.py`. The example
   `mods/examples/tally`; seen in the 1.2 and 1.0 labs (the player's shots, his leaving the taxi, a person killed by
   a script, a car blown up with its explosion and the hit it gave the player).
+- **Sound** (2026-10-16; item 13): `sound_play` (LS3D's I3D_sound: 2D as the menus' own sounds, in the world at a
+  place, or following a frame; volume, pitch, range, looped), `sound_set`, `sound_move`, `sound_stop`,
+  `sound_state`; music (`music_play`, `music_set`, `music_stop`: LS3D's IShow, the game's own streaming, times the
+  options' music volume, looped by its end event) and `music_game` (C_game::CityMusicPaused). `sounds.list`,
+  `sound.play`, `sound.set`, `sound.stop`, `music.play`, `music.set`, `music.stop`, `music.game`. Checked in both
+  builds by `check_builds.py`; seen in both labs: the pitch and the volume at the DirectSound buffer (22050 Hz times
+  0.5 and 1.5: 11025, 33075; volume 0.5: -30.6 dB), a 3D sound on the taxi following it, the world's sounds held by
+  the pause, a track played to its end and released, a looped one started again, the city's music paused
+  (C_game +0x2FC0). The example `mods/examples/engine_note`.
 - **Props** (2026-10-16; item 12, block 12a): `prop_create` (a model by the game's model cache as an LS3D frame with
   no actor: in the world, linked into its room as a spawned actor's model, or attached to any frame: a bone, an
   actor's model, a car, another prop), `prop_place`, `prop_attach` (its world place kept or its local one),
@@ -434,7 +443,7 @@ V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselv
     a model's animations; Known gaps.)* **Props** (F K P R). Models placed in the world without being actors (a rod, a fish, a board), moved every frame,
     attached to a bone or a car's part and detached, shown, hidden, removed; with a collision shape when asked
     (the scripts' `model_create` and `create_physicalobject` are partial cases).
-13. **Sound** (F K P C S W). The game's sounds and a mod's own (item 2) played in 2D or in 3D at a point or attached
+13. *(Done 2026-10-16: see "Done"; what is left: Known gaps.)* **Sound** (F K P C S W). The game's sounds and a mod's own (item 2) played in 2D or in 3D at a point or attached
     to a frame, looped, their volume and pitch changed live (an engine's note follows its revolutions), stopped;
     the music.
 14. **Control** (K P F V). A mod's keys and buttons taken so the game does not also act on them; actions of a mod's
@@ -558,6 +567,13 @@ merged, sorted by importance):
   matrix being the camera's backdrop view, bit for bit (it was, every drawing, in both labs). `MML_VIEW_OWN_SECTOR`
   (a camera in another room) was not tried. The first two or three reloads of `rear_mirror` added 2..13 handles each (taken to be
   Direct3D's own warming up: views made and taken back by mode changes added none); then 0.
+- **Sound** (host/sound.cpp, item 13): **heard by no one yet**: every check was made on LS3D's and DirectSound's
+  state (playing, the position moving, the buffer's frequency and volume), none by ear; the owner listens once
+  (`engine_note`, `sound.play`). No panning of a 2D sound (I3D's ambient sounds have none; ISND_sound's SetPanning
+  would need a sound of the ISND layer). The cone of a 3D sound is all round. LS3D's IShow leaks 3 handles a track
+  played and stopped (the game's own music too: the same Stop, Close, Release as C_game::DestroyIShow). A mod's own
+  `files\sounds\` file was not tried (the open goes through dtaOpen, as a texture's). The music's volume is set when
+  it starts and with `music_set`: a change of the options' music volume while it plays is not followed.
 - **Props** (host/props.cpp, item 12a): no collision shape (the scripts' `create_physicalobject` is the lead: a
   prop that falls, is hit, is stood on); a model of a mod's own `files\models\` is opened by the same cache that
   `files.cpp` answers, but was not tried; a prop on a car's part (a wheel, a door) was not tried, only on the car's

@@ -98,6 +98,7 @@ int __fastcall hkMissionClose(void *self, void *edx) {
     ScriptMissionClose();   // (their actors go with the mission)
     WorldMissionClose();
     PropsMissionClose();    // (the props unlinked and released while their scene is there)
+    SoundMissionClose();    // (the 3D sounds, likewise)
     SetPaused(false);
     Dispatch(Event(MML_EVENT_MISSION_CLOSE));
     g_missionLoaded = false;
@@ -178,6 +179,7 @@ void Frame() {
     InputFrame();     // (before the settings' events: a handler that binds its hotkey again must not lose a press)
     ConfigFrame();
     FilesFrame();
+    SoundFrame();
     // a pause: a frame went by without the mission's tick while a menu is open over a loaded mission
     bool ticked = g_ticks != g_ticksSeen;
     g_ticksSeen = g_ticks;

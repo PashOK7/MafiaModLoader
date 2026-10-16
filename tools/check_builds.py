@@ -415,6 +415,31 @@ def main(a):
             check('cmp eax, 0xf' in head, f'{name} LS3DF sceneVtable+{o:#x}: the weather\'s switch on 16 parameters')
     check(gl12.at(sv(gl12, builds['1.2'][1]['sceneVtable'], 0xF0), 16) == gl10.at(sv(gl10, builds['1.0'][1]['sceneVtable'], 0xF0), 16),
           'LS3DF sceneVtable+0xF0: the weather\'s reset, the same code in both builds')
+    # Sound (host/sound.cpp): I3D_sound's vtable is written by a constructor in both builds; the slots the loader calls
+    # have the same code in both (the first 16 bytes) and the arguments game_build.h gives (their first ret); SetVolume
+    # writes +0x18C, SetFrequency +0x194. Music: CityMusicPaused writes C_game +0x2FC0 and ends with ret 4; the music
+    # volume is what IShowSetVolume multiplies by (fld [musicVolume] before IShow's +0x38).
+    s12, s10 = builds['1.2'][1]['soundVtable'], builds['1.0'][1]['soundVtable']
+    for name, gls, vt in (('1.2', gl12, s12), ('1.0', gl10, s10)):
+        imm = (gls.base + vt).to_bytes(4, 'little')
+        check(any(b'\xc7' + bytes([r]) + imm in bytes(gls.mem) for r in range(8)), f'{name} LS3DF soundVtable written by a constructor')
+    rets = {0x50: '0x14', 0x54: '8', 0x58: '8', 0x5C: '0x14', 0x60: '0xc', 0x64: '8', 0x68: '8', 0x6C: '8', 0x70: '8', 0x74: '8',
+            0x80: '4', 0x84: '4', 0x88: '0xc'}
+    for o, ret in rets.items():
+        if o not in (0x50, 0x5C, 0x60):   # (Open reads the sound driver's global; SetRange, SetCone: their rets checked)
+            check(gl12.at(sl(gl12, s12, o), 16) == gl10.at(sl(gl10, s10, o), 16), f'LS3DF soundVtable+{o:#x}: the same code in both builds')
+        for name, gls, vt in (('1.2', gl12, s12), ('1.0', gl10, s10)):
+            first = next((i for i in gls.md.disasm(gls.at(sl(gls, vt, o), 0x200), 0) if i.mnemonic == 'ret'), None)
+            check(first is not None and first.op_str == ret, f'{name} LS3DF soundVtable+{o:#x}: its first ret is ret {ret}')
+    for name, gls, vt in (('1.2', gl12, s12), ('1.0', gl10, s10)):
+        for o, off in ((0x68, '0x18c'), (0x74, '0x194')):
+            code = ' '.join(f'{i.mnemonic} {i.op_str}' for i in gls.md.disasm(gls.at(sl(gls, vt, o), 0x40), 0))
+            check(f'+ {off}]' in code, f'{name} LS3DF soundVtable+{o:#x} writes {off}')
+    for name, (exe, ls, gexe, gls) in builds.items():
+        ins = [f'{i.mnemonic} {i.op_str}' for i in gexe.md.disasm(gexe.at(exe['cityMusicPaused'] - 0x400000, 0x20), exe['cityMusicPaused'])]
+        check('mov byte ptr [ecx + 0x2fc0], al' in ins and 'ret 4' in ins, f'{name} cityMusicPaused writes C_game +0x2FC0, ret 4')
+        imm = b'\xd9\x05' + exe['musicVolume'].to_bytes(4, 'little') + b'\xd8\x4c'
+        check(bytes(gexe.mem).count(imm) >= 1, f'{name} musicVolume: loaded and multiplied (IShowSetVolume)')
     # The game's state (host/state.cpp): SetScore writes C_game +0x3640, reads +0x363E, ends with ret 4.
     for name, (exe, ls, gexe, gls) in builds.items():
         sc = [f'{i.mnemonic} {i.op_str}' for i in gexe.md.disasm(gexe.at(exe['gameSetScore'] - 0x400000, 0x30), exe['gameSetScore'])]

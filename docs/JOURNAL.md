@@ -1103,3 +1103,24 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   (the start's log says so) and a patrolman arrested Tommy for his Thompson.
 - **Tests**: offline the seven functions and the bridge's refusals with no game. ALL PASSED; `mcp_smoke.py` ALL
   PASSED (the MCP instructions name the effects' and the props' methods).
+
+## 2026-10-16: sound and music (item 13)
+
+- **Read**: MafiaOnline's sound service (I3D_sound as a frame of type 4, the sound cache, C_game::Play3DSound) and
+  mEdit's I3D_sound header gave the slots; each was read in both builds (the same code, the same arguments:
+  `check_builds.py`). The menus play `sounds\menuopen.wav` as an ambient I3D_sound in no scene, opened by its own
+  Open: that is a 2D sound. I3D_sound::Open turns its flag 8 into ISND_FREQUENCY (the cars' engine sounds pass it);
+  without it SetFrequency does nothing. Music: C_game streams the city's music through LS3D's IShow (IGraph slot 0),
+  times the options' music volume (1.2 0x6D4B10, 1.0 0x672498); IShow's position for an .ogg is the decoder's
+  (ov_time_tell, ahead and in steps), its GetEvent tells the end (1). CityMusicPaused (1.0's found by 1.2's bytes).
+- **Made** `host/sound.cpp`: nine functions in the C ABI, eight bridge methods.
+- **In the labs** (both builds alike): sounds play (IsPlaying, the position moving), a one-shot is released at its
+  end; the pitch reached the DirectSound buffer (22050 Hz: 11025 at 0.5, 33075 at 1.5), the volume too (0.5:
+  -30.6 dB); `th_1.wav` (the Bolt-Thrower's engine, found by tapping I3D_sound::Open while a car was made) on the
+  taxi followed it 45 m; in the pause menu LS3D held the world's sounds itself (their time stood) and went on with
+  them after; "13 - Game Over" played to its end and was released, looped it started again; the city's music paused
+  (C_game +0x2FC0 = 1). `engine_note`'s pitch followed the revolutions (0.89 idle, 1.08 after a pull); its unload
+  stopped its sounds and music and gave the city's music back. IShow leaks 3 handles a track (the game's own way of
+  stopping one: LS3D's).
+- **Nobody listened**: the owner hears it once (Known gaps).
+- **Tests**: offline the nine functions and the bridge's refusals with no game. ALL PASSED; check_builds ALL PASSED.

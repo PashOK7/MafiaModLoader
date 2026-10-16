@@ -845,6 +845,16 @@ def main():
         r = b.call('kit.props')
         check('prop_create, prop_place, prop_attach, prop_show, prop_remove, actor_frame, frame_world with no game: none',
               r['ok'] and r['result'] == {'create': 0, 'place': 0, 'attach': 0, 'show': 0, 'remove': 0, 'actor_frame': 0, 'frame_world': 0}, r)
+        r = b.call('kit.sound')
+        check('sound_play (2D and 3D), sound_set, sound_move, sound_stop, sound_state, music_* with no game: none, music_game -1',
+              r['ok'] and r['result'] == {'play2d': 0, 'play3d': 0, 'set': 0, 'move': 0, 'stop': 0, 'state': 0, 'music': 0, 'music_set': 0,
+                                          'music_stop': 0, 'music_game': -1}, r)
+        r = b.call('sounds.list')
+        check('sounds.list with no game: not known, none', r['ok'] and r['result']['known'] is False and r['result']['sounds'] == [] and r['result']['music'] == [], r)
+        r = b.call('sound.play', {'file': 'menuopen.wav'})
+        check('sound.play with no game: an error, saying why', not r['ok'] and 'not known' in str(r), r)
+        r = b.call('music.game', {'on': False})
+        check('music.game with no game: an error, saying why', not r['ok'] and 'no mission' in str(r), r)
         r = b.call('props.list')
         check('props.list with no game: not known, none', r['ok'] and r['result'] == {'known': False, 'props': []}, r)
         r = b.call('prop.create', {'model': '2tommy.i3d', 'at': [0, 0, 0]})

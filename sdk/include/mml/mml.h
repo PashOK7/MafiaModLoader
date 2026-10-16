@@ -513,6 +513,19 @@ typedef struct MmlParticleDef {
     uint32_t raw[41];                    /* the whole record (0xA4 bytes), for what has no name here */
 } MmlParticleDef;
 
+/* Sound and music (sound_play, music_play below). */
+#define MML_SOUND_LOOP 1u          /* played again and again until stopped */
+#define MML_SOUND_PAUSABLE 2u      /* a 2D sound held while the game is paused (a pause menu open); 3D ones always are,
+                                      by LS3D, as the world's own */
+typedef struct MmlSoundState {
+    uint32_t size;
+    int playing;            /* LS3D plays it now (a 3D sound out of its range may not be) */
+    int looped, in_world;   /* MML_SOUND_LOOP; 1: a 3D sound (at a place, on a frame), 0: 2D */
+    int ms, length_ms;      /* where it is in its file, the file's length (ms) */
+    float volume, pitch;
+    float pos[3];           /* a 3D sound's place in the world now */
+} MmlSoundState;
+
 /* The frame's measures (frame_stats below): the frames Present to Present, the last 600 of them. */
 typedef struct MmlFrameStats {
     uint32_t size;
@@ -875,6 +888,32 @@ typedef struct MmlHost {
     void *(*actor_frame)(MmlMod *mod, void *actor);
     /* any frame's world matrix now (row vectors: rows 0..2 its axes with their scale, row 3 its position) */
     int (*frame_world)(MmlMod *mod, void *frame, float out[16]);
+
+    /* ---- sound (both builds; docs/MODDING.md "Sound"). sound_play: a sound of the game's (its archives' sounds\...) or
+     * a mod's own (files\sounds\...) played as LS3D plays the game's: "sounds\\x.wav", or "x.wav" (sounds\ put before
+     * it). In 2D (frame and pos NULL: heard the same everywhere, as the menus' own sounds, in a menu too), at a place
+     * in the world (pos), or following a frame (a bone, an actor's model from actor_frame, a prop; pos in its space,
+     * NULL its origin). volume 0..1, pitch a factor (1 as recorded; 2 an octave up), range_near / range_far in metres
+     * (3D: full volume to near, nothing past far; <= 0: 5 and 40), flags MML_SOUND_*. Returns the sound's id, 0 when
+     * it could not be played (the log says why). A sound that is not looped ends by itself (its id is then unknown);
+     * the mod's sounds are stopped at its unload, the 3D ones at the mission's close. */
+    int (*sound_play)(MmlMod *mod, const char *file, void *frame, const float pos[3], float volume, float pitch, float range_near,
+                      float range_far, uint32_t flags);
+    /* volume, pitch changed while it plays (NAN: kept): an engine's note following its turns */
+    int (*sound_set)(MmlMod *mod, int sound, float volume, float pitch);
+    /* moved (frame NULL: to pos in the world) or attached to another frame (pos in its space) */
+    int (*sound_move)(MmlMod *mod, int sound, void *frame, const float pos[3]);
+    int (*sound_stop)(MmlMod *mod, int sound);
+    /* 1 while it is known: out (may be NULL) its state */
+    int (*sound_state)(MmlMod *mod, int sound, MmlSoundState *out);
+    /* ---- music: an .ogg (or .mp3) streamed as the game streams its own music (LS3D's IShow), in a menu too; volume
+     * 0..1 times the options' music volume. Returns its id, 0 when it could not be opened. */
+    int (*music_play)(MmlMod *mod, const char *file, float volume, uint32_t flags);
+    int (*music_set)(MmlMod *mod, int music, float volume);
+    int (*music_stop)(MmlMod *mod, int music);
+    /* the game's own city music: 0 faded out and kept off (C_game::CityMusicPaused), 1 let play again. -1 when no
+     * mission; the mod's choice is undone at its unload. */
+    int (*music_game)(MmlMod *mod, int on);
 } MmlHost;
 
 #define MML_FILE_GAME 1              /* file_read: the game's own file, not a mod's of the same name */

@@ -1,0 +1,8 @@
+{
+  // The defaults of engine_note's settings (read at its load; config.set changes them live).
+  "sound": "th_1.wav",       // the voice (the game's sounds\: th_1.wav is the Bolt-Thrower's engine)
+  "volume": 0.8,
+  "pitch_idle": 0.6,         // the pitch at idle ...
+  "pitch_top": 1.8,          // ... and at the engine's top revolutions
+  "hotkey": "F9"             // the voice on and off
+}

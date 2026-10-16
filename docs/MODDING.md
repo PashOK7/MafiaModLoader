@@ -453,6 +453,40 @@ H->frame_world(M, H->actor_frame(M, H->human_player(M)), w); /* any frame's worl
   (placed each frame around his neck bone); `props_demo.drop` leaves the bat in the air, `props_demo.wear` puts it
   back.
 
+### Sound and music
+
+```c
+int ui = H->sound_play(M, "menuopen.wav", NULL, NULL, 1, 1, 0, 0, 0);          /* 2D: heard the same everywhere */
+const float at[3] = {-1940, -3, 25};
+int bell = H->sound_play(M, "sounds\\x.wav", NULL, at, 1, 1, 5, 40, 0);       /* 3D at a place: full to 5 m, none past 40 */
+int note = H->sound_play(M, "th_1.wav", car_frame, NULL, 0.8f, 0.6f, 4, 60, MML_SOUND_LOOP);   /* on a car, looped */
+H->sound_set(M, note, NAN, 0.6f + 1.2f * rpm_share);                          /* the pitch follows the engine */
+int track = H->music_play(M, "13 - Game Over.ogg", 1, MML_SOUND_LOOP);       /* sounds\music\..., streamed */
+H->music_game(M, 0);                                                          /* the city's own music faded out */
+```
+
+- **A sound is LS3D's own sound frame** (I3D_sound), opened and played as the game plays its own: the file from the
+  game's `sounds\` and archives, or a mod's `files\sounds\` (a name without a folder is put under `sounds\`, one
+  without an extension gets `.wav`). In 2D it is what the menus' own sounds are (it plays in a menu too); in 3D it
+  is placed in the mission's world (a place, or a frame it follows: a bone, `actor_frame`'s model, a car, a prop),
+  heard by the game's listener with its range (full volume to near, nothing past far). The game's own engine sounds
+  are such sounds: `th_1.wav` is the Bolt-Thrower's.
+- `volume` is 0..1, `pitch` a factor of the file's own rate (seen at the DirectSound buffer: 22050 Hz times 0.5 and
+  1.5), both changed live with `sound_set`. A sound that is not looped ends by itself (its id is then unknown).
+- **The pause**: LS3D holds the world's (3D) sounds itself while the game is paused and goes on with them after; a
+  2D sound plays on (a menu's sound), unless `MML_SOUND_PAUSABLE` holds it too.
+- **Who stops them**: the mod (`sound_stop`, `music_stop`); the host at the mod's unload (the city's music given
+  back too), and the 3D sounds when the mission closes (a mod plays them again after `MML_EVENT_MISSION_LOADED`).
+- **Music** is the game's own streaming (LS3D's IShow: .ogg, .mp3), in a menu too, its volume times the options'
+  music volume (as the game's). `.mp3` and `.ogg` are tried for each other, as the game does (the scripts name
+  "13 - Game Over.mp3"; the archives have the .ogg). A looped track starts again at its end, another is released.
+- `call sounds.list`, `sound.play {"file", "at" | "on": "car", "bone", "pos", "volume", "pitch", "range", "loop"}`,
+  `sound.set {"sound", "volume", "pitch", "at"...}`, `sound.stop {"sound" | "all"}`, `music.play {"file", "volume",
+  "loop"}`, `music.set`, `music.stop`, `music.game {"on": false}`.
+- `mods/examples/engine_note` (not enabled by default): a second engine voice on the player's car, its pitch
+  following the revolutions; F9 turns it off; `engine_note.music {"file": "13 - Game Over.ogg"}` plays a track in
+  place of the city's music.
+
 ### What happens (shots, explosions, deaths, vehicles)
 
 | Event | When | `actor` | more |

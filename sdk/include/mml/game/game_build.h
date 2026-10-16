@@ -336,6 +336,13 @@ struct ExeBuild {
     // int param), ret 8, what WEATHER_SETPARAM calls after On (0) or MaxCount (10): both kept and applied again
     // scaled by the detail setting.
     uintptr_t weatherSave;
+    // Music (host/sound.cpp). The game plays music through LS3D's IShow (IGraph's slot 0 CreateIShow; its slots,
+    // stdcall: +0x04 Release, +0x0C Open(file, flags) (an .ogg or .mp3 streamed), +0x10 Close, +0x14 Play, +0x18 Stop,
+    // +0x2C GetEvent, +0x30 SetCurrentPos, +0x34 GetCurrentPos, +0x38 SetVolume(float), +0x3C GetVolume), every
+    // volume times musicVolume (a float: the options' music volume, as C_game::IShowSetVolume multiplies it).
+    // cityMusicPaused: C_game::CityMusicPaused, thiscall(C_game*, bool), ret 4: the city's music (C_game::Tick's
+    // sounds\music\city_music_<area>.ogg) faded out and kept off while true (C_game +0x2FC0).
+    uintptr_t musicVolume, cityMusicPaused;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -414,6 +421,14 @@ struct Ls3dBuild {
     // through the vtable after a particle is moved (its local position +0x80); their +0x2C SetParent, stdcall(frame,
     // parent, flags): into the scene when a particle starts, to no parent when it ends.
     uintptr_t prtbVtable, prteVtable;
+    // Sound (host/sound.cpp): I3D_sound's vtable, a frame of type 4 the I3D driver makes (its constructor and
+    // destructor write it). Its slots, stdcall(sound, ...), the same in both builds (each one's arguments read): +0x24
+    // SetOn(bool) (on: it plays), +0x50 Open(const char *file, flags, cb, ctx) (the file as given, "sounds\\x.wav"; flags 8: the pitch can change),
+    // +0x54 IsPlaying(bool), +0x58 SetSoundType (1 point, 3 ambient: the menus' own sounds are ambient sounds in no
+    // scene), +0x5C SetRange(inner, outer, curve, the volume at outer), +0x60 SetCone(inner, outer), +0x64
+    // SetOutVol, +0x68 SetVolume, +0x6C SetLoop(bool), +0x70 SetCurrTime(ms), +0x74 SetFrequency(factor), +0x80
+    // GetCurrTime, +0x84 GetPlayTime (ms), +0x88 SetOn2(bool, bool) (the scripts' STOPSOUND: off, at once).
+    uintptr_t soundVtable;
 };
 
 inline const ExeBuild kExe12 = {
@@ -484,6 +499,8 @@ inline const ExeBuild kExe12 = {
     0x4DEE90, 0x63D8A4, 0x6D4C1C, 0x6234BC,
     0xC68, 0x468, 0x460, 0x454, 0x46C, 0x1F9C, 0xCE8,
     0x5B9540,   // (WEATHER_SETPARAM's call at 0x474417)
+    // music (2026-10-16: C_game::IShowSetVolume 0x5B6600 multiplies by it; CityMusicPaused writes C_game +0x2FC0)
+    0x6D4B10, 0x5AE1B0,
 };
 
 inline const ExeBuild kExe10 = {
@@ -570,6 +587,9 @@ inline const ExeBuild kExe10 = {
     0x52B8A0, 0x6561FC, 0x6EFB9C, 0x63B2D0,
     0xCE4, 0x4E4, 0x4DC, 0x4D0, 0x4E8, 0x1F18, 0xD64,
     0x5F51C0,   // (st0rm94's game_apply_weather_detail_level: the same code as 1.2's)
+    // music (2026-10-16: game_media_apply_volumes 0x5F2280 multiplies by it; CityMusicPaused found by 1.2's bytes,
+    // called at 0x5C1615)
+    0x672498, 0x5E9DF0,
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,
@@ -583,7 +603,8 @@ inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1
                                   0x9B6D0, 0x9C8F8, 0x4A1D0, 0x65560,
                                   0x39280, 0x28D40, 0x083B0,
                                   0x9BC88,   // (I3D_light's vtable: its constructor 0x201F0 writes it at 0x2027D)
-                                  0x9C660, 0x9C5B8};   // (written at 0x3FA3B and 0x406D8, PRTE's at 0x3FB72)
+                                  0x9C660, 0x9C5B8,   // (written at 0x3FA3B and 0x406D8, PRTE's at 0x3FB72)
+                                  0x9CE78};   // (I3D_sound's: written at 0x5774F and 0x57802)
 // LS3D 3.84.5 (31.7.2002): the vertex buffer has no flags word, everything after +0x04 sits 4 bytes lower.
 inline const Ls3dBuild kLs3d10 = {"1.0", 0x5ED80, 0x1A8A0, 0x305B0, 0x5D070, 0x1C350, 0x6E580, 0, 0,
                                   0x1AE00, 0x1BD60, 0x1C030, 0x2B540, 0x04, 0x14, 0x18,
@@ -598,7 +619,8 @@ inline const Ls3dBuild kLs3d10 = {"1.0", 0x5ED80, 0x1A8A0, 0x305B0, 0x5D070, 0x1
                                   0x97690, 0x98898, 0x47D20, 0x622D0,
                                   0x37940, 0x28670, 0x07E50,   // (the vtables +0x6C of OBJ_, LMAP, billboards)
                                   0x97C28,   // (I3D_light's vtable: its slots' code the same as 1.2's, written at 0x2002D)
-                                  0x98600, 0x98558};   // (written at 0x3DDFB and 0x3EB08, PRTE's at 0x3DF22)
+                                  0x98600, 0x98558,   // (written at 0x3DDFB and 0x3EB08, PRTE's at 0x3DF22)
+                                  0x98E10};   // (I3D_sound's: its slots' code the same as 1.2's, written at 0x5486F)
 
 // The builds found (null until Detect succeeds).
 inline const ExeBuild *g_exe;
