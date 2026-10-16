@@ -845,6 +845,15 @@ def main():
         r = b.call('kit.props')
         check('prop_create, prop_place, prop_attach, prop_show, prop_remove, actor_frame, frame_world with no game: none',
               r['ok'] and r['result'] == {'create': 0, 'place': 0, 'attach': 0, 'show': 0, 'remove': 0, 'actor_frame': 0, 'frame_world': 0}, r)
+        r = b.call('kit.control')
+        check('key_capture, action_capture, player_lock, vehicle_hook, vehicle_body with no game: none (letting a hook go: done)',
+              r['ok'] and r['result'] == {'key': 0, 'action': 0, 'lock': 0, 'hook': 0, 'unhook': 1, 'body': 0}, r)
+        r = b.call('control.state')
+        check('control.state with no game: nothing locked, no hook', r['ok'] and r['result']['locked'] is False and r['result']['vehicle_hook'] == 'none', r)
+        r = b.call('player.lock', {'on': True})
+        check('player.lock with no game: an error, saying why', not r['ok'] and 'not known' in str(r), r)
+        r = b.call('input.capture', {'action': 'Forwards'})
+        check('input.capture of an action with no game: an error, saying why', not r['ok'] and 'actions' in str(r), r)
         r = b.call('kit.sound')
         check('sound_play (2D and 3D), sound_set, sound_move, sound_stop, sound_state, music_* with no game: none, music_game -1',
               r['ok'] and r['result'] == {'play2d': 0, 'play3d': 0, 'set': 0, 'move': 0, 'stop': 0, 'state': 0, 'music': 0, 'music_set': 0,

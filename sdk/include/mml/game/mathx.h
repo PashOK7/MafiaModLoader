@@ -64,6 +64,28 @@ struct M3 {
     }
 };
 
+// The quaternion of a rotation (rows: the axes) as QuatMatrix lays it out (Shepperd's method), unit length.
+inline Q QuatOf(const M3 &m) {
+    float m00 = m.r[0].x, m01 = m.r[0].y, m02 = m.r[0].z, m10 = m.r[1].x, m11 = m.r[1].y, m12 = m.r[1].z, m20 = m.r[2].x, m21 = m.r[2].y, m22 = m.r[2].z;
+    float tr = m00 + m11 + m22;
+    Q q;
+    if (tr > 0) {
+        float s = std::sqrt(tr + 1.0f) * 2;
+        q = {0.25f * s, (m21 - m12) / s, (m02 - m20) / s, (m10 - m01) / s};
+    } else if (m00 > m11 && m00 > m22) {
+        float s = std::sqrt(1.0f + m00 - m11 - m22) * 2;
+        q = {(m21 - m12) / s, 0.25f * s, (m01 + m10) / s, (m02 + m20) / s};
+    } else if (m11 > m22) {
+        float s = std::sqrt(1.0f + m11 - m00 - m22) * 2;
+        q = {(m02 - m20) / s, (m01 + m10) / s, 0.25f * s, (m12 + m21) / s};
+    } else {
+        float s = std::sqrt(1.0f + m22 - m00 - m11) * 2;
+        q = {(m10 - m01) / s, (m02 + m20) / s, (m12 + m21) / s, 0.25f * s};
+    }
+    float n = std::sqrt(q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z);
+    return n > 1e-9f ? Q{q.w / n, q.x / n, q.y / n, q.z / n} : Q{1, 0, 0, 0};
+}
+
 // Basis whose first row points a->b and whose third row is normal to the plane (a,b,c).
 inline M3 BasisFrom(const V3 &a, const V3 &b, const V3 &c) {
     V3 x = Norm(b - a, {1, 0, 0});

@@ -411,6 +411,11 @@ int H_MusicPlay(MmlMod *m, const char *file, float volume, uint32_t flags) {
 int H_MusicSet(MmlMod *m, int music, float volume) { std::string err; return Alive(m) && MusicSet(music, volume, &err) ? 1 : 0; }
 int H_MusicStop(MmlMod *m, int music) { std::string err; return Alive(m) && MusicStop(music, &err) ? 1 : 0; }
 int H_MusicGame(MmlMod *m, int on) { return Alive(m) ? MusicGame(m, on) : -1; }
+int H_KeyCapture(MmlMod *m, int key, int on) { return Alive(m) && KeyCapture(m, key, on != 0) ? 1 : 0; }
+int H_ActionCapture(MmlMod *m, int slot, int on) { return Alive(m) && ActionCapture(m, slot, on != 0) ? 1 : 0; }
+int H_PlayerLock(MmlMod *m, int on) { return Alive(m) ? PlayerLock(m, on) : 0; }
+int H_VehicleHook(MmlMod *m, MmlVehicleFn fn, void *user) { return Alive(m) ? VehicleHook(m, fn, user) : 0; }
+int H_VehicleBody(MmlMod *m, void *car, MmlVehicleBody *read, const MmlVehicleBody *write) { return Alive(m) ? VehicleBody(car, read, write) : 0; }
 int H_WorldShapes(MmlMod *m, const float lo[3], const float hi[3], uint32_t what, MmlShape *out, int max) {
     return Alive(m) && lo && hi ? WorldShapes(lo, hi, what, out, out ? max : 0) : 0;
 }
@@ -590,6 +595,8 @@ bool UnloadMod(ModEntry *e, const char *why) {
     EffectsModGone(m);
     PropsModGone(m);
     SoundModGone(m);
+    ControlModGone(m);
+    CapturesRemove(m);
     ConfigForget(m);
     g_subs.erase(std::remove_if(g_subs.begin(), g_subs.end(), [&](const Sub &s) { return s.mod == m; }), g_subs.end());
     for (auto it = g_commands.begin(); it != g_commands.end();) it = it->second.mod == m ? g_commands.erase(it) : std::next(it);
@@ -887,6 +894,11 @@ void ModsInit() {
     g_host.music_set = H_MusicSet;
     g_host.music_stop = H_MusicStop;
     g_host.music_game = H_MusicGame;
+    g_host.key_capture = H_KeyCapture;
+    g_host.action_capture = H_ActionCapture;
+    g_host.player_lock = H_PlayerLock;
+    g_host.vehicle_hook = H_VehicleHook;
+    g_host.vehicle_body = H_VehicleBody;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();
@@ -984,6 +996,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (EffectsMethod(method, paramsJson, reply, &ok)) return ok;
     if (PropsMethod(method, paramsJson, reply, &ok)) return ok;
     if (SoundMethod(method, paramsJson, reply, &ok)) return ok;
+    if (ControlMethod(method, paramsJson, reply, &ok)) return ok;
     if (WorldMethod(method, paramsJson, reply, &ok)) return ok;
     if (FilesMethod(method, paramsJson, reply, &ok)) return ok;
     if (RenderMethod(method, paramsJson, reply, &ok)) return ok;

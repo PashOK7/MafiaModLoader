@@ -99,6 +99,7 @@ int __fastcall hkMissionClose(void *self, void *edx) {
     WorldMissionClose();
     PropsMissionClose();    // (the props unlinked and released while their scene is there)
     SoundMissionClose();    // (the 3D sounds, likewise)
+    ControlMissionClose();
     SetPaused(false);
     Dispatch(Event(MML_EVENT_MISSION_CLOSE));
     g_missionLoaded = false;

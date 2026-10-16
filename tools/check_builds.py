@@ -251,6 +251,18 @@ def main(a):
                 if i.mnemonic == 'ret' and i.op_str == '0xc':
                     stored |= any(b.mnemonic == 'mov' and b.op_str.endswith(f'+ {exe["vehicleStepTime"]:#x}], edx') for b in body[max(0, j - 6):j])
                     break
+        # (host/control.cpp: the rest counters a mod's step starts again: +4 the ms near the place at +8, compared
+        # with 4000; vehicleFlags + 4 the ms calm, written by Tick)
+        tops = [f'{i.mnemonic} {i.op_str}' for i in tick]
+        check('cmp dword ptr [esi + 4], 0xfa0' in tops and 'mov dword ptr [esi + 4], 0' in tops and
+              f'mov dword ptr [esi + {exe["vehicleFlags"] + 4:#x}], 0' in tops,
+              f'{name} vehicleTick: the rest counters at +4 (place +8) and vehicleFlags + 4')
+        # (host/control.cpp: Engine copies the body's matrix vehMatrix and its inverse (+0x40) into the step before's
+        # (vehMatrixPrev and +0x40), 16 dwords each)
+        eng = [f'{i.mnemonic} {i.op_str}' for i in md.disasm(gexe.at(exe['vehicleEngine'] - 0x400000, 0x200), exe['vehicleEngine'])]
+        vm = exe['vehMatrix']
+        check(all(any(e.startswith('lea') and e.endswith(f'+ {o:#x}]') for e in eng) for o in (vm, vm + 0x40, exe['vehMatrixPrev'], exe['vehMatrixPrev'] + 0x40)),
+              f'{name} vehMatrix: Engine copies it and its inverse into vehMatrixPrev')
         brake = list(md.disasm(gexe.at(set_brake - 0x400000, 0x120), set_brake))
         check(stored and any(i.mnemonic == 'fld' and i.op_str.endswith(f'+ {exe["vehicleStepTime"]:#x}]') for i in brake),
               f'{name} vehicleStepTime: stored by the Engine Tick calls, read by SetBrake')

@@ -526,6 +526,23 @@ typedef struct MmlSoundState {
     float pos[3];           /* a 3D sound's place in the world now */
 } MmlSoundState;
 
+/* A car's body (vehicle_body, vehicle_hook below): what the game's physics integrates, in the world's axes. */
+typedef struct MmlVehicleBody {
+    float pos[3];           /* the body's position (metres) */
+    float axes[3][3];       /* forward, right, up: unit vectors (the model frame's z, x and y rows) */
+    float velocity[3];      /* m/s */
+    float turn[3];          /* the angular velocity, rad/s */
+} MmlVehicleBody;
+typedef struct MmlVehicleStep {
+    uint32_t size;
+    void *car;              /* the car (an actor of type 4) */
+    float dt;               /* this step's time (s): the frame's, cut by the game into Move's substeps */
+    int player;             /* the player's car */
+    MmlVehicleBody body;    /* before the step; written by the mod when it returns 1 */
+} MmlVehicleStep;
+/* Return 1: the game's physics skipped for this car's step, `body` is where the car is after it; 0: the game steps. */
+typedef int (*MmlVehicleFn)(MmlVehicleStep *step, void *user);
+
 /* The frame's measures (frame_stats below): the frames Present to Present, the last 600 of them. */
 typedef struct MmlFrameStats {
     uint32_t size;
@@ -914,6 +931,23 @@ typedef struct MmlHost {
     /* the game's own city music: 0 faded out and kept off (C_game::CityMusicPaused), 1 let play again. -1 when no
      * mission; the mod's choice is undone at its unload. */
     int (*music_game)(MmlMod *mod, int on);
+
+    /* ---- control (both builds; docs/MODDING.md "Control"). key_capture: the key kept from the game while on (the game
+     * reads it up; the mod still sees it: key_down, key_pressed, its hotkeys). action_capture: the action a slot
+     * belongs to (action_slot's), its primary and secondary bindings both, kept from the game: the game reads 0,
+     * action_held / action_pressed still give what the player does. Let go with on 0 and at the mod's unload.
+     * 0: not known (the key or the slot). */
+    int (*key_capture)(MmlMod *mod, int key, int on);
+    int (*action_capture)(MmlMod *mod, int slot, int on);
+    /* the player's own control locked as the scripts' PLAYER_LOCKCONTROLS does (C_player::LockControls): he stands,
+     * the game's walking, shooting and driving leave him alone, the controls are still read; the mod moves him.
+     * 0 gives it back (also at the mod's unload; a new mission starts free). */
+    int (*player_lock)(MmlMod *mod, int on);
+    /* a car's physics replaced: fn is told of every car's step (C_Vehicle::Engine) and may move the body itself
+     * (return 1). One mod at a time (a second replaces the first; NULL: none). */
+    int (*vehicle_hook)(MmlMod *mod, MmlVehicleFn fn, void *user);
+    /* a car's body read (read, may be NULL) and/or written (write, may be NULL) now */
+    int (*vehicle_body)(MmlMod *mod, void *car, MmlVehicleBody *read, const MmlVehicleBody *write);
 } MmlHost;
 
 #define MML_FILE_GAME 1              /* file_read: the game's own file, not a mod's of the same name */

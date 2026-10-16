@@ -269,6 +269,17 @@ void SoundFrame();                        // every frame: sounds that follow fra
 void SoundModGone(MmlMod *mod);           // (its unload) its sounds and music stopped, the city's music given back
 void SoundMissionClose();                 // (before the mission closes) the 3D sounds released
 bool SoundMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+// control handed to mods: keys and binding slots kept from the game (input.cpp), the player locked, a car's physics
+// replaced (control.cpp)
+bool KeyCapture(MmlMod *mod, int key, bool on);
+bool ActionCapture(MmlMod *mod, int slot, bool on);
+void CapturesRemove(MmlMod *mod);
+int PlayerLock(MmlMod *mod, int on);
+int VehicleHook(MmlMod *mod, MmlVehicleFn fn, void *user);
+int VehicleBody(void *car, MmlVehicleBody *read, const MmlVehicleBody *write);
+void ControlModGone(MmlMod *mod);         // (its unload) its vehicle hook dropped, its lock let go
+void ControlMissionClose();               // (the mission closes) the lock forgotten
+bool ControlMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 // the scene's lights (lights.cpp): LS3D's light frames listed and changed through its setters; lights.list, light.set
 void LightsMissionClosed();
 int SceneLights(MmlLight *out, int max);

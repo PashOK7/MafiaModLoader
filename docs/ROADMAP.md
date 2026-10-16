@@ -288,6 +288,15 @@ What is done, what comes next and later, and what is known to be missing or wron
   on `events.since` and MCP `wait`. Both builds' addresses checked by `check_builds.py`. The example
   `mods/examples/tally`; seen in the 1.2 and 1.0 labs (the player's shots, his leaving the taxi, a person killed by
   a script, a car blown up with its explosion and the hit it gave the player).
+- **Control** (2026-10-16; item 14, block 14a): `key_capture` (a key kept from the game: LS3D's keyboard state
+  cleared after mods read it), `action_capture` (an action's slots written 0 after the update, the player's values
+  kept for `action_held`), `player_lock` (C_player::LockControls and Do_Breath, as PLAYER_LOCKCONTROLS),
+  `vehicle_hook` (C_Vehicle::Engine: a mod steps a car's body; the host writes the body, its matrices and the model
+  frame, and keeps the car awake), `vehicle_body`. `input.capture`, `player.lock`, `vehicle.body`, `control.state`.
+  Checked in both builds by `check_builds.py` (1.0 keeps the step before's matrices at the C_Vehicle's start); seen
+  in both labs: a captured Accelerate or W/Up kept the taxi still (5 m without), the locked player stood, `hover`
+  flew the taxi 60 m 1.5 m over the street and turned it, and let go it fell. The primary and secondary bindings
+  read in the code (knowledge/notes/game.md, the owner's question). The example `mods/examples/hover`.
 - **Sound** (2026-10-16; item 13): `sound_play` (LS3D's I3D_sound: 2D as the menus' own sounds, in the world at a
   place, or following a frame; volume, pitch, range, looped), `sound_set`, `sound_move`, `sound_stop`,
   `sound_state`; music (`music_play`, `music_set`, `music_stop`: LS3D's IShow, the game's own streaming, times the
@@ -446,7 +455,8 @@ V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselv
 13. *(Done 2026-10-16: see "Done"; what is left: Known gaps.)* **Sound** (F K P C S W). The game's sounds and a mod's own (item 2) played in 2D or in 3D at a point or attached
     to a frame, looped, their volume and pitch changed live (an engine's note follows its revolutions), stopped;
     the music.
-14. **Control** (K P F V). A mod's keys and buttons taken so the game does not also act on them; actions of a mod's
+14. *(14a done 2026-10-16: keys and actions kept from the game, the player locked, a car's physics replaced; see
+    "Done". Left: actions in the game's controls menu, another kind of vehicle; Known gaps.)* **Control** (K P F V). A mod's keys and buttons taken so the game does not also act on them; actions of a mod's
     own, bindable in the game's controls menu like its own; the player's movement handed to a mod (a skateboard
     moves him, the game's walking stands aside) and given back; a vehicle's physics replaced by a mod's (a plane's
     flight on a car's or an airplane actor's body: `C_airplane` exists); entering, leaving and seats of a mod's
@@ -567,6 +577,14 @@ merged, sorted by importance):
   matrix being the camera's backdrop view, bit for bit (it was, every drawing, in both labs). `MML_VIEW_OWN_SECTOR`
   (a camera in another room) was not tried. The first two or three reloads of `rear_mirror` added 2..13 handles each (taken to be
   Direct3D's own warming up: views made and taken back by mode changes added none); then 0.
+- **Control** (host/control.cpp, input.cpp, item 14a): **actions of a mod's own in the game's controls menu**
+  are not made: the menu's rows are fixed binding slots the profile saves (60 in 1.2); growing them means the
+  bindings' vector, the held/pressed arrays and the profile's copy (`G_LoadSaveClass + 0x1F4`), not read yet. A mod
+  binds its keys through its settings (`hotkey`, `key_down`) and captures them. **Seats and the using-objects of a
+  mod's vehicle** are the game's car's (`actor_seat`); a vehicle of another kind (a plane actor, `C_airplane`) was
+  not tried. In a replaced step the wheels are not run (their suspension and turning stay as they were) and the
+  sectors are not relinked by the host (a car flown 60 m drew fine; far flights not tried). The player's lock is
+  the scripts' (a mission's own lock and unlock act on the same flag).
 - **Sound** (host/sound.cpp, item 13): **heard by no one yet**: every check was made on LS3D's and DirectSound's
   state (playing, the position moving, the buffer's frequency and volume), none by ear; the owner listens once
   (`engine_note`, `sound.play`). No panning of a 2D sound (I3D's ambient sounds have none; ISND_sound's SetPanning

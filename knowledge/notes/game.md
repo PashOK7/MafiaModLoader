@@ -77,6 +77,17 @@ any of them up with `kb_function`.
   47 gear down, 49 horn, 51 look left, 53 look right, 55 clutch; one each: 57 manual/auto gearing, 58 change
   camera, 59 replace car (racing). The menu's texts: 301..325 and 330..344 (`G_TextDatabase` 0x6D8714,
   `GetTextOrNULL` 0x60FBA0).
+- **code** The primary and the secondary binding are one action read two ways (2026-10-16, 1.2's decompile; the
+  owner asked what really tells them apart). On foot (0x58F4B0) every pair is either at 0.25 or more (forwards,
+  backwards, the steps aside, walk/run, fire, crouch: `a4[0] >= 0.25 || a4[1] >= 0.25`): no difference. Driving
+  (0x5917F0), Accelerate (33/34), Brake (35/36), Clutch (55/56) and the steering (37/38 with 39/40): the primary
+  wins while it is not 0, and the player's flags (bits 2, 4, 8, 1) remember that it was in use and where the
+  secondary stood then (0x6478AC, 0x6478A8, 0x6478A4, 0x6478A0/0x64789C); once the primary is 0 the secondary is
+  taken only after it has moved 0.5 or more from there (a joystick's axis resting off its centre does not drive).
+  With the primary in use the car ramps the value (`C_Vehicle` `m_bDontInterpolateBrake`, `..Clutch`,
+  `..Steering` and the power's 0: interpolated); with the secondary it is applied as it is, not ramped (an analog
+  axis). The other driving pairs (handbrake, limiter, gears, horn, looks) are either nonzero. So an agent's or a
+  mod's value written to a secondary slot steers or accelerates exactly, a primary one through the car's ramps.
 - **game** On foot the player turns by `mouse sensitivity (float 0x6D4B00) * 5 * held[18]` radians an update
   (0x58F4B0). Measured: 141.3 degrees for a sum of 1 at sensitivity 0.4932, linear from 0.005 to 0.1 an update;
   right is positive, and on the Y axis down is positive. A value of 1 is 400 counts in one frame.

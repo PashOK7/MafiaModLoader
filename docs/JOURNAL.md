@@ -1124,3 +1124,23 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   stopping one: LS3D's).
 - **Nobody listened**: the owner hears it once (Known gaps).
 - **Tests**: offline the nine functions and the bridge's refusals with no game. ALL PASSED; check_builds ALL PASSED.
+
+## 2026-10-16: control (item 14, block 14a)
+
+- **Made** `host/control.cpp` (the player locked, a car's physics replaced, a car's body) and the captures in
+  `host/input.cpp`; five functions in the C ABI, four bridge methods.
+- **The primary and the secondary binding** (the owner asked what really tells them apart; read in 1.2's
+  decompile): on foot one action, either at 0.25; driving the primary wins while it is not 0 and is ramped by the
+  car, the secondary is taken once it has moved 0.5 from where it stood and is applied as it is (a joystick).
+  Captures take the whole action. Written in knowledge/notes/game.md.
+- **A car's body**: skipping C_Vehicle::Engine left the model where it was (the body moved 63 m alone): Move places
+  the model frame itself each substep, and the body's matrix (vehMatrix) is the frame's world matrix. The host now
+  writes them; 1.0 keeps the step before's matrices at the C_Vehicle's start, not after vehMatrix (found when the
+  check failed: `vehMatrixPrev`). Let go, the car stayed in the air until a pedal (the owner saw it fall at a key):
+  Tick's rest counters had put it to sleep; the host starts them again at every step a mod makes, and it falls at
+  once (both builds).
+- **In the labs**: a captured Accelerate, W (1.0) or Up (1.2) kept the taxi still, 5 m without; the locked player
+  stood (0.6..2.2 m unlocked); `hover` floated the taxi 1.5 m over the street, flew it 44..60 m, turned it left, and
+  dropped it when off.
+- **Tests**: offline the five functions and the bridge's refusals with no game. ALL PASSED; check_builds ALL PASSED
+  (the rest counters, the matrices' copy in each build's Engine).

@@ -39,7 +39,8 @@ One C header, `sdk/include/mml/mml.h`, every function of it in both builds:
   (and changed), the rain's parameters.
 - **The world without a program**: cars and people of any model made, moved, seated, armed; props (any model, not
   an actor) placed in the world or attached to a bone, a car or another prop; sounds in 2D or 3D (on a car, at a
-  place) with their pitch and volume changed live, music streamed, the city's music paused; the game's own script machine (every
+  place) with their pitch and volume changed live, music streamed, the city's music paused; keys and actions
+  kept from the game, the player's control locked, a car's physics replaced by a mod's; the game's own script machine (every
   command the missions have).
 - **Input and menus**: the game's actions by name, keys, hotkeys; items and whole pages in the game's own menus,
   made of its real controls.
@@ -54,7 +55,7 @@ One C header, `sdk/include/mml/mml.h`, every function of it in both builds:
 | Part | What it is |
 |---|---|
 | `MafiaModLoader.asi` (`host/`) | A 32-bit DLL loaded into the game by [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader). It is never unloaded: it turns the game's functions into events, keeps the hook chains mods share, loads the mods, isolates their faults, writes crash dumps, runs the bridge (TCP on 127.0.0.1) and the start. |
-| Mods (`mml\mods\<id>\`) | DLLs with a `mod.json`, written against one C header (`sdk/include/mml/mml.h`): C, C++, Rust, anything with a C ABI. Each is rebuilt and reloaded while the game runs. `core` gives the game's live state (player, car, people, actors, frames); `mods/examples/telemetry` (a speed and lap-time overlay) is the complete example of a mod; `mods/examples/fps_unlock` frees the frame rate (the game's 62.5 fps limit taken away, what breaks above it fixed); `mods/examples/boxes` is a heavy mod (Jolt Physics, a Direct3D 11 device of its own, shaders compiled in its build) that hot-reloads cleanly. One example a service: `rear_mirror` (mirrors, reflections, a headset's eyes), `river_water` (the river drawn anew), `depth_pulse`, `hud_panel`, `puppet`, `tally`, `orbit_cam`, `probe`, `bounty`, `dusk`, `exhaust_fx`, `wind`, `storm`, `props_demo`, `engine_note` (most are off by default: `call mod.load {"id"}`). |
+| Mods (`mml\mods\<id>\`) | DLLs with a `mod.json`, written against one C header (`sdk/include/mml/mml.h`): C, C++, Rust, anything with a C ABI. Each is rebuilt and reloaded while the game runs. `core` gives the game's live state (player, car, people, actors, frames); `mods/examples/telemetry` (a speed and lap-time overlay) is the complete example of a mod; `mods/examples/fps_unlock` frees the frame rate (the game's 62.5 fps limit taken away, what breaks above it fixed); `mods/examples/boxes` is a heavy mod (Jolt Physics, a Direct3D 11 device of its own, shaders compiled in its build) that hot-reloads cleanly. One example a service: `rear_mirror` (mirrors, reflections, a headset's eyes), `river_water` (the river drawn anew), `depth_pulse`, `hud_panel`, `puppet`, `tally`, `orbit_cam`, `probe`, `bounty`, `dusk`, `exhaust_fx`, `wind`, `storm`, `props_demo`, `engine_note`, `hover` (most are off by default: `call mod.load {"id"}`). |
 | `mml-mcp.exe` (`mcp/`) | The MCP server (Rust, 64-bit), outside the game: it launches and closes the game, talks to the bridge, reads the log and the crash dumps, deploys builds, and answers questions about the game's code from the knowledge base. |
 | `knowledge/` | What is known about the game's code: every function of the 1.2 `Game.exe` and `LS3DF.dll` (names, classes, signatures, calls), our own names, notes. Imported from the MafiaReverse decompiles (facts only; the code itself is never committed). |
 

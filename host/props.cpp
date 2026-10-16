@@ -70,27 +70,6 @@ bool InverseAffine(const float *m, float *o) {
     o[12] = ti.x; o[13] = ti.y; o[14] = ti.z; o[15] = 1;
     return true;
 }
-// The quaternion of a rotation as QuatMatrix (LS3D's formula) lays it out (Shepperd's method).
-Q QuatOf(const M3 &m) {
-    float m00 = m.r[0].x, m01 = m.r[0].y, m02 = m.r[0].z, m10 = m.r[1].x, m11 = m.r[1].y, m12 = m.r[1].z, m20 = m.r[2].x, m21 = m.r[2].y, m22 = m.r[2].z;
-    float tr = m00 + m11 + m22;
-    Q q;
-    if (tr > 0) {
-        float s = std::sqrt(tr + 1.0f) * 2;
-        q = {0.25f * s, (m21 - m12) / s, (m02 - m20) / s, (m10 - m01) / s};
-    } else if (m00 > m11 && m00 > m22) {
-        float s = std::sqrt(1.0f + m00 - m11 - m22) * 2;
-        q = {(m21 - m12) / s, 0.25f * s, (m01 + m10) / s, (m02 + m20) / s};
-    } else if (m11 > m22) {
-        float s = std::sqrt(1.0f + m11 - m00 - m22) * 2;
-        q = {(m02 - m20) / s, (m01 + m10) / s, 0.25f * s, (m12 + m21) / s};
-    } else {
-        float s = std::sqrt(1.0f + m22 - m00 - m11) * 2;
-        q = {(m10 - m01) / s, (m02 + m20) / s, (m12 + m21) / s, 0.25f * s};
-    }
-    float n = std::sqrt(q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z);
-    return n > 1e-9f ? Q{q.w / n, q.x / n, q.y / n, q.z / n} : Q{1, 0, 0, 0};
-}
 // A 4x4 into position, rotation and scale (per axis).
 void Decompose(const float *m, V3 *pos, Q *rot, V3 *scale) {
     V3 r[3] = {{m[0], m[1], m[2]}, {m[4], m[5], m[6]}, {m[8], m[9], m[10]}};

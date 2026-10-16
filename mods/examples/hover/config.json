@@ -1,0 +1,7 @@
+{
+  // The defaults of hover's settings (read at its load; config.set changes them live).
+  "height": 1.5,      // metres above the ground it floats
+  "speed": 25,        // its top speed, m/s
+  "turn": 1.2,        // how fast it turns, rad/s
+  "hotkey": "F8"      // hovering on and off
+}

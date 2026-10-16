@@ -32,6 +32,7 @@
 // fields of the menus take characters from LS3D's own translation of the keys it read); text.get {id}, text.find
 // {text, from, to}.
 #include "host.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -99,6 +100,17 @@ void WriteSlot(int slot, float held, float pressed) {
     MemWrite(Rd(c + game::Exe().controlsPressed) + 4 * slot, &pressed, 4);
 }
 
+// ---- what mods keep from the game (mml.h key_capture, action_capture): a key's bit cleared in LS3D's keyboard
+// state after mods have read it, an action's slots written 0 after the update (and after the agents' holds) with
+// what the player did kept for mods. Each is held by the mods that asked (counted), let go at their unload.
+struct Capture { MmlMod *mod; bool key; int code; };
+std::vector<Capture> g_captures;
+std::vector<float> g_realHeld, g_realPressed;   // the captured slots' values before they were written 0
+bool Captured(bool key, int code) {
+    for (const Capture &c : g_captures) if (c.key == key && c.code == code) return true;
+    return false;
+}
+
 void __fastcall UpdateHook(uintptr_t controls, void *edx, int flag) {
     g_update(controls, edx, flag);
     for (int s : g_clearSlots) WriteSlot(s, 0.0f, 0.0f);
@@ -115,6 +127,18 @@ void __fastcall UpdateHook(uintptr_t controls, void *edx, int flag) {
         h.edgeSent = true;
         h.frames--;
         i++;
+    }
+    int n = SlotCount();
+    if (!g_captures.empty() && n > 0) {
+        g_realHeld.assign(n, 0.0f);
+        g_realPressed.assign(n, 0.0f);
+        uint32_t held = Rd(controls + game::Exe().controlsHeld), pressed = Rd(controls + game::Exe().controlsPressed);
+        for (const Capture &c : g_captures) {
+            if (c.key || c.code < 0 || c.code >= n) continue;
+            MemRead(held + 4 * c.code, &g_realHeld[c.code], 4);
+            MemRead(pressed + 4 * c.code, &g_realPressed[c.code], 4);
+            WriteSlot(c.code, 0.0f, 0.0f);
+        }
     }
 }
 
@@ -163,6 +187,8 @@ int __stdcall KeyboardHook(void *igraph) {
     uint8_t *state = reinterpret_cast<uint8_t *>(ModuleBase("LS3DF.dll") + game::Ls3d().keyboardState);
     ApplyKeyHolds(state);
     KeysRead(state);
+    for (const Capture &c : g_captures)
+        if (c.key) state[c.code & 0xFF] &= 0x7F;   // (the game reads it up; mods saw it in KeysRead)
     return r;
 }
 
@@ -591,9 +617,44 @@ int ActionSlotOf(const char *name) {
 
 float ActionValue(int slot, bool pressed) {
     if (!ActionsKnown() || slot < 0 || slot >= SlotCount()) return 0.0f;
+    if (Captured(false, slot) && slot < static_cast<int>(g_realHeld.size())) return pressed ? g_realPressed[slot] : g_realHeld[slot];
     float v = 0.0f;
     MemRead(Rd(game::Exe().controls + (pressed ? game::Exe().controlsPressed : game::Exe().controlsHeld)) + 4 * slot, &v, 4);
     return v;
+}
+
+bool KeyCapture(MmlMod *mod, int key, bool on) {
+    if (key <= 0 || key > 255 || VirtualKeys()) return false;
+    auto it = std::find_if(g_captures.begin(), g_captures.end(), [&](const Capture &c) { return c.mod == mod && c.key && c.code == key; });
+    if (on && it == g_captures.end()) g_captures.push_back({mod, true, key});
+    if (!on && it != g_captures.end()) g_captures.erase(it);
+    return true;
+}
+// The action a slot belongs to: every binding of it (its primary and secondary slots) kept or let go together. The
+// game takes the two as one action: on foot either at 0.25 or more; driving (Accelerate, Brake, Clutch, the
+// steering) the primary while it is not 0, ramped by the car, else the secondary once it has moved 0.5 from where it
+// was, not ramped (a joystick's axis) (knowledge/notes/game.md, "The controls").
+bool ActionCapture(MmlMod *mod, int slot, bool on) {
+    if (!ActionsKnown() || slot < 0 || slot >= SlotCount()) return false;
+    int first = slot, count = 1, s = 0;
+    for (const Action &a : kActions) {
+        if (slot >= s && slot < s + a.slots) { first = s; count = a.slots; break; }
+        s += a.slots;
+    }
+    for (int k = first; k < first + count && k < SlotCount(); k++) {
+        auto it = std::find_if(g_captures.begin(), g_captures.end(), [&](const Capture &c) { return c.mod == mod && !c.key && c.code == k; });
+        if (on && it == g_captures.end()) g_captures.push_back({mod, false, k});
+        if (!on && it != g_captures.end()) g_captures.erase(it);
+    }
+    return true;
+}
+void CapturesRemove(MmlMod *mod) {
+    g_captures.erase(std::remove_if(g_captures.begin(), g_captures.end(), [&](const Capture &c) { return c.mod == mod; }), g_captures.end());
+}
+json CapturesJson() {
+    json out = json::array();
+    for (const Capture &c : g_captures) out.push_back({{"by", c.mod ? ModIdOf(c.mod) : "bridge"}, {c.key ? "key" : "slot", c.code}});
+    return out;
 }
 
 // "F5", "Ctrl+F5", "Ctrl+Shift+R": modifiers, then the key (a modifier alone is a key too).
@@ -678,7 +739,7 @@ bool InputMethod(const std::string &method, const std::string &paramsJson, std::
         for (int i = 0; i < 256; i++) if (g_keyNow[i]) down.push_back(DikName(i));
         for (const Hotkey &h : g_hotkeys) hotkeys.push_back({{"mod", ModIdOf(h.mod)}, {"combo", h.combo}});
         json out = {{"actions_hooked", g_actionsOk}, {"keys_hooked", g_keysOk}, {"mouse_hooked", g_mouseOk}, {"holds", State()},
-                    {"keys_down", down}, {"hotkeys", hotkeys}};
+                    {"keys_down", down}, {"hotkeys", hotkeys}, {"captures", CapturesJson()}};
         Cursor c = MenuCursor();
         if (MenusMouseKnown())
             out["cursor"] = {{"menu_open", c.menu}, {"x", std::round(c.px / c.sx * 10) / 10}, {"y", std::round(c.py / c.sy * 10) / 10}};
@@ -754,8 +815,24 @@ bool InputMethod(const std::string &method, const std::string &paramsJson, std::
             } else i++;
         }
         *reply = json{{"released", before - g_holds.size()}}.dump(-1, ' ', false, json::error_handler_t::replace);
+    } else if (method == "input.capture") {   // keys and actions kept from the game for the bridge (agents' tests)
+        bool on = p.value("on", true);
+        if (p.contains("key")) {
+            int k = KeyCode(p["key"]);
+            if (k <= 0 || !KeyCapture(nullptr, k, on)) { *reply = "input.capture: key: a key's name or code (with a build whose keyboard is known)"; return true; }
+        } else if (p.contains("action")) {
+            std::string name;
+            int slot = ActionsKnown() ? SlotOf(p["action"], &name) : -1;
+            if (slot < 0 || !ActionCapture(nullptr, slot, on)) { *reply = "input.capture: action: one of input.actions' (with a build whose actions are known)"; return true; }
+        } else if (p.value("all", false) && !on) {
+            CapturesRemove(nullptr);
+        } else {
+            *reply = "input.capture: key, action, or {\"all\": true, \"on\": false}";
+            return true;
+        }
+        *reply = json{{"captures", CapturesJson()}}.dump(-1, ' ', false, json::error_handler_t::replace);
     } else {
-        *reply = "unknown method '" + method + "' (input.actions, input.act, input.key, input.mouse, input.text, input.seq, input.release, input.state, text.get, text.find)";
+        *reply = "unknown method '" + method + "' (input.actions, input.act, input.key, input.mouse, input.text, input.seq, input.release, input.capture, input.state, text.get, text.find)";
         return true;
     }
     *ok = true;

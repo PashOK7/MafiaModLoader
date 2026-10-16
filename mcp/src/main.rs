@@ -975,7 +975,8 @@ radius}`, `world.shapes`; the game's state: `state.money {set}`, `human.health {
 effects: `exhaust.state`, `particles.defs`, `weather.state`, `weather.set`; props (models that are not actors): \
 `prop.create {model, at | parent, bone, pos, dir, scale}`, `prop.place`, `prop.attach`, `prop.show`, \
 `prop.remove`, `props.list`; sound: `sound.play {file, at | on, loop, pitch}`, `sound.set`, `sound.stop`, \
-`music.play {file, loop}`, `music.game {on}`, `sounds.list`; what \
+`music.play {file, loop}`, `music.game {on}`, `sounds.list`; control: `input.capture {key | action}`, \
+`player.lock {on}`, `vehicle.body {car}`, `control.state`; what \
 happened: `events.since` (or the wait tool); the frame: `prof.state` (or the profile tool), `gfx.state`, \
 `view.state`, `geom.survey`; any game function: `native.call {at, conv, this, args, ret}`; who writes a field: \
 the watch tool.";

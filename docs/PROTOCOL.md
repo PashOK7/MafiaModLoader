@@ -67,6 +67,9 @@ Taps can also start with the game, before its first frame: `"taps": ["5409D0 n=4
 | `music.set` | `music`, `volume` | the volume (times the options' music volume) |
 | `music.stop` | `music` or `all` | stopped and released |
 | `music.game` | `on` (false: the game's city music faded out and kept off) | `city_music` |
+| `player.lock` | `on` (default true) | the player's own control locked (the scripts' PLAYER_LOCKCONTROLS) or given back: `locked` |
+| `vehicle.body` | `car` (`"car"` default, `"0x..."`), and to write: `pos`, `velocity`, `turn` ([x, y, z]) | the car's body: `pos`, `velocity`, `turn`, `forward`, `right`, `up` |
+| `control.state` | | `lock_known`, `locked`, `locked_by`, `vehicle_hook` (a mod or `none`), `engine` (the step's hook), `steps`, `skipped` (steps a mod made), `faults` |
 | `lights.list` | `type` (`point`, `spot`, `directional`, `ambient`, `fog`), `all` (the lights that are off too), `max` (100), `rescan` | the scene's light frames: `count`, `kinds`, `lights` (`light`, `name`, `type`, `on`, `color`, `power`, `range`, `cone`, `pos`, `dir`, `sectors`), `sun` (`to_sun`, `color`, `ambient`) |
 | `light.set` | `light` (from `lights.list`), `color`, `power`, `range` ([near, far]), `on` | the light changed through LS3D's setters; the light after |
 | `state.money` | `set` or `add` | the freeride's money (`money`, null with no game; `shown`: the HUD shows it), set through the game's `C_game::SetScore` |
@@ -115,7 +118,8 @@ Taps can also start with the game, before its first frame: `"taps": ["5409D0 n=4
 | `input.text` | `text` (up to 200 characters of the US layout), `every_ms` (default 120), `ms` (each key held, default 60) | each character typed as a key press, with Shift where it needs it: the menus' text fields take what LS3D makes of the keys |
 | `input.seq` | `steps`: up to 256 of the above (each with `action`, `key`, `turn`, `mouse`, `button` or `wheel`) | all of them started on one clock (their `after_ms`), or none when one is wrong |
 | `input.release` | `what`: `"all"` (default), an action's or a key's name | holds dropped |
-| `input.state` | | the hooks, the holds running and waiting, the keys down at the last read, the mods' hotkeys |
+| `input.state` | | the hooks, the holds running and waiting, the keys down at the last read, the mods' hotkeys, `captures` |
+| `input.capture` | `key` (a name or code), or `action` (a name or slot: the action, its primary and secondary bindings both), `on` (default true); or `all` with `on` false | kept from the game (it reads the key up, the slot 0) while mods and `input.state` still see them: `captures` |
 | `text.get` / `text.find` | `id` / `text`, `from`, `to` | the game's localised texts (its text database), by id or by a part of the text |
 | `screenshot` | | asks for the next frame the game presents: `{id}` |
 | `screenshot.state` | `id` | `done`, `ok` or `error`, `path` (`<game>\mml\shots\<id>.bgra`: 16 bytes `"MMLS"`, width, height, 0; then BGRA rows, top first), `width`, `height` |

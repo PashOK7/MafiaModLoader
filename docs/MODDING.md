@@ -487,6 +487,44 @@ H->music_game(M, 0);                                                          /*
   following the revolutions; F9 turns it off; `engine_note.music {"file": "13 - Game Over.ogg"}` plays a track in
   place of the city's music.
 
+### Control: keys kept from the game, the player locked, a car's physics replaced
+
+```c
+int up = H->key_code("Up");
+H->key_capture(M, up, 1);                        /* the game reads Up as up; the mod still sees it (key_down) */
+int accel = H->action_slot("Accelerate");
+H->action_capture(M, accel, 1);                  /* Accelerate (both bindings) reads 0 for the game ... */
+float pedal = H->action_held(accel);             /* ... and what the player does for the mod */
+H->player_lock(M, 1);                            /* he stands; the mod moves him (actor_teleport, poses) */
+
+int OnStep(MmlVehicleStep *s, void *user) {      /* every car's physics step (C_Vehicle::Engine) */
+    if (!s->player) return 0;                    /* the game steps the others */
+    s->body.pos[1] += 0.5f * s->dt;              /* the mod's own flight: position, axes, velocities */
+    return 1;                                    /* the game's step skipped: this body is the car's */
+}
+H->vehicle_hook(M, OnStep, NULL);
+```
+
+- **Keys and actions kept from the game**: `key_capture` clears the key in LS3D's keyboard state after mods have
+  read it (every reader of the game sees it up: the controls, the menus, cheats); `action_capture` writes 0 into an
+  action's slots after the game's update (and after the agents' `input`), keeping what the player did for
+  `action_held` / `action_pressed`. An action's two bindings are one action to the game: on foot either at 0.25 or
+  more; driving the primary while it is not 0 (ramped by the car), else the secondary (not ramped: a joystick's
+  axis) (knowledge/notes/game.md, "Controls and input"). Both go back at the mod's unload.
+- **The player locked**: the scripts' own PLAYER_LOCKCONTROLS (`C_player::LockControls`): he stands where he is,
+  walking, shooting and driving leave him alone; the controls are still read. Given back at the mod's unload; a new
+  mission starts free.
+- **A car's physics replaced**: the function is told of every car's step with its body (`pos`, `axes` forward,
+  right, up, `velocity`, `turn`) and the step's time; returning 1 the game's step is skipped and the host makes the
+  car what the body says: the body's fields, its matrices (the one the exhaust and others read), the model frame
+  (placed as the game's Move places it), the car kept awake (Tick's rest counters started again, so it falls
+  under the game's physics at once when the mod lets it go). One mod at a time. `vehicle_body` reads or writes a
+  car's body at any time.
+- `call input.capture {"key": "W"}` / `{"action": "Accelerate"}` / `{"all": true, "on": false}`, `player.lock
+  {"on"}`, `vehicle.body {"car", "pos", "velocity", "turn"}`, `control.state`.
+- `mods/examples/hover` (not enabled by default): F8 and the player's car floats `height` metres over the ground
+  under it (the game's own ray), Accelerate and Brake push it, the steering turns it; F8 again and it drops back.
+
 ### What happens (shots, explosions, deaths, vehicles)
 
 | Event | When | `actor` | more |

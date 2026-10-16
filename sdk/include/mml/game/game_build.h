@@ -343,6 +343,14 @@ struct ExeBuild {
     // cityMusicPaused: C_game::CityMusicPaused, thiscall(C_game*, bool), ret 4: the city's music (C_game::Tick's
     // sounds\music\city_music_<area>.ogg) faded out and kept off while true (C_game +0x2FC0).
     uintptr_t musicVolume, cityMusicPaused;
+    // The player's control (host/control.cpp): playerLockControls, C_player::LockControls, thiscall(C_player*, bool),
+    // ret 4; humanDoBreath, C_human::Do_Breath, thiscall(C_human*): what the scripts' PLAYER_LOCKCONTROLS calls, in
+    // that order, on the player.
+    uintptr_t playerLockControls, humanDoBreath;
+    // A car's body as a mod steps it (host/control.cpp): vehMatrixPrev, the step before's body matrix (and its inverse
+    // 0x40 after it), into which C_Vehicle::Engine copies vehMatrix and its inverse before its substeps. 1.2 keeps it
+    // after vehMatrix's pair, 1.0 at the C_Vehicle's start (both read in each build's Engine).
+    int vehMatrixPrev;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -501,6 +509,9 @@ inline const ExeBuild kExe12 = {
     0x5B9540,   // (WEATHER_SETPARAM's call at 0x474417)
     // music (2026-10-16: C_game::IShowSetVolume 0x5B6600 multiplies by it; CityMusicPaused writes C_game +0x2FC0)
     0x6D4B10, 0x5AE1B0,
+    // the player's control (2026-10-16: PLAYER_LOCKCONTROLS 0x4702C8 calls them at 0x47030B and 0x470324)
+    0x595F00, 0x57D310,
+    0xDE8,   // (Engine's rep movsd at 0x4E1DC0 and 0x4E1DDD)
 };
 
 inline const ExeBuild kExe10 = {
@@ -590,6 +601,9 @@ inline const ExeBuild kExe10 = {
     // music (2026-10-16: game_media_apply_volumes 0x5F2280 multiplies by it; CityMusicPaused found by 1.2's bytes,
     // called at 0x5C1615)
     0x672498, 0x5E9DF0,
+    // the player's control (2026-10-16: PLAYER_LOCKCONTROLS 0x5BE0BC calls them at 0x5BE0FF and 0x5BE118)
+    0x4CD890, 0x49D870,
+    0x68,    // (Engine's rep movsd at 0x52E7AD and 0x52E7CA)
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,
