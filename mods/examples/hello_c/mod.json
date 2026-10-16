@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "native",
   "entry": "hello_c.dll",
-  "enabled": true,
+  "enabled": false,
   "builds": ["1.2", "1.0"],
   "load_order": 100,
   "depends": ["core"]

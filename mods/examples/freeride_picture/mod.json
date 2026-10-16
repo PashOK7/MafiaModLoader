@@ -6,7 +6,7 @@
   "name": "Freeride picture: a picture of the game's replaced by a mod's own file",
   "version": "0.1.0",
   "type": "files",
-  "enabled": true,
+  "enabled": false,
   "builds": ["1.2", "1.0"],
   "load_order": 100
 }

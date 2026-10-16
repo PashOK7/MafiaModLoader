@@ -620,12 +620,14 @@ def main():
     for mod in ('core', 'hello_c', 'boxes'):
         shutil.rmtree(os.path.join(mods, mod), ignore_errors=True)
         shutil.copytree(os.path.join(OUT, 'mml', 'mods', mod), os.path.join(mods, mod))
-    # boxes ships disabled; the harness loads it from the start (its world kept across the loads boxes_tests makes)
-    manifest = os.path.join(mods, 'boxes', 'mod.json')
-    with open(manifest) as f:
-        text = f.read()
-    with open(manifest, 'w') as f:
-        f.write(text.replace('"enabled": false', '"enabled": true'))
+    # the examples ship disabled; the harness loads hello_c and boxes from the start (boxes' world kept across the
+    # loads boxes_tests makes)
+    for mod in ('hello_c', 'boxes'):
+        manifest = os.path.join(mods, mod, 'mod.json')
+        with open(manifest) as f:
+            text = f.read()
+        with open(manifest, 'w') as f:
+            f.write(text.replace('"enabled": false', '"enabled": true'))
     # a mod's own files: files_a (files alone), files_b's files\ folder, the stand-in rw_data's "archive"
     src = os.path.join(ROOT, 'tests', 'mods')
     shutil.rmtree(os.path.join(mods, 'files_a'), ignore_errors=True)
