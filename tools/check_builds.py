@@ -907,6 +907,12 @@ def main(a):
         check(n >= 1, f'{name} carDb {exe["carDb"]:#x} is ECX of GetCarName')
         d = operands(gexe, w['tables'], 0x90)
         check(exe['items'] in d and exe['items'] + 4 in d, f'{name} items {exe["items"]:#x} and its count written by the tables\' loader')
+        # the items' memory comes from gameNew (the loader's fifth call: dtaOpen, delete, the size's seek, the seek back,
+        # new), which pushes 1 and the size and calls the CRT's allocator (the new handler's mode)
+        tc = [int(i.op_str, 16) for i in gexe.md.disasm(gexe.at(w['tables'] - 0x400000, 0x60), w['tables']) if i.mnemonic == 'call']
+        nw = [f'{i.mnemonic} {i.op_str}' for i in gexe.md.disasm(gexe.at(exe['gameNew'] - 0x400000, 8), exe['gameNew'])]
+        check(len(tc) >= 5 and tc[4] == exe['gameNew'] and tc[2] == tc[3] and nw[:2] == ['push 1', 'push dword ptr [esp + 8]'],   # (items.cpp)
+              f'{name} gameNew {exe["gameNew"]:#x}: the tables\' loader allocates the items with it')
     for f in ('modelOpen', 'missionCreateActor', 'gameAddTemp', 'gameRemoveTemp', 'vehicleCalm'):
         a, b = norm(g12.insn(e12[f] - 0x400000)), norm(g10.insn(e10[f] - 0x400000))
         check(a == b, f'{f}: 1.2 "{a}" vs 1.0 "{b}"')

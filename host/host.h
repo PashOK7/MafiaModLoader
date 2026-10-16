@@ -322,6 +322,15 @@ void SavesInit();                         // (after the game's hooks) SaveGameSa
 int SavePut(MmlMod *mod, int scope, const char *key, const void *data, size_t n, std::string *err);   // null mod: the bridge's
 size_t SaveGet(MmlMod *mod, int scope, const char *key, void *data, size_t cap);
 bool SavesMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+// a mod's own items (items.cpp): records added to the game's items, their ids kept in mml/items.json
+const char *GameTextOwn(uint32_t id);                       // (menus.cpp) the game's own text of an id, or null
+bool GameTextSet(uint32_t id, const std::string &utf8);     // (menus.cpp) one of the game's ids answered by the loader
+bool GameTextsReady();                                      // (menus.cpp) the text database hooked (once)
+void ItemsFrame();                        // every frame: the table ours once the game has it (ids kept from earlier runs)
+int ItemDefine(const std::string &mod, const MmlItemDef &def, std::string *err);   // the id, 0: refused
+int ItemFind(const std::string &mod, const std::string &name);
+std::string ItemOwner(int id);            // "mod/name" of a mod's item, "" for the game's
+bool ItemsMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 // people's animations, getting up, the traffic pedestrians' hits (anims.cpp)
 bool HumanBones(void *human, void **frames);   // (humans.cpp) the skeleton's frames of a person the host keeps
 bool HumanKnown(void *human);

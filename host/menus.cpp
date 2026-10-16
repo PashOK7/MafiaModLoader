@@ -398,9 +398,16 @@ std::vector<const char *> g_ourTexts;   // id - kTextBase - 1
 using GetTextFn = const char *(__fastcall *)(uintptr_t db, void *edx, uint32_t id);
 GetTextFn oGetText, oGetTextOrNull;
 bool g_textsOk;
+// The game's own ids answered by the loader (items.cpp: a mod's item's name at 3300 + its id...), interned strings.
+std::map<uint32_t, const char *> g_setTexts;
 const char *OurText(uint32_t id) {
     uint32_t i = id - kTextBase - 1;
-    return id > kTextBase && i < g_ourTexts.size() ? g_ourTexts[i] : nullptr;
+    if (id > kTextBase && i < g_ourTexts.size()) return g_ourTexts[i];
+    if (!g_setTexts.empty()) {
+        auto it = g_setTexts.find(id);
+        if (it != g_setTexts.end()) return it->second;
+    }
+    return nullptr;
 }
 const char *__fastcall hkGetText(uintptr_t db, void *edx, uint32_t id) {
     const char *t = OurText(id);
@@ -839,6 +846,21 @@ bool MenuTextsHook() {
 uint32_t GameTextId(const std::string &utf8) {
     if (!MenuTextsHook()) return 0;
     return TextIds({Ansi(utf8)});
+}
+// The game's own text of an id (its database's, not the loader's), or null.
+const char *GameTextOwn(uint32_t id) {
+    if (!MenuTextsHook()) return nullptr;
+    const char *t = nullptr;
+    __try { t = oGetTextOrNull(game::Exe().textDb, nullptr, id); } __except (EXCEPTION_EXECUTE_HANDLER) { t = nullptr; }
+    return t;
+}
+bool GameTextsReady() { return MenuTextsHook(); }
+// One of the game's own ids answered with this text from now on (UTF-8; "" gives it back to the game).
+bool GameTextSet(uint32_t id, const std::string &utf8) {
+    if (!MenuTextsHook()) return false;
+    if (utf8.empty()) g_setTexts.erase(id);
+    else g_setTexts[id] = Intern(Ansi(utf8));
+    return true;
 }
 std::string GameAnsi(const std::string &utf8) { return Ansi(utf8); }
 std::string MenuUtf8(const char *ansi) { return Utf8(ansi); }

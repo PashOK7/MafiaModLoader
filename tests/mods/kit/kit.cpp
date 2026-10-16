@@ -374,6 +374,19 @@ int Anims(const char *, MmlReply *r, void *) {
     return 0;
 }
 
+// A mod's items with no game: refused (no table), none found.
+int Items(const char *, MmlReply *r, void *) {
+    if (!MML_HAS(H, item_find)) { H->reply_error(r, "the loader has no item_define"); return 1; }
+    MmlItemDef d{sizeof d, "rod", "Fishing rod", "2rod.i3d", 17, -1, nullptr};
+    MmlItemDef bad{sizeof bad, "a rod!", nullptr, nullptr, 0, -1, nullptr};
+    int define = H->item_define(M, &d), badName = H->item_define(M, &bad), null = H->item_define(M, nullptr);
+    int find = H->item_find(M, "rod"), findOther = H->item_find(M, "other/rod");
+    char out[200];
+    snprintf(out, sizeof out, "{\"define\":%d,\"bad_name\":%d,\"null\":%d,\"find\":%d,\"find_other\":%d}", define, badName, null, find, findOther);
+    H->reply_append(r, out, static_cast<size_t>(-1));
+    return 0;
+}
+
 // People with no game: none, no skeleton, bone_set refused, no player.
 int Humans(const char *, MmlReply *r, void *) {
     if (!MML_HAS(H, human_player)) { H->reply_error(r, "the loader has no human_player"); return 1; }
@@ -444,6 +457,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->command(mod, "hud", "picture_load and the rest, hud_console, hud_help, the markers with no game", Hud, nullptr);
     host->command(mod, "saves", "save_put, save_get with no game", Saves, nullptr);
     host->command(mod, "anims", "human_anim_play and the rest, human_get_up with no game", Anims, nullptr);
+    host->command(mod, "items", "item_define, item_find with no game", Items, nullptr);
     host->command(mod, "control", "key_capture, action_capture, player_lock, vehicle_hook, vehicle_body with no game", Control, nullptr);
     host->command(mod, "sound", "sound_play and the rest, music_play and the rest with no game", Sound, nullptr);
     host->command(mod, "effects","car_exhaust, exhaust_hook, particle_def(_set) with no game", Effects, nullptr);

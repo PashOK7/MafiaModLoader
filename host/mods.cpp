@@ -492,6 +492,17 @@ int H_HumanAnimReplace(MmlMod *m, void *human, const char *own, const char *with
     return 0;
 }
 int H_HumanAnimState(MmlMod *m, void *human, MmlHumanAnim *out) { return Alive(m) ? HumanAnimState(human, out) : 0; }
+int H_ItemDefine(MmlMod *m, const MmlItemDef *def) {
+    if (!Alive(m) || !def) return 0;
+    if (def->size < offsetof(MmlItemDef, collected)) { Log(MML_LOG_WARN, Who(m), "item_define: an MmlItemDef too small"); return 0; }
+    MmlItemDef d{};
+    std::memcpy(&d, def, std::min<size_t>(def->size, sizeof d));
+    std::string err;
+    int id = ItemDefine(ModIdOf(m), d, &err);
+    if (!id) Log(MML_LOG_WARN, Who(m), "item_define %s: %s", d.name ? d.name : "?", err.c_str());
+    return id;
+}
+int H_ItemFind(MmlMod *m, const char *name) { return Alive(m) && name ? ItemFind(ModIdOf(m), name) : 0; }
 int H_HumanGetUp(MmlMod *m, void *human, int blend_ms) {
     if (!Alive(m)) return 0;
     std::string err;
@@ -1005,6 +1016,8 @@ void ModsInit() {
     g_host.human_anim_replace = H_HumanAnimReplace;
     g_host.human_anim_state = H_HumanAnimState;
     g_host.human_get_up = H_HumanGetUp;
+    g_host.item_define = H_ItemDefine;
+    g_host.item_find = H_ItemFind;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();
@@ -1107,6 +1120,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (HudMethod(method, paramsJson, reply, &ok)) return ok;
     if (SavesMethod(method, paramsJson, reply, &ok)) return ok;
     if (AnimsMethod(method, paramsJson, reply, &ok)) return ok;
+    if (ItemsMethod(method, paramsJson, reply, &ok)) return ok;
     if (WorldMethod(method, paramsJson, reply, &ok)) return ok;
     if (FilesMethod(method, paramsJson, reply, &ok)) return ok;
     if (RenderMethod(method, paramsJson, reply, &ok)) return ok;

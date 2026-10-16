@@ -343,6 +343,28 @@ H->human_take_item(M, p, 12);                    /* the scripts' human_delweapon
 - `mods/examples/bounty` (not enabled by default): each person the player kills pays `reward` dollars, his health
   comes back once nothing has hit him for a while, `endless_ammo` keeps the hand's weapon's reserve full.
 
+### A mod's own items
+
+```c
+MmlItemDef rod = {sizeof rod, "rod", "Fishing rod", "2rod.i3d", 17 /* made like the bucket */, -1, NULL};
+int id = H->item_define(M, &rod);                /* 35 and up; the same id for "rod" in every run */
+MmlItemDef fish = {sizeof fish, "trout", "Trout", NULL, 0 /* a key: kept among the extra items */, -1, "A trout!"};
+H->item_define(M, &fish);
+H->give_item(M, H->human_player(M), id, 0, 0);   /* given, held, dropped, picked up as the game's own */
+```
+
+- **What it is**: one more record of the game's items (`tables\predmety.def`, as the game loaded it), copied from
+  the game's item it is made `like` (where it is kept, how it is held, whether it is a weapon), with its label,
+  the model the game puts on the ground when it is dropped (`models\`, or the mod's own `files\models\`) and its
+  flags (`MML_ITEM_*`, -1: like's). The game shows the label itself: the pickup menu, the line when it comes into
+  the hand, "<label> collected" (or `collected`).
+- **Its id** (35 and up) is kept for the mod's name of it in `<game>\mml\items.json`, so a save holding the item
+  finds it again; defining the same name again gives the same id and changes the record (a hot reload does). An
+  id kept from an earlier run whose mod is not loaded is an inert item named by its key. Room for about 60 items:
+  an id is given only where the game's own texts 3300 + id, 3400 + id and 3500 + id are free.
+- `item_find(M, "rod")` (this mod's) or `"othermod/rod"`; `world.items` lists them with their `mod`;
+  `call items.define {"name", "label", "model", "like", "flags", "collected"}` (the bridge's own), `items.state`.
+
 ### The scene's lights
 
 ```c

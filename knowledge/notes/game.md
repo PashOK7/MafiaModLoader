@@ -393,6 +393,20 @@ autosplitter; kept outside it, not ported). Checked against the above:
   already freed (memory reserved, not committed). Then `LS3DF.dll+0x5AC2E`: the index buffer manager's `FreeAll`
   writing to owners already gone (24 stale slices made before anything of ours ran).
 
+## The items' table and a mod's items (read and seen 2026-10-16, both labs; host/items.cpp)
+
+- **code** `LoadMaterialsFromBin` (0x60F5C0; 1.0 0x592080), once from `G_LoadSaveClass::Init`: `tables\predmety.def`
+  read whole into `operator new` memory (0x6106FC; 1.0 0x624934), `g_pItems` and the count (size / 188). A record:
+  +0x00 the name (32), +0x20 the flags (`def-files-docs/predmety.md` in the 1.0 reverse), +0x24 the model (32),
+  +0x44.. a firearm's figures (+0x60 magazine, +0x64 reserve, +0x68.. floats), +0x88 1.0 in every record. The
+  inventory, the hand, dropping and picking up, the pickup menu and `human_addweapon` read it by id, bounded by the
+  count: a table grown in place (more records, the count raised) took a key's and a bucket's copies at 35 and 36.
+- **game** The names the game shows: text 3300 + id (the pickup menu's line, the line when it comes into the hand:
+  0x595EC5), 3400 + id ("... collected", 0x609C99 pushes 0xD48), 3500 + id (the gun shop, 0x5E29F2..). 3333..3399,
+  3433..3437 and 3533..3599 are blank (" ") in the 1.2 lab's English database; 3438 "You already have this weapon",
+  3439 "The weapon is fully loaded". 1.0 uses the same bases (0x4CD855, 0x55BCB9, 0x57899D..).
+- **game** A big item (the coat's slot, 0x200000) is refused by `human_addweapon` while the coat holds another.
+
 ## What bullets, crashes and falls do (read and seen 2026-10-16, both labs; host/happen.cpp)
 
 - **code** `C_game::NewShoot` (0x5A84A0; 1.0 0x5E3DF0) finds the static world's impact at once (`testLine`

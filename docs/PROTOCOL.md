@@ -125,7 +125,9 @@ Taps can also start with the game, before its first frame: `"taps": ["5409D0 n=4
 | `world.seat` | `actor` (a person), `car` (default `"car"`), `seat` (default 1) | the scripts' `human_force_settocar`: in the seat at once, no walk, no door |
 | `world.give` | `actor` (default `"player"`), `item` (a name: `"thompson 1928"`, `"colt"`, `"grenade"`, or a number), `loaded`, `reserve` (default: a full magazine, the item's usual reserve) | the scripts' `human_addweapon`: a character holds it at once, the player gets it in his inventory |
 | `world.cars` | `query` (a part of a name or a model) | the game's car list: `id`, `name`, `model` |
-| `world.items` | `query` | the items of `tables\predmety.def`: `id` (what `human_addweapon` takes), `name`, `kind` (`firearm`, `throwable`, `melee`, `item`), `model`, `magazine`, `reserve`, `flags` |
+| `world.items` | `query` | the items of `tables\predmety.def`: `id` (what `human_addweapon` takes), `name`, `kind` (`firearm`, `throwable`, `melee`, `item`), `model`, `magazine`, `reserve`, `flags`; a mod's item its `mod` ("mod/name") |
+| `items.define` | `name` (the bridge's own), `label`, `model`, `like` (the game's item copied, default 16 a key), `flags` (-1: like's), `collected` | `id` (35 and up, kept for the name in `mml\items.json`), `key`, `name` |
+| `items.state` | | `known`, `game_items`, `count`, `installed` (the table moved to the loader's), `room`, `file`, `items` (each `id`, `key`, `defined` this run; `label`, `like`, `model`, `flags`) |
 | `world.spawned` | | `known`, the actors `world.spawn` and mods made that are still there: actor, by (the mod, or `bridge`), model, pos |
 | `start.state` | | the start asked by `<game>\mml\start.json`: `waiting`, `profile`, `main`, `freeride`, `place`, `done`, `failed` (+ `error`; `kind`; `note`: a kind the profile had not opened) |
 | `input.actions` | | every action slot: its name, primary or secondary binding, the device and key it is bound to, its values now |

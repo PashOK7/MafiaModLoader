@@ -1268,3 +1268,18 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **In both labs** alike (ROADMAP "Done"): the taxi into the wall, bullets into the wall, the taxi and Paulie, a fall
   of 8.44 m, the Thompson dropped and picked up from the ground, a Colt given, the Magnum taken, the money set.
 - **Tests**: offline ALL PASSED; `mcp_smoke.py` ALL PASSED; check_builds ALL PASSED.
+
+## 2026-10-16: a mod's own items (item 10, block 10b)
+
+- **Read**: the items are `tables\predmety.def` read whole once (LoadMaterialsFromBin, at G_LoadSaveClass::Init)
+  into operator new memory; everything reads a record by id, bounded by the count. The game's names for an item
+  are its texts 3300, 3400 ("... collected") and 3500 + id, the same bases in 1.0; 3438 and 3439 are other lines.
+- **Tried by hand first**: the table copied into game memory one record longer (a bucket's and a key's copies at 35,
+  36): given, held, dropped, picked up from the ground, no fault.
+- **Made** `host/items.cpp`: `item_define` (like a game item, its label, model, flags; ids kept in
+  `mml\items.json`, an unloaded mod's id an inert placeholder), `item_find`; the game's text ids answered from the
+  loader (menus.cpp GameTextSet, only where the game's own are blank); `items.define`, `items.state`; world.items'
+  `mod`. The game's operator new was already in the table (the menus'); its use by the tables' loader is checked.
+- **In both labs** alike (ROADMAP "Done"): rod and trout at 35 and 36, the rod dropped and picked up ("Fishing rod
+  collected"), the ids kept after a restart.
+- **Tests**: offline ALL PASSED (item_define refused with no game, items.define's error); check_builds ALL PASSED.

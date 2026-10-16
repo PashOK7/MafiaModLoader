@@ -302,6 +302,15 @@ What is done, what comes next and later, and what is known to be missing or wron
   the Thompson dropped (lost, -147 rounds), picked up from the ground (1.2: the game's "Pickup/Use" menu, which pauses
   the game; 1.0: taken at once, the only item there), a Colt given to one who had it (rounds only, +14), the Magnum
   taken; the money set.
+- **A mod's own items** (2026-10-16; item 10, block 10b): `item_define` adds a record to the game's items (the table
+  moved once into the game's own heap, `gameNew`, with room for 128; the count raised), copied from the game's item
+  it is made like, with its label (the game's texts 3300, 3400 and 3500 + id answered by the loader, an id given
+  only where all three are free in the game's database), model and flags; ids kept by "mod/name" in
+  `mml\items.json` (an id whose mod is not loaded is an inert placeholder). `item_find`; `items.define`,
+  `items.state`; `world.items`' `mod`. Both builds' table and `gameNew` checked by `check_builds.py`. Seen alike in
+  the 1.2 and 1.0 labs: "Fishing rod" (made like the bucket, its model) and "Trout" (like a key) at 35 and 36,
+  given, the rod dropped (the bucket's model on the ground) and picked up ("Fishing rod collected", in his hand in
+  1.0), the trout taken; ITEM_GAINED and _LOST for each; after a restart the ids kept (placeholders until defined).
 - **Interaction** (2026-10-16; item 15): `zone_add` (spheres the player crosses, on foot or in his car, in the world
   or following a frame), `use_point_add` (a record of the loader's in the game's own using objects, C_game +
   0x29EC: what Action finds on foot, offered alone or in the game's own choice menu with a label that is a text id
@@ -447,7 +456,7 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
    thing, falls, items picked up, money). No "mission won or failed" and no objectives: the story is linear, a mission's script loads
    the next one when it is done (CHANGE_MISSION: MISSION_CLOSE, MISSION_OPEN already tell it), a failure is the
    player's death (HUMAN_DIED), and the objectives are texts the scripts show (`mission_objectives`), read in them.
-4. A mod's own items in the inventory (item 10's rest).
+4. *(Done 2026-10-16.)* A mod's own items in the inventory (item 10's rest).
 5. The statistics and the profile's progress (item 10's rest: kills, cars stolen, distance, chapters, unlocks).
 6. The world and its geometry (item 8's rest: the water's height, each model's file, the drawn triangles, cars'
    meshes, the `.4ds` index; item 12's rest: a prop's collision shape and animations; zones for people and cars).
@@ -728,6 +737,11 @@ merged, sorted by importance):
   stays in the screen's middle, now pointing where the game's camera looks) and the sound's listener are the game's.
   A camera the game itself follows (a field of view it keeps, an aim from the drawn camera) needs the camera's
   update hooked (mafia-ragdoll `freecam.cpp`, `ragcam.cpp`). Drawn only in the mission's world, not a menu's scene.
+- **A mod's own items** (host/items.cpp): a save holding a mod's item was not loaded in a test (the ids are kept for
+  it); a model of a mod's own `files\models\` was not tried (the game opens the item's model by its name, as files.cpp
+  answers). The game's first item array is left allocated (6.5 KB: a pointer to one of its records may be kept). An
+  item made like a firearm was not tried (its sounds, its HUD and the gun shop may index by id). At most about 60
+  items (the game's text ids after 3300 + id).
 - **What happens** (host/happen.cpp): the killer of `HUMAN_DIED` is the last attacker of `HUMAN_HIT` in 3 s (seen
   2026-10-16 in both labs: the player's Thompson killing a spawned Paulie, aimed by `world.ray` from the camera); a
   death the game queues with no hit (a script's) has none. `SHOT`'s direction is not a unit vector (its length is the weapon's reach). Deaths and vehicles come from

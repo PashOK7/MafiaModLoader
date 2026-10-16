@@ -513,9 +513,13 @@ bool WorldMethod(const std::string &method, const std::string &paramsJson, std::
             std::string q = Lower(p.value("query", ""));
             json list = json::array();
             for (const ItemRec &i : Items())
-                if (q.empty() || Lower(i.name).find(q) != std::string::npos)
-                    list.push_back({{"id", i.id}, {"name", i.name}, {"kind", ItemKind(i.flags)}, {"model", i.model},
-                                    {"magazine", i.magazine}, {"reserve", i.reserve}, {"flags", Hex(i.flags)}});
+                if (q.empty() || Lower(i.name).find(q) != std::string::npos) {
+                    json j = {{"id", i.id}, {"name", i.name}, {"kind", ItemKind(i.flags)}, {"model", i.model},
+                              {"magazine", i.magazine}, {"reserve", i.reserve}, {"flags", Hex(i.flags)}};
+                    std::string owner = ItemOwner(i.id);
+                    if (!owner.empty()) j["mod"] = owner;
+                    list.push_back(j);
+                }
             *reply = dump({{"count", list.size()}, {"items", list}});
         } else if (method == "world.spawned") {
             json list = json::array();

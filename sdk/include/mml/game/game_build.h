@@ -236,7 +236,8 @@ struct ExeBuild {
     // tables\predmety.def (g_pItems, the count after it), 188 bytes a record in both builds: +0x00 the name,
     // +0x20 flags (0x04 a melee weapon, 0x20 a firearm or a throwable, 0x80 a throwable), +0x24 the model, +0x60
     // the rounds in a magazine, +0x64 the rounds in reserve (seen in the 1.2 game: Colt 1911 7 and 35, Thompson
-    // 50 and 200); an item's id is its index (what HUMAN_ADDWEAPON takes).
+    // 50 and 200); an item's id is its index (what HUMAN_ADDWEAPON takes). The tables' loader allocates them with
+    // gameNew (the menus' fields), where host/items.cpp moves them.
     uintptr_t carDb, items;
     int carDbStride;
     // The main menu's flying camera (mods/examples/fps_unlock). menuCamTick: GM_Menu's TickCamera, fastcall(ms),

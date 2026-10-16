@@ -869,6 +869,13 @@ def main():
         r = b.call('kit.anims')
         check('human_anim_play, _stop, _replace, _state, human_get_up with no game: refused, nothing faults',
               r['ok'] and r['result'] == {'play': -1, 'stop': 0, 'replace': 0, 'state': 0, 'untouched': 1, 'get_up': 0}, r)
+        r = b.call('kit.items')
+        check('item_define, item_find with no game: refused, none found',
+              r['ok'] and r['result'] == {'define': 0, 'bad_name': 0, 'null': 0, 'find': 0, 'find_other': 0}, r)
+        r = b.call('items.define', {'name': 'rod'})
+        r2 = b.call('items.state')
+        check('items.define with no game: an error, saying why; items.state: not installed, nothing defined',
+              not r['ok'] and 'not known' in str(r) and r2['ok'] and r2['result']['installed'] is False and r2['result']['items'] == [], (r, r2))
         for method in ('human.anim', 'human.anim_state', 'human.get_up'):
             r = b.call(method, {'actor': '0x1000', 'play': 'walk'})
             check(f'{method} with no game: an error, saying why', not r['ok'] and ('not a person' in str(r) or 'no actors' in str(r)), r)

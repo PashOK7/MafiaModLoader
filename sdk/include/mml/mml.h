@@ -478,6 +478,19 @@ typedef struct MmlItem {
     int loaded, reserve;    /* rounds in it, in reserve */
 } MmlItem;
 
+/* A mod's own item (item_define). */
+typedef struct MmlItemDef {
+    uint32_t size;          /* sizeof(MmlItemDef) */
+    const char *name;       /* the mod's name for it ("rod": letters, digits, '_', '-', '.'): its id is kept for it */
+    const char *label;      /* what the game shows, UTF-8 ("Fishing rod"; NULL: the name) */
+    const char *model;      /* the model put on the ground when dropped ("2rod.i3d", at most 31 characters; NULL:
+                               like's) */
+    int like;               /* the game's item it is made like (0: 16, a key: kept among the extra items; 17 a bucket:
+                               carried, the coat's slot; 4 a baseball bat: a melee weapon...) */
+    int flags;              /* MML_ITEM_* (predmety.def's flags); -1: like's */
+    const char *collected;  /* the line when it is picked up (NULL: "<label> collected") */
+} MmlItemDef;
+
 /* A light of the scene (scene_lights below). */
 enum { MML_LIGHT_POINT = 1, MML_LIGHT_SPOT = 2, MML_LIGHT_DIRECTIONAL = 3, MML_LIGHT_AMBIENT = 4, MML_LIGHT_FOG = 5 };
 typedef struct MmlLight {
@@ -1101,7 +1114,28 @@ typedef struct MmlHost {
     int (*human_anim_replace)(MmlMod *mod, void *human, const char *own, const char *with);
     int (*human_anim_state)(MmlMod *mod, void *human, MmlHumanAnim *out);
     int (*human_get_up)(MmlMod *mod, void *human, int blend_ms);
+
+    /* ---- a mod's own items (both builds; docs/MODDING.md "A mod's own items"). item_define: an item of the mod's own
+     * added to the game's items (tables\predmety.def's records, as the game loaded them), made like one of the game's
+     * (its record copied: its kind, where it is kept, how it is held), with its label (what the game shows: the
+     * pickup menu, the line when it comes into the hand, "... collected"), its model (the model the game puts on the
+     * ground when it is dropped; models\, or the mod's files\models\) and its flags. Its id (35 and up) is kept for
+     * the mod's name of it across runs (mml\items.json), so a save holding it loads it again; the same name again:
+     * the same id, the record changed. It is then given, taken, dropped and picked up as the game's own (world_give,
+     * human_take_item, human_items, ITEM_GAINED). Returns the id, 0: refused (the log says why). item_find: the id
+     * of "mod/name" (any mod's; "name" alone: this mod's), 0: none. Game thread. */
+    int (*item_define)(MmlMod *mod, const MmlItemDef *def);
+    int (*item_find)(MmlMod *mod, const char *name);
 } MmlHost;
+
+/* predmety.def's flags (MmlItemDef.flags; tables\predmety.def's +0x20 word, read in the game's code) */
+#define MML_ITEM_MELEE      0x4u        /* a melee weapon (struck with) */
+#define MML_ITEM_RANGED     0x20u       /* a firearm or a throwable */
+#define MML_ITEM_THROWN     0x80u       /* a throwable */
+#define MML_ITEM_KEPT       0x100u      /* kept, not held (keys, papers: the inventory's row is not usable) */
+#define MML_ITEM_IN_HAND    0x2000u     /* taken straight into the hand */
+#define MML_ITEM_BIG        0x200000u   /* a big item: the coat's one slot */
+#define MML_ITEM_NOT_SOLD   0x800000u   /* not in the gun shop */
 
 #define MML_ANIM_SIMPLE 0x1
 
