@@ -1177,3 +1177,22 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   on Paulie's model taken, gone when `world.remove` destroyed him; leaving to the main menu (1.2) left none and no
   fault.
 - **Tests**: offline ALL PASSED; check_builds ALL PASSED.
+
+## 2026-10-16: the HUD (item 16)
+
+- **Read**: the HUD's pictures (G_IndicatorsClass::Create: IGraph's CreateITexture with the file, its alpha twin and
+  flags), the console (ConsoleAddText), the compass (SETCOMPASS: CompassSetDestination and the HUD's flag 0x80) and
+  the radar (RadarAddObject; DrawAll draws it under the flag 0x80000). The map's "target" (SetPlayerNaviPoint) is a
+  global nothing reads. 1.0's AddFlag, RemoveFlag found by their bytes, paired by SETCOMPASS's calls in both builds;
+  1.0's compass target is at +0x9270, not +0x9278 (`check_builds.py` reads it in CompassSetDestination).
+- **Made** `host/hud.cpp` (pictures, the console and help lines, markers on the screen, the radar and the compass;
+  a place given to the radar and the compass as an LS3D dummy frame) and pictures and the pass's items in
+  `host/draw.cpp` (the markers projected at each 2D pass with that frame's camera); nine functions in the C ABI,
+  `draw.picture` and five `hud.*` bridge methods.
+- **A trap**: the radar's flag set in the city freeride made DrawAll read a null (the mission has no radar map): the
+  game hung in the crash handler. The loader never sets that flag; the radar's marks show where a mission shows it.
+- **In both labs** alike (details in ROADMAP "Done"): markers at the edge with their distance, the compass taken,
+  handed between markers and given back with the HUD's flags as they were; pictures with alpha, tinted, turned;
+  console lines bottom left, the help line above the crosshair; nothing left after the mission's close.
+- **Tests**: offline the nine functions and the bridge's refusals with no game. ALL PASSED; `mcp_smoke.py` ALL
+  PASSED; check_builds ALL PASSED.

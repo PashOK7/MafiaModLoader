@@ -548,6 +548,23 @@ typedef void (*MmlZoneFn)(int zone, int inside, void *actor, void *user);
 typedef void (*MmlUseFn)(int point, void *user);
 typedef void (*MmlTimerFn)(int timer, void *user);
 
+/* A marker on the HUD (hud_marker_add): a place in the world shown on the screen, the radar or the compass. */
+typedef struct MmlHudMarker {
+    uint32_t size;          /* sizeof(MmlHudMarker) */
+    float pos[3];           /* in the world, or in frame's space when frame is given */
+    void *frame;            /* followed (actor_frame's model, a bone from human_skeleton, a prop); NULL: the world */
+    uint32_t flags;         /* MML_MARKER_* */
+    uint32_t argb;          /* its colour on the screen (a picture's tint) and on the radar; 0: white */
+    int picture;            /* drawn at its place on the screen (picture_load); 0: a diamond of its colour */
+    float scale;            /* its height on the screen in 800x600 units; 0: 24 */
+    const char *label;      /* written under it on the screen (UTF-8; NULL: none); copied */
+} MmlHudMarker;
+#define MML_MARKER_SCREEN   0x01   /* drawn where it is on the screen (its picture or a diamond, its label) */
+#define MML_MARKER_DISTANCE 0x02   /* with its distance from the player under it ("35 m") */
+#define MML_MARKER_EDGE     0x04   /* off the screen or behind the camera: held at the screen's edge, toward it */
+#define MML_MARKER_RADAR    0x08   /* a mark on the game's radar (shown where the mission shows its radar) */
+#define MML_MARKER_COMPASS  0x10   /* the compass' target, the compass shown (one target: the newest marker's) */
+
 /* The frame's measures (frame_stats below): the frames Present to Present, the last 600 of them. */
 typedef struct MmlFrameStats {
     uint32_t size;
@@ -967,6 +984,29 @@ typedef struct MmlHost {
     int (*use_point_add)(MmlMod *mod, const float pos[3], float radius, void *frame, const char *label, MmlUseFn fn, void *user);
     int (*timer_add)(MmlMod *mod, int ms, int repeat, MmlTimerFn fn, void *user);
     int (*interact_remove)(MmlMod *mod, int id);
+
+    /* ---- the HUD (both builds; docs/MODDING.md "The HUD"). Pictures: picture_load opens a texture by the game's own
+     * loader (IGraph::CreateITexture, as the HUD opens its own): a file of the game's maps\ (the archives, or a mod's
+     * files\Maps\), a .tga with its alpha, a .bmp opaque or with alpha_file (its "+" twin: "icon.bmp", "icon+.bmp");
+     * its handle, 0: not loaded (the log says why). It stays until picture_free or the mod's unload; the same file
+     * twice is the same texture. picture_size: its pixels. draw_picture: as draw_rect, the picture on it, turned by
+     * angle (degrees, clockwise, about its centre), tinted by argb (0xFFFFFFFF: as it is), uv the part of it
+     * ({u0, v0, u1, v1}; NULL: all). */
+    int (*picture_load)(MmlMod *mod, const char *file, const char *alpha_file);
+    int (*picture_size)(int picture, int *width, int *height);
+    void (*picture_free)(MmlMod *mod, int picture);
+    void (*draw_picture)(MmlMod *mod, int picture, float x, float y, float w, float h, float angle, uint32_t argb, const float uv[4]);
+    /* Messages in the game's style: hud_console a line of the game's console (bottom left; five lines, 5 s each, at
+     * most 63 characters; UTF-8, its colour argb's RGB); hud_help a line of its help (the mission's hints, above the
+     * crosshair): the ms it is shown, 0: not shown. */
+    int (*hud_console)(MmlMod *mod, const char *text, uint32_t argb);
+    int (*hud_help)(MmlMod *mod, const char *text);
+    /* Markers (MmlHudMarker above): hud_marker_add its id (0: refused, the log says why), hud_marker_set changes it,
+     * hud_marker_remove takes it away. A mod's go with its unload, every one with the mission's close, one on an
+     * actor's frame with the actor; the compass goes back to the mission's target when the marker that took it goes. */
+    int (*hud_marker_add)(MmlMod *mod, const MmlHudMarker *marker);
+    int (*hud_marker_set)(MmlMod *mod, int marker, const MmlHudMarker *m);
+    int (*hud_marker_remove)(MmlMod *mod, int marker);
 } MmlHost;
 
 #define MML_FILE_GAME 1              /* file_read: the game's own file, not a mod's of the same name */

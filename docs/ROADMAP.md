@@ -298,6 +298,19 @@ What is done, what comes next and later, and what is known to be missing or wron
   front" beside the taxi, its pick a USED with no car entered, the car's pick entering it; a point alone taken by
   Action at once; one on Paulie's model taken, and gone when he was removed; the mission's close leaving none; a
   zone entered, a timer at 2 s (1.0).
+- **The HUD** (2026-10-16; item 16; host/hud.cpp, draw.cpp): pictures opened by the game's own texture loader
+  (`picture_load`, IGraph::CreateITexture with the HUD's own flags: a .tga's alpha, a .bmp's "+" twin), drawn turned,
+  tinted and cut (`draw_picture`, `draw.picture`); the game's console (`hud_console`, ConsoleAddText) and help line
+  (`hud_help`); markers (`hud_marker_add`, `_set`, `_remove`; `hud.marker`, `hud.remove`, `hud.list`) on the screen
+  (projected with the camera of the frame being drawn, held at the screen's edge when off it, with the distance), on
+  the radar (RadarAddObject) and as the compass' target (CompassSetDestination and the HUD's flag 0x80, as the
+  scripts' SETCOMPASS; given back to the mission's target), a place of the world given to them as an LS3D dummy
+  frame. The HUD's flags and the compass' target paired in both builds by `check_builds.py` (1.0's target is not
+  0x5000 further as the rest: 8 less). Seen in both labs alike: a marker on the taxi held at the screen's left edge
+  "Taxi 19 m" while the compass pointed behind, a second one taking the compass (the needle turned to it) and giving
+  it back when removed, the compass hidden again and the HUD's flags as they were when the last went; a marker on
+  Paulie gone with him; the scope's `2sight.bmp` with its `+` twin (the circle clear), `1numbers.tga` tinted red
+  and turned; console and help lines; markers hidden under the pause menu; leaving to the main menu left none.
 - **Control** (2026-10-16; item 14, block 14a): `key_capture` (a key kept from the game: LS3D's keyboard state
   cleared after mods read it), `action_capture` (an action's slots written 0 after the update, the player's values
   kept for `action_held`), `player_lock` (C_player::LockControls and Do_Breath, as PLAYER_LOCKCONTROLS),
@@ -473,7 +486,7 @@ V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselv
     vehicle (the game's using-objects).
 15. *(Done 2026-10-16: see "Done"; what is left: Known gaps.)* **Interaction** (F P C). Use-points with the game's own prompt ("Fish" at the water's edge), zones with enter and
     leave events, timers of the game's clock (they stop with the pause).
-16. **The HUD** (C F P V). Pictures and textures in the 2D layer (an achievement's icon, a plane's instruments:
+16. *(Done 2026-10-16: see "Done"; what is left: Known gaps.)* **The HUD** (C F P V). Pictures and textures in the 2D layer (an achievement's icon, a plane's instruments:
     drawing has text, lines and rectangles only), notifications in the game's style (its console, `console_addtext`,
     with a mod's own texts), markers at world positions, the compass's and the map's target.
 17. **A mod's state in the game's saves** (C F). A mod's data written with each save slot and read back when that
@@ -591,6 +604,14 @@ merged, sorted by importance):
   A use-point is on foot only (the game's using objects are; nothing offers one in a car), its reach a horizontal
   circle with the game's own 1.5 m up or down; the menu's line is the label as it is (no icon, no hint of what
   comes). A label's text id stays for the game's life (one a distinct text: the same label gets the same id).
+- **The HUD** (host/hud.cpp, item 16): **the radar was not seen with a mark**: the game draws its radar from the
+  mission's radar map where the mission turns it on (the HUD's flag 0x80000), and none of the freerides tried does
+  (setting the flag in `freeitaly` made DrawAll read a null: the loader never sets it); which missions show it was
+  not looked for. The map has no target of its own: SETCOMPASS's SetPlayerNaviPoint (1.2 0x58F160) writes a global
+  nothing reads, so the compass is the only target. Markers are drawn over the world, not hidden by walls; a marker
+  on a frame gives the radar and the compass that frame's origin (its `pos` offset is for the screen only). A
+  device lost and made again (alt-tab, a new resolution) was not tried with pictures (LS3D's own textures, the HUD's
+  among them, come back by its texture manager).
 - **Control** (host/control.cpp, input.cpp, item 14a): **actions of a mod's own in the game's controls menu**
   are not made: the menu's rows are fixed binding slots the profile saves (60 in 1.2); growing them means the
   bindings' vector, the held/pressed arrays and the profile's copy (`G_LoadSaveClass + 0x1F4`), not read yet. A mod

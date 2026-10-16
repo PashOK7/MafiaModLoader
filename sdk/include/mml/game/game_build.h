@@ -353,8 +353,8 @@ struct ExeBuild {
     int vehMatrixPrev;
     // The HUD's own lines and marks (host/interact.cpp, host/hud.cpp), thiscall on the HUD (`hud`):
     // hudHelpAdd, G_IndicatorsClass::MissionHelpAdd(text id) ret 4 -> ms it shows: a line of the game's help (the
-    // objectives' lines at the top, wrapped, 2500 ms + 40 a character); hudConsoleAdd, ConsoleAddText(const char *,
-    // argb) ret 8: a line of the console (top left); hudCompassSet, CompassSetDestination(frame) ret 4: the compass'
+    // mission's hints above the crosshair, wrapped; 2500 ms + 40 a character); hudConsoleAdd, ConsoleAddText(const char *,
+    // argb) ret 8: a line of the console (bottom left); hudCompassSet, CompassSetDestination(frame) ret 4: the compass'
     // target (a frame; null: none); hudRadarAdd, RadarAddObject(frame, argb) ret 8 and hudRadarRemove,
     // RadarRemoveObject(frame) ret 4: a mark on the radar (the map's corner).
     uintptr_t hudHelpAdd, hudConsoleAdd, hudCompassSet, hudRadarAdd, hudRadarRemove;
@@ -369,6 +369,13 @@ struct ExeBuild {
     // menuExecute, GM_Menu::ExecuteMenu, fastcall(menu, bool tick, int) ret 4: the modal menu's loop, its result
     // (the action menu's: 0xA9 + the item's index, 0xA8 take them all, other: nothing chosen).
     uintptr_t uoAdd, uoDel, uoFind, menuExecute;
+    // The HUD's parts shown (host/hud.cpp): hudAddFlag, G_IndicatorsClass::AddFlag(flags), and hudRemoveFlag,
+    // RemoveFlag(flags), thiscall(hud) ret 4: or / and-not into the HUD's flags at hud + hudFlags. 0x80: the compass
+    // (the scripts' SETCOMPASS sets it with the compass' target, removes it with none); 0x80000: the radar, which
+    // DrawAll draws from the mission's radar map (where a mission has none, a null is read: never set it).
+    // hudCompassTarget: hud + this, the compass' target (the I3D_frame CompassSetDestination writes).
+    uintptr_t hudAddFlag, hudRemoveFlag;
+    int hudFlags, hudCompassTarget;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -534,6 +541,8 @@ inline const ExeBuild kExe12 = {
     0x5F9A00, 0x5F9D50, 0x5FA020, 0x5FA780, 0x5FA990,
     // the using objects (2026-10-16: MafiaOnline's and st0rm94's; Do_AB_OwnerNULL's calls at 0x5947B8 and 0x594891)
     0x55DD60, 0x55DF10, 0x55E180, 0x5EBA40,
+    // the HUD's flags (2026-10-16: SETCOMPASS at 0x46E1D8 calls AddFlag(0x80) and RemoveFlag(0x80))
+    0x47A080, 0x47A0A0, 0x40A4, 0x4278,
 };
 
 inline const ExeBuild kExe10 = {
@@ -631,6 +640,8 @@ inline const ExeBuild kExe10 = {
     0x54BB20, 0x54BE80, 0x54C150, 0x54C8A0, 0x54CAB0,
     // the using objects (2026-10-16: st0rm94's; player_do_action_button_on_foot's calls at 0x4CC1B8 and 0x4CC274)
     0x61BB30, 0x61BCE0, 0x61BF50, 0x56CCC0,
+    // the HUD's flags (2026-10-16: SETCOMPASS at 0x5BC005 calls them; the flags 0x5000 further, as the HUD's fonts)
+    0x424E20, 0x5C7DB0, 0x90A4, 0x9270,   // (the compass' target is not 0x5000 further: 8 less)
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,

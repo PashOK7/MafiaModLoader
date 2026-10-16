@@ -20,8 +20,13 @@
 // Not drawn: while the game loads (its loading screen is not the scene's 2D pass, and the loader has no frames
 // then) and during the intro videos.
 //
+// Pictures (hud.cpp's textures, opened by the game's own loader) are drawn as the game draws its textured rectangles
+// (SetTexture, then the strip), turned about their centre in pixels; the host's markers (hud.cpp) are queued at each
+// 2D pass, projected with the camera of the frame being drawn.
+//
 // Bridge methods (game thread): draw.text {x, y, text, size, color, font, align, ms}, draw.rect {x, y, w, h, color,
-// filled, ms}, draw.line {x0, y0, x1, y1, color, ms}, draw.clear, draw.state.
+// filled, ms}, draw.line {x0, y0, x1, y1, color, ms}, draw.picture {file, alpha, x, y, w, h, angle, color, uv, ms},
+// draw.clear, draw.state.
 #include "host.h"
 #include <algorithm>
 #include <cmath>
@@ -35,17 +40,21 @@ using json = nlohmann::json;
 namespace host {
 namespace {
 
-enum Kind { kText, kLine, kRect, kFrame };
+enum Kind { kText, kLine, kRect, kFrame, kPicture, kQuad };
 struct Item {                // plain data: drawn inside __try
     MmlMod *owner;           // null: the host's (the bridge's items)
     int kind;
-    float a, b, c, d;        // text: x, y, size; line: x0, y0, x1, y1; rectangles: x, y, w, h
+    float a, b, c, d;        // text: x, y, size; line: x0, y0, x1, y1; rectangles, pictures: x, y, w, h
     uint32_t argb;
     int font, align;
     DWORD until;             // the bridge's: the tick count it goes at
+    int picture;             // a picture's handle (hud.cpp): its texture is looked up when it is drawn
+    float angle;             // a picture's turn, degrees clockwise
+    float p[8];              // a picture's uv (u0, v0, u1, v1); a quad's corners (x, y four times, a strip's order)
     char text[128];
 };
 std::vector<Item> g_frame;   // the mods', for the frame being made
+std::vector<Item> g_pass;    // the host's for this 2D pass (hud.cpp's markers: projected with this frame's camera)
 std::vector<Item> g_held;    // the bridge's
 std::vector<MmlMod *> g_off; // mods whose drawing faulted (until they are reloaded: a reload is a new MmlMod)
 bool g_hooked;
@@ -71,7 +80,7 @@ bool Usable(float v) { return v == v && v > -1.0e6f && v < 1.0e6f; }
 
 bool Off(const MmlMod *mod) { return std::find(g_off.begin(), g_off.end(), mod) != g_off.end(); }
 
-Vertex V(float x, float y, uint32_t argb) { return Vertex{x, y, 0.0f, 1.0f, argb, 0xFF000000u, 0.0f, 0.0f}; }
+Vertex V(float x, float y, uint32_t argb, float u = 0.0f, float v = 0.0f) { return Vertex{x, y, 0.0f, 1.0f, argb, 0xFF000000u, u, v}; }
 
 void DrawOne(const Item &it, void *ig, const Space &s) {
     const game::ExeBuild &e = game::Exe();
@@ -82,7 +91,25 @@ void DrawOne(const Item &it, void *ig, const Space &s) {
                                                   it.argb, it.align, it.font, nullptr);
         return;
     }
+    if (it.kind == kPicture) {
+        void *tex = HudPictureTexture(it.picture);
+        if (!tex) return;   // (freed since it was queued)
+        Vt<SetTextureFn>(ig, 0x0C)(ig, tex);
+        // turned about its centre in pixels (the units are not square away from 4:3)
+        float cx = (it.a + it.c * 0.5f) * s.sx + s.ox, cy = (it.b + it.d * 0.5f) * s.sy, hw = it.c * 0.5f * s.sx, hh = it.d * 0.5f * s.sy;
+        float r = it.angle * 0.017453293f, cs = std::cos(r), sn = std::sin(r);
+        auto at = [&](float x, float y, float u, float v) { return V(cx + x * cs - y * sn, cy + x * sn + y * cs, it.argb, u, v); };
+        Vertex v[4] = {at(-hw, -hh, it.p[0], it.p[1]), at(hw, -hh, it.p[2], it.p[1]), at(-hw, hh, it.p[0], it.p[3]), at(hw, hh, it.p[2], it.p[3])};
+        Vt<DrawPrimitiveFn>(ig, 0x58)(ig, kPrimTriStrip, 2, v, 1);
+        return;
+    }
     Vt<SetTextureFn>(ig, 0x0C)(ig, nullptr);
+    if (it.kind == kQuad) {
+        Vertex v[4];
+        for (int k = 0; k < 4; k++) v[k] = V(it.p[2 * k] * s.sx + s.ox, it.p[2 * k + 1] * s.sy, it.argb);
+        Vt<DrawPrimitiveFn>(ig, 0x58)(ig, kPrimTriStrip, 2, v, 1);
+        return;
+    }
     if (it.kind == kLine) {
         Vertex v[2] = {V(it.a * s.sx + s.ox, it.b * s.sy, it.argb), V(it.c * s.sx + s.ox, it.d * s.sy, it.argb)};
         Vt<DrawPrimitiveFn>(ig, 0x58)(ig, kPrimLineList, 1, v, 1);
@@ -109,8 +136,8 @@ DWORD SafeDrawOwner(const Item *items, size_t n, const MmlMod *owner, void *ig, 
 
 // The engine's state for 2D drawing set as the HUD sets it for itself (G_IndicatorsClass::DrawAll: IGraph's state 0,
 // the blending, to 1; the driver's state 3 to 0), every owner's items drawn, the state put back.
-DWORD SafeDrawAll(const Item *frame, size_t nFrame, const Item *held, size_t nHeld, MmlMod **owners, size_t nOwners,
-                  DWORD *ownerFault, unsigned *drawn) {
+DWORD SafeDrawAll(const Item *frame, size_t nFrame, const Item *pass, size_t nPass, const Item *held, size_t nHeld, MmlMod **owners,
+                  size_t nOwners, DWORD *ownerFault, unsigned *drawn) {
     __try {
         const game::ExeBuild &e = game::Exe();
         void *ig = *reinterpret_cast<void **>(e.igraph), *drv = *reinterpret_cast<void **>(e.i3dDriver);
@@ -123,8 +150,12 @@ DWORD SafeDrawAll(const Item *frame, size_t nFrame, const Item *held, size_t nHe
         Vt<SetStateFn>(drv, 0x14)(drv, 3, 0);
         Vt<SetStateFn>(ig, 0x44)(ig, 0, 1);
         Vt<SetStateFn>(ig, 0x44)(ig, 1, 0);
-        for (size_t k = 0; k < nOwners; k++)
-            ownerFault[k] = owners[k] ? SafeDrawOwner(frame, nFrame, owners[k], ig, &s, drawn) : SafeDrawOwner(held, nHeld, nullptr, ig, &s, drawn);
+        for (size_t k = 0; k < nOwners; k++) {
+            DWORD f = SafeDrawOwner(frame, nFrame, owners[k], ig, &s, drawn);
+            if (!f) f = SafeDrawOwner(pass, nPass, owners[k], ig, &s, drawn);
+            if (!f && !owners[k]) f = SafeDrawOwner(held, nHeld, nullptr, ig, &s, drawn);
+            ownerFault[k] = f;
+        }
         Vt<SetStateFn>(ig, 0x44)(ig, 1, func);
         Vt<SetStateFn>(ig, 0x44)(ig, 0, blend);
         Vt<SetStateFn>(drv, 0x14)(drv, 3, state3);
@@ -135,13 +166,17 @@ DWORD SafeDrawAll(const Item *frame, size_t nFrame, const Item *held, size_t nHe
 void DrawQueued() {
     g_passes++;
     g_drawnLast = 0;
-    if (g_frame.empty() && g_held.empty()) return;
+    g_pass.clear();
+    HudPass();   // (hud.cpp: the markers, where this frame's camera puts them)
+    if (g_frame.empty() && g_pass.empty() && g_held.empty()) return;
     std::vector<MmlMod *> owners;   // in the order they first queued; the bridge's items last (on top)
-    for (const Item &it : g_frame)
-        if (std::find(owners.begin(), owners.end(), it.owner) == owners.end()) owners.push_back(it.owner);
-    if (!g_held.empty()) owners.push_back(nullptr);
+    for (const std::vector<Item> *v : {&g_pass, &g_frame})
+        for (const Item &it : *v)
+            if (it.owner && std::find(owners.begin(), owners.end(), it.owner) == owners.end()) owners.push_back(it.owner);
+    owners.push_back(nullptr);
     std::vector<DWORD> faults(owners.size(), 0);
-    DWORD ex = SafeDrawAll(g_frame.data(), g_frame.size(), g_held.data(), g_held.size(), owners.data(), owners.size(), faults.data(), &g_drawnLast);
+    DWORD ex = SafeDrawAll(g_frame.data(), g_frame.size(), g_pass.data(), g_pass.size(), g_held.data(), g_held.size(), owners.data(),
+                           owners.size(), faults.data(), &g_drawnLast);
     if (ex) {
         // not in an item: in the state calls around them. Nobody's fault but ours: say it once and stop drawing.
         char b[96];
@@ -149,6 +184,7 @@ void DrawQueued() {
         if (g_lastFault != b) Log(MML_LOG_ERROR, "host", "draw: %s; nothing is drawn", b);
         g_lastFault = b;
         g_frame.clear();
+        g_pass.clear();
         g_held.clear();
         return;
     }
@@ -156,14 +192,14 @@ void DrawQueued() {
         if (!faults[k]) continue;
         char b[160];
         snprintf(b, sizeof b, "exception %08X while drawing %s's items", static_cast<unsigned>(faults[k]), ModIdOf(owners[k]));
-        g_lastFault = b;
         if (owners[k]) {
             g_off.push_back(owners[k]);
             Log(MML_LOG_ERROR, "host", "draw: %s: its drawing is off until it is reloaded", b);
         } else {
-            g_held.clear();
-            Log(MML_LOG_ERROR, "host", "draw: %s: the bridge's items are dropped", b);
+            g_held.clear();   // (and the host's markers are drawn again next pass: said once)
+            if (g_lastFault != b) Log(MML_LOG_ERROR, "host", "draw: %s: the bridge's items are dropped", b);
         }
+        g_lastFault = b;
     }
 }
 
@@ -192,6 +228,19 @@ Item TextItem(MmlMod *mod, float x, float y, float size, uint32_t argb, int font
     it.font = font < 0 || font >= MML_FONT_COUNT_ ? MML_FONT_SMALL : font;
     it.align = align == MML_DRAW_CENTER || align == MML_DRAW_RIGHT ? align : MML_DRAW_LEFT;
     strncpy(it.text, text ? text : "", sizeof it.text - 1);
+    return it;
+}
+
+Item PictureItem(MmlMod *mod, int picture, float x, float y, float w, float h, float angle, uint32_t argb, const float *uv) {
+    Item it{};
+    it.owner = mod;
+    it.kind = kPicture;
+    it.picture = picture;
+    it.a = x; it.b = y; it.c = w; it.d = h;
+    it.angle = angle == angle ? angle : 0.0f;
+    it.argb = argb;
+    const float all[4] = {0, 0, 1, 1};
+    memcpy(it.p, uv ? uv : all, sizeof all);
     return it;
 }
 
@@ -266,6 +315,41 @@ void DrawRect(MmlMod *mod, float x, float y, float w, float h, uint32_t argb, in
     Queue(&g_frame, ShapeItem(mod, filled ? kRect : kFrame, x, y, w, h, argb));
 }
 
+void DrawPicture(MmlMod *mod, int picture, float x, float y, float w, float h, float angle, uint32_t argb, const float uv[4]) {
+    if (!mod || Off(mod) || picture <= 0) return;
+    Queue(&g_frame, PictureItem(mod, picture, x, y, w, h, angle, argb, uv));
+}
+
+// The host's items for this 2D pass (hud.cpp, from HudPass): drawn under their owner's fault guard, dropped after it.
+void DrawPassText(MmlMod *owner, float x, float y, float size, uint32_t argb, int font, int align, const char *text) {
+    if (Off(owner) || !text || !*text) return;
+    Queue(&g_pass, TextItem(owner, x, y, size, argb, font, align, text));
+}
+void DrawPassPicture(MmlMod *owner, int picture, float x, float y, float w, float h, float angle, uint32_t argb) {
+    if (Off(owner)) return;
+    Queue(&g_pass, PictureItem(owner, picture, x, y, w, h, angle, argb, nullptr));
+}
+void DrawPassQuad(MmlMod *owner, const float xy[8], uint32_t argb) {
+    if (Off(owner)) return;
+    Item it = ShapeItem(owner, kQuad, xy[0], xy[1], xy[6], xy[7], argb);
+    memcpy(it.p, xy, sizeof it.p);
+    Queue(&g_pass, it);
+}
+// A point of camera_project's (800 x 600 over the whole viewport) in the HUD's units (800 x 600 of its 4:3 middle
+// where the game adds an x offset); false before the HUD is set up.
+bool DrawUnitsFromScreen(float x, float y, float *ux, float *uy) {
+    __try {
+        const game::ExeBuild &e = game::Exe();
+        const float *scale = reinterpret_cast<const float *>(e.hud + e.hudScale);
+        float ox = e.hudXOffset ? *reinterpret_cast<const float *>(e.hudXOffset) : 0.0f;
+        if (!(scale[0] > 0.01f && scale[0] < 100.0f)) return false;
+        float width = scale[-2];   // (the screen's pixels: hud + hudScale - 8)
+        *ux = (x / 800.0f * width - ox) / scale[0];
+        *uy = y;
+        return width > 1.0f;
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
+
 void DrawRemove(MmlMod *mod) {
     g_frame.erase(std::remove_if(g_frame.begin(), g_frame.end(), [&](const Item &it) { return it.owner == mod; }), g_frame.end());
 }
@@ -308,8 +392,20 @@ bool DrawMethod(const std::string &method, const std::string &paramsJson, std::s
                            p.value("h", 0.0f), Colour(p, "color"));
         } else if (method == "draw.line") {
             it = ShapeItem(nullptr, kLine, p.value("x0", 0.0f), p.value("y0", 0.0f), p.value("x1", 0.0f), p.value("y1", 0.0f), Colour(p, "color"));
+        } else if (method == "draw.picture") {
+            std::string file = p.value("file", ""), err;
+            if (file.empty()) { *reply = "file: a picture of the game's maps\\ (\"2sight.bmp\", a mod's files\\Maps\\...); alpha (its \"+\" twin), x, y, w, h (800x600 units), angle, color, uv [u0, v0, u1, v1], ms"; return true; }
+            int pic = HudPictureLoad(nullptr, file.c_str(), p.value("alpha", "").c_str(), &err);
+            if (!pic) { *reply = "draw.picture: " + err; return true; }
+            float uv[4] = {0, 0, 1, 1};
+            if (p.contains("uv") && p["uv"].is_array() && p["uv"].size() == 4)
+                for (int k = 0; k < 4; k++) uv[k] = p["uv"][k].get<float>();
+            int pw = 0, ph = 0;
+            HudPictureSize(pic, &pw, &ph);
+            it = PictureItem(nullptr, pic, p.value("x", 0.0f), p.value("y", 0.0f), p.value("w", static_cast<float>(pw)), p.value("h", static_cast<float>(ph)),
+                             p.value("angle", 0.0f), Colour(p, "color"), uv);
         } else {
-            *reply = "unknown method '" + method + "' (draw.text, draw.rect, draw.line, draw.clear, draw.state)";
+            *reply = "unknown method '" + method + "' (draw.text, draw.rect, draw.line, draw.picture, draw.clear, draw.state)";
             return true;
         }
         it.until = GetTickCount() + static_cast<DWORD>(ms);

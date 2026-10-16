@@ -553,6 +553,45 @@ H->timer_add(M, 5000, 0, OnTimer, NULL);          /* once, 5 s of the mission's 
   {"ms", "repeat"}`, `interact.remove {"id" | "all"}`; the crossings, uses and timers of the bridge's go to
   `events.since` (`ZONE_ENTERED`, `ZONE_LEFT`, `USED`, `TIMER`) and MCP `wait`.
 
+### The HUD: pictures, the game's messages, markers
+
+```c
+int fish = H->picture_load(M, "fish.tga", NULL);       /* the mod's files\Maps\fish.tga (or the game's maps\) */
+/* every frame (MML_EVENT_FRAME), as draw_rect: */
+H->draw_picture(M, fish, 700, 20, 64, 32, 0, 0xFFFFFFFF, NULL);   /* x, y, w, h, angle, tint, uv */
+
+H->hud_console(M, "Caught a trout", 0x80FF80);         /* a line of the game's console */
+H->hud_help(M, "Find a quiet spot by the river");      /* a line of its help */
+
+MmlHudMarker m = {sizeof m};
+m.pos[0] = -1598.5f; m.pos[1] = -6.2f; m.pos[2] = -30.8f;
+m.flags = MML_MARKER_SCREEN | MML_MARKER_DISTANCE | MML_MARKER_EDGE | MML_MARKER_COMPASS;
+m.argb = 0xFF40C0FF;
+m.label = "Fishing spot";
+int spot = H->hud_marker_add(M, &m);                   /* hud_marker_set to change it, hud_marker_remove */
+```
+
+- **Pictures** are opened by the game's own texture loader (`IGraph::CreateITexture`), as its HUD opens its own:
+  a file of `maps\` (the archives', or the mod's `files\Maps\`): a `.tga` with its alpha channel, a `.bmp` opaque
+  or with its alpha in a twin (`"icon.bmp"`, `"icon+.bmp"`: white shows, black is clear). `picture_size` gives its
+  pixels. `draw_picture` draws it as `draw_rect` draws a rectangle (each frame it is to be seen, in 800x600 units),
+  turned about its centre (`angle`, degrees clockwise: a needle, an instrument), tinted (`argb` multiplies it),
+  and `uv` picks a part of it (a sheet of icons). A picture stays until `picture_free` or the mod's unload.
+- **Messages in the game's style**: `hud_console` adds a line to the game's console (bottom left, five lines, each
+  for 5 s, at most 63 characters; its colour is `argb`'s RGB); `hud_help` shows a line of the game's help (the
+  mission's hints, in the middle above the crosshair) and returns how long it stays.
+- **Markers** are places shown by the HUD: on the screen (`MML_MARKER_SCREEN`: the picture, or a diamond of its
+  colour, and the label under it; `MML_MARKER_DISTANCE` adds "35 m" from the player; `MML_MARKER_EDGE` keeps it at
+  the screen's edge, toward it, when it is off the screen or behind), on the game's radar (`MML_MARKER_RADAR`) and
+  as the compass' target (`MML_MARKER_COMPASS`: the game's compass is shown and points at it, as a mission's
+  `setcompass` does; one target: the newest marker's, and when the last of them goes the compass goes back to what
+  the mission had). A marker is at a place in the world, or follows a frame (`frame`: an actor's model from
+  `actor_frame`, a bone, a prop; `pos` in its space; it goes when the actor is destroyed). Markers are drawn while
+  the mission runs (not under the pause menu); a mod's go with its unload, every one with the mission.
+- `call draw.picture {"file", "alpha", "x", "y", "w", "h", "angle", "color", "uv", "ms"}`, `hud.console {"text",
+  "color"}`, `hud.help {"text"}`, `hud.marker {"at" | "on", "bone", "pos", "label", "color", "picture", "scale",
+  "screen", "distance", "edge", "radar", "compass"}` (`"id"` changes one), `hud.remove {"id" | "all"}`, `hud.list`.
+
 ### What happens (shots, explosions, deaths, vehicles)
 
 | Event | When | `actor` | more |

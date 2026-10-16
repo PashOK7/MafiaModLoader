@@ -317,6 +317,28 @@ int Interact(const char *, MmlReply *r, void *) {
     return 0;
 }
 
+// The HUD with no game: no picture, no line, no marker; drawing a picture that is not there is nothing.
+int Hud(const char *, MmlReply *r, void *) {
+    if (!MML_HAS(H, hud_marker_remove)) { H->reply_error(r, "the loader has no HUD functions"); return 1; }
+    int pic = H->picture_load(M, "2sight.bmp", "2sight+.bmp");
+    int w = -1, h = -1;
+    int size = H->picture_size(pic, &w, &h);
+    H->draw_picture(M, 7, 10, 10, 32, 32, 45, 0xFFFFFFFFu, nullptr);
+    H->picture_free(M, 7);
+    MmlHudMarker m{};
+    m.size = sizeof m;
+    m.flags = MML_MARKER_SCREEN | MML_MARKER_COMPASS;
+    m.label = "Here";
+    int marker = H->hud_marker_add(M, &m);
+    int set = H->hud_marker_set(M, 1, &m), removed = H->hud_marker_remove(M, 1);
+    int console = H->hud_console(M, "hello", 0xFFFFFFFFu), help = H->hud_help(M, "hello");
+    char out[200];
+    snprintf(out, sizeof out, "{\"picture\":%d,\"size\":%d,\"marker\":%d,\"set\":%d,\"removed\":%d,\"console\":%d,\"help\":%d}", pic, size, marker,
+             set, removed, console, help);
+    H->reply_append(r, out, static_cast<size_t>(-1));
+    return 0;
+}
+
 // People with no game: none, no skeleton, bone_set refused, no player.
 int Humans(const char *, MmlReply *r, void *) {
     if (!MML_HAS(H, human_player)) { H->reply_error(r, "the loader has no human_player"); return 1; }
@@ -384,6 +406,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->command(mod, "humans", "humans_list, human_skeleton, bone_set, human_player with no game", Humans, nullptr);
     host->command(mod, "props", "prop_create and the rest with no game", Props, nullptr);
     host->command(mod, "interact", "zone_add, use_point_add, timer_add, interact_remove with no game", Interact, nullptr);
+    host->command(mod, "hud", "picture_load and the rest, hud_console, hud_help, the markers with no game", Hud, nullptr);
     host->command(mod, "control", "key_capture, action_capture, player_lock, vehicle_hook, vehicle_body with no game", Control, nullptr);
     host->command(mod, "sound", "sound_play and the rest, music_play and the rest with no game", Sound, nullptr);
     host->command(mod, "effects","car_exhaust, exhaust_hook, particle_def(_set) with no game", Effects, nullptr);

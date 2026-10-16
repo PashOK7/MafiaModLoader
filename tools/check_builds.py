@@ -460,6 +460,22 @@ def main(a):
         for name, (exe, ls, gexe, gls) in builds.items():
             first = next((i for i in gexe.md.disasm(gexe.at(exe[f] - 0x400000, 0x400), exe[f]) if i.mnemonic == 'ret'), None)
             check(first is not None and first.op_str == ret, f'{name} {f}: its first ret is ret {ret}')
+    # The HUD's flags (host/hud.cpp): AddFlag ors, RemoveFlag and-nots its argument into hud + hudFlags, ret 4; the
+    # scripts' SETCOMPASS calls CompassSetDestination, then AddFlag(0x80), on the HUD.
+    sc = {'1.2': 0x46E1D8, '1.0': 0x5BC005}
+    for name, (exe, ls, gexe, gls) in builds.items():
+        fl = exe['hudFlags']
+        for f, op in (('hudAddFlag', 'or edx, eax'), ('hudRemoveFlag', 'and edx, eax')):
+            ins = [f'{i.mnemonic} {i.op_str}' for i in gexe.md.disasm(gexe.at(exe[f] - 0x400000, 0x18), exe[f])]
+            check(f'mov edx, dword ptr [ecx + {fl:#x}]' in ins and op in ins and f'mov dword ptr [ecx + {fl:#x}], edx' in ins
+                  and 'ret 4' in ins, f'{name} {f}: {op} into hud + {fl:#x}, ret 4')
+        ins = [f'{i.mnemonic} {i.op_str}' for i in gexe.md.disasm(gexe.at(sc[name] - 0x400000, 0x60), sc[name])]
+        k = next((k for k, t in enumerate(ins) if t == f'call {exe["hudCompassSet"]:#x}'), -1)
+        check(k > 0 and ins[k + 1:k + 4] == ['push 0x80', f'mov ecx, {exe["hud"]:#x}', f'call {exe["hudAddFlag"]:#x}'],
+              f'{name} SETCOMPASS: the compass\' target, then hudAddFlag(0x80) on the HUD')
+        cs = [f'{i.mnemonic} {i.op_str}' for i in gexe.md.disasm(gexe.at(exe['hudCompassSet'] - 0x400000, 0x10), exe['hudCompassSet'])]
+        check(cs[:3] == ['mov eax, dword ptr [esp + 4]', f'mov dword ptr [ecx + {exe["hudCompassTarget"]:#x}], eax', 'ret 4'],
+              f'{name} hudCompassSet writes hud + {exe["hudCompassTarget"]:#x}')
     # The using objects (host/interact.cpp): the player's Action on foot calls FindNearObjects on C_game + 0x29EC, then
     # ExecuteMenu (`xor dl, dl` before it) and compares its result with 0xA8; AddObject and DelObject end ret 4,
     # FindNearObjects ret 0x10, ExecuteMenu ret 4.

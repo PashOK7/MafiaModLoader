@@ -74,6 +74,11 @@ Taps can also start with the game, before its first frame: `"taps": ["5409D0 n=4
 | `use.add` | as `zone.add`, `radius` (2), `label` (its line in the game's Action choice menu) | `id`, `at`: the player's taking it goes to `events.since` (USED) |
 | `timer.add` | `ms`, `repeat` | `id`: TIMER in `events.since` after ms of the mission's time |
 | `interact.remove` | `id` or `all` (the bridge's) | removed |
+| `hud.console` | `text`, `color` (its RGB) | a line of the game's console (five lines, 5 s each, 63 characters): `shown` |
+| `hud.help` | `text` | a line of the game's help (the mission's hints, above the crosshair): `ms` it is shown |
+| `hud.marker` | `at` [x, y, z], or `on` an actor and `bone`, `pos`; `label`, `color`, `picture` (a file of `maps\`, `alpha` its twin), `scale` (24), `screen`, `distance`, `edge` (default true), `radar`, `compass` (default false); `id`: one of the bridge's changed | `id`, `at`, `flags`: drawn where it is on the screen (at its edge when off it) with its distance from the player; a mark on the game's radar; the compass' target |
+| `hud.remove` | `id` or `all` (the bridge's) | removed |
+| `hud.list` | | `markers` (each `id`, `by`, `label`, `flags`, `at`, `radar`, `compass`), `pictures` (`id`, `by`, `file`, `alpha`, `w`, `h`), `compass_by`, `hud_flags`, `compass_target` |
 | `control.state` | | `lock_known`, `locked`, `locked_by`, `vehicle_hook` (a mod or `none`), `engine` (the step's hook), `steps`, `skipped` (steps a mod made), `faults` |
 | `lights.list` | `type` (`point`, `spot`, `directional`, `ambient`, `fog`), `all` (the lights that are off too), `max` (100), `rescan` | the scene's light frames: `count`, `kinds`, `lights` (`light`, `name`, `type`, `on`, `color`, `power`, `range`, `cone`, `pos`, `dir`, `sectors`), `sun` (`to_sun`, `color`, `ambient`) |
 | `light.set` | `light` (from `lights.list`), `color`, `power`, `range` ([near, far]), `on` | the light changed through LS3D's setters; the light after |
@@ -130,6 +135,7 @@ Taps can also start with the game, before its first frame: `"taps": ["5409D0 n=4
 | `screenshot.state` | `id` | `done`, `ok` or `error`, `path` (`<game>\mml\shots\<id>.bgra`: 16 bytes `"MMLS"`, width, height, 0; then BGRA rows, top first), `width`, `height` |
 | `draw.text` | `x`, `y`, `text`, `size` (default 20), `color` (`"#AARRGGBB"`, `"#RRGGBB"` or a number; default white), `font` (0 small, 1 big, 2 title), `align` (`"left"`, `"center"`, `"right"`), `ms` (default 3000) | a text held in the game's frame for that long: `held`, `hooked` (false: no known build, nothing is drawn) |
 | `draw.rect` / `draw.line` | `x`, `y`, `w`, `h`, `filled` (default true) / `x0`, `y0`, `x1`, `y1`; `color`, `ms` | a rectangle (or its outline) / a line, held the same way |
+| `draw.picture` | `file` (a picture of the game's `maps\`: the archives' or a mod's `files\Maps\`; a .tga with its alpha, a .bmp), `alpha` (a .bmp's `+` twin), `x`, `y`, `w`, `h` (default its pixels), `angle` (degrees clockwise), `color` (a tint; default white), `uv` [u0, v0, u1, v1], `ms` | a picture opened by the game's own texture loader, held the same way |
 | `draw.clear` / `draw.state` | | the held items dropped / the 2D pass hooked or not, passes seen, items queued by mods last frame and drawn in the last pass, items held, mods whose drawing faulted (`off`), the last fault |
 | `config.get` | `mod`, `key` (a path: `"overlay.x"`; none: the whole config) | `value` (the defaults with the changes over them), `default`, `known`, `changes` (what differs from the defaults), `files` |
 | `config.set` | `mod`, `key`, `value` (any JSON; `null`: back to the default) | the same; the change is written to `<game>\mml\data\<mod>\config.json` and the mod gets `MML_EVENT_CONFIG_CHANGED` at the next frame |

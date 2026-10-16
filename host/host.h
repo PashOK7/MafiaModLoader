@@ -134,6 +134,12 @@ void DrawText(MmlMod *mod, float x, float y, float size, uint32_t argb, int font
 float DrawTextWidth(int font, float size, const char *text);
 void DrawLine(MmlMod *mod, float x0, float y0, float x1, float y1, uint32_t argb);
 void DrawRect(MmlMod *mod, float x, float y, float w, float h, uint32_t argb, int filled);
+void DrawPicture(MmlMod *mod, int picture, float x, float y, float w, float h, float angle, uint32_t argb, const float uv[4]);
+// the host's items for the 2D pass being drawn (hud.cpp's markers, queued from HudPass): under the owner's guard
+void DrawPassText(MmlMod *owner, float x, float y, float size, uint32_t argb, int font, int align, const char *text);
+void DrawPassPicture(MmlMod *owner, int picture, float x, float y, float w, float h, float angle, uint32_t argb);
+void DrawPassQuad(MmlMod *owner, const float xy[8], uint32_t argb);   // a filled quad, a triangle strip's corners
+bool DrawUnitsFromScreen(float x, float y, float *ux, float *uy);     // camera_project's 800x600 to the HUD's units
 void DrawRemove(MmlMod *mod);
 bool DrawMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 
@@ -295,6 +301,22 @@ void InteractModGone(MmlMod *mod);
 void InteractMissionClose();
 void InteractActorGone(void *actor);      // (an actor's destructor) what follows its model goes
 bool InteractMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+// the HUD (hud.cpp): pictures by the game's texture loader, the game's console and help lines, markers on the screen,
+// the radar and the compass
+std::string GameAnsi(const std::string &utf8);  // (menus.cpp) UTF-8 to the game's own encoding
+int HudPictureLoad(MmlMod *mod, const char *file, const char *alpha, std::string *err);   // null mod: the bridge's (kept)
+bool HudPictureSize(int picture, int *w, int *h);
+void HudPictureFree(MmlMod *mod, int picture);
+void *HudPictureTexture(int picture);     // (draw.cpp, inside its guard) the ITexture*, null when freed
+int HudConsole(const std::string &utf8, uint32_t argb, std::string *err);
+int HudMarkerAdd(MmlMod *mod, const MmlHudMarker *m, std::string *err);
+bool HudMarkerSet(MmlMod *mod, int id, const MmlHudMarker *m, std::string *err);
+bool HudMarkerRemove(MmlMod *mod, int id);
+void HudPass();                           // (draw.cpp, each 2D pass) the markers queued where the camera puts them
+void HudModGone(MmlMod *mod);
+void HudMissionClose();                   // (before the game's) markers, their frames, the compass
+void HudActorGone(void *actor);
+bool HudMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 // the scene's lights (lights.cpp): LS3D's light frames listed and changed through its setters; lights.list, light.set
 void LightsMissionClosed();
 int SceneLights(MmlLight *out, int max);
@@ -353,6 +375,7 @@ int CameraOverride(MmlMod *mod, MmlViewFn fn, void *user);
 void FrameCameraBegin(void *scene);       // (render.cpp) before the views and the frame's own drawing
 void FrameCameraEnd();                    // ... after the frame's drawing: the game's camera back
 int RenderProject(const float world[3], float screen[3]);   // mml.h camera_project (render.cpp)
+bool RenderFrameCamera(MmlRenderCamera *out);              // the camera the mission's world was last drawn with
 int RenderRay(float x, float y, float origin[3], float dir[3]);   // mml.h camera_ray
 bool CameraMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 

@@ -221,6 +221,12 @@ int RenderProject(const float w[3], float out[3]) {
     return 1;
 }
 
+bool RenderFrameCamera(MmlRenderCamera *out) {
+    if (!g_haveFrameCamera) return false;
+    *out = g_frameCamera;
+    return true;
+}
+
 int RenderRay(float x, float y, float origin[3], float dir[3]) {
     if (!g_haveFrameCamera) return 0;
     const MmlRenderCamera &c = g_frameCamera;

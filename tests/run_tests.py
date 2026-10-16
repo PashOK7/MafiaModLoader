@@ -852,6 +852,14 @@ def main():
         check('interact.list with no game: nothing', r['ok'] and r['result']['items'] == [], r)
         r = b.call('zone.add', {'at': [0, 0, 0]})
         check('zone.add with no game: an error, saying why', not r['ok'] and 'no game' in str(r), r)
+        r = b.call('kit.hud')
+        check('picture_load, picture_size, hud_marker_add, _set, _remove, hud_console, hud_help with no game: none (drawing nothing: nothing)',
+              r['ok'] and r['result'] == {'picture': 0, 'size': 0, 'marker': 0, 'set': 0, 'removed': 0, 'console': 0, 'help': 0}, r)
+        r = b.call('hud.list')
+        check('hud.list with no game: nothing', r['ok'] and r['result']['markers'] == [] and r['result']['pictures'] == [], r)
+        for method, params in (('hud.marker', {'at': [0, 0, 0]}), ('hud.console', {'text': 'hello'}), ('draw.picture', {'file': '2sight.bmp'})):
+            r = b.call(method, params)
+            check(f'{method} with no game: an error, saying why', not r['ok'] and 'no game' in str(r), r)
         r = b.call('kit.control')
         check('key_capture, action_capture, player_lock, vehicle_hook, vehicle_body with no game: none (letting a hook go: done)',
               r['ok'] and r['result'] == {'key': 0, 'action': 0, 'lock': 0, 'hook': 0, 'unhook': 1, 'body': 0}, r)

@@ -433,6 +433,41 @@ int H_TimerAdd(MmlMod *m, int ms, int repeat, MmlTimerFn fn, void *user) {
     return Alive(m) && fn ? TimerAdd(m, ms, repeat != 0, fn, user, &err) : 0;
 }
 int H_InteractRemove(MmlMod *m, int id) { return Alive(m) && InteractRemove(m, id) ? 1 : 0; }
+int H_PictureLoad(MmlMod *m, const char *file, const char *alpha) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    int id = HudPictureLoad(m, file, alpha, &err);
+    if (!id) Log(MML_LOG_WARN, Who(m), "picture_load: %s", err.c_str());
+    return id;
+}
+int H_PictureSize(int picture, int *w, int *h) { return HudPictureSize(picture, w, h) ? 1 : 0; }
+void H_PictureFree(MmlMod *m, int picture) { if (Alive(m)) HudPictureFree(m, picture); }
+void H_DrawPicture(MmlMod *m, int picture, float x, float y, float w, float h, float angle, uint32_t argb, const float uv[4]) {
+    if (Alive(m)) DrawPicture(m, picture, x, y, w, h, angle, argb, uv);
+}
+int H_HudConsole(MmlMod *m, const char *text, uint32_t argb) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    if (HudConsole(text ? text : "", argb, &err)) return 1;
+    Log(MML_LOG_WARN, Who(m), "hud_console: %s", err.c_str());
+    return 0;
+}
+int H_HudHelp(MmlMod *m, const char *text) { return Alive(m) && text && *text ? HudHelpLine(text) : 0; }
+int H_HudMarkerAdd(MmlMod *m, const MmlHudMarker *marker) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    int id = HudMarkerAdd(m, marker, &err);
+    if (!id) Log(MML_LOG_WARN, Who(m), "hud_marker_add: %s", err.c_str());
+    return id;
+}
+int H_HudMarkerSet(MmlMod *m, int id, const MmlHudMarker *marker) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    if (HudMarkerSet(m, id, marker, &err)) return 1;
+    Log(MML_LOG_WARN, Who(m), "hud_marker_set: %s", err.c_str());
+    return 0;
+}
+int H_HudMarkerRemove(MmlMod *m, int id) { return Alive(m) && HudMarkerRemove(m, id) ? 1 : 0; }
 int H_WorldShapes(MmlMod *m, const float lo[3], const float hi[3], uint32_t what, MmlShape *out, int max) {
     return Alive(m) && lo && hi ? WorldShapes(lo, hi, what, out, out ? max : 0) : 0;
 }
@@ -614,6 +649,7 @@ bool UnloadMod(ModEntry *e, const char *why) {
     SoundModGone(m);
     ControlModGone(m);
     InteractModGone(m);
+    HudModGone(m);
     CapturesRemove(m);
     ConfigForget(m);
     g_subs.erase(std::remove_if(g_subs.begin(), g_subs.end(), [&](const Sub &s) { return s.mod == m; }), g_subs.end());
@@ -921,6 +957,15 @@ void ModsInit() {
     g_host.use_point_add = H_UseAdd;
     g_host.timer_add = H_TimerAdd;
     g_host.interact_remove = H_InteractRemove;
+    g_host.picture_load = H_PictureLoad;
+    g_host.picture_size = H_PictureSize;
+    g_host.picture_free = H_PictureFree;
+    g_host.draw_picture = H_DrawPicture;
+    g_host.hud_console = H_HudConsole;
+    g_host.hud_help = H_HudHelp;
+    g_host.hud_marker_add = H_HudMarkerAdd;
+    g_host.hud_marker_set = H_HudMarkerSet;
+    g_host.hud_marker_remove = H_HudMarkerRemove;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();
@@ -1020,6 +1065,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (SoundMethod(method, paramsJson, reply, &ok)) return ok;
     if (ControlMethod(method, paramsJson, reply, &ok)) return ok;
     if (InteractMethod(method, paramsJson, reply, &ok)) return ok;
+    if (HudMethod(method, paramsJson, reply, &ok)) return ok;
     if (WorldMethod(method, paramsJson, reply, &ok)) return ok;
     if (FilesMethod(method, paramsJson, reply, &ok)) return ok;
     if (RenderMethod(method, paramsJson, reply, &ok)) return ok;

@@ -244,3 +244,24 @@ known here: **pet1kk** (his notes only), **game** (also checked in our running 1
 - A mod's drawing code guarded so that a fault turns the drawing off and logs it instead of taking the game down.
   (The loader does this for every mod's queued drawing: `host/draw.cpp`. Provoked 2026-10-13 by pointing the title
   font's character map `0x6C4080` at nothing while a mod drew in that font: caught, logged, the game went on.)
+
+## The HUD's parts for mods (read and seen 2026-10-16, both labs; host/hud.cpp)
+
+- **game** The HUD's flags (`hud + 0x40A4`, 1.0 `+ 0x90A4`) say what DrawAll draws: `0x80` the compass, which points
+  at the frame `hud + 0x4278` (1.0 `+ 0x9270`: not 0x5000 further as the rest, 8 less) holds; the scripts'
+  SETCOMPASS (1.2 0x46E1D8, 1.0 0x5BC005) is CompassSetDestination(frame), AddFlag(0x80), SetPlayerNaviPoint(frame)
+  (a global nothing reads), and with no frame RemoveFlag(0x80). `0x80000`: the radar (DrawAll 0x5FDD5F), drawn from
+  the mission's radar map: set in `freeitaly` (which has none) DrawAll read a null (LS3DF+0x2C8FA). `0x801` hides
+  the lot. The freeride's flags: `0x08000024`.
+- **game** The console (ConsoleAddText): five lines in a ring, 64 bytes each copied with `strncpy` (a 64-byte text is
+  not ended), the colour's RGB, each kept 5 s (`0x40A00000`); drawn bottom left in both builds. MissionHelpAdd's
+  line is above the crosshair, in the middle.
+- **game** Pictures: IGraph slot 1, `CreateITexture(diffuse, alpha, flags, ITexture **out)` (stdcall, `0` on
+  success), looks in `maps\`; the HUD's own: `"1numbers.tga", 0, 2`, `"2blood.bmp", "2blood+.bmp", 4`,
+  `"2sight.bmp", "2sight+.bmp", 0x404`; the menus' GM_Picture `(file, 0, 2)`. Flag 4 loads the alpha file (LS3D
+  sets it itself when an alpha file is given without it, with a warning). An ITexture's Release is its vtable's
+  slot 0; its width and height are u16 at `+0x28`, `+0x2A` (128 x 128 for `2sight.bmp`, 128 x 16 for
+  `1numbers.tga`, read). Drawn as the HUD draws its textured rectangles (SetTexture, a strip of FVF 0x1C4 vertices):
+  the vertex colour multiplies the texture (a white `.tga` drawn red), its alpha blends.
+- **ours** LS3D's dummy frame (I3D_FRAME_TYPE 6, made by the driver's CreateFrame, placed by SetPos, not linked) is
+  a target the compass and the radar take: they read its world matrix (UpdateWMatrixProc).

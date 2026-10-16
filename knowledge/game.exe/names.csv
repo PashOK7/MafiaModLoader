@@ -225,3 +225,6 @@ address,kind,name,source,note
 0055DD60,function,uoAdd,MafiaModLoader,"C_using_object::AddObject: thiscall(registry = C_game + 0x29EC, S_using_object*) ret 4 (1.0 0x61BB30); host/interact.cpp use_point_add"
 0055DF10,function,uoDel,MafiaModLoader,"C_using_object::DelObject: thiscall(registry, record) ret 4 (1.0 0x61BCE0)"
 0055E180,function,uoFind,MafiaModLoader,"C_using_object::FindNearObjects: thiscall(registry, at, dir, vector<S_GameItem> *out, frame) ret 0x10, nearest first (1.0 0x61BF50); Do_AB_OwnerNULL hands the list to the action menu"
+0047A080,function,hudAddFlag,MafiaModLoader,"G_IndicatorsClass::AddFlag: thiscall(hud, flags) ret 4, ors into hud + 0x40A4 (1.0 0x424E20, + 0x90A4); 0x80 the compass, 0x80000 the radar; host/hud.cpp"
+0047A0A0,function,hudRemoveFlag,MafiaModLoader,"G_IndicatorsClass::RemoveFlag: thiscall(hud, flags) ret 4, and-nots hud + 0x40A4 (1.0 0x5C7DB0)"
+0058F160,function,SetPlayerNaviPoint,MafiaModLoader,"SETCOMPASS's: ECX into the global 0x6478B4, which nothing reads (1.0 0x4C6B80): the map has no target of its own"
