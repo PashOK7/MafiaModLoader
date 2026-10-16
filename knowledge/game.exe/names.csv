@@ -222,3 +222,6 @@ address,kind,name,source,note
 005C8770,function,testLineAll,MafiaModLoader,"g_collision::_TestLineH: thiscall(g_collision*, from, delta, hit, normal, uint movingMask (-1 none), uint staticMask (-1 none)) -> the primitive or moving object hit, ret 0x18; host/collide.cpp world_ray"
 005C3D60,function,collExclude,MafiaModLoader,"g_collision::DynSetNextCollOwnerMult: the moving objects the next tests pass (+0x2B8 array, +0x2BC count, +0x2B0), ret 0xC; host/collide.cpp's ignore"
 005B9FE0,function,gameSetScore,MafiaModLoader,"C_game::SetScore: thiscall(C_game*, int), ret 4: the freeride's money +0x3640, the HUD told when +0x363E; host/state.cpp money_set"
+0055DD60,function,uoAdd,MafiaModLoader,"C_using_object::AddObject: thiscall(registry = C_game + 0x29EC, S_using_object*) ret 4 (1.0 0x61BB30); host/interact.cpp use_point_add"
+0055DF10,function,uoDel,MafiaModLoader,"C_using_object::DelObject: thiscall(registry, record) ret 4 (1.0 0x61BCE0)"
+0055E180,function,uoFind,MafiaModLoader,"C_using_object::FindNearObjects: thiscall(registry, at, dir, vector<S_GameItem> *out, frame) ret 0x10, nearest first (1.0 0x61BF50); Do_AB_OwnerNULL hands the list to the action menu"

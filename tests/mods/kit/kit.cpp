@@ -309,7 +309,7 @@ int Interact(const char *, MmlReply *r, void *) {
     if (!MML_HAS(H, interact_remove)) { H->reply_error(r, "the loader has no interaction"); return 1; }
     const float pos[3] = {0, 0, 0};
     int t = H->timer_add(M, 1000, 0, KitTimer, nullptr);
-    int zone = H->zone_add(M, pos, 3, nullptr, KitZone, nullptr), use = H->use_point_add(M, pos, 2, nullptr, "Fish", KitUse, nullptr);
+    int zone = H->zone_add(M, pos, 3, nullptr, KitZone, nullptr), use = H->use_point_add(M, pos, 2, nullptr, "Fish here", KitUse, nullptr);
     int removed = H->interact_remove(M, t), again = H->interact_remove(M, t);   // (in this order: not as arguments)
     char out[160];
     snprintf(out, sizeof out, "{\"zone\":%d,\"use\":%d,\"timer\":%s,\"removed\":%d,\"again\":%d}", zone, use, t > 0 ? "true" : "false", removed, again);

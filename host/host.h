@@ -282,17 +282,18 @@ int VehicleBody(void *car, MmlVehicleBody *read, const MmlVehicleBody *write);
 void ControlModGone(MmlMod *mod);         // (its unload) its vehicle hook dropped, its lock let go
 void ControlMissionClose();               // (the mission closes) the lock forgotten
 bool ControlMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
-// interaction (interact.cpp): zones, use-points with the game's help line, timers on the mission's clock
+// interaction (interact.cpp): zones, use-points in the game's own using objects (its Action's choice menu), timers
 uint32_t GameTextId(const std::string &utf8);   // (menus.cpp) a text of the loader's own in the game's database; 0: none
 int HudHelpLine(const std::string &utf8);       // the game's help line shown (MissionHelpAdd): the ms it stays, 0 not
 int ZoneAdd(MmlMod *mod, const float *pos, float radius, void *frame, MmlZoneFn fn, void *user, std::string *err);
-int UseAdd(MmlMod *mod, const float *pos, float radius, void *frame, const char *prompt, MmlUseFn fn, void *user, std::string *err);
+int UseAdd(MmlMod *mod, const float *pos, float radius, void *frame, const char *label, MmlUseFn fn, void *user, std::string *err);
 int TimerAdd(MmlMod *mod, int ms, bool repeat, MmlTimerFn fn, void *user, std::string *err);
 bool InteractRemove(MmlMod *mod, int id);
 void InteractFrame();                     // every frame of a loaded mission: crossings, prompts, presses
 void InteractTick(int ms);                // the mission's tick: the timers
 void InteractModGone(MmlMod *mod);
 void InteractMissionClose();
+void InteractActorGone(void *actor);      // (an actor's destructor) what follows its model goes
 bool InteractMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 // the scene's lights (lights.cpp): LS3D's light frames listed and changed through its setters; lights.list, light.set
 void LightsMissionClosed();

@@ -122,6 +122,7 @@ void __fastcall hkActorDtor(void *self, void *edx) {
     ScriptActorGone(self);
     WorldActorGone(self);
     PropsActorGone(self);
+    InteractActorGone(self);
     oActorDtor(self, edx);
 }
 void *__fastcall hkHumanCtor(void *self, void *edx) {

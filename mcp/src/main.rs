@@ -977,7 +977,7 @@ effects: `exhaust.state`, `particles.defs`, `weather.state`, `weather.set`; prop
 `prop.create {model, at | parent, bone, pos, dir, scale}`, `prop.place`, `prop.attach`, `prop.show`, \
 `prop.remove`, `props.list`; sound: `sound.play {file, at | on, loop, pitch}`, `sound.set`, `sound.stop`, \
 `music.play {file, loop}`, `music.game {on}`, `sounds.list`; control: `input.capture {key | action}`, \
-`player.lock {on}`, `vehicle.body {car}`, `control.state`; interaction: `use.add {prompt}`, `zone.add {at, \
+`player.lock {on}`, `vehicle.body {car}`, `control.state`; interaction: `use.add {label}` (a line in the game's Action menu), `zone.add {at, \
 radius}`, `timer.add {ms}` (then wait for USED, ZONE_ENTERED, TIMER), `interact.list`; what \
 happened: `events.since` (or the wait tool); the frame: `prof.state` (or the profile tool), `gfx.state`, \
 `view.state`, `geom.survey`; any game function: `native.call {at, conv, this, args, ret}`; who writes a field: \

@@ -289,13 +289,15 @@ What is done, what comes next and later, and what is known to be missing or wron
   `mods/examples/tally`; seen in the 1.2 and 1.0 labs (the player's shots, his leaving the taxi, a person killed by
   a script, a car blown up with its explosion and the hit it gave the player).
 - **Interaction** (2026-10-16; item 15): `zone_add` (spheres the player crosses, on foot or in his car, in the world
-  or following a frame), `use_point_add` (on foot, a prompt as the game's own help line, G_IndicatorsClass::
-  MissionHelpAdd with a text id of the loader's in the game's database; the game's Action kept from the game there
-  and given to the mod), `timer_add` (the mission's clock), `interact_remove`. `interact.list`, `zone.add`,
-  `use.add`, `timer.add`, `interact.remove`; ZONE_ENTERED, ZONE_LEFT, USED, TIMER in `events.since`. The HUD's
-  functions checked in both builds by `check_builds.py`; seen in the 1.0 lab: the prompt at the top in the game's
-  font, an Action beside the taxi was the mod's (no car entered), the next one, the point removed, entered it; a
-  zone entered, a timer at 2 s.
+  or following a frame), `use_point_add` (a record of the loader's in the game's own using objects, C_game +
+  0x29EC: what Action finds on foot, offered alone or in the game's own choice menu with a label that is a text id
+  of the loader's in the game's database; the pick read from FindNearObjects' list and ExecuteMenu's result),
+  `timer_add` (the mission's clock), `interact_remove`. `interact.list`, `zone.add`, `use.add`, `timer.add`,
+  `interact.remove`; ZONE_ENTERED, ZONE_LEFT, USED, TIMER in `events.since`. The HUD's and the using objects'
+  functions checked in both builds by `check_builds.py`; seen in both labs: "2. Fish here" under "1. Get in the
+  front" beside the taxi, its pick a USED with no car entered, the car's pick entering it; a point alone taken by
+  Action at once; one on Paulie's model taken, and gone when he was removed; the mission's close leaving none; a
+  zone entered, a timer at 2 s (1.0).
 - **Control** (2026-10-16; item 14, block 14a): `key_capture` (a key kept from the game: LS3D's keyboard state
   cleared after mods read it), `action_capture` (an action's slots written 0 after the update, the player's values
   kept for `action_held`), `player_lock` (C_player::LockControls and Do_Breath, as PLAYER_LOCKCONTROLS),
@@ -585,10 +587,10 @@ merged, sorted by importance):
   matrix being the camera's backdrop view, bit for bit (it was, every drawing, in both labs). `MML_VIEW_OWN_SECTOR`
   (a camera in another room) was not tried. The first two or three reloads of `rear_mirror` added 2..13 handles each (taken to be
   Direct3D's own warming up: views made and taken back by mode changes added none); then 0.
-- **Interaction** (host/interact.cpp, item 15): the game has no prompt of its own for using things (no "press E"):
-  the help line is the nearest of its own. Zones watch the player only (not other people or cars), as spheres. The
-  help line queues behind the game's own (an objective shown at the same time waits). Not seen in the 1.2 lab yet
-  at the block's commit (with item 16's).
+- **Interaction** (host/interact.cpp, item 15): zones watch the player only (not other people or cars), as spheres.
+  A use-point is on foot only (the game's using objects are; nothing offers one in a car), its reach a horizontal
+  circle with the game's own 1.5 m up or down; the menu's line is the label as it is (no icon, no hint of what
+  comes). A label's text id stays for the game's life (one a distinct text: the same label gets the same id).
 - **Control** (host/control.cpp, input.cpp, item 14a): **actions of a mod's own in the game's controls menu**
   are not made: the menu's rows are fixed binding slots the profile saves (60 in 1.2); growing them means the
   bindings' vector, the held/pressed arrays and the profile's copy (`G_LoadSaveClass + 0x1F4`), not read yet. A mod

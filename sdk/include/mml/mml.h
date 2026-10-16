@@ -956,13 +956,15 @@ typedef struct MmlHost {
 
     /* ---- interaction (both builds; docs/MODDING.md "Interaction"). zone_add: a sphere (pos in the world, or in a
      * frame's space when frame is given: it follows the frame) the player enters and leaves, on foot or in his car:
-     * fn at each crossing (game thread, a frame's). use_point_add: the same on foot, with a prompt shown as the
-     * game's own help line (UTF-8; NULL: none) while he is in it; there the game's "Action" is the mod's (fn when
-     * it is pressed), not the game's. timer_add: fn after ms of the mission's time (it stands while the game is
-     * paused or loads), again every ms when repeat. Each returns its id (0: refused, the log says why);
-     * interact_remove takes any of them away. A mod's go with its unload, every one with the mission's close. */
+     * fn at each crossing (game thread, a frame's). use_point_add: one of the game's own using objects (what Action
+     * finds on foot: doors, the cars' seats): within radius (horizontal; 1.5 m up or down) Action offers it as the
+     * game offers a door, with the others near it in the game's own choice menu (label: its line, UTF-8), and fn is
+     * called when the player takes it; the car beside it is still the game's. A mission must be loaded. timer_add:
+     * fn after ms of the mission's time (it stands while the game is paused or loads), again every ms when repeat.
+     * Each returns its id (0: refused, the log says why); interact_remove takes any of them away. A mod's go with
+     * its unload, every one with the mission's close, one on a frame of an actor with the actor. */
     int (*zone_add)(MmlMod *mod, const float pos[3], float radius, void *frame, MmlZoneFn fn, void *user);
-    int (*use_point_add)(MmlMod *mod, const float pos[3], float radius, void *frame, const char *prompt, MmlUseFn fn, void *user);
+    int (*use_point_add)(MmlMod *mod, const float pos[3], float radius, void *frame, const char *label, MmlUseFn fn, void *user);
     int (*timer_add)(MmlMod *mod, int ms, int repeat, MmlTimerFn fn, void *user);
     int (*interact_remove)(MmlMod *mod, int id);
 } MmlHost;

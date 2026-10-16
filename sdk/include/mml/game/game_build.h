@@ -358,6 +358,17 @@ struct ExeBuild {
     // target (a frame; null: none); hudRadarAdd, RadarAddObject(frame, argb) ret 8 and hudRadarRemove,
     // RadarRemoveObject(frame) ret 4: a mark on the radar (the map's corner).
     uintptr_t hudHelpAdd, hudConsoleAdd, hudCompassSet, hudRadarAdd, hudRadarRemove;
+    // The using objects (host/interact.cpp): what the player's Action finds on foot (doors, cars' seats, switches,
+    // bodies, weapons on the ground). A registry at C_game + 0x29EC (both builds) of S_using_object* (0x38 bytes:
+    // +0x00 position, +0x0C the range squared (horizontal; 1.5 m up or down), +0x10 a world matrix the position is
+    // in (null: the world's), +0x14 flags (1: freed by DelObject, 2: its frame +0x18 released), +0x20 an owner frame
+    // (0: any), +0x28 the S_GameItem the menu shows: {1, the action's id (a text id: its line), 0, the record}).
+    // uoAdd, C_using_object::AddObject, thiscall(registry, record) ret 4; uoDel, DelObject, likewise; uoFind,
+    // FindNearObjects, thiscall(registry, const S_vector *at, const S_vector *dir, vector<S_GameItem> *out, frame)
+    // ret 0x10: the items in reach, nearest first, which C_player::Do_AB_OwnerNULL hands to the action menu;
+    // menuExecute, GM_Menu::ExecuteMenu, fastcall(menu, bool tick, int) ret 4: the modal menu's loop, its result
+    // (the action menu's: 0xA9 + the item's index, 0xA8 take them all, other: nothing chosen).
+    uintptr_t uoAdd, uoDel, uoFind, menuExecute;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -521,6 +532,8 @@ inline const ExeBuild kExe12 = {
     0xDE8,   // (Engine's rep movsd at 0x4E1DC0 and 0x4E1DDD)
     // the HUD's lines and marks (2026-10-16: st0rm94's names, MafiaOnline's ConsoleAddText contract; rets read)
     0x5F9A00, 0x5F9D50, 0x5FA020, 0x5FA780, 0x5FA990,
+    // the using objects (2026-10-16: MafiaOnline's and st0rm94's; Do_AB_OwnerNULL's calls at 0x5947B8 and 0x594891)
+    0x55DD60, 0x55DF10, 0x55E180, 0x5EBA40,
 };
 
 inline const ExeBuild kExe10 = {
@@ -616,6 +629,8 @@ inline const ExeBuild kExe10 = {
     // the HUD's lines and marks (2026-10-16: st0rm94's hud_mission_help_add, hud_console_push_message,
     // hud_compass_set_destination_frame, hud_radar_add_object_with_color, hud_radar_remove_object; the same code)
     0x54BB20, 0x54BE80, 0x54C150, 0x54C8A0, 0x54CAB0,
+    // the using objects (2026-10-16: st0rm94's; player_do_action_button_on_foot's calls at 0x4CC1B8 and 0x4CC274)
+    0x61BB30, 0x61BCE0, 0x61BF50, 0x56CCC0,
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,

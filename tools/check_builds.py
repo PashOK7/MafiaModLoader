@@ -460,6 +460,19 @@ def main(a):
         for name, (exe, ls, gexe, gls) in builds.items():
             first = next((i for i in gexe.md.disasm(gexe.at(exe[f] - 0x400000, 0x400), exe[f]) if i.mnemonic == 'ret'), None)
             check(first is not None and first.op_str == ret, f'{name} {f}: its first ret is ret {ret}')
+    # The using objects (host/interact.cpp): the player's Action on foot calls FindNearObjects on C_game + 0x29EC, then
+    # ExecuteMenu (`xor dl, dl` before it) and compares its result with 0xA8; AddObject and DelObject end ret 4,
+    # FindNearObjects ret 0x10, ExecuteMenu ret 4.
+    ab = {'1.2': 0x594300, '1.0': 0x4CBD00}
+    for name, (exe, ls, gexe, gls) in builds.items():
+        ins = [f'{i.mnemonic} {i.op_str}' for i in gexe.md.disasm(gexe.at(ab[name] - 0x400000, 0x1000), ab[name])]
+        k = next((k for k, t in enumerate(ins) if t == f'call {exe["uoFind"]:#x}'), -1)
+        check(k > 0 and ins[k - 1] == 'lea ecx, [eax + 0x29ec]', f'{name} uoFind: the Action calls it on C_game + 0x29EC')
+        m = next((m for m, t in enumerate(ins) if t == f'call {exe["menuExecute"]:#x}'), -1)
+        check(m > k and 'xor dl, dl' in ins[m - 4:m] and ins[m + 1] == 'cmp eax, 0xa8', f'{name} menuExecute: the action menu run, its result against 0xA8')
+        for f, ret in (('uoAdd', '4'), ('uoDel', '4'), ('uoFind', '0x10'), ('menuExecute', '4')):
+            first = next((i for i in gexe.md.disasm(gexe.at(exe[f] - 0x400000, 0x800), exe[f]) if i.mnemonic == 'ret'), None)
+            check(first is not None and first.op_str == ret, f'{name} {f}: its first ret is ret {ret}')
     # The game's state (host/state.cpp): SetScore writes C_game +0x3640, reads +0x363E, ends with ret 4.
     for name, (exe, ls, gexe, gls) in builds.items():
         sc = [f'{i.mnemonic} {i.op_str}' for i in gexe.md.disasm(gexe.at(exe['gameSetScore'] - 0x400000, 0x30), exe['gameSetScore'])]

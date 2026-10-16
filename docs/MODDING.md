@@ -529,24 +529,27 @@ H->vehicle_hook(M, OnStep, NULL);
 
 ```c
 void OnZone(int zone, int inside, void *player, void *user) { /* 1 entered, 0 left (on foot or in his car) */ }
-void OnUse(int point, void *user) { /* he pressed Action in it */ }
+void OnUse(int point, void *user) { /* he took it (Action, or its line in the game's choice menu) */ }
 void OnTimer(int timer, void *user) { /* the mission's time went by */ }
 const float dock[3] = {-1598.5f, -6.2f, -30.8f};
 H->zone_add(M, dock, 10, NULL, OnZone, NULL);
-H->use_point_add(M, dock, 2, NULL, "Fish here: press Action", OnUse, NULL);
+H->use_point_add(M, dock, 2, NULL, "Fish here", OnUse, NULL);   /* a mission must be loaded */
 H->timer_add(M, 5000, 0, OnTimer, NULL);          /* once, 5 s of the mission's clock (the pause stands it still) */
 ```
 
 - **Zones** are spheres in the world, or following a frame (`frame`: a bone, an actor's model, a prop; `pos` in
   its space); the player is in one when his model is (in a car: the car's place).
-- **Use-points** are zones he stands in on foot, with a prompt shown as **the game's own help line** (the line the
-  objectives use, top centre, in its font: the loader gives the text an id in the game's text database), shown
-  again while he stays. There the game's `Action` is the mod's: pressed, the mod's function is called and the game
-  does not also act (he does not get into the car beside him). Elsewhere `Action` is the game's.
+- **Use-points** are **the game's own using objects**, what `Action` finds on foot (doors, the cars' seats, a weapon
+  on the ground): within `radius` (horizontal; 1.5 m up or down) the game offers it as it offers a door. Alone, his
+  `Action` takes it at once; with others near, the game shows its own choice menu ("Pickup/Use": "1. Get in the
+  front", "2. Fish here", "0. Exit"), the label being its line (the loader gives the text an id in the game's text
+  database). The mod's function is called when he takes it; the game does nothing else for it, and what is beside
+  it stays the game's (the car is still entered from the same menu). On a frame (`frame`: an actor's model, a bone,
+  a prop) the point follows it, and goes when that actor is destroyed.
 - **Timers** run on the mission's clock (`MML_EVENT_MISSION_TICK`'s time): they stand while the game is paused or
   loads. `repeat` calls again every `ms`.
 - `interact_remove` takes any of them; a mod's go with its unload, every one with the mission.
-- `call interact.list`, `zone.add {"at" | "on", "bone", "pos", "radius"}`, `use.add {..., "prompt"}`, `timer.add
+- `call interact.list`, `zone.add {"at" | "on", "bone", "pos", "radius"}`, `use.add {..., "label"}`, `timer.add
   {"ms", "repeat"}`, `interact.remove {"id" | "all"}`; the crossings, uses and timers of the bridge's go to
   `events.since` (`ZONE_ENTERED`, `ZONE_LEFT`, `USED`, `TIMER`) and MCP `wait`.
 

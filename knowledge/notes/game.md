@@ -392,3 +392,17 @@ autosplitter; kept outside it, not ported). Checked against the above:
 - **game** At exit the first fault is in `Game.exe+0x7AD00`, a name comparator (0x46D954's code) reading an object
   already freed (memory reserved, not committed). Then `LS3DF.dll+0x5AC2E`: the index buffer manager's `FreeAll`
   writing to owners already gone (24 stale slices made before anything of ours ran).
+
+## The using objects: what Action finds on foot (read and seen 2026-10-16, both labs)
+
+- **game** `C_player::Do_AB_OwnerNULL` (0x594300; 1.0 0x4CBD00) asks `FindNearObjects` (0x55E180) of the registry
+  at `C_game + 0x29EC` for the records near a point 0.8 m ahead of the player and 0.9 m up, then **always** runs the
+  action menu (`GM_Menu`, vtable 0x625920) through `ExecuteMenu`, even for one record: alone, it is taken without the
+  menu showing. The result is `0xA9 + the item's index` (0xA8: take them all, the weapons and items); an item of
+  type 1 with an actor (`record + 0x1C`) goes to the actor's code (cars, type 27 people: 2012 search, 2013 a body),
+  one without switches on its id (0x7D0.. the doors, seats...) and passes over an id it does not know.
+- **game** A record (`S_using_object`, 0x38 bytes): +0x00 the place, +0x0C the reach squared (horizontal; 1.5 m up
+  or down), +0x10 a world matrix the place is in (null: the world), +0x14 flags (1: DelObject frees it, 2: its frame
+  +0x18 released), +0x1C an actor, +0x20 an owner frame (0: any), +0x28 the S_GameItem the menu lists: {type 1, the
+  action's id, 0, the record}. The menu's line is the game's text of the action's id: the loader's use-points give
+  it a text id of their own (host/interact.cpp) and are listed with the car's seats ("2. Fish here").

@@ -422,9 +422,9 @@ int H_ZoneAdd(MmlMod *m, const float pos[3], float radius, void *frame, MmlZoneF
     if (Alive(m) && !id) Log(MML_LOG_WARN, Who(m), "zone_add: %s", fn ? err.c_str() : "no function");
     return id;
 }
-int H_UseAdd(MmlMod *m, const float pos[3], float radius, void *frame, const char *prompt, MmlUseFn fn, void *user) {
+int H_UseAdd(MmlMod *m, const float pos[3], float radius, void *frame, const char *label, MmlUseFn fn, void *user) {
     std::string err;
-    int id = Alive(m) && fn ? UseAdd(m, pos, radius, frame, prompt, fn, user, &err) : 0;
+    int id = Alive(m) && fn ? UseAdd(m, pos, radius, frame, label, fn, user, &err) : 0;
     if (Alive(m) && !id) Log(MML_LOG_WARN, Who(m), "use_point_add: %s", fn ? err.c_str() : "no function");
     return id;
 }

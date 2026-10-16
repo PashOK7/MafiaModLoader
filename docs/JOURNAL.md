@@ -1159,3 +1159,21 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **A trap in a test**: MSVC evaluates a call's arguments right to left: two `interact_remove` calls as snprintf's
   arguments ran in the other order (the test now calls them first).
 - **Tests**: offline the four functions and the bridge with no game. ALL PASSED; check_builds ALL PASSED.
+
+## 2026-10-16: use-points in the game's own Action menu (item 15, reworked)
+
+- **Why**: the owner pointed out that the game has its own choice when several things are near (Action beside a
+  car and a door). The help line and a captured Action took the press from everything near; the game's own way is
+  its using objects.
+- **Read**: `C_player::Do_AB_OwnerNULL` asks `C_using_object::FindNearObjects` for the records near the player and
+  always runs the action menu through `ExecuteMenu` (alone, a record is taken without the menu showing); the result
+  is 0xA9 + the item's index; an action id the executor does not know is passed over (knowledge/notes/game.md, "The
+  using objects"). AddObject, DelObject, FindNearObjects and ExecuteMenu paired in both builds (`check_builds.py`).
+- **Made**: a use-point is a record of the loader's in the registry (its label a text id of the loader's); the pick
+  is FindNearObjects' list (its hook) at ExecuteMenu's result (its hook). No Action capture, no help line. A point
+  on an actor's frame goes with the actor (its destructor's hook: the record reads the frame's matrix).
+- **In both labs** alike: "2. Fish here" under "1. Get in the front" ("Monte devant" in the 1.0 lab's French) beside
+  the taxi; its pick a USED, no car entered; the car's pick entered it; a point alone taken by Action at once; one
+  on Paulie's model taken, gone when `world.remove` destroyed him; leaving to the main menu (1.2) left none and no
+  fault.
+- **Tests**: offline ALL PASSED; check_builds ALL PASSED.

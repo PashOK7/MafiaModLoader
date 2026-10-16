@@ -3,18 +3,24 @@
 // Zones: spheres in the world (or following a frame) the player enters and leaves, on foot or in his car (his
 // model's world position: in a car it is the car's); the mod's function is told of each crossing, the bridge's
 // zones go to events.since (ZONE_ENTERED, ZONE_LEFT).
-// Use-points: a zone the player stands in on foot, with a prompt: the game's own help line (G_IndicatorsClass::
-// MissionHelpAdd: the objectives' lines at the top, in the game's font), shown with the loader's own text id in the
-// game's text database, again while he stays once it has gone; while he is in one, the game's "Action" is kept from
-// the game (input.cpp's capture: he does not also enter a car or open a door) and its press calls the mod (USED).
+// Use-points: the game's own using objects, what the player's Action finds on foot (doors, the cars' seats, a body,
+// a weapon on the ground: game_build.h uoAdd). A use-point is a record of the loader's in the game's registry
+// (C_game + 0x29EC), its action's id a text id of the loader's in the game's text database (the label): the game
+// finds it as it finds a door, sorts it with the others by distance and, where there are several, shows its own
+// choice menu ("1 - Get in the car as the driver", "2 - Fish here"). The game's executor passes over an action it
+// does not know, so the game does nothing for it and nothing else is taken from the player (the car beside it is
+// still entered from the same menu). The pick is read where the game makes it: FindNearObjects' list kept (its
+// hook) and ExecuteMenu's result (0xA9 + the item's index) mapped to it.
 // Timers: the mission's clock (MML_EVENT_MISSION_TICK's time: they stand while the game is paused or loads), once
-// or repeated; a mod's go with its unload, every zone, use-point and timer with the mission.
+// or repeated. A mod's go with its unload, every zone, use-point and timer with the mission; a use-point on a frame
+// of an actor that is destroyed goes with it.
 //
-// Bridge methods (game thread): interact.list, zone.add {at | on, bone, pos, radius}, use.add {at, radius, prompt},
+// Bridge methods (game thread): interact.list, zone.add {at | on, bone, pos, radius}, use.add {..., label},
 // timer.add {ms, repeat}, interact.remove {id | all}.
 #include "host.h"
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <string>
 #include <vector>
 #include "json.hpp"
@@ -26,6 +32,25 @@ using json = nlohmann::json;
 namespace host {
 namespace {
 
+// S_using_object (game_build.h uoAdd): what the registry points to; the S_GameItem at +0x28 is what the menu lists.
+#pragma pack(push, 1)
+struct UoRecord {
+    float pos[3];             // in `matrix`'s space, or the world's
+    float range2;             // horizontal reach, squared
+    const float *matrix;      // a world matrix (a frame's), or null
+    uint32_t flags;           // 0: the record and no frame are the game's to free
+    void *frame, *actor, *owner;
+    uint8_t transient, pad[3];
+    uint32_t type;            // 1: an action
+    uint32_t id;              // the action: its label's text id
+    uint32_t zero;
+    UoRecord *self;
+};
+#pragma pack(pop)
+static_assert(sizeof(UoRecord) == 0x38, "S_using_object");
+constexpr int kUsingObjects = 0x29EC;
+constexpr int kMenuPicked = 0xA9;
+
 enum Kind { kZone, kUse, kTimer };
 struct Item {
     int id;
@@ -34,27 +59,41 @@ struct Item {
     void *frame;              // followed (null: the world)
     V3 pos;                   // the world's, or in the frame's space
     float radius;
-    std::string prompt;       // a use-point's (UTF-8)
-    uint32_t textId;
+    std::string label;        // a use-point's (UTF-8)
+    std::shared_ptr<UoRecord> rec;   // a use-point's record, registered
     MmlZoneFn zoneFn;
     MmlUseFn useFn;
     MmlTimerFn timerFn;
     void *user;
     bool inside;
-    DWORD promptUntil;        // a use-point's help line shown until then
     int ms, left;             // a timer's period and what is left of it (mission ms)
     bool repeat;
     int fired;
 };
 std::vector<Item> g_items;
 int g_nextId;
-int g_actionSlot = -1;        // "Action"'s primary slot (its secondary is the next)
-bool g_actionKept;
+
+using UoFn = int(__fastcall *)(void *registry, void *edx, void *record);
+using FindFn = void(__fastcall *)(void *registry, void *edx, const float *at, const float *dir, void *out, void *frame);
+using ExecFn = int(__fastcall *)(void *menu, int tick, int unused);
+FindFn oFind;
+ExecFn oExec;
+bool g_hooked;
+std::string g_hookWhy = "not asked for";
+struct Found { uint32_t type, id; void *rec; };
+std::vector<Found> g_found;   // the last FindNearObjects' list, until the menu that shows it returns
+bool g_armed;
+unsigned g_menus, g_picked;
 
 const game::ExeBuild &E() { return game::Exe(); }
 
 template <class F> DWORD Guarded(F &f) {
     __try { f(); return 0; } __except (EXCEPTION_EXECUTE_HANDLER) { return GetExceptionCode(); }
+}
+
+void *Registry() {
+    void *g = game::g_exe ? game::Game() : nullptr;
+    return g ? static_cast<uint8_t *>(g) + kUsingObjects : nullptr;
 }
 
 bool PlayerPlace(V3 *out, bool *onFoot) {
@@ -85,17 +124,65 @@ struct UseCall { Item *it; };
 void CallUse(void *p) { auto *c = static_cast<UseCall *>(p); c->it->useFn(c->it->id, c->it->user); }
 void CallTimer(void *p) { auto *c = static_cast<UseCall *>(p); c->it->timerFn(c->it->id, c->it->user); }
 
-void Tell(Item &it, const char *type, const char *what) {
+void Tell(Item &it, const char *type) {
     json d = {{"id", it.id}, {"by", it.mod ? ModIdOf(it.mod) : "bridge"}};
-    if (it.kind == kUse) d["prompt"] = it.prompt;
+    if (it.kind == kUse) d["label"] = it.label;
     EventsRecord(type, d.dump());
-    (void)what;
 }
 
-void KeepAction(bool keep) {
-    if (keep == g_actionKept || g_actionSlot < 0) return;
-    ActionCapture(kLoaderOwner, g_actionSlot, keep);
-    g_actionKept = keep;
+void Unregister(Item &it) {
+    if (!it.rec) return;
+    void *reg = Registry();
+    auto f = [&] { if (reg) reinterpret_cast<UoFn>(E().uoDel)(reg, nullptr, it.rec.get()); };
+    Guarded(f);
+    it.rec.reset();
+}
+
+void __fastcall hkFind(void *registry, void *edx, const float *at, const float *dir, void *out, void *frame) {
+    oFind(registry, edx, at, dir, out, frame);
+    g_found.clear();
+    g_armed = false;
+    auto f = [&] {
+        const uint32_t *b = static_cast<uint32_t **>(out)[1], *e = static_cast<uint32_t **>(out)[2];
+        for (const uint32_t *p = b; p && p < e && g_found.size() < 64; p += 4) g_found.push_back({p[0], p[1], reinterpret_cast<void *>(p[3])});
+    };
+    Guarded(f);
+    g_armed = !g_found.empty();   // (the action menu follows at once when anything was found)
+}
+
+int __fastcall hkExec(void *menu, int tick, int unused) {
+    if (!g_armed) return oExec(menu, tick, unused);
+    std::vector<Found> found;
+    found.swap(g_found);
+    g_armed = false;
+    g_menus++;
+    int r = oExec(menu, tick, unused);
+    int idx = r - kMenuPicked;
+    if (idx >= 0 && idx < static_cast<int>(found.size()) && found[idx].type == 1)
+        for (Item &it : g_items)
+            if (it.kind == kUse && it.rec && it.rec.get() == found[idx].rec) {
+                g_picked++;
+                Tell(it, "USED");
+                if (it.useFn && (!it.mod || ModAlive(it.mod))) {
+                    UseCall uc{&it};
+                    ModCall(it.mod, CallUse, &uc, "its use-point function");
+                }
+                break;
+            }
+    return r;
+}
+
+bool EnsureHooks(std::string *err) {
+    if (g_hooked) return true;
+    if (!game::g_exe || !E().uoAdd || !E().uoDel || !E().uoFind || !E().menuExecute) { *err = g_hookWhy = "the using objects are not known for this build"; return false; }
+    if (!HookAdd(nullptr, E().uoFind, reinterpret_cast<void *>(&hkFind), reinterpret_cast<void **>(&oFind), err) ||
+        !HookAdd(nullptr, E().menuExecute, reinterpret_cast<void *>(&hkExec), reinterpret_cast<void **>(&oExec), err)) {
+        g_hookWhy = *err;
+        return false;
+    }
+    g_hooked = true;
+    g_hookWhy = "hooked";
+    return true;
 }
 
 } // namespace
@@ -127,10 +214,15 @@ int ZoneAdd(MmlMod *mod, const float *pos, float radius, void *frame, MmlZoneFn 
     return it.id;
 }
 
-int UseAdd(MmlMod *mod, const float *pos, float radius, void *frame, const char *prompt, MmlUseFn fn, void *user, std::string *err) {
+int UseAdd(MmlMod *mod, const float *pos, float radius, void *frame, const char *label, MmlUseFn fn, void *user, std::string *err) {
     if (!game::g_exe) { *err = "no game"; return 0; }
     if (!(radius > 0)) { *err = "radius: more than 0"; return 0; }
-    if (g_actionSlot < 0) g_actionSlot = ActionSlotOf("Action");
+    if (!label || !*label) { *err = "label: the menu's line for it (\"Fish here\")"; return 0; }
+    void *reg = Registry();
+    if (!reg) { *err = "no mission (the using objects are the mission's)"; return 0; }
+    if (!EnsureHooks(err)) return 0;
+    uint32_t text = GameTextId(label);
+    if (!text) { *err = "the game's text database is not hooked (menus.cpp)"; return 0; }
     Item it{};
     it.id = ++g_nextId;
     it.kind = kUse;
@@ -138,9 +230,25 @@ int UseAdd(MmlMod *mod, const float *pos, float radius, void *frame, const char 
     it.frame = frame;
     it.pos = pos ? V3{pos[0], pos[1], pos[2]} : V3{0, 0, 0};
     it.radius = radius;
-    it.prompt = prompt ? prompt : "";
+    it.label = label;
     it.useFn = fn;
     it.user = user;
+    it.rec = std::make_shared<UoRecord>();
+    UoRecord &r = *it.rec;
+    memset(&r, 0, sizeof r);
+    r.pos[0] = it.pos.x; r.pos[1] = it.pos.y; r.pos[2] = it.pos.z;
+    r.range2 = radius * radius;
+    if (frame) {
+        const float *w = nullptr;
+        auto g = [&] { w = game::WorldMatrix(frame); };
+        if (Guarded(g) || !w) { *err = "frame: not a frame"; return 0; }
+        r.matrix = w;   // (the frame's own world matrix: the record follows it)
+    }
+    r.type = 1;
+    r.id = text;
+    r.self = &r;
+    auto f = [&] { reinterpret_cast<UoFn>(E().uoAdd)(reg, nullptr, &r); };
+    if (Guarded(f)) { *err = "AddObject faulted"; return 0; }
     g_items.push_back(it);
     return it.id;
 }
@@ -162,54 +270,33 @@ int TimerAdd(MmlMod *mod, int ms, bool repeat, MmlTimerFn fn, void *user, std::s
 bool InteractRemove(MmlMod *mod, int id) {
     auto it = std::find_if(g_items.begin(), g_items.end(), [&](const Item &i) { return i.id == id && (!mod || i.mod == mod); });
     if (it == g_items.end()) return false;
+    Unregister(*it);
     g_items.erase(it);
     return true;
 }
 
-// Every frame of a loaded mission: the crossings and the use-points' prompts and presses.
+// Every frame of a loaded mission: the zones' crossings (and the use-points' "inside", for interact.list).
 void InteractFrame() {
-    if (g_items.empty()) { KeepAction(false); return; }
+    if (g_items.empty()) return;
     V3 p;
     bool foot = false;
     bool have = PlayerPlace(&p, &foot);
-    bool inUse = false;
-    DWORD now = GetTickCount();
     for (size_t i = 0; i < g_items.size(); i++) {
         Item &it = g_items[i];
         if (it.kind == kTimer) continue;
         V3 c;
         bool in = have && Centre(it, &c) && Len(p - c) <= it.radius && (it.kind == kZone || foot);
-        if (in != it.inside) {
-            it.inside = in;
-            int id = it.id;
-            if (it.kind == kZone) {
-                Tell(it, in ? "ZONE_ENTERED" : "ZONE_LEFT", "");
-                if (it.zoneFn && (!it.mod || ModAlive(it.mod))) {
-                    ZoneCall zc{&it, in ? 1 : 0, game::Player()};
-                    ModCall(it.mod, CallZone, &zc, "its zone function");
-                }
-            } else if (in) {
-                it.promptUntil = 0;
-            }
-            if (i >= g_items.size() || g_items[i].id != id) { i--; continue; }   // (removed by its own function)
+        if (in == it.inside) continue;
+        it.inside = in;
+        if (it.kind != kZone) continue;
+        int id = it.id;
+        Tell(it, in ? "ZONE_ENTERED" : "ZONE_LEFT");
+        if (it.zoneFn && (!it.mod || ModAlive(it.mod))) {
+            ZoneCall zc{&it, in ? 1 : 0, game::Player()};
+            ModCall(it.mod, CallZone, &zc, "its zone function");
         }
-        if (it.kind == kUse && it.inside) {
-            inUse = true;
-            if (!it.prompt.empty() && now >= it.promptUntil) {
-                int ms = HudHelpLine(it.prompt);
-                it.promptUntil = now + static_cast<DWORD>(ms > 0 ? ms + 500 : 3000);
-            }
-            if (g_actionKept && g_actionSlot >= 0 && (ActionValue(g_actionSlot, true) >= 0.25f || ActionValue(g_actionSlot + 1, true) >= 0.25f)) {
-                Tell(it, "USED", "");
-                if (it.useFn && (!it.mod || ModAlive(it.mod))) {
-                    UseCall uc{&it};
-                    ModCall(it.mod, CallUse, &uc, "its use-point function");
-                }
-                break;   // (one use a press; the list may have changed)
-            }
-        }
+        if (i >= g_items.size() || g_items[i].id != id) i--;   // (removed by its own function)
     }
-    KeepAction(inUse);
 }
 
 // The mission's tick (its time: the pause and the loading stand still).
@@ -221,7 +308,7 @@ void InteractTick(int ms) {
         if (it.left > 0) { i++; continue; }
         it.fired++;
         int id = it.id;
-        Tell(it, "TIMER", "");
+        Tell(it, "TIMER");
         if (it.timerFn && (!it.mod || ModAlive(it.mod))) {
             UseCall uc{&it};
             ModCall(it.mod, CallTimer, &uc, "its timer function");
@@ -235,11 +322,27 @@ void InteractTick(int ms) {
 }
 
 void InteractModGone(MmlMod *mod) {
-    g_items.erase(std::remove_if(g_items.begin(), g_items.end(), [&](const Item &i) { return i.mod == mod; }), g_items.end());
+    for (size_t i = 0; i < g_items.size();)
+        if (g_items[i].mod == mod) { Unregister(g_items[i]); g_items.erase(g_items.begin() + i); }
+        else i++;
 }
-void InteractMissionClose() {
+void InteractMissionClose() {   // (before the game's: its registry is still there)
+    for (Item &it : g_items) Unregister(it);
     g_items.clear();
-    KeepAction(false);
+    g_found.clear();
+    g_armed = false;
+}
+// An actor's destructor (before the game's): what follows a frame of its model goes (a use-point's record would
+// read the frame's matrix after it is freed).
+void InteractActorGone(void *actor) {
+    void *model = actor ? game::at<void *>(actor, game::kActorFrame) : nullptr;
+    if (!model) return;
+    for (size_t i = 0; i < g_items.size();) {
+        bool on = false;
+        for (void *f = g_items[i].frame; f && !on; f = game::at<void *>(f, game::kFrameParent)) on = f == model;
+        if (on) { Unregister(g_items[i]); g_items.erase(g_items.begin() + i); }
+        else i++;
+    }
 }
 
 bool InteractMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok) {
@@ -262,13 +365,13 @@ bool InteractMethod(const std::string &method, const std::string &paramsJson, st
                     if (Centre(it, &c)) j["at"] = r3(c);
                     j["radius"] = it.radius;
                     j["inside"] = it.inside;
-                    if (it.kind == kUse) j["prompt"] = it.prompt;
+                    if (it.kind == kUse) { j["label"] = it.label; j["text_id"] = it.rec ? it.rec->id : 0; }
                 }
                 list.push_back(j);
             }
             V3 pl;
             bool foot = false;
-            json out = {{"items", list}, {"action_kept", g_actionKept}};
+            json out = {{"items", list}, {"using_objects", g_hookWhy}, {"action_menus", g_menus}, {"picked", g_picked}};
             if (PlayerPlace(&pl, &foot)) { out["player"] = r3(pl); out["on_foot"] = foot; }
             *reply = dump(out);
             *ok = true;
@@ -277,7 +380,9 @@ bool InteractMethod(const std::string &method, const std::string &paramsJson, st
         if (method == "interact.remove") {
             if (p.value("all", false)) {
                 size_t n = 0;
-                for (size_t i = 0; i < g_items.size();) if (!g_items[i].mod) { g_items.erase(g_items.begin() + i); n++; } else i++;
+                for (size_t i = 0; i < g_items.size();)
+                    if (!g_items[i].mod) { Unregister(g_items[i]); g_items.erase(g_items.begin() + i); n++; }
+                    else i++;
                 *reply = dump({{"removed", n}});
             } else {
                 if (!InteractRemove(nullptr, p.value("id", 0))) { *reply = "interact.remove: id: one of the bridge's (interact.list)"; return true; }
@@ -293,7 +398,7 @@ bool InteractMethod(const std::string &method, const std::string &paramsJson, st
             *ok = true;
             return true;
         }
-        // zone.add, use.add: a place (`at`, or `on` an actor with `bone` and `pos`), a radius
+        // zone.add, use.add: a place (`at`, or `on` an actor with `bone` and `pos`; default: where the player is)
         void *frame = nullptr;
         V3 pos{0, 0, 0};
         if (p.contains("on") && p["on"].is_string()) {
@@ -315,7 +420,7 @@ bool InteractMethod(const std::string &method, const std::string &paramsJson, st
         }
         const float f[3] = {pos.x, pos.y, pos.z};
         int id = method == "zone.add" ? ZoneAdd(nullptr, f, p.value("radius", 3.0f), frame, nullptr, nullptr, &err)
-                                      : UseAdd(nullptr, f, p.value("radius", 2.0f), frame, p.value("prompt", "").c_str(), nullptr, nullptr, &err);
+                                      : UseAdd(nullptr, f, p.value("radius", 2.0f), frame, p.value("label", "").c_str(), nullptr, nullptr, &err);
         if (!id) { *reply = method + ": " + err; return true; }
         *reply = dump({{"id", id}, {"at", r3(pos)}});
         *ok = true;
