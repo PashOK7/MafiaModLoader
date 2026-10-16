@@ -298,7 +298,10 @@ struct ExeBuild {
     // shot put into the game's shot queue (MafiaOnline's contract, checked). newExplosion: C_game::NewExplosion,
     // thiscall(C_game*, void* source, S_vector* pos, float radius, float damage, bool world, bool large, bool smoke,
     // int sound), ret 0x20. carExplosion: C_car::CarExplosion, thiscall(C_car*, uint flags), ret 4: a car blows up.
-    uintptr_t newShoot, newExplosion, carExplosion;
+    // carCrash: C_car::Was_Collision, fastcall(C_car*, const S_vector* impulse, const S_vector*, const S_vector* pos,
+    // float, const S_vector*, C_actor* struck (a car; null: the world), const prim* (the world's; null: a car), int),
+    // ret 0x1C: each contact of a car's body or wheels (the debris and sparks: |impulse| / the car's mass).
+    uintptr_t newShoot, newExplosion, carExplosion, carCrash;
     // Questions to the world (host/collide.cpp). testLineAll: g_collision::_TestLineH, thiscall(g_collision*, const
     // S_vector *from, const S_vector *delta, S_vector *hit, S_vector *normal, uint movingMask, uint staticMask) ->
     // the primitive or moving object hit (0: none), ret 0x18: the static world (a primitive whose first dword has a
@@ -543,8 +546,9 @@ inline const ExeBuild kExe12 = {
     0x4E1CE0, 0x4E2090, 0x4E6AF0,
     0xC24, 0xC3C, 0xC38, 0x4C4, 0x221C,
     // what happens (2026-10-16: MafiaOnline's addresses, their rets read: 0x5A8E68 ret 0x2C, 0x5AB66F ret 0x20,
-    // 0x422ACB ret 4)
-    0x5A84A0, 0x5AAE10, 0x421D60,
+    // 0x422ACB ret 4; carCrash st0rm94's C_car::Was_Collision, 0x426286 ret 0x1C, seen called by BodyCollision and
+    // DoWheelsCollision)
+    0x5A84A0, 0x5AAE10, 0x421D60, 0x4259E0,
     // questions to the world (2026-10-16: st0rm94's and MafiaOnline's names, both read in the disassembly: ret 0x18,
     // ret 0xC)
     0x5C8770, 0x5C3D60,
@@ -648,8 +652,9 @@ inline const ExeBuild kExe10 = {
     0x52E6D0, 0x52EA80, 0x5334E0,
     0xCA0, 0xCB8, 0xCB4, 0x540, 0x21F4,
     // what happens (2026-10-16: st0rm94's game_new_shoot, game_new_explosion, car_explosion; their rets read:
-    // 0x5E47B8 ret 0x2C, 0x5E7065 ret 0x20, 0x4699B7 ret 4)
-    0x5E3DF0, 0x5E6760, 0x468BC0,
+    // 0x5E47B8 ret 0x2C, 0x5E7065 ret 0x20, 0x4699B7 ret 4; carCrash car_on_collision_apply_damage, 0x46D513 ret 0x1C,
+    // the same code as 1.2's)
+    0x5E3DF0, 0x5E6760, 0x468BC0, 0x46CC40,
     // questions to the world (2026-10-16: st0rm94's collision_test_line_horizontal and
     // collision_dyn_set_next_multiple_owners, the same code as 1.2's: ret 0x18, ret 0xC)
     0x5838A0, 0x57EE90,

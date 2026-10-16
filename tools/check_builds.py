@@ -348,12 +348,29 @@ def main(a):
             check(any(i.mnemonic == 'fabs' for i in head) and c == limit, f'{name} LS3DF {f}: |w| compared with {limit}')
     # What happens (host/happen.cpp): NewShoot, NewExplosion and CarExplosion begin the same in both builds and end
     # with their arguments' ret (0x2C, 0x20, 4).
-    for f, ret in (('newShoot', '0x2c'), ('newExplosion', '0x20'), ('carExplosion', '4')):
+    for f, ret in (('newShoot', '0x2c'), ('newExplosion', '0x20'), ('carExplosion', '4'), ('carCrash', '0x1c')):
         a, b = norm(g12.insn(e12[f] - 0x400000)), norm(g10.insn(e10[f] - 0x400000))
         check(a == b, f'{f}: 1.2 "{a}" vs 1.0 "{b}"')
         for name, (exe, ls, gexe, gls) in builds.items():
             first = next((i for i in gexe.md.disasm(gexe.at(exe[f] - 0x400000, 0x2000), exe[f]) if i.mnemonic == 'ret'), None)
             check(first is not None and first.op_str == ret, f'{name} {f}: its first ret is ret {ret}')
+    # The car's crash divides |impulse| by the car's mass (C_car + vehicle + vehMass), and its prim's surface is its
+    # byte +3; the shot queue is C_game +0x1D8 (the bullets' tick reads it before bulletRay); a person's landing
+    # (MovementIntern, after waterFall) compares the fall's speed +0x418 in the state 3 and sets the state 1.
+    gk = {m.group(1): int(m.group(2), 0) for m in re.finditer(r'\b(kHuman\w+) = (0x[0-9A-Fa-f]+|\d+)', gh)}
+    for name, (exe, ls, gexe, gls) in builds.items():
+        t = '\n'.join(f'{i.mnemonic} {i.op_str}' for i in gexe.md.disasm(gexe.at(exe['carCrash'] - 0x400000, 0x90), exe['carCrash']))
+        check(f'fld dword ptr [esi + {exe["vehicle"] + exe["vehMass"]:#x}]' in t and 'mov al, byte ptr [ecx + 3]' in t,
+              f'{name} carCrash: |impulse| / [car + {exe["vehicle"] + exe["vehMass"]:#x}] (the mass), the surface byte +3')
+        t = ' '.join(f'{i.op_str}' for i in gexe.md.disasm(gexe.at(exe['bulletRay'] - 0x600 - 0x400000, 0x600), exe['bulletRay'] - 0x600))
+        check('[ebp + 0x1d8]' in t and '[ebp + 0x1dc]' in t, f'{name} game.h kGameShots: the bullets\' tick reads C_game +0x1D8, +0x1DC')
+        t = ' '.join(f'{i.mnemonic} {i.op_str}' for i in gexe.md.disasm(gexe.at(exe['bulletRay'] - 0x400000, 0x1000), exe['bulletRay']))
+        check('mov al, byte ptr [esi + 0x50]' in t, f'{name} game.h kShotHits: the bullets\' tick reads the record\'s static impact flag +0x50')
+        t = [f'{i.mnemonic} {i.op_str}' for i in gexe.md.disasm(gexe.at(exe['waterFall'] - 0x400000, 0x400), exe['waterFall'])]
+        land = lambda k: (f'fld dword ptr [esi + {gk["kHumanFallSpeed"]:#x}]' in t[k:k + 8] and
+                          f'mov dword ptr [esi + {exe["humanState"]:#x}], edi' in t[k:k + 8])
+        check(any(s == f'cmp eax, {gk["kHumanStateAir"]}' and land(j) for j, s in enumerate(t)),
+              f'{name} game.h kHumanFallSpeed: the landing reads +{gk["kHumanFallSpeed"]:#x} in the state {gk["kHumanStateAir"]}')
     # Questions to the world (host/collide.cpp): _TestLineH and DynSetNextCollOwnerMult begin the same in both builds
     # and end with ret 0x18 and ret 0xC; the latter writes the exclusion list (+0x2B8, +0x2BC, +0x2B0); the sphere
     # sweep's thunk sets ecx to g_collision and jumps to a function ending with ret 0x1C.

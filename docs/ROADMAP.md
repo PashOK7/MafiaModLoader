@@ -288,6 +288,20 @@ What is done, what comes next and later, and what is known to be missing or wron
   on `events.since` and MCP `wait`. Both builds' addresses checked by `check_builds.py`. The example
   `mods/examples/tally`; seen in the 1.2 and 1.0 labs (the player's shots, his leaving the taxi, a person killed by
   a script, a car blown up with its explosion and the hit it gave the player).
+- **What happens, the rest** (2026-10-16; item 7, block 7b): `MML_EVENT_BULLET_HIT` (what a bullet struck that is
+  not a person: the moving objects from the bullets' tick's collRayTest, the static world from the impact NewShoot
+  kept in the bullet's record, told when the bullet comes to it), `CAR_CRASH` (C_car::Was_Collision: each contact
+  with the world or a car changing the car's speed by 1 m/s or more), `HUMAN_FELL` (the state 3 left: the fall's
+  speed and height), `ITEM_GAINED` / `_LOST` (each person's items by id and rounds, every frame) and
+  `MONEY_CHANGED` (C_game +0x3640, every frame). A car striking a person is his `HUMAN_HIT` (types 5 and 8, the car
+  the attacker). Both builds' addresses and offsets checked by `check_builds.py` (Was_Collision paired, its mass and
+  surface reads, the shot queue, the static impact's flag, the landing's state and speed). Seen alike in the 1.2
+  and 1.0 labs: the taxi driven into a wall (9.5 and 9.9 m/s, 1520 kg, surface 33) with the driver's hit; the
+  Thompson's bullets in the wall (the normal toward the shooter), in the taxi (`struck` it, kind 0x40) and in
+  Paulie (only his HUMAN_HIT); a fall of 8.44 m at 13 m/s with its hit of type 6 (112 damage) in the same frame;
+  the Thompson dropped (lost, -147 rounds), picked up from the ground (1.2: the game's "Pickup/Use" menu, which pauses
+  the game; 1.0: taken at once, the only item there), a Colt given to one who had it (rounds only, +14), the Magnum
+  taken; the money set.
 - **Interaction** (2026-10-16; item 15): `zone_add` (spheres the player crosses, on foot or in his car, in the world
   or following a frame), `use_point_add` (a record of the loader's in the game's own using objects, C_game +
   0x29EC: what Action finds on foot, offered alone or in the game's own choice menu with a label that is a text id
@@ -429,8 +443,8 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
 1. Item 17, a mod's state in the game's saves.
 2. *(Done 2026-10-16.)* People and animations (item 6's rest: animations played and blended, getting up, traffic pedestrians' hits,
    1.0's fields).
-3. The events still missing (item 7's rest: what a bullet struck, a car striking a person or a thing, falls, items
-   picked up, money). No "mission won or failed" and no objectives: the story is linear, a mission's script loads
+3. *(Done 2026-10-16.)* The events still missing (item 7's rest: what a bullet struck, a car striking a person or a
+   thing, falls, items picked up, money). No "mission won or failed" and no objectives: the story is linear, a mission's script loads
    the next one when it is done (CHANGE_MISSION: MISSION_CLOSE, MISSION_OPEN already tell it), a failure is the
    player's death (HUMAN_DIED), and the objectives are texts the scripts show (`mission_objectives`), read in them.
 4. A mod's own items in the inventory (item 10's rest).
@@ -480,8 +494,8 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
    and a mod's own (item 2) played on a person or a model, blended, stopped, their state read. 1.0's fields for
    bullets, getting up and trams (zeros today). Reference: the host's `listHumans`, `ragdoll.cpp` (`PoseSnap`),
    `getup.cpp`, `hits.cpp`; the scripts' `human_playanim`, `model_playanim`.
-7. *(7a done 2026-10-16: shots, explosions, cars blown up, deaths with their killer, vehicles entered and left; see
-   "Done". Left: what a bullet struck, a car striking a person or a thing, falls, items, money.)* **What happens, as events** (R W S C). A bullet's path and what it struck (the game's shot queue, `NewShoot`
+7. *(Done 2026-10-16: 7a, shots, explosions, cars blown up, deaths with their killer, vehicles entered and left; 7b,
+   what a bullet struck, cars' crashes, falls, items, money; see "Done". What is left: Known gaps.)* **What happens, as events** (R W S C). A bullet's path and what it struck (the game's shot queue, `NewShoot`
    0x5A84A0), explosions (place, radius, force), a car striking a person or a thing, falls, deaths with who killed
    whom, a car entered, left or stolen, an item picked up, money changed, a mission's objective done, the mission
    won or failed: today only a hit on a `C_human` and the missions' opening and closing are told. Reference:
@@ -717,7 +731,14 @@ merged, sorted by importance):
 - **What happens** (host/happen.cpp): the killer of `HUMAN_DIED` is the last attacker of `HUMAN_HIT` in 3 s (seen
   2026-10-16 in both labs: the player's Thompson killing a spawned Paulie, aimed by `world.ray` from the camera); a
   death the game queues with no hit (a script's) has none. `SHOT`'s direction is not a unit vector (its length is the weapon's reach). Deaths and vehicles come from
-  the people the loader knows (C_human), a frame late at most.
+  the people the loader knows (C_human), a frame late at most. `CAR_CRASH`'s 1 m/s is a compromise against a car
+  pressed on a wall (a contact every frame); several contacts of one blow come as several events in the same frame.
+  `BULLET_HIT` is not told for a glass the bullet breaks on the way (the tick's own path, not looked into) nor for
+  the traffic pedestrians (PEDESTRIAN_HIT); it finds the bullet's record by its place, and a bullet a mod hooked
+  collRayTest around before the loader (outermost) would not be seen. A jump is the game's animation (state 4), not
+  a fall: only a fall (state 3) gives `HUMAN_FELL`. Items are counted by id: one item swapped for another of the
+  same id in the same frame is no change; the rounds spent are not told. The game's own pickup function (inside the
+  "itempickup" menu, vtable 0x625920) is not hooked: a pickup is seen as its inventory's change.
 - **Animations, getting up** (host/anims.cpp, item 6b): an animation human_anim_play starts is in the animations
   machine, not in the person's +0x70 (which stays his own life's: `human_anim_state`'s `playing`); his state turns 4
   only for an animation with a track (.tck) of its own. A mod's own animation file in `files\anims\` was not tried

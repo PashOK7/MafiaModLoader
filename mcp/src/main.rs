@@ -334,8 +334,10 @@ struct WaitArgs {
     /// GAME_RESUMED, HUMAN_CREATED, HUMAN_HIT, HUMAN_DIED, SHOT, EXPLOSION, CAR_EXPLODED, VEHICLE_ENTERED,
     /// VEHICLE_LEFT, ACTOR_DESTROYED, MOD_LOADED, MOD_UNLOADED, MOD_FAULTED, SCRIPT_ENDED, CONFIG_CHANGED,
     /// FILE_CHANGED, SERVICES_CHANGED, ZONE_ENTERED, ZONE_LEFT, USED, TIMER (the bridge's zones, use-points and
-    /// timers), GAME_SAVING, GAME_LOADED (a save written or loaded, a new game: `slot`, `profile`), PEDESTRIAN_HIT
-    /// (`call events.since` lists the recent ones).
+    /// timers), GAME_SAVING, GAME_LOADED (a save written or loaded, a new game: `slot`, `profile`), PEDESTRIAN_HIT,
+    /// BULLET_HIT (a bullet struck the world or a car: `pos`, `struck`, `surface`), CAR_CRASH (`speed` the change
+    /// of the car's speed, `struck`), HUMAN_FELL (`speed`, `height`), ITEM_GAINED, ITEM_LOST (`item`, `name`,
+    /// `count`, `rounds`), MONEY_CHANGED (`money`, `change`) (`call events.since` lists the recent ones).
     types: String,
     /// Fields the event's data must have, equal (strings without regard to case): {"name": "freeitaly"},
     /// {"killed": true}, {"actor": "0x12345678"}.

@@ -98,6 +98,22 @@ typedef enum MmlEventType {
     MML_EVENT_PEDESTRIAN_HIT = 28,   /* a traffic pedestrian took a hit (after the game's): actor its element (the
                                         traffic system's walker, not a C_actor), other its model frame, hit (pos
                                         where it stands, was_alive / alive by its health) */
+    MML_EVENT_BULLET_HIT = 29,       /* a bullet struck something that is not a person (people: HUMAN_HIT,
+                                        PEDESTRIAN_HIT): the static world, a car, a door...: actor the shooter, bullet */
+    MML_EVENT_CAR_CRASH = 30,        /* a car struck the world or another car (each car of the two is told): actor the
+                                        car, other the car it struck (NULL: the world), crash. Contacts that change the
+                                        car's speed by 1 m/s or more (a car pressed on a wall touches it every frame); a
+                                        car striking a person is that person's HUMAN_HIT (hit type 5 or 8, the car its
+                                        attacker) */
+    MML_EVENT_HUMAN_FELL = 31,       /* a person landed after a fall (off an edge, dropped; a jump is an animation of
+                                        the game's, not a fall): actor him, fall (its damage, if any,
+                                        is a HUMAN_HIT of type 6 at the same frame) */
+    MML_EVENT_ITEM_GAINED = 32,      /* a person got an item, or rounds for one he has, however (picked up, given by a
+                                        script, bought): actor him, item */
+    MML_EVENT_ITEM_LOST = 33,        /* ... an item left his inventory (dropped, thrown, taken, his death): actor
+                                        him, item */
+    MML_EVENT_MONEY_CHANGED = 34,    /* the freeride's money changed (money_set, the scripts, the game): value the
+                                        money now, change by how much */
     MML_EVENT_COUNT_
 } MmlEventType;
 
@@ -218,6 +234,31 @@ typedef struct MmlExplosion {
     MmlVec3 pos;
     float radius, damage;
 } MmlExplosion;
+typedef struct MmlBulletHit {
+    void *shooter;          /* the actor that fired */
+    MmlVec3 pos, normal;    /* where it struck; the surface's normal there (as MmlHit's) */
+    MmlVec3 dir;            /* the bullet's direction (a unit vector) */
+    float damage;
+    void *actor;            /* what it struck: a moving object's owner (a car, a door...), NULL the static world */
+    uint32_t flags;         /* as MmlHit's: the primitive's kind, a static one's surface in the top byte */
+    const void *prim;       /* the game's primitive or object */
+} MmlBulletHit;
+typedef struct MmlCarCrash {
+    MmlVec3 pos;            /* where they touched (the world) */
+    MmlVec3 impulse;        /* N s: what the contact gave the car */
+    float speed;            /* m/s: the change of the car's speed it made (|impulse| / its mass; the game's own sparks
+                               begin at 5, its debris at 6) */
+    uint32_t flags;         /* the world's primitive struck: as MmlHit's (its surface in the top byte); 0 a car */
+} MmlCarCrash;
+typedef struct MmlFall {
+    float speed;            /* m/s: how fast he fell when he landed (the game hurts from 8 up) */
+    float height;           /* m: from the highest point of the fall down to where he landed */
+} MmlFall;
+typedef struct MmlItemChange {
+    int item;               /* the item's id in the game's list (world.items) */
+    int count;              /* items of that id: +1 gained, -1 lost; 0: only rounds for one he has */
+    int rounds;             /* rounds that came or went with it (loaded and in reserve) */
+} MmlItemChange;
 
 typedef struct MmlEvent {
     uint32_t size;          /* sizeof(MmlEvent) as the loader built it */
@@ -233,9 +274,14 @@ typedef struct MmlEvent {
     int view;               /* VIEW_WORLD: the scene view's handle; 0 in every other event */
     const struct MmlShot *shot;            /* SHOT */
     const struct MmlExplosion *explosion;  /* EXPLOSION */
-    void *other;            /* HUMAN_DIED: the killer; VEHICLE_*: the vehicle */
+    void *other;            /* HUMAN_DIED: the killer; VEHICLE_*: the vehicle; CAR_CRASH: the car struck */
     int slot, profile;      /* GAME_SAVING, GAME_LOADED: the save's number (savegame\mafia<profile>.<slot>; -1: a new
                                game) and the profile's */
+    const struct MmlBulletHit *bullet;     /* BULLET_HIT */
+    const struct MmlCarCrash *crash;       /* CAR_CRASH */
+    const struct MmlFall *fall;            /* HUMAN_FELL */
+    const struct MmlItemChange *item;      /* ITEM_GAINED, ITEM_LOST */
+    int value, change;      /* MONEY_CHANGED: the money now, and by how much */
 } MmlEvent;
 
 #define MML_EVENT_HAS(ev, member) ((size_t)(ev)->size >= offsetof(MmlEvent, member) + sizeof((ev)->member))

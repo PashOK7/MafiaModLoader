@@ -1247,3 +1247,24 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **In both labs**: details in ROADMAP "Done". Hitting a walking pedestrian with the player's Thompson took too long
   to aim from here; a scripted explosion beside them gave the events.
 - **Tests**: offline ALL PASSED; check_builds ALL PASSED.
+
+## 2026-10-16: what a bullet struck, cars' crashes, falls, items, money (item 7, block 7b)
+
+- **Read**: NewShoot finds the static world's impact at once (testLine) and keeps it in the shot's record; the
+  bullets' tick asks collRayTest only for the moving objects on each frame's stretch (it returned 0 for a wall) and
+  makes the static impact when the bullet comes to it. C_car::Was_Collision is each contact of a car (body and
+  wheels), every frame of one pressed on a wall; it divides |impulse| by the car's mass. The fall is the state 3 and
+  the speed +0x418 of MovementIntern (a jump is state 4, an animation). The ground's pickup happens inside the
+  "itempickup" menu, not through G_Inventory::Insert (tapped: not called). Both builds' code is the same at the same
+  offsets (`check_builds.py`: Was_Collision paired, its mass and surface reads, the shot queue's +0x1D8, the record's
+  impact flag +0x50, the landing's +0x418 in the state 3).
+- **Made** in `host/happen.cpp`: BULLET_HIT (collRayTest hooked at the tick's call; the record found by its place),
+  CAR_CRASH (Was_Collision hooked, 1 m/s and more), HUMAN_FELL, ITEM_GAINED, ITEM_LOST and MONEY_CHANGED (read every
+  frame); the frame's events now sent after the people are looked at (a handler's call could add to the list being
+  walked). Four structs and six event types in `mml.h`; `events.since` fields; a static_assert that every event has
+  a name.
+- **A wrong first guess, measured**: BULLET_HIT from collRayTest alone gave nothing for walls; the static impact is
+  the record's.
+- **In both labs** alike (ROADMAP "Done"): the taxi into the wall, bullets into the wall, the taxi and Paulie, a fall
+  of 8.44 m, the Thompson dropped and picked up from the ground, a Colt given, the Magnum taken, the money set.
+- **Tests**: offline ALL PASSED; `mcp_smoke.py` ALL PASSED; check_builds ALL PASSED.

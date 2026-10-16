@@ -620,7 +620,7 @@ H->save_put(M, MML_SAVE_PROFILE, "record", &best, sizeof best);   /* the profile
 - `call save.state` (the profile, the slot, every key), `save.get {"mod", "key", "scope"}`, `save.put {"key",
   "value", "scope"}` (the bridge's own keys); `GAME_SAVING` and `GAME_LOADED` go to `events.since` and MCP `wait`.
 
-### What happens (shots, explosions, deaths, vehicles)
+### What happens (shots, hits, crashes, falls, deaths, vehicles, items, money)
 
 | Event | When | `actor` | more |
 |---|---|---|---|
@@ -631,9 +631,16 @@ H->save_put(M, MML_SAVE_PROFILE, "record", &best, sizeof best);   /* the profile
 | `MML_EVENT_HUMAN_DIED` | a person's life goes out, however (a hit, a fall, the water, a script) | him | `other`: the last who hit him in the 3 s before, or NULL |
 | `MML_EVENT_VEHICLE_ENTERED`, `_LEFT` | a person starts or stops using a vehicle (a car, a tram) | him | `other`: the vehicle |
 | `MML_EVENT_PEDESTRIAN_HIT` | the game hits a traffic pedestrian (the city's walkers are the traffic system's elements, not actors) | its element | `hit` (`pos` where it stands, alive by its health), `other`: its model frame |
+| `MML_EVENT_BULLET_HIT` | a bullet strikes something that is not a person (people: `HUMAN_HIT`, `PEDESTRIAN_HIT`): the world, a car, a door | the shooter | `bullet`: `pos`, `normal`, `dir`, `damage`, `actor` what it struck (NULL: the static world), `flags` (as `MmlHit`'s: the world's surface in the top byte) |
+| `MML_EVENT_CAR_CRASH` | a car strikes the world or another car hard enough to change its speed by 1 m/s (each car of two is told) | the car | `other`: the car struck (NULL: the world); `crash`: `pos`, `impulse`, `speed` (that change), `flags` |
+| `MML_EVENT_HUMAN_FELL` | a person lands after a fall (a jump is an animation of the game's, not a fall) | him | `fall`: `speed` (the game hurts from 8 m/s, with a `HUMAN_HIT` of type 6), `height` (from the highest point) |
+| `MML_EVENT_ITEM_GAINED`, `_LOST` | an item comes into a person's inventory or leaves it, however (picked up, given, bought; dropped, thrown, taken); rounds gained for an item he has | him | `item`: `item` (its id, `world.items`), `count` (+1, -1; 0: only rounds), `rounds` |
+| `MML_EVENT_MONEY_CHANGED` | the freeride's money changes | | `value` the money now, `change` |
 
-Deaths and vehicles are read every frame from each person the loader knows (a frame late at most); shots and
-explosions are the game's own functions hooked. Every one of them also reaches agents (`events.since`, MCP
+A car striking a person is that person's `HUMAN_HIT` (hit type 5 or 8, the car its attacker); a car pressed on a
+wall touches it every frame, hence the 1 m/s (the game's own sparks begin at 5, its debris at 6). Deaths, vehicles,
+landings, items and the money are read every frame from each person the loader knows and from the game (a frame
+late at most); shots, explosions, bullets and crashes are the game's own functions hooked. Every one of them also reaches agents (`events.since`, MCP
 `wait {"types": "HUMAN_DIED"}`). `mods/examples/tally` (not enabled by default) counts the player's shots and
 kills, deaths, explosions, cars blown up and rides in a panel, the base an achievements mod stands on.
 

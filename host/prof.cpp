@@ -81,7 +81,9 @@ const char *EventName(int type) {
                                   "SERVICES_CHANGED", "MOD_LOADED", "MISSION_OPEN", "MISSION_LOADED", "GAME_PAUSED", "GAME_RESUMED",
                                   "CONFIG_CHANGED", "FILE_CHANGED", "RENDER_BEGIN", "RENDER_WORLD", "RENDER_END", "PRESENT", "VIEW_WORLD",
                                   "SHOT", "EXPLOSION", "HUMAN_DIED", "VEHICLE_ENTERED", "VEHICLE_LEFT", "CAR_EXPLODED",
-                                  "GAME_SAVING", "GAME_LOADED", "PEDESTRIAN_HIT"};
+                                  "GAME_SAVING", "GAME_LOADED", "PEDESTRIAN_HIT", "BULLET_HIT", "CAR_CRASH", "HUMAN_FELL",
+                                  "ITEM_GAINED", "ITEM_LOST", "MONEY_CHANGED"};
+    static_assert(sizeof names / sizeof names[0] == MML_EVENT_COUNT_, "a name for every MML_EVENT_*");
     return type >= 0 && type < static_cast<int>(sizeof names / sizeof names[0]) ? names[type] : "event";
 }
 

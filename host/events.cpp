@@ -98,7 +98,34 @@ void EventsFromDispatch(const MmlEvent &ev) {
         d["radius"] = x.radius;
         d["damage"] = x.damage;
     }
-    if (ev.other) d[ev.type == MML_EVENT_HUMAN_DIED ? "killer" : ev.type == MML_EVENT_PEDESTRIAN_HIT ? "model" : "vehicle"] = Hex(ev.other);
+    if (ev.type == MML_EVENT_BULLET_HIT && ev.bullet) {
+        const MmlBulletHit &b = *ev.bullet;
+        d["pos"] = {b.pos.x, b.pos.y, b.pos.z};
+        d["normal"] = {b.normal.x, b.normal.y, b.normal.z};
+        d["dir"] = {b.dir.x, b.dir.y, b.dir.z};
+        d["damage"] = b.damage;
+        if (b.actor) d["struck"] = Hex(b.actor);
+        d["kind"] = b.flags & 0xFF;
+        if (!b.actor) d["surface"] = b.flags >> 24;
+    }
+    if (ev.type == MML_EVENT_CAR_CRASH && ev.crash) {
+        const MmlCarCrash &c = *ev.crash;
+        d["pos"] = {c.pos.x, c.pos.y, c.pos.z};
+        d["impulse"] = {c.impulse.x, c.impulse.y, c.impulse.z};
+        d["speed"] = c.speed;
+        if (c.flags) d["surface"] = c.flags >> 24;
+    }
+    if (ev.type == MML_EVENT_HUMAN_FELL && ev.fall) { d["speed"] = ev.fall->speed; d["height"] = ev.fall->height; }
+    if ((ev.type == MML_EVENT_ITEM_GAINED || ev.type == MML_EVENT_ITEM_LOST) && ev.item) {
+        d["item"] = ev.item->item;
+        d["name"] = WorldItemName(ev.item->item);
+        d["count"] = ev.item->count;
+        d["rounds"] = ev.item->rounds;
+    }
+    if (ev.type == MML_EVENT_MONEY_CHANGED) { d["money"] = ev.value; d["change"] = ev.change; }
+    if (ev.other)
+        d[ev.type == MML_EVENT_HUMAN_DIED ? "killer" : ev.type == MML_EVENT_PEDESTRIAN_HIT ? "model" : ev.type == MML_EVENT_CAR_CRASH ? "struck" : "vehicle"] =
+            Hex(ev.other);
     if (ev.type == MML_EVENT_GAME_SAVING || ev.type == MML_EVENT_GAME_LOADED) { d["slot"] = ev.slot; d["profile"] = ev.profile; }
     Push(ProfEventSite(ev.type), std::move(d));
 }

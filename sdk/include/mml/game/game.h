@@ -42,12 +42,24 @@ constexpr int kHumanHealthMax = 0x604;   // (the properties' maxima: +0x600..; t
 // +0x30 five belt slots, +0x80 the coat's (a big weapon), +0x90 four extra items, +0xD0 the one put away in a car;
 // each an S_GameItem of 0x10 bytes: u16 id (0: empty), u16, u32 rounds in it, u32 in reserve, u32.
 constexpr int kHumanInventory = 0x480;
+// The fall (C_human::MovementIntern, both builds): the state +0x40C (game_build.h humanState) is 3 while he is in the
+// air; each frame the fall's speed +0x418 (m/s, down) grows by 9.81 t; on landing the state turns 1 and a speed of 8
+// or more hurts him (a hit of type 6, (speed - 2) * 10).
+constexpr int kHumanFallSpeed = 0x418, kHumanStateAir = 3;
 
 // C_mission / C_game
 constexpr int kMissionGame = 0x24;
 constexpr int kMissionScene = 0x10;   // I3D_scene* the game renders each frame (found with `rstat`)
 constexpr int kGamePlayer  = 0xE4;
 constexpr int kGameScore = 0x3640, kGameScoreShown = 0x363E;   // the freeride's money (int), and whether the HUD shows it
+// The shot queue (C_game::NewShoot fills it, the bullets' tick C_game::TickShoot moves and resolves it; both builds):
+// a vector at +0x1D8 (begin, end +0x1DC) of 0x5C-byte records: +0x00 where from, +0x0C the way to where it ends (the
+// static world's impact NewShoot found with testLine, or the weapon's reach), +0x1C where the bullet is now, +0x28 the
+// damage, +0x2C the shooter, +0x34 the static primitive struck, +0x38 its point, +0x44 its normal, +0x50 (byte) 1
+// when there is one, +0x58 (byte) its surface. The tick asks collRayTest only for the moving objects on the way; at
+// the end of the way (|now - from|^2 + 1 >= |way|^2) it makes the static impact's effects.
+constexpr int kGameShots = 0x1D8, kShotSize = 0x5C, kShotFrom = 0x00, kShotWay = 0x0C, kShotNow = 0x1C, kShotDamage = 0x28,
+              kShotShooter = 0x2C, kShotPrim = 0x34, kShotHitPos = 0x38, kShotHitNormal = 0x44, kShotHits = 0x50, kShotSurface = 0x58;
 
 template <class T> inline T &at(void *p, int off) { return *reinterpret_cast<T *>(reinterpret_cast<uint8_t *>(p) + off); }
 

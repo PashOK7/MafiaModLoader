@@ -393,6 +393,32 @@ autosplitter; kept outside it, not ported). Checked against the above:
   already freed (memory reserved, not committed). Then `LS3DF.dll+0x5AC2E`: the index buffer manager's `FreeAll`
   writing to owners already gone (24 stale slices made before anything of ours ran).
 
+## What bullets, crashes and falls do (read and seen 2026-10-16, both labs; host/happen.cpp)
+
+- **code** `C_game::NewShoot` (0x5A84A0; 1.0 0x5E3DF0) finds the static world's impact at once (`testLine`
+  0x5C74D0 with the shot's whole way) and keeps it in the shot's record, pushed to the queue at `C_game + 0x1D8`
+  (records of 0x5C bytes): +0x00 from, +0x0C the way (to the impact, or the weapon's reach), +0x1C where it is now,
+  +0x28 damage, +0x2C shooter, +0x30 a glass's frame, +0x34 the static primitive, +0x38 its point, +0x44 its normal
+  (toward the shooter), +0x50 (byte) 1 when there is one, +0x58 (byte) its surface. `C_game::TickShoot` (0x5A8E70;
+  1.0 0x5E47C0, the same code at the same offsets) moves each bullet 0.3 m a ms and asks `collRayTest` (its call
+  returns at 0x5A935C) only for the moving objects on the frame's stretch (it returned 0 for a wall 1.5 m away);
+  people (types 2, 27) get the parts test (`humanBoneRayTest`) and their Hit, others their Hit (vtable +0x7C); at the
+  end of the way (`|now - from|^2 + 1 > |way|^2`) it makes the static impact's sparks and particles.
+- **code** `C_car::Was_Collision` (0x4259E0; 1.0 0x46CC40, the same code), fastcall(car, impulse*, impulse copy*,
+  pos*, float, S_vector*, C_actor* struck, prim*, int), ret 0x1C: called by `C_Vehicle::BodyCollision` and
+  `DoWheelsCollision` for each contact, every frame of a car pressed on a wall (about 65 N s against a wall at
+  rest, 15 000 N s for the taxi at 10 m/s). It divides |impulse| by the mass (C_car + 0x664; 1.0 + 0x6E0): debris
+  from 6 m/s, a flash from 5. The taxi's mass: 1520 kg. A car striking a person goes by `C_car::Call_Collision`
+  (0x425480) to the person's vtable +0x78 and then his Hit (type 8 for a moving car, the car the attacker); the
+  driver of a car that strikes a wall gets a Hit of type 5 from his car (zero position and direction).
+- **game** A person's fall: `C_human::MovementIntern` keeps the state +0x40C at 3 in the air, the fall's speed
+  +0x418 growing by 9.81 t; on landing the state turns 1 and from 8 m/s (18 with the byte +0x41C) he is hurt with a
+  Hit of type 6, `(speed - 2) * 10` (12 instead of 2 with +0x41C). A jump is an animation (state 4). A person
+  teleported into the air stays there until he moves.
+- **game** A dropped weapon falls as an actor for about 3 s, then is destroyed and becomes a using object to pick up
+  (1.2 offered it with the rest in the "Pickup/Use" menu, `itempickup`, which pauses the game; the 1.0 lab took the
+  only one at once). Its keys: digit 2 closed the menu here without taking; `menu.click` on the line took it.
+
 ## The using objects: what Action finds on foot (read and seen 2026-10-16, both labs)
 
 - **game** `C_player::Do_AB_OwnerNULL` (0x594300; 1.0 0x4CBD00) asks `FindNearObjects` (0x55E180) of the registry
