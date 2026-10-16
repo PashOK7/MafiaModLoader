@@ -82,6 +82,16 @@ typedef enum MmlEventType {
                                         view: its handle. The device's transforms and target are the view's: what a
                                         mod draws here is in the view (a thing of the mod's seen in a reflection);
                                         the device's state is kept around it as around RENDER_WORLD */
+    /* what happens (docs/MODDING.md "What happens"; both builds) */
+    MML_EVENT_SHOT = 20,             /* a shot into the game's shot queue (every weapon's): actor the shooter, shot */
+    MML_EVENT_EXPLOSION = 21,        /* an explosion (grenades, cars, scripts): actor its source (may be NULL),
+                                        explosion */
+    MML_EVENT_HUMAN_DIED = 22,       /* a person's life went out, however (a hit, a fall, the water, a script): actor
+                                        him, other the last who hit him in the 3 s before (NULL: none) */
+    MML_EVENT_VEHICLE_ENTERED = 23,  /* a person uses a vehicle (a car, a tram), entering or seated: actor him, other
+                                        the vehicle */
+    MML_EVENT_VEHICLE_LEFT = 24,     /* ... no longer uses it: actor him, other the vehicle */
+    MML_EVENT_CAR_EXPLODED = 25,     /* a car blew up: actor the car */
     MML_EVENT_COUNT_
 } MmlEventType;
 
@@ -191,6 +201,18 @@ typedef struct MmlHumanHit {
     int was_alive, alive;   /* the human's alive flag before and after the game's Hit */
 } MmlHumanHit;
 
+typedef struct MmlShot {
+    void *shooter;          /* the actor that fired */
+    MmlVec3 pos, dir;       /* where from and towards (the world; dir as the game passed it) */
+    float damage;
+    int shots;              /* pellets in it (a shotgun's several) */
+} MmlShot;
+typedef struct MmlExplosion {
+    void *source;           /* what blew up or threw it (a grenade, a car), may be NULL */
+    MmlVec3 pos;
+    float radius, damage;
+} MmlExplosion;
+
 typedef struct MmlEvent {
     uint32_t size;          /* sizeof(MmlEvent) as the loader built it */
     MmlEventType type;
@@ -203,6 +225,9 @@ typedef struct MmlEvent {
     int world;              /* RENDER_*: 1 the mission's world scene, 0 another (a menu's) */
     void *device;           /* RENDER_*, PRESENT: the game's IDirect3DDevice8 */
     int view;               /* VIEW_WORLD: the scene view's handle; 0 in every other event */
+    const struct MmlShot *shot;            /* SHOT */
+    const struct MmlExplosion *explosion;  /* EXPLOSION */
+    void *other;            /* HUMAN_DIED: the killer; VEHICLE_*: the vehicle */
 } MmlEvent;
 
 #define MML_EVENT_HAS(ev, member) ((size_t)(ev)->size >= offsetof(MmlEvent, member) + sizeof((ev)->member))

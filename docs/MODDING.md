@@ -249,6 +249,22 @@ int view = H->scene_view(M, 640, 200, PlaceMirror, NULL);   /* 0, 0: the frame's
   `"check"` (the left half of the frame drawn again and compared: black when equal). `depth_pulse` runs its pass in
   the views: its wave is seen in the mirror.
 
+### What happens (shots, explosions, deaths, vehicles)
+
+| Event | When | `actor` | more |
+|---|---|---|---|
+| `MML_EVENT_SHOT` | a shot goes into the game's shot queue (every weapon) | the shooter | `shot`: `pos`, `dir` (its length is the weapon's reach, about 120 m for a Thompson), `damage`, `shots` (pellets) |
+| `MML_EVENT_HUMAN_HIT` | the game hits a person (a bullet, a car, an explosion, a fall) | him | `hit`: type, damage, attacker, alive before and after |
+| `MML_EVENT_EXPLOSION` | an explosion (grenades, cars, the scripts' `explosion`) | its source or NULL | `explosion`: `pos`, `radius`, `damage` (sent after the game applied it: its hits come first) |
+| `MML_EVENT_CAR_EXPLODED` | a car blows up | the car | |
+| `MML_EVENT_HUMAN_DIED` | a person's life goes out, however (a hit, a fall, the water, a script) | him | `other`: the last who hit him in the 3 s before, or NULL |
+| `MML_EVENT_VEHICLE_ENTERED`, `_LEFT` | a person starts or stops using a vehicle (a car, a tram) | him | `other`: the vehicle |
+
+Deaths and vehicles are read every frame from each person the loader knows (a frame late at most); shots and
+explosions are the game's own functions hooked. Every one of them also reaches agents (`events.since`, MCP
+`wait {"types": "HUMAN_DIED"}`). `mods/examples/tally` (not enabled by default) counts the player's shots and
+kills, deaths, explosions, cars blown up and rides in a panel, the base an achievements mod stands on.
+
 ### People, skeletons, poses
 
 ```c

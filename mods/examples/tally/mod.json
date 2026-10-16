@@ -1,0 +1,11 @@
+{
+  "id": "tally",
+  "name": "Tally: what happens, counted and told (shots, kills, deaths, explosions, rides)",
+  "version": "0.1.0",
+  "type": "native",
+  "entry": "tally.dll",
+  "enabled": false,
+  "builds": ["1.2", "1.0"],
+  "load_order": 100,
+  "depends": []
+}

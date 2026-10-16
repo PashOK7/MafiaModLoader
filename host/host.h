@@ -261,6 +261,12 @@ void RenderViewWorld(int handle);         // (render.cpp) MML_EVENT_VIEW_WORLD s
 bool ViewMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 int ViewDrawingNow();                     // the scene view LS3D is drawing now (its handle), 0: none
 
+// ---- what happens (happen.cpp): shots, explosions, cars blown up, deaths, vehicles entered and left
+void HappenInit();                        // (game_hooks.cpp) once the build is known
+void HappenHit(void *human, void *attacker);
+void HappenFrame();                       // every frame of a loaded mission
+void HappenMissionClosed();
+
 // ---- people and their skeletons (humans.cpp): humans.list, human.skeleton, human.pose
 void HumansCreated(void *human);          // (game_hooks.cpp) C_human's constructor
 void HumansGone(void *actor);             // ... an actor's destructor

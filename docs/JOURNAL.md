@@ -933,3 +933,21 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Tests**: offline people with no game, a watch on a kit field written by a command (found twice, its before and
   after), access mode, clear, refusals; `mcp_smoke.py` has `watch`. ALL PASSED both. One `native.call` of an
   arbitrary address made by mistake in the 1.0 lab faulted inside its guard; the game went on.
+
+## 2026-10-16: what happens, as events (item 7, block 7a)
+
+- **Read**: the knowledge base had the functions with other projects' contracts: `C_game::NewShoot` (0x5A84A0;
+  MafiaOnline: thiscall, the shooter, the position and direction by value, damage, particle, frame, shots, ret
+  0x2C), `C_game::NewExplosion` (0x5AAE10; MafiaOnline's hook: the source, a position pointer, radius, damage,
+  three flags, a sound, ret 0x20; Hex-Rays named registers it does not take), `C_car::CarExplosion` (0x421D60, ret
+  4); 1.0's from st0rm94 (game_new_shoot, game_new_explosion, car_explosion). Each one's first instruction and first
+  ret read in both builds; `check_builds.py` checks them.
+- **Made** `host/happen.cpp`: the three hooked (SHOT, EXPLOSION after the game applied it, CAR_EXPLODED); deaths and
+  vehicles read every frame from the people `humans.cpp` keeps (the alive flag +0x5D, the vehicle +0x98), the killer
+  the last attacker of a HUMAN_HIT in 3 s. Reading, not hooking, so every way into a car or out of life is seen.
+- **In the labs**: 1.2 and 1.0 alike: the player leaving the taxi (VEHICLE_LEFT), the Thompson's shots (50 damage,
+  one every 0.1 s, a direction about 120 m long), a spawned person killed by a script (HUMAN_DIED, no killer), a car
+  blown up by a script (EXPLOSION radius 10 damage 200, CAR_EXPLODED, and the HUMAN_HIT the blast gave the player
+  before them). A killer was not seen: the player's shots missed the person (Known gaps).
+- **The example** `tally`: a panel of the player's shots and kills, deaths, explosions, cars blown up, rides, a
+  note for the last thing ("a car blew up"), counts kept across reloads.

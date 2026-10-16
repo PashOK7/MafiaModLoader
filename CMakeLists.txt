@@ -27,7 +27,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     # ---- the loader
     add_library(MafiaModLoader SHARED
         host/main.cpp host/log.cpp host/memory.cpp host/crash.cpp host/hooks.cpp host/mods.cpp host/game_hooks.cpp
-        host/bridge.cpp host/tap.cpp host/start.cpp host/input.cpp host/screenshot.cpp host/draw.cpp host/config.cpp host/menus.cpp host/menus10.cpp host/script.cpp host/world.cpp host/lifecycle.cpp host/files.cpp host/render.cpp host/gfx.cpp host/view.cpp host/geom.cpp host/prof.cpp host/events.cpp host/native.cpp host/humans.cpp host/watch.cpp)
+        host/bridge.cpp host/tap.cpp host/start.cpp host/input.cpp host/screenshot.cpp host/draw.cpp host/config.cpp host/menus.cpp host/menus10.cpp host/script.cpp host/world.cpp host/lifecycle.cpp host/files.cpp host/render.cpp host/gfx.cpp host/view.cpp host/geom.cpp host/prof.cpp host/events.cpp host/native.cpp host/humans.cpp host/watch.cpp host/happen.cpp)
     # ($<0:> keeps Visual Studio from adding a per-configuration folder)
     set_target_properties(MafiaModLoader PROPERTIES SUFFIX ".asi" RUNTIME_OUTPUT_DIRECTORY ${MML_OUT}/$<0:>)
     target_include_directories(MafiaModLoader PRIVATE third_party/json host)
@@ -189,6 +189,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
         SHADERS river_water.hlsl:VsWater:vs_5_0 river_water.hlsl:PsWater:ps_5_0)
     mml_add_files_mod(freeride_picture ${CMAKE_SOURCE_DIR}/mods/examples/freeride_picture)
     mml_add_mod(puppet ${CMAKE_SOURCE_DIR}/mods/examples/puppet mods/examples/puppet/puppet.cpp)
+    mml_add_mod(tally ${CMAKE_SOURCE_DIR}/mods/examples/tally mods/examples/tally/tally.cpp)
     # (tools/new_mod.py adds a mod's line above this one)
 
     # ---- offline tests: a stand-in game that loads the loader and pumps its frames (tests/run_tests.py)

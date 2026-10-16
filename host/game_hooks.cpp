@@ -103,6 +103,7 @@ int __fastcall hkMissionClose(void *self, void *edx) {
     g_missionName.clear();
     int r = oMissionClose(self, edx);
     HumansMissionClosed();   // (its people went with it)
+    HappenMissionClosed();
     if (g_inOpen && !g_openSent) SendOpen();
     return r;
 }
@@ -137,6 +138,7 @@ int __fastcall hkHumanHit(void *self, void *edx, int type, MmlVec3 *dir, MmlVec3
     hit.attacker = attacker;
     hit.was_alive = before != 0;
     hit.alive = after != 0;
+    HappenHit(self, attacker);
     MmlEvent ev = Event(MML_EVENT_HUMAN_HIT);
     ev.actor = self;
     ev.hit = &hit;
@@ -180,6 +182,7 @@ void Frame() {
         MemRead(game::Exe().menuTop, &menu, sizeof menu);
         if (menu) SetPaused(true);
     }
+    if (g_missionLoaded) HappenFrame();   // (happen.cpp: deaths, vehicles entered and left)
     MmlEvent ev = Event(MML_EVENT_FRAME);
     ev.dt = dt;
     Dispatch(ev);
@@ -210,6 +213,7 @@ bool GameHooksInstall() {
     Hook(x.actorDtor, (void *)hkActorDtor, (void **)&oActorDtor, "ActorDtor");
     Hook(x.humanCtor, (void *)hkHumanCtor, (void **)&oHumanCtor, "HumanCtor");
     Hook(x.humanHit, (void *)hkHumanHit, (void **)&oHumanHit, "HumanHit");
+    HappenInit();   // (happen.cpp: shots, explosions, cars blown up)
     return true;
 }
 

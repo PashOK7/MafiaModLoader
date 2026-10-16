@@ -334,6 +334,14 @@ def main(a):
             fc = next((i for i in head if i.mnemonic == 'fcomp' and i.op_str.startswith('qword ptr [0x')), None)
             c = struct.unpack('<d', gls.at(int(fc.op_str[11:-1], 16) - gls.base, 8))[0] if fc else None
             check(any(i.mnemonic == 'fabs' for i in head) and c == limit, f'{name} LS3DF {f}: |w| compared with {limit}')
+    # What happens (host/happen.cpp): NewShoot, NewExplosion and CarExplosion begin the same in both builds and end
+    # with their arguments' ret (0x2C, 0x20, 4).
+    for f, ret in (('newShoot', '0x2c'), ('newExplosion', '0x20'), ('carExplosion', '4')):
+        a, b = norm(g12.insn(e12[f] - 0x400000)), norm(g10.insn(e10[f] - 0x400000))
+        check(a == b, f'{f}: 1.2 "{a}" vs 1.0 "{b}"')
+        for name, (exe, ls, gexe, gls) in builds.items():
+            first = next((i for i in gexe.md.disasm(gexe.at(exe[f] - 0x400000, 0x2000), exe[f]) if i.mnemonic == 'ret'), None)
+            check(first is not None and first.op_str == ret, f'{name} {f}: its first ret is ret {ret}')
     # The scene drawn from another camera (host/view.cpp): I3D_camera's vtable is written by its constructor; its
     # update (+0x44) asks the scene's GetSector (+0xB4) for the sector it keeps at +0x3F8 and makes the view (+0x164),
     # the view x projection (+0x1E4) and the backdrop's and the near pass' (+0x324, +0x3A4); the field of view's

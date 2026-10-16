@@ -85,6 +85,20 @@ void EventsFromDispatch(const MmlEvent &ev) {
         d["alive"] = h.alive != 0;
         d["killed"] = h.was_alive && !h.alive;
     }
+    if (ev.type == MML_EVENT_SHOT && ev.shot) {
+        const MmlShot &s = *ev.shot;
+        d["pos"] = {s.pos.x, s.pos.y, s.pos.z};
+        d["dir"] = {s.dir.x, s.dir.y, s.dir.z};
+        d["damage"] = s.damage;
+        d["shots"] = s.shots;
+    }
+    if (ev.type == MML_EVENT_EXPLOSION && ev.explosion) {
+        const MmlExplosion &x = *ev.explosion;
+        d["pos"] = {x.pos.x, x.pos.y, x.pos.z};
+        d["radius"] = x.radius;
+        d["damage"] = x.damage;
+    }
+    if (ev.other) d[ev.type == MML_EVENT_HUMAN_DIED ? "killer" : "vehicle"] = Hex(ev.other);
     Push(ProfEventSite(ev.type), std::move(d));
 }
 

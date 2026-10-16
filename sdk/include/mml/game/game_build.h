@@ -293,6 +293,12 @@ struct ExeBuild {
     // for type 4): the C_Vehicle runs from C_car + vehicle to its end.
     uintptr_t vehicleEngine, vehicleMove, vehicleWheelsColl;
     int vehSubstepMax, vehAxes, vehWheels, vehWheelCount, carSize;
+    // What happens, as events (host/happen.cpp). newShoot: C_game::NewShoot, thiscall(C_game*, C_actor* shooter,
+    // S_vector pos, S_vector dir (both by value), float damage, int particle, I3D_frame*, int shots), ret 0x2C: a
+    // shot put into the game's shot queue (MafiaOnline's contract, checked). newExplosion: C_game::NewExplosion,
+    // thiscall(C_game*, void* source, S_vector* pos, float radius, float damage, bool world, bool large, bool smoke,
+    // int sound), ret 0x20. carExplosion: C_car::CarExplosion, thiscall(C_car*, uint flags), ret 4: a car blows up.
+    uintptr_t newShoot, newExplosion, carExplosion;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -416,6 +422,9 @@ inline const ExeBuild kExe12 = {
     // CreateActor's new 0x221C before C_car's constructor 0x41BB80)
     0x4E1CE0, 0x4E2090, 0x4E6AF0,
     0xC24, 0xC3C, 0xC38, 0x4C4, 0x221C,
+    // what happens (2026-10-16: MafiaOnline's addresses, their rets read: 0x5A8E68 ret 0x2C, 0x5AB66F ret 0x20,
+    // 0x422ACB ret 4)
+    0x5A84A0, 0x5AAE10, 0x421D60,
 };
 
 inline const ExeBuild kExe10 = {
@@ -489,6 +498,9 @@ inline const ExeBuild kExe10 = {
     // offsets plus 0x7C, each read here)
     0x52E6D0, 0x52EA80, 0x5334E0,
     0xCA0, 0xCB8, 0xCB4, 0x540, 0x21F4,
+    // what happens (2026-10-16: st0rm94's game_new_shoot, game_new_explosion, car_explosion; their rets read:
+    // 0x5E47B8 ret 0x2C, 0x5E7065 ret 0x20, 0x4699B7 ret 4)
+    0x5E3DF0, 0x5E6760, 0x468BC0,
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,

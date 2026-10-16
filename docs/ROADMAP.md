@@ -282,6 +282,12 @@ What is done, what comes next and later, and what is known to be missing or wron
   stack and the values; the handler reads nothing in access mode and allocates nothing. `watch.set`, `watch.show`,
   `watch.clear`; MCP `watch` names the code. Offline (a kit field written by a command: found twice, access mode,
   refusals); in both labs it found what writes a person's bone (`C_human::Update` running LS3D's animation).
+- **What happens, as events** (2026-10-16; item 7, block 7a): `MML_EVENT_SHOT` (C_game::NewShoot), `EXPLOSION`
+  (C_game::NewExplosion), `CAR_EXPLODED` (C_car::CarExplosion), `HUMAN_DIED` (each person's alive flag every frame,
+  the killer the last who hit him in 3 s) and `VEHICLE_ENTERED` / `_LEFT` (each person's vehicle every frame); all
+  on `events.since` and MCP `wait`. Both builds' addresses checked by `check_builds.py`. The example
+  `mods/examples/tally`; seen in the 1.2 and 1.0 labs (the player's shots, his leaving the taxi, a person killed by
+  a script, a car blown up with its explosion and the hit it gave the player).
 - **People, skeletons, poses** (2026-10-16; item 6, block 6a): the host keeps every `C_human` (`humans_list`,
   `human_player`), a person's skeleton by the bones' names (`human_skeleton`: 18 joints, the pelvis, the root), a
   pose written for the frame's drawing (`bone_set` in `RENDER_BEGIN`, each posed model updated once after);
@@ -334,7 +340,9 @@ V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselv
    and a mod's own (item 2) played on a person or a model, blended, stopped, their state read. 1.0's fields for
    bullets, getting up and trams (zeros today). Reference: the host's `listHumans`, `ragdoll.cpp` (`PoseSnap`),
    `getup.cpp`, `hits.cpp`; the scripts' `human_playanim`, `model_playanim`.
-7. **What happens, as events** (R W S C). A bullet's path and what it struck (the game's shot queue, `NewShoot`
+7. *(7a done 2026-10-16: shots, explosions, cars blown up, deaths with their killer, vehicles entered and left; see
+   "Done". Left: what a bullet struck, a car striking a person or a thing, falls, items, money, objectives, a
+   mission won or failed.)* **What happens, as events** (R W S C). A bullet's path and what it struck (the game's shot queue, `NewShoot`
    0x5A84A0), explosions (place, radius, force), a car striking a person or a thing, falls, deaths with who killed
    whom, a car entered, left or stolen, an item picked up, money changed, a mission's objective done, the mission
    won or failed: today only a hit on a `C_human` and the missions' opening and closing are told. Reference:
@@ -488,6 +496,10 @@ merged, sorted by importance):
   matrix being the camera's backdrop view, bit for bit (it was, every drawing, in both labs). `MML_VIEW_OWN_SECTOR`
   (a camera in another room) was not tried. The first two or three reloads of `rear_mirror` added 2..13 handles each (taken to be
   Direct3D's own warming up: views made and taken back by mode changes added none); then 0.
+- **What happens** (host/happen.cpp): the killer of `HUMAN_DIED` (the last attacker of `HUMAN_HIT` in 3 s) was
+  not seen in a lab (the player's shots missed the target); a death the game queues with no hit (a script's) has
+  none. `SHOT`'s direction is not a unit vector (its length is the weapon's reach). Deaths and vehicles come from
+  the people the loader knows (C_human), a frame late at most.
 - **People** (host/humans.cpp): a freeride lists 36 people besides the player with the model name `road_bl_E` at
   the origin (both builds): the traffic system's pool, not placed yet, whose actor + 0x68 is not a person's model
   (no skeleton). Traffic pedestrians walking the streets were not checked against the list. A pose is drawn only:
