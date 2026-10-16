@@ -368,6 +368,28 @@ int H_ParticleHook(MmlMod *m, MmlParticleFn fn, void *user) { return Alive(m) ? 
 int H_WeatherGet(MmlMod *m, int param, double *v) { return Alive(m) ? WeatherGet(param, v) : 0; }
 int H_WeatherSet(MmlMod *m, int param, double v) { return Alive(m) ? WeatherSet(param, v) : 0; }
 int H_WeatherReset(MmlMod *m) { return Alive(m) ? WeatherReset() : 0; }
+void *H_PropCreate(MmlMod *m, const char *model, void *parent, const float pos[3], const float rot[4], float scale) {
+    if (!Alive(m)) return nullptr;
+    std::string err;
+    void *p = PropCreate(m, model, parent, pos, rot, scale, &err);
+    if (!p) Log(MML_LOG_WARN, Who(m), "prop_create: %s", err.c_str());
+    return p;
+}
+int H_PropPlace(MmlMod *m, void *prop, const float pos[3], const float rot[4], float scale) {
+    std::string err;
+    return Alive(m) && PropPlace(prop, pos, rot, scale, &err) ? 1 : 0;
+}
+int H_PropAttach(MmlMod *m, void *prop, void *parent, int keep) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    if (PropAttach(prop, parent, keep != 0, &err)) return 1;
+    Log(MML_LOG_WARN, Who(m), "prop_attach: %s", err.c_str());
+    return 0;
+}
+int H_PropShow(MmlMod *m, void *prop, int on) { std::string err; return Alive(m) && PropShow(prop, on != 0, &err) ? 1 : 0; }
+int H_PropRemove(MmlMod *m, void *prop) { std::string err; return Alive(m) && PropRemove(prop, &err) ? 1 : 0; }
+void *H_ActorFrame(MmlMod *m, void *actor) { return Alive(m) ? ActorFrame(actor) : nullptr; }
+int H_FrameWorld(MmlMod *m, void *frame, float out[16]) { return Alive(m) && out ? FrameWorld(frame, out) : 0; }
 int H_WorldShapes(MmlMod *m, const float lo[3], const float hi[3], uint32_t what, MmlShape *out, int max) {
     return Alive(m) && lo && hi ? WorldShapes(lo, hi, what, out, out ? max : 0) : 0;
 }
@@ -545,6 +567,7 @@ bool UnloadMod(ModEntry *e, const char *why) {
     ViewRemove(m, 0);
     GeomRemove(m);
     EffectsModGone(m);
+    PropsModGone(m);
     ConfigForget(m);
     g_subs.erase(std::remove_if(g_subs.begin(), g_subs.end(), [&](const Sub &s) { return s.mod == m; }), g_subs.end());
     for (auto it = g_commands.begin(); it != g_commands.end();) it = it->second.mod == m ? g_commands.erase(it) : std::next(it);
@@ -826,6 +849,13 @@ void ModsInit() {
     g_host.weather_get = H_WeatherGet;
     g_host.weather_set = H_WeatherSet;
     g_host.weather_reset = H_WeatherReset;
+    g_host.prop_create = H_PropCreate;
+    g_host.prop_place = H_PropPlace;
+    g_host.prop_attach = H_PropAttach;
+    g_host.prop_show = H_PropShow;
+    g_host.prop_remove = H_PropRemove;
+    g_host.actor_frame = H_ActorFrame;
+    g_host.frame_world = H_FrameWorld;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();
@@ -921,6 +951,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (StateMethod(method, paramsJson, reply, &ok)) return ok;
     if (LightsMethod(method, paramsJson, reply, &ok)) return ok;
     if (EffectsMethod(method, paramsJson, reply, &ok)) return ok;
+    if (PropsMethod(method, paramsJson, reply, &ok)) return ok;
     if (WorldMethod(method, paramsJson, reply, &ok)) return ok;
     if (FilesMethod(method, paramsJson, reply, &ok)) return ok;
     if (RenderMethod(method, paramsJson, reply, &ok)) return ok;

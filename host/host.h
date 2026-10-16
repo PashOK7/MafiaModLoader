@@ -242,6 +242,18 @@ int WeatherReset();
 int ParticleDef(int index, MmlParticleDef *out);   // index -1: the count
 int ParticleDefSet(int index, const MmlParticleDef *def);
 bool EffectsMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+// props (props.cpp): models in the world without actors, made, placed, attached, shown, removed
+void *PropCreate(MmlMod *mod, const char *model, void *parent, const float *pos, const float *rot, float scale, std::string *err);
+bool PropPlace(void *prop, const float *pos, const float *rot, float scale, std::string *err);
+bool PropAttach(void *prop, void *parent, bool keepWorld, std::string *err);
+bool PropShow(void *prop, bool on, std::string *err);
+bool PropRemove(void *prop, std::string *err);
+void PropsModGone(MmlMod *mod);           // (its unload) its props removed
+void PropsMissionClose();                 // (before the mission closes) every prop removed
+void PropsActorGone(void *actor);         // (an actor's destructor) props on it put into the world
+void *ActorFrame(void *actor);
+int FrameWorld(void *frame, float out[16]);
+bool PropsMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 // the scene's lights (lights.cpp): LS3D's light frames listed and changed through its setters; lights.list, light.set
 void LightsMissionClosed();
 int SceneLights(MmlLight *out, int max);

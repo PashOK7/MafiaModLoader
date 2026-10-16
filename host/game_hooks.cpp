@@ -97,6 +97,7 @@ int __fastcall hkMissionTick(void *self, void *edx, int ms) {
 int __fastcall hkMissionClose(void *self, void *edx) {
     ScriptMissionClose();   // (their actors go with the mission)
     WorldMissionClose();
+    PropsMissionClose();    // (the props unlinked and released while their scene is there)
     SetPaused(false);
     Dispatch(Event(MML_EVENT_MISSION_CLOSE));
     g_missionLoaded = false;
@@ -116,6 +117,7 @@ void __fastcall hkActorDtor(void *self, void *edx) {
     HumansGone(self);
     ScriptActorGone(self);
     WorldActorGone(self);
+    PropsActorGone(self);
     oActorDtor(self, edx);
 }
 void *__fastcall hkHumanCtor(void *self, void *edx) {

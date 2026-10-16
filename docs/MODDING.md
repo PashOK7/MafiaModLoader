@@ -416,6 +416,43 @@ H->particle_def_set(M, 12, &d);                     /* in MML_EVENT_MISSION_OPEN
   `mods/examples/storm` (not enabled by default): rain over the city slanted by a turning wind, the scene's own
   weather put back when it is off or unloaded.
 
+### Props: models that are not actors
+
+```c
+MmlBone b[MML_BONE_COUNT];
+H->human_skeleton(M, H->human_player(M), b, MML_BONE_COUNT);
+const float pos[3] = {0, -0.05f, -0.2f};                    /* in the bone's space: y up the spine, z out of the chest */
+const float rot[4] = {0.9848078f, 0, 0, 0.1736482f};        /* w x y z: 20 degrees about z */
+void *bat = H->prop_create(M, "2bbat1.i3d", b[MML_BONE_BACK3].frame, pos, rot, 1);   /* on his back */
+const float at[3] = {-1984.5f, -3.3f, 19.4f};
+void *stone = H->prop_create(M, "2stone.i3d", NULL, at, NULL, 0.25f);                 /* in the world, small */
+H->prop_place(M, stone, at, NULL, 0);                       /* moved (each frame if it must: cheap) */
+H->prop_attach(M, bat, NULL, 1);                            /* off his back, left in the world where it is */
+float w[16];
+H->frame_world(M, H->actor_frame(M, H->human_player(M)), w); /* any frame's world matrix: rows 0..2 axes, 3 position */
+```
+
+- **A prop is an LS3D model frame**, made as the game makes an actor's model (the I3D driver's frame, the file opened
+  by the game's model cache: the game's `models\` and its archives, or a mod's own `files\models\`, which the cache
+  opens as any other file), with no actor on it: nothing the game's logic sees, and no collision shape is made for it
+  (not yet: docs/ROADMAP.md, Known gaps). In the world it is linked into the room (sector) at its
+  place, as a spawned actor's is, again each time `prop_place` moves it; attached, it is a child of the frame (a bone
+  from `human_skeleton`, an actor's model from `actor_frame`, a car's part found under it, another prop) and follows
+  its every move: a bat on a person's back follows his animation, his fall, his arrest.
+- `pos`, `rot` (w x y z) and `scale` are in the parent's space (the world's without one); NULL / 0 keep what it has.
+  `prop_attach` with `keep_world` 1 keeps it where it is in the world (its local place computed anew); 0 keeps its
+  local place in the new parent. A model's own axes are its file's: the bat lies along its y.
+- **Who removes it**: the mod with `prop_remove`; the host at the mod's unload (so a hot reload starts clean), and
+  every prop when the mission closes (a mod makes them again at `MML_EVENT_MISSION_LOADED`). A prop on an actor that
+  is destroyed is put into the world where it was; one on another prop that is removed, too. A game over's retry
+  (the same mission, the player the same actor) keeps them.
+- `call props.list`, `prop.create {"model", "at": [x, y, z] | "player", "ahead", "up", "parent": "player" | "car" |
+  "0x...", "bone": "r_hand", "frame", "pos", "rot" | "dir", "scale"}`, `prop.place`, `prop.attach {"prop", "parent",
+  "keep"}`, `prop.show {"prop", "on"}`, `prop.remove {"prop" | "all"}`.
+- `mods/examples/props_demo` (not enabled by default): a baseball bat on the player's back, stones circling his head
+  (placed each frame around his neck bone); `props_demo.drop` leaves the bat in the air, `props_demo.wear` puts it
+  back.
+
 ### What happens (shots, explosions, deaths, vehicles)
 
 | Event | When | `actor` | more |

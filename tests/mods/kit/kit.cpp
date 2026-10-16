@@ -259,6 +259,20 @@ int Effects(const char *, MmlReply *r, void *) {
     return 0;
 }
 
+// Props with no game: none made, nothing placed, no frame.
+int Props(const char *, MmlReply *r, void *) {
+    if (!MML_HAS(H, frame_world)) { H->reply_error(r, "the loader has no props"); return 1; }
+    const float pos[3] = {0, 0, 0};
+    float w[16];
+    char out[160];
+    void *p = H->prop_create(M, "2tommy.i3d", nullptr, pos, nullptr, 1);
+    snprintf(out, sizeof out, "{\"create\":%d,\"place\":%d,\"attach\":%d,\"show\":%d,\"remove\":%d,\"actor_frame\":%d,\"frame_world\":%d}", p ? 1 : 0,
+             H->prop_place(M, &w, pos, nullptr, 0), H->prop_attach(M, &w, nullptr, 1), H->prop_show(M, &w, 0), H->prop_remove(M, &w),
+             H->actor_frame(M, nullptr) ? 1 : 0, H->frame_world(M, nullptr, w));
+    H->reply_append(r, out, static_cast<size_t>(-1));
+    return 0;
+}
+
 // People with no game: none, no skeleton, bone_set refused, no player.
 int Humans(const char *, MmlReply *r, void *) {
     if (!MML_HAS(H, human_player)) { H->reply_error(r, "the loader has no human_player"); return 1; }
@@ -324,7 +338,8 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->command(mod, "passviews_clear", "takes that pass back", PassViewsClear, nullptr);
     host->command(mod, "geom", "geom_hide, geom_capture with no game (refused), geom_show", Geom, nullptr);
     host->command(mod, "humans", "humans_list, human_skeleton, bone_set, human_player with no game", Humans, nullptr);
-    host->command(mod, "effects", "car_exhaust, exhaust_hook, particle_def(_set) with no game", Effects, nullptr);
+    host->command(mod, "props", "prop_create and the rest with no game", Props, nullptr);
+    host->command(mod, "effects","car_exhaust, exhaust_hook, particle_def(_set) with no game", Effects, nullptr);
     host->command(mod, "lights","scene_lights, light_set, scene_sun with no game", Lights, nullptr);
     host->command(mod, "state","money, money_set, human_health(_set), human_items, item_ammo_set, human_take_item with no game", State, nullptr);
     host->command(mod, "ask","world_ray, world_sweep, world_near, world_shapes with no game", WorldAsk, nullptr);

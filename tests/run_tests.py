@@ -842,6 +842,13 @@ def main():
               r['ok'] and r['result'] == {'exhaust': 0, 'hook': 0, 'defs': 0, 'def': 0, 'set': 0, 'particles': 0}, r)
         r = b.call('particles.defs')
         check('particles.defs with no game: an error, saying why', not r['ok'] and 'not known' in str(r), r)
+        r = b.call('kit.props')
+        check('prop_create, prop_place, prop_attach, prop_show, prop_remove, actor_frame, frame_world with no game: none',
+              r['ok'] and r['result'] == {'create': 0, 'place': 0, 'attach': 0, 'show': 0, 'remove': 0, 'actor_frame': 0, 'frame_world': 0}, r)
+        r = b.call('props.list')
+        check('props.list with no game: not known, none', r['ok'] and r['result'] == {'known': False, 'props': []}, r)
+        r = b.call('prop.create', {'model': '2tommy.i3d', 'at': [0, 0, 0]})
+        check('prop.create with no game: an error, saying why', not r['ok'] and 'not known' in str(r), r)
         r = b.call('weather.state')
         check('weather.state with no game: an error, saying why', not r['ok'] and 'no mission' in str(r), r)
         r = b.call('weather.set', {})

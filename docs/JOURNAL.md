@@ -1083,3 +1083,23 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   25 m around and 12 m above, falling (0.199, -0.980, 0). `storm` rained over the city (the 1.0 lab's detail
   setting showed fewer drops) and put every value back at its unload; `weather.set` round-tripped 12.5, 0.2 and
   0xFFFF2020; `weather.reset` restored the preset but left the rain on.
+
+## 2026-10-16: props (item 12, block 12a)
+
+- **Made** `host/props.cpp`: a model made as world.cpp makes an actor's (the I3D driver's CreateFrame, the model
+  cache's Open) with no actor; in the world linked into the sector at its place (the scene's `sceneMoved`, as a spawned
+  actor's), or a child of any frame (LinkTo); its local place written as the game's setters write it (SetPos, the
+  rotation's quaternion and flags, the scale at +0x90), then the frame's Update. Seven functions in the C ABI, six
+  bridge methods; the host removes a mod's props at its unload, every prop at the mission's close (before the
+  game's), and an actor's destructor's hook puts props on it into the world.
+- **In the labs** (both builds alike): a bat made 4 m ahead of the taxi, scaled 3, turned, attached to the car with
+  its world place kept: 13.2 m driven, the bat 13.2 m on with the car's turn; hidden and shown. `props_demo`: the bat
+  on `back3` (its length is the model's y; the bone's y runs up the spine, z out of the chest) followed the walk, the
+  arrest's fall and a game over's retry (1.0's retry keeps the mission and the player: no prop was lost); six stones
+  around the neck (`2stone` is a boulder: scaled 0.25); `drop` left the bat in the air. A bat in Paulie's `r_hand`
+  went into the world when `world.remove` destroyed him. The mod's unload, a hot reload and the mission's close left
+  no prop and no fault.
+- **A trap**: 1.0's freeride profile "FullSave" never opened the freeride's settings, so `"police": 0` was not used
+  (the start's log says so) and a patrolman arrested Tommy for his Thompson.
+- **Tests**: offline the seven functions and the bridge's refusals with no game. ALL PASSED; `mcp_smoke.py` ALL
+  PASSED (the MCP instructions name the effects' and the props' methods).

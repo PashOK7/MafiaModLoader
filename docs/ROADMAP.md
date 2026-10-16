@@ -288,6 +288,14 @@ What is done, what comes next and later, and what is known to be missing or wron
   on `events.since` and MCP `wait`. Both builds' addresses checked by `check_builds.py`. The example
   `mods/examples/tally`; seen in the 1.2 and 1.0 labs (the player's shots, his leaving the taxi, a person killed by
   a script, a car blown up with its explosion and the hit it gave the player).
+- **Props** (2026-10-16; item 12, block 12a): `prop_create` (a model by the game's model cache as an LS3D frame with
+  no actor: in the world, linked into its room as a spawned actor's model, or attached to any frame: a bone, an
+  actor's model, a car, another prop), `prop_place`, `prop_attach` (its world place kept or its local one),
+  `prop_show`, `prop_remove`, `actor_frame`, `frame_world`; the host removes a mod's props at its unload and every
+  prop at the mission's close, and puts props on a destroyed actor into the world. `props.list`, `prop.create`,
+  `prop.place`, `prop.attach`, `prop.show`, `prop.remove`. The example `mods/examples/props_demo`; seen in both
+  labs (a bat on a car carried 13 m with it; on Tommy's back through his walk, his arrest and a game over's retry;
+  in Paulie's hand, left in the world when he was removed; none left after the mod's unload or the mission's close).
 - **The weather** (2026-10-16; item 11, block 11d): `weather_get` / `weather_set` / `weather_reset` (the mission
   scene's LS3D weather: its 15 parameters, read and set through its own getter and setter, a flag, an int, a colour
   or a float's bits each, as the scripts' `weather_setparam`, with `C_game::OsefujPocasi` after `on` and
@@ -422,7 +430,8 @@ V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselv
 
 ### Tier 3: building blocks for new things in the game
 
-12. **Props** (F K P R). Models placed in the world without being actors (a rod, a fish, a board), moved every frame,
+12. *(12a done 2026-10-16: props made, placed, attached, shown, removed; see "Done". Left: a collision shape,
+    a model's animations; Known gaps.)* **Props** (F K P R). Models placed in the world without being actors (a rod, a fish, a board), moved every frame,
     attached to a bone or a car's part and detached, shown, hidden, removed; with a collision shape when asked
     (the scripts' `model_create` and `create_physicalobject` are partial cases).
 13. **Sound** (F K P C S W). The game's sounds and a mod's own (item 2) played in 2D or in 3D at a point or attached
@@ -549,6 +558,11 @@ merged, sorted by importance):
   matrix being the camera's backdrop view, bit for bit (it was, every drawing, in both labs). `MML_VIEW_OWN_SECTOR`
   (a camera in another room) was not tried. The first two or three reloads of `rear_mirror` added 2..13 handles each (taken to be
   Direct3D's own warming up: views made and taken back by mode changes added none); then 0.
+- **Props** (host/props.cpp, item 12a): no collision shape (the scripts' `create_physicalobject` is the lead: a
+  prop that falls, is hit, is stood on); a model of a mod's own `files\models\` is opened by the same cache that
+  `files.cpp` answers, but was not tried; a prop on a car's part (a wheel, a door) was not tried, only on the car's
+  model; a model's animations are not played on a prop. A prop in the world is linked into the room at its place on
+  each `prop_place` with a position (6 stones a frame showed no cost in the labs; not measured with `profile`).
 - **The weather** (host/effects.cpp, item 11d): the 16th parameter of LS3D's switch (a flag, bit 0x200) has no
   keyword in the scripts and is left out; `weather_reset` leaves `on` as it was (the scene's own reset). The rain's
   sound is not reached (whether the scene's weather plays one was not looked at).

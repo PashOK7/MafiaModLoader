@@ -1,0 +1,5 @@
+{
+  // The defaults of props_demo's settings (read at its load).
+  "stones": 6,     // how many circle his head (at most 8)
+  "radius": 0.9    // metres from his neck
+}

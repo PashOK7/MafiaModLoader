@@ -858,6 +858,23 @@ typedef struct MmlHost {
     int (*weather_get)(MmlMod *mod, int param, double *value);
     int (*weather_set)(MmlMod *mod, int param, double value);
     int (*weather_reset)(MmlMod *mod);
+
+    /* ---- props: models in the world that are not actors (both builds; docs/MODDING.md "Props"). prop_create: a model
+     * of the game's (or a mod's own files\models\) made as an LS3D frame, in the world (parent NULL: pos is the world's)
+     * or attached to a frame (a bone from human_skeleton, actor_frame's model, another prop: pos, rot and scale are in
+     * that frame's space); rot w x y z (NULL: none), scale (<= 0: 1). Returns the prop (its frame) or NULL. The mod's
+     * props go with its unload, every prop with the mission; one on an actor that is destroyed is put into the world. */
+    void *(*prop_create)(MmlMod *mod, const char *model, void *parent, const float pos[3], const float rot[4], float scale);
+    /* moved, turned, scaled in its parent's space (NULL, scale <= 0: as it is) */
+    int (*prop_place)(MmlMod *mod, void *prop, const float pos[3], const float rot[4], float scale);
+    /* given another parent (NULL: the world); keep_world 1: it stays where it is in the world */
+    int (*prop_attach)(MmlMod *mod, void *prop, void *parent, int keep_world);
+    int (*prop_show)(MmlMod *mod, void *prop, int on);
+    int (*prop_remove)(MmlMod *mod, void *prop);
+    /* an actor's model frame (a person's, a car's: a parent for props, FindChild's root), NULL for none */
+    void *(*actor_frame)(MmlMod *mod, void *actor);
+    /* any frame's world matrix now (row vectors: rows 0..2 its axes with their scale, row 3 its position) */
+    int (*frame_world)(MmlMod *mod, void *frame, float out[16]);
 } MmlHost;
 
 #define MML_FILE_GAME 1              /* file_read: the game's own file, not a mod's of the same name */

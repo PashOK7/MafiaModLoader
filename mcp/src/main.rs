@@ -971,7 +971,10 @@ people: `humans.list`, `human.skeleton {actor}`, `human.pose {actor, bones, ms}`
 fov, ms}` (look at any place, then screenshot), `camera.state`, `camera.release`; questions to the world: \
 `world.ray {from: \"camera\"}` (what the crosshair looks at), `world.sweep`, `world.ground {at}`, `world.near {at, \
 radius}`, `world.shapes`; the game's state: `state.money {set}`, `human.health {set}`, `human.items`, \
-`human.ammo {slot, loaded, reserve}`, `human.take {item}`; the scene's lights: `lights.list`, `light.set`; what \
+`human.ammo {slot, loaded, reserve}`, `human.take {item}`; the scene's lights: `lights.list`, `light.set`; the \
+effects: `exhaust.state`, `particles.defs`, `weather.state`, `weather.set`; props (models that are not actors): \
+`prop.create {model, at | parent, bone, pos, dir, scale}`, `prop.place`, `prop.attach`, `prop.show`, \
+`prop.remove`, `props.list`; what \
 happened: `events.since` (or the wait tool); the frame: `prof.state` (or the profile tool), `gfx.state`, \
 `view.state`, `geom.survey`; any game function: `native.call {at, conv, this, args, ret}`; who writes a field: \
 the watch tool.";
