@@ -104,6 +104,7 @@ int __fastcall hkMissionClose(void *self, void *edx) {
     int r = oMissionClose(self, edx);
     HumansMissionClosed();   // (its people went with it)
     LightsMissionClosed();   // (its lights too)
+    EffectsMissionClosed();
     HappenMissionClosed();
     if (g_inOpen && !g_openSent) SendOpen();
     return r;

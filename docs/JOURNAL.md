@@ -1057,3 +1057,16 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   change the running emitter; changed at the mission's opening (by `exhaust_fx`'s `game_tint`, the mod enabled for
   the launch), the taxi's own exhaust came out red.
 - **Tests**: offline the four functions and the bridge with no game. ALL PASSED; check_builds ALL PASSED.
+
+## 2026-10-16: the game's particles (item 11, block 11c)
+
+- **Read**: mafia-ragdoll moves the game's particles from hooks on LS3D's frame Update and SetParent, functions every
+  frame of the scene goes through. Here the particle visuals' own vtables are patched instead: PRTB (1.2 LS3DF
+  0x9C660, 1.0 0x98600) and PRTE (0x9C5B8, 0x98558), each found as the vtable a constructor writes before it stores
+  its type ('PRTB', 'PRTE') at the visual's +0x1D4; their +0x18 and +0x2C are the frame's Update and SetParent. The
+  emitters' puff tick calls Update through the vtable (`call [eax + 0x18]` after `lea eax, [esi + 0x80]`); LS3DF's
+  one direct call of Update is in I3D_light's code. SetParent has five direct calls (not reached: the end of a life
+  is then found by silence).
+- **In the labs**: 1.0 with the vtables patched and no mod: 27 239 emitted and 9 409 pooled moves in a few seconds,
+  337 lives begun or ended; `wind` pushed 54 020 moves, no fault. 1.2: the taxi's puffs born at x -1985.3 were at
+  -1977.8 when they died (4 m/s for about 1.8 s), the pooled effects' too.

@@ -370,7 +370,7 @@ H->scene_sun(M, toSun, sunColor, ambient);       /* the level's sun and the ambi
 - `mods/examples/dusk` (not enabled by default): the sun and the ambient lights tinted towards a dusk, put back
   when it is turned off or unloaded.
 
-### The game's effects: the car exhaust, particles.def
+### The game's effects: the car exhaust, particles.def, the particles
 
 ```c
 int OnExhaust(const MmlExhaust *e, void *user) {   /* every tick, every car whose exhaust the game is about to make */
@@ -394,8 +394,18 @@ H->particle_def_set(M, 12, &d);                     /* in MML_EVENT_MISSION_OPEN
   `MML_EVENT_MISSION_OPEN` shows in that mission (seen: the taxi's exhaust red), one made later in the next.
 - `call exhaust.state {"car"}` (the hook, how many cars it was told of and skipped, a car's exhaust),
   `particles.defs {"index"}`, `particles.def.set {"index", "tint_birth": [r, g, b], ...}`.
+- **The particles**: every particle the game shows is an LS3D particle visual, whichever system makes it: the
+  emitters' puffs (`MML_PARTICLE_EMITTED`: the exhaust, dust, grass) and the game's pooled effects
+  (`MML_PARTICLE_POOLED`: fire, steam, vents, leaves). `particle_hook`'s function is told of each move, after the game
+  made it: where it is (`pos`), how far the game moved it (`moved`, its own motion), since when (`dt_ms`), whether
+  it is the first move of its life; change `pos` and return 1 and the particle is drawn there and goes on from
+  there. A wind, PhysX smoke moving the game's own puffs (mafia-ragdoll's), a counter. The host patches two slots of
+  the particle visuals' vtables (Update, SetParent): only particles pay. In the freeride's city: some 10 000 moves
+  a second.
+- `call particles.state {"patch": true}` (moves counted by kind without a mod, a few tracked particles' places).
 - `mods/examples/exhaust_fx` (not enabled by default): the game's exhaust replaced by the mod's own puffs (drawn as
   squares over the frame: an example of the data, not of drawing smoke), or with `game_tint` the game's own tinted.
+  `mods/examples/wind` (not enabled by default): every particle of the game blown by a gusty wind.
 
 ### What happens (shots, explosions, deaths, vehicles)
 

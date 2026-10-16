@@ -288,6 +288,12 @@ What is done, what comes next and later, and what is known to be missing or wron
   on `events.since` and MCP `wait`. Both builds' addresses checked by `check_builds.py`. The example
   `mods/examples/tally`; seen in the 1.2 and 1.0 labs (the player's shots, his leaving the taxi, a person killed by
   a script, a car blown up with its explosion and the hit it gave the player).
+- **The game's particles** (2026-10-16; item 11, block 11c): `particle_hook` (every move of every particle the game
+  shows, the emitters' puffs and the pooled effects: where the game put it, how far it moved it, since when; the mod
+  may put it elsewhere, and it goes on from there), the particle visuals' vtables (PRTB, PRTE) patched at Update and
+  SetParent in both builds (`check_builds.py`: each written before its type's store, its slots the frame's own);
+  `particles.state`. The example `mods/examples/wind` seen in both labs (the taxi's puffs carried 7.5 m downwind in
+  their life; about 10 000 moves a second in the city, no fault).
 - **The car exhaust and particles.def** (2026-10-16; item 11, block 11b): `car_exhaust` (a car's pipes in the world,
   the way they blow, the jet by the engine's turns, the car's velocity at each, the emitter's additions, as the
   game's `C_Vehicle::UpdateExhaustParticles` reads them), `exhaust_hook` (told before the game puffs, every tick,
@@ -404,8 +410,8 @@ V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselv
     mission's objectives and its outcome, the game's statistics (kills, cars stolen, distance), the profile's
     progress (chapters, freeride unlocks); a mod's own items in the items' table (a fishing rod, a fish).
 11. *(11a done 2026-10-16: the scene's lights read and changed, the sun and ambient light for the bridge; 11b: the
-    car exhaust read and replaced, `particles.def` read and written; see "Done". Left: the game's particles moved,
-    the weather's parameters; Known gaps.)* **The game's effects as data** (S W P). Particle emitters and the car exhaust (`0x4DEE90`) read, moved or
+    car exhaust read and replaced, `particles.def` read and written; 11c: the game's particles moved; see "Done".
+    Left: the weather's parameters; Known gaps.)* **The game's effects as data** (S W P). Particle emitters and the car exhaust (`0x4DEE90`) read, moved or
     replaced; `tables\particles.def`'s records; the weather's parameters; the scene's lights. Reference:
     `smoke_game.cpp`, `effects.cpp`, `frame_life.cpp`, `scene_light.cpp`.
 
@@ -538,6 +544,11 @@ merged, sorted by importance):
   matrix being the camera's backdrop view, bit for bit (it was, every drawing, in both labs). `MML_VIEW_OWN_SECTOR`
   (a camera in another room) was not tried. The first two or three reloads of `rear_mirror` added 2..13 handles each (taken to be
   Direct3D's own warming up: views made and taken back by mode changes added none); then 0.
+- **The particles** (host/effects.cpp, item 11c): one hook at a time; a particle unlinked by one of LS3D's direct
+  calls of SetParent (five in LS3DF, not through the vtable) has its end found only by a five seconds' silence (its
+  frame may be reused before: `first` is then missed); a pinned particle (frame flag 0x80) is not told. The pooled
+  effects were counted (thousands of moves in the city) but not looked at on the screen: which effects they are
+  (fire, steam, leaves) was not told apart.
 - **The exhaust and particles.def** (host/effects.cpp, item 11b): one exhaust hook at a time (the last mod's); a record
   changed after a mission's load shows from the next one (the emitters copied it); the emitters themselves (LS3D's
   I3D_emitor, their parameters) are not reached. `exhaust_fx` draws its puffs as 2D squares over the frame (no depth

@@ -238,14 +238,17 @@ int Lights(const char *, MmlReply *r, void *) {
 
 // The game's effects with no game: no exhaust, the hook refused (no build known), no particle records.
 int NoExhaust(const MmlExhaust *, void *) { return 0; }
+int NoParticle(MmlParticle *, void *) { return 0; }
 int Effects(const char *, MmlReply *r, void *) {
     if (!MML_HAS(H, particle_def_set)) { H->reply_error(r, "the loader has no game effects"); return 1; }
     MmlExhaust e;
     MmlParticleDef d;
     char out[128];
-    snprintf(out, sizeof out, "{\"exhaust\":%d,\"hook\":%d,\"defs\":%d,\"def\":%d,\"set\":%d}", H->car_exhaust(M, nullptr, &e),
-             H->exhaust_hook(M, NoExhaust, nullptr), H->particle_def(M, -1, nullptr), H->particle_def(M, 12, &d), H->particle_def_set(M, 12, &d));
+    snprintf(out, sizeof out, "{\"exhaust\":%d,\"hook\":%d,\"defs\":%d,\"def\":%d,\"set\":%d,\"particles\":%d}", H->car_exhaust(M, nullptr, &e),
+             H->exhaust_hook(M, NoExhaust, nullptr), H->particle_def(M, -1, nullptr), H->particle_def(M, 12, &d), H->particle_def_set(M, 12, &d),
+             H->particle_hook(M, NoParticle, nullptr));
     H->exhaust_hook(M, nullptr, nullptr);
+    H->particle_hook(M, nullptr, nullptr);
     H->reply_append(r, out, static_cast<size_t>(-1));
     return 0;
 }

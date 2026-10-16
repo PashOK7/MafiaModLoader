@@ -364,6 +364,7 @@ int H_CarExhaust(MmlMod *m, void *car, MmlExhaust *out) { return Alive(m) ? CarE
 int H_ExhaustHook(MmlMod *m, MmlExhaustFn fn, void *user) { return Alive(m) ? ExhaustHook(m, fn, user) : 0; }
 int H_ParticleDef(MmlMod *m, int index, MmlParticleDef *out) { return Alive(m) ? ParticleDef(index, out) : 0; }
 int H_ParticleDefSet(MmlMod *m, int index, const MmlParticleDef *d) { return Alive(m) ? ParticleDefSet(index, d) : 0; }
+int H_ParticleHook(MmlMod *m, MmlParticleFn fn, void *user) { return Alive(m) ? ParticleHook(m, fn, user) : 0; }
 int H_WorldShapes(MmlMod *m, const float lo[3], const float hi[3], uint32_t what, MmlShape *out, int max) {
     return Alive(m) && lo && hi ? WorldShapes(lo, hi, what, out, out ? max : 0) : 0;
 }
@@ -818,6 +819,7 @@ void ModsInit() {
     g_host.exhaust_hook = H_ExhaustHook;
     g_host.particle_def = H_ParticleDef;
     g_host.particle_def_set = H_ParticleDefSet;
+    g_host.particle_hook = H_ParticleHook;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();

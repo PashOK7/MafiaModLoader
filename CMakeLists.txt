@@ -195,6 +195,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     mml_add_mod(bounty ${CMAKE_SOURCE_DIR}/mods/examples/bounty mods/examples/bounty/bounty.cpp)
     mml_add_mod(dusk ${CMAKE_SOURCE_DIR}/mods/examples/dusk mods/examples/dusk/dusk.cpp)
     mml_add_mod(exhaust_fx ${CMAKE_SOURCE_DIR}/mods/examples/exhaust_fx mods/examples/exhaust_fx/exhaust_fx.cpp)
+    mml_add_mod(wind ${CMAKE_SOURCE_DIR}/mods/examples/wind mods/examples/wind/wind.cpp)
     # (tools/new_mod.py adds a mod's line above this one)
 
     # ---- offline tests: a stand-in game that loads the loader and pumps its frames (tests/run_tests.py)

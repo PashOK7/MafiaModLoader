@@ -401,6 +401,12 @@ struct Ls3dBuild {
     // (count +0x148), +0x154 its type (1 point, 2 spot, 3 directional, 4 ambient, 5 fog...), +0x158 power, +0x15C
     // colour, +0x168 and +0x16C its range, +0x170 and +0x174 its cone (each setter read in both builds).
     uintptr_t lightVtable;
+    // The particles (host/effects.cpp): the vtables of LS3D's particle visuals, PRTB (written by the constructors that
+    // store 'PRTB' at the visual's +0x1D4: Game.exe's pooled effects, and the base of every particle) and PRTE (an
+    // LS3D emitter's puff, made from PRTB's constructor). Their +0x18 is the frame's Update, stdcall(frame), called
+    // through the vtable after a particle is moved (its local position +0x80); their +0x2C SetParent, stdcall(frame,
+    // parent, flags): into the scene when a particle starts, to no parent when it ends.
+    uintptr_t prtbVtable, prteVtable;
 };
 
 inline const ExeBuild kExe12 = {
@@ -567,7 +573,8 @@ inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1
                                   0x2EE00, 0x2EC00, 0x2E070,
                                   0x9B6D0, 0x9C8F8, 0x4A1D0, 0x65560,
                                   0x39280, 0x28D40, 0x083B0,
-                                  0x9BC88};   // (I3D_light's vtable: its constructor 0x201F0 writes it at 0x2027D)
+                                  0x9BC88,   // (I3D_light's vtable: its constructor 0x201F0 writes it at 0x2027D)
+                                  0x9C660, 0x9C5B8};   // (written at 0x3FA3B and 0x406D8, PRTE's at 0x3FB72)
 // LS3D 3.84.5 (31.7.2002): the vertex buffer has no flags word, everything after +0x04 sits 4 bytes lower.
 inline const Ls3dBuild kLs3d10 = {"1.0", 0x5ED80, 0x1A8A0, 0x305B0, 0x5D070, 0x1C350, 0x6E580, 0, 0,
                                   0x1AE00, 0x1BD60, 0x1C030, 0x2B540, 0x04, 0x14, 0x18,
@@ -581,7 +588,8 @@ inline const Ls3dBuild kLs3d10 = {"1.0", 0x5ED80, 0x1A8A0, 0x305B0, 0x5D070, 0x1
                                   // Render's calls of QueueVisual)
                                   0x97690, 0x98898, 0x47D20, 0x622D0,
                                   0x37940, 0x28670, 0x07E50,   // (the vtables +0x6C of OBJ_, LMAP, billboards)
-                                  0x97C28};   // (I3D_light's vtable: its slots' code the same as 1.2's, written at 0x2002D)
+                                  0x97C28,   // (I3D_light's vtable: its slots' code the same as 1.2's, written at 0x2002D)
+                                  0x98600, 0x98558};   // (written at 0x3DDFB and 0x3EB08, PRTE's at 0x3DF22)
 
 // The builds found (null until Detect succeeds).
 inline const ExeBuild *g_exe;

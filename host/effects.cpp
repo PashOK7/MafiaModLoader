@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <unordered_map>
 #include <vector>
 #include "json.hpp"
 #include "mml/game/game_build.h"
@@ -171,6 +172,133 @@ bool SafeDefSet(int index, const MmlParticleDef *d) {
     } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
 }
 
+// ---- the game's particles: the two slots of LS3D's particle visuals' vtables (game_build.h prtbVtable, prteVtable)
+// that every particle goes through: Update (+0x18) after the game has moved it, SetParent (+0x2C) when its life
+// starts or ends. Patched in the vtables themselves, so only particles pay (the frame's own functions are shared by
+// every frame of the scene); the original is the frame's, the same in both vtables.
+constexpr int kVtUpdateSlot = 0x18, kVtParentSlot = 0x2C, kFramePosLocal = 0x80;
+constexpr uint32_t kFlagPinned = 0x80;
+using UpdateFn = void(__stdcall *)(void *frame);
+using SetParentFn = int(__stdcall *)(void *frame, void *parent, uint32_t flags);
+UpdateFn oPrtUpdate;
+SetParentFn oPrtParent;
+bool g_prtPatched;
+std::string g_prtWhy = "not patched yet";
+struct PrtHook { MmlMod *mod; MmlParticleFn fn; void *user; } g_prtHook;
+struct Track { V3 world; DWORD t; };
+std::unordered_map<void *, Track> g_tracks;
+unsigned long long g_prtMoves[3], g_prtMoved, g_prtLives, g_prtFaults;
+DWORD g_prtPruned;
+uintptr_t g_prtbVt, g_prteVt;
+
+const float *ParentWorld(void *frame) {
+    void *parent = game::at<void *>(frame, game::kFrameParent);
+    return parent ? game::WorldMatrix(parent) : nullptr;
+}
+V3 ToWorld(const float *m, const V3 &p) {
+    return {p.x * m[0] + p.y * m[4] + p.z * m[8] + m[12], p.x * m[1] + p.y * m[5] + p.z * m[9] + m[13], p.x * m[2] + p.y * m[6] + p.z * m[10] + m[14]};
+}
+bool ToLocal(const float *m, const V3 &w, V3 *out) {   // solves t + r0 x + r1 y + r2 z = w (Cramer)
+    V3 r0{m[0], m[1], m[2]}, r1{m[4], m[5], m[6]}, r2{m[8], m[9], m[10]}, c = w - V3{m[12], m[13], m[14]};
+    float det = Dot(r0, Cross(r1, r2));
+    if (std::fabs(det) < 1e-10f) return false;
+    *out = {Dot(c, Cross(r1, r2)) / det, Dot(r0, Cross(c, r2)) / det, Dot(r0, Cross(r1, c)) / det};
+    return true;
+}
+
+struct PrtCall { MmlParticle *p; int r; };
+void CallPrt(void *x) {
+    auto *c = static_cast<PrtCall *>(x);
+    c->r = g_prtHook.fn(c->p, g_prtHook.user);
+}
+
+void ParticleMoved(uint8_t *f) {
+    if (game::at<uint32_t>(f, game::kFrameFlags) & kFlagPinned) return;
+    const float *m = ParentWorld(f);
+    if (!m) return;
+    V3 &local = game::at<V3>(f, kFramePosLocal);
+    V3 w = ToWorld(m, local);
+    DWORD now = GetTickCount();
+    MmlParticle p{};
+    p.size = sizeof p;
+    p.frame = f;
+    p.kind = game::at<uintptr_t>(f, 0) == g_prteVt ? MML_PARTICLE_EMITTED : MML_PARTICLE_POOLED;
+    g_prtMoves[p.kind]++;
+    auto it = g_tracks.find(f);
+    p.first = it == g_tracks.end();
+    if (!p.first) {
+        p.dt_ms = static_cast<int>(now - it->second.t);
+        V3 d = w - it->second.world;
+        p.moved[0] = d.x; p.moved[1] = d.y; p.moved[2] = d.z;
+    }
+    p.pos[0] = w.x; p.pos[1] = w.y; p.pos[2] = w.z;
+    if (g_prtHook.fn && ModAlive(g_prtHook.mod)) {
+        PrtCall c{&p, 0};
+        if (!ModCall(g_prtHook.mod, CallPrt, &c, "its particle hook")) g_prtFaults++;
+        else if (c.r) {
+            V3 want{p.pos[0], p.pos[1], p.pos[2]}, loc;
+            if (std::isfinite(want.x + want.y + want.z) && ToLocal(m, want, &loc)) {
+                local = loc;
+                uint32_t &fl = game::at<uint32_t>(f, game::kFrameFlags);
+                fl = (fl & 0xFFFFFEDFu) | 0x40000000u;   // (as the game's SetPos marks a move)
+                w = want;
+                g_prtMoved++;
+            }
+        }
+    }
+    g_tracks[f] = Track{w, now};
+    if (now - g_prtPruned > 2000) {   // (lives whose end was not seen: unlinked by a direct call)
+        g_prtPruned = now;
+        for (auto i = g_tracks.begin(); i != g_tracks.end();) i = now - i->second.t > 5000 ? g_tracks.erase(i) : std::next(i);
+    }
+}
+void SafeParticleMoved(uint8_t *f) { __try { ParticleMoved(f); } __except (EXCEPTION_EXECUTE_HANDLER) { g_prtFaults++; } }
+
+void __stdcall hkPrtUpdate(void *frame) {
+    if (g_prtHook.fn) SafeParticleMoved(static_cast<uint8_t *>(frame));
+    else g_prtMoves[game::at<uintptr_t>(frame, 0) == g_prteVt ? MML_PARTICLE_EMITTED : MML_PARTICLE_POOLED]++;
+    oPrtUpdate(frame);
+}
+int __stdcall hkPrtParent(void *frame, void *parent, uint32_t flags) {
+    // into the scene or out of it: a life starts or ends (moving between sectors is neither)
+    if (!parent || !game::at<void *>(frame, game::kFrameParent)) {
+        g_tracks.erase(frame);
+        g_prtLives++;
+    }
+    return oPrtParent(frame, parent, flags);
+}
+
+bool PatchSlot(uintptr_t slot, void *hook, void **orig) {
+    DWORD old;
+    if (!VirtualProtect(reinterpret_cast<void *>(slot), 4, PAGE_READWRITE, &old)) return false;
+    *orig = *reinterpret_cast<void **>(slot);
+    *reinterpret_cast<void **>(slot) = hook;
+    VirtualProtect(reinterpret_cast<void *>(slot), 4, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<void *>(slot), 4);
+    return true;
+}
+bool EnsureParticles(std::string *err) {
+    if (g_prtPatched) return true;
+    if (!game::g_ls3d || !game::Ls3d().prtbVtable || !game::Ls3d().prteVtable) { *err = g_prtWhy = "this build's particles are not known"; return false; }
+    uintptr_t base = ModuleBase("LS3DF.dll");
+    g_prtbVt = base + game::Ls3d().prtbVtable;
+    g_prteVt = base + game::Ls3d().prteVtable;
+    void *u1 = *reinterpret_cast<void **>(g_prtbVt + kVtUpdateSlot), *u2 = *reinterpret_cast<void **>(g_prteVt + kVtUpdateSlot);
+    void *s1 = *reinterpret_cast<void **>(g_prtbVt + kVtParentSlot), *s2 = *reinterpret_cast<void **>(g_prteVt + kVtParentSlot);
+    if (u1 != u2 || s1 != s2) { *err = g_prtWhy = "the two particle vtables' slots differ (patched by someone else?)"; return false; }
+    oPrtUpdate = reinterpret_cast<UpdateFn>(u1);   // (before the slots point at the hooks)
+    oPrtParent = reinterpret_cast<SetParentFn>(s1);
+    void *o = nullptr;
+    bool ok = PatchSlot(g_prtbVt + kVtUpdateSlot, reinterpret_cast<void *>(&hkPrtUpdate), &o) &&
+              PatchSlot(g_prteVt + kVtUpdateSlot, reinterpret_cast<void *>(&hkPrtUpdate), &o);
+    ok = ok && PatchSlot(g_prtbVt + kVtParentSlot, reinterpret_cast<void *>(&hkPrtParent), &o) &&
+         PatchSlot(g_prteVt + kVtParentSlot, reinterpret_cast<void *>(&hkPrtParent), &o);
+    if (!ok) { *err = g_prtWhy = "the vtables could not be written"; return false; }
+    g_prtPatched = true;
+    g_prtWhy = "patched";
+    return true;
+}
+
 std::string HexOf(const void *p) {
     char b[16];
     snprintf(b, sizeof b, "0x%08X", static_cast<unsigned>(reinterpret_cast<uintptr_t>(p)));
@@ -204,7 +332,20 @@ int ExhaustHook(MmlMod *mod, MmlExhaustFn fn, void *user) {
     g_hook = Hook{mod, fn, user};
     return 1;
 }
-void EffectsModGone(MmlMod *mod) { if (g_hook.mod == mod) g_hook = Hook{}; }
+void EffectsModGone(MmlMod *mod) {
+    if (g_hook.mod == mod) g_hook = Hook{};
+    if (g_prtHook.mod == mod) g_prtHook = PrtHook{};
+}
+void EffectsMissionClosed() { g_tracks.clear(); }
+
+int ParticleHook(MmlMod *mod, MmlParticleFn fn, void *user) {
+    if (!fn) { if (g_prtHook.mod == mod) g_prtHook = PrtHook{}; return 1; }
+    std::string err;
+    if (!EnsureParticles(&err)) { Log(MML_LOG_WARN, ModIdOf(mod), "particle_hook: %s", err.c_str()); return 0; }
+    g_tracks.clear();
+    g_prtHook = PrtHook{mod, fn, user};
+    return 1;
+}
 
 int ParticleDef(int index, MmlParticleDef *out) {
     if (!Known()) return 0;
@@ -215,7 +356,7 @@ int ParticleDef(int index, MmlParticleDef *out) {
 int ParticleDefSet(int index, const MmlParticleDef *d) { return Known() && d && SafeDefSet(index, d) ? 1 : 0; }
 
 bool EffectsMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok) {
-    if (method != "exhaust.state" && method != "particles.defs" && method != "particles.def.set") return false;
+    if (method != "exhaust.state" && method != "particles.defs" && method != "particles.def.set" && method != "particles.state") return false;
     *ok = false;
     json p = json::parse(paramsJson.empty() ? "null" : paramsJson, nullptr, false);
     if (!p.is_object()) p = json::object();
@@ -223,6 +364,23 @@ bool EffectsMethod(const std::string &method, const std::string &paramsJson, std
     std::string err;
     try {
         if (!Known()) { *reply = method + ": this build's effects are not known"; return true; }
+        if (method == "particles.state") {
+            if (p.value("patch", false) && !EnsureParticles(&err)) { *reply = "particles.state: " + err; return true; }
+            *reply = dump({{"patched", g_prtPatched}, {"why", g_prtWhy}, {"hook", g_prtHook.fn ? ModIdOf(g_prtHook.mod) : "none"},
+                           {"moves_pooled", g_prtMoves[MML_PARTICLE_POOLED]}, {"moves_emitted", g_prtMoves[MML_PARTICLE_EMITTED]},
+                           {"moved_by_hook", g_prtMoved}, {"lives_started_or_ended", g_prtLives}, {"tracked", g_tracks.size()},
+                           {"faults", g_prtFaults}, {"sample", [&] {
+                                json s = json::array();   // (a few tracked particles: where they were last moved to)
+                                for (const auto &kv : g_tracks) {
+                                    if (s.size() >= 5) break;
+                                    float w[3] = {kv.second.world.x, kv.second.world.y, kv.second.world.z};
+                                    s.push_back({{"frame", HexOf(kv.first)}, {"pos", R3(w)}, {"ms_ago", GetTickCount() - kv.second.t}});
+                                }
+                                return s;
+                            }()}});
+            *ok = true;
+            return true;
+        }
         if (method == "exhaust.state") {
             json out = {{"hooked", g_hooked}, {"hook", g_hook.fn ? ModIdOf(g_hook.mod) : "none"}, {"calls", g_calls}, {"skipped", g_skipped},
                         {"faults", g_faults}, {"why", g_hookWhy}};

@@ -384,6 +384,22 @@ def main(a):
         n = code.count(exe['particleDefs'].to_bytes(4, 'little'))
         c = code.count((exe['particleDefs'] + 4).to_bytes(4, 'little'))
         check(n >= 20 and c >= 1, f'{name} particleDefs: read in {n} places, its count in {c}')
+    # The particles (host/effects.cpp): each vtable is the one a constructor writes before it stores the visual's
+    # type ('PRTB', 'PRTE') at +0x1D4; its +0x18 and +0x2C are the frame's Update and SetParent (the same as
+    # I3D_light's: one I3D_frame's code).
+    for name, (exe, ls, gexe, gls) in builds.items():
+        mem = bytes(gls.mem)
+        for f, code in (('prtbVtable', b'PRTB'), ('prteVtable', b'PRTE')):
+            vt = ls[f]
+            imm = (gls.base + vt).to_bytes(4, 'little')
+            ok = False
+            for m in re.finditer(re.escape(b'\xd4\x01\x00\x00' + code), mem):
+                k = m.start() - 2
+                if mem[k] == 0xC7 and imm in mem[k - 0x200:k]:
+                    ok = True
+            check(ok, f'{name} LS3DF {f}: written before a {code.decode()} store at +0x1D4')
+            for o in (0x18, 0x2C):
+                check(gls.at(vt + o, 4) == gls.at(ls['lightVtable'] + o, 4), f'{name} LS3DF {f}+{o:#x}: the frame\'s own (as I3D_light\'s)')
     # The game's state (host/state.cpp): SetScore writes C_game +0x3640, reads +0x363E, ends with ret 4.
     for name, (exe, ls, gexe, gls) in builds.items():
         sc = [f'{i.mnemonic} {i.op_str}' for i in gexe.md.disasm(gexe.at(exe['gameSetScore'] - 0x400000, 0x30), exe['gameSetScore'])]

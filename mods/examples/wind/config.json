@@ -1,0 +1,5 @@
+{
+  // The defaults of wind's settings.
+  "wind": { "x": 4, "y": 0, "z": 0 },   // m/s
+  "gust": 0.5                           // how much it comes and goes (0: steady)
+}

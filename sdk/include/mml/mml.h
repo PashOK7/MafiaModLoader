@@ -462,6 +462,21 @@ typedef struct MmlExhaust {
  * for this car this tick are left out (the mod makes its own); 0: the game's go on. */
 typedef int (*MmlExhaustFn)(const MmlExhaust *exhaust, void *user);
 
+/* A particle of the game's as it moves (particle_hook below): every particle the game shows is an LS3D particle
+ * visual, whichever system makes it. */
+enum { MML_PARTICLE_POOLED = 1, MML_PARTICLE_EMITTED = 2 };
+typedef struct MmlParticle {
+    uint32_t size;
+    void *frame;            /* its visual (a frame): the same while its life lasts; a pooled one is reused after */
+    int kind;               /* MML_PARTICLE_POOLED: the game's effects (fire, steam, vents...); _EMITTED: an LS3D
+                               emitter's puff (the exhaust, dust, grass) */
+    int first;              /* 1: the first move of its life the host sees */
+    int dt_ms;              /* since its last move (0 at the first) */
+    float pos[3];           /* where the game has just put it (world): change it and return 1 to put it there */
+    float moved[3];         /* how far the game moved it since its last move (world): its own motion */
+} MmlParticle;
+typedef int (*MmlParticleFn)(MmlParticle *particle, void *user);
+
 /* A record of tables\particles.def (particle_def below): how an emitter of the game puffs. */
 typedef struct MmlParticleDef {
     uint32_t size;
@@ -814,6 +829,10 @@ typedef struct MmlHost {
      * makes them, at a mission's load, so a change shows from the next mission (set it in MML_EVENT_MISSION_OPEN) */
     int (*particle_def)(MmlMod *mod, int index, MmlParticleDef *out);
     int (*particle_def_set)(MmlMod *mod, int index, const MmlParticleDef *def);
+    /* fn told of every move of every particle of the game's, after the game moved it and before LS3D takes the move
+     * (fn NULL: no more; the last mod that asked replaces the one before): a wind, PhysX smoke moving the game's own
+     * particles, a particle counter */
+    int (*particle_hook)(MmlMod *mod, MmlParticleFn fn, void *user);
 } MmlHost;
 
 #define MML_FILE_GAME 1              /* file_read: the game's own file, not a mod's of the same name */
