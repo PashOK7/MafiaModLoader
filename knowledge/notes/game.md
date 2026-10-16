@@ -485,3 +485,29 @@ autosplitter; kept outside it, not ported). Checked against the above:
   the model's x (x x y = z, the facing): front = (right shoulder - left + right thigh - left) x (neck - pelvis).
 - **ours** Lying on the back, a person's pelvis's local rotation relative to his model frame (the pelvis's parent) is
   (w x y z) (0, 0, 0.7071, 0.7071) and on the front (0.7071, -0.7071, 0, 0), the pelvis 0.15 m up (both builds).
+
+## A model's own animation, physical objects (read and seen 2026-10-17, both labs; host/props.cpp)
+
+- **game** MODEL_PLAYANIM (1.2 0x471E90, 1.0 0x5BFC80): the animation cache (1.2 0x647D80, 1.0 0x6F93C8)'s Open
+  (1.2 0x4104F0, 1.0 0x47FA10; thiscall(cache, name, &set, 0, 0) ret 0x10), the set's mode +8 set to 2, the model's
+  vtable +0x60 SetAnimation(model, set, channel 0, 1.0f, mode 0), C_mission::AddAnimModel(model, true) (1.2 0x53F520,
+  1.0 0x5FEAC0), the set released. AddAnimModel takes the model only when its +0x64 (the channel's set) is not null;
+  C_mission::Tick calls each listed model's +0x14 Tick(ms) after the scene's (C_mission +0x18/+0x1C the list, 8 bytes
+  an entry: model, cleared with the mission). MODEL_STOPANIM: +0x68 StopAnimation(model, 0), DelAnimModel.
+- **ls3d** The model's animation channels: +0x150, made by the first SetAnimation (0xF8 bytes: +0 the model, 8
+  channels of 0x1C bytes from +8: the set, a byte "on", the mode, the time in ms, -40, a word, the weight; +0xE8/+0xF0
+  the frames moved). Its tick adds the ms to each channel on; past the set's length (its vtable +8) a mode 2 channel
+  wraps, any other mode turns off and stays in its last pose. SetAnimation's mode 0 takes the set's own (+8). The
+  same layout in 1.0 (its model vtable 0x10098100, 1.2's 0x1009C160).
+- **game** CREATE_PHYSICALOBJECT (1.2 0x4741D5, 1.0 0x5C1FC5): new C_public_physics (0x38C bytes, 1.0 0x3B0; ctor
+  1.2 0x47C3A0, 1.0 0x4CDE20: C_PhThing's with the type 0x20), its vtable +0x48 Init(frame) (C_PhThing::Init: the
+  frame's world matrix copied), C_PhThing::InitBox (1.2 0x45EE90, 1.0 0x4C41A0; {mass >= 1, velocity, 0.45}),
+  C_game::AddTemporaryActor; its GameInit puts a box of the frame's bounds (+0xB0, LS3D's hierarchy bound) into the
+  collision's dynamic objects (DynInsert). The kick: ExternalImpuls (1.2 0x460000, 1.0 0x4C53F0; thiscall(impulse,
+  at) ret 8, the point minus the object's position the lever). With no velocity it stays where it was made, in the
+  air too, until pushed.
+- **game** C_actor::GameDone (when RemoveTemporaryActor's deletion comes, the next tick) relinks the frame to the
+  actor's +0x58 (its parent at GameInit) and writes back +0x3C (the local position) and +0x48 (the rotation, w x y
+  z): a physical object taken out puts its frame back where it was made, into the scene, even one unlinked since.
+  Written before the removal, they decide where it is left. C_actor::Init clears +0x6C, the byte that makes the
+  destructor release the frame; the frame's reference count is its +4.

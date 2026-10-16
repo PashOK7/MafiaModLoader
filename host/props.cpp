@@ -10,7 +10,17 @@
 // go with its unload, every prop with the mission; a prop attached to an actor that is destroyed is put into the
 // world where it was (the actor's destructor's hook, before the game's).
 //
-// Bridge methods (game thread): props.list, prop.create, prop.place, prop.attach, prop.show, prop.remove.
+// A prop's own animation is played as the scripts' MODEL_PLAYANIM plays one (the animation cache's set given to the
+// model's SetAnimation, the model put on the mission's list of animated models, which its tick steps), stopped as
+// MODEL_STOPANIM stops it. A prop in the world is made a physical object as CREATE_PHYSICALOBJECT makes one (a
+// C_public_physics on its frame: a box from its bounds in the collision's dynamic objects, falling, pushed, struck):
+// the actor holds a reference of its own to the frame (the frame's count +4 raised, its byte +0x6C set: its
+// destructor releases it), so the prop and the actor may go in either order. Taken out (gameRemoveTemp), the actor
+// is deleted at the game's next tick; physics asked for again before that is made at the frame after its
+// destructor (a prop moved while physical: taken out, moved, made again).
+//
+// Bridge methods (game thread): props.list, prop.create, prop.place, prop.attach, prop.show, prop.remove, prop.anim,
+// prop.physics, prop.push.
 #include "host.h"
 #include <algorithm>
 #include <cmath>
@@ -39,12 +49,46 @@ using LinkToFn = int(__stdcall *)(void *frame, void *parent, uint32_t flags);
 using SetPosFn = void(__fastcall *)(void *frame, void *edx, const V3 *pos);
 using SceneMovedFn = int(__fastcall *)(void *scene, void *edx, void *frame);
 
-struct Prop { void *frame; MmlMod *mod; std::string model; void *parent; bool on; };
+enum { kVtSetAnimation = 0x60, kVtStopAnimation = 0x68 };
+constexpr int kFrameRefs = 0x04, kModelAnims = 0x150;   // (the frame's reference count; the model's animation channels)
+constexpr int kChanSet = 0x08, kChanOn = 0x0C, kChanMode = 0x10, kChanTime = 0x14, kChanWeight = 0x20;
+constexpr int kModeLoop = 2, kModeOnce = 1;
+// C_actor's placement, which its GameDone gives the frame back when the actor goes (both builds, read in
+// InternalPlacementReset and GameDone): the frame relinked to +0x58 (its parent at GameInit), its local position
+// +0x3C and rotation +0x48 (w, x, y, z) written back.
+constexpr int kActorOwnsFrame = 0x6C, kActorPlacePos = 0x3C, kActorPlaceRot = 0x48, kActorPlaceParent = 0x58;
+constexpr int kFrameLocal = 0x50;
+enum { kVtActorRelease = 0x44, kVtActorInit = 0x48 };
+
+struct Prop {
+    void *frame; MmlMod *mod; std::string model; void *parent; bool on;
+    std::string anim; bool animListed = false; bool loop = false;   // (animListed: on the mission's list)
+    void *phys = nullptr;      // its physical object (an actor), while it lives
+    void *physGone = nullptr;  // one taken out, not destroyed yet
+    bool want = false; MmlPropPhysics wantP{};   // physics to make once physGone is destroyed
+    MmlPropPhysics physP{};
+};
 std::vector<Prop> g_props;
 unsigned g_made;
 
 const game::ExeBuild &E() { return game::Exe(); }
 bool Known() { return game::g_exe && E().modelCache && E().modelOpen && E().i3dDriver && E().frameSetPos && E().sceneMoved; }
+bool AnimKnown() { return game::g_exe && E().animCache && E().animOpen && E().missionAddAnim && E().missionDelAnim; }
+bool PhysKnown() {
+    return game::g_exe && E().physCtor && E().physInitBox && E().physImpulse && E().physSize && E().gameNew && E().gameAddTemp && E().gameRemoveTemp;
+}
+
+using AnimOpenFn = int(__fastcall *)(uintptr_t cache, void *edx, const char *file, void **set, int, int);
+using SetAnimationFn = int(__stdcall *)(void *model, void *set, int channel, float weight, int mode);
+using StopAnimationFn = int(__stdcall *)(void *model, int channel);
+using SetLengthFn = int(__stdcall *)(void *set);
+using SetReleaseFn = int(__stdcall *)(void *set);
+using AddAnimFn = int(__fastcall *)(void *mission, void *edx, void *model, int cleared);
+using DelAnimFn = void(__fastcall *)(void *mission, void *edx, void *model);
+using GameNewFn = void *(__cdecl *)(size_t);
+using ThisFn = void *(__fastcall *)(void *self, void *edx);
+using ThisPtrFn = int(__fastcall *)(void *self, void *edx, void *arg);
+using ImpulseFn = int(__fastcall *)(void *self, void *edx, const V3 *impulse, const V3 *at);
 void *Vt(void *obj, int off) { return (*reinterpret_cast<void ***>(obj))[off / 4]; }
 
 template <class F> DWORD Guarded(F &f) {
@@ -156,17 +200,29 @@ void *PropCreate(MmlMod *mod, const char *model, void *parent, const float *pos,
     return frame;
 }
 
+bool PropPhysics(void *prop, const MmlPropPhysics *p, std::string *err);
+namespace {
+void SavePlacement(void *actor, void *frame, bool unlink);
+}
+
 bool PropPlace(void *prop, const float *pos, const float *rot, float scale, std::string *err) {
     Prop *pr = Find(prop);
     if (!pr) { *err = "not a prop (props.list)"; return false; }
     V3 p = pos ? V3{pos[0], pos[1], pos[2]} : V3{};
     Q q = rot ? Q{rot[0], rot[1], rot[2], rot[3]} : Q{};
     V3 s{scale, scale, scale};
+    // (a physical prop keeps its place in its actor: taken out, moved, made again, at rest)
+    bool physical = pr->phys || pr->want;
+    MmlPropPhysics again = pr->want ? pr->wantP : pr->physP;
+    for (float &v : again.velocity) v = 0;
+    if (physical) PropPhysics(prop, nullptr, err);
     auto f = [&] {
         WriteLocal(prop, pos ? &p : nullptr, rot ? &q : nullptr, scale > 0 ? &s : nullptr);
         if (!pr->parent && pos) IntoWorld(prop);   // (it may have moved into another room)
     };
     if (Guarded(f)) { *err = "placing it faulted"; return false; }
+    if (pr->physGone) SavePlacement(pr->physGone, prop, false);   // (where the actor going leaves it: here)
+    if (physical && !PropPhysics(prop, &again, err)) return false;
     return true;
 }
 
@@ -174,6 +230,7 @@ bool PropAttach(void *prop, void *parent, bool keepWorld, std::string *err) {
     Prop *pr = Find(prop);
     if (!pr) { *err = "not a prop (props.list)"; return false; }
     if (parent && InChain(parent, prop)) { *err = "the parent is the prop or below it"; return false; }
+    if (parent && (pr->phys || pr->want)) PropPhysics(prop, nullptr, err);   // (only a prop in the world is physical)
     auto f = [&] {
         float w[16], pw[16], pinv[16], local[16];
         memcpy(w, game::WorldMatrix(prop), sizeof w);
@@ -209,8 +266,189 @@ bool PropShow(void *prop, bool on, std::string *err) {
     return true;
 }
 
+// ---- its animation (the scripts' MODEL_PLAYANIM, MODEL_STOPANIM)
+int PropAnimPlay(void *prop, const char *anim, uint32_t flags, float weight, std::string *err) {
+    Prop *pr = Find(prop);
+    if (!pr) { *err = "not a prop (props.list)"; return -1; }
+    if (!AnimKnown()) { *err = "a model's animations are not known for this build"; return -1; }
+    void *mission = game::Mission();
+    if (!mission) { *err = "no mission loaded"; return -1; }
+    if (!anim || !*anim) { *err = "anim: a file of anims\\ (\"walk1.i3d\"...)"; return -1; }
+    std::string file = anim;
+    if (file.find('.') == std::string::npos) file += ".i3d";
+    void *set = nullptr;
+    int length = 0;
+    auto f = [&] {
+        reinterpret_cast<AnimOpenFn>(E().animOpen)(E().animCache, nullptr, file.c_str(), &set, 0, 0);
+        if (!set) return;
+        length = reinterpret_cast<SetLengthFn>(Vt(set, 0x08))(set);
+        reinterpret_cast<SetAnimationFn>(Vt(prop, kVtSetAnimation))(prop, set, 0, weight > 0 ? weight : 1.0f,
+                                                                    (flags & MML_PROP_ANIM_LOOP) ? kModeLoop : kModeOnce);
+        if (!pr->animListed) reinterpret_cast<AddAnimFn>(E().missionAddAnim)(mission, nullptr, prop, 1);
+        pr->animListed = true;
+        reinterpret_cast<SetReleaseFn>(Vt(set, 0))(set);   // (the model took a reference of its own)
+    };
+    if (Guarded(f)) { *err = "playing it faulted"; return -1; }
+    if (!set) { *err = "no animation \"" + file + "\" (anims\\ in the archives, or a mod's files\\anims\\)"; return 0; }
+    pr->anim = file;
+    pr->loop = (flags & MML_PROP_ANIM_LOOP) != 0;
+    return length > 0 ? length : 1;
+}
+
 namespace {
-void Unmake(void *frame) {
+void AnimUnlist(Prop &p) {
+    if (!p.animListed) return;
+    p.animListed = false;
+    void *mission = game::Mission();
+    auto f = [&] {
+        reinterpret_cast<StopAnimationFn>(Vt(p.frame, kVtStopAnimation))(p.frame, 0);
+        if (mission) reinterpret_cast<DelAnimFn>(E().missionDelAnim)(mission, nullptr, p.frame);
+    };
+    Guarded(f);
+}
+} // namespace
+
+bool PropAnimStop(void *prop, std::string *err) {
+    Prop *pr = Find(prop);
+    if (!pr) { *err = "not a prop (props.list)"; return false; }
+    AnimUnlist(*pr);
+    pr->anim.clear();
+    return true;
+}
+
+int PropAnimState(void *prop, MmlPropAnim *out) {
+    Prop *pr = Find(prop);
+    if (!pr) return 0;
+    MmlPropAnim a{};
+    snprintf(a.anim, sizeof a.anim, "%s", pr->anim.c_str());
+    a.loop = pr->loop ? 1 : 0;
+    auto f = [&] {
+        uint8_t *ch = game::at<uint8_t *>(prop, kModelAnims);
+        if (!ch || pr->anim.empty()) return;
+        void *set = *reinterpret_cast<void **>(ch + kChanSet);
+        if (!set) return;
+        a.playing = ch[kChanOn] ? 1 : 0;
+        a.time_ms = *reinterpret_cast<int *>(ch + kChanTime);
+        a.weight = *reinterpret_cast<float *>(ch + kChanWeight);
+        a.length_ms = reinterpret_cast<SetLengthFn>(Vt(set, 0x08))(set);
+    };
+    Guarded(f);
+    if (out) *out = a;
+    return 1;
+}
+
+// ---- its physics (the scripts' CREATE_PHYSICALOBJECT, DESTROY_PHYSICALOBJECT)
+namespace {
+void *MakePhysics(void *frame, const MmlPropPhysics &p, std::string *err) {
+    void *phys = nullptr;
+    bool inited = false;
+    auto f = [&] {
+        void *mem = reinterpret_cast<GameNewFn>(E().gameNew)(static_cast<size_t>(E().physSize));
+        if (!mem) return;
+        phys = reinterpret_cast<ThisFn>(E().physCtor)(mem, nullptr);
+        inited = (reinterpret_cast<ThisPtrFn>(Vt(phys, kVtActorInit))(phys, nullptr, frame) & 0xFF) != 0;
+        if (!inited) {
+            reinterpret_cast<ThisFn>(Vt(phys, kVtActorRelease))(phys, nullptr);
+            return;
+        }
+        float block[5] = {p.mass > 1 ? p.mass : 1.0f, p.velocity[0], p.velocity[1], p.velocity[2], 0.45f};
+        reinterpret_cast<ThisPtrFn>(E().physInitBox)(phys, nullptr, block);
+        game::at<int>(frame, kFrameRefs)++;            // (the actor's own reference, released by its destructor)
+        game::at<uint8_t>(phys, kActorOwnsFrame) = 1;
+        reinterpret_cast<ThisPtrFn>(E().gameAddTemp)(game::Game(), nullptr, phys);
+    };
+    if (Guarded(f)) { *err = "making the physical object faulted"; return nullptr; }
+    if (!phys) { *err = "the game made no physical object"; return nullptr; }
+    if (!inited) { *err = "the physical object refused the frame (another actor's?)"; return nullptr; }
+    return phys;
+}
+// What the actor's GameDone gives the frame when it goes: where the frame is now (in its parent now), or, for a prop
+// being removed, no parent at all.
+void SavePlacement(void *actor, void *frame, bool unlink) {
+    auto f = [&] {
+        V3 pos, scale;
+        Q rot;
+        Decompose(reinterpret_cast<const float *>(reinterpret_cast<uint8_t *>(frame) + kFrameLocal), &pos, &rot, &scale);
+        game::at<V3>(actor, kActorPlacePos) = pos;
+        game::at<Q>(actor, kActorPlaceRot) = rot;
+        game::at<void *>(actor, kActorPlaceParent) = unlink ? nullptr : game::at<void *>(frame, game::kFrameParent);
+    };
+    Guarded(f);
+}
+void TakePhysicsOut(Prop &p) {
+    if (!p.phys) return;
+    void *phys = p.phys;
+    SavePlacement(phys, p.frame, false);   // (it stays where it lies)
+    auto f = [&] { reinterpret_cast<ThisPtrFn>(E().gameRemoveTemp)(game::Game(), nullptr, phys); };
+    Guarded(f);
+    p.physGone = phys;   // (deleted at the game's next tick: PropsActorGone)
+    p.phys = nullptr;
+}
+} // namespace
+
+bool PropPhysics(void *prop, const MmlPropPhysics *p, std::string *err) {
+    Prop *pr = Find(prop);
+    if (!pr) { *err = "not a prop (props.list)"; return false; }
+    if (!PhysKnown()) { *err = "physical objects are not known for this build"; return false; }
+    if (!p) {
+        pr->want = false;
+        TakePhysicsOut(*pr);
+        return true;
+    }
+    if (pr->parent) { *err = "the prop is attached to a frame: only a prop in the world can be physical"; return false; }
+    if (!game::Mission() || !game::Game()) { *err = "no mission loaded"; return false; }
+    TakePhysicsOut(*pr);
+    if (pr->physGone) {   // (the one before is still there: made once it is destroyed)
+        pr->want = true;
+        pr->wantP = *p;
+        return true;
+    }
+    void *phys = MakePhysics(prop, *p, err);
+    if (!phys) return false;
+    pr->phys = phys;
+    pr->physP = *p;
+    return true;
+}
+
+bool PropPush(void *prop, const float impulse[3], const float *at, std::string *err) {
+    Prop *pr = Find(prop);
+    if (!pr) { *err = "not a prop (props.list)"; return false; }
+    if (!pr->phys) { *err = pr->want ? "its physics is made at the next frame" : "the prop is not physical (prop_physics)"; return false; }
+    V3 i{impulse[0], impulse[1], impulse[2]}, a;
+    if (at) {
+        a = {at[0], at[1], at[2]};
+    } else {
+        float w[16];
+        if (!FrameWorld(prop, w)) { *err = "no place"; return false; }
+        a = {w[12], w[13], w[14]};
+    }
+    auto f = [&] { reinterpret_cast<ImpulseFn>(E().physImpulse)(pr->phys, nullptr, &i, &a); };
+    if (Guarded(f)) { *err = "the impulse faulted"; return false; }
+    return true;
+}
+
+void *PropBody(void *prop) {
+    Prop *pr = Find(prop);
+    return pr ? pr->phys : nullptr;
+}
+
+void PropsFrame() {
+    for (Prop &p : g_props) {
+        if (!p.want || p.physGone) continue;
+        p.want = false;
+        std::string err;
+        void *phys = MakePhysics(p.frame, p.wantP, &err);
+        if (phys) { p.phys = phys; p.physP = p.wantP; }
+        else Log(MML_LOG_WARN, "props", "%s: physics not made again: %s", p.model.c_str(), err.c_str());
+    }
+}
+
+namespace {
+void Unmake(Prop &p) {
+    AnimUnlist(p);
+    TakePhysicsOut(p);   // (the actor keeps its own reference until its destructor)
+    if (p.physGone) SavePlacement(p.physGone, p.frame, true);   // (its GameDone must not link the frame back)
+    void *frame = p.frame;
     auto f = [&] {
         reinterpret_cast<LinkToFn>(Vt(frame, kVtLinkTo))(frame, nullptr, 0);
         reinterpret_cast<ReleaseFn>(Vt(frame, kVtRelease))(frame);
@@ -225,8 +463,9 @@ bool PropRemove(void *prop, std::string *err) {
     // (its children props first go into the world where they are)
     for (Prop &c : g_props)
         if (c.frame != prop && c.parent && InChain(c.parent, prop)) { std::string e; PropAttach(c.frame, nullptr, true, &e); }
-    Unmake(prop);
-    g_props.erase(std::find_if(g_props.begin(), g_props.end(), [&](const Prop &p) { return p.frame == prop; }));
+    it = std::find_if(g_props.begin(), g_props.end(), [&](const Prop &p) { return p.frame == prop; });
+    Unmake(*it);
+    g_props.erase(it);
     return true;
 }
 
@@ -236,11 +475,22 @@ void PropsModGone(MmlMod *mod) {
     std::string err;
     for (void *f : mine) PropRemove(f, &err);
 }
-void PropsMissionClose() {   // (before the mission's world goes: the props unlinked and released)
-    for (const Prop &p : g_props) Unmake(p.frame);
+void PropsMissionClose() {   // (before the mission's world goes: the props unlinked and released; the physical objects
+                             // go with the mission's actors, each releasing its own reference)
+    for (Prop &p : g_props) {
+        if (p.phys) p.physGone = p.phys;   // (the mission deletes its temporary actors itself)
+        p.phys = nullptr;
+        Unmake(p);          // (off the mission's list of animated models too)
+    }
     g_props.clear();
 }
 void PropsActorGone(void *actor) {   // (its destructor, before the game's: props on it go into the world)
+    bool ours = false;
+    for (Prop &p : g_props) {
+        if (p.physGone == actor) { p.physGone = nullptr; ours = true; }
+        if (p.phys == actor) { p.phys = nullptr; ours = true; }   // (the game destroyed it: the prop stays where it lies)
+    }
+    if (ours) return;   // (its frame is the prop's: what hangs on it stays)
     void *model = game::at<void *>(actor, game::kActorFrame);
     if (!model) return;
     for (Prop &p : g_props)
@@ -335,13 +585,21 @@ json PropJson(const Prop &p) {
     };
     if (p.parent) j["parent_name"] = name(p.parent);
     j["name"] = name(p.frame);
+    if (!p.anim.empty()) {
+        MmlPropAnim a{};
+        PropAnimState(p.frame, &a);
+        j["anim"] = {{"file", a.anim}, {"playing", a.playing != 0}, {"loop", a.loop != 0}, {"ms", a.time_ms}, {"length_ms", a.length_ms},
+                     {"weight", a.weight}};
+    }
+    if (p.phys) j["physics"] = {{"actor", HexOf(p.phys)}, {"mass", p.physP.mass > 1 ? p.physP.mass : 1.0f}};
+    else if (p.want) j["physics"] = {{"pending", true}};
     return j;
 }
 } // namespace
 
 bool PropsMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok) {
     if (method != "props.list" && method != "prop.create" && method != "prop.place" && method != "prop.attach" && method != "prop.show" &&
-        method != "prop.remove")
+        method != "prop.remove" && method != "prop.anim" && method != "prop.physics" && method != "prop.push")
         return false;
     *ok = false;
     json p = json::parse(paramsJson.empty() ? "null" : paramsJson, nullptr, false);
@@ -402,6 +660,35 @@ bool PropsMethod(const std::string &method, const std::string &paramsJson, std::
             *reply = dump(PropJson(*Find(prop)));
         } else if (method == "prop.show") {
             if (!PropShow(prop, p.value("on", true), &err)) { *reply = "prop.show: " + err; return true; }
+            *reply = dump(PropJson(*Find(prop)));
+        } else if (method == "prop.anim") {
+            if (p.value("stop", false)) {
+                if (!PropAnimStop(prop, &err)) { *reply = "prop.anim: " + err; return true; }
+            } else {
+                std::string a = p.value("play", "");
+                if (a.empty()) { *reply = "prop.anim: play: an animation of anims\\ (\"walk1\"), or stop: true"; return true; }
+                int n = PropAnimPlay(prop, a.c_str(), p.value("loop", false) ? MML_PROP_ANIM_LOOP : 0, p.value("weight", 1.0f), &err);
+                if (n <= 0) { *reply = "prop.anim: " + err; return true; }
+            }
+            *reply = dump(PropJson(*Find(prop)));
+        } else if (method == "prop.physics") {
+            if (!p.value("on", true)) {
+                if (!PropPhysics(prop, nullptr, &err)) { *reply = "prop.physics: " + err; return true; }
+            } else {
+                MmlPropPhysics ph{};
+                ph.mass = p.value("mass", 10.0f);
+                if (p.contains("velocity") && IsVec(p["velocity"]))
+                    for (int i = 0; i < 3; i++) ph.velocity[i] = p["velocity"][i].get<float>();
+                if (!PropPhysics(prop, &ph, &err)) { *reply = "prop.physics: " + err; return true; }
+            }
+            *reply = dump(PropJson(*Find(prop)));
+        } else if (method == "prop.push") {
+            if (!p.contains("impulse") || !IsVec(p["impulse"])) { *reply = "prop.push: impulse: [x, y, z] (kg m/s)"; return true; }
+            float imp[3], at[3];
+            for (int i = 0; i < 3; i++) imp[i] = p["impulse"][i].get<float>();
+            bool haveAt = p.contains("at") && IsVec(p["at"]);
+            if (haveAt) for (int i = 0; i < 3; i++) at[i] = p["at"][i].get<float>();
+            if (!PropPush(prop, imp, haveAt ? at : nullptr, &err)) { *reply = "prop.push: " + err; return true; }
             *reply = dump(PropJson(*Find(prop)));
         } else {
             if (!PropRemove(prop, &err)) { *reply = "prop.remove: " + err; return true; }

@@ -327,6 +327,16 @@ What is done, what comes next and later, and what is known to be missing or wron
   by Little Italy's bridge at y -9.99 (surface 31, no bed in the collision; covered under the embankment), the taxi
   and the player crossing a zone of cars and people, Paulie entering one and leaving it as he fell into the river,
   a zone watching the taxi alone.
+- **A prop's animation and physics** (2026-10-17; item 12, block 6b of the order): `prop_anim_play`,
+  `prop_anim_stop`, `prop_anim_state` (the scripts' `model_playanim` and `model_stopanim`: the animation cache's set
+  given to the model's SetAnimation, the model on the mission's list of animated models), `prop_physics`,
+  `prop_push`, `prop_body` (the scripts' `create_physicalobject`: a C_public_physics on the prop's frame holding its
+  own reference to it; its GameDone's placement written before it goes, so the prop stays where it lies, or comes
+  out of the scene when removed); `prop.anim`, `prop.physics`, `prop.push`. Both builds' addresses checked by
+  `check_builds.py` in the three handlers. Seen alike in the 1.2 and 1.0 labs: a prop of Tommy's model walking in
+  place (`walk1`, looped and once), a bat falling, pushed 4 m, moved while physical (made again at its new place),
+  left where it lay, removed while physical (gone from the screen), a mission changed with an animated physical prop
+  in it.
 - **Interaction** (2026-10-16; item 15): `zone_add` (spheres the player crosses, on foot or in his car, in the world
   or following a frame), `use_point_add` (a record of the loader's in the game's own using objects, C_game +
   0x29EC: what Action finds on foot, offered alone or in the game's own choice menu with a label that is a text id
@@ -475,7 +485,8 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
 4. *(Done 2026-10-16.)* A mod's own items in the inventory (item 10's rest).
 5. *(Done 2026-10-16.)* The statistics and the profile's progress (item 10's rest: kills, cars stolen, distance,
    chapters, unlocks).
-6. *(6a done 2026-10-16: the water's height, zones for people and cars; see "Done".)* The world and its geometry
+6. *(6a done 2026-10-16: the water's height, zones for people and cars; 6b 2026-10-17: a prop's animation and
+   physics; see "Done".)* The world and its geometry
    (item 8's rest: the water's height, each model's file, the drawn triangles, cars'
    meshes, the `.4ds` index; item 12's rest: a prop's collision shape and animations; zones for people and cars).
 7. The camera and control (item 9's rest: the game's own camera logic; item 14's rest: a mod's actions in the
@@ -514,7 +525,8 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
 ### Tier 2: the game's world as data, read and changed
 
 6. *(Done 2026-10-16: 6a the list, the skeleton, poses; 6b animations, getting up, the pedestrians' hits, 1.0's
-   fields; see "Done". What is left: a model's (a prop's) animations, in block 6 of the order; Known gaps.)* **People, skeletons, animations** (R K F; S W as pushers). Every `C_human`, the traffic system's pooled ones too,
+   fields; a model's (a prop's) animations with block 6b of the order, 2026-10-17; see "Done". What is left: Known
+   gaps.)* **People, skeletons, animations** (R K F; S W as pushers). Every `C_human`, the traffic system's pooled ones too,
    as a list (the constructor's hook already sends `HUMAN_CREATED`; no list is kept); traffic pedestrians' elements
    and their own Hit (`0x4588D0`) as events; the bones by name, a pose read in one call (the 18 joints, the model
    root), written back before Render (item 3); handing a body back to the game (getting up); the game's animations
@@ -554,8 +566,8 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
 
 ### Tier 3: building blocks for new things in the game
 
-12. *(12a done 2026-10-16: props made, placed, attached, shown, removed; see "Done". Left: a collision shape,
-    a model's animations; Known gaps.)* **Props** (F K P R). Models placed in the world without being actors (a rod, a fish, a board), moved every frame,
+12. *(Done: 12a 2026-10-16, props made, placed, attached, shown, removed; 2026-10-17 (block 6b of the order) their
+    animations and physics; see "Done". What is left: Known gaps.)* **Props** (F K P R). Models placed in the world without being actors (a rod, a fish, a board), moved every frame,
     attached to a bone or a car's part and detached, shown, hidden, removed; with a collision shape when asked
     (the scripts' `model_create` and `create_physicalobject` are partial cases).
 13. *(Done 2026-10-16: see "Done"; what is left: Known gaps.)* **Sound** (F K P C S W). The game's sounds and a mod's own (item 2) played in 2D or in 3D at a point or attached
@@ -716,11 +728,16 @@ merged, sorted by importance):
   played and stopped (the game's own music too: the same Stop, Close, Release as C_game::DestroyIShow). A mod's own
   `files\sounds\` file was not tried (the open goes through dtaOpen, as a texture's). The music's volume is set when
   it starts and with `music_set`: a change of the options' music volume while it plays is not followed.
-- **Props** (host/props.cpp, item 12a): no collision shape (the scripts' `create_physicalobject` is the lead: a
-  prop that falls, is hit, is stood on); a model of a mod's own `files\models\` is opened by the same cache that
+- **Props** (host/props.cpp, items 12a, 6b): a model of a mod's own `files\models\` is opened by the same cache that
   `files.cpp` answers, but was not tried; a prop on a car's part (a wheel, a door) was not tried, only on the car's
-  model; a model's animations are not played on a prop. A prop in the world is linked into the room at its place on
-  each `prop_place` with a position (6 stones a frame showed no cost in the labs; not measured with `profile`).
+  model. A prop in the world is linked into the room at its place on each `prop_place` with a position (6 stones a
+  frame showed no cost in the labs; not measured with `profile`). **Animations**: one channel (LS3D's model has
+  eight, blended by weight; the mission's list steps a model only while its channel 0 plays); a mod's own
+  `files\anims\` file was not tried. **Physics**: the game's box from the model's bounds, nothing finer; a physical
+  prop lies still, in the air too, until it is pushed or given a velocity: the taxi driven into one at about 4 m/s
+  was stopped by it and did not move it; bullets and explosions were not tried on one; a person walking into one
+  was not tried. Its friction (the scripts' 0.45) is not offered. A physical prop moved is made again a frame
+  later, at rest (its velocity is not carried).
 - **The weather** (host/effects.cpp, item 11d): the 16th parameter of LS3D's switch (a flag, bit 0x200) has no
   keyword in the scripts and is left out; `weather_reset` leaves `on` as it was (the scene's own reset). The rain's
   sound is not reached (whether the scene's weather plays one was not looked at).

@@ -932,6 +932,38 @@ def main(a):
         body = gls.at(ls['mouseUpdate'], 0x40)
         check(b'\x68' + (gls.base + ls['mouseState']).to_bytes(4, 'little') + b'\x6a\x10' in body, f'{name} LS3DF mouseState pushed with 16 in mouseUpdate')
         check(b'\xc2\x04\x00' in body, f'{name} LS3DF mouseUpdate returns with ret 4')
+    # A model's animation and its physics (host/props.cpp): MODEL_PLAYANIM opens the animation with ECX = animCache and
+    # calls missionAddAnim, MODEL_STOPANIM missionDelAnim; CREATE_PHYSICALOBJECT news physSize for physCtor, then
+    # InitBox, gameAddTemp and the kick's physImpulse. The model's vtable +0x60/+0x64/+0x68 and its channels at
+    # +0x150 (LS3DF): SetAnimation and the channel reader read +0x150, 0x1C bytes a channel.
+    handlers = {'1.2': (0x471E90, 0x471F41, 0x4741D5), '1.0': (0x5BFC80, 0x5BFD31, 0x5C1FC5)}
+    for name, (exe, ls, gexe, gls) in builds.items():
+        if not exe['animOpen']:
+            continue
+        play, stop, phys = handlers[name]
+        ins = lambda va, n: list(gexe.md.disasm(gexe.at(va - 0x400000, n), va))
+        calls = lambda l: [int(i.op_str, 16) for i in l if i.mnemonic == 'call' and i.op_str.startswith('0x')]
+        p = ins(play, 0xB0)
+        k = next((k for k, i in enumerate(p) if i.mnemonic == 'call' and i.op_str == hex(exe['animOpen'])), -1)
+        check(k > 0 and f'mov ecx, {exe["animCache"]:#x}' in [f'{i.mnemonic} {i.op_str}' for i in p[k - 3:k]],
+              f'{name} animOpen called on animCache by MODEL_PLAYANIM')
+        check(exe['missionAddAnim'] in calls(p) and 'call dword ptr [ecx + 0x60]' in [f'{i.mnemonic} {i.op_str}' for i in p],
+              f'{name} MODEL_PLAYANIM: SetAnimation (+0x60) and missionAddAnim')
+        s = ins(stop, 0x68)
+        check(exe['missionDelAnim'] in calls(s) and 'call dword ptr [ecx + 0x68]' in [f'{i.mnemonic} {i.op_str}' for i in s],
+              f'{name} MODEL_STOPANIM: StopAnimation (+0x68) and missionDelAnim')
+        c = ins(phys, 0x190)
+        t = [f'{i.mnemonic} {i.op_str}' for i in c]
+        cc = calls(c)
+        check(f'push {exe["physSize"]:#x}' in t and exe['gameNew'] in cc and exe['physCtor'] in cc and exe['physInitBox'] in cc and
+              exe['gameAddTemp'] in cc and exe['physImpulse'] in cc,
+              f'{name} CREATE_PHYSICALOBJECT: gameNew({exe["physSize"]:#x}), physCtor, physInitBox, gameAddTemp, physImpulse')
+        for f, ret in (('physInitBox', '4'), ('physImpulse', '8'), ('missionAddAnim', '8'), ('missionDelAnim', '4'), ('animOpen', '0x10')):
+            first = next((i for i in gexe.md.disasm(gexe.at(exe[f] - 0x400000, 0x3000), exe[f]) if i.mnemonic == 'ret'), None)
+            check(first is not None and first.op_str == ret, f'{name} {f}: its first ret is ret {ret}')
+    for f in ('animOpen', 'missionAddAnim', 'missionDelAnim', 'physCtor', 'physImpulse'):   # (InitBox's prologue is scheduled otherwise in 1.0)
+        a, b = norm(g12.insn(e12[f] - 0x400000)), norm(g10.insn(e10[f] - 0x400000))
+        check(a == b, f'{f}: 1.2 "{a}" vs 1.0 "{b}"')
     print('ALL PASSED' if not fails else f'{fails} FAILED')
     return 1 if fails else 0
 

@@ -388,6 +388,27 @@ int H_PropAttach(MmlMod *m, void *prop, void *parent, int keep) {
 }
 int H_PropShow(MmlMod *m, void *prop, int on) { std::string err; return Alive(m) && PropShow(prop, on != 0, &err) ? 1 : 0; }
 int H_PropRemove(MmlMod *m, void *prop) { std::string err; return Alive(m) && PropRemove(prop, &err) ? 1 : 0; }
+int H_PropAnimPlay(MmlMod *m, void *prop, const char *anim, uint32_t flags, float weight) {
+    if (!Alive(m)) return -1;
+    std::string err;
+    int n = PropAnimPlay(prop, anim, flags, weight, &err);
+    if (n <= 0) Log(MML_LOG_WARN, Who(m), "prop_anim_play: %s", err.c_str());
+    return n;
+}
+int H_PropAnimStop(MmlMod *m, void *prop) { std::string err; return Alive(m) && PropAnimStop(prop, &err) ? 1 : 0; }
+int H_PropAnimState(MmlMod *m, void *prop, MmlPropAnim *out) { return Alive(m) ? PropAnimState(prop, out) : 0; }
+int H_PropPhysics(MmlMod *m, void *prop, const MmlPropPhysics *p) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    if (PropPhysics(prop, p, &err)) return 1;
+    Log(MML_LOG_WARN, Who(m), "prop_physics: %s", err.c_str());
+    return 0;
+}
+int H_PropPush(MmlMod *m, void *prop, const float impulse[3], const float at[3]) {
+    std::string err;
+    return Alive(m) && impulse && PropPush(prop, impulse, at, &err) ? 1 : 0;
+}
+void *H_PropBody(MmlMod *m, void *prop) { return Alive(m) ? PropBody(prop) : nullptr; }
 void *H_ActorFrame(MmlMod *m, void *actor) { return Alive(m) ? ActorFrame(actor) : nullptr; }
 int H_FrameWorld(MmlMod *m, void *frame, float out[16]) { return Alive(m) && out ? FrameWorld(frame, out) : 0; }
 int H_SoundPlay(MmlMod *m, const char *file, void *frame, const float pos[3], float volume, float pitch, float rangeNear, float rangeFar, uint32_t flags) {
@@ -1034,6 +1055,12 @@ void ModsInit() {
     g_host.profile_saves = H_ProfileSaves;
     g_host.world_water = H_WorldWater;
     g_host.zone_watch = H_ZoneWatch;
+    g_host.prop_anim_play = H_PropAnimPlay;
+    g_host.prop_anim_stop = H_PropAnimStop;
+    g_host.prop_anim_state = H_PropAnimState;
+    g_host.prop_physics = H_PropPhysics;
+    g_host.prop_push = H_PropPush;
+    g_host.prop_body = H_PropBody;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();

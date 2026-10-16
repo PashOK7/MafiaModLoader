@@ -484,8 +484,8 @@ H->frame_world(M, H->actor_frame(M, H->human_player(M)), w); /* any frame's worl
 
 - **A prop is an LS3D model frame**, made as the game makes an actor's model (the I3D driver's frame, the file opened
   by the game's model cache: the game's `models\` and its archives, or a mod's own `files\models\`, which the cache
-  opens as any other file), with no actor on it: nothing the game's logic sees, and no collision shape is made for it
-  (not yet: docs/ROADMAP.md, Known gaps). In the world it is linked into the room (sector) at its
+  opens as any other file), with no actor on it: nothing the game's logic sees, and nothing collides with it until
+  it is made physical (below). In the world it is linked into the room (sector) at its
   place, as a spawned actor's is, again each time `prop_place` moves it; attached, it is a child of the frame (a bone
   from `human_skeleton`, an actor's model from `actor_frame`, a car's part found under it, another prop) and follows
   its every move: a bat on a person's back follows his animation, his fall, his arrest.
@@ -496,9 +496,24 @@ H->frame_world(M, H->actor_frame(M, H->human_player(M)), w); /* any frame's worl
   every prop when the mission closes (a mod makes them again at `MML_EVENT_MISSION_LOADED`). A prop on an actor that
   is destroyed is put into the world where it was; one on another prop that is removed, too. A game over's retry
   (the same mission, the player the same actor) keeps them.
+- **Its animation**: `prop_anim_play(M, prop, "walk1", MML_PROP_ANIM_LOOP, 1)` plays a file of `anims\` (the game's
+  `.5ds`, named `.i3d` as the scripts name them; a mod's own `files\anims\`) on the prop's model as the scripts'
+  `model_playanim` does: LS3D's SetAnimation, the model on the mission's list of animated models, stepped by its
+  tick (it stands while the game is paused). An animation moves the model's frames that have its tracks' names: a
+  person's animation on a person's model (a prop of `Tommy.i3d` walks in place), a door's or a crane's on its model.
+  Returns its length in ms (0: no such file). Once, it stops at its end in its last pose; `prop_anim_stop` leaves the
+  pose it reached; `prop_anim_state` says where it is.
+- **Its physics**: `prop_physics(M, prop, &(MmlPropPhysics){.mass = 2})` makes a prop in the world a physical object
+  as the scripts' `create_physicalobject` makes one (C_public_physics: a box from its model's bounds put among the
+  collision's moving objects): a car is stopped by it, it falls when pushed or given a `velocity`, and it lies still
+  (in the air too) until something wakes it: `prop_push(M, prop, impulse, at)` (kg m/s at a point of the world;
+  NULL its centre). `prop_physics(M, prop, NULL)` leaves it where it lies, an ordinary prop again. A physical prop
+  moved by `prop_place` is made again at rest at its new place at the next frame (the game deletes its old object
+  at its next tick); attached to a frame, it is no longer physical. `prop_body` gives its object (an actor).
 - `call props.list`, `prop.create {"model", "at": [x, y, z] | "player", "ahead", "up", "parent": "player" | "car" |
   "0x...", "bone": "r_hand", "frame", "pos", "rot" | "dir", "scale"}`, `prop.place`, `prop.attach {"prop", "parent",
-  "keep"}`, `prop.show {"prop", "on"}`, `prop.remove {"prop" | "all"}`.
+  "keep"}`, `prop.show {"prop", "on"}`, `prop.remove {"prop" | "all"}`, `prop.anim {"prop", "play", "loop", "weight"
+  | "stop": true}`, `prop.physics {"prop", "on", "mass", "velocity"}`, `prop.push {"prop", "impulse", "at"}`.
 - `mods/examples/props_demo` (not enabled by default): a baseball bat on the player's back, stones circling his head
   (placed each frame around his neck bone); `props_demo.drop` leaves the bat in the air, `props_demo.wear` puts it
   back.

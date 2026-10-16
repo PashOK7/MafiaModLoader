@@ -887,6 +887,13 @@ def main():
         check('world_water, zone_watch with no game: none, refused', r['ok'] and r['result'] == {'water': 0, 'untouched': 1, 'watch': 0}, r)
         r = b.call('world.water', {'at': [0, 0, 0]})
         check('world.water with no game: an error, saying why', not r['ok'] and 'no mission' in str(r), r)
+        r = b.call('kit.prop_more')
+        check('prop_anim_*, prop_physics, prop_push, prop_body with no game: not a prop, refused',
+              r['ok'] and r['result'] == {'play': -1, 'stop': 0, 'state': 0, 'untouched': 1, 'physics': 0, 'push': 0, 'body': 0}, r)
+        for method, params in (('prop.anim', {'prop': '0x1000', 'play': 'walk1'}), ('prop.physics', {'prop': '0x1000'}),
+                               ('prop.push', {'prop': '0x1000', 'impulse': [0, 1, 0]})):
+            r = b.call(method, params)
+            check(f'{method} with no game: an error, saying why', not r['ok'] and 'not a prop' in str(r), r)
         for method in ('human.anim', 'human.anim_state', 'human.get_up'):
             r = b.call(method, {'actor': '0x1000', 'play': 'walk'})
             check(f'{method} with no game: an error, saying why', not r['ok'] and ('not a person' in str(r) or 'no actors' in str(r)), r)

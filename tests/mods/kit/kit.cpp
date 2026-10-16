@@ -418,6 +418,24 @@ int Water(const char *, MmlReply *r, void *) {
     return 0;
 }
 
+// A prop's animation and physics with no game: not a prop, refused.
+int PropMore(const char *, MmlReply *r, void *) {
+    if (!MML_HAS(H, prop_body)) { H->reply_error(r, "the loader has no prop_body"); return 1; }
+    void *nope = reinterpret_cast<void *>(static_cast<uintptr_t>(0x1000));
+    MmlPropAnim a{};
+    a.time_ms = 7;
+    MmlPropPhysics p{};
+    p.mass = 5;
+    const float impulse[3] = {0, 1, 0};
+    int play = H->prop_anim_play(M, nope, "walk1", MML_PROP_ANIM_LOOP, 1), stop = H->prop_anim_stop(M, nope),
+        state = H->prop_anim_state(M, nope, &a), phys = H->prop_physics(M, nope, &p), push = H->prop_push(M, nope, impulse, nullptr);
+    char out[160];
+    snprintf(out, sizeof out, "{\"play\":%d,\"stop\":%d,\"state\":%d,\"untouched\":%d,\"physics\":%d,\"push\":%d,\"body\":%d}", play, stop, state,
+             a.time_ms == 7 ? 1 : 0, phys, push, H->prop_body(M, nope) ? 1 : 0);
+    H->reply_append(r, out, static_cast<size_t>(-1));
+    return 0;
+}
+
 // People with no game: none, no skeleton, bone_set refused, no player.
 int Humans(const char *, MmlReply *r, void *) {
     if (!MML_HAS(H, human_player)) { H->reply_error(r, "the loader has no human_player"); return 1; }
@@ -491,6 +509,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->command(mod, "items", "item_define, item_find with no game", Items, nullptr);
     host->command(mod, "stats", "stats_get, profile_progress, profile_saves with no game", Stats, nullptr);
     host->command(mod, "water", "world_water, zone_watch with no game", Water, nullptr);
+    host->command(mod, "prop_more", "a prop's animation and physics with no game", PropMore, nullptr);
     host->command(mod, "control", "key_capture, action_capture, player_lock, vehicle_hook, vehicle_body with no game", Control, nullptr);
     host->command(mod, "sound", "sound_play and the rest, music_play and the rest with no game", Sound, nullptr);
     host->command(mod, "effects","car_exhaust, exhaust_hook, particle_def(_set) with no game", Effects, nullptr);

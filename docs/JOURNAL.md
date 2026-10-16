@@ -1310,3 +1310,17 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   dropped); `world.water`, `zone.add {who}`.
 - **In both labs** alike (ROADMAP "Done").
 - **Tests**: offline ALL PASSED.
+
+## 2026-10-17: a prop's animation and physics (block 6b of the order)
+
+- **Read**: MODEL_PLAYANIM, MODEL_STOPANIM and CREATE_PHYSICALOBJECT in both builds (their calls, the model's
+  vtable +0x60/+0x64/+0x68 and its channels at +0x150 in both LS3DFs); C_PhThing's Init and GameInit (a box of the
+  frame's bounds in the dynamic collision); C_actor::GameDone.
+- **Made** in `host/props.cpp`: `prop_anim_play`, `prop_anim_stop`, `prop_anim_state`, `prop_physics`, `prop_push`,
+  `prop_body`; `prop.anim`, `prop.physics`, `prop.push`; game_build.h's fields checked by `check_builds.py`.
+- **A wrong first try, measured**: a physical bat moved by `prop_place` came back to where its physics was made. The
+  old object's GameDone (at its deletion, the next tick) relinks the frame to its parent of then and writes back its
+  placement of then (C_actor +0x3C, +0x48, +0x58): those are now written before the object is taken out (where the
+  prop is, or no parent for a prop removed, which would otherwise come back into the scene).
+- **In both labs** alike (ROADMAP "Done").
+- **Tests**: offline ALL PASSED; check_builds ALL PASSED.

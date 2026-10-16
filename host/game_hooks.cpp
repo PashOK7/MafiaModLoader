@@ -199,6 +199,7 @@ void Frame() {
     if (g_missionLoaded) HappenFrame();   // (happen.cpp: deaths, vehicles entered and left)
     if (g_missionLoaded) InteractFrame();   // (interact.cpp: zones crossed, use-points)
     if (g_missionLoaded) StatsFrame(dt, ticked);   // (stats.cpp: the time played, the distances)
+    if (g_missionLoaded) PropsFrame();   // (props.cpp: physics asked again once the one before is destroyed)
     ItemsFrame();   // (items.cpp: the mods' items in the game's table)
     MmlEvent ev = Event(MML_EVENT_FRAME);
     ev.dt = dt;

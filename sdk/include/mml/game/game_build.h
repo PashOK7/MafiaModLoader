@@ -402,6 +402,24 @@ struct ExeBuild {
     // animation's time and length in ms (Do_PlayAnim returns the second as the length).
     uintptr_t animTime;
     int humanAnimMachine;
+    // A model's own animation (host/props.cpp; 0: not known), as the scripts' MODEL_PLAYANIM plays one on a frame of
+    // type 9: animOpen, the animation cache's Open (C_I3D_cache<I3D_animation_set>::Open, thiscall(animCache, const
+    // char *file, I3D_animation_set **out, 0, 0) ret 0x10: anims\<file>, a reference of its own handed out; the set's
+    // vtable +0 Release, +8 its length in ms); then the model's vtable +0x60 SetAnimation, stdcall(model, set,
+    // channel, float weight, mode) (0 the set's own mode, 2 looped: what the scripts set; anything else plays once)
+    // and missionAddAnim (C_mission::AddAnimModel, thiscall(mission, model, bool cleared with the mission) ret 8:
+    // the mission's tick then calls the model's +0x14 Tick(ms) after the scene's). MODEL_STOPANIM: +0x68
+    // StopAnimation(model, channel) and missionDelAnim (DelAnimModel, thiscall(mission, model) ret 4).
+    uintptr_t animCache, animOpen, missionAddAnim, missionDelAnim;
+    // A model made a physical object, as the scripts' CREATE_PHYSICALOBJECT does: physCtor (C_public_physics's,
+    // thiscall on gameNew(physSize)), its vtable +0x48 Init(frame) -> bool (+0x44 Release when it fails), physInitBox
+    // (C_PhThing::InitBox, thiscall(phys, const float block[5]) ret 4: {mass (1 at least), velocity x, y, z, 0.45}:
+    // a box from the frame's bounds), then gameAddTemp; its GameInit puts the box into the collision's dynamic
+    // objects. physImpulse: C_PhThing::ExternalImpuls, thiscall(phys, const S_vector *impulse, const S_vector *at)
+    // ret 8. DESTROY_PHYSICALOBJECT takes it out with gameRemoveTemp. The actor releases its frame in its destructor
+    // when its byte +0x6C is set (C_actor::Init clears it).
+    uintptr_t physCtor, physInitBox, physImpulse;
+    int physSize;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -576,6 +594,10 @@ inline const ExeBuild kExe12 = {
     // found by its records, "smrt pad end vstavani.I3D" 111 among them)
     0x585E80, 0x57D2E0, 0x57DD00, 0x62E488, 576,
     0x40E890, 0xBC,
+    // a model's animation and its physics (2026-10-17: MODEL_PLAYANIM 0x471E90, MODEL_STOPANIM 0x471F41,
+    // CREATE_PHYSICALOBJECT 0x4741D5, their calls read)
+    0x647D80, 0x4104F0, 0x53F520, 0x53F710,
+    0x47C3A0, 0x45EE90, 0x460000, 0x38C,
 };
 
 inline const ExeBuild kExe10 = {
@@ -684,6 +706,10 @@ inline const ExeBuild kExe10 = {
     // people's animations (2026-10-16: the same three handlers' calls; the same table, its numbers the same)
     0x4A63F0, 0x49D840, 0x49E260, 0x647808, 576,
     0x5AB3A0, 0xBC,
+    // a model's animation and its physics (2026-10-17: the same handlers in 1.0, 0x5BFC80, 0x5BFD31, 0x5C1FC5; the
+    // physical object is 0x24 bytes larger)
+    0x6F93C8, 0x47FA10, 0x5FEAC0, 0x5FECB0,
+    0x4CDE20, 0x4C41A0, 0x4C53F0, 0x3B0,
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,

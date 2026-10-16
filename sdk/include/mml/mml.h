@@ -458,6 +458,21 @@ typedef struct MmlWater {
     int covered;            /* 1: something of the static world between the point and the water (a bridge, a pier) */
     const void *prim;       /* the water's face */
 } MmlWater;
+/* a prop's animation (prop_anim_state) */
+typedef struct MmlPropAnim {
+    char anim[64];          /* the file it was given ("" none) */
+    int playing;            /* 1 while it runs (a looped one until it is stopped; one played once until its end) */
+    int loop;
+    int time_ms;            /* where it is (a looped one counts on past its length) */
+    int length_ms;
+    float weight;
+} MmlPropAnim;
+#define MML_PROP_ANIM_LOOP 0x1u
+/* a prop made a physical object (prop_physics) */
+typedef struct MmlPropPhysics {
+    float mass;             /* kg (1 at least) */
+    float velocity[3];      /* at the start, m/s ({0, 0, 0}: it lies still until something strikes or pushes it) */
+} MmlPropPhysics;
 enum { MML_SHAPE_TRIANGLE = 1, MML_SHAPE_BOX = 2, MML_SHAPE_SPHERE = 3, MML_SHAPE_POLE = 4 };
 typedef struct MmlShape {
     uint32_t kind;          /* MML_SHAPE_* */
@@ -1191,6 +1206,24 @@ typedef struct MmlHost {
      * crossing with that actor. 1: done. Game thread. */
     int (*world_water)(MmlMod *mod, const float at[3], MmlWater *out);
     int (*zone_watch)(MmlMod *mod, int zone, uint32_t who, void *actor);
+
+    /* ---- a prop's animation and physics (both builds; docs/MODDING.md "Props"). prop_anim_play: an animation of
+     * anims\ (the archives', or a mod's files\anims\; "x.i3d" or "x") played on the prop's model as the scripts'
+     * model_playanim plays one (LS3D's SetAnimation; the mission's tick steps it): its frames move the model's
+     * frames of the same names (a door's leaf, a person's bones on a person's model). flags MML_PROP_ANIM_LOOP,
+     * weight 0..1 (<= 0: 1). Returns its length in ms, 0: no such file, -1 refused. prop_anim_stop: the model stays
+     * in the pose it reached. prop_physics: a prop in the world (not attached) made a physical object as the
+     * scripts' create_physicalobject makes one (a box from its model's bounds among the collision's moving objects:
+     * it falls, people and cars strike and stand on it, bullets hit it); NULL: no longer (it stays where it lies).
+     * A physical prop moved by prop_place is made again at rest at its new place (at the next frame). prop_push: an
+     * impulse (kg m/s) at a point of the world (NULL: its centre). prop_body: its physical object (an actor), NULL
+     * none. Game thread. */
+    int (*prop_anim_play)(MmlMod *mod, void *prop, const char *anim, uint32_t flags, float weight);
+    int (*prop_anim_stop)(MmlMod *mod, void *prop);
+    int (*prop_anim_state)(MmlMod *mod, void *prop, MmlPropAnim *out);
+    int (*prop_physics)(MmlMod *mod, void *prop, const MmlPropPhysics *physics);
+    int (*prop_push)(MmlMod *mod, void *prop, const float impulse[3], const float at[3]);
+    void *(*prop_body)(MmlMod *mod, void *prop);
 } MmlHost;
 
 #define MML_ZONE_PLAYER 0x1u

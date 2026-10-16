@@ -77,7 +77,8 @@ to}` moves one, `give {actor, item: "Thompson 1928"}` arms by name (`call world.
 {"set"}`, `human.items`, `human.ammo {"slot", "loaded", "reserve"}`, `human.take {"item"}`, a mod's own items `items.define {"name", "label", "like"}`, `stats.state`, `profile.progress`. **People**:
 `humans.list`, `human.skeleton {actor}`, `human.pose {actor, bones, ms}`, `human.anim {actor, play | stop | replace}`, `human.anim_state`, `human.get_up {actor, blend_ms}`, `human.anims {query}`. **The scene's lights**: `lights.list`,
 `light.set {light, color, power}`. **Props** (models that are not actors): `prop.create {"model": "2bbat1", "parent":
-"player", "bone": "back3"}` or `{"model", "at": [x, y, z]}`, `prop.place`, `prop.attach`, `props.list`. **Sound**: `sound.play {"file": "menuopen.wav"}` (2D), `{"file":
+"player", "bone": "back3"}` or `{"model", "at": [x, y, z]}`, `prop.place`, `prop.attach`, `props.list`, `prop.anim
+{prop, "play": "walk1", "loop"}`, `prop.physics {prop, mass}` (it falls when pushed: `prop.push {prop, impulse}`). **Sound**: `sound.play {"file": "menuopen.wav"}` (2D), `{"file":
 "th_1.wav", "on": "car", "loop": true}` (3D on a car), `sound.set {sound, volume, pitch}`, `music.play {"file": "13 -
 Game Over.ogg"}`, `music.game {"on": false}`; nobody hears them: check `sounds.list` (`playing`, `ms`). **Control**: `input.capture {"action": "Accelerate"}`
 (the game reads 0), `player.lock {"on": true}`, `vehicle.body {"car"}`, `control.state`. **Interaction**: `use.add {"label": "Fish here"}` (at the

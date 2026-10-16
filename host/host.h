@@ -257,6 +257,13 @@ bool PropRemove(void *prop, std::string *err);
 void PropsModGone(MmlMod *mod);           // (its unload) its props removed
 void PropsMissionClose();                 // (before the mission closes) every prop removed
 void PropsActorGone(void *actor);         // (an actor's destructor) props on it put into the world
+int PropAnimPlay(void *prop, const char *anim, uint32_t flags, float weight, std::string *err);   // its length; 0 no file, -1 refused
+bool PropAnimStop(void *prop, std::string *err);
+int PropAnimState(void *prop, MmlPropAnim *out);
+bool PropPhysics(void *prop, const MmlPropPhysics *p, std::string *err);   // p null: off
+bool PropPush(void *prop, const float impulse[3], const float *at, std::string *err);
+void *PropBody(void *prop);
+void PropsFrame();                        // every frame of a loaded mission: physics asked again made
 void *ActorFrame(void *actor);
 int FrameWorld(void *frame, float out[16]);
 bool PropsMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
