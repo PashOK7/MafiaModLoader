@@ -155,6 +155,32 @@ int Geom(const char *, MmlReply *r, void *) {
     return 0;
 }
 
+// native.call's subjects: one function a convention, floats, an out-buffer, a string, a fault.
+int __cdecl NatAdd(int a, int b) { return a + b; }
+int __stdcall NatMul(int a, int b) { return a * b; }
+struct NatObj { int x; int __thiscall Plus(int a) { return x + a; } };
+int __fastcall NatSum3(int a, int b, int c) { return a * 100 + b * 10 + c; }
+float __stdcall NatHalf(float f) { return f * 0.5f; }
+double __cdecl NatTwice(double d) { return d * 2; }
+void __stdcall NatFill(int *out, int n) { for (int i = 0; i < n; i++) out[i] = i * 3; }
+int __cdecl NatLen(const char *s) { return static_cast<int>(strlen(s)); }
+int __stdcall NatFault(int *p) { return *p; }
+NatObj g_natObj{40};
+int Natives(const char *, MmlReply *r, void *) {
+    int (__thiscall NatObj::*plus)(int) = &NatObj::Plus;
+    void *plusAddr;
+    memcpy(&plusAddr, &plus, sizeof plusAddr);
+    char out[512];
+    snprintf(out, sizeof out,
+             "{\"add\":\"0x%p\",\"mul\":\"0x%p\",\"plus\":\"0x%p\",\"obj\":\"0x%p\",\"sum3\":\"0x%p\",\"half\":\"0x%p\",\"twice\":\"0x%p\","
+             "\"fill\":\"0x%p\",\"len\":\"0x%p\",\"fault\":\"0x%p\"}",
+             reinterpret_cast<void *>(&NatAdd), reinterpret_cast<void *>(&NatMul), plusAddr, static_cast<void *>(&g_natObj),
+             reinterpret_cast<void *>(&NatSum3), reinterpret_cast<void *>(&NatHalf), reinterpret_cast<void *>(&NatTwice),
+             reinterpret_cast<void *>(&NatFill), reinterpret_cast<void *>(&NatLen), reinterpret_cast<void *>(&NatFault));
+    H->reply_append(r, out, static_cast<size_t>(-1));
+    return 0;
+}
+
 int Write(const char *, MmlReply *r, void *) {
     std::string path = std::string(H->mod_data_dir(M)) + "note.txt";
     FILE *f = fopen(path.c_str(), "w");
@@ -193,6 +219,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->command(mod, "passviews", "a pass of its own, gfx_pass_views on it and on no such pass", PassViews, nullptr);
     host->command(mod, "passviews_clear", "takes that pass back", PassViewsClear, nullptr);
     host->command(mod, "geom", "geom_hide, geom_capture with no game (refused), geom_show", Geom, nullptr);
+    host->command(mod, "natives", "the addresses of native.call's test functions (each convention, floats, a buffer, a fault)", Natives, nullptr);
     return 0;
 }
 

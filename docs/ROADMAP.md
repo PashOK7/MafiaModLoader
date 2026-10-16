@@ -270,6 +270,13 @@ What is done, what comes next and later, and what is known to be missing or wron
   missions opened, loaded and closed; a person spawned; a script ended); offline tests and `mcp_smoke.py`. The
   roadmap's `events.wait` on the bridge is MCP's `wait` (a bridge call that blocked would hold its client's line).
   What item 7 will add (deaths, shots, cars entered) comes through the same way.
+- **`native.call`** (2026-10-16; item 21): any function called from the bridge on the game thread by its address and
+  convention (stdcall, cdecl, thiscall, fastcall), with integers, addresses, floats, doubles, strings and out-buffers,
+  its integer, pointer, float (ST0), 64-bit or string result; ESP measured around the call (a wrong convention or
+  count of arguments shows, and the stack is put back), the x87 stack left as found, a fault guarded and named.
+  Offline: every convention, floats, a buffer, a wrong convention, a fault (11 checks); in the 1.2 lab the game's
+  text 1403 ("Game Over") by its text lookup (thiscall on the text database), in the 1.0 lab the same ("Fin de
+  partie").
 
 ## Next, by importance
 
@@ -380,7 +387,7 @@ V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselv
 20. *(Done 2026-10-16: see "Done".)* **Waiting for what happens** (A). The bridge keeps the last events (item 7's, missions, actors destroyed,
     programs ended, mods faulted) with a sequence number; `events.since {seq}`, `events.wait {type, filter,
     timeout_ms}`, MCP `wait` ("until the mission is loaded", "until he dies").
-21. **`native.call`** (A). Any game function called from the bridge by its address and convention (thiscall,
+21. *(Done 2026-10-16: see "Done".)* **`native.call`** (A). Any game function called from the bridge by its address and convention (thiscall,
     stdcall, cdecl, fastcall; integer, float, pointer and string arguments; a fault guarded): a hypothesis in one call.
 22. **Hardware watchpoints** (A; from Later). Who writes or reads a field, on the bridge and MCP; the handler never
     reads the watched address (a recursion crashed the game once). Reference: `hwwatch.cpp`.

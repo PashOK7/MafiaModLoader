@@ -55,6 +55,37 @@ def check(name, cond, detail=''):
         failures.append(name)
 
 
+def native_tests(b):
+    """native.call: each convention, floats, a string, an out-buffer, a wrong convention seen in the stack, a fault."""
+    a = b.call('kit.natives')['result']
+    call = lambda **p: b.call('native.call', p)
+    r = call(at=a['add'], conv='cdecl', args=[2, 40])
+    check('native.call cdecl: 2 + 40, the caller pops', r['ok'] and r['result']['ret'] == 42 and r['result']['stack']['ok'], r)
+    r = call(at=a['mul'], conv='stdcall', args=[6, -7])
+    check('native.call stdcall: 6 * -7, the callee popped 8', r['ok'] and r['result']['ret'] == -42 and r['result']['stack']['popped_by_callee'] == 8, r)
+    r = call(at=a['plus'], conv='thiscall', this=a['obj'], args=[2])
+    check('native.call thiscall: this->x (40) + 2', r['ok'] and r['result']['ret'] == 42 and r['result']['stack']['ok'], r)
+    r = call(at=a['sum3'], conv='fastcall', args=[1, 2, 3])
+    check('native.call fastcall: ECX, EDX and one on the stack', r['ok'] and r['result']['ret'] == 123 and r['result']['stack']['ok'], r)
+    r = call(at=a['half'], conv='stdcall', args=[{'float': 5.0}], ret='float')
+    check('native.call: a float argument, a float back (ST0)', r['ok'] and r['result']['ret'] == 2.5, r)
+    r = call(at=a['twice'], conv='cdecl', args=[{'double': 1.25}], ret='int')
+    check('native.call: a double argument; ST0 popped though `ret` said int', r['ok'] and r['result']['st0'] == 2.5 and r['result']['stack']['ok'], r)
+    r = call(at=a['fill'], conv='stdcall', args=[{'buf': 16}, 4], ret='void')
+    words = r['result']['buffers'][0]['words'] if r['ok'] else []
+    check('native.call: an out-buffer read back', words == ['0x00000000', '0x00000003', '0x00000006', '0x00000009'], r)
+    r = call(at=a['len'], conv='cdecl', args=[{'str': 'Lost Heaven'}])
+    check('native.call: a string argument', r['ok'] and r['result']['ret'] == 11, r)
+    r = call(at=a['add'], conv='stdcall', args=[1, 2])
+    check('native.call: a cdecl function called as stdcall: the stack says so, and is put back', r['ok'] and r['result']['ret'] == 3
+          and r['result']['stack']['ok'] is False and 'note' in r['result']['stack'], r)
+    r = call(at=a['fault'], conv='stdcall', args=[0])
+    check('native.call: a fault in the function: an error with where, the game goes on', not r['ok'] and 'faulted' in str(r)
+          and b.call('ping')['ok'], r)
+    r = call(at='0x00000010', args=[])
+    check('native.call: an address that is not code: refused', not r['ok'] and 'not executable' in str(r), r)
+
+
 def kit_tests(b):
     """The mod author's kit with no game: the test mod `kit` uses each part, `kit.status` tells what it saw."""
     status = lambda: b.call('kit.status')['result']
@@ -720,6 +751,7 @@ def main():
               r['ok'] and res.get('done') and res.get('samples', 0) > 100 and res['by_module']   # (the harness's thread sleeps between frames: ntdll)
               and 'game' in res['phases'], {k: res.get(k) for k in ('done', 'samples', 'by_module')})
         kit_tests(b)
+        native_tests(b)
         files_tests(b)
         heavy_tests(b)
         boxes_tests(b)

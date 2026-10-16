@@ -261,6 +261,9 @@ void RenderViewWorld(int handle);         // (render.cpp) MML_EVENT_VIEW_WORLD s
 bool ViewMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 int ViewDrawingNow();                     // the scene view LS3D is drawing now (its handle), 0: none
 
+// ---- native.call (native.cpp): any function called from the bridge by its address and convention
+bool NativeMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+
 // ---- what happens, kept for agents (events.cpp): events.since on the bridge's thread, MCP's `wait`
 void EventsRecord(const char *type, const std::string &dataJson);   // a host's own event (game thread)
 void EventsFromDispatch(const MmlEvent &ev);                         // (mods.cpp Dispatch) every event but each frame's

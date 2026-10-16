@@ -78,6 +78,9 @@ player's state when the last step has ended. `call input.actions` lists every ac
 to learn what the game does. **Wait for what happens** with `wait {"types": "MISSION_LOADED"}` (or `HUMAN_HIT` with
 `"filter": {"killed": true}`, `SCRIPT_ENDED`, `MOD_FAULTED`...; `call events.since` lists what came) instead of
 sleeping. **Where the time goes**: `profile {seconds}` (each mod's cost by site, the game thread sampled, named).
+**Try a hypothesis in one call**: `call native.call {"at": "0x60FB40", "conv": "thiscall", "this": "0x6D8714",
+"args": [1403], "ret": "str"}` (the game's text 1403: "Game Over"); the reply's `stack` says whether the convention
+and the count of arguments were right.
 **Writing a mod**: `python tools/new_mod.py <id>`, then `docs/MODDING.md` (the whole way; `mods/examples/telemetry`
 is a complete one). The host gives a mod the frame's drawing (text, lines, rectangles in the game's fonts), the
 keys and the game's actions, hotkeys, the car by name, the mission as events, a data folder and settings, and the

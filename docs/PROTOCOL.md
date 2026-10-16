@@ -38,6 +38,7 @@ Taps can also start with the game, before its first frame: `"taps": ["5409D0 n=4
 |---|---|---|
 | `mods.list` | | every mod: id, version, loaded, generation, error; `live_dir` (the load's folder), `last_unload` (threads found in its code and whether it was `kept`, libraries that `stays_loaded`, the process `since_load`: `free_mb`, `largest_free_mb`, `handles`, `threads`), `kept_generations` (loads not freed yet) |
 | `mods.rescan` | | new mods in `mml\mods` loaded |
+| `native.call` | `at` (an address: `"game+0x..."`, `"ls3d+..."`, `"0x..."`), `conv` (`stdcall` default, `cdecl`, `thiscall`, `fastcall`), `this` (thiscall's ECX), `args` (numbers, addresses, `{"float"}`, `{"double"}`, `{"str"}`, `{"buf": n, "hex"}`), `ret` (`int` default, `uint`, `ptr`, `float`, `double`, `int64`, `str`, `void`) | any function called on the game thread behind a fault guard: `ret`, `eax`, `edx`, `st0` (what it left on the x87 stack, always popped), `buffers` (each `buf` after the call: `hex`, `words`, `floats`), `stack` (`pushed`, `popped_by_callee`, `expected`, `ok`: a wrong convention or count shows here; ESP is put back either way), `ms`; a fault: an error with where |
 | `mod.reload` / `mod.load` / `mod.unload` | `id` (`"*"`: every loaded mod, for reload); reload: `times` (1..200) | the mod; with `times`: `rounds` (the process after each load) and `per_reload` (what one reload did not give back) |
 | `commands.list` | | every method, the mods' with their help |
 | `hooks.list` | | every hooked function and its chain |

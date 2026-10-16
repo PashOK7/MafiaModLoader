@@ -898,3 +898,15 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   queue, not a hit: deaths are item 7's), the script's end SCRIPT_ENDED.
 - **Tests**: offline (the fault, the unload after it, nothing after `latest`); `mcp_smoke.py` (`wait` from `since`,
   `wait` timing out with a plain error). ALL PASSED both.
+
+## 2026-10-16: native.call (item 21)
+
+- **Made** `host/native.cpp`: the arguments pushed from inline assembly (the last first), ECX and EDX set for
+  thiscall and fastcall, EAX, EDX and ESP kept after the call, ESP put back from the one before (so a wrong
+  convention cannot unbalance the game thread's stack), ST0 examined with `fxam` and popped when it holds a value
+  (a float function's result must not stay on the x87 stack). The reply compares what the callee popped with what
+  the convention says. Strings and buffers live in the host for the call; buffers come back as hex, words, floats.
+- **Offline**: test functions in the kit (one a convention, a float, a double, an out-buffer, a string, a fault):
+  11 checks, a cdecl function called as stdcall reported as such. **In the labs**: the text lookup (`textGet`,
+  thiscall on `textDb`) gave "Game Over" in 1.2 and "Fin de partie" in the French 1.0.
+- The session's usage limit ran out in the middle of the 1.0 check; resumed after it reset.
