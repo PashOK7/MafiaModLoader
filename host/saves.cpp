@@ -234,6 +234,8 @@ std::string Who(MmlMod *mod) { return mod ? ModIdOf(mod) : "bridge"; }
 
 } // namespace
 
+int SaveProfileNumber() { return ProfileNow(); }
+
 void SavesInit() {
     if (!game::g_exe || !E().saveGameSave || !E().saveGameLoad || !E().saveGameNew || !E().profileDelete || !E().loadSave) return;
     std::string err;
@@ -245,6 +247,9 @@ void SavesInit() {
 }
 
 int SavePut(MmlMod *mod, int scope, const char *key, const void *data, size_t n, std::string *err) {
+    return SavePutAs(Who(mod), scope, key, data, n, err);
+}
+int SavePutAs(const std::string &who, int scope, const char *key, const void *data, size_t n, std::string *err) {
     if (scope != MML_SAVE_SLOT && scope != MML_SAVE_PROFILE) { *err = "scope: MML_SAVE_SLOT or MML_SAVE_PROFILE"; return 0; }
     if (!key || !*key || strlen(key) > kMaxKey) { *err = "key: 1..128 characters"; return 0; }
     if (n > kMaxBlob) { *err = "at most 16 MB a key"; return 0; }
@@ -252,7 +257,6 @@ int SavePut(MmlMod *mod, int scope, const char *key, const void *data, size_t n,
     int profile = ProfileNow();
     if (scope == MML_SAVE_PROFILE && profile < 0) { *err = "no profile selected yet"; return 0; }
     Blobs &b = scope == MML_SAVE_SLOT ? g_slot : Profile(profile);
-    std::string who = Who(mod);
     if (!data || !n) {
         auto it = b.find(who);
         if (it != b.end()) { it->second.erase(key); if (it->second.empty()) b.erase(it); }
@@ -263,13 +267,14 @@ int SavePut(MmlMod *mod, int scope, const char *key, const void *data, size_t n,
     return 1;
 }
 
-size_t SaveGet(MmlMod *mod, int scope, const char *key, void *data, size_t cap) {
+size_t SaveGet(MmlMod *mod, int scope, const char *key, void *data, size_t cap) { return SaveGetAs(Who(mod), scope, key, data, cap); }
+size_t SaveGetAs(const std::string &who, int scope, const char *key, void *data, size_t cap) {
     if (!key || (scope != MML_SAVE_SLOT && scope != MML_SAVE_PROFILE)) return 0;
     std::lock_guard<std::recursive_mutex> g(g_lock);
     int profile = ProfileNow();
     if (scope == MML_SAVE_PROFILE && profile < 0) return 0;
     const Blobs &b = scope == MML_SAVE_SLOT ? g_slot : Profile(profile);
-    auto m = b.find(Who(mod));
+    auto m = b.find(who);
     if (m == b.end()) return 0;
     auto k = m->second.find(key);
     if (k == m->second.end()) return 0;

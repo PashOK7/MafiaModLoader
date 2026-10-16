@@ -876,6 +876,13 @@ def main():
         r2 = b.call('items.state')
         check('items.define with no game: an error, saying why; items.state: not installed, nothing defined',
               not r['ok'] and 'not known' in str(r) and r2['ok'] and r2['result']['installed'] is False and r2['result']['items'] == [], (r, r2))
+        r = b.call('kit.stats')
+        check('stats_get, profile_progress, profile_saves with no game: the game\'s counts at 0, no profile, no saves',
+              r['ok'] and r['result'] == {'game': 1, 'kills': 0, 'profile': 0, 'bad_scope': 0, 'progress': 0, 'profile_number': -1, 'saves': 0}, r)
+        r = b.call('stats.state')
+        r2 = b.call('profile.progress')
+        check('stats.state with no game: the game\'s counts, no profile; profile.progress: an error, saying why',
+              r['ok'] and r['result']['game']['kills'] == 0 and r['result']['profile_number'] == -1 and not r2['ok'] and 'no profile' in str(r2), (r, r2))
         for method in ('human.anim', 'human.anim_state', 'human.get_up'):
             r = b.call(method, {'actor': '0x1000', 'play': 'walk'})
             check(f'{method} with no game: an error, saying why', not r['ok'] and ('not a person' in str(r) or 'no actors' in str(r)), r)

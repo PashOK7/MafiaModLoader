@@ -863,6 +863,7 @@ bool GameTextSet(uint32_t id, const std::string &utf8) {
     return true;
 }
 std::string GameAnsi(const std::string &utf8) { return Ansi(utf8); }
+std::string GameUtf8(const std::string &ansi) { return Utf8(ansi.c_str()); }
 std::string MenuUtf8(const char *ansi) { return Utf8(ansi); }
 std::string MenuAnsi(const std::string &utf8) { return Ansi(utf8); }
 std::vector<std::string> MenuSplitOptions(const std::string &text) { return SplitOptions(text); }

@@ -304,6 +304,7 @@ bool InteractMethod(const std::string &method, const std::string &paramsJson, st
 // the HUD (hud.cpp): pictures by the game's texture loader, the game's console and help lines, markers on the screen,
 // the radar and the compass
 std::string GameAnsi(const std::string &utf8);  // (menus.cpp) UTF-8 to the game's own encoding
+std::string GameUtf8(const std::string &ansi);  // (menus.cpp) ... and back
 int HudPictureLoad(MmlMod *mod, const char *file, const char *alpha, std::string *err);   // null mod: the bridge's (kept)
 bool HudPictureSize(int picture, int *w, int *h);
 void HudPictureFree(MmlMod *mod, int picture);
@@ -322,6 +323,17 @@ void SavesInit();                         // (after the game's hooks) SaveGameSa
 int SavePut(MmlMod *mod, int scope, const char *key, const void *data, size_t n, std::string *err);   // null mod: the bridge's
 size_t SaveGet(MmlMod *mod, int scope, const char *key, void *data, size_t cap);
 bool SavesMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+int SavePutAs(const std::string &owner, int scope, const char *key, const void *data, size_t n, std::string *err);   // the host's own
+size_t SaveGetAs(const std::string &owner, int scope, const char *key, void *data, size_t cap);
+int SaveProfileNumber();                  // the profile selected (savegame\mafia<number>.sav), -1: none
+// the statistics and the profile's progress (stats.cpp)
+void StatsEvent(const MmlEvent &ev);      // (mods.cpp Dispatch) every event: what the player did
+void StatsFrame(float dt, bool ticking);  // (game_hooks.cpp) every frame of a loaded mission: time, distances
+int StatsGet(int scope, MmlStats *out);
+int ProfileProgress(MmlProgress *out);
+int ProfileSaves(int *slots, int max);
+bool StatsMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+std::string WorldCarName(int index);      // (world.cpp) the car database's name of a car, "" none
 // a mod's own items (items.cpp): records added to the game's items, their ids kept in mml/items.json
 const char *GameTextOwn(uint32_t id);                       // (menus.cpp) the game's own text of an id, or null
 bool GameTextSet(uint32_t id, const std::string &utf8);     // (menus.cpp) one of the game's ids answered by the loader

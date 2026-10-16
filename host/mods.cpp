@@ -503,6 +503,9 @@ int H_ItemDefine(MmlMod *m, const MmlItemDef *def) {
     return id;
 }
 int H_ItemFind(MmlMod *m, const char *name) { return Alive(m) && name ? ItemFind(ModIdOf(m), name) : 0; }
+int H_StatsGet(MmlMod *m, int scope, MmlStats *out) { return Alive(m) ? StatsGet(scope, out) : 0; }
+int H_ProfileProgress(MmlMod *m, MmlProgress *out) { return Alive(m) ? ProfileProgress(out) : 0; }
+int H_ProfileSaves(MmlMod *m, int *slots, int max) { return Alive(m) ? ProfileSaves(slots, slots ? max : 0) : 0; }
 int H_HumanGetUp(MmlMod *m, void *human, int blend_ms) {
     if (!Alive(m)) return 0;
     std::string err;
@@ -1018,6 +1021,9 @@ void ModsInit() {
     g_host.human_get_up = H_HumanGetUp;
     g_host.item_define = H_ItemDefine;
     g_host.item_find = H_ItemFind;
+    g_host.stats_get = H_StatsGet;
+    g_host.profile_progress = H_ProfileProgress;
+    g_host.profile_saves = H_ProfileSaves;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();
@@ -1049,6 +1055,7 @@ bool Subscribed(MmlEventType type) {
 
 void Dispatch(const MmlEvent &ev) {
     EventsFromDispatch(ev);   // (events.cpp: kept for agents)
+    StatsEvent(ev);           // (stats.cpp: what the player did)
     if (g_subs.empty()) return;
     std::vector<Sub> subs = g_subs;   // a handler may subscribe; a faulted mod is unloaded only at the next frame
     for (const Sub &s : subs) {
@@ -1121,6 +1128,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (SavesMethod(method, paramsJson, reply, &ok)) return ok;
     if (AnimsMethod(method, paramsJson, reply, &ok)) return ok;
     if (ItemsMethod(method, paramsJson, reply, &ok)) return ok;
+    if (StatsMethod(method, paramsJson, reply, &ok)) return ok;
     if (WorldMethod(method, paramsJson, reply, &ok)) return ok;
     if (FilesMethod(method, paramsJson, reply, &ok)) return ok;
     if (RenderMethod(method, paramsJson, reply, &ok)) return ok;

@@ -1283,3 +1283,19 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **In both labs** alike (ROADMAP "Done"): rod and trout at 35 and 36, the rod dropped and picked up ("Fishing rod
   collected"), the ids kept after a restart.
 - **Tests**: offline ALL PASSED (item_define refused with no game, items.define's error); check_builds ALL PASSED.
+
+## 2026-10-16: statistics and the profile's progress (item 10, block 10c)
+
+- **Read**: the game keeps no statistics (nothing in the knowledge base, the 1.0 reverse or the profile's file). The
+  profile's progress is the manager's: ProfileSave streams its header and three blocks; the race, steal and freeride
+  bonus-car masks (letters), the garage, the freeride's level word sit in the same layout in both builds; the saves
+  and their files are obfuscated by G_Stream, their names are the texts 5000 + slot (the chapter their number).
+- **Made** `host/stats.cpp`: the player's counts from the events (Dispatch) and his place (each frame), the game's
+  in its saves and the profile's beside its .sav under the host's own owner "mml" (saves.cpp SavePutAs, SaveGetAs);
+  `stats_get`, `profile_progress`, `profile_saves`; `stats.state`, `profile.progress`.
+- **Two corrections, measured**: a teleport of 10 m was counted as walking (a 50 m limit): now a move faster than a
+  runner (15 m/s) or a car (80 m/s); a fall was counted as walked (on foot only the ground's distance now). The
+  profile's totals were written every minute and the last 16 s of a run were lost at the game's close: every 10 s.
+- **Not found**: a car stolen (Known gaps).
+- **In both labs** alike (ROADMAP "Done").
+- **Tests**: offline ALL PASSED; check_builds ALL PASSED.

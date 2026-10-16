@@ -311,6 +311,15 @@ What is done, what comes next and later, and what is known to be missing or wron
   the 1.2 and 1.0 labs: "Fishing rod" (made like the bucket, its model) and "Trout" (like a key) at 35 and 36,
   given, the rod dropped (the bucket's model on the ground) and picked up ("Fishing rod collected", in his hand in
   1.0), the trout taken; ITEM_GAINED and _LOST for each; after a restart the ids kept (placeholders until defined).
+- **Statistics, the profile's progress** (2026-10-16; item 10, block 10c): `stats_get` (what the player did, counted
+  by the loader from the events: kills, deaths, shots, hits, cars got into, crashes, falls that hurt, items, the
+  distance on foot and in vehicles with teleports left out, the time played, money gained and lost; the game's in
+  its saves, the profile's beside its .sav under the owner "mml"), `profile_progress` (the profile manager's own:
+  the chapter of the newest story save, the race, steal and freeride bonus-car letters, the garage, the freeride's
+  level word), `profile_saves`; `stats.state`, `profile.progress`. Seen alike in the 1.2 and 1.0 labs: profile 4
+  (chapter 20, 105 saves, "ABCDEFGHIJPR" bonus cars) and the 1.0 lab's "Run" (chapter 6, French save names); a kill
+  with the Thompson (and its hits and shots), a fall of 8 m, a crash into a wall, items given, money set; the
+  profile's totals kept after a restart, the freeride's game counts back at 0.
 - **Interaction** (2026-10-16; item 15): `zone_add` (spheres the player crosses, on foot or in his car, in the world
   or following a frame), `use_point_add` (a record of the loader's in the game's own using objects, C_game +
   0x29EC: what Action finds on foot, offered alone or in the game's own choice menu with a label that is a text id
@@ -457,7 +466,8 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
    the next one when it is done (CHANGE_MISSION: MISSION_CLOSE, MISSION_OPEN already tell it), a failure is the
    player's death (HUMAN_DIED), and the objectives are texts the scripts show (`mission_objectives`), read in them.
 4. *(Done 2026-10-16.)* A mod's own items in the inventory (item 10's rest).
-5. The statistics and the profile's progress (item 10's rest: kills, cars stolen, distance, chapters, unlocks).
+5. *(Done 2026-10-16.)* The statistics and the profile's progress (item 10's rest: kills, cars stolen, distance,
+   chapters, unlocks).
 6. The world and its geometry (item 8's rest: the water's height, each model's file, the drawn triangles, cars'
    meshes, the `.4ds` index; item 12's rest: a prop's collision shape and animations; zones for people and cars).
 7. The camera and control (item 9's rest: the game's own camera logic; item 14's rest: a mod's actions in the
@@ -525,9 +535,8 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
    of a mod's own following its own rules (a skateboard's, a plane's chase camera), a free camera; a world point to
    the screen and a screen point to a ray (markers, aiming). Reference: `freecam.cpp`, `ragcam.cpp`,
    `scene_camera.cpp`.
-10. *(10a done 2026-10-16: the freeride's money, health, the inventory and its rounds, items taken; see "Done".
-    Left: the statistics, the profile's progress, a mod's own items; Known
-    gaps.)* **The game's state and progress** (C F P). Money, health, the inventory and ammo (read and changed), the
+10. *(Done 2026-10-16: 10a the freeride's money, health, the inventory and its rounds, items taken; 10b a mod's
+    own items; 10c the statistics and the profile's progress; see "Done". What is left: Known gaps.)* **The game's state and progress** (C F P). Money, health, the inventory and ammo (read and changed), the
     mission's objectives and its outcome, the game's statistics (kills, cars stolen, distance), the profile's
     progress (chapters, freeride unlocks); a mod's own items in the items' table (a fishing rod, a fish).
 11. *(Done 2026-10-16: 11a the scene's lights, 11b the car exhaust and `particles.def`, 11c the game's particles
@@ -737,6 +746,13 @@ merged, sorted by importance):
   stays in the screen's middle, now pointing where the game's camera looks) and the sound's listener are the game's.
   A camera the game itself follows (a field of view it keeps, an aim from the drawn camera) needs the camera's
   update hooked (mafia-ragdoll `freecam.cpp`, `ragcam.cpp`). Drawn only in the mission's world, not a menu's scene.
+- **Statistics** (host/stats.cpp): "cars stolen" is not counted: the game keeps no such count, and its theft's own
+  path (the police's C_shvestky::CarSteal, a driver thrown out: Do_ThrowCocotFromCar) was not reached in a test (the
+  player only opened a spawned car's door); `cars_driven` counts every car he gets into. Only the player's deeds are
+  counted. The profile's totals of the last 10 s are lost when the game is killed (it has no exit the loader hears).
+  The saves of a story game carrying the game's counts were not loaded in a test (the freeride's start was: 0). The
+  freeride level word's values (3 in both labs' profiles) are not decoded beyond "3 and up: the freeride's settings
+  count"; the garages of both test profiles were empty.
 - **A mod's own items** (host/items.cpp): a save holding a mod's item was not loaded in a test (the ids are kept for
   it); a model of a mod's own `files\models\` was not tried (the game opens the item's model by its name, as files.cpp
   answers). The game's first item array is left allocated (6.5 KB: a pointer to one of its records may be kept). An

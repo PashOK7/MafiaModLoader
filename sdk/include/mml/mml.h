@@ -478,6 +478,40 @@ typedef struct MmlItem {
     int loaded, reserve;    /* rounds in it, in reserve */
 } MmlItem;
 
+/* What the player did (stats_get), counted by the loader. */
+typedef struct MmlStats {
+    uint32_t size;          /* sizeof(MmlStats) */
+    int kills;              /* people he killed (his weapons, his car), traffic pedestrians not counted */
+    int deaths;             /* his own */
+    int shots;              /* shots he fired (a shotgun's: one) */
+    int hits;               /* hits he gave people and traffic pedestrians (bullets, blows, his car) */
+    int cars_driven;        /* times he got into a car or a vehicle */
+    int crashes;            /* his car's crashes of 5 m/s and more */
+    int falls;              /* falls that hurt him */
+    int items;              /* items that came into his inventory (picked up, given, bought) */
+    float on_foot_m;        /* metres walked and run, on the ground (a fall, a teleport not counted) */
+    float in_vehicle_m;     /* metres in vehicles */
+    float played_s;         /* seconds of the mission's world running (menus and the pause not counted) */
+    int money_earned;       /* the freeride's money gained */
+    int money_spent;        /* ... and lost */
+} MmlStats;
+
+/* The profile's progress (profile_progress): the game's own, as its .sav keeps it. */
+typedef struct MmlProgress {
+    uint32_t size;          /* sizeof(MmlProgress) */
+    int profile;            /* savegame\mafia<profile>.sav; -1: none selected */
+    char name[32];          /* its name (the game's ANSI) */
+    int chapter;            /* the chapter of its newest story save (1..20), 0: none */
+    int newest_slot;        /* that save's slot, -1: none */
+    int saves;              /* how many saves it has on disk */
+    int freeride_level;     /* the freeride's level word (the manager's +0x1F0; 3 and up: the freeride's settings
+                               count) */
+    uint32_t race_cars;     /* the car groups unlocked for racing: bit n the letter 'A' + n */
+    uint32_t steal_cars;    /* the groups the player may steal (the freeride: the race groups) */
+    uint32_t freeride_cars; /* the freeride's bonus cars unlocked (bit n: 'A' + n; production cars always are) */
+    int garage[25];         /* the garage's cars: the car database's index, -1 an empty place */
+} MmlProgress;
+
 /* A mod's own item (item_define). */
 typedef struct MmlItemDef {
     uint32_t size;          /* sizeof(MmlItemDef) */
@@ -1126,6 +1160,17 @@ typedef struct MmlHost {
      * of "mod/name" (any mod's; "name" alone: this mod's), 0: none. Game thread. */
     int (*item_define)(MmlMod *mod, const MmlItemDef *def);
     int (*item_find)(MmlMod *mod, const char *name);
+
+    /* ---- statistics and the profile's progress (both builds; docs/MODDING.md "Statistics, the profile's progress").
+     * stats_get: what the player did, counted by the loader from the events (the game keeps no statistics):
+     * MML_SAVE_SLOT the game being played (kept in its saves, read back with them; a new game and a freeride start
+     * at 0), MML_SAVE_PROFILE the profile's totals (kept beside its .sav). profile_progress: the game's own progress
+     * of the profile selected (its .sav: the freeride's level, the car groups unlocked, the garage), and the chapter
+     * its newest save reached. profile_saves: the slots of its saves on disk (savegame\mafia<p>.<slot>; slot 0..599,
+     * named by the game's text 5000 + slot), ascending; returns how many there are. Game thread. */
+    int (*stats_get)(MmlMod *mod, int scope, MmlStats *out);
+    int (*profile_progress)(MmlMod *mod, MmlProgress *out);
+    int (*profile_saves)(MmlMod *mod, int *slots, int max);
 } MmlHost;
 
 /* predmety.def's flags (MmlItemDef.flags; tables\predmety.def's +0x20 word, read in the game's code) */

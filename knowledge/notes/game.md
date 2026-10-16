@@ -393,6 +393,20 @@ autosplitter; kept outside it, not ported). Checked against the above:
   already freed (memory reserved, not committed). Then `LS3DF.dll+0x5AC2E`: the index buffer manager's `FreeAll`
   writing to owners already gone (24 stale slices made before anything of ours ran).
 
+## The profile's progress (read and seen 2026-10-16, both labs; host/stats.cpp)
+
+- **code** `G_LoadSaveClass::ProfileSave` (0x6059F0; 1.0 0x557A20) writes `savegame\mafia%03d.sav` through G_Stream
+  (obfuscated, as the saves are: their bytes cannot be read off the disk): the header +0x20 (0x54 bytes: 'Prof',
+  version 1, the number +0x28, the name +0x30; +0x64, +0x68, +0x70 copies of +0x1F0, +0x9C, +0x94), then +0x1F4 (the
+  key bindings, 0x2D0), +0x4C4 (the settings, 0x5C), +0x520 (the network settings, 0x9C). The masks: +0x94 race
+  unlocks, +0x98 steal permission (the freeride copies the race mask into it), +0x9C the freeride's bonus cars (bit
+  n: the letter 'A' + n; carindex.def's +0xA0); +0xA0 the garage, 25 places {packed car id, C_car*}. The same
+  layout in 1.0 (the 1.0 reverse's structs/loadsave.md). Profile 4 of the 1.2 lab: +0x1F0 3, +0x94 = +0x98 0xC5FFF,
+  +0x9C 0x283FF.
+- **game** The saves' names: text 5000 + slot ("01 An Offer You Can't Refuse" at 5000, "20-06 The Death Of Art -
+  Sam" at 5561, "Freeride" 5584, "Freeride Extreme - Home" 5585, "... - Subquest" 5590; 5570 and 5580 blank).
+  SaveGameEnumFiles lists a slot only when its text exists and its file's record says 16.
+
 ## The items' table and a mod's items (read and seen 2026-10-16, both labs; host/items.cpp)
 
 - **code** `LoadMaterialsFromBin` (0x60F5C0; 1.0 0x592080), once from `G_LoadSaveClass::Init`: `tables\predmety.def`

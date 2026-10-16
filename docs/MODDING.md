@@ -365,6 +365,29 @@ H->give_item(M, H->human_player(M), id, 0, 0);   /* given, held, dropped, picked
 - `item_find(M, "rod")` (this mod's) or `"othermod/rod"`; `world.items` lists them with their `mod`;
   `call items.define {"name", "label", "model", "like", "flags", "collected"}` (the bridge's own), `items.state`.
 
+### Statistics, the profile's progress
+
+```c
+MmlStats s = {sizeof s};
+H->stats_get(M, MML_SAVE_PROFILE, &s);          /* the profile's totals; MML_SAVE_SLOT: the game being played */
+MmlProgress p = {sizeof p};
+H->profile_progress(M, &p);                      /* chapter 20, freeride_cars "A".."T" as bits, the garage... */
+int slots[600], n = H->profile_saves(M, slots, 600);   /* its saves on disk, by slot */
+```
+
+- **Statistics**: the game keeps none, so the loader counts what the player does from the events: people he killed
+  (his weapons, his car), his deaths, his shots, the hits he gave, the cars he got into, his car's crashes of 5 m/s
+  and more, the falls that hurt him, the items that came to him, the distance on foot (on the ground) and in
+  vehicles (a move faster than a runner or a car is a teleport, not counted), the seconds the mission's world ran,
+  the freeride's money gained and lost. Two sets: the game being played (kept in its saves, read back with them; a
+  new game and a freeride start at 0) and the profile's totals (beside its `.sav`, written at each save, at the
+  mission's close and every 10 s of play).
+- **The profile's progress** is the game's own, as its `.sav` keeps it: the chapter of its newest story save, its
+  saves (slot `n` named by the game's text 5000 + `n`, "05-03 Fairplay - The Racing Circuit"), the freeride's level
+  word, the car groups unlocked for racing, for stealing and as the freeride's bonus cars (bit `n`: the letter
+  `'A' + n`), and the garage's cars (the car database's indices).
+- `call stats.state`, `profile.progress` (the letters, the garage's car names, the saves' names).
+
 ### The scene's lights
 
 ```c

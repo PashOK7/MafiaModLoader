@@ -387,6 +387,23 @@ int Items(const char *, MmlReply *r, void *) {
     return 0;
 }
 
+// Statistics and the progress with no game: the game's counts at 0, no profile, no saves.
+int Stats(const char *, MmlReply *r, void *) {
+    if (!MML_HAS(H, profile_saves)) { H->reply_error(r, "the loader has no stats_get"); return 1; }
+    MmlStats s{};
+    s.size = sizeof s;
+    s.kills = 7;
+    int game = H->stats_get(M, MML_SAVE_SLOT, &s), profile = H->stats_get(M, MML_SAVE_PROFILE, &s), bad = H->stats_get(M, 9, &s);
+    MmlProgress p{};
+    p.size = sizeof p;
+    int progress = H->profile_progress(M, &p), saves = H->profile_saves(M, nullptr, 0);
+    char out[220];
+    snprintf(out, sizeof out, "{\"game\":%d,\"kills\":%d,\"profile\":%d,\"bad_scope\":%d,\"progress\":%d,\"profile_number\":%d,\"saves\":%d}", game,
+             s.kills, profile, bad, progress, p.profile, saves);
+    H->reply_append(r, out, static_cast<size_t>(-1));
+    return 0;
+}
+
 // People with no game: none, no skeleton, bone_set refused, no player.
 int Humans(const char *, MmlReply *r, void *) {
     if (!MML_HAS(H, human_player)) { H->reply_error(r, "the loader has no human_player"); return 1; }
@@ -458,6 +475,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->command(mod, "saves", "save_put, save_get with no game", Saves, nullptr);
     host->command(mod, "anims", "human_anim_play and the rest, human_get_up with no game", Anims, nullptr);
     host->command(mod, "items", "item_define, item_find with no game", Items, nullptr);
+    host->command(mod, "stats", "stats_get, profile_progress, profile_saves with no game", Stats, nullptr);
     host->command(mod, "control", "key_capture, action_capture, player_lock, vehicle_hook, vehicle_body with no game", Control, nullptr);
     host->command(mod, "sound", "sound_play and the rest, music_play and the rest with no game", Sound, nullptr);
     host->command(mod, "effects","car_exhaust, exhaust_hook, particle_def(_set) with no game", Effects, nullptr);
