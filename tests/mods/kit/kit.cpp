@@ -447,9 +447,14 @@ int Models(const char *, MmlReply *r, void *) {
     int open = H->model_open(M, "nothing_here"), nodes = H->model_nodes(M, 12345, &n, 1), got = H->model_mesh(M, 12345, 0, 0, &mesh),
         mats = H->model_materials(M, 12345, nullptr, 0), mf = H->model_file(M, nullptr, file, sizeof file);
     H->model_close(M, 12345);
-    char out[200];
-    snprintf(out, sizeof out, "{\"files\":%d,\"told\":%d,\"open\":%d,\"nodes\":%d,\"mesh\":%d,\"materials\":%d,\"file\":%d,\"untouched\":%d}", all, seen,
-             open, nodes, got, mats, mf, strcmp(file, "untouched") == 0 ? 1 : 0);
+    const float lo[3] = {-10, -10, -10}, hi[3] = {10, 10, 10};
+    MmlMeshPiece piece{};
+    int focus = H->scene_focus(M, lo, hi), pieces = H->scene_pieces(M, &piece, 1),
+        actor = H->actor_meshes(M, reinterpret_cast<void *>(static_cast<uintptr_t>(0x1000)), &piece, 1), off = H->scene_focus(M, nullptr, nullptr);
+    char out[260];
+    snprintf(out, sizeof out, "{\"files\":%d,\"told\":%d,\"open\":%d,\"nodes\":%d,\"mesh\":%d,\"materials\":%d,\"file\":%d,\"untouched\":%d,"
+             "\"focus\":%d,\"pieces\":%d,\"actor\":%d,\"off\":%d}", all, seen, open, nodes, got, mats, mf, strcmp(file, "untouched") == 0 ? 1 : 0,
+             focus, pieces, actor, off);
     H->reply_append(r, out, static_cast<size_t>(-1));
     return 0;
 }

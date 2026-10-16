@@ -523,3 +523,10 @@ autosplitter; kept outside it, not ported). Checked against the above:
   `.4ds` names (a2 3045, a8 the patch's 98, a1 80); `models\` names are in a2 and a8 (`MODELS\` upper case in a8).
 - **ours** The .4ds parser read 3220 of 3223 (4.38 million triangles at LOD 0); the others are version 27
   (`missions\CARCYCLOPEDIA\scene.4ds` and one more) and 58 (`models\tvoda01.4DS`).
+
+## The meshes LS3D holds (seen 2026-10-17, both labs; host/meshes.cpp)
+
+- **ls3d** A visual: +0x1D4 its kind (`OBJ_`, `LMAP`, `BBRD` billboards, `PRTE` particles, `SNGM` skinned,
+  `SMMR`...), +0x1E0 its mesh, +0x19C its world bounding sphere's centre, +0x1A8 its radius; the mesh's LODs and
+  face groups as host/meshes.cpp says, the same in both builds. At the freeride's start, 140 m around the player: 109
+  to 127 `OBJ_` and 12 `LMAP` visuals touch the box, 26 of them actors'.

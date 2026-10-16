@@ -432,6 +432,9 @@ int H_ModelNodes(MmlMod *m, int model, MmlModelNode *out, int max) { return Aliv
 int H_ModelMesh(MmlMod *m, int model, int node, int lod, MmlModelMesh *out) { return Alive(m) ? ModelMesh(model, node, lod, out) : 0; }
 int H_ModelMaterials(MmlMod *m, int model, MmlModelMaterial *out, int max) { return Alive(m) ? ModelMaterials(model, out, max) : 0; }
 void H_ModelClose(MmlMod *m, int model) { if (Alive(m)) ModelClose(m, model); }
+int H_SceneFocus(MmlMod *m, const float lo[3], const float hi[3]) { return Alive(m) && SceneFocus(m, lo && hi ? lo : nullptr, hi) ? 1 : 0; }
+int H_ScenePieces(MmlMod *m, MmlMeshPiece *out, int max) { return Alive(m) ? ScenePieces(m, out, max) : 0; }
+int H_ActorMeshes(MmlMod *m, void *actor, MmlMeshPiece *out, int max) { return Alive(m) && actor ? ActorMeshes(actor, out, max) : -1; }
 void *H_ActorFrame(MmlMod *m, void *actor) { return Alive(m) ? ActorFrame(actor) : nullptr; }
 int H_FrameWorld(MmlMod *m, void *frame, float out[16]) { return Alive(m) && out ? FrameWorld(frame, out) : 0; }
 int H_SoundPlay(MmlMod *m, const char *file, void *frame, const float pos[3], float volume, float pitch, float rangeNear, float rangeFar, uint32_t flags) {
@@ -744,6 +747,7 @@ bool UnloadMod(ModEntry *e, const char *why) {
     EffectsModGone(m);
     PropsModGone(m);
     ModelsModGone(m);
+    MeshesModGone(m);
     SoundModGone(m);
     ControlModGone(m);
     InteractModGone(m);
@@ -1092,6 +1096,9 @@ void ModsInit() {
     g_host.model_mesh = H_ModelMesh;
     g_host.model_materials = H_ModelMaterials;
     g_host.model_close = H_ModelClose;
+    g_host.scene_focus = H_SceneFocus;
+    g_host.scene_pieces = H_ScenePieces;
+    g_host.actor_meshes = H_ActorMeshes;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();
@@ -1190,6 +1197,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (EffectsMethod(method, paramsJson, reply, &ok)) return ok;
     if (PropsMethod(method, paramsJson, reply, &ok)) return ok;
     if (ModelsMethod(method, paramsJson, reply, &ok)) return ok;
+    if (MeshesMethod(method, paramsJson, reply, &ok)) return ok;
     if (SoundMethod(method, paramsJson, reply, &ok)) return ok;
     if (ControlMethod(method, paramsJson, reply, &ok)) return ok;
     if (InteractMethod(method, paramsJson, reply, &ok)) return ok;

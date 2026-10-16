@@ -275,6 +275,14 @@ int ModelMaterials(int model, MmlModelMaterial *out, int max);
 void ModelClose(MmlMod *mod, int model);
 void ModelsModGone(MmlMod *mod);          // (its unload) its models closed
 bool ModelsMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+// the meshes the game draws (meshes.cpp): the scene's around the mods' boxes, an actor's
+bool SceneFocus(MmlMod *mod, const float *lo, const float *hi);   // null lo: none
+int ScenePieces(MmlMod *mod, MmlMeshPiece *out, int max);
+int ActorMeshes(void *actor, MmlMeshPiece *out, int max);         // -1: no model
+void MeshesFrame();                       // every frame of a loaded mission: the walk, the scans
+void MeshesMissionClose();
+void MeshesModGone(MmlMod *mod);
+bool MeshesMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 void *ActorFrame(void *actor);
 int FrameWorld(void *frame, float out[16]);
 bool PropsMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);

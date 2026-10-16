@@ -343,6 +343,13 @@ What is done, what comes next and later, and what is known to be missing or wron
   `model_nodes`, `model_mesh`, `model_materials`, `model_close` (a .4ds parser after mafia-ragdoll's);
   `files.game`, `model.file`, `model.info`. Seen alike in the 1.2 and 1.0 labs: 3223 models listed, 3220 parsed (two
   scenes of version 27, one model of 58 refused), the player's and the taxi's files named.
+- **The meshes the game draws** (2026-10-17; item 8, block 6d of the order): `scene_focus`, `scene_pieces` (the
+  scene walked a little each frame, scanned every 0.25 s around every mod's box: the objects' meshes read once from
+  LS3D's buffers, their space found by the engine's bounding sphere; after mafia-ragdoll's scenery and
+  visual_meshes), `actor_meshes` (an actor's visuals posed now, another model hung on it left out); `scene.focus`,
+  `scene.pieces`, `actor.meshes`. Seen alike in the 1.2 and 1.0 labs: the freeride's start, 140 m around the player:
+  about 100 pieces and 4 400 to 5 600 triangles, none unreadable nor out of place, the walk of 24 000 frames 2 ms in
+  all; the taxi's 24 parts (body, four doors and windows, wheels) with Tommy in it left out.
 - **Interaction** (2026-10-16; item 15): `zone_add` (spheres the player crosses, on foot or in his car, in the world
   or following a frame), `use_point_add` (a record of the loader's in the game's own using objects, C_game +
   0x29EC: what Action finds on foot, offered alone or in the game's own choice menu with a label that is a text id
@@ -491,8 +498,9 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
 4. *(Done 2026-10-16.)* A mod's own items in the inventory (item 10's rest).
 5. *(Done 2026-10-16.)* The statistics and the profile's progress (item 10's rest: kills, cars stolen, distance,
    chapters, unlocks).
-6. *(6a done 2026-10-16: the water's height, zones for people and cars; 6b 2026-10-17: a prop's animation and
-   physics; 6c 2026-10-17: the game's files, each model's file, .4ds read; see "Done".)* The world and its geometry
+6. *(Done: 6a 2026-10-16, the water's height, zones for people and cars; 6b 2026-10-17, a prop's animation and
+   physics; 6c, the game's files, each model's file, .4ds read; 6d, the meshes the game draws, an actor's posed; see
+   "Done".)* The world and its geometry
    (item 8's rest: the water's height, each model's file, the drawn triangles, cars'
    meshes, the `.4ds` index; item 12's rest: a prop's collision shape and animations; zones for people and cars).
 7. The camera and control (item 9's rest: the game's own camera logic; item 14's rest: a mod's actions in the
@@ -547,7 +555,8 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
    `hits.cpp`, `knock.cpp`, core.cpp's shot hook.
 8. *(8a done 2026-10-16: the questions in `mml.h` (a ray, a sweep, the actors near a point, the collision's shapes, the
    ground under a point) answered by the game's own tests; the water's height (6a), the files each model came from and
-   the `.4ds` read (6c); see "Done". Left: the drawn triangles' cache, cars' meshes; Known gaps.)* **The world's geometry and questions about it** (R S W K P F). The file each loaded model came from (hooked from
+   the `.4ds` read (6c), the drawn triangles around a place and cars' meshes posed (6d); see "Done". What is left:
+  Known gaps.)* **The world's geometry and questions about it** (R S W K P F). The file each loaded model came from (hooked from
    the process's start: only the loader is there that early); the triangles of what the game draws around a point
    (cached, fed a few pieces a tick), the collision grids (static primitives, dynamic objects with their owners),
    cars' meshes posed with their parts, an index of every `.4ds` in the archives and its parser; one scan shared by
@@ -771,8 +780,14 @@ merged, sorted by importance):
   (world_water) is the collision's faces of surfaces 31 and 44: shallow water (44) was not met in a test, and the
   river has no bed in the collision (a mod's own depth is its to choose). A
   traffic pedestrian's objects are owned by the pedestrian system (`actor` is it, not a person), and `world_near`
-  lists actors only. Not done of item 8: the drawn triangles around a point cached (geom_capture gives a frame's),
-  cars' meshes posed.
+  lists actors only.
+- **The meshes the game draws** (host/meshes.cpp, block 6d): the finest LOD only; plain and lightmapped objects
+  only (billboards, particles, skinned people, morphs, mirrors are left out); a piece is told by its bounding sphere
+  touching a box (a long piece may hold far triangles). Frames LS3D frees during a mission are not followed (each
+  read is guarded; the next walk forgets them). A mesh whose vertices were changed by the game after it was read (a
+  car's dents for `actor_meshes`: read once a mesh) is read again only when its LOD's vertex count or start
+  changes. No mover events: `version` and `moving` are read by the mod. The scene's numbers (about 100 pieces in
+  140 m at the freeride's start) were not compared with what the screen shows.
 - **The game's files and models** (host/models.cpp, block 6c): the archives' keys are the game's table's, written in
   the host (not read from the game): an archive the game gets with other keys (a mod's own .dta) is not listed. The
   game's folder's own files are listed only under the folders the archives hold. A frame of the mission's scene has

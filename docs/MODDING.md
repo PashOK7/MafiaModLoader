@@ -310,6 +310,36 @@ H->model_close(M, m);
 - `call files.game {"match": "models\\tommy*"}`, `model.file {"actor": "car" | "frame" | "prop"}`, `model.info
   {"file": "taxi00", "meshes"}`.
 
+### The meshes the game draws (the scenery around a place, an actor's parts posed)
+
+```c
+const float lo[3] = {x - 30, y - 10, z - 30}, hi[3] = {x + 30, y + 20, z + 30};
+H->scene_focus(M, lo, hi);                           /* once, and again when the place moves */
+/* later frames: */
+MmlMeshPiece pieces[512];
+int n = H->scene_pieces(M, pieces, 512);
+for (int i = 0; i < n && i < 512; i++) {
+    const MmlMeshPiece *p = &pieces[i];               /* world = (pos, 1) * p->world; p->index: 3 a triangle */
+}
+n = H->actor_meshes(M, car, pieces, 512);            /* the car's body, doors, wheels, where they are now */
+```
+
+- Read from LS3D's own vertex and index buffers (the finest LOD of each visual), not from files: what the game
+  draws, as it is now (a car's dents are in its buffers).
+- **The scenery** is shared by every mod: the host walks the mission's scene a little each frame (a city's 24 000
+  frames in about 2 ms, spread over frames), and every 0.25 s takes the plain and lightmapped objects whose bounds
+  touch any mod's box, shown, not a part of an actor (people, cars: `actor_meshes`), each mesh read once within 3 ms
+  a scan (the rest at the next scans; the first scan of a mission takes its time). `scene_pieces` gives those
+  touching this mod's box. A piece's `world` puts its vertices in the world (most meshes are in their frame's space,
+  the terrain's and some large pieces in the world's: the host finds which by the engine's bounding sphere);
+  `version` changes when it moves (a door), `moving` says it moved within the last second. Billboards, particles,
+  skinned and morphed meshes, mirrors are not pieces.
+- **`actor_meshes`**: every shown visual under the actor's model, posed by their frames now (a door open, the
+  wheels turned), without another model hung on it (a person sitting in the car).
+- The arrays are the host's until the next frame: copy what is kept.
+- `call scene.focus {"at": "player", "radius": 30}`, `scene.pieces {"limit"}` (with the scan's numbers),
+  `actor.meshes {"actor": "car"}`.
+
 ### Questions to the world (rays, sweeps, the ground, the water, what is near, the collision's shapes)
 
 ```c

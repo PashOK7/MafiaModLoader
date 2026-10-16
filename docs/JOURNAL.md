@@ -1336,3 +1336,13 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   LS3D's model loader in 1.0 named it as every caller): left as it is, written into the Known gaps.
 - **In both labs** alike (ROADMAP "Done"): every `.4ds` listed and parsed through the bridge (3220 of 3223).
 - **Tests**: offline ALL PASSED.
+
+## 2026-10-17: the meshes the game draws, an actor's posed (block 6d of the order)
+
+- **Made** `host/meshes.cpp` after mafia-ragdoll's scene_walk, scenery and visual_meshes: the scene walked a
+  little each frame, scanned every 0.25 s around the mods' boxes, meshes read from LS3D's buffers through their
+  Direct3D 8 vtables; `scene_focus`, `scene_pieces`, `actor_meshes`; `scene.focus`, `scene.pieces`, `actor.meshes`.
+- **A first result corrected**: `actor_meshes` of the taxi gave the player's Thompson and its clip (the player in a
+  car is the car's child): the walk now stops at another model (type 9) and below a hidden frame.
+- **In both labs** alike (ROADMAP "Done").
+- **Tests**: offline ALL PASSED; check_builds ALL PASSED.

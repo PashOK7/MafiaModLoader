@@ -501,6 +501,21 @@ typedef struct MmlModelMaterial {
     char texture[64];       /* its diffuse picture (maps\ implied), "" none */
     char opacity_texture[64];
 } MmlModelMaterial;
+/* a mesh the game draws (scene_pieces, actor_meshes): one visual's triangles at its finest LOD, as LS3D holds them */
+typedef struct MmlMeshPiece {
+    void *visual;           /* the LS3D visual frame */
+    float world[16];        /* its vertices' space to the world now (row vectors: rows 0..2 axes with scale, row 3 the
+                               position); a piece holding world coordinates has the identity */
+    const float *pos;       /* 3 a vertex */
+    const float *normal;    /* 3 a vertex (the side a face is seen from), NULL: none */
+    int vertices;
+    const uint32_t *index;  /* 3 a triangle */
+    const uint32_t *material;   /* a triangle's material flags (the .4ds bits: 0x10000000 two-sided, 0x20000000 a
+                                   colour key's cut-outs, 0x40000000 translucent, 0x80000000 additive light) */
+    int triangles;
+    uint32_t version;       /* changes when its mesh or its place changed */
+    int moving;             /* 1: it moved within the last second (a door, a gate) */
+} MmlMeshPiece;
 /* game_files' function: one file's name (as the game opens it) and where it comes from ("a2.dta", "folder", a mod's
    id); return nonzero to stop */
 typedef int (*MmlFileFn)(const char *name, const char *source, void *user);
@@ -1274,6 +1289,17 @@ typedef struct MmlHost {
     int (*model_mesh)(MmlMod *mod, int model, int node, int lod, MmlModelMesh *out);
     int (*model_materials)(MmlMod *mod, int model, MmlModelMaterial *out, int max);
     void (*model_close)(MmlMod *mod, int model);
+
+    /* ---- the meshes the game draws (both builds; docs/MODDING.md "The meshes the game draws"). scene_focus: the box
+     * (world) whose scenery the mod wants (NULL, NULL: none): the host walks the mission's scene a little each frame
+     * and every 0.25 s takes the visuals of objects around the boxes of every mod (shown, not a part of an actor),
+     * their meshes read once from LS3D's own buffers within a few milliseconds a scan (the rest at the next scans).
+     * scene_pieces: the pieces of the last scan touching the mod's box; how many there are, filling out up to max.
+     * actor_meshes: an actor's visuals now (a car's body, doors, wheels, each in its frame's pose; -1: no model;
+     * people's skinned meshes are not in it). The arrays are the host's until the next frame. Game thread. */
+    int (*scene_focus)(MmlMod *mod, const float lo[3], const float hi[3]);
+    int (*scene_pieces)(MmlMod *mod, MmlMeshPiece *out, int max);
+    int (*actor_meshes)(MmlMod *mod, void *actor, MmlMeshPiece *out, int max);
 } MmlHost;
 
 #define MML_ZONE_PLAYER 0x1u

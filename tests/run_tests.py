@@ -895,6 +895,10 @@ def main():
         check('game_files with no game: the mods\' files only, each told; model_open, _nodes, _mesh, _materials, _file: none',
               r['ok'] and m['files'] == m['told'] and m['files'] > 0 and m['open'] == 0 and m['nodes'] == 0 and m['mesh'] == 0 and
               m['materials'] == 0 and m['file'] == 0 and m['untouched'] == 1, r)
+        check('scene_focus with no game: taken (and let go); scene_pieces none; actor_meshes of no actor: -1',
+              r['ok'] and m['focus'] == 1 and m['pieces'] == 0 and m['actor'] == -1 and m['off'] == 1, r)
+        r = b.call('scene.pieces')
+        check('scene.pieces with no game: none, saying there is no focus', r['ok'] and r['result']['pieces'] == 0 and 'scene.focus' in str(r), r)
         r = b.call('files.game', {'match': '*', 'limit': 3})
         check('files.game with no game: the mods\' files, from their mods', r['ok'] and r['result']['count'] > 0 and
               all(f['from'] not in ('folder',) and not f['from'].endswith('.dta') for f in r['result']['files']), r)
