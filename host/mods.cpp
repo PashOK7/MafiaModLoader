@@ -311,6 +311,18 @@ void *H_HumanPlayer(MmlMod *m) { return Alive(m) ? HumanPlayer() : nullptr; }
 int H_CameraOverride(MmlMod *m, MmlViewFn fn, void *user) { return Alive(m) ? CameraOverride(m, fn, user) : 0; }
 int H_CameraProject(MmlMod *m, const float w[3], float s[3]) { return Alive(m) && w && s ? RenderProject(w, s) : 0; }
 int H_CameraRay(MmlMod *m, float x, float y, float o[3], float d[3]) { return Alive(m) && o && d ? RenderRay(x, y, o, d) : 0; }
+int H_WorldRay(MmlMod *m, const float f[3], const float t[3], uint32_t what, void *ignore, MmlHit *hit) {
+    return Alive(m) && f && t && hit ? WorldRay(f, t, what, ignore, hit) : 0;
+}
+int H_WorldSweep(MmlMod *m, const float f[3], const float t[3], float r, uint32_t what, void *ignore, MmlHit *hit) {
+    return Alive(m) && f && t && hit ? WorldSweep(f, t, r, what, ignore, hit) : 0;
+}
+int H_WorldNear(MmlMod *m, const float at[3], float radius, int type, void **out, int max) {
+    return Alive(m) && at ? WorldNear(at, radius, type, out, out ? max : 0) : 0;
+}
+int H_WorldShapes(MmlMod *m, const float lo[3], const float hi[3], uint32_t what, MmlShape *out, int max) {
+    return Alive(m) && lo && hi ? WorldShapes(lo, hi, what, out, out ? max : 0) : 0;
+}
 int H_GeomCapture(MmlMod *m, const char *pattern, MmlGeomFn fn, void *user) {
     if (!Alive(m)) return 0;
     std::string err;
@@ -743,6 +755,10 @@ void ModsInit() {
     g_host.camera_override = H_CameraOverride;
     g_host.camera_project = H_CameraProject;
     g_host.camera_ray = H_CameraRay;
+    g_host.world_ray = H_WorldRay;
+    g_host.world_sweep = H_WorldSweep;
+    g_host.world_near = H_WorldNear;
+    g_host.world_shapes = H_WorldShapes;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();
@@ -834,6 +850,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (ConfigMethod(method, paramsJson, reply, &ok)) return ok;
     if (MenusMethod(method, paramsJson, reply, &ok)) return ok;
     if (ScriptMethod(method, paramsJson, reply, &ok)) return ok;
+    if (CollideMethod(method, paramsJson, reply, &ok)) return ok;
     if (WorldMethod(method, paramsJson, reply, &ok)) return ok;
     if (FilesMethod(method, paramsJson, reply, &ok)) return ok;
     if (RenderMethod(method, paramsJson, reply, &ok)) return ok;
@@ -944,7 +961,7 @@ std::string CommandsList() {
                           "input.seq", "input.release", "input.state", "text.get", "text.find", "screenshot", "screenshot.state",
                           "draw.text", "draw.rect", "draw.line", "draw.clear", "draw.state", "config.get", "config.set",
                           "menu.item", "menu.items", "menu.item.remove", "menu.page", "menu.page.set", "menu.page.close", "menu.def", "menu.click", "input.mouse", "input.text",
-                          "script.run", "script.state", "script.stop", "script.list", "files.list", "files.which", "files.read", "render.state", "gfx.state", "gfx.reset", "view.state", "view.show", "geom.hide", "geom.show", "geom.state", "geom.survey", "geom.capture", "prof.state", "prof.reset", "prof.sample", "native.call", "humans.list", "human.skeleton", "human.pose", "watch.set", "watch.show", "watch.clear", "camera.state", "camera.set", "camera.release"})
+                          "script.run", "script.state", "script.stop", "script.list", "files.list", "files.which", "files.read", "render.state", "gfx.state", "gfx.reset", "view.state", "view.show", "geom.hide", "geom.show", "geom.state", "geom.survey", "geom.capture", "prof.state", "prof.reset", "prof.sample", "native.call", "humans.list", "human.skeleton", "human.pose", "watch.set", "watch.show", "watch.clear", "camera.state", "camera.set", "camera.release", "world.ray", "world.sweep", "world.ground", "world.near", "world.shapes"})
         out.push_back({{"name", m}, {"owner", "host"}});
     for (auto &kv : g_commands) out.push_back({{"name", kv.first}, {"owner", Who(kv.second.mod)}, {"help", kv.second.help}});
     return out.dump();

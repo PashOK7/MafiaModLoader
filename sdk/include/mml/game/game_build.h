@@ -299,6 +299,18 @@ struct ExeBuild {
     // thiscall(C_game*, void* source, S_vector* pos, float radius, float damage, bool world, bool large, bool smoke,
     // int sound), ret 0x20. carExplosion: C_car::CarExplosion, thiscall(C_car*, uint flags), ret 4: a car blows up.
     uintptr_t newShoot, newExplosion, carExplosion;
+    // Questions to the world (host/collide.cpp). testLineAll: g_collision::_TestLineH, thiscall(g_collision*, const
+    // S_vector *from, const S_vector *delta, S_vector *hit, S_vector *normal, uint movingMask, uint staticMask) ->
+    // the primitive or moving object hit (0: none), ret 0x18: the static world (a primitive whose first dword has a
+    // bit of staticMask, or 0x20, is passed; -1: none tested) and the moving objects (one whose class +8 has a bit
+    // of movingMask is passed; -1: none tested); a ray with no horizontal length goes to _TestLineV. The normal comes
+    // out of the surface. TestLineHStatic (testLine) is it with movingMask -1. The sphere's sweep is the thunk
+    // sphereSweep (TestSphereB with ecx = g_collision; stdcall(from, delta, float radius, S_vector *centre where it
+    // stops, S_vector *normal, uint movingMask, uint staticMask), ret 0x1C). collExclude:
+    // g_collision::DynSetNextCollOwnerMult, thiscall(g_collision*, objects*, int count, int), ret 0xC: the moving
+    // objects the next tests pass (+0x2B8 the array, +0x2BC its count, +0x2B0 the third), as the game sets its own
+    // shooter's and puts (0, 0, 0) back after.
+    uintptr_t testLineAll, collExclude;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -425,6 +437,9 @@ inline const ExeBuild kExe12 = {
     // what happens (2026-10-16: MafiaOnline's addresses, their rets read: 0x5A8E68 ret 0x2C, 0x5AB66F ret 0x20,
     // 0x422ACB ret 4)
     0x5A84A0, 0x5AAE10, 0x421D60,
+    // questions to the world (2026-10-16: st0rm94's and MafiaOnline's names, both read in the disassembly: ret 0x18,
+    // ret 0xC)
+    0x5C8770, 0x5C3D60,
 };
 
 inline const ExeBuild kExe10 = {
@@ -501,6 +516,9 @@ inline const ExeBuild kExe10 = {
     // what happens (2026-10-16: st0rm94's game_new_shoot, game_new_explosion, car_explosion; their rets read:
     // 0x5E47B8 ret 0x2C, 0x5E7065 ret 0x20, 0x4699B7 ret 4)
     0x5E3DF0, 0x5E6760, 0x468BC0,
+    // questions to the world (2026-10-16: st0rm94's collision_test_line_horizontal and
+    // collision_dyn_set_next_multiple_owners, the same code as 1.2's: ret 0x18, ret 0xC)
+    0x5838A0, 0x57EE90,
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,

@@ -71,7 +71,9 @@ others); `input` plays a timed sequence inside the game: the game's actions by n
 coordinates), `call input.text {"text": "Tommy"}` types. **In the world**: `spawn {"car": "Bolt-Thrower"}` or
 `{"human": "Paulie", "in": "car"}` makes a car or a person of any model (the game's own functions), `teleport {actor,
 to}` moves one, `give {actor, item: "Thompson 1928"}` arms by name (`call world.cars`, `world.items` list the names;
-`world.seat`, `world.remove`). `script {code, act, flt, owner}` runs a
+`world.seat`, `world.remove`). **Ask the world**: `call world.ray {"from": "camera"}` (what the crosshair looks at),
+`world.ground {"at"}`, `world.near {"radius"}`, `world.shapes` (the game's own collision tests and grids).
+`script {code, act, flt, owner}` runs a
 program on the game's own script machine (the missions' language: teleport, spawn copies, weapons, deaths, cars,
 weather, traffic, camera; docs/SCRIPTS.md has the recipes), `script_commands {query}` tells a command's arguments. It returns the
 player's state when the last step has ended. `call input.actions` lists every action and its binding.

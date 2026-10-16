@@ -41,6 +41,11 @@ Taps can also start with the game, before its first frame: `"taps": ["5409D0 n=4
 | `humans.list` | | every person (`actor`, `model`, `pos`, `health`, `alive`, `player`, `vehicle`), `count` |
 | `human.skeleton` | `actor` (default `"player"`) | `bones`: `name`, `frame`, `world_pos`, `rot` (w x y z), `pos` (local), `x_axis`, `y_axis`, `z_axis` |
 | `human.pose` | `actor`, `bones` (`{"r_arm": {"rot": [w, x, y, z], "pos": [x, y, z]}}`), `ms` (default 3000), `clear` | the bones held in that pose, drawn every frame for `ms` |
+| `world.ray` | `from` (`[x, y, z]`, an actor (1.5 m up), `"camera"` (default: the last frame's eye through `screen`, default the middle)), `to` (`[x, y, z]`, an actor) or `dir` and `length` (100), `what` (`all`, `static`, `moving`), `no_people`, `no_cars`, `ignore` (an actor; default the `from` actor, the player for `"camera"`; `""` none) | the game's ray test: `hit`, `pos`, `normal`, `distance`, `fraction`, `kind`, `flags`, `prim`, `surface` (static) or `actor`, `name`, `classes` (moving); `from`, `to`, `ignored` |
+| `world.sweep` | as `world.ray`, `radius` (0.3) | the game's sphere sweep: the same, `pos` the sphere's centre where it stops |
+| `world.ground` | `at` (`[x, y, z]` or an actor, 0.5 m up; default the player), `depth` (100) | the static world straight below: `height`, `normal`, `surface`... |
+| `world.near` | `at`, `radius` (30), `type` (0 any, 2 people, 4 cars), `max` (50) | the actors within `radius`, nearest first: `actor`, `type`, `name`, `pos`, `distance`; `count` |
+| `world.shapes` | `at` and `radius` (3), or `lo`, `hi`; `what`, `max` (100) | the collision shapes there: `count`, `kinds` (counts), `shapes` (`kind`, `corners` and `normal`, or `center`, `half`, `axes`, `radius`; `surface` or `actor`, `classes`) |
 | `camera.state` | | the frame's camera: `override` (a mod's id, `the bridge (camera.set)`, `none`), `frames_overridden`, `declined` (the mod's function returned 0), `skipped`, `last` (drawn, or why not), `frame_camera` (`eye`, `fwd` of the last frame drawn) |
 | `camera.set` | `eye`, `at` or `dir`, `up` (default `[0, 1, 0]`), `fov` (vertical degrees; default the game's), `ms` (default 10000) | the frame drawn from that camera from the next frame for `ms` (over a mod's `camera_override` while held); only the drawing |
 | `camera.release` | | the bridge's camera given back |

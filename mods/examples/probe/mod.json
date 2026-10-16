@@ -1,0 +1,11 @@
+{
+  "id": "probe",
+  "name": "Probe: the world's collision asked and shown (the crosshair's ray, the ground, a sweep, the shapes)",
+  "version": "0.1.0",
+  "type": "native",
+  "entry": "probe.dll",
+  "enabled": false,
+  "builds": ["1.2", "1.0"],
+  "load_order": 100,
+  "depends": []
+}

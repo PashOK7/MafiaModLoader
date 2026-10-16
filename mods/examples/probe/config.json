@@ -1,0 +1,5 @@
+{
+  // The defaults of probe's settings.
+  "wire": 1,          // the static world's collision around the player drawn as lines (0: off)
+  "wire_radius": 4    // metres around him
+}

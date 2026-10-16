@@ -288,6 +288,15 @@ What is done, what comes next and later, and what is known to be missing or wron
   on `events.since` and MCP `wait`. Both builds' addresses checked by `check_builds.py`. The example
   `mods/examples/tally`; seen in the 1.2 and 1.0 labs (the player's shots, his leaving the taxi, a person killed by
   a script, a car blown up with its explosion and the hit it gave the player).
+- **Questions to the world** (2026-10-16; item 8, block 8a): `world_ray` (g_collision::_TestLineH, the bullets'
+  and the AI's test: the static world and the moving objects), `world_sweep` (TestSphereB, the moves' sphere test),
+  an actor ignored the game's way (its objects on the tests' exclusion list, DynSetNextCollOwnerMult, the list put
+  back after), `world_near` (the actors within a radius, nearest first), `world_shapes` (the static grid's
+  triangles, boxes, spheres and poles and the moving objects' boxes and spheres in a box); `world.ray` (from the
+  camera: what the crosshair looks at), `world.sweep`, `world.ground`, `world.near`, `world.shapes`. Both builds'
+  addresses checked by `check_builds.py`. The example `mods/examples/probe`; seen in the 1.2 and 1.0 labs (the
+  ground under Tommy, a ray through him hitting him without `ignore` and the taxi with it, a sweep stopping at the
+  taxi, the shapes around him); offline tests with no game.
 - **The camera** (2026-10-16; item 9, block 9a): `camera_override` (the frame of the mission's world drawn from a
   mod's camera: its pose, an asymmetric frustum, its range, its room; the camera's bytes put back after the frame,
   the scene views starting from it), `camera_project` and `camera_ray` (the last frame's camera, overridden or not,
@@ -353,7 +362,9 @@ V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselv
    whom, a car entered, left or stolen, an item picked up, money changed, a mission's objective done, the mission
    won or failed: today only a hit on a `C_human` and the missions' opening and closing are told. Reference:
    `hits.cpp`, `knock.cpp`, core.cpp's shot hook.
-8. **The world's geometry and questions about it** (R S W K P F). The file each loaded model came from (hooked from
+8. *(8a done 2026-10-16: the questions in `mml.h` (a ray, a sweep, the actors near a point, the collision's shapes, the
+   ground under a point) answered by the game's own tests; see "Done". Left: the water's height, the files each model
+   came from, the drawn triangles' cache, cars' meshes, the `.4ds` index; Known gaps.)* **The world's geometry and questions about it** (R S W K P F). The file each loaded model came from (hooked from
    the process's start: only the loader is there that early); the triangles of what the game draws around a point
    (cached, fed a few pieces a tick), the collision grids (static primitives, dynamic objects with their owners),
    cars' meshes posed with their parts, an index of every `.4ds` in the archives and its parser; one scan shared by
@@ -504,6 +515,13 @@ merged, sorted by importance):
   matrix being the camera's backdrop view, bit for bit (it was, every drawing, in both labs). `MML_VIEW_OWN_SECTOR`
   (a camera in another room) was not tried. The first two or three reloads of `rear_mirror` added 2..13 handles each (taken to be
   Direct3D's own warming up: views made and taken back by mode changes added none); then 0.
+- **Questions to the world** (host/collide.cpp, item 8a): the static mask is 0 (every primitive the game does not
+  always pass, 0x20): the bits the bullets pass besides (0x200000 half the time, 0x400000) are not named. The water's
+  height is not answered: the river's drawn plane (y -9.99) is not in the collision the rays were cast at, and where
+  the game keeps its water (a car's sinking, a person's drowning) was not looked for (the owner may know where). A
+  traffic pedestrian's objects are owned by the pedestrian system (`actor` is it, not a person), and `world_near`
+  lists actors only. Not done of item 8: the file each loaded model came from, the drawn triangles around a point
+  cached (geom_capture gives a frame's), cars' meshes posed, an index and parser of the archives' `.4ds`.
 - **The camera** (host/view.cpp, item 9a): only the drawing is the mod's: the game's camera logic (its spring
   behind the player, its distance, its collision with walls, the car's cameras), the player's aim and crosshair (it
   stays in the screen's middle, now pointing where the game's camera looks) and the sound's listener are the game's.

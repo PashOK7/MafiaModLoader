@@ -342,6 +342,27 @@ def main(a):
         for name, (exe, ls, gexe, gls) in builds.items():
             first = next((i for i in gexe.md.disasm(gexe.at(exe[f] - 0x400000, 0x2000), exe[f]) if i.mnemonic == 'ret'), None)
             check(first is not None and first.op_str == ret, f'{name} {f}: its first ret is ret {ret}')
+    # Questions to the world (host/collide.cpp): _TestLineH and DynSetNextCollOwnerMult begin the same in both builds
+    # and end with ret 0x18 and ret 0xC; the latter writes the exclusion list (+0x2B8, +0x2BC, +0x2B0); the sphere
+    # sweep's thunk sets ecx to g_collision and jumps to a function ending with ret 0x1C.
+    for f, ret in (('testLineAll', '0x18'), ('collExclude', '0xc')):
+        a, b = norm(g12.insn(e12[f] - 0x400000)), norm(g10.insn(e10[f] - 0x400000))
+        check(a == b, f'{f}: 1.2 "{a}" vs 1.0 "{b}"')
+        for name, (exe, ls, gexe, gls) in builds.items():
+            first = next((i for i in gexe.md.disasm(gexe.at(exe[f] - 0x400000, 0x2000), exe[f]) if i.mnemonic == 'ret'), None)
+            check(first is not None and first.op_str == ret, f'{name} {f}: its first ret is ret {ret}')
+    for name, (exe, ls, gexe, gls) in builds.items():
+        ce = ' '.join(f'{i.mnemonic} {i.op_str}' for i in gexe.md.disasm(gexe.at(exe['collExclude'] - 0x400000, 0x30), exe['collExclude']))
+        check(all(f'[ecx + {o:#x}]' in ce for o in (0x2B8, 0x2BC, 0x2B0)), f'{name} collExclude writes +0x2B8, +0x2BC, +0x2B0')
+        th = list(gexe.md.disasm(gexe.at(exe['sphereSweep'] - 0x400000, 0x20), exe['sphereSweep']))
+        mv = next((i for i in th if i.mnemonic == 'mov' and i.op_str.startswith('ecx, 0x')), None)
+        jm = next((i for i in th if i.mnemonic == 'jmp'), None)
+        ok = mv is not None and int(mv.op_str[5:], 16) == exe['collision'] and jm is not None
+        if ok:
+            tgt = int(jm.op_str, 16)
+            first = next((i for i in gexe.md.disasm(gexe.at(tgt - 0x400000, 0x2000), tgt) if i.mnemonic == 'ret'), None)
+            ok = first is not None and first.op_str == '0x1c'
+        check(ok, f'{name} sphereSweep: ecx = g_collision, a jump to a function with ret 0x1c')
     # The scene drawn from another camera (host/view.cpp): I3D_camera's vtable is written by its constructor; its
     # update (+0x44) asks the scene's GetSector (+0xB4) for the sector it keeps at +0x3F8 and makes the view (+0x164),
     # the view x projection (+0x1E4) and the backdrop's and the near pass' (+0x324, +0x3A4); the field of view's

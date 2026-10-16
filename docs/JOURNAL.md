@@ -967,3 +967,28 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - `camera.state` counted the frames the mod's function declined (returned 0) as skipped: now `declined`.
 - **Tests**: offline the override taken and given back, project and ray with no frame, `camera.set` held, released,
   refused without an eye or with the point at the eye. ALL PASSED.
+
+## 2026-10-16: questions to the world (item 8, block 8a)
+
+- **Read**: the knowledge base had g_collision's tests by st0rm94's and MafiaOnline's names. `_TestLineH`
+  (0x5C8770; 1.0 0x5838A0) takes two masks, the moving objects' (-1: none) and the static world's, and goes to
+  `_TestLineV` for a ray with no horizontal length; `TestLineHStatic` (game.h's TestLine) is it with the moving
+  part off, `TestLineHDynamic` the moving part alone. `TestSphereB` (through the stdcall thunk 0x5D5940 that sets
+  ecx) takes the same two masks (-1 skips a part). The moving tests pass the objects in the exclusion list at
+  g_collision +0x2B8 (count +0x2BC), which `DynSetNextCollOwnerMult` sets as the game sets its shooter's. A moving
+  object passes when its class (+8) has a bit of the mask: 0x100 people, 0x200 cars. All read in both builds'
+  disassembly (the same code), checked by `check_builds.py`.
+- **Made** `host/collide.cpp`: `world_ray`, `world_sweep` (an actor ignored through the exclusion list, each step
+  guarded, the list put back as it was: the game leaves its array pointing at its own single slot with the count
+  0), `world_near` (the actors, by their model's world position), `world_shapes` (the grids read as
+  mafia-ragdoll's game_collision.cpp reads them); five bridge methods.
+- **In the labs** (1.2 and 1.0 alike, to the millimetre): the ground under Tommy at -5.025 (a triangle, surface 4);
+  a ray across him hit his sphere (class 0x102) and, ignoring him, the taxi's box (0x202) 3.84 m on; a 0.4 m sphere
+  swept from his chest stopped 0.46 m on, at the taxi; 11 shapes within 3 m (7 triangles, the taxi's two boxes,
+  his two spheres); the crosshair's ray from the camera hit a building 78 m away. A ray starting inside him does
+  not hit him. The game's exclusion list read after the tests: as before them.
+- **The water**: rays down over the river by Little Italy's bridge found the embankment's triangles (-6.2..-5.5),
+  not a water surface: the water's height is left for the owner (Known gaps).
+- **The example** `probe`: what the crosshair looks at, the ground under the player, a sweep ahead, the people
+  near, the static collision around him drawn as lines; seen in both labs.
+- **Tests**: offline the four functions with no game, the bridge's refusals. ALL PASSED; check_builds ALL PASSED.

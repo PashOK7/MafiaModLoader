@@ -377,6 +377,38 @@ typedef struct MmlBone {
     float pos[3];           /* its local position, in its parent's space */
 } MmlBone;
 
+/* Questions to the world (world_ray, world_sweep, world_shapes below). */
+#define MML_WORLD_STATIC    0x1u     /* the static world: buildings, the ground, fences, poles */
+#define MML_WORLD_MOVING    0x2u     /* the moving objects: people, cars, doors... */
+#define MML_WORLD_ALL       0x3u
+#define MML_WORLD_NO_PEOPLE 0x100u   /* moving objects of people passed (their class bit) */
+#define MML_WORLD_NO_CARS   0x200u   /* ... of cars */
+typedef struct MmlHit {
+    uint32_t size;          /* set by the host */
+    float pos[3];           /* the point hit; a sweep's: the sphere's centre where it stops */
+    float normal[3];        /* the surface's, out of it (a unit vector) */
+    float fraction;         /* how far from `from` to `to`, 0..1 */
+    void *actor;            /* a moving object's owner (an actor; the traffic's pedestrians: their system), NULL static */
+    uint32_t flags;         /* the game's first dword of what was hit: its kind in the low byte (static: 1..7 a
+                               triangle, 0x80 a box, 0x81 an axis-aligned box, 0x82 a sphere, 0x83 a box, 0x84 a pole;
+                               moving: 0x40 a box, 0x42 and 0x44 spheres); a static one's surface in the top byte */
+    uint32_t classes;       /* a moving object's class bits (0x100 a person, 0x200 a car), 0 for the static world */
+    const void *prim;       /* the game's primitive or object */
+} MmlHit;
+enum { MML_SHAPE_TRIANGLE = 1, MML_SHAPE_BOX = 2, MML_SHAPE_SPHERE = 3, MML_SHAPE_POLE = 4 };
+typedef struct MmlShape {
+    uint32_t kind;          /* MML_SHAPE_* */
+    uint32_t flags;         /* as MmlHit's */
+    uint32_t classes;       /* as MmlHit's */
+    float corner[3][3];     /* a triangle's corners */
+    float normal[3];        /* a triangle's, out of the solid */
+    float center[3];        /* a box's, a sphere's; a pole's x and z (it stands from far below to far above) */
+    float half[3];          /* a box's half sizes along its axes; a sphere's, a pole's radius in half[0] */
+    float axes[9];          /* a box's axes (rows: x, y, z; unit vectors) */
+    void *actor;            /* a moving object's owner, NULL static */
+    const void *prim;       /* the game's primitive or object */
+} MmlShape;
+
 /* The frame's measures (frame_stats below): the frames Present to Present, the last 600 of them. */
 typedef struct MmlFrameStats {
     uint32_t size;
@@ -658,6 +690,21 @@ typedef struct MmlHost {
     int (*camera_override)(MmlMod *mod, MmlViewFn fn, void *user);
     int (*camera_project)(MmlMod *mod, const float world[3], float screen[3]);
     int (*camera_ray)(MmlMod *mod, float x, float y, float origin[3], float dir[3]);
+
+    /* ---- questions to the world: the game's own collision tests (both builds; docs/MODDING.md "Questions to the
+     * world"). `what`: MML_WORLD_STATIC (buildings, the ground, fences, poles), MML_WORLD_MOVING (people, cars,
+     * doors: the game's moving objects), both; MML_WORLD_NO_PEOPLE, MML_WORLD_NO_CARS leave those out. `ignore`:
+     * an actor whose own objects are passed (the shooter's, the player's), or NULL. 1: hit, filled; 0: nothing (or no
+     * mission). Called on the game thread (any event of the mod's, a command). */
+    int (*world_ray)(MmlMod *mod, const float from[3], const float to[3], uint32_t what, void *ignore, MmlHit *hit);
+    /* a sphere of `radius` moved from `from` to `to`: where it stops (hit->pos: its centre there), what it touched */
+    int (*world_sweep)(MmlMod *mod, const float from[3], const float to[3], float radius, uint32_t what, void *ignore, MmlHit *hit);
+    /* the actors within `radius` of a point (their model's world position), nearest first; `type` 0 any, else the
+     * game's actor type (2 a person, 4 a car); returns how many there are (more than `max`: the first max given) */
+    int (*world_near)(MmlMod *mod, const float at[3], float radius, int type, void **out, int max);
+    /* the collision shapes in a box (the world's axes): the static world's primitives and the moving objects, as
+     * the game keeps them in its grids; returns how many there are (more than `max`: the first max given) */
+    int (*world_shapes)(MmlMod *mod, const float lo[3], const float hi[3], uint32_t what, MmlShape *out, int max);
 } MmlHost;
 
 #define MML_FILE_GAME 1              /* file_read: the game's own file, not a mod's of the same name */

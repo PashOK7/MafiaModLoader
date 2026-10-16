@@ -776,6 +776,18 @@ def main():
         check('camera.set with the point at the eye: refused', not r['ok'], r)
         r = b.call('camera.set', {'at': [1, 1, 1]})
         check('camera.set with no eye: refused, saying what it takes', not r['ok'] and 'eye' in str(r), r)
+        # questions to the world with no game: nothing hit, near or there; the bridge says why
+        r = b.call('kit.ask')
+        check('world_ray, world_sweep, world_near, world_shapes with no game: 0',
+              r['ok'] and r['result'] == {'ray': 0, 'sweep': 0, 'near': 0, 'shapes': 0}, r)
+        r = b.call('world.ray', {'from': [0, 10, 0], 'to': [0, -10, 0]})
+        check('world.ray with no game: an error, saying why', not r['ok'] and ('not known' in str(r) or 'no mission' in str(r)), r)
+        r = b.call('world.ray', {'from': 'camera'})
+        check('world.ray from the camera with no frame: an error, saying why', not r['ok'] and 'no frame' in str(r), r)
+        r = b.call('world.ray', {'from': [0, 0, 0]})
+        check('world.ray with no end: refused, saying what it takes', not r['ok'] and 'dir' in str(r), r)
+        r = b.call('world.shapes', {'lo': [-5, -5, -5], 'hi': [5, 5, 5]})
+        check('world.shapes with no game: none', r['ok'] and r['result']['count'] == 0, r)
         # a hardware watchpoint: the field the kit's command writes on the game thread, found with the code that wrote it
         addr = b.call('kit.poke', {'addr': 1})['result']
         r = b.call('watch.set', {'addr': addr, 'mode': 'write'})

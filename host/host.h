@@ -215,6 +215,13 @@ bool WorldSeat(void *human, void *car, int seat, std::string *err);             
 void WorldActorGone(void *actor);         // (game_hooks.cpp) out of the spawned list
 void WorldMissionClose();
 bool WorldMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+// questions to the world (collide.cpp): the game's own ray and sphere tests, the actors near a point, the collision
+// grids' shapes; world.ray, world.sweep, world.ground, world.near, world.shapes
+int WorldRay(const float from[3], const float to[3], uint32_t what, void *ignore, MmlHit *hit);
+int WorldSweep(const float from[3], const float to[3], float radius, uint32_t what, void *ignore, MmlHit *hit);
+int WorldNear(const float at[3], float radius, int type, void **out, int max);
+int WorldShapes(const float lo[3], const float hi[3], uint32_t what, MmlShape *out, int max);
+bool CollideMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 
 // ---- the frame's drawing (render.cpp): I3D_driver::Render hooked; MML_EVENT_RENDER_*, PRESENT; render.state
 void RenderInit();                        // after the game's hooks

@@ -279,6 +279,42 @@ H->camera_ray(M, 400, 300, o, d);              /* the ray through the screen's m
 - `mods/examples/orbit_cam` (not enabled by default; F8, `orbit_cam.on {"on": true}`): the camera circles the
   player while he is played as usual; a label over his head through `camera_project`.
 
+### Questions to the world (rays, sweeps, the ground, what is near, the collision's shapes)
+
+```c
+MmlHit h;
+float from[3] = {x, y + 1.5f, z}, to[3] = {x + 100 * dx, y + 1.5f, z + 100 * dz};
+if (H->world_ray(M, from, to, MML_WORLD_ALL, H->human_player(M), &h)) {
+    /* h.pos, h.normal, h.fraction; h.actor: whose object (NULL: the static world); h.classes 0x100 a person,
+       0x200 a car; h.flags >> 24: a static surface's material */
+}
+H->world_sweep(M, from, to, 0.3f, MML_WORLD_ALL, NULL, &h);    /* h.pos: the sphere's centre where it stops */
+void *people[32];
+int n = H->world_near(M, from, 20, 2, people, 32);             /* type 2 people, 4 cars, 0 any; nearest first */
+MmlShape s[256];
+int k = H->world_shapes(M, lo, hi, MML_WORLD_STATIC, s, 256);  /* triangles, boxes, spheres, poles in a box */
+```
+
+- **The game's own tests answer**: `world_ray` is the test the bullets and the AI cast (`g_collision::_TestLineH`),
+  `world_sweep` the one a person's and a car's moves sweep (`TestSphereB`): the static world (buildings, the
+  ground, fences, poles: the level's collision, not the drawn meshes) and the moving objects (each person's
+  spheres, each car's boxes, doors). `MML_WORLD_NO_PEOPLE`, `MML_WORLD_NO_CARS` leave those out.
+- **`ignore`**: an actor's own objects are passed the game's way (its exclusion list, as a shooter's own body is
+  passed by his bullets), and the list is put back after. A ray that starts inside a person does not hit him.
+- **The ground**: a ray straight down with `MML_WORLD_STATIC` (`call world.ground {"at"}` does that).
+- **The shapes** (`world_shapes`): what the game keeps in its grids, in the world's space: the static world's
+  triangles (normal out of the solid), boxes (centre, half sizes, axes), spheres and poles (vertical cylinders);
+  the moving objects' boxes and spheres with their owner. What a physics library builds its world from near a
+  body (a ragdoll's ground and walls, a fish's riverbed, a skateboard's ramps).
+- Called on the game thread (in any event of the mod's or a command); every call is the game's work: a ray costs
+  little, a large box of shapes more (tens of microseconds for a few metres around a person).
+- `call world.ray {"from": "camera"}` (what the crosshair looks at; `"screen": [x, y]`), `{"from": "player", "to":
+  "car"}`, `{"from": [x, y, z], "dir": [x, y, z], "length": 50, "what": "static", "ignore": ""}`; `world.sweep`
+  (the same and `radius`), `world.ground {"at"}`, `world.near {"at", "radius", "type"}`, `world.shapes {"at",
+  "radius"}` or `{"lo", "hi"}` (counts by kind, the first `max` shapes).
+- `mods/examples/probe` (not enabled by default): what the crosshair looks at, the ground under the player, a
+  sphere swept ahead of him, the people near him, and the static world's collision around him drawn as lines.
+
 ### What happens (shots, explosions, deaths, vehicles)
 
 | Event | When | `actor` | more |
