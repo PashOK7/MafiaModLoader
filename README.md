@@ -1,191 +1,81 @@
 # MafiaModLoader
 
-A mod loader for **Mafia: The City of Lost Heaven** (2002; the Steam/GOG 1.2 and the original 1.0), made for AI agents
-first and for people who write mods with them. An agent connected over MCP can start the game straight into a
-profile and the freeride, read and write its memory, see its live objects, watch any of its functions, rebuild and
-hot-reload mods while it runs, and open its crash dumps, all without anyone at the keyboard.
+A mod loader for **Mafia: The City of Lost Heaven** (2002; Steam/GOG 1.2 and the original 1.0), made for AI agents.
+An agent connects over MCP and works with the live game: starts it, plays it, changes it, writes mods for it and
+reloads them while it runs.
 
-A mod written for it needs no thread, no window and no Windows hook of its own: the loader gives it drawing in the
-game's frame (the game's own fonts and 2D drawing), the keys and the game's actions, hotkeys, the car and the
-mission by name, a data folder and settings an agent can change over MCP, and the game's own menus extended: an
-item in the pause menu and pages of the mod's own, made of the game's real controls (an achievements list, a mod's
-settings), not an overlay. `python tools/new_mod.py <id>` starts
-one; [docs/MODDING.md](docs/MODDING.md) is the whole way.
+Status: in development, before the first release. Everything below works in both builds.
+[docs/ROADMAP.md](docs/ROADMAP.md) has what is next and the known gaps.
 
-Status: in development, before its first release (2026-10). Everything listed here works in both builds, 1.2 and
-1.0, each part seen in both games before it was called done; [docs/ROADMAP.md](docs/ROADMAP.md) has what is next
-and what is known to be missing.
+## What your AI agent can do with it
 
-## What you can do with it
-
-These are the building blocks. A fishing mini-game, a plane or an achievements screen is put together from them.
-Each block is there for a mod (a function in one C header) and, for most, for an agent too, through the MCP server
-without writing a mod at all.
-
-**Drive the game without hands.** Start the game straight into a profile, the freeride or a chapter of the story,
-skipping the logos. Walk, run, turn, shoot, drive and use things through the game's own controls. Click and type
-in its menus. Take screenshots of what the game draws, also while its window is in the background. Close it again.
-
-**Put things into the world and take them out.** Make cars and people of any model the game has, put a person
-into a car's seat, arm them, move them anywhere, remove them. Place any model as a prop: on the ground, or fixed to a
-bone (a bat on the back), a car or another prop. Move, turn, scale, show and hide it. Run the game's own mission
-scripts: every command the real missions use.
-
-**Read and change what is going on.** Get the player, his car (speed, gear, fuel, the whole state saved and put
-back), every person and their skeleton, and the mission. Read and change money, health, weapons and ammo, the
-scene's lights and sun, the rain and the particles. Get told what happens: shots, hits, deaths and who killed whom,
-explosions, cars entered and left, missions loaded.
-
-**Take control.** Read keys and the game's actions (the mouse's movement among them), and add hotkeys. Keep a key or an action away from the
-game so your mod has it alone. Lock the player and move him yourself. Replace a car's physics with your own.
-
-**Let the player do things.** Add zones the player walks or drives into. Add places where the player's Action key
-offers your own choice, in the game's own menu, next to "Get in the car". Add timers that run on the mission's
-clock and stop when the game is paused.
-
-**Change the interface.** Draw text, lines, rectangles and pictures on the screen in the game's own fonts: turned,
-tinted, cut from a sheet. Write lines into the game's console and help line. Put markers on places and people:
-on the screen (at its edge when they are behind you, with the distance), on the radar, and as the compass' target.
-Add items to the game's own menus (the pause menu) and whole pages of your own, built from the game's real buttons,
-lists, sliders and switches. Read and click any menu the game has open.
-
-**Draw in 3D and with shaders.** Draw into the 3D world with the game's own Direct3D device. Run your own
-Direct3D 11 shaders over the frame, with its colour, depth, camera, fog and sun: post effects, water, a world drawn
-anew. Hide the game's own meshes by their texture and draw your own in their place.
-
-**More cameras and viewports.** Move the game camera anywhere, or let a mod drive it every frame. Have the game draw
-its scene again from other cameras: a mirror, a reflection, a security camera, a headset's two eyes. Each view
-comes back as a picture with its depth that you can show anywhere.
-
-**Sound.** Play the game's sounds or your own: flat, or in 3D at a place or on a car, with live volume and pitch.
-Stream music. Pause the city's music.
-
-**Ship your own files.** Put textures, models, sounds and tables in your mod's folder. The game loads them by name
-in place of its own, or as new ones. Nothing in the game's folder is changed.
-
-**Ask the world.** Cast a ray (what is the crosshair on?), sweep a sphere, find the ground under a point, list the
-actors near a place, read the collision shapes.
-
-**Develop fast.** Rebuild a mod and reload it while the game runs, in a second. A mod that crashes is switched off
-and the game goes on; the log says where. Every mod gets its own data folder and settings that an agent can change
-live. Measure what each mod costs per frame. Watch any game function or memory field and see who calls or writes
-it. Look up any of the game's functions in a knowledge base of the game's code. Read crash dumps with names in them.
-Write mods in C, C++, Rust or anything else that speaks C.
-
-## What a mod gets
-
-One C header, `sdk/include/mml/mml.h`, every function of it in both builds:
-
-- **The frame**: text, lines and rectangles in the game's own fonts; the 3D world's drawing points (before the
-  world, after it, before Present); a Direct3D 11 graphics bridge over the game's Direct3D 9 (the frame's colour,
-  depth, camera, fog and sun, mods' passes in order, GPU timers, the 2D layer as its own target).
-- **The scene from other cameras**: LS3D draws the mission again for a mirror, a reflection or a headset's two eyes
-  (asymmetric frusta, a clip plane, the right room); the frame itself drawn from a mod's camera; a world point to
-  the screen and back.
-- **The game's own geometry**: its meshes hidden, surveyed and captured by their textures' names (the river's water
-  replaced by a mod's).
-- **Questions to the world**, answered by the game's collision tests: a ray, a sphere's sweep, the ground under a
-  point, the actors near it, the collision's triangles, boxes and spheres in a box.
-- **People**: every person, their skeletons by bone, poses written for the frame's drawing.
-- **What happens, as events**: the mission's life, hits, shots, explosions, deaths with their killer, cars entered
-  and left, cars blown up, mods loaded or faulted.
-- **The game's state**: the freeride's money, health, the inventory slot by slot and its rounds; the scene's lights
-  (the sun, the ambient light, every lamp) read and changed through LS3D's own setters.
-- **The game's effects**: the car exhaust read or replaced, `particles.def`'s records, every particle's move told
-  (and changed), the rain's parameters.
-- **The world without a program**: cars and people of any model made, moved, seated, armed; props (any model, not
-  an actor) placed in the world or attached to a bone, a car or another prop; sounds in 2D or 3D (on a car, at a
-  place) with their pitch and volume changed live, music streamed, the city's music paused; keys and actions
-  kept from the game, the player's control locked, a car's physics replaced by a mod's; zones, use-points offered in
-  the game's own Action menu, timers on the mission's clock; the game's own script machine (every command the
-  missions have).
-- **The HUD**: pictures opened by the game's own texture loader (turned, tinted, cut from a sheet), lines in the
-  game's console and help line, markers on the screen (at its edge when off it, with the distance), on the radar
-  and as the compass' target.
-- **Input and menus**: the game's actions by name, keys, hotkeys; items and whole pages in the game's own menus,
-  made of its real controls.
-- **Files and settings**: a mod's own textures, models, sounds and tables answered to the game by name; a data
-  folder; settings an agent can change while the game runs.
-- **Measuring**: each mod's time by site, the frame's hitches with what took them, the game thread sampled.
-- **A heavy mod's life**: its own libraries and threads, a Direct3D 11 device, shaders built by CMake, and a clean
-  hot reload (checked: 20 reloads in a row lose no thread and no address space).
+- **Run the game.** Start it straight into any chapter of the story, a new game or any freeride, skipping the logos.
+  Close it. Take screenshots, even with the window in the background.
+- **Control the character.** Walk, run, turn, jump, shoot, drive, use things: the game's own controls, injected.
+  Click and type in the game's menus.
+- **Spawn and remove anything.** Cars and people of any model, seated in cars, armed, moved anywhere. Any model as a
+  prop: in the world or attached to a bone, a car or another prop.
+- **Read and change the game's state.** The player, cars, people and their skeletons, money, health, weapons, ammo,
+  lights and sun, weather, particles. Events for shots, hits, deaths, explosions, cars entered and left.
+- **Run the game's own scripts.** Every command the missions use.
+- **Take over input.** Keys, the game's actions, hotkeys. Keep a key or an action from the game, lock the player,
+  replace a car's physics.
+- **Add interaction.** Zones, use-points in the game's own Action menu, timers on the mission's clock.
+- **Change the interface.** Text, shapes and pictures on screen in the game's fonts. Lines in the game's console and
+  help line. Markers on the screen, on the radar and as the compass' target. New items and whole pages in the game's
+  own menus, built from its real controls.
+- **Draw in 3D.** Draw into the world with the game's Direct3D device. Direct3D 11 shader passes over the frame with
+  its colour, depth and camera. Hide the game's meshes and draw your own instead.
+- **Use more cameras.** Move the game camera or drive it from a mod. Render the scene again from other cameras
+  (mirrors, reflections, stereo views) into textures.
+- **Play sound.** The game's sounds or your own, 2D or 3D, with live volume and pitch. Music.
+- **Replace and add files.** Textures, models, sounds and tables from a mod's folder, loaded by the game by name.
+  The game's folder stays untouched.
+- **Query the world.** Rays, sphere sweeps, the ground under a point, actors nearby, collision shapes.
+- **Develop fast.** Hot-reload mods while the game runs. A crashing mod is switched off, the game goes on. Per-mod
+  settings changed live, per-frame cost per mod, watch any function or memory field, read crash dumps with names, a
+  knowledge base of the game's code. Mods in C, C++, Rust or anything with a C ABI.
 
 ## What is in it
 
 | Part | What it is |
 |---|---|
-| `MafiaModLoader.asi` (`host/`) | A 32-bit DLL loaded into the game by [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader). It is never unloaded: it turns the game's functions into events, keeps the hook chains mods share, loads the mods, isolates their faults, writes crash dumps, runs the bridge (TCP on 127.0.0.1) and the start. |
-| Mods (`mml\mods\<id>\`) | DLLs with a `mod.json`, written against one C header (`sdk/include/mml/mml.h`): C, C++, Rust, anything with a C ABI. Each is rebuilt and reloaded while the game runs. `core` gives the game's live state (player, car, people, actors, frames); `mods/examples/telemetry` (a speed and lap-time overlay) is the complete example of a mod; `mods/examples/fps_unlock` frees the frame rate (the game's 62.5 fps limit taken away, what breaks above it fixed); `mods/examples/boxes` is a heavy mod (Jolt Physics, a Direct3D 11 device of its own, shaders compiled in its build) that hot-reloads cleanly. One example a service: `rear_mirror` (mirrors, reflections, a headset's eyes), `river_water` (the river drawn anew), `depth_pulse`, `hud_panel`, `puppet`, `tally`, `orbit_cam`, `probe`, `bounty`, `dusk`, `exhaust_fx`, `wind`, `storm`, `props_demo`, `engine_note`, `hover` (every example is off by default: `call mod.load {"id"}` or `"enabled": true` in its `mod.json`; only `core` is on). |
-| `mml-mcp.exe` (`mcp/`) | The MCP server (Rust, 64-bit), outside the game: it launches and closes the game, talks to the bridge, reads the log and the crash dumps, deploys builds, and answers questions about the game's code from the knowledge base. |
-| `knowledge/` | What is known about the game's code: every function of the 1.2 `Game.exe` and `LS3DF.dll` (names, classes, signatures, calls), our own names, notes. Imported from the MafiaReverse decompiles (facts only; the code itself is never committed). |
+| `host/` | `MafiaModLoader.asi`: the loader inside the game (loaded by [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader)) |
+| `sdk/` | `mml.h`: the one C header every mod is written against |
+| `mcp/` | the MCP server (Rust): the agent's tools |
+| `mods/` | `core` (the game's live state) and small examples, all off by default |
+| `knowledge/` | what is known about the game's code: functions, names, calls, notes |
 
 ## Quick start
 
-Needs Windows, Visual Studio 2022 (C++ x86 tools), CMake 3.24+, Rust (stable), Python 3.10+, a Mafia install (1.2 or 1.0; `mml.config.json` names it, and a lab folder for each build you test in).
+Needs Windows, Visual Studio 2022 (C++ x86), CMake 3.24+, Rust, Python 3.10+ and the game (1.2 or 1.0).
 
 ```bat
-python tools/deps.py                                  :: pinned downloads: Ultimate ASI Loader, LuaJIT, Jolt (hashes checked; the build fetches Jolt by itself)
-copy mml.config.example.json mml.config.json          :: then set game_dir (and reverse_dir, if you have MafiaReverse)
+python tools/deps.py                                  :: pinned downloads (hash-checked)
+copy mml.config.example.json mml.config.json          :: set game_dir to your game's folder
 cmake --preset x86
 cmake --build --preset x86-release                    :: the loader and the mods
 cargo build --release --manifest-path mcp/Cargo.toml  :: the MCP server
-python tests/run_tests.py                             :: offline tests (a stand-in game): ALL PASSED
-python tests/mcp_smoke.py                             :: the MCP server against it: ALL PASSED
-python tools/lab.py mode loader                       :: install into the game (dinput8.dll, the .asi, the mods)
-python tools/kb_strings.py                            :: the knowledge base's strings, read from your own 1.2 game (knowledge/README.md)
-python tools/start.py freeride --profile 4            :: the game, straight into profile 4's freeride (--police 0: no patrols)
+python tests/run_tests.py                             :: offline tests
+python tools/lab.py mode loader                       :: install into the game
+python tools/kb_strings.py                            :: the knowledge base's strings, from your own game
 ```
 
-`.mcp.json` registers the server as `mafia` for Claude Code (and any MCP client). Agents start with
+`.mcp.json` registers the server as `mafia` for Claude Code or any MCP client. The agent starts with
 [AGENTS.md](AGENTS.md).
-
-## For agents (MCP tools)
-
-| Tool | What |
-|---|---|
-| `game_launch` | start the game; with `{"profile": 4, "go": "freeride"}` straight into the freeride (returns once the player exists); `"police": 0` for a city without patrols |
-| `screenshot` | see the game: its own frame as a picture, whether or not the window is visible |
-| `input` | act in the game: a timed sequence of its own actions (walk, drive, fire, turn by an angle) and keys, injected inside the game |
-| `game_status`, `game_close` | is it running (and the mods); close it (its window, then its exact pid) |
-| `call`, `commands_list` | any bridge method or mod command (`player`, `car`, `world.ray`, `human.items`, `lights.list`, `camera.set`, `menu.state`...); `commands_list {"query": "world."}` gives each method's params and result (made from docs/PROTOCOL.md) |
-| `spawn`, `teleport`, `give`, `script`, `script_commands` | the world without a program: cars and people made, moved, armed; the game's own script machine |
-| `wait` | wait for what happens (a mission loaded, a person dead, a mod faulted) instead of sleeping |
-| `profile` | where the frame's time goes: each mod by site, the game thread sampled, named |
-| `watch` | a hardware watchpoint: which code writes (or reads) a field, with its callers and the values |
-| `mem_read`, `mem_write` | the game's memory (`"game+0x1762A0"`, `"ls3d+1AAE0"`), never faulting |
-| `tap` | watch any function: callers, arguments, memory behind them, the result |
-| `where` | what the game's main thread is doing (a hang, a loading screen) |
-| `log_tail` | the loader's log, live or from disk |
-| `mods_list`, `mod_reload`, `deploy` | the mods; copy a build into the game and reload it |
-| `crash_list`, `crash_inspect` | the crash dumps, read: the exception, the memory, the stack, named |
-| `kb_search`, `kb_function` | the knowledge base: find a function, read its facts, calls and decompiled code |
 
 ## Documents
 
-- [AGENTS.md](AGENTS.md): the guide for agents (rules, the work loop, the map, facts that cost time).
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how it works. [docs/PROTOCOL.md](docs/PROTOCOL.md): the bridge.
-- [docs/MODDING.md](docs/MODDING.md): writing a mod, from `tools/new_mod.py` to the game (what the host gives:
-  drawing, keys, the car, the mission, files and settings). [docs/SCRIPTS.md](docs/SCRIPTS.md): the game's own
-  script machine for agents and mods (every command the missions have), and the world without a program (a car or
-  a person of any model made new, moved, seated, armed by name). [docs/VERSIONS.md](docs/VERSIONS.md): the
-  two builds. [knowledge/README.md](knowledge/README.md): the
-  knowledge base.
-- [docs/ROADMAP.md](docs/ROADMAP.md): what is done, next, later, and the known gaps.
-- [docs/JOURNAL.md](docs/JOURNAL.md): what was done and found, in order.
-
-## Third-party
-
-MinHook 1.3.4 and nlohmann/json 3.12.0 (vendored, `third_party/README.md`), Ultimate ASI Loader 9.7.4, LuaJIT 2.1 and
-Jolt Physics 5.6.0 (downloaded and hash-checked by `tools/deps.py`), Rust crates (`mcp/Cargo.lock`). No game files are in the
-repository.
+[AGENTS.md](AGENTS.md) (for agents) · [MODDING.md](docs/MODDING.md) (writing a mod) ·
+[PROTOCOL.md](docs/PROTOCOL.md) (every bridge method) · [SCRIPTS.md](docs/SCRIPTS.md) (the game's scripts) ·
+[ARCHITECTURE.md](docs/ARCHITECTURE.md) · [VERSIONS.md](docs/VERSIONS.md) · [ROADMAP.md](docs/ROADMAP.md) ·
+[knowledge/](knowledge/README.md)
 
 ## License
 
-MIT ([LICENSE](LICENSE)). The vendored and downloaded libraries keep their own licenses (`third_party/`).
+MIT ([LICENSE](LICENSE)). Third-party libraries keep their own licenses: MinHook and nlohmann/json (vendored),
+Ultimate ASI Loader, LuaJIT and Jolt Physics (downloaded by `tools/deps.py`).
 
-## Disclaimer
-
-MafiaModLoader is an unofficial fan project. It is not affiliated with, endorsed or sponsored by 2K, Take-Two
-Interactive or Illusion Softworks. Mafia: The City of Lost Heaven is a trademark of Take-Two Interactive Software,
-Inc. You need your own legally obtained copy of the game; the repository contains no game files, and nothing of
-the game is redistributed.
+Unofficial fan project, not affiliated with 2K, Take-Two Interactive or Illusion Softworks. Mafia: The City of Lost
+Heaven is a trademark of Take-Two Interactive Software, Inc. You need your own copy of the game; no game files are
+in this repository.
