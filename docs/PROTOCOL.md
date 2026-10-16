@@ -21,7 +21,7 @@ Addresses: `"0x5762A0"`, `"5762A0"`, `"game+0x1762A0"`, `"ls3d+1AAE0"`, `"<modul
 |---|---|---|
 | `ping` | | pid, build, frames, api, uptime, game_dir |
 | `log.tail` | `lines` | the last lines of the loader's log |
-| `events.since` | `seq`, `types` (a list or "A,B"), `filter` (fields equal; strings in any case), `limit` | the events kept after `seq` (the last 2000; not each frame's: FRAME, MISSION_TICK, RENDER_*, PRESENT, VIEW_WORLD): `seq`, `t` (s), `type`, `data` (`actor`, `name`; a hit's `hit_type`, `damage`, `pos`, `dir`, `attacker`, `killed`; `MOD_FAULTED` `where`, `exception`, `at`; `MOD_UNLOADED` `why`; `SCRIPT_ENDED` `id`, `owner`, `state`, `why`; `SHOT` `pos`, `dir`, `damage`, `shots`; `EXPLOSION` `pos`, `radius`, `damage`; `HUMAN_DIED` `killer`; `VEHICLE_ENTERED`, `VEHICLE_LEFT` `vehicle`; `CAR_EXPLODED`); `latest` (MCP `wait` waits on it) |
+| `events.since` | `seq`, `types` (a list or "A,B"), `filter` (fields equal; strings in any case), `limit` | the events kept after `seq` (the last 2000; not each frame's: FRAME, MISSION_TICK, RENDER_*, PRESENT, VIEW_WORLD): `seq`, `t` (s), `type`, `data` (`actor`, `name`; a hit's `hit_type`, `damage`, `pos`, `dir`, `attacker`, `killed`; `MOD_FAULTED` `where`, `exception`, `at`; `MOD_UNLOADED` `why`; `SCRIPT_ENDED` `id`, `owner`, `state`, `why`; `SHOT` `pos`, `dir`, `damage`, `shots`; `EXPLOSION` `pos`, `radius`, `damage`; `HUMAN_DIED` `killer`; `VEHICLE_ENTERED`, `VEHICLE_LEFT` `vehicle`; `CAR_EXPLODED`; `GAME_SAVING`, `GAME_LOADED` `slot`, `profile`); `latest` (MCP `wait` waits on it) |
 | `mem.read` | `addr`, `size` (≤ 1 MiB), `as` (u8 i8 u16 i16 u32 i32 f32 f64 ptr str) | hex (and the values) |
 | `mem.write` | `addr`, `hex` or `as` + `values` | bytes written (code pages unprotected for it) |
 | `addr.describe` | `addr` | module+offset |
@@ -78,6 +78,9 @@ Taps can also start with the game, before its first frame: `"taps": ["5409D0 n=4
 | `hud.help` | `text` | a line of the game's help (the mission's hints, above the crosshair): `ms` it is shown |
 | `hud.marker` | `at` [x, y, z], or `on` an actor and `bone`, `pos`; `label`, `color`, `picture` (a file of `maps\`, `alpha` its twin), `scale` (24), `screen`, `distance`, `edge` (default true), `radar`, `compass` (default false); `id`: one of the bridge's changed | `id`, `at`, `flags`: drawn where it is on the screen (at its edge when off it) with its distance from the player; a mark on the game's radar; the compass' target |
 | `hud.remove` | `id` or `all` (the bridge's) | removed |
+| `save.state` | | `hooked`, the `profile` and `slot` selected, `slot_loaded`, `slot_keys` and `profile_keys` (each `mod`, `key`, `size`), `saves_written`, `saves_loaded`, `new_games`, `last_file`, `profile_file`, `last_error` |
+| `save.get` | `mod` (default the bridge's), `key`, `scope` (`"slot"` default, `"profile"`) | `value` (text, or `{"hex"}`), `size` |
+| `save.put` | `key`, `value` (a string, or JSON kept as its text; empty: removed), `scope` | the bridge's own key put: written with the next save (`slot`) or at once (`profile`) |
 | `hud.list` | | `markers` (each `id`, `by`, `label`, `flags`, `at`, `radar`, `compass`), `pictures` (`id`, `by`, `file`, `alpha`, `w`, `h`), `compass_by`, `hud_flags`, `compass_target` |
 | `control.state` | | `lock_known`, `locked`, `locked_by`, `vehicle_hook` (a mod or `none`), `engine` (the step's hook), `steps`, `skipped` (steps a mod made), `faults` |
 | `lights.list` | `type` (`point`, `spot`, `directional`, `ambient`, `fog`), `all` (the lights that are off too), `max` (100), `rescan` | the scene's light frames: `count`, `kinds`, `lights` (`light`, `name`, `type`, `on`, `color`, `power`, `range`, `cone`, `pos`, `dir`, `sectors`), `sun` (`to_sun`, `color`, `ambient`) |

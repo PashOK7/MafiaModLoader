@@ -334,7 +334,8 @@ struct WaitArgs {
     /// GAME_RESUMED, HUMAN_CREATED, HUMAN_HIT, HUMAN_DIED, SHOT, EXPLOSION, CAR_EXPLODED, VEHICLE_ENTERED,
     /// VEHICLE_LEFT, ACTOR_DESTROYED, MOD_LOADED, MOD_UNLOADED, MOD_FAULTED, SCRIPT_ENDED, CONFIG_CHANGED,
     /// FILE_CHANGED, SERVICES_CHANGED, ZONE_ENTERED, ZONE_LEFT, USED, TIMER (the bridge's zones, use-points and
-    /// timers) (`call events.since` lists the recent ones).
+    /// timers), GAME_SAVING, GAME_LOADED (a save written or loaded, a new game: `slot`, `profile`)
+    /// (`call events.since` lists the recent ones).
     types: String,
     /// Fields the event's data must have, equal (strings without regard to case): {"name": "freeitaly"},
     /// {"killed": true}, {"actor": "0x12345678"}.
@@ -980,7 +981,8 @@ effects: `exhaust.state`, `particles.defs`, `weather.state`, `weather.set`; prop
 `player.lock {on}`, `vehicle.body {car}`, `control.state`; interaction: `use.add {label}` (a line in the game's Action menu), `zone.add {at, \
 radius}`, `timer.add {ms}` (then wait for USED, ZONE_ENTERED, TIMER), `interact.list`; the HUD: `hud.marker {at | on, \
 label, compass, radar}`, `hud.console {text}`, `hud.help {text}`, `draw.picture {file, alpha, x, y, w, h, angle}`, \
-`hud.list`; what \
+`hud.list`; a mod's state in the game's saves: `save.state`, `save.put {key, value, scope}`, `save.get` (wait for \
+GAME_SAVING, GAME_LOADED); what \
 happened: `events.since` (or the wait tool); the frame: `prof.state` (or the profile tool), `gfx.state`, \
 `view.state`, `geom.survey`; any game function: `native.call {at, conv, this, args, ret}`; who writes a field: \
 the watch tool.";

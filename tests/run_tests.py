@@ -857,6 +857,17 @@ def main():
         r = b.call('kit.hud')
         check('picture_load, picture_size, hud_marker_add, _set, _remove, hud_console, hud_help with no game: none (drawing nothing: nothing)',
               r['ok'] and r['result'] == {'picture': 0, 'size': 0, 'marker': 0, 'set': 0, 'removed': 0, 'console': 0, 'help': 0}, r)
+        r = b.call('kit.saves')
+        check('save_put, save_get with no game: the slot\'s state kept, read, removed; the profile\'s refused',
+              r['ok'] and r['result'] == {'put': 1, 'got': 5, 'value': 'trout', 'profile': 0, 'removed': 1, 'after': 0, 'bad_scope': 0}, r)
+        r = b.call('save.put', {'key': 'note', 'value': 'kept'})
+        r2 = b.call('save.get', {'key': 'note'})
+        r3 = b.call('save.state')
+        check('save.put, save.get, save.state with no game: the bridge\'s key kept, not hooked',
+              r['ok'] and r2['ok'] and r2['result']['value'] == 'kept' and r3['ok'] and r3['result']['hooked'] is False
+              and {'mod': 'bridge', 'key': 'note', 'size': 4} in r3['result']['slot_keys'], (r, r2, r3))
+        r = b.call('save.put', {'key': 'note', 'value': 'x', 'scope': 'profile'})
+        check('save.put to the profile with no game: an error, saying why', not r['ok'] and 'no profile' in str(r), r)
         r = b.call('hud.list')
         check('hud.list with no game: nothing', r['ok'] and r['result']['markers'] == [] and r['result']['pictures'] == [], r)
         for method, params in (('hud.marker', {'at': [0, 0, 0]}), ('hud.console', {'text': 'hello'}), ('draw.picture', {'file': '2sight.bmp'})):

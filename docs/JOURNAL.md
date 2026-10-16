@@ -1209,3 +1209,19 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   keeps the NUL-ended printable runs its operands point at (1087 Game.exe functions in 15 s, against the 239 the
   decompile's hints had; LS3DF 350 against 112); the MCP server reads both local files. MIT license; every example
   off by default (only `core` loads); a disclaimer in the README; the commits' address to GitHub's noreply one.
+
+## 2026-10-16: a mod's state in the game's saves (item 17)
+
+- **Read**: G_LoadSaveClass (1.2 0x6D4628, 1.0 0x671FB0) formats `savegame\mafia%03d.%03d` from its +0x28 (the
+  profile) and +0x7C (the slot) in SaveGameSave (writes; ret 4) and SaveGameLoad (reads; opens the mission and
+  restores the actors inside); SaveGameNewGame clears a new game's or a freeride's state; ProfileDelete deletes a
+  profile's .sav and its 600 possible saves. 1.0 has the same code at st0rm94's twins (`check_builds.py`).
+- **Made** `host/saves.cpp`: the slot's state beside each save (`.mml`), the profile's in `mafia<p>.sav.mml`;
+  `save_put`, `save_get`, MML_EVENT_GAME_SAVING, MML_EVENT_GAME_LOADED (MmlEvent's `slot`, `profile`); `save.state`,
+  `save.get`, `save.put`.
+- **A slip**: `ProfileNow()` read the build's table before asking whether a game is there: the offline test faulted
+  (the harness has none); it asks first now.
+- **In both labs**: details in ROADMAP "Done". The freeride saves slot 570 at its start (a GAME_SAVING right after
+  MISSION_LOADED). A save made by calling SaveGameSave from the bridge at the start of 1.2's "Old Prison" loaded
+  into a Game Over (Known gaps); both labs' saves were restored from copies and the test's `.mml` files deleted.
+- **Tests**: offline ALL PASSED; check_builds ALL PASSED.

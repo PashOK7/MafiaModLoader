@@ -476,6 +476,27 @@ def main(a):
         cs = [f'{i.mnemonic} {i.op_str}' for i in gexe.md.disasm(gexe.at(exe['hudCompassSet'] - 0x400000, 0x10), exe['hudCompassSet'])]
         check(cs[:3] == ['mov eax, dword ptr [esp + 4]', f'mov dword ptr [ecx + {exe["hudCompassTarget"]:#x}], eax', 'ret 4'],
               f'{name} hudCompassSet writes hud + {exe["hudCompassTarget"]:#x}')
+    # The saves (host/saves.cpp): SaveGameSave and SaveGameLoad format "savegame\mafia%03d.%03d" from the manager's
+    # saveProfile and saveSlot (ESI the manager); SaveGameNewGame clears +0x1E8 and +0x98; ProfileDelete reads the
+    # profile's number from its list (+4, 0x54 bytes a profile, +8) and ends ret 4; SaveGameSave ends ret 4.
+    for name, (exe, ls, gexe, gls) in builds.items():
+        fmt = None
+        for f in ('saveGameSave', 'saveGameLoad'):
+            ins = [f'{i.mnemonic} {i.op_str}' for i in gexe.md.disasm(gexe.at(exe[f] - 0x400000, 0x120), exe[f])]
+            k = next((k for k, t in enumerate(ins) if t == f'mov eax, dword ptr [esi + {exe["saveSlot"]:#x}]'), -1)
+            ok = k >= 0 and ins[k + 1] == f'mov ecx, dword ptr [esi + {exe["saveProfile"]:#x}]'
+            push = next((t for t in ins[k:k + 8] if t.startswith('push 0x')), None) if ok else None
+            if push:
+                va = int(push[5:], 16)
+                fmt = bytes(gexe.at(va - 0x400000, 24)).split(b'\0')[0]
+            check(ok and fmt == b'savegame\\mafia%03d.%03d', f'{name} {f}: the save\'s name from the manager\'s profile and slot')
+        ng = [f'{i.mnemonic} {i.op_str}' for i in gexe.md.disasm(gexe.at(exe['saveGameNew'] - 0x400000, 0x24), exe['saveGameNew'])]
+        check(ng[:2] == ['mov dword ptr [ecx + 0x1e8], 0', 'mov dword ptr [ecx + 0x98], 0'] and 'ret ' in ng,
+              f'{name} saveGameNew: clears +0x1E8 and +0x98')
+        pd = [f'{i.mnemonic} {i.op_str}' for i in gexe.md.disasm(gexe.at(exe['profileDelete'] - 0x400000, 0x200), exe['profileDelete'])]
+        check('mov ebx, dword ptr [edi + eax + 8]' in pd and 'ret 4' in pd, f'{name} profileDelete: the profile\'s number read, ret 4')
+        first = next((i for i in gexe.md.disasm(gexe.at(exe['saveGameSave'] - 0x400000, 0x800), exe['saveGameSave']) if i.mnemonic == 'ret'), None)
+        check(first is not None and first.op_str == '4', f'{name} saveGameSave: ret 4')
     # The using objects (host/interact.cpp): the player's Action on foot calls FindNearObjects on C_game + 0x29EC, then
     # ExecuteMenu (`xor dl, dl` before it) and compares its result with 0xA8; AddObject and DelObject end ret 4,
     # FindNearObjects ret 0x10, ExecuteMenu ret 4.

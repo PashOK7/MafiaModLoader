@@ -99,6 +99,7 @@ void EventsFromDispatch(const MmlEvent &ev) {
         d["damage"] = x.damage;
     }
     if (ev.other) d[ev.type == MML_EVENT_HUMAN_DIED ? "killer" : "vehicle"] = Hex(ev.other);
+    if (ev.type == MML_EVENT_GAME_SAVING || ev.type == MML_EVENT_GAME_LOADED) { d["slot"] = ev.slot; d["profile"] = ev.profile; }
     Push(ProfEventSite(ev.type), std::move(d));
 }
 

@@ -468,6 +468,14 @@ int H_HudMarkerSet(MmlMod *m, int id, const MmlHudMarker *marker) {
     return 0;
 }
 int H_HudMarkerRemove(MmlMod *m, int id) { return Alive(m) && HudMarkerRemove(m, id) ? 1 : 0; }
+int H_SavePut(MmlMod *m, int scope, const char *key, const void *data, size_t n) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    if (SavePut(m, scope, key, data, n, &err)) return 1;
+    Log(MML_LOG_WARN, Who(m), "save_put: %s", err.c_str());
+    return 0;
+}
+size_t H_SaveGet(MmlMod *m, int scope, const char *key, void *data, size_t cap) { return Alive(m) ? SaveGet(m, scope, key, data, cap) : 0; }
 int H_WorldShapes(MmlMod *m, const float lo[3], const float hi[3], uint32_t what, MmlShape *out, int max) {
     return Alive(m) && lo && hi ? WorldShapes(lo, hi, what, out, out ? max : 0) : 0;
 }
@@ -966,6 +974,8 @@ void ModsInit() {
     g_host.hud_marker_add = H_HudMarkerAdd;
     g_host.hud_marker_set = H_HudMarkerSet;
     g_host.hud_marker_remove = H_HudMarkerRemove;
+    g_host.save_put = H_SavePut;
+    g_host.save_get = H_SaveGet;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();
@@ -1066,6 +1076,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (ControlMethod(method, paramsJson, reply, &ok)) return ok;
     if (InteractMethod(method, paramsJson, reply, &ok)) return ok;
     if (HudMethod(method, paramsJson, reply, &ok)) return ok;
+    if (SavesMethod(method, paramsJson, reply, &ok)) return ok;
     if (WorldMethod(method, paramsJson, reply, &ok)) return ok;
     if (FilesMethod(method, paramsJson, reply, &ok)) return ok;
     if (RenderMethod(method, paramsJson, reply, &ok)) return ok;

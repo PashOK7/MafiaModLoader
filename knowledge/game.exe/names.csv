@@ -228,3 +228,7 @@ address,kind,name,source,note
 0047A080,function,hudAddFlag,MafiaModLoader,"G_IndicatorsClass::AddFlag: thiscall(hud, flags) ret 4, ors into hud + 0x40A4 (1.0 0x424E20, + 0x90A4); 0x80 the compass, 0x80000 the radar; host/hud.cpp"
 0047A0A0,function,hudRemoveFlag,MafiaModLoader,"G_IndicatorsClass::RemoveFlag: thiscall(hud, flags) ret 4, and-nots hud + 0x40A4 (1.0 0x5C7DB0)"
 0058F160,function,SetPlayerNaviPoint,MafiaModLoader,"SETCOMPASS's: ECX into the global 0x6478B4, which nothing reads (1.0 0x4C6B80): the map has no target of its own"
+00606EA0,function,saveGameSave,MafiaModLoader,"G_LoadSaveClass::SaveGameSave: thiscall(manager 0x6D4628, bool quick) ret 4, savegame\mafia%03d.%03d from +0x28 (profile), +0x7C (slot) (1.0 0x558ED0, manager 0x671FB0); host/saves.cpp"
+00606150,function,saveGameLoad,MafiaModLoader,"G_LoadSaveClass::SaveGameLoad: thiscall(manager), reads the save, opens the mission (1.0 0x558180)"
+00605FF0,function,saveGameNew,MafiaModLoader,"G_LoadSaveClass::SaveGameNewGame: thiscall(manager), a new game's and every freeride's start (1.0 0x558020)"
+00605740,function,profileDelete,MafiaModLoader,"G_LoadSaveClass::ProfileDelete: thiscall(manager, index) ret 4, the profile's .sav and saves deleted (1.0 0x5577D0)"

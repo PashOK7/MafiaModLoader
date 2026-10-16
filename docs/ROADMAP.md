@@ -311,6 +311,15 @@ What is done, what comes next and later, and what is known to be missing or wron
   it back when removed, the compass hidden again and the HUD's flags as they were when the last went; a marker on
   Paulie gone with him; the scope's `2sight.bmp` with its `+` twin (the circle clear), `1numbers.tga` tinted red
   and turned; console and help lines; markers hidden under the pause menu; leaving to the main menu left none.
+- **A mod's state in the saves** (2026-10-16; item 17; host/saves.cpp): `save_put`, `save_get` by scope
+  (`MML_SAVE_SLOT`, `MML_SAVE_PROFILE`); MML_EVENT_GAME_SAVING before the game writes a save, MML_EVENT_GAME_LOADED
+  after it loads one or starts a new game (slot -1); the slot's state written beside the game's save
+  (`savegame\mafia<p>.<s>.mml`) by a hook on SaveGameSave, read back by one on SaveGameLoad, cleared by one on
+  SaveGameNewGame; the profile's written at once; ProfileDelete's hook takes a profile's `.mml` files. `save.state`,
+  `save.get`, `save.put`. The four functions and the manager's offsets read in both builds by `check_builds.py`.
+  Seen in both labs alike: the freeride's start a GAME_LOADED (slot -1) and its autosave a GAME_SAVING (slot 570); a
+  chapter (1.0 06-03, 1.2 Old Prison) loaded with no state, a key put, the game's SaveGameSave called, the game
+  closed and the chapter loaded again: the key back, and the profile's key across the restarts.
 - **Control** (2026-10-16; item 14, block 14a): `key_capture` (a key kept from the game: LS3D's keyboard state
   cleared after mods read it), `action_capture` (an action's slots written 0 after the update, the player's values
   kept for `action_held`), `player_lock` (C_player::LockControls and Do_Breath, as PLAYER_LOCKCONTROLS),
@@ -402,6 +411,27 @@ NVIDIA Flow) on a host of its own, and its code is the reference for what severa
 builds' decision; AGENTS.md "Builds"). Each item names who needs it (R ragdoll, W water, S smoke,
 V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselves) and its reference.
 
+**The order of work** (the owner, 2026-10-16; one block at a time, each seen in both labs): the functions themselves
+matter, not example mods for them (no "fishing" example for items 15 and 16).
+1. Item 17, a mod's state in the game's saves.
+2. People and animations (item 6's rest: animations played and blended, getting up, traffic pedestrians' hits,
+   1.0's fields).
+3. The events still missing (item 7's rest: what a bullet struck, a car striking a person or a thing, falls, items
+   picked up, money, objectives, a mission won or failed).
+4. A mod's own items in the inventory (item 10's rest).
+5. The statistics and the profile's progress (item 10's rest: kills, cars stolen, distance, chapters, unlocks;
+   the mission's objectives and outcome).
+6. The world and its geometry (item 8's rest: the water's height, each model's file, the drawn triangles, cars'
+   meshes, the `.4ds` index; item 12's rest: a prop's collision shape and animations; zones for people and cars).
+7. The camera and control (item 9's rest: the game's own camera logic; item 14's rest: a mod's actions in the
+   controls menu, another kind of vehicle).
+8. The agent's tools (items 24, 25 and the snapshots in Later: structures by name, crash triage in one call,
+   restore points).
+9. Mod languages (Later: the Rust crate; LuaJIT script mods).
+10. Orders for the people made (item 26).
+11. Tests in the real game, as scripts of steps (item 23).
+12. The tuning panel (item 18).
+
 ### Tier 1: foundations every large mod stands on
 
 1. *(Done 2026-10-15: a heavy mod's lifecycle, the loader's part and the build's part; see "Done". The number is
@@ -489,7 +519,7 @@ V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselv
 16. *(Done 2026-10-16: see "Done"; what is left: Known gaps.)* **The HUD** (C F P V). Pictures and textures in the 2D layer (an achievement's icon, a plane's instruments:
     drawing has text, lines and rectangles only), notifications in the game's style (its console, `console_addtext`,
     with a mod's own texts), markers at world positions, the compass's and the map's target.
-17. **A mod's state in the game's saves** (C F). A mod's data written with each save slot and read back when that
+17. *(Done 2026-10-16: see "Done"; what is left: Known gaps.)* **A mod's state in the game's saves** (C F). A mod's data written with each save slot and read back when that
     slot loads (and per profile), so its state follows the player's game, not only its data folder.
 18. **A tuning panel** (all). A mod's settings shown and changed live in the game: a page made from its
     `config.json` (sliders, check boxes, selectors from the menus' constructor), so dozens of parameters need no page
@@ -612,6 +642,11 @@ merged, sorted by importance):
   on a frame gives the radar and the compass that frame's origin (its `pos` offset is for the screen only). A
   device lost and made again (alt-tab, a new resolution) was not tried with pictures (LS3D's own textures, the HUD's
   among them, come back by its texture manager).
+- **A mod's state in the saves** (host/saves.cpp, item 17): ProfileDelete's hook was not run in a lab (it deletes
+  a profile's saves: read in the code only). The saves were made in the tests by calling SaveGameSave from the
+  bridge, not at the game's own save points: in 1.2 the save made so at the start of "Old Prison" loaded into a
+  Game Over (the game's file shrank from 3733 to 1215 bytes; restored from a copy); the mod's state came back all
+  the same. A save in the story is made by the scripts (SaveGameFromScript, which calls SaveGameSave): not tried.
 - **Control** (host/control.cpp, input.cpp, item 14a): **actions of a mod's own in the game's controls menu**
   are not made: the menu's rows are fixed binding slots the profile saves (60 in 1.2); growing them means the
   bindings' vector, the held/pressed arrays and the profile's copy (`G_LoadSaveClass + 0x1F4`), not read yet. A mod

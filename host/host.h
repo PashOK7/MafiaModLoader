@@ -317,6 +317,11 @@ void HudModGone(MmlMod *mod);
 void HudMissionClose();                   // (before the game's) markers, their frames, the compass
 void HudActorGone(void *actor);
 bool HudMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+// a mod's state in the game's saves (saves.cpp): beside each save of the game, and the profile's
+void SavesInit();                         // (after the game's hooks) SaveGameSave, SaveGameLoad, SaveGameNewGame, ProfileDelete
+int SavePut(MmlMod *mod, int scope, const char *key, const void *data, size_t n, std::string *err);   // null mod: the bridge's
+size_t SaveGet(MmlMod *mod, int scope, const char *key, void *data, size_t cap);
+bool SavesMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 // the scene's lights (lights.cpp): LS3D's light frames listed and changed through its setters; lights.list, light.set
 void LightsMissionClosed();
 int SceneLights(MmlLight *out, int max);

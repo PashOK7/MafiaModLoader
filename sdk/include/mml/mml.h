@@ -92,6 +92,9 @@ typedef enum MmlEventType {
                                         the vehicle */
     MML_EVENT_VEHICLE_LEFT = 24,     /* ... no longer uses it: actor him, other the vehicle */
     MML_EVENT_CAR_EXPLODED = 25,     /* a car blew up: actor the car */
+    MML_EVENT_GAME_SAVING = 26,      /* the game is about to write a save (slot, profile): save_put the state now */
+    MML_EVENT_GAME_LOADED = 27,      /* a save was loaded (slot, profile), or a new game or a freeride began (slot -1):
+                                        save_get (MML_SAVE_SLOT) gives that save's state now */
     MML_EVENT_COUNT_
 } MmlEventType;
 
@@ -228,6 +231,8 @@ typedef struct MmlEvent {
     const struct MmlShot *shot;            /* SHOT */
     const struct MmlExplosion *explosion;  /* EXPLOSION */
     void *other;            /* HUMAN_DIED: the killer; VEHICLE_*: the vehicle */
+    int slot, profile;      /* GAME_SAVING, GAME_LOADED: the save's number (savegame\mafia<profile>.<slot>; -1: a new
+                               game) and the profile's */
 } MmlEvent;
 
 #define MML_EVENT_HAS(ev, member) ((size_t)(ev)->size >= offsetof(MmlEvent, member) + sizeof((ev)->member))
@@ -1007,7 +1012,20 @@ typedef struct MmlHost {
     int (*hud_marker_add)(MmlMod *mod, const MmlHudMarker *marker);
     int (*hud_marker_set)(MmlMod *mod, int marker, const MmlHudMarker *m);
     int (*hud_marker_remove)(MmlMod *mod, int marker);
+
+    /* ---- a mod's state in the game's saves (both builds; docs/MODDING.md "A mod's state in the saves"). Blobs by
+     * key, the mod's own. MML_SAVE_SLOT: the state of the game being played: written beside each save the game
+     * writes (MML_EVENT_GAME_SAVING asks for it just before), read back when that save is loaded
+     * (MML_EVENT_GAME_LOADED), empty in a new game and a freeride. MML_SAVE_PROFILE: the profile's, across its saves
+     * (written at once). save_put with data NULL (or n 0) removes the key; save_get returns the blob's size (0:
+     * none), copying at most cap bytes. Files: savegame\mafia<profile>.<slot>.mml, savegame\mafia<profile>.sav.mml;
+     * the game deleting a profile deletes them too. */
+    int (*save_put)(MmlMod *mod, int scope, const char *key, const void *data, size_t n);
+    size_t (*save_get)(MmlMod *mod, int scope, const char *key, void *data, size_t cap);
 } MmlHost;
+
+#define MML_SAVE_SLOT 0
+#define MML_SAVE_PROFILE 1
 
 #define MML_FILE_GAME 1              /* file_read: the game's own file, not a mod's of the same name */
 

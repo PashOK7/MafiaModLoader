@@ -80,7 +80,8 @@ const char *EventName(int type) {
     static const char *names[] = {"?", "FRAME", "MISSION_TICK", "MISSION_CLOSE", "ACTOR_DESTROYED", "HUMAN_CREATED", "HUMAN_HIT",
                                   "SERVICES_CHANGED", "MOD_LOADED", "MISSION_OPEN", "MISSION_LOADED", "GAME_PAUSED", "GAME_RESUMED",
                                   "CONFIG_CHANGED", "FILE_CHANGED", "RENDER_BEGIN", "RENDER_WORLD", "RENDER_END", "PRESENT", "VIEW_WORLD",
-                                  "SHOT", "EXPLOSION", "HUMAN_DIED", "VEHICLE_ENTERED", "VEHICLE_LEFT", "CAR_EXPLODED"};
+                                  "SHOT", "EXPLOSION", "HUMAN_DIED", "VEHICLE_ENTERED", "VEHICLE_LEFT", "CAR_EXPLODED",
+                                  "GAME_SAVING", "GAME_LOADED"};
     return type >= 0 && type < static_cast<int>(sizeof names / sizeof names[0]) ? names[type] : "event";
 }
 

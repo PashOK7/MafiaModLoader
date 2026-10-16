@@ -376,6 +376,14 @@ struct ExeBuild {
     // hudCompassTarget: hud + this, the compass' target (the I3D_frame CompassSetDestination writes).
     uintptr_t hudAddFlag, hudRemoveFlag;
     int hudFlags, hudCompassTarget;
+    // The game's saves (host/saves.cpp), thiscall on the profile manager (`loadSave`, G_LoadSaveClass), whose
+    // +0x28 (saveProfile) is the profile's number and +0x7C (saveSlot) the save's: savegame\mafia%03d.%03d.
+    // saveGameSave, SaveGameSave(bool quick) ret 4: writes that save; saveGameLoad, SaveGameLoad(): reads it (the
+    // mission opened and its actors restored inside); saveGameNew, SaveGameNewGame(): a new game's or a freeride's
+    // state cleared; profileDelete, ProfileDelete(index) ret 4: the index-th profile's .sav and every save of it
+    // deleted.
+    uintptr_t saveGameSave, saveGameLoad, saveGameNew, profileDelete;
+    int saveProfile, saveSlot;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -543,6 +551,8 @@ inline const ExeBuild kExe12 = {
     0x55DD60, 0x55DF10, 0x55E180, 0x5EBA40,
     // the HUD's flags (2026-10-16: SETCOMPASS at 0x46E1D8 calls AddFlag(0x80) and RemoveFlag(0x80))
     0x47A080, 0x47A0A0, 0x40A4, 0x4278,
+    // the saves (2026-10-16: st0rm94's names; the sprintf arguments read in SaveGameSave and SaveGameLoad)
+    0x606EA0, 0x606150, 0x605FF0, 0x605740, 0x28, 0x7C,
 };
 
 inline const ExeBuild kExe10 = {
@@ -642,6 +652,8 @@ inline const ExeBuild kExe10 = {
     0x61BB30, 0x61BCE0, 0x61BF50, 0x56CCC0,
     // the HUD's flags (2026-10-16: SETCOMPASS at 0x5BC005 calls them; the flags 0x5000 further, as the HUD's fonts)
     0x424E20, 0x5C7DB0, 0x90A4, 0x9270,   // (the compass' target is not 0x5000 further: 8 less)
+    // the saves (2026-10-16: st0rm94's twins; the same code and the same manager offsets as 1.2's)
+    0x558ED0, 0x558180, 0x558020, 0x5577D0, 0x28, 0x7C,
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,

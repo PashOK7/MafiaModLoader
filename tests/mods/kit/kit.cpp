@@ -339,6 +339,24 @@ int Hud(const char *, MmlReply *r, void *) {
     return 0;
 }
 
+// The saves with no game: the slot's state kept (written with the game's next save), read back, removed; the
+// profile's refused (no profile is selected).
+int Saves(const char *, MmlReply *r, void *) {
+    if (!MML_HAS(H, save_get)) { H->reply_error(r, "the loader has no save_put"); return 1; }
+    char buf[16] = {0};
+    int put = H->save_put(M, MML_SAVE_SLOT, "fish", "trout", 5);
+    size_t got = H->save_get(M, MML_SAVE_SLOT, "fish", buf, sizeof buf);
+    int profile = H->save_put(M, MML_SAVE_PROFILE, "caught", "1", 1);
+    int removed = H->save_put(M, MML_SAVE_SLOT, "fish", nullptr, 0);
+    size_t after = H->save_get(M, MML_SAVE_SLOT, "fish", nullptr, 0);
+    int bad = H->save_put(M, 7, "x", "y", 1);
+    char out[200];
+    snprintf(out, sizeof out, "{\"put\":%d,\"got\":%u,\"value\":\"%s\",\"profile\":%d,\"removed\":%d,\"after\":%u,\"bad_scope\":%d}", put,
+             static_cast<unsigned>(got), buf, profile, removed, static_cast<unsigned>(after), bad);
+    H->reply_append(r, out, static_cast<size_t>(-1));
+    return 0;
+}
+
 // People with no game: none, no skeleton, bone_set refused, no player.
 int Humans(const char *, MmlReply *r, void *) {
     if (!MML_HAS(H, human_player)) { H->reply_error(r, "the loader has no human_player"); return 1; }
@@ -407,6 +425,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->command(mod, "props", "prop_create and the rest with no game", Props, nullptr);
     host->command(mod, "interact", "zone_add, use_point_add, timer_add, interact_remove with no game", Interact, nullptr);
     host->command(mod, "hud", "picture_load and the rest, hud_console, hud_help, the markers with no game", Hud, nullptr);
+    host->command(mod, "saves", "save_put, save_get with no game", Saves, nullptr);
     host->command(mod, "control", "key_capture, action_capture, player_lock, vehicle_hook, vehicle_body with no game", Control, nullptr);
     host->command(mod, "sound", "sound_play and the rest, music_play and the rest with no game", Sound, nullptr);
     host->command(mod, "effects","car_exhaust, exhaust_hook, particle_def(_set) with no game", Effects, nullptr);

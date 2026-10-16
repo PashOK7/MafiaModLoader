@@ -592,6 +592,34 @@ int spot = H->hud_marker_add(M, &m);                   /* hud_marker_set to chan
   "color"}`, `hud.help {"text"}`, `hud.marker {"at" | "on", "bone", "pos", "label", "color", "picture", "scale",
   "screen", "distance", "edge", "radar", "compass"}` (`"id"` changes one), `hud.remove {"id" | "all"}`, `hud.list`.
 
+### A mod's state in the saves
+
+```c
+void OnEvent(const MmlEvent *ev, void *user) {
+    if (ev->type == MML_EVENT_GAME_SAVING)                      /* the game writes a save now */
+        H->save_put(M, MML_SAVE_SLOT, "fish", &g_fish, sizeof g_fish);
+    if (ev->type == MML_EVENT_GAME_LOADED) {                    /* a save loaded (or a new game: slot -1) */
+        g_fish = 0;
+        H->save_get(M, MML_SAVE_SLOT, "fish", &g_fish, sizeof g_fish);
+    }
+}
+H->subscribe(M, MML_EVENT_GAME_SAVING, OnEvent, NULL);
+H->subscribe(M, MML_EVENT_GAME_LOADED, OnEvent, NULL);
+H->save_put(M, MML_SAVE_PROFILE, "record", &best, sizeof best);   /* the profile's, written at once */
+```
+
+- **`MML_SAVE_SLOT`** is the state of the game being played. The loader writes it beside every save the game writes
+  (`savegame\mafia<profile>.<slot>.mml`) and reads it back when the game loads that save, whatever loads it (the
+  load menu, a retry, the pause menu's "Load Game"). A new game and every freeride start empty. Put the state at
+  any time, or in `MML_EVENT_GAME_SAVING`; read it in `MML_EVENT_GAME_LOADED` (`slot` and `profile` in the event).
+- **`MML_SAVE_PROFILE`** follows the profile across its saves (records, unlocks): written to
+  `savegame\mafia<profile>.sav.mml` as soon as it is put.
+- Keys are the mod's own (kept under its id: a reload keeps them); `save_put` with no data removes a key. The
+  game's own files are never changed: a save made without mods has no state, a `.mml` is never read without its save.
+  The game deleting a profile deletes its `.mml` files too.
+- `call save.state` (the profile, the slot, every key), `save.get {"mod", "key", "scope"}`, `save.put {"key",
+  "value", "scope"}` (the bridge's own keys); `GAME_SAVING` and `GAME_LOADED` go to `events.since` and MCP `wait`.
+
 ### What happens (shots, explosions, deaths, vehicles)
 
 | Event | When | `actor` | more |
