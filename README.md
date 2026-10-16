@@ -76,6 +76,7 @@ cargo build --release --manifest-path mcp/Cargo.toml  :: the MCP server
 python tests/run_tests.py                             :: offline tests (a stand-in game): ALL PASSED
 python tests/mcp_smoke.py                             :: the MCP server against it: ALL PASSED
 python tools/lab.py mode loader                       :: install into the game (dinput8.dll, the .asi, the mods)
+python tools/kb_strings.py                            :: the knowledge base's strings, read from your own 1.2 game (knowledge/README.md)
 python tools/start.py freeride --profile 4            :: the game, straight into profile 4's freeride (--police 0: no patrols)
 ```
 
@@ -121,6 +122,10 @@ python tools/start.py freeride --profile 4            :: the game, straight into
 MinHook 1.3.4 and nlohmann/json 3.12.0 (vendored, `third_party/README.md`), Ultimate ASI Loader 9.7.4, LuaJIT 2.1 and
 Jolt Physics 5.6.0 (downloaded and hash-checked by `tools/deps.py`), Rust crates (`mcp/Cargo.lock`). No game files are in the
 repository.
+
+## License
+
+MIT ([LICENSE](LICENSE)). The vendored and downloaded libraries keep their own licenses (`third_party/`).
 
 ## Disclaimer
 

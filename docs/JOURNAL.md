@@ -1196,3 +1196,16 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   console lines bottom left, the help line above the crosshair; nothing left after the mission's close.
 - **Tests**: offline the nine functions and the bridge's refusals with no game. ALL PASSED; `mcp_smoke.py` ALL
   PASSED; check_builds ALL PASSED.
+
+## 2026-10-16: ready to be public (the owner's decision)
+
+- **Audit**: no game files, dumps, decompiles or secrets in the history; the two pictures are ours (one drawn by
+  `make_picture.py`, one a 7-byte stand-in). What could not go public: other projects' names whose terms forbid it or
+  say nothing (MafiaHub's OSS license: use only to contribute to their work; Oakwood's: no derivative works; reM and
+  mafia-re: no terms), and the game's own text (the strings each function uses).
+- **Made**: `external.csv` keeps st0rm94's names (he shared them for everyone and agreed); `tools/kb_external.py`
+  writes every other project's names to `external.local.csv` on the machine that has the clones. The functions'
+  strings come from the user's own game: `tools/kb_strings.py` disassembles each function of `functions.csv` and
+  keeps the NUL-ended printable runs its operands point at (1087 Game.exe functions in 15 s, against the 239 the
+  decompile's hints had; LS3DF 350 against 112); the MCP server reads both local files. MIT license; every example
+  off by default (only `core` loads); a disclaimer in the README; the commits' address to GitHub's noreply one.

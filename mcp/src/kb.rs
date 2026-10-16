@@ -68,6 +68,15 @@ fn load_module(dir: &PathBuf, name: &'static str, base: u32, source: &'static st
         });
     }
     funcs.sort_by_key(|f| f.addr);
+    // the strings each function uses: read from this machine's own game files (tools/kb_strings.py), never committed
+    if let Ok(mut rd) = csv::Reader::from_path(d.join("strings.local.csv")) {
+        for r in rd.records().flatten() {
+            let Some(addr) = hex(&r[0]) else { continue };
+            if let Ok(i) = funcs.binary_search_by_key(&addr, |f| f.addr) {
+                funcs[i].strings = r[1].to_string();
+            }
+        }
+    }
     let mut callers: HashMap<u32, Vec<u32>> = HashMap::new();
     let mut callees: HashMap<u32, Vec<u32>> = HashMap::new();
     if let Ok(mut rd) = csv::Reader::from_path(d.join("calls.csv")) {
@@ -78,9 +87,10 @@ fn load_module(dir: &PathBuf, name: &'static str, base: u32, source: &'static st
             }
         }
     }
-    // ours (names.csv), then other projects' (external.csv: tools/kb_external.py, each checked against the files)
+    // ours (names.csv), then other projects' (tools/kb_external.py, each checked against the files): external.csv the
+    // ones the repository carries, external.local.csv the ones made on this machine from its clones
     let mut names = vec![];
-    for file in ["names.csv", "external.csv"] {
+    for file in ["names.csv", "external.csv", "external.local.csv"] {
         let Ok(mut rd) = csv::Reader::from_path(d.join(file)) else { continue };
         for r in rd.records().flatten() {
             let Some(addr) = hex(&r[0]) else { continue };

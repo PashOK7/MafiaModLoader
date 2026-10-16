@@ -1,10 +1,13 @@
 # Other projects' work on Mafia: what each holds, where to read it
 
 Found 2026-10-14 (to take the most from what others have already reversed). The repositories are
-cloned into `re/ext/` (ignored by git; `git clone --depth 1` each again on another machine). Only facts land in
-this repository: names, addresses, layouts, each with its source, in `knowledge/<module>/external.csv`
-(`tools/kb_external.py` makes it and checks every address against our files). No code and no prose of theirs is
-copied; read their documents in place, by the paths below.
+cloned into `re/ext/` (ignored by git; `git clone --depth 1` each again on another machine). No code and no prose
+of theirs is copied; read their documents in place, by the paths below. Their names, each checked against our files
+by `tools/kb_external.py`, go to `knowledge/<module>/external.local.csv` on the machine that has the clones, never
+into the repository: their terms do not let us redistribute them (MafiaHub's OSS license allows use only to
+contribute to their work, Oakwood's forbids derivative works, reM and mafia-re state no terms). st0rm94 shared his
+export for everyone's use and agreed to it: his names are committed (`external.csv`). What the loader's code says
+it learned from a project (an address first seen there) was checked in the game's own code before it was used.
 
 ## The sources
 

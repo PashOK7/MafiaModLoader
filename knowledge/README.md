@@ -5,11 +5,12 @@ server (`kb_search`, `kb_function`) and the loader uses to name addresses (`cras
 
 | Path | What | Made by |
 |---|---|---|
-| `<module>/functions.csv` | every function: address, name, class, signature, topics, the strings it uses, its lines in the decompile | `tools/kb_import.py` |
+| `<module>/functions.csv` | every function: address, name, class, signature, topics, its lines in the decompile (the strings column is empty: the game's text is not committed) | `tools/kb_import.py` |
 | `<module>/calls.csv` | the call graph (caller, callee) | `tools/kb_import.py` |
-| `<module>/strings.csv` | the string sites (address, the strings there) | `tools/kb_import.py` |
+| `<module>/strings.local.csv` | **made on your machine**, not committed: the strings each function uses, read from your own 1.2 `Game.exe` and `LS3DF.dll` (`python tools/kb_strings.py`, a few seconds); `kb_search` finds functions by them | `tools/kb_strings.py` |
 | `<module>/names.csv` | **our own names**: functions, labels (code sites, data) found in the running game and in other projects | by hand, plus `game_build.h` rows from `kb_import.py` |
-| `<module>/external.csv` | **other projects' names** (MafiaOnline, Oakwood, reM, mafia-re, st0rm94's 1.0 names carried to 1.2, IGraph's methods from mEdit), each address checked against the game's files; `source` says whose, `note` how it was found | `tools/kb_external.py` |
+| `<module>/external.csv` | **other projects' names the repository may carry**: st0rm94's 1.0 names carried to 1.2 (shared by him for everyone's use), each address checked against the game's files; `source` says whose, `note` how it was found | `tools/kb_external.py` |
+| `<module>/external.local.csv` | **made on your machine**, not committed: the other projects' names (MafiaOnline, Oakwood, reM, mafia-re, IGraph's methods from mEdit), from your own clones of them in `re/ext/` (their terms do not let us redistribute them) | `tools/kb_external.py` |
 | `game.exe/twins_10.csv` | the 1.0 twin of each 1.2 function that could be paired by its code (va12, va10, how) | `tools/kb_external.py` |
 | `game.exe/script_commands.csv` | the mission scripts' commands: opcode, name, handler in 1.2; opcode, handler in 1.0 (read from the binaries) | `tools/kb_external.py` |
 | `notes/*.md` | findings that do not fit a table: formats, layouts, how things work (`notes/external.md`: the other projects and where to read them by topic) | by hand |
@@ -32,7 +33,18 @@ server (`kb_search`, `kb_function`) and the loader uses to name addresses (`cras
 - **Other projects** (`notes/external.md`): MafiaHub's MafiaOnline and Oakwood, DavoSK's reM, Marvisak's mafia-re
   (1.2), st0rm94's reverse-engineering export (1.0), mEdit, OpenMF, Insanity3D. Cloned into `re/ext/` (never
   committed); `python tools/kb_external.py --game12 <1.2 Game.exe> --ls3d12 <1.2 LS3DF.dll> --game10 <1.0 Game.exe>`
-  makes the three tables above again (pull the clones first).
+  makes the tables above again (pull the clones first): the names of st0rm94's export into `external.csv`, every
+  other project's into `external.local.csv`, which stays on your machine.
+- **Your own game**: `python tools/kb_strings.py` (the 1.2 lab of `mml.config.json`, or `--game12`) reads the
+  strings each function uses into `strings.local.csv`. Nothing of the game's own text is in the repository.
+
+## On a new machine
+
+```bat
+python tools/kb_strings.py                          :: the functions' strings, from your 1.2 Game.exe and LS3DF.dll
+:: optional: the other projects' names (clone them into re\ext first: notes/external.md lists them)
+python tools/kb_external.py --game12 <1.2 Game.exe> --ls3d12 <1.2 LS3DF.dll> --game10 <1.0 Game.exe>
+```
 
 ## Growing it
 

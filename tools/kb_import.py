@@ -4,14 +4,14 @@
     python tools/kb_import.py <the reverse folder>      (or reverse_dir in mml.config.json)
 
 MafiaReverse holds full Hex-Rays decompiles of the 1.2 Game.exe and LS3DF.dll with generated indexes. The
-repository takes the facts only: every function's address, name, class, signature, topics and the strings it uses,
-the call graph, the strings' table. Never the decompiled code: the MCP server reads that at run time from the
-reverse folder (`kb_function`), which stays on this machine.
+repository takes the facts only: every function's address, name, class, signature and topics, and the call graph.
+Never the decompiled code (the MCP server reads it at run time from the reverse folder, `kb_function`, which stays
+on this machine), nor the game's own text: the strings column stays empty, tools/kb_strings.py fills
+strings.local.csv from this machine's game.
 
 Output (CSV, UTF-8):
-  knowledge/<module>/functions.csv  address,name,class,signature,topics,strings,src_start,src_end
+  knowledge/<module>/functions.csv  address,name,class,signature,topics,strings (empty),src_start,src_end
   knowledge/<module>/calls.csv      caller,callee
-  knowledge/<module>/strings.csv    address,strings
 where <module> is game.exe or ls3df.dll, and src_start/src_end are the function's lines in the decompile
 (Game.c / LS3DF_dll.c).
 
@@ -121,16 +121,14 @@ def main():
         funcs = []
         for r in rows(os.path.join(idx, 'functions.csv')):
             name = name_of(r)
-            funcs.append([r['address'].upper(), name, r['class'], ' '.join(r['signature'].split()), r['topics'], r['strings'],
+            funcs.append([r['address'].upper(), name, r['class'], ' '.join(r['signature'].split()), r['topics'], '',
                           r['start_line'], r['end_line']])
         funcs.sort(key=lambda f: int(f[0], 16))
         write(os.path.join(OUT, module, 'functions.csv'),
               ['address', 'name', 'class', 'signature', 'topics', 'strings', 'src_start', 'src_end'], funcs)
         calls = sorted({(r['caller_address'].upper(), r['callee_address'].upper()) for r in rows(os.path.join(idx, 'calls.csv'))})
         write(os.path.join(OUT, module, 'calls.csv'), ['caller', 'callee'], calls)
-        strings = [[r['address'].upper(), r.get('string_comment') or r.get('strings') or r.get('string') or '']
-                   for r in rows(os.path.join(idx, 'strings.csv'))]
-        write(os.path.join(OUT, module, 'strings.csv'), ['address', 'strings'], strings)
+        strings = []   # (the game's own text is not committed: tools/kb_strings.py reads it from this machine's game)
         named = sum(1 for f in funcs if f[1])
         ours = merge_names(module, table_names[module], funcs)
         print('%-9s %5d functions (%d named), %6d calls, %5d string sites, %d names of ours'

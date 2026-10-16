@@ -10,3 +10,5 @@ build_configure.log
 *.dmp
 /re/
 __pycache__/
+# made on this machine: other projects' names (kb_external.py), the game's strings (kb_strings.py)
+/knowledge/*/*.local.csv

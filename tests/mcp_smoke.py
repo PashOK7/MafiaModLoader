@@ -71,8 +71,11 @@ def main():
             'screenshot', 'input', 'script', 'script_commands', 'spawn', 'teleport', 'give', 'profile', 'wait', 'watch'}
     check('tools/list has every tool', want <= tools, want - tools)
 
-    ok, text = c.tool('kb_search', {'query': 'scene.i3d', 'module': 'game.exe'})
-    check('kb_search: by a string the function uses', ok and 'C_mission::Open' in text, text)
+    if os.path.exists(os.path.join(ROOT, 'knowledge', 'game.exe', 'strings.local.csv')):   # (tools/kb_strings.py made it)
+        ok, text = c.tool('kb_search', {'query': 'scene.i3d', 'module': 'game.exe'})
+        check('kb_search: by a string the function uses (read from this machine\'s game)', ok and 'C_mission::Open' in text, text)
+    ok, text = c.tool('kb_search', {'query': 'C_mission::Open', 'module': 'game.exe'})
+    check('kb_search: by a name', ok and '005' in text, text)
     ok, text = c.tool('kb_search', {'query': 'pedCarHit'})
     check('kb_search: our own names (names.csv)', ok and '0044CA50' in text, text)
     ok, text = c.tool('kb_search', {'query': 'ISD0'})

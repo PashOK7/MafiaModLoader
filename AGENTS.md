@@ -118,7 +118,9 @@ facts, callers, callees and its decompiled code (read from a reverse folder of f
 running game (`mem_read`, `call`), and write what you learned back: `knowledge/<module>/names.csv`,
 `knowledge/notes/`, addresses code uses in `game_build.h`. **Others have reversed much of the game** (multiplayer
 mods for 1.2, a 1.0 reverse with 114 class documents, LS3D's interfaces): their names are in the knowledge base
-(`external.csv`, source named), the scripts' commands in `knowledge/game.exe/script_commands.csv`, and
+(`external.csv`, st0rm94's; `external.local.csv`, the rest, made on this machine from their clones and never
+committed: their terms forbid it), the functions' strings in `strings.local.csv` (`tools/kb_strings.py`, from this
+machine's own game: the game's text is never committed), the scripts' commands in `knowledge/game.exe/script_commands.csv`, and
 `knowledge/notes/external.md` says where to read what, by topic (`re/ext/<project>/...`): read there before
 reversing a system anew.
 

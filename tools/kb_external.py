@@ -18,7 +18,8 @@ Every address is checked in the 1.2 files: a function's must start a function (o
 decompile), a contract row's original bytes must be there; what does not hold is left out and counted.
 
 Writes:
-  knowledge/game.exe/external.csv, knowledge/ls3df.dll/external.csv   address,kind,name,source,note
+  knowledge/<module>/external.csv         address,kind,name,source,note: the sources in PUBLISHED (committed)
+  knowledge/<module>/external.local.csv   the same for every other source (ignored by git: this machine's)
   knowledge/game.exe/twins_10.csv     va12,va10,how: the 1.0 twin of each 1.2 function that could be paired
   knowledge/game.exe/script_commands.csv   opcode,command,handler,opcode_10,handler_10: the mission scripts'
       commands of both builds, read from the binaries themselves (the keyword table DecodeInstruction builds,
@@ -39,6 +40,10 @@ import pefile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KB = os.path.join(ROOT, 'knowledge')
+# The sources whose names the repository carries (external.csv): st0rm94 shared his export with everyone and agreed
+# to its use. The others' terms do not allow it or say nothing: their names go to external.local.csv, made on the
+# machine that has their clones, never committed (the MCP server reads both).
+PUBLISHED = {'st0rm94'}
 HEX_ADDR = re.compile(r'0x[0-9a-fA-F]{6,8}\b')
 
 # The script machine of each build (checked when used: the code must be what was read).
@@ -459,8 +464,11 @@ def main():
 
     game_rows.sort(key=lambda r: (int(r[0], 16), r[3]))
     ls3d_rows.sort(key=lambda r: (int(r[0], 16), r[3]))
-    write_csv(os.path.join(KB, 'game.exe', 'external.csv'), ['address', 'kind', 'name', 'source', 'note'], game_rows)
-    write_csv(os.path.join(KB, 'ls3df.dll', 'external.csv'), ['address', 'kind', 'name', 'source', 'note'], ls3d_rows)
+    # what the repository may carry (PUBLISHED) and what stays on this machine (external.local.csv, ignored by git)
+    for module, rows in (('game.exe', game_rows), ('ls3df.dll', ls3d_rows)):
+        head = ['address', 'kind', 'name', 'source', 'note']
+        write_csv(os.path.join(KB, module, 'external.csv'), head, [r for r in rows if r[3] in PUBLISHED])
+        write_csv(os.path.join(KB, module, 'external.local.csv'), head, [r for r in rows if r[3] not in PUBLISHED])
     per = Counter(r[3] for r in game_rows)
     print('game.exe external: %d (%s)' % (len(game_rows), ', '.join('%s %d' % kv for kv in per.most_common())))
     print('ls3df.dll external: %d (%s)' % (len(ls3d_rows), ', '.join('%s %d' % kv for kv in Counter(r[3] for r in ls3d_rows).most_common())))
