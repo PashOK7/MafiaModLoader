@@ -24,8 +24,10 @@ Status: in development, before the first release. Everything below works in both
 - **Change the interface.** Text, shapes and pictures on screen in the game's fonts. Lines in the game's console and
   help line. Markers on the screen, on the radar and as the compass' target. New items and whole pages in the game's
   own menus, built from its real controls.
-- **Draw in 3D.** Draw into the world with the game's Direct3D device. Direct3D 11 shader passes over the frame with
-  its colour, depth and camera. Hide the game's meshes and draw your own instead.
+- **Draw in 3D.** Draw into the world with the game's Direct3D device. Replace the shaders of the game's own objects
+  (HLSL, Shader Model 3, through the d3d8to9 wrapper), with the game's lights near each one and a shadow map from the
+  sun. Direct3D 11 passes over the frame with its colour, depth, camera and the sun's shadow map (a god rays example).
+  Hide the game's meshes and draw your own instead.
 - **Use more cameras.** Move the game camera or drive it from a mod. Render the scene again from other cameras
   (mirrors, reflections, stereo views) into textures.
 - **Play sound.** The game's sounds or your own, 2D or 3D, with live volume and pitch. Music.
@@ -33,7 +35,8 @@ Status: in development, before the first release. Everything below works in both
   The game's folder stays untouched.
 - **Query the world.** Rays, sphere sweeps, the ground under a point, actors nearby, collision shapes.
 - **Develop fast.** Hot-reload mods while the game runs. A crashing mod is switched off, the game goes on. Per-mod
-  settings changed live, per-frame cost per mod, watch any function or memory field, read crash dumps with names, a
+  settings changed live (also on a page in the game's Options > Mods, made from the mod's manifest), per-frame cost
+  per mod, watch any function or memory field, read crash dumps with names, a
   knowledge base of the game's code. Mods in C, C++, Rust or anything with a C ABI.
 
 ## What is in it
