@@ -250,12 +250,12 @@ typedef struct MmlGfxConstants {
     float right[4], up[4], fwd[4];   /* its axes in the world */
     float proj[4];          /* the projection's _11, _22, _31, _32 */
     float size[4];          /* width, height, 1/width, 1/height */
-    float sun[4];           /* towards the sun (unit), w: 1 the game's light */
+    float sun[4];           /* towards the sun (unit), w: 1 the game's (its Direct3D light, else the scene's sun) */
     float depth_proj[4];    /* the projection's _33, _43; the sky's linear depth */
     float sun_color[4];     /* w: 1 the game's */
     float fog[4];           /* start, end, density, mode (0 none, 1 exp, 2 exp2, 3 linear) */
     float fog_color[4];     /* w: 1 when on */
-    float ambient[4];       /* w: 1 the game's */
+    float ambient[4];       /* w: 1 the scene's ambient light */
 } MmlGfxConstants;
 typedef struct MmlGfxView MmlGfxView;   /* a scene view as the passes get it (below) */
 typedef struct MmlGfxFrame {
@@ -423,6 +423,22 @@ typedef struct MmlItem {
     int id;                 /* the item (world.items: 9 Colt 1911, 10 Thompson 1928...) */
     int loaded, reserve;    /* rounds in it, in reserve */
 } MmlItem;
+
+/* A light of the scene (scene_lights below). */
+enum { MML_LIGHT_POINT = 1, MML_LIGHT_SPOT = 2, MML_LIGHT_DIRECTIONAL = 3, MML_LIGHT_AMBIENT = 4, MML_LIGHT_FOG = 5 };
+typedef struct MmlLight {
+    void *frame;            /* its I3D_light (a frame of type 2): light_set's handle */
+    char name[32];          /* the frame's name */
+    int type;               /* MML_LIGHT_* (LS3D's types; 6 and more: others) */
+    int on;                 /* it and every frame above it are on */
+    float color[3];         /* 0..1 */
+    float power;
+    float range[2];         /* near, far (metres) */
+    float cone[2];          /* a spot's inner and outer angles (radians) */
+    float pos[3];           /* in the world */
+    float dir[3];           /* where it shines (its z axis) */
+    int sectors;            /* how many sectors (rooms) it lights */
+} MmlLight;
 
 /* The frame's measures (frame_stats below): the frames Present to Present, the last 600 of them. */
 typedef struct MmlFrameStats {
@@ -737,6 +753,17 @@ typedef struct MmlHost {
     int (*item_ammo_set)(MmlMod *mod, void *human, int slot, int loaded, int reserve);
     /* an item taken from a person (the scripts' human_delweapon: every slot with it; his weapon model changed) */
     int (*human_take_item)(MmlMod *mod, void *human, int item);
+
+    /* ---- the scene's lights (both builds; docs/MODDING.md "The scene's lights"). The level's light frames as LS3D
+     * keeps them (the world itself is lit ahead of time: lightmaps; the lights light people, cars and objects as
+     * they move). scene_lights: every light of the mission's scene; returns how many there are. */
+    int (*scene_lights)(MmlMod *mod, MmlLight *out, int max);
+    /* a light changed through LS3D's own setters: color (NULL: kept), power, near and far range (NAN: kept), on (1, 0;
+     * -1 kept) */
+    int (*light_set)(MmlMod *mod, void *light, const float color[3], float power, float range_near, float range_far, int on);
+    /* the scene's sun (its brightest directional light that is on: towards it, its colour times its power) and the
+     * ambient light beside it; 0: none */
+    int (*scene_sun)(MmlMod *mod, float to_sun[3], float sun_color[3], float ambient[3]);
 } MmlHost;
 
 #define MML_FILE_GAME 1              /* file_read: the game's own file, not a mod's of the same name */

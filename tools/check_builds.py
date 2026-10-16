@@ -351,6 +351,21 @@ def main(a):
         for name, (exe, ls, gexe, gls) in builds.items():
             first = next((i for i in gexe.md.disasm(gexe.at(exe[f] - 0x400000, 0x2000), exe[f]) if i.mnemonic == 'ret'), None)
             check(first is not None and first.op_str == ret, f'{name} {f}: its first ret is ret {ret}')
+    # The scene's lights (host/lights.cpp): I3D_light's vtable is written by a constructor (mov [reg], imm) in both
+    # builds; its slots' code is the same in both (the first 16 bytes); SetPower writes +0x158, SetRange +0x168 and
+    # +0x16C, SetLightType +0x154.
+    vt12, vt10 = builds['1.2'][1]['lightVtable'], builds['1.0'][1]['lightVtable']
+    gl12, gl10 = builds['1.2'][3], builds['1.0'][3]
+    for name, gls, vt in (('1.2', gl12, vt12), ('1.0', gl10, vt10)):
+        imm = (gls.base + vt).to_bytes(4, 'little')
+        check(any(b'\xc7' + bytes([r]) + imm in bytes(gls.mem) for r in range(8)), f'{name} LS3DF lightVtable written by a constructor')
+    sl = lambda g, vt, o: struct.unpack('<I', g.at(vt + o, 4))[0] - g.base
+    for o in (0x24, 0x50, 0x54, 0x58, 0x5C, 0x60, 0x64, 0x68):
+        check(gl12.at(sl(gl12, vt12, o), 16) == gl10.at(sl(gl10, vt10, o), 16), f'LS3DF lightVtable+{o:#x}: the same code in both builds')
+    for name, gls, vt in (('1.2', gl12, vt12), ('1.0', gl10, vt10)):
+        for o, offs in ((0x5C, ('0x158',)), (0x64, ('0x168', '0x16c')), (0x50, ('0x154',))):
+            code = ' '.join(f'{i.mnemonic} {i.op_str}' for i in gls.md.disasm(gls.at(sl(gls, vt, o), 0x60), gls.base + sl(gls, vt, o)))
+            check(all(f'+ {x}]' in code for x in offs), f'{name} LS3DF lightVtable+{o:#x} writes {offs}')
     # The game's state (host/state.cpp): SetScore writes C_game +0x3640, reads +0x363E, ends with ret 4.
     for name, (exe, ls, gexe, gls) in builds.items():
         sc = [f'{i.mnemonic} {i.op_str}' for i in gexe.md.disasm(gexe.at(exe['gameSetScore'] - 0x400000, 0x30), exe['gameSetScore'])]

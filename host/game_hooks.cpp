@@ -103,6 +103,7 @@ int __fastcall hkMissionClose(void *self, void *edx) {
     g_missionName.clear();
     int r = oMissionClose(self, edx);
     HumansMissionClosed();   // (its people went with it)
+    LightsMissionClosed();   // (its lights too)
     HappenMissionClosed();
     if (g_inOpen && !g_openSent) SendOpen();
     return r;

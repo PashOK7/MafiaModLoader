@@ -1010,3 +1010,20 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   `HUMAN_DIED` with the player as the killer in both builds, and `bounty` paid $50 (the HUD's $50, 827$). The 7a
   gap is closed.
 - **Tests**: offline the seven functions with no game, the bridge's refusals. ALL PASSED; check_builds ALL PASSED.
+
+## 2026-10-16: the scene's lights (item 11, block 11a)
+
+- **Read**: mafia-ragdoll's scene_light.cpp had the light frames' fields (type +0x154, power +0x158, colour +0x15C,
+  range +0x168, sectors +0x140/+0x148) and the way to the sun. The knowledge base named I3D_light's setters in 1.2
+  (reM, Oakwood); they are not exported, so the vtable was found holding SetPower (LS3DF 0x9BC88, written by the
+  constructor) and 1.0's as the table whose slots hold the same code (0x97C28). Slots +0x24 SetOn, +0x58 SetColor,
+  +0x5C SetPower, +0x64 SetRange; the setters write the same offsets in both builds (`check_builds.py`).
+- **Made** `host/lights.cpp` (`scene_lights`, `light_set`, `scene_sun`, `lights.list`, `light.set`); the graphics
+  bridge takes the scene's sun and ambient light when the frame has no Direct3D light (`gfx.state` `sun_from`: in
+  both labs' freeride there is none, so the passes had a default sun from above until now).
+- **In the labs**: the freeride's city has 39..44 lights (19 point, 14..19 spot, 3 ambient, 2 fog, 1 directional:
+  `light03`, power 2, a warm colour, the same in both builds); `dusk` tinted the sun and the ambient lights and the
+  whole picture went to a dusk (the sky and the buildings too, not only what moves), and back at its unload.
+- **A hitch found and fixed**: the first version scanned the scene's frames every two seconds; `prof.state` showed a
+  13 ms "scene lights scan" in a hitch every two seconds. Now once a mission (and on `rescan`).
+- **Tests**: offline the three functions and the bridge's refusals with no game. ALL PASSED; check_builds ALL PASSED.

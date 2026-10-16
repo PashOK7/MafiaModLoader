@@ -223,6 +223,19 @@ int State(const char *, MmlReply *r, void *) {
     return 0;
 }
 
+// The scene's lights with no game: none, nothing set, no sun.
+int Lights(const char *, MmlReply *r, void *) {
+    if (!MML_HAS(H, scene_sun)) { H->reply_error(r, "the loader has no scene lights"); return 1; }
+    MmlLight l[2];
+    float s[3], c[3], a[3];
+    const float color[3] = {1, 0, 0};
+    char out[96];
+    snprintf(out, sizeof out, "{\"lights\":%d,\"set\":%d,\"sun\":%d}", H->scene_lights(M, l, 2), H->light_set(M, l, color, 1, NAN, NAN, -1),
+             H->scene_sun(M, s, c, a));
+    H->reply_append(r, out, static_cast<size_t>(-1));
+    return 0;
+}
+
 // People with no game: none, no skeleton, bone_set refused, no player.
 int Humans(const char *, MmlReply *r, void *) {
     if (!MML_HAS(H, human_player)) { H->reply_error(r, "the loader has no human_player"); return 1; }
@@ -288,7 +301,8 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->command(mod, "passviews_clear", "takes that pass back", PassViewsClear, nullptr);
     host->command(mod, "geom", "geom_hide, geom_capture with no game (refused), geom_show", Geom, nullptr);
     host->command(mod, "humans", "humans_list, human_skeleton, bone_set, human_player with no game", Humans, nullptr);
-    host->command(mod, "state", "money, money_set, human_health(_set), human_items, item_ammo_set, human_take_item with no game", State, nullptr);
+    host->command(mod, "lights", "scene_lights, light_set, scene_sun with no game", Lights, nullptr);
+    host->command(mod, "state","money, money_set, human_health(_set), human_items, item_ammo_set, human_take_item with no game", State, nullptr);
     host->command(mod, "ask","world_ray, world_sweep, world_near, world_shapes with no game", WorldAsk, nullptr);
     host->command(mod, "camera","camera_override taken and given back, camera_project and camera_ray with no frame", Camera, nullptr);
     host->command(mod, "poke","{}: adds 7 to a field on the game thread; {\"addr\": 1}: the field's address", Poke, nullptr);

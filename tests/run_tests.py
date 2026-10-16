@@ -798,6 +798,13 @@ def main():
         check('state.money set with no game: refused', not r['ok'], r)
         r = b.call('human.items')
         check('human.items with no game: an error, saying why', not r['ok'] and 'no actors' in str(r), r)
+        # the scene's lights with no game: none; light.set refused
+        r = b.call('kit.lights')
+        check('scene_lights, light_set, scene_sun with no game: none, refused', r['ok'] and r['result'] == {'lights': 0, 'set': 0, 'sun': 0}, r)
+        r = b.call('lights.list')
+        check('lights.list with no game: none, no sun', r['ok'] and r['result']['count'] == 0 and 'sun' not in r['result'], r)
+        r = b.call('light.set', {'light': '0x12345678', 'power': 2})
+        check('light.set of no light: refused, saying why', not r['ok'] and 'lights.list' in str(r), r)
         # a hardware watchpoint: the field the kit's command writes on the game thread, found with the code that wrote it
         addr = b.call('kit.poke', {'addr': 1})['result']
         r = b.call('watch.set', {'addr': addr, 'mode': 'write'})

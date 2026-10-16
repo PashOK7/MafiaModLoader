@@ -210,6 +210,10 @@ double g_framePrims, g_litPrims;
 Fog g_worldFog;
 SunTally g_worldSun;
 bool g_haveWorldFog, g_haveWorldSun;
+DWORD g_sceneSunAt;
+bool g_haveSceneSun;
+float g_sceneSun[3], g_sceneSunColor[3], g_sceneAmbient[3];
+const char *g_sunFrom = "a default from above";
 
 void Tally(UINT prims) {
     if (g_quiet || !prims) return;
@@ -682,10 +686,23 @@ void FillConstants(MmlGfxConstants &k, UINT w, UINT h, float *viewOut, float *pr
         fromGame = s[0] * s[0] + s[1] * s[1] + s[2] * s[2] > 1e-12f;
         if (!fromGame) { s[0] = 0.35f; s[1] = 0.85f; s[2] = 0.4f; sc[0] = sc[1] = sc[2] = 1; }
     }
+    // no Direct3D light in the frame: the scene's own sun and ambient light (lights.cpp: LS3D's light frames), read
+    // at most every 100 ms
+    if (GetTickCount() - g_sceneSunAt >= 100 || !g_sceneSunAt) {
+        g_sceneSunAt = GetTickCount();
+        g_haveSceneSun = SceneSun(g_sceneSun, g_sceneSunColor, g_sceneAmbient) != 0;
+    }
+    bool fromScene = false;
+    if (!fromGame && g_haveSceneSun) {
+        for (int i = 0; i < 3; i++) { s[i] = g_sceneSun[i]; sc[i] = g_sceneSunColor[i]; }
+        fromGame = fromScene = s[0] * s[0] + s[1] * s[1] + s[2] * s[2] > 1e-12f;
+        if (!fromGame) { s[0] = 0.35f; s[1] = 0.85f; s[2] = 0.4f; sc[0] = sc[1] = sc[2] = 1; }
+    }
+    g_sunFrom = fromScene ? "the scene's lights" : fromGame ? "Direct3D's light" : "a default from above";
     float n = std::sqrt(s[0] * s[0] + s[1] * s[1] + s[2] * s[2]);
-    for (int i = 0; i < 3; i++) { k.sun[i] = s[i] / n; k.sun_color[i] = sc[i]; k.ambient[i] = 0.5f; }
+    for (int i = 0; i < 3; i++) { k.sun[i] = s[i] / n; k.sun_color[i] = sc[i]; k.ambient[i] = g_haveSceneSun ? g_sceneAmbient[i] : 0.5f; }
     k.sun[3] = k.sun_color[3] = fromGame ? 1.0f : 0.0f;
-    k.ambient[3] = 0;   // (the scene's ambient light is LS3D's own, not a Direct3D state: not read yet)
+    k.ambient[3] = g_haveSceneSun ? 1.0f : 0.0f;   // (the scene's ambient light: LS3D's own, not a Direct3D state)
     k.depth_proj[0] = p._33; k.depth_proj[1] = p._43; k.depth_proj[2] = kFarDepth; k.depth_proj[3] = 0;
     DWORD on = 0, color = 0, table = 0, vertex = 0, start = 0, end = 0, density = 0;
     if (g_stateHooked && g_haveWorldFog) {
@@ -1366,7 +1383,8 @@ bool GfxMethod(const std::string &method, const std::string &, std::string *repl
     if (g_frames) {
         const MmlGfxConstants &k = g_k;
         out["world"] = {{"eye", {k.eye[0], k.eye[1], k.eye[2]}}, {"sun", {k.sun[0], k.sun[1], k.sun[2]}}, {"sun_from_game", k.sun[3] > 0.5f},
-                        {"sun_color", {k.sun_color[0], k.sun_color[1], k.sun_color[2]}},
+                        {"sun_color", {k.sun_color[0], k.sun_color[1], k.sun_color[2]}}, {"sun_from", g_sunFrom},
+                        {"ambient", {k.ambient[0], k.ambient[1], k.ambient[2]}}, {"ambient_from_scene", k.ambient[3] > 0.5f},
                         {"fog", {{"on", k.fog_color[3] > 0.5f}, {"mode", k.fog[3]}, {"start", k.fog[0]}, {"end", k.fog[1]},
                                  {"density", k.fog[2]}, {"color", {k.fog_color[0], k.fog_color[1], k.fog_color[2]}}}}};
     }

@@ -46,6 +46,8 @@ Taps can also start with the game, before its first frame: `"taps": ["5409D0 n=4
 | `world.ground` | `at` (`[x, y, z]` or an actor, 0.5 m up; default the player), `depth` (100) | the static world straight below: `height`, `normal`, `surface`... |
 | `world.near` | `at`, `radius` (30), `type` (0 any, 2 people, 4 cars), `max` (50) | the actors within `radius`, nearest first: `actor`, `type`, `name`, `pos`, `distance`; `count` |
 | `world.shapes` | `at` and `radius` (3), or `lo`, `hi`; `what`, `max` (100) | the collision shapes there: `count`, `kinds` (counts), `shapes` (`kind`, `corners` and `normal`, or `center`, `half`, `axes`, `radius`; `surface` or `actor`, `classes`) |
+| `lights.list` | `type` (`point`, `spot`, `directional`, `ambient`, `fog`), `all` (the lights that are off too), `max` (100), `rescan` | the scene's light frames: `count`, `kinds`, `lights` (`light`, `name`, `type`, `on`, `color`, `power`, `range`, `cone`, `pos`, `dir`, `sectors`), `sun` (`to_sun`, `color`, `ambient`) |
+| `light.set` | `light` (from `lights.list`), `color`, `power`, `range` ([near, far]), `on` | the light changed through LS3D's setters; the light after |
 | `state.money` | `set` or `add` | the freeride's money (`money`, null with no game; `shown`: the HUD shows it), set through the game's `C_game::SetScore` |
 | `human.health` | `actor` (default `"player"`), `set` | `health`, `max`; `set` above 0, at most `max` (the player's HUD number told) |
 | `human.items` | `actor` | `items`: `slot` (0 the hand, 1..5 the belt, 6 the coat, 7..10 extra, 11 put away in a car), `where`, `id`, `name`, `loaded`, `reserve` |

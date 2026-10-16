@@ -15,12 +15,12 @@ cbuffer MmlFrame : register(b0) {
     float4 g_fwd;
     float4 g_proj;        // the projection's _11, _22, _31, _32 (row vectors)
     float4 g_size;        // width, height, 1/width, 1/height (pixels)
-    float4 g_sun;         // the direction towards the sun (unit), w: 1 the game's light, 0 a default
+    float4 g_sun;         // the direction towards the sun (unit), w: 1 the game's (its Direct3D light, else the scene's sun), 0 a default
     float4 g_depthProj;   // the projection's _33, _43; the linear depth of the sky (where nothing was drawn); unused
     float4 g_sunColor;    // the sun's colour, w: 1 the game's
     float4 g_fog;         // the world's fog: start, end (linear), density (exp), mode (0 none, 1 exp, 2 exp2, 3 linear)
     float4 g_fogColor;    // its colour, w: 1 when on
-    float4 g_ambient;     // the ambient light, w: 1 the game's (else a default grey)
+    float4 g_ambient;     // the ambient light, w: 1 the scene's (else a default grey)
 };
 
 Texture2D<float> g_sceneDepth : register(t0);    // linear view depth, metres (the sky: g_depthProj.z)

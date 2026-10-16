@@ -288,6 +288,12 @@ What is done, what comes next and later, and what is known to be missing or wron
   on `events.since` and MCP `wait`. Both builds' addresses checked by `check_builds.py`. The example
   `mods/examples/tally`; seen in the 1.2 and 1.0 labs (the player's shots, his leaving the taxi, a person killed by
   a script, a car blown up with its explosion and the hit it gave the player).
+- **The scene's lights** (2026-10-16; item 11, block 11a): `scene_lights` (the level's I3D_light frames: type,
+  colour, power, range, cone, place, direction, sectors), `light_set` (through LS3D's own setters, the vtable checked
+  first), `scene_sun` (the brightest directional light and the ambient light beside it); the graphics bridge's
+  `g_sun`, `g_sunColor`, `g_ambient` take them when the frame has no Direct3D light (`gfx.state` `sun_from`);
+  `lights.list`, `light.set`. I3D_light's vtable in both builds checked by `check_builds.py`. The example
+  `mods/examples/dusk` seen in the 1.0 and 1.2 labs (the whole city tinted, put back at its unload).
 - **The game's state** (2026-10-16; item 10, block 10a): `money` / `money_set` (the freeride's money, C_game
   +0x3640, through the game's `C_game::SetScore`: the HUD shows it), `human_health` / `human_health_set` (+0x644 of
   +0x604; the player's HUD number told through `G_IndicatorsClass::PlayerSetLives` as a hit tells it),
@@ -390,7 +396,8 @@ V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselv
     gaps.)* **The game's state and progress** (C F P). Money, health, the inventory and ammo (read and changed), the
     mission's objectives and its outcome, the game's statistics (kills, cars stolen, distance), the profile's
     progress (chapters, freeride unlocks); a mod's own items in the items' table (a fishing rod, a fish).
-11. **The game's effects as data** (S W P). Particle emitters and the car exhaust (`0x4DEE90`) read, moved or
+11. *(11a done 2026-10-16: the scene's lights read and changed, the sun and ambient light for the bridge; see "Done".
+    Left: particle emitters, the car exhaust, `particles.def`, the weather's parameters; Known gaps.)* **The game's effects as data** (S W P). Particle emitters and the car exhaust (`0x4DEE90`) read, moved or
     replaced; `tables\particles.def`'s records; the weather's parameters; the scene's lights. Reference:
     `smoke_game.cpp`, `effects.cpp`, `frame_life.cpp`, `scene_light.cpp`.
 
@@ -509,9 +516,8 @@ merged, sorted by importance):
   is gone from the source (clean `build/x86/out` or the game's copy by hand). The presaved textures are recognised
   by their names' form as LS3DF 1.2 builds them (read in its decompile); 1.0's LS3DF asked the same name for the
   menu's picture (its code not read).
-- **The graphics bridge** (host/gfx.cpp): left of item 3 besides 3c: the scene's own light (LS3D lights its world
-  without Direct3D lights: the sun is a default from above, the ambient light a grey; mafia-ragdoll's `scene_light`
-  reads the scene's lights), antialiasing of our own (a mod with `"gfx": true` turns the game's multisampling off),
+- **The graphics bridge** (host/gfx.cpp): left of item 3 besides 3c: the sky's own sun (the scene's lights feed the
+  sun and the ambient light since item 11a), antialiasing of our own (a mod with `"gfx": true` turns the game's multisampling off),
   the frame's depth as a Direct3D 11 depth buffer for libraries that test against one (mafia-ragdoll's
   `BuildSceneDsv`), the readback of a pixel's depth (its `Aim`). Plain Direct3D 8 (no wrapper) has no bridge. The
   passes run in the mission's world only, not in a menu's scene. At most 64 passes. Measured on one NVIDIA RTX 3070.
@@ -524,6 +530,12 @@ merged, sorted by importance):
   matrix being the camera's backdrop view, bit for bit (it was, every drawing, in both labs). `MML_VIEW_OWN_SECTOR`
   (a camera in another room) was not tried. The first two or three reloads of `rear_mirror` added 2..13 handles each (taken to be
   Direct3D's own warming up: views made and taken back by mode changes added none); then 0.
+- **The scene's lights** (host/lights.cpp, item 11a): found once a mission (13 ms in the 1.2 lab: not repeated),
+  so lights made later (a car's lamps: 39 to 44 lights between two launches of the same freeride) need
+  `lights.list {"rescan": true}`; the list holds frames that LS3D may free (each read guarded, each change checks the
+  vtable). The sky's own sun (its quad in the backdrop, mafia-ragdoll's `FindSkySun`) is not read: `scene_sun` is
+  the directional light's direction. Not done of item 11: particle emitters, the car exhaust (0x4DEE90),
+  `tables\particles.def`, the weather's parameters.
 - **The game's state** (host/state.cpp, item 10a): the money is the freeride's only (the story keeps none); health
   written does not pass the game's hit (no wound, no sound), and a death is not written. Not done of item 10: the
   mission's objectives (the scripts' `mission_objectives` shows a text; what is current was not looked for), the

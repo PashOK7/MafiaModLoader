@@ -230,6 +230,12 @@ bool StateHealthSet(void *human, float health, std::string *err);
 int StateItems(void *human, MmlItem *out, int max);
 bool StateAmmoSet(void *human, int slot, int loaded, int reserve, std::string *err);
 bool StateTakeItem(void *human, int item, std::string *err);
+// the scene's lights (lights.cpp): LS3D's light frames listed and changed through its setters; lights.list, light.set
+void LightsMissionClosed();
+int SceneLights(MmlLight *out, int max);
+bool LightSet(void *light, const float *color, float power, float rangeNear, float rangeFar, int on, std::string *err);
+int SceneSun(float toSun[3], float sunColor[3], float ambient[3]);
+bool LightsMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 bool StateMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 bool CollideMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 

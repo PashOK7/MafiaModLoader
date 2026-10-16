@@ -351,6 +351,15 @@ int H_HumanTakeItem(MmlMod *m, void *h, int item) {
     Log(MML_LOG_WARN, Who(m), "human_take_item: %s", err.c_str());
     return 0;
 }
+int H_SceneLights(MmlMod *m, MmlLight *out, int max) { return Alive(m) ? SceneLights(out, out ? max : 0) : 0; }
+int H_LightSet(MmlMod *m, void *light, const float color[3], float power, float rn, float rf, int on) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    if (LightSet(light, color, power, rn, rf, on, &err)) return 1;
+    Log(MML_LOG_WARN, Who(m), "light_set: %s", err.c_str());
+    return 0;
+}
+int H_SceneSun(MmlMod *m, float s[3], float c[3], float a[3]) { return Alive(m) ? SceneSun(s, c, a) : 0; }
 int H_WorldShapes(MmlMod *m, const float lo[3], const float hi[3], uint32_t what, MmlShape *out, int max) {
     return Alive(m) && lo && hi ? WorldShapes(lo, hi, what, out, out ? max : 0) : 0;
 }
@@ -797,6 +806,9 @@ void ModsInit() {
     g_host.human_items = H_HumanItems;
     g_host.item_ammo_set = H_ItemAmmoSet;
     g_host.human_take_item = H_HumanTakeItem;
+    g_host.scene_lights = H_SceneLights;
+    g_host.light_set = H_LightSet;
+    g_host.scene_sun = H_SceneSun;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();
@@ -890,6 +902,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (ScriptMethod(method, paramsJson, reply, &ok)) return ok;
     if (CollideMethod(method, paramsJson, reply, &ok)) return ok;
     if (StateMethod(method, paramsJson, reply, &ok)) return ok;
+    if (LightsMethod(method, paramsJson, reply, &ok)) return ok;
     if (WorldMethod(method, paramsJson, reply, &ok)) return ok;
     if (FilesMethod(method, paramsJson, reply, &ok)) return ok;
     if (RenderMethod(method, paramsJson, reply, &ok)) return ok;
@@ -1000,7 +1013,7 @@ std::string CommandsList() {
                           "input.seq", "input.release", "input.state", "text.get", "text.find", "screenshot", "screenshot.state",
                           "draw.text", "draw.rect", "draw.line", "draw.clear", "draw.state", "config.get", "config.set",
                           "menu.item", "menu.items", "menu.item.remove", "menu.page", "menu.page.set", "menu.page.close", "menu.def", "menu.click", "input.mouse", "input.text",
-                          "script.run", "script.state", "script.stop", "script.list", "files.list", "files.which", "files.read", "render.state", "gfx.state", "gfx.reset", "view.state", "view.show", "geom.hide", "geom.show", "geom.state", "geom.survey", "geom.capture", "prof.state", "prof.reset", "prof.sample", "native.call", "humans.list", "human.skeleton", "human.pose", "watch.set", "watch.show", "watch.clear", "camera.state", "camera.set", "camera.release", "world.ray", "world.sweep", "world.ground", "world.near", "world.shapes", "state.money", "human.health", "human.items", "human.ammo", "human.take"})
+                          "script.run", "script.state", "script.stop", "script.list", "files.list", "files.which", "files.read", "render.state", "gfx.state", "gfx.reset", "view.state", "view.show", "geom.hide", "geom.show", "geom.state", "geom.survey", "geom.capture", "prof.state", "prof.reset", "prof.sample", "native.call", "humans.list", "human.skeleton", "human.pose", "watch.set", "watch.show", "watch.clear", "camera.state", "camera.set", "camera.release", "world.ray", "world.sweep", "world.ground", "world.near", "world.shapes", "state.money", "human.health", "human.items", "human.ammo", "human.take", "lights.list", "light.set"})
         out.push_back({{"name", m}, {"owner", "host"}});
     for (auto &kv : g_commands) out.push_back({{"name", kv.first}, {"owner", Who(kv.second.mod)}, {"help", kv.second.help}});
     return out.dump();

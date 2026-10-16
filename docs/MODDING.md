@@ -343,6 +343,33 @@ H->human_take_item(M, p, 12);                    /* the scripts' human_delweapon
 - `mods/examples/bounty` (not enabled by default): each person the player kills pays `reward` dollars, his health
   comes back once nothing has hit him for a while, `endless_ammo` keeps the hand's weapon's reserve full.
 
+### The scene's lights
+
+```c
+MmlLight lights[256];
+int n = H->scene_lights(M, lights, 256);         /* name, type, on, color, power, range, cone, pos, dir, sectors */
+for (int i = 0; i < n && i < 256; i++)
+    if (lights[i].type == MML_LIGHT_DIRECTIONAL) {
+        const float warm[3] = {1.0f, 0.6f, 0.4f};
+        H->light_set(M, lights[i].frame, warm, lights[i].power * 0.6f, NAN, NAN, -1);   /* NAN, -1: kept */
+    }
+float toSun[3], sunColor[3], ambient[3];
+H->scene_sun(M, toSun, sunColor, ambient);       /* the level's sun and the ambient light beside it */
+```
+
+- **The lights are the level's own light frames** (LS3D's `I3D_light`: point, spot, directional, ambient, fog);
+  the freeride's city has about 40. A change goes through LS3D's own setters. In the labs a change of the sun and
+  the ambient light changed the whole picture (the buildings, the sky, the people and cars), at once.
+- The list is found once a mission (the walk over every frame of the scene: about 13 ms, so not each frame);
+  lights that come later (a car's lamps) are found with `call lights.list {"rescan": true}`. A mod that changed
+  lights puts them back when it unloads; a new mission brings its own.
+- The graphics bridge's constants (`g_sun`, `g_sunColor`, `g_ambient`) take the scene's sun and ambient light
+  when the frame has no Direct3D light (`gfx.state` `sun_from`).
+- `call lights.list {"type": "directional", "all": true, "max", "rescan"}` (the lights that are on; `all`: every
+  one; and the sun), `light.set {"light", "color", "power", "range": [near, far], "on"}`.
+- `mods/examples/dusk` (not enabled by default): the sun and the ambient lights tinted towards a dusk, put back
+  when it is turned off or unloaded.
+
 ### What happens (shots, explosions, deaths, vehicles)
 
 | Event | When | `actor` | more |

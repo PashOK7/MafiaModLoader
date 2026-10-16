@@ -1,0 +1,6 @@
+{
+  // The defaults of dusk's settings.
+  "on": 1,
+  "tint": { "r": 1.0, "g": 0.55, "b": 0.35 },   // the sun's and the ambient light's colours times this
+  "strength": 0.6                                 // their power times this
+}

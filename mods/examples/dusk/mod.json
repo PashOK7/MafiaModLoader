@@ -1,0 +1,11 @@
+{
+  "id": "dusk",
+  "name": "Dusk: the scene's sun and ambient lights tinted (the scene's lights)",
+  "version": "0.1.0",
+  "type": "native",
+  "entry": "dusk.dll",
+  "enabled": false,
+  "builds": ["1.2", "1.0"],
+  "load_order": 100,
+  "depends": []
+}
