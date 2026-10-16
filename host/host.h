@@ -18,6 +18,8 @@
 #include <vector>
 #include "mml/mml.h"
 
+struct IDirect3DBaseTexture9;   // (d3d9.h's: shadows.cpp's map)
+
 namespace host {
 
 // ---- paths (set once at start)
@@ -295,6 +297,15 @@ bool ShaderRemove(MmlMod *mod, int handle);   // handle 0: every one of the mod'
 void ShadersModGone(MmlMod *mod);
 void ShadersFrameEnd();                   // (render.cpp) the frame drawn: the survey done
 bool ShadersMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+// the shadow map from the sun and the game's lights near a draw (shadows.cpp)
+bool ShaderShadows(MmlMod *mod, const MmlShadowSettings *s);   // null s: the mod no longer wants it
+bool ShadowsWanted();
+void ShadowsModGone(MmlMod *mod);
+void ShadowsBeforeWorld();                // (render.cpp) the pass, before the mission's world is drawn
+void ShadowsMissionClose();
+void ShadowsConstants(const void *visual, float *c);   // game.hlsli's c76..c116 for a draw of this visual
+::IDirect3DBaseTexture9 *ShadowsTexture();  // the map drawn this frame, or null
+void ShadowsState(std::string *json);
 void *ActorFrame(void *actor);
 int FrameWorld(void *frame, float out[16]);
 bool PropsMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);

@@ -100,6 +100,7 @@ int __fastcall hkMissionClose(void *self, void *edx) {
     WorldMissionClose();
     PropsMissionClose();    // (the props unlinked and released while their scene is there)
     MeshesMissionClose();   // (the scene's frames and meshes forgotten)
+    ShadowsMissionClose();  // (the shadow pass's buffers of those meshes)
     SoundMissionClose();    // (the 3D sounds, likewise)
     ControlMissionClose();
     InteractMissionClose();

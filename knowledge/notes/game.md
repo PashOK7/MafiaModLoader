@@ -541,6 +541,12 @@ autosplitter; kept outside it, not ported). Checked against the above:
   fog, linear (FOGVERTEXMODE 3, no table fog). Blending SRCALPHA / INVSRCALPHA (translucent) or SRCALPHA / ONE
   (additive); alpha test GREATEREQUAL with 200 or 1. Skinned people come the same way (skinned on the CPU). One
   pass a face group.
+- **ls3d** The city by night (freeridenoc, measured 2026-10-17 in both labs): 1053 lights in the scene (1025
+  point lights: the street lamps; 21 spots, among them each car's headlights: a spot of the car's own at its front,
+  range 25 to 60 m, cones 0.52 and 1.22 rad, its direction the car's forward). The cone of light the headlights
+  throw on the street is not drawn by the face groups (every one at pass 0 in a survey): another path, not found.
+- **ours** A face's normal from a pixel's world position is `cross(ddx(p), ddy(p))` under the game's projection
+  (the street's comes out y up); the other order points it away (game.hlsli's `mml_FaceNormal` had it so at first).
 - **ours** The depth's last bits matter: a sign behind a wall of the building across the street from the
   freeride's start is hidden from the parking lot by the fixed pipeline's arithmetic and shows through the wall
   when a shader computes the position with the matrices multiplied together first.

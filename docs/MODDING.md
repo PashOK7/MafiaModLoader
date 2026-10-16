@@ -864,6 +864,17 @@ int h = H->shader_add(M, &r, err, sizeof err);   /* 0: refused, err says why (th
   `mml_WorldViewProj` in one step. The game's models hide things inside one another: a shop's sign stands just
   behind a wall; from 80 m the depth buffer cannot tell them apart, and only the last bits of the arithmetic decide
   which wins. In the game's order the wall wins (as the game shows it); in another, the sign shows through the wall.
+- **The sun's shadow and the game's lights** (`shader_shadows`): a mod that asks for it gets a shadow map from the
+  scene's sun drawn before each frame of the mission's world (`MmlShadowSettings`: its size, 2048 texels; its
+  extent, 60 m from the camera; the depth's bias), its casters the scene's meshes around the camera and the cars
+  near it (block 6d's `scene_pieces` and `actor_meshes`: people are not among them, nor billboards). The rules'
+  shaders read it with `mml_Shadow(worldPos)` (1 lit, 0 in the shadow, 1 when there is no map); the sun is
+  `mml_SunDir`, `mml_SunColor`, `mml_SunAmbient`. Always there, asked for or not: the game's own point and spot
+  lights that reach the drawn visual (up to eight, nearest to its bounding sphere's centre first; a car's
+  headlights are spots of its own), `mml_GameLightInfo.x` of them, `mml_GameLight(i, worldPos, normal)` one's light
+  at a point as LS3D falls it off. The game's lightmaps already hold the static shadows and its vertex colours the
+  lights: what to add, and where, is the shader's choice (a surface facing away from the sun: `dot(normal,
+  mml_SunDir)`). `call shader.shadows {"size", "extent", "bias"}` tries it (`"on": false` stops it).
 - Shaders compiled in a mod's build: `mml_shaders()` (fxc, `vs_3_0` / `ps_3_0`), the bytecode in `vs_code` /
   `ps_code`; `sdk/include` on fxc's include path (`#include "mml/shaders/game.hlsli"`).
 - `call shader.add {"source", "vs", "ps", "pattern", "kinds", "classes", "where", "all_passes"}` (an agent tries a

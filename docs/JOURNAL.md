@@ -1361,3 +1361,22 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **In both labs** alike (ROADMAP "Done"): the reference on every draw, the frame the game's.
 - **Tests**: offline ALL PASSED (a shader that does not compile refused with the compiler's message; the reference
   compiled with its header).
+
+## 2026-10-17: the sun's shadow and the game's lights for shaders (block 7c of the order)
+
+- **Made** `host/shadows.cpp`: a shadow map from the scene's sun (R32F, an orthographic box around the camera, its
+  texels snapped) drawn on the game's device before the mission's world from block 6d's meshes (the scene around
+  the camera, the cars near it), every state put back; the scene's point and spot lights reaching each draw a rule
+  takes, nearest first; `shader_shadows`, `shader.shadows`; game.hlsli's registers c76..c116, `mml_Shadow`,
+  `mml_GameLight`.
+- **Seen**: by day, a debug shader showing `mml_Shadow` alone, then the reference darkened by it: the taxi's shadow
+  on the parking lot, the building's on the pavement (the sun behind it), alike in both labs.
+- **A wrong conclusion, caught by the owner**: the first night's picture was taken for the headlights lighting the
+  street through `mml_GameLight`; the owner saw only the game's own cone there. Measured: the street came out black
+  (no light at all), the cone was the game's, drawn by a path the rules do not take (the survey has every face
+  group at pass 0). The cause: `mml_FaceNormal` (block 7b) pointed away from the eye (a shader drawing the normal:
+  the street's y down), so every light's facing term was 0. Corrected (`cross(ddx, ddy)`); then the street lit by
+  the car's own spot (a wide fan ahead of it) and the lamps, alike in both labs.
+- **Not found**: what draws the headlights' cone on the street (Known gaps).
+- **Tests**: offline ALL PASSED (the shadows asked for and let go by a mod and the bridge; a shader using
+  `mml_Shadow` and `mml_GameLight` compiled).

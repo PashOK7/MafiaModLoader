@@ -42,8 +42,54 @@ struct MmlLight {   // Direct3D's lights (D3DLIGHT9); none in the game's own dra
 MmlLight mml_Lights[8] : register(c27);
 float4 mml_TFactor  : register(c75);   // D3DRS_TEXTUREFACTOR (a car's reflection's amount is its alpha)
 
+// What per-object shading needs beyond the draw (mml.h shader_shadows): the shadow map from the sun (when a mod asked
+// for it), the sun, the game's own lights near this draw.
+row_major float4x4 mml_ShadowViewProj : register(c76);   // the world to the map's clip space (x, y -1..1, z 0..1 its depth)
+float4 mml_ShadowInfo : register(c80);   // x 1 when the map was drawn this frame, y one texel (1 / size), z the depth's bias, w size
+float4 mml_SunDir     : register(c81);   // xyz towards the sun (the scene's brightest directional light), w 1 when there is one
+float4 mml_SunColor   : register(c82);   // rgb its colour times its power
+float4 mml_SunAmbient : register(c83);   // rgb the scene's ambient light
+float4 mml_GameLightInfo : register(c84);   // x the lights below (0..8), y the scene's lights that are on
+struct MmlGameLight {   // LS3D's point and spot lights (lights.cpp), the nearest to the draw's object first
+    float4 pos;       // xyz the place (world), w the type (1 point, 2 spot)
+    float4 color;     // rgb its colour times its power, w its far range (nothing past it)
+    float4 dir;       // xyz where a spot shines, w cos(its outer cone / 2)
+    float4 range;     // x its near range (full light to it), y cos(its inner cone / 2)
+};
+MmlGameLight mml_GameLights[8] : register(c85);
+
 sampler2D mml_Tex0 : register(s0);   // the textures the game set: stage 0 the surface's, stage 1 a lightmap or a reflection
 sampler2D mml_Tex1 : register(s1);
+sampler2D mml_ShadowMap : register(s2);   // R32F: the sun's depth (1 nothing); point sampling, white past its edges
+
+// How lit a point of the world is by the sun: 1 lit, 0 in a shadow (2x2 texels, a 3x3 average). 1 when there is no
+// map this frame.
+float mml_Shadow(float3 worldPos) {
+    if (mml_ShadowInfo.x < 0.5) return 1;
+    float4 p = mul(float4(worldPos, 1), mml_ShadowViewProj);
+    float2 uv = float2(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
+    float depth = p.z - mml_ShadowInfo.z;
+    float lit = 0;
+    for (int y = -1; y <= 1; y++)
+        for (int x = -1; x <= 1; x++)
+            lit += tex2D(mml_ShadowMap, uv + float2(x, y) * mml_ShadowInfo.y).r >= depth ? 1 : 0;
+    return lit / 9;
+}
+
+// One of the game's lights at a point: its colour times how much reaches it (LS3D's: full to the near range, none past
+// the far one, linear between; a spot's cone between its inner and outer angles), times the surface's facing it.
+float3 mml_GameLight(int i, float3 worldPos, float3 worldNormal) {
+    MmlGameLight l = mml_GameLights[i];
+    float3 to = l.pos.xyz - worldPos;
+    float dist = length(to);
+    float3 L = to / max(dist, 1e-4);
+    float att = saturate((l.color.w - dist) / max(l.color.w - l.range.x, 1e-4));
+    if (l.pos.w > 1.5) {
+        float rho = dot(-L, normalize(l.dir.xyz));
+        att *= saturate((rho - l.dir.w) / max(l.range.y - l.dir.w, 1e-4));
+    }
+    return l.color.rgb * att * saturate(dot(normalize(worldNormal), L));
+}
 
 // The game's fog factor (1: no fog) for a distance from the eye, as the fixed pipeline works it out.
 float mml_FogFactor(float dist) {
@@ -86,9 +132,10 @@ float4 mml_FixedStage(float4 stage, float4 tex, float4 cur, float4 diffuse) {
     return float4(rgb, a);
 }
 
-// The face's normal in the world from a pixel's world position (flat: the triangle's).
+// The face's normal in the world from a pixel's world position (flat: the triangle's), towards the eye's side
+// (measured: the street's is y up; the other order of the cross product gave y down).
 float3 mml_FaceNormal(float3 worldPos) {
-    return normalize(cross(ddy(worldPos), ddx(worldPos)));
+    return normalize(cross(ddx(worldPos), ddy(worldPos)));
 }
 
 // Direct3D's fixed lighting of a point (for draws Direct3D lights: mml_Draw.y 1; the game's own draws are lit by LS3D).

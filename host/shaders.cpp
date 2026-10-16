@@ -194,7 +194,7 @@ void Survey(IDirect3DDevice9 *d, UINT prims) {
 }
 
 // ---- the constants (game.hlsli)
-constexpr int kRegs = 76;
+constexpr int kRegs = 117;   // (c0..c75 here, c76..c116 shadows.cpp's)
 void Mul(const D3DMATRIX &a, const D3DMATRIX &b, D3DMATRIX *o) {
     for (int i = 0; i < 4; i++)
         for (int j = 0; j < 4; j++) o->m[i][j] = a.m[i][0] * b.m[0][j] + a.m[i][1] * b.m[1][j] + a.m[i][2] * b.m[2][j] + a.m[i][3] * b.m[3][j];
@@ -283,6 +283,7 @@ void Constants(IDirect3DDevice9 *d, float *c) {
     c[105] = range ? 1.0f : 0.0f;
     c[106] = static_cast<float>(vpo.Width);
     c[107] = static_cast<float>(vpo.Height);
+    ShadowsConstants(g_group.visual, c);
 }
 
 bool Make(Rule &r, IDirect3DDevice9 *d) {
@@ -338,7 +339,27 @@ bool Draw(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex, UINT
     d->SetPixelShaderConstantF(0, c, kRegs);
     if (r->vs) d->SetVertexShader(r->vs);
     if (r->ps) d->SetPixelShader(r->ps);
+    // the shadow map at sampler 2 (shadows.cpp), the sampler's state put back after
+    IDirect3DBaseTexture9 *map = ShadowsTexture(), *oldTex = nullptr;
+    DWORD ss[5] = {};
+    const D3DSAMPLERSTATETYPE kSs[5] = {D3DSAMP_MINFILTER, D3DSAMP_MAGFILTER, D3DSAMP_MIPFILTER, D3DSAMP_ADDRESSU, D3DSAMP_ADDRESSV};
+    if (map) {
+        d->GetTexture(2, &oldTex);
+        for (int i = 0; i < 5; i++) d->GetSamplerState(2, kSs[i], &ss[i]);
+        d->SetTexture(2, map);
+        d->SetSamplerState(2, D3DSAMP_MINFILTER, D3DTEXF_POINT);
+        d->SetSamplerState(2, D3DSAMP_MAGFILTER, D3DTEXF_POINT);
+        d->SetSamplerState(2, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
+        d->SetSamplerState(2, D3DSAMP_ADDRESSU, D3DTADDRESS_BORDER);
+        d->SetSamplerState(2, D3DSAMP_ADDRESSV, D3DTADDRESS_BORDER);
+        d->SetSamplerState(2, D3DSAMP_BORDERCOLOR, 0xFFFFFFFF);
+    }
     *hr = dip(d, t, base, minIndex, verts, start, n);
+    if (map) {
+        d->SetTexture(2, oldTex);
+        if (oldTex) oldTex->Release();
+        for (int i = 0; i < 5; i++) d->SetSamplerState(2, kSs[i], ss[i]);
+    }
     d->SetVertexShader(oldVs);
     d->SetPixelShader(oldPs);
     if (oldVs) oldVs->Release();
@@ -523,6 +544,16 @@ bool ShadersMethod(const std::string &method, const std::string &paramsJson, std
             bool all = p.value("all", false);
             ShaderRemove(nullptr, all ? 0 : p.value("handle", -1));
             *reply = dump({{"rules", g_rules.size()}});
+        } else if (method == "shader.shadows") {
+            if (!p.value("on", true)) {
+                ShaderShadows(nullptr, nullptr);
+            } else {
+                MmlShadowSettings ss{p.value("size", 2048), p.value("extent", 60.0f), p.value("bias", 0.002f)};
+                ShaderShadows(nullptr, &ss);
+            }
+            std::string sh;
+            ShadowsState(&sh);
+            *reply = dump(json::parse(sh, nullptr, false));
         } else if (method == "shader.state") {
             json rules = json::array();
             for (auto &r : g_rules) {
@@ -531,7 +562,9 @@ bool ShadersMethod(const std::string &method, const std::string &paramsJson, std
                 if (!r->error.empty()) j["error"] = r->error;
                 rules.push_back(j);
             }
-            *reply = dump({{"rules", rules}, {"faults", g_faults}});
+            std::string sh;
+            ShadowsState(&sh);
+            *reply = dump({{"rules", rules}, {"faults", g_faults}, {"shadows", json::parse(sh, nullptr, false)}});
         } else if (method == "shader.survey") {
             int id = p.value("id", 0);
             if (!id) {
@@ -544,7 +577,7 @@ bool ShadersMethod(const std::string &method, const std::string &paramsJson, std
                 *reply = dump(out);
             }
         } else {
-            *reply = "unknown shader method (shader.add, shader.remove, shader.state, shader.survey)";
+            *reply = "unknown shader method (shader.add, shader.remove, shader.state, shader.survey, shader.shadows)";
             return true;
         }
         *ok = true;

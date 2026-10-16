@@ -897,6 +897,7 @@ def main():
               m['materials'] == 0 and m['file'] == 0 and m['untouched'] == 1, r)
         check('scene_focus with no game: taken (and let go); scene_pieces none; actor_meshes of no actor: -1',
               r['ok'] and m['focus'] == 1 and m['pieces'] == 0 and m['actor'] == -1 and m['off'] == 1, r)
+        check('shader_shadows from a mod with no game: taken and let go', r['ok'] and m['shadows'] == 2, r)
         ref = open(os.path.join(ROOT, 'sdk', 'include', 'mml', 'shaders', 'reference.hlsl')).read()
         r = b.call('shader.add', {'source': ref.replace('mml_ps(', 'mml_ps_broken(', 1), 'vs': 'mml_vs', 'ps': 'mml_ps'})
         check('shader.add of HLSL that does not compile: refused with the compiler\'s message',
@@ -904,6 +905,22 @@ def main():
         r = b.call('shader.add', {'source': ref, 'vs': 'mml_vs', 'ps': 'mml_ps'})
         check('shader.add of the reference shaders with no game: compiled (game.hlsli included), refused for want of the game',
               not r['ok'] and 'no game' in str(r), r)
+        lit = ('#include "mml/game.hlsli"\n'
+               'float4 ps(float3 w : TEXCOORD0, float3 n : TEXCOORD1) : COLOR0 {\n'
+               '    float3 c = mml_SunAmbient.rgb + mml_SunColor.rgb * mml_Shadow(w);\n'
+               '    for (int i = 0; i < 8; i++) if (i < mml_GameLightInfo.x) c += mml_GameLight(i, w, n);\n'
+               '    return float4(c, 1);\n'
+               '}\n')
+        r = b.call('shader.add', {'source': lit, 'ps': 'ps'})
+        check('shader.add of a pixel shader sampling the sun\'s shadow and the game\'s lights: compiled, refused for want of the game',
+              not r['ok'] and 'no game' in str(r), r)
+        r = b.call('shader.shadows', {'size': 1024, 'extent': 50})
+        s = r.get('result', {})
+        check('shader.shadows with no game: wanted, not drawn, saying why', r['ok'] and s['wanted'] and not s['drawn'] and s['why'], r)
+        r = b.call('shader.state')
+        check('shader.state shows the shadows\' state', r['ok'] and r['result']['shadows']['wanted'], r)
+        r = b.call('shader.shadows', {'on': False})
+        check('shader.shadows off: no longer wanted', r['ok'] and not r['result']['wanted'], r)
         r = b.call('shader.survey')
         check('shader.survey with no game: an error, saying why', not r['ok'] and 'no game' in str(r), r)
         r = b.call('scene.pieces')

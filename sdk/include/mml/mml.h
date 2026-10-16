@@ -538,6 +538,12 @@ typedef struct MmlShaderRule {
 #define MML_SHADE_TRANSLUCENT 0x4u
 #define MML_SHADE_ADDITIVE    0x8u
 #define MML_SHADE_ALL_PASSES  0x1u
+/* shader_shadows: the shadow map from the sun the rules' shaders sample (game.hlsli mml_Shadow) */
+typedef struct MmlShadowSettings {
+    int size;               /* its texels a side: 512, 1024, 2048 (the default), 4096 */
+    float extent;           /* metres from the camera to the map's edge (default 60) */
+    float bias;             /* the depth's bias (default 0.002 of the map's 800 m depth) */
+} MmlShadowSettings;
 /* game_files' function: one file's name (as the game opens it) and where it comes from ("a2.dta", "folder", a mod's
    id); return nonzero to stop */
 typedef int (*MmlFileFn)(const char *name, const char *source, void *user);
@@ -1333,6 +1339,12 @@ typedef struct MmlHost {
      * starting point to copy. Game thread. */
     int (*shader_add)(MmlMod *mod, const MmlShaderRule *rule, char *error, int cap);
     int (*shader_remove)(MmlMod *mod, int handle);
+    /* shader_shadows: the host draws a shadow map from the scene's sun before each frame of the mission's world (the
+     * scene's meshes around the camera and the cars near it: scene_pieces', actor_meshes' geometry), for the rules'
+     * shaders (sampler 2, game.hlsli mml_ShadowViewProj, mml_Shadow); NULL: the mod no longer wants it (also at its
+     * unload). Several mods: the largest of each setting. The game's lights near each draw (up to eight point and
+     * spot lights, nearest first) and the sun are in game.hlsli's registers always. Game thread. */
+    int (*shader_shadows)(MmlMod *mod, const MmlShadowSettings *settings);
 } MmlHost;
 
 #define MML_ZONE_PLAYER 0x1u

@@ -448,6 +448,7 @@ int H_ShaderAdd(MmlMod *m, const MmlShaderRule *rule, char *error, int cap) {
     return h;
 }
 int H_ShaderRemove(MmlMod *m, int handle) { return Alive(m) && ShaderRemove(m, handle) ? 1 : 0; }
+int H_ShaderShadows(MmlMod *m, const MmlShadowSettings *s) { return Alive(m) && ShaderShadows(m, s) ? 1 : 0; }
 void *H_ActorFrame(MmlMod *m, void *actor) { return Alive(m) ? ActorFrame(actor) : nullptr; }
 int H_FrameWorld(MmlMod *m, void *frame, float out[16]) { return Alive(m) && out ? FrameWorld(frame, out) : 0; }
 int H_SoundPlay(MmlMod *m, const char *file, void *frame, const float pos[3], float volume, float pitch, float rangeNear, float rangeFar, uint32_t flags) {
@@ -762,6 +763,7 @@ bool UnloadMod(ModEntry *e, const char *why) {
     ModelsModGone(m);
     MeshesModGone(m);
     ShadersModGone(m);
+    ShadowsModGone(m);
     SoundModGone(m);
     ControlModGone(m);
     InteractModGone(m);
@@ -1115,6 +1117,7 @@ void ModsInit() {
     g_host.actor_meshes = H_ActorMeshes;
     g_host.shader_add = H_ShaderAdd;
     g_host.shader_remove = H_ShaderRemove;
+    g_host.shader_shadows = H_ShaderShadows;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();

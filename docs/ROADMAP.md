@@ -354,6 +354,15 @@ What is done, what comes next and later, and what is known to be missing or wron
   0.25 of 255; 0.08 % of the pixels over 8: the car's moving exhaust); no cost seen at the game's 62.5 frames a
   second. The owner found the one difference of a first version: a sign behind a wall showing through it, the
   position computed in another order than the game's (now its order).
+- **The sun's shadow and the game's lights for shaders** (2026-10-17; item 27, block 7c of the order):
+  `shader_shadows` (a shadow map from the scene's sun, R32F on the game's device, drawn before the mission's world
+  from block 6d's meshes around the camera and the cars near it, its texels snapped; every state put back),
+  game.hlsli's `mml_ShadowViewProj`, `mml_Shadow`, `mml_SunDir`, `mml_SunColor`, `mml_SunAmbient`, the game's point
+  and spot lights near each draw (`mml_GameLights`, `mml_GameLight`); `shader.shadows`, `shader.state`'s `shadows`.
+  Seen alike in the 1.2 and 1.0 labs: by day the taxi's shadow on the parking lot and the building's on the pavement
+  (the map 0.5 ms a frame, 140 to 250 casters, 8 to 17 thousand triangles); at night a car's headlights (its own
+  spots) and the street lamps lighting the street through `mml_GameLight`. Found on the way: `mml_FaceNormal`
+  (block 7b) gave the normal pointing away (the street's y down): corrected and measured.
 - **The meshes the game draws** (2026-10-17; item 8, block 6d of the order): `scene_focus`, `scene_pieces` (the
   scene walked a little each frame, scanned every 0.25 s around every mod's box: the objects' meshes read once from
   LS3D's buffers, their space found by the engine's bounding sphere; after mafia-ragdoll's scenery and
@@ -514,7 +523,7 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
    "Done".)* The world and its geometry
    (item 8's rest: the water's height, each model's file, the drawn triangles, cars'
    meshes, the `.4ds` index; item 12's rest: a prop's collision shape and animations; zones for people and cars).
-7. *(7a and 7b done 2026-10-17; see "Done".)* Shaders on the game's own drawing (item 27; the owner, 2026-10-17:
+7. *(Done: 7a and 7b 2026-10-17, 7c 2026-10-17; see "Done".)* Shaders on the game's own drawing (item 27; the owner, 2026-10-17:
    put first, the base agents build "real" shaders on). In blocks: *7a* the service (a mod's Direct3D 9 shaders set on the game's draws it chooses, with the
    frame's constants under one documented contract), *7b* reference shaders that draw every kind of the game's draw
    as its fixed pipeline does (the same picture, checked by screenshots in both labs: the starting point a mod
@@ -821,8 +830,17 @@ merged, sorted by importance):
   each lab (the city by day); the night, the rain, the countryside, the interiors and a mission were not compared;
   the scene views (mirrors) take rules too but were not looked at. The constants are read from the device at each
   draw a rule takes (Get* calls: on a pure device they would fail; dxwrapper's is not pure). The cost was not
-  measured above the game's 62.5 frames a second. 7c (a shadow map from the sun, the lights near an object) is
-  not done.
+  measured above the game's 62.5 frames a second.
+- **The sun's shadow and the game's lights** (host/shadows.cpp, block 7c): people cast no shadow (the casters are
+  block 6d's meshes: no skinned people, billboards, particles); one map of a fixed extent around the camera (no
+  cascades: past it, lit); the box of the scene's meshes moves when the camera has gone a quarter of it, and a mesh
+  first met is in the map from meshes.cpp's next scan (0.25 s). The scene views (mirrors) sample the frame's map
+  (drawn around the game camera, not the view's eye); not looked at in a view. The lights a draw gets are the eight
+  nearest its visual's bounding sphere's centre among those reaching it: a long piece (a street) may get far lamps
+  before a near one. Seen in the city's freerides only (day and night), not in the rain, the countryside, the
+  interiors or a mission. **The headlights' cone on the street** the game draws at night is not one of the face
+  groups LS3D draws (the night's survey has every face group at pass 0, no second pass), so no rule takes it: what
+  draws it was not found (left for later).
 - **The meshes the game draws** (host/meshes.cpp, block 6d): the finest LOD only; plain and lightmapped objects
   only (billboards, particles, skinned people, morphs, mirrors are left out); a piece is told by its bounding sphere
   touching a box (a long piece may hold far triangles). Frames LS3D frees during a mission are not followed (each
