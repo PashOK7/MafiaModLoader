@@ -1,0 +1,7 @@
+{
+  // The defaults of exhaust_fx's settings.
+  "replace": 1,         // 1: the game's puffs left out; 0: the mod's beside them
+  "color": 4259680,     // 0x40FF60, the puffs' colour (RRGGBB)
+  "rise": 0.6,          // m/s the puffs rise
+  "game_tint": -1       // RRGGBB: the game's own exhaust tinted from the next mission (-1: as the game has it)
+}

@@ -236,6 +236,20 @@ int Lights(const char *, MmlReply *r, void *) {
     return 0;
 }
 
+// The game's effects with no game: no exhaust, the hook refused (no build known), no particle records.
+int NoExhaust(const MmlExhaust *, void *) { return 0; }
+int Effects(const char *, MmlReply *r, void *) {
+    if (!MML_HAS(H, particle_def_set)) { H->reply_error(r, "the loader has no game effects"); return 1; }
+    MmlExhaust e;
+    MmlParticleDef d;
+    char out[128];
+    snprintf(out, sizeof out, "{\"exhaust\":%d,\"hook\":%d,\"defs\":%d,\"def\":%d,\"set\":%d}", H->car_exhaust(M, nullptr, &e),
+             H->exhaust_hook(M, NoExhaust, nullptr), H->particle_def(M, -1, nullptr), H->particle_def(M, 12, &d), H->particle_def_set(M, 12, &d));
+    H->exhaust_hook(M, nullptr, nullptr);
+    H->reply_append(r, out, static_cast<size_t>(-1));
+    return 0;
+}
+
 // People with no game: none, no skeleton, bone_set refused, no player.
 int Humans(const char *, MmlReply *r, void *) {
     if (!MML_HAS(H, human_player)) { H->reply_error(r, "the loader has no human_player"); return 1; }
@@ -301,7 +315,8 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->command(mod, "passviews_clear", "takes that pass back", PassViewsClear, nullptr);
     host->command(mod, "geom", "geom_hide, geom_capture with no game (refused), geom_show", Geom, nullptr);
     host->command(mod, "humans", "humans_list, human_skeleton, bone_set, human_player with no game", Humans, nullptr);
-    host->command(mod, "lights", "scene_lights, light_set, scene_sun with no game", Lights, nullptr);
+    host->command(mod, "effects", "car_exhaust, exhaust_hook, particle_def(_set) with no game", Effects, nullptr);
+    host->command(mod, "lights","scene_lights, light_set, scene_sun with no game", Lights, nullptr);
     host->command(mod, "state","money, money_set, human_health(_set), human_items, item_ammo_set, human_take_item with no game", State, nullptr);
     host->command(mod, "ask","world_ray, world_sweep, world_near, world_shapes with no game", WorldAsk, nullptr);
     host->command(mod, "camera","camera_override taken and given back, camera_project and camera_ray with no frame", Camera, nullptr);

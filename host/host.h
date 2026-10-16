@@ -230,6 +230,13 @@ bool StateHealthSet(void *human, float health, std::string *err);
 int StateItems(void *human, MmlItem *out, int max);
 bool StateAmmoSet(void *human, int slot, int loaded, int reserve, std::string *err);
 bool StateTakeItem(void *human, int item, std::string *err);
+// the game's effects (effects.cpp): the car exhaust read and hooked, tables\particles.def read and written
+int CarExhaust(void *car, MmlExhaust *out);
+int ExhaustHook(MmlMod *mod, MmlExhaustFn fn, void *user);
+void EffectsModGone(MmlMod *mod);         // (its unload) its exhaust hook taken out
+int ParticleDef(int index, MmlParticleDef *out);   // index -1: the count
+int ParticleDefSet(int index, const MmlParticleDef *def);
+bool EffectsMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 // the scene's lights (lights.cpp): LS3D's light frames listed and changed through its setters; lights.list, light.set
 void LightsMissionClosed();
 int SceneLights(MmlLight *out, int max);

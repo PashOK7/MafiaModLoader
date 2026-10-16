@@ -440,6 +440,45 @@ typedef struct MmlLight {
     int sectors;            /* how many sectors (rooms) it lights */
 } MmlLight;
 
+/* A car's exhaust as the game makes it (car_exhaust, exhaust_hook below). */
+#define MML_EXHAUST_PIPES 8
+typedef struct MmlExhaust {
+    uint32_t size;
+    void *car;              /* the C_car */
+    int dt_ms;              /* the tick's length (exhaust_hook; 0 from car_exhaust) */
+    int type;               /* its particle type: its particles.def record and emitter (12 ordinary cars, 15 the big
+                               trucks, the fire engine, racing cars); 0 none */
+    int emitting;           /* the game puffs now: the engine runs, the car is slower than max_speed, it has a type */
+    float jet_speed;        /* m/s out of the pipes: the idle's to the top's by the engine's turns */
+    float max_speed;        /* m/s: no puffs above it */
+    int pipes;              /* how many (its model's EXHAUST dummies), at most MML_EXHAUST_PIPES */
+    float pos[MML_EXHAUST_PIPES][3];     /* each pipe's mouth in the world */
+    float dir[MML_EXHAUST_PIPES][3];     /* the way it blows (unit) */
+    float carry[MML_EXHAUST_PIPES][3];   /* the car's velocity at the pipe, as the game works it out for a puff */
+    float add_birth[3], add_death[3];    /* what the type's emitter adds to a puff's velocity at its birth, its death */
+    float death_share;      /* a puff's velocity at death: death_share x (jet + carry) + add_death */
+} MmlExhaust;
+/* exhaust_hook's function: every tick, each car whose exhaust the game is about to make. Return 1: the game's puffs
+ * for this car this tick are left out (the mod makes its own); 0: the game's go on. */
+typedef int (*MmlExhaustFn)(const MmlExhaust *exhaust, void *user);
+
+/* A record of tables\particles.def (particle_def below): how an emitter of the game puffs. */
+typedef struct MmlParticleDef {
+    uint32_t size;
+    char model[32];         /* the puff's model (models\<name>.4ds: one textured quad) */
+    int interval_ms, interval_rand_ms;   /* from puff to puff (+ a random part) */
+    int life_ms, life_rand_ms;           /* a puff's life */
+    float growth_min, growth_max;        /* g: the size is times 1 + 0.01 g every 10 ms */
+    float birth_cube;                    /* the cube a puff is born in (metres) */
+    float dir_jitter;                    /* its end direction's jitter */
+    int turn_ms, turn_rand_ms;           /* over which its direction turns to the end one (0: its life) */
+    float fade_in, fade_out;             /* the share of its life the alpha ramps up; the share after which it fades */
+    float spin_min, spin_max;            /* rad/s */
+    float scale;                         /* the model's scale at birth */
+    float tint_birth[3], tint_death[3];  /* its colour at birth and at death */
+    uint32_t raw[41];                    /* the whole record (0xA4 bytes), for what has no name here */
+} MmlParticleDef;
+
 /* The frame's measures (frame_stats below): the frames Present to Present, the last 600 of them. */
 typedef struct MmlFrameStats {
     uint32_t size;
@@ -764,6 +803,17 @@ typedef struct MmlHost {
     /* the scene's sun (its brightest directional light that is on: towards it, its colour times its power) and the
      * ambient light beside it; 0: none */
     int (*scene_sun)(MmlMod *mod, float to_sun[3], float sun_color[3], float ambient[3]);
+
+    /* ---- the game's effects (both builds; docs/MODDING.md "The game's effects"). car_exhaust: a car's exhaust now
+     * (its pipes, its jet, whether the game puffs); 0: not a car. exhaust_hook: fn told every tick of every car whose
+     * exhaust the game makes, before it does (fn NULL: no more; the last mod that asked replaces the one before). */
+    int (*car_exhaust)(MmlMod *mod, void *car, MmlExhaust *out);
+    int (*exhaust_hook)(MmlMod *mod, MmlExhaustFn fn, void *user);
+    /* tables\particles.def: how many records (particle_def(mod, -1, NULL)), one read; particle_def_set writes the named
+     * fields of `def` into record `index` (not `model`, not `raw`): the game hands the records to its emitters when it
+     * makes them, at a mission's load, so a change shows from the next mission (set it in MML_EVENT_MISSION_OPEN) */
+    int (*particle_def)(MmlMod *mod, int index, MmlParticleDef *out);
+    int (*particle_def_set)(MmlMod *mod, int index, const MmlParticleDef *def);
 } MmlHost;
 
 #define MML_FILE_GAME 1              /* file_read: the game's own file, not a mod's of the same name */

@@ -370,6 +370,33 @@ H->scene_sun(M, toSun, sunColor, ambient);       /* the level's sun and the ambi
 - `mods/examples/dusk` (not enabled by default): the sun and the ambient lights tinted towards a dusk, put back
   when it is turned off or unloaded.
 
+### The game's effects: the car exhaust, particles.def
+
+```c
+int OnExhaust(const MmlExhaust *e, void *user) {   /* every tick, every car whose exhaust the game is about to make */
+    /* e->pipes, e->pos[i], e->dir[i] (where it blows), e->carry[i] (the car's velocity there), e->jet_speed,
+       e->emitting (the game puffs now), e->type (its particles.def record), e->dt_ms */
+    return 1;                                       /* the game's puffs for this car left out: the mod makes its own */
+}
+H->exhaust_hook(M, OnExhaust, NULL);
+MmlParticleDef d;
+H->particle_def(M, 12, &d);                         /* the ordinary cars' exhaust: model, rate, life, growth, tints */
+d.tint_birth[0] = 1; d.tint_birth[1] = d.tint_birth[2] = 0;
+H->particle_def_set(M, 12, &d);                     /* in MML_EVENT_MISSION_OPEN: the game's emitters take it then */
+```
+
+- **The exhaust** is the game's own `C_Vehicle::UpdateExhaustParticles`, read as the game reads it: each pipe (the
+  model's EXHAUST dummies) in the world, the way it blows, the jet's speed by the engine's turns, the car's velocity
+  at the pipe, what the emitter adds to a puff's velocity at its birth and death. A smoke mod takes these as its
+  sources; a mod that returns 1 replaces the game's puffs for that car. `car_exhaust` reads one car's at any time.
+- **`tables\particles.def`**: 23 records in both builds (the exhausts are 12 and 15; dust, grass, stones, leaves,
+  smoke). The game hands a record to its emitter when it makes it, at a mission's load: a change made in
+  `MML_EVENT_MISSION_OPEN` shows in that mission (seen: the taxi's exhaust red), one made later in the next.
+- `call exhaust.state {"car"}` (the hook, how many cars it was told of and skipped, a car's exhaust),
+  `particles.defs {"index"}`, `particles.def.set {"index", "tint_birth": [r, g, b], ...}`.
+- `mods/examples/exhaust_fx` (not enabled by default): the game's exhaust replaced by the mod's own puffs (drawn as
+  squares over the frame: an example of the data, not of drawing smoke), or with `game_tint` the game's own tinted.
+
 ### What happens (shots, explosions, deaths, vehicles)
 
 | Event | When | `actor` | more |

@@ -288,6 +288,13 @@ What is done, what comes next and later, and what is known to be missing or wron
   on `events.since` and MCP `wait`. Both builds' addresses checked by `check_builds.py`. The example
   `mods/examples/tally`; seen in the 1.2 and 1.0 labs (the player's shots, his leaving the taxi, a person killed by
   a script, a car blown up with its explosion and the hit it gave the player).
+- **The car exhaust and particles.def** (2026-10-16; item 11, block 11b): `car_exhaust` (a car's pipes in the world,
+  the way they blow, the jet by the engine's turns, the car's velocity at each, the emitter's additions, as the
+  game's `C_Vehicle::UpdateExhaustParticles` reads them), `exhaust_hook` (told before the game puffs, every tick,
+  every car; 1 leaves the game's puffs out), `particle_def` / `particle_def_set` (tables\particles.def's 23 records);
+  `exhaust.state`, `particles.defs`, `particles.def.set`. 1.0's exhaust found by its code and paired with 1.2's
+  instruction by instruction; `check_builds.py` checks every field it reads. The example `mods/examples/exhaust_fx`
+  seen in both labs (the taxi's puffs replaced; the game's own exhaust tinted red from the mission's opening).
 - **The scene's lights** (2026-10-16; item 11, block 11a): `scene_lights` (the level's I3D_light frames: type,
   colour, power, range, cone, place, direction, sectors), `light_set` (through LS3D's own setters, the vtable checked
   first), `scene_sun` (the brightest directional light and the ambient light beside it); the graphics bridge's
@@ -396,8 +403,9 @@ V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselv
     gaps.)* **The game's state and progress** (C F P). Money, health, the inventory and ammo (read and changed), the
     mission's objectives and its outcome, the game's statistics (kills, cars stolen, distance), the profile's
     progress (chapters, freeride unlocks); a mod's own items in the items' table (a fishing rod, a fish).
-11. *(11a done 2026-10-16: the scene's lights read and changed, the sun and ambient light for the bridge; see "Done".
-    Left: particle emitters, the car exhaust, `particles.def`, the weather's parameters; Known gaps.)* **The game's effects as data** (S W P). Particle emitters and the car exhaust (`0x4DEE90`) read, moved or
+11. *(11a done 2026-10-16: the scene's lights read and changed, the sun and ambient light for the bridge; 11b: the
+    car exhaust read and replaced, `particles.def` read and written; see "Done". Left: the game's particles moved,
+    the weather's parameters; Known gaps.)* **The game's effects as data** (S W P). Particle emitters and the car exhaust (`0x4DEE90`) read, moved or
     replaced; `tables\particles.def`'s records; the weather's parameters; the scene's lights. Reference:
     `smoke_game.cpp`, `effects.cpp`, `frame_life.cpp`, `scene_light.cpp`.
 
@@ -530,6 +538,10 @@ merged, sorted by importance):
   matrix being the camera's backdrop view, bit for bit (it was, every drawing, in both labs). `MML_VIEW_OWN_SECTOR`
   (a camera in another room) was not tried. The first two or three reloads of `rear_mirror` added 2..13 handles each (taken to be
   Direct3D's own warming up: views made and taken back by mode changes added none); then 0.
+- **The exhaust and particles.def** (host/effects.cpp, item 11b): one exhaust hook at a time (the last mod's); a record
+  changed after a mission's load shows from the next one (the emitters copied it); the emitters themselves (LS3D's
+  I3D_emitor, their parameters) are not reached. `exhaust_fx` draws its puffs as 2D squares over the frame (no depth
+  test): a smoke mod draws in the 3D world (the render events, the graphics bridge).
 - **The scene's lights** (host/lights.cpp, item 11a): found once a mission (13 ms in the 1.2 lab: not repeated),
   so lights made later (a car's lamps: 39 to 44 lights between two launches of the same freeride) need
   `lights.list {"rescan": true}`; the list holds frames that LS3D may free (each read guarded, each change checks the

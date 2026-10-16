@@ -366,6 +366,24 @@ def main(a):
         for o, offs in ((0x5C, ('0x158',)), (0x64, ('0x168', '0x16c')), (0x50, ('0x154',))):
             code = ' '.join(f'{i.mnemonic} {i.op_str}' for i in gls.md.disasm(gls.at(sl(gls, vt, o), 0x60), gls.base + sl(gls, vt, o)))
             check(all(f'+ {x}]' in code for x in offs), f'{name} LS3DF lightVtable+{o:#x} writes {offs}')
+    # The exhaust (host/effects.cpp): its first instruction the same in both builds, ret 4; it reads every field
+    # game_build.h names for it, the emitter table, and C_Vehicle::Update calls it. The particles' table: read in
+    # 20 places and more (C_car::LoadParticles), its count beside it.
+    a, b = norm(g12.insn(e12['vehExhaust'] - 0x400000)), norm(g10.insn(e10['vehExhaust'] - 0x400000))
+    check(a == b, f'vehExhaust: 1.2 "{a}" vs 1.0 "{b}"')
+    for name, (exe, ls, gexe, gls) in builds.items():
+        ins = list(gexe.md.disasm(gexe.at(exe['vehExhaust'] - 0x400000, 0x700), exe['vehExhaust']))
+        body = ' '.join(f'{i.mnemonic} {i.op_str}' for i in ins)
+        first = next((i for i in ins if i.mnemonic == 'ret'), None)
+        check(first is not None and first.op_str == '4', f'{name} vehExhaust: its first ret is ret 4')
+        fields = ('vehState', 'vehEngineOn', 'vehSpeed', 'vehExMaxSpeed', 'vehExType', 'vehExPipes', 'vehExJet', 'vehRps', 'vehRpsMax',
+                  'vehMatrix', 'vehVelocity', 'vehTurn', 'vehCentre')
+        missing = [f for f in fields if f'+ {exe[f]:#x}]' not in body]
+        check(not missing and f'[{exe["emitterTable"]:#x}]' in body and f'[{exe["exEndShare"]:#x}]' in body, f'{name} vehExhaust reads its fields and the emitter table {missing}')
+        code = bytes(gexe.mem)
+        n = code.count(exe['particleDefs'].to_bytes(4, 'little'))
+        c = code.count((exe['particleDefs'] + 4).to_bytes(4, 'little'))
+        check(n >= 20 and c >= 1, f'{name} particleDefs: read in {n} places, its count in {c}')
     # The game's state (host/state.cpp): SetScore writes C_game +0x3640, reads +0x363E, ends with ret 4.
     for name, (exe, ls, gexe, gls) in builds.items():
         sc = [f'{i.mnemonic} {i.op_str}' for i in gexe.md.disasm(gexe.at(exe['gameSetScore'] - 0x400000, 0x30), exe['gameSetScore'])]

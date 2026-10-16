@@ -360,6 +360,10 @@ int H_LightSet(MmlMod *m, void *light, const float color[3], float power, float 
     return 0;
 }
 int H_SceneSun(MmlMod *m, float s[3], float c[3], float a[3]) { return Alive(m) ? SceneSun(s, c, a) : 0; }
+int H_CarExhaust(MmlMod *m, void *car, MmlExhaust *out) { return Alive(m) ? CarExhaust(car, out) : 0; }
+int H_ExhaustHook(MmlMod *m, MmlExhaustFn fn, void *user) { return Alive(m) ? ExhaustHook(m, fn, user) : 0; }
+int H_ParticleDef(MmlMod *m, int index, MmlParticleDef *out) { return Alive(m) ? ParticleDef(index, out) : 0; }
+int H_ParticleDefSet(MmlMod *m, int index, const MmlParticleDef *d) { return Alive(m) ? ParticleDefSet(index, d) : 0; }
 int H_WorldShapes(MmlMod *m, const float lo[3], const float hi[3], uint32_t what, MmlShape *out, int max) {
     return Alive(m) && lo && hi ? WorldShapes(lo, hi, what, out, out ? max : 0) : 0;
 }
@@ -536,6 +540,7 @@ bool UnloadMod(ModEntry *e, const char *why) {
     GfxRemove(m);
     ViewRemove(m, 0);
     GeomRemove(m);
+    EffectsModGone(m);
     ConfigForget(m);
     g_subs.erase(std::remove_if(g_subs.begin(), g_subs.end(), [&](const Sub &s) { return s.mod == m; }), g_subs.end());
     for (auto it = g_commands.begin(); it != g_commands.end();) it = it->second.mod == m ? g_commands.erase(it) : std::next(it);
@@ -809,6 +814,10 @@ void ModsInit() {
     g_host.scene_lights = H_SceneLights;
     g_host.light_set = H_LightSet;
     g_host.scene_sun = H_SceneSun;
+    g_host.car_exhaust = H_CarExhaust;
+    g_host.exhaust_hook = H_ExhaustHook;
+    g_host.particle_def = H_ParticleDef;
+    g_host.particle_def_set = H_ParticleDefSet;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();
@@ -903,6 +912,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (CollideMethod(method, paramsJson, reply, &ok)) return ok;
     if (StateMethod(method, paramsJson, reply, &ok)) return ok;
     if (LightsMethod(method, paramsJson, reply, &ok)) return ok;
+    if (EffectsMethod(method, paramsJson, reply, &ok)) return ok;
     if (WorldMethod(method, paramsJson, reply, &ok)) return ok;
     if (FilesMethod(method, paramsJson, reply, &ok)) return ok;
     if (RenderMethod(method, paramsJson, reply, &ok)) return ok;

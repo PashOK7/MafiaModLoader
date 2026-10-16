@@ -1040,3 +1040,20 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Tests**: `run_tests.py` checks that the file is current, that every documented method is listed with its help
   and answered (none an unknown method), and that every method the host's code compares a name with is documented;
   `mcp_smoke.py` checks `commands_list {query}`. ALL PASSED both; `commands.list` read in the 1.2 lab.
+
+## 2026-10-16: the car exhaust and particles.def (item 11, block 11b)
+
+- **Read**: mafia-ragdoll's smoke_game.cpp had 1.2's exhaust (0x4DEE90) and its fields. The knowledge base's twins
+  had no 1.0 pair for it (C_Vehicle::Update's calls in 1.0 are in another order), so 1.0's was found by its code: a
+  function reading `[reg + 0xCE4]` (1.2's 0xC68 + 0x7C), testing bit 0x200, dividing by 28 (the emitter table's
+  entries): 0x52B8A0. Paired with 1.2's instruction by instruction (740 and 747 instructions, the same mnemonics):
+  every C_Vehicle field 0x7C higher but the velocity and the turns' maximum (0x84 lower), the emitter table 0x6561FC,
+  the death share's float 0x63B2D0. `ebx` is saved before it is used (Hex-Rays' `__userpurge` was wrong): thiscall,
+  ret 4. particles.def: C_car::LoadParticles and its twin read 0x6D4C1C / 0x6EFB9C, the same record offsets.
+- **Made** `host/effects.cpp`, four functions in the C ABI, three bridge methods.
+- **In the labs**: the taxi's single pipe, type 12, jet 1.13..2.07 m/s, the emitter adding 0.2 m/s along z at birth,
+  in both builds; 23 records (exhausts 12 and 15, dust, grass, stones, leaves). `exhaust_fx` replaced the taxi's puffs
+  (the hook called for every car, about 5 a tick; the taxi's skipped). A record changed in the freeride did not
+  change the running emitter; changed at the mission's opening (by `exhaust_fx`'s `game_tint`, the mod enabled for
+  the launch), the taxi's own exhaust came out red.
+- **Tests**: offline the four functions and the bridge with no game. ALL PASSED; check_builds ALL PASSED.

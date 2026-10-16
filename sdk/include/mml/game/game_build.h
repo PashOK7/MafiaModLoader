@@ -316,6 +316,19 @@ struct ExeBuild {
     // hudSetLives: G_IndicatorsClass::PlayerSetLives, thiscall(hud, unsigned value), ret 4: the HUD's health number,
     // which C_player::Hit sets to health +0x644 / maximum +0x604 * 100 rounded (at least 1 while alive).
     uintptr_t gameSetScore, hudSetLives;
+    // The car's exhaust and the particles' table (host/effects.cpp; mafia-ragdoll's smoke_game.cpp read them in 1.2,
+    // 1.0's paired instruction by instruction: the same code). vehExhaust: C_Vehicle::UpdateExhaustParticles,
+    // thiscall(C_Vehicle*, int dt_ms), ret 4, every tick for each car: when the engine runs (vehState bit 0x200, and
+    // vehEngineOn) and the car is slower than vehExMaxSpeed (a float), the shared emitter of the car's particle type
+    // (vehExType, an int: 12 ordinary cars, 15 trucks; 0 none) is moved to each pipe and fired. The pipes:
+    // [vehExPipes, +4) 24-byte records {position, direction} in the car's frame (its EXHAUST* dummies); the jet speed
+    // is vehExJet (idle) to vehExJet + 4 (top) by vehRps / vehRpsMax; vehMatrix the body's world matrix (row-major).
+    // emitterTable: [begin, end) of 0x1C-byte entries a particle type {emitter, velocity added at birth, at death}.
+    // particleDefs: tables\particles.def, the records' pointer (count at +4), 0xA4 bytes each; C_car::LoadParticles
+    // hands each to its emitter (SetParam) when the emitters are made. exEndShare: the float the exhaust takes for a
+    // puff's velocity at death (that share of jet + carry, plus the emitter's own).
+    uintptr_t vehExhaust, emitterTable, particleDefs, exEndShare;
+    int vehState, vehExMaxSpeed, vehExType, vehExPipes, vehExJet, vehRpsMax, vehMatrix;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -454,6 +467,9 @@ inline const ExeBuild kExe12 = {
     0x5C8770, 0x5C3D60,
     // the game's state (2026-10-16: FREERIDE_SCOREGET reads C_game +0x3640 through 0x47B6B0, FREERIDE_SCORESET calls it)
     0x5B9FE0, 0x5F88E0,   // (PlayerSetLives: C_player::Hit's call at 0x5942AD, ecx = the HUD)
+    // the exhaust and the particles (2026-10-16: mafia-ragdoll's addresses; C_Vehicle::Update calls the exhaust at 0x4E1271)
+    0x4DEE90, 0x63D8A4, 0x6D4C1C, 0x6234BC,
+    0xC68, 0x468, 0x460, 0x454, 0x46C, 0x1F9C, 0xCE8,
 };
 
 inline const ExeBuild kExe10 = {
@@ -535,6 +551,10 @@ inline const ExeBuild kExe10 = {
     0x5838A0, 0x57EE90,
     // the game's state (2026-10-16: the scripts' FREERIDE_SCORESET at 0x5C6915 calls it; the same code as 1.2's)
     0x5F5C30, 0x54A9D0,   // (st0rm94's hud_set_player_health_value; its calls at 0x49C00C... with ecx = the HUD)
+    // the exhaust and the particles (2026-10-16: the exhaust found by its code, 1.2's paired with it instruction by
+    // instruction, every offset shifted as the C_Vehicle is; the table read by car_load_particle_effects 0x463A30)
+    0x52B8A0, 0x6561FC, 0x6EFB9C, 0x63B2D0,
+    0xCE4, 0x4E4, 0x4DC, 0x4D0, 0x4E8, 0x1F18, 0xD64,
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,

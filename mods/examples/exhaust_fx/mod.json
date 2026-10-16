@@ -1,0 +1,11 @@
+{
+  "id": "exhaust_fx",
+  "name": "Exhaust FX: the game's car exhaust replaced by puffs of the mod's own (the game's effects)",
+  "version": "0.1.0",
+  "type": "native",
+  "entry": "exhaust_fx.dll",
+  "enabled": false,
+  "builds": ["1.2", "1.0"],
+  "load_order": 100,
+  "depends": []
+}

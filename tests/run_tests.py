@@ -836,6 +836,12 @@ def main():
         check('state.money set with no game: refused', not r['ok'], r)
         r = b.call('human.items')
         check('human.items with no game: an error, saying why', not r['ok'] and 'no actors' in str(r), r)
+        # the game's effects with no game: nothing read, the hook refused; the bridge says why
+        r = b.call('kit.effects')
+        check('car_exhaust, exhaust_hook, particle_def, particle_def_set with no game: 0',
+              r['ok'] and r['result'] == {'exhaust': 0, 'hook': 0, 'defs': 0, 'def': 0, 'set': 0}, r)
+        r = b.call('particles.defs')
+        check('particles.defs with no game: an error, saying why', not r['ok'] and 'not known' in str(r), r)
         # the scene's lights with no game: none; light.set refused
         r = b.call('kit.lights')
         check('scene_lights, light_set, scene_sun with no game: none, refused', r['ok'] and r['result'] == {'lights': 0, 'set': 0, 'sun': 0}, r)
