@@ -1027,3 +1027,16 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **A hitch found and fixed**: the first version scanned the scene's frames every two seconds; `prof.state` showed a
   13 ms "scene lights scan" in a hitch every two seconds. Now once a mission (and on `rescan`).
 - **Tests**: offline the three functions and the bridge's refusals with no game. ALL PASSED; check_builds ALL PASSED.
+
+## 2026-10-16: the bridge's methods found by agents
+
+- **The gap**: every block made bridge methods, but `commands.list` named the host's 80 methods without their
+  params or results (and left out the bridge thread's and `world.*`), the MCP server's instructions told of none of
+  the new blocks, and AGENTS.md of only some.
+- **Made**: docs/PROTOCOL.md's tables are the one description; `tools/gen_methods.py` makes `host/methods.inc` from
+  them, and `commands.list` gives each host method (97) with `thread`, `params` and `result`. MCP `commands_list`
+  takes a `query` (the list is long); its instructions list the methods by topic; `wait`'s event types include
+  7a's. AGENTS.md: "Finding a method", the state, people and lights, the map's new files and examples.
+- **Tests**: `run_tests.py` checks that the file is current, that every documented method is listed with its help
+  and answered (none an unknown method), and that every method the host's code compares a name with is documented;
+  `mcp_smoke.py` checks `commands_list {query}`. ALL PASSED both; `commands.list` read in the 1.2 lab.

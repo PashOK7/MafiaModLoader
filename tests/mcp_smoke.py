@@ -109,6 +109,11 @@ def main():
         check('log_tail (live)', ok and 'hello_c' in text, text)
         ok, text = c.tool('call', {'method': 'no.such.method'})
         check('an unknown method is an error result', not ok, text)
+        ok, text = c.tool('commands_list', {'query': 'world.ray'})
+        listed = json.loads(text) if ok else []
+        check('commands_list {query}: the matching methods, each with its params and result',
+              ok and any(m.get('name') == 'world.ray' and 'camera' in m.get('params', '') and m.get('result') for m in listed)
+              and len(listed) < 10, text[:400])
         ok, text = c.tool('screenshot')
         check('screenshot with no Direct3D device: an error result that says so', not ok and 'device' in text, text)
         ok, text = c.tool('input', {'steps': [{'turn': 90}, {'action': 'Forwards', 'ms': 200}]})

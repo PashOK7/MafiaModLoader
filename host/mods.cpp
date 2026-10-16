@@ -1006,15 +1006,17 @@ std::string ModsList() {
     return out + "]";
 }
 
+// The host's methods, each with its params, its result and the thread that answers it (host/methods.inc, made by
+// tools/gen_methods.py from docs/PROTOCOL.md), then every mod's commands with their help.
+struct MethodDoc { const char *name, *thread, *params, *result; };
+const MethodDoc kMethods[] = {
+#include "methods.inc"
+};
+
 std::string CommandsList() {
     json out = json::array();
-    for (const char *m : {"mods.list", "mods.rescan", "mod.reload", "mod.load", "mod.unload", "commands.list", "hooks.list",
-                          "menu.state", "menu.command", "menu.value", "start.state", "input.actions", "input.act", "input.key",
-                          "input.seq", "input.release", "input.state", "text.get", "text.find", "screenshot", "screenshot.state",
-                          "draw.text", "draw.rect", "draw.line", "draw.clear", "draw.state", "config.get", "config.set",
-                          "menu.item", "menu.items", "menu.item.remove", "menu.page", "menu.page.set", "menu.page.close", "menu.def", "menu.click", "input.mouse", "input.text",
-                          "script.run", "script.state", "script.stop", "script.list", "files.list", "files.which", "files.read", "render.state", "gfx.state", "gfx.reset", "view.state", "view.show", "geom.hide", "geom.show", "geom.state", "geom.survey", "geom.capture", "prof.state", "prof.reset", "prof.sample", "native.call", "humans.list", "human.skeleton", "human.pose", "watch.set", "watch.show", "watch.clear", "camera.state", "camera.set", "camera.release", "world.ray", "world.sweep", "world.ground", "world.near", "world.shapes", "state.money", "human.health", "human.items", "human.ammo", "human.take", "lights.list", "light.set"})
-        out.push_back({{"name", m}, {"owner", "host"}});
+    for (const MethodDoc &m : kMethods)
+        out.push_back({{"name", m.name}, {"owner", "host"}, {"thread", m.thread}, {"params", m.params}, {"result", m.result}});
     for (auto &kv : g_commands) out.push_back({{"name", kv.first}, {"owner", Who(kv.second.mod)}, {"help", kv.second.help}});
     return out.dump();
 }

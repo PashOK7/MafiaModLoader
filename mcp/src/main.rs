@@ -323,10 +323,17 @@ struct WatchArgs {
 }
 
 #[derive(Deserialize, JsonSchema)]
+struct CommandsListArgs {
+    /// Keep the methods whose name, params or help hold this text (any case); none: every one.
+    query: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 struct WaitArgs {
     /// The event types to wait for, comma-separated: MISSION_LOADED, MISSION_OPEN, MISSION_CLOSE, GAME_PAUSED,
-    /// GAME_RESUMED, HUMAN_CREATED, HUMAN_HIT, ACTOR_DESTROYED, MOD_LOADED, MOD_UNLOADED, MOD_FAULTED, SCRIPT_ENDED,
-    /// CONFIG_CHANGED, FILE_CHANGED, SERVICES_CHANGED (`call events.since` lists the recent ones).
+    /// GAME_RESUMED, HUMAN_CREATED, HUMAN_HIT, HUMAN_DIED, SHOT, EXPLOSION, CAR_EXPLODED, VEHICLE_ENTERED,
+    /// VEHICLE_LEFT, ACTOR_DESTROYED, MOD_LOADED, MOD_UNLOADED, MOD_FAULTED, SCRIPT_ENDED, CONFIG_CHANGED,
+    /// FILE_CHANGED, SERVICES_CHANGED (`call events.since` lists the recent ones).
     types: String,
     /// Fields the event's data must have, equal (strings without regard to case): {"name": "freeitaly"},
     /// {"killed": true}, {"actor": "0x12345678"}.
@@ -597,10 +604,21 @@ impl Server {
         self.call_value(&a.method, a.params.unwrap_or(Value::Null), a.timeout_ms).await.map(|v| pretty(&v))
     }
 
-    /// Every method the bridge answers: the host's and those the loaded mods registered, with their help.
+    /// Every method the bridge answers: the host's (each with its params, its result and the thread that answers
+    /// it, from docs/PROTOCOL.md) and those the loaded mods registered, with their help. `query` keeps the ones
+    /// whose name or text holds it ("world.", "light", "camera", "human"): the whole list is long.
     #[tool(annotations(read_only_hint = true))]
-    async fn commands_list(&self) -> Out {
-        self.call_value("commands.list", Value::Null, None).await.map(|v| pretty(&v))
+    async fn commands_list(&self, Parameters(a): Parameters<CommandsListArgs>) -> Out {
+        let v = self.call_value("commands.list", Value::Null, None).await?;
+        let q = a.query.unwrap_or_default().to_lowercase();
+        if q.is_empty() {
+            return Ok(pretty(&v));
+        }
+        let kept: Vec<Value> = v
+            .as_array()
+            .map(|all| all.iter().filter(|c| c.to_string().to_lowercase().contains(&q)).cloned().collect())
+            .unwrap_or_default();
+        Ok(pretty(&Value::Array(kept)))
     }
 
     /// Read the game's memory (never faults: an unreadable address is an error). Returns hex, and the values when
@@ -947,7 +965,16 @@ The world without a program: `spawn {car | human, at, in}` makes a car or a pers
 `call world.cars`), `teleport {actor, to}` moves one, `give {actor, item}` arms by name (`call world.items`), \
 `call world.seat {actor, car, seat}`, `world.remove {actor}`; mods: actor_spawn, actor_teleport, give_item, actor_seat. \
 The game's own script machine: `script {code, act, flt}` runs a program in the missions' language (teleport, spawn, weapons, kill, cars, weather, camera: every command the missions have), `script_commands {query}` tells the commands' arguments, docs/SCRIPTS.md has recipes; a mod does the same with script_run. What a game function does, where a thing lives: kb_search, then kb_function (facts, calls, decompiled code); \
-knowledge/notes/ holds the hand-written findings.";
+knowledge/notes/ holds the hand-written findings. \
+More through `call` (commands_list {query} gives each one's params and result; docs/PROTOCOL.md has them all): \
+people: `humans.list`, `human.skeleton {actor}`, `human.pose {actor, bones, ms}`; the camera: `camera.set {eye, at, \
+fov, ms}` (look at any place, then screenshot), `camera.state`, `camera.release`; questions to the world: \
+`world.ray {from: \"camera\"}` (what the crosshair looks at), `world.sweep`, `world.ground {at}`, `world.near {at, \
+radius}`, `world.shapes`; the game's state: `state.money {set}`, `human.health {set}`, `human.items`, \
+`human.ammo {slot, loaded, reserve}`, `human.take {item}`; the scene's lights: `lights.list`, `light.set`; what \
+happened: `events.since` (or the wait tool); the frame: `prof.state` (or the profile tool), `gfx.state`, \
+`view.state`, `geom.survey`; any game function: `native.call {at, conv, this, args, ret}`; who writes a field: \
+the watch tool.";
 
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for Server {

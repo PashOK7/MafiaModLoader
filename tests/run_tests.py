@@ -16,6 +16,7 @@ Exit code 0: all passed.
 """
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -363,6 +364,43 @@ def heavy_tests(b):
         os.replace(os.path.join(mod_dir, 'heavylib.off'), os.path.join(mod_dir, 'heavylib.dll'))
     r = b.call('mod.load', {'id': 'heavy'})
     check('heavy: the library back: it loads', r['ok'] and b.call('heavy.status')['result']['lib'] == 4242, r)
+
+
+# The host's methods as agents find them: host/methods.inc is what docs/PROTOCOL.md gives, commands.list lists every
+# documented method with its params, result and thread, and each of them is answered (called with no params: an
+# answer or an error of its own, never "unknown method"). Methods that change what the later tests see are not
+# called (they are answered elsewhere in these tests).
+NOT_CALLED = {'mods.rescan', 'mod.reload', 'mod.load', 'mod.unload', 'gfx.reset', 'prof.reset', 'prof.sample', 'watch.clear',
+              'input.release', 'draw.clear', 'mem.write', 'geom.show', 'camera.release'}
+
+
+def methods_tests(b):
+    gen = subprocess.run([sys.executable, os.path.join(ROOT, 'tools', 'gen_methods.py'), '--check'], capture_output=True, text=True)
+    check('host/methods.inc is what docs/PROTOCOL.md gives (tools/gen_methods.py --check)', gen.returncode == 0, gen.stdout)
+    sys.path.insert(0, os.path.join(ROOT, 'tools'))
+    import gen_methods
+    documented = {name: thread for name, thread, _, _ in gen_methods.rows()}
+    listed = {c['name']: c for c in b.call('commands.list')['result'] if c.get('owner') == 'host'}
+    missing = sorted(set(documented) - set(listed))
+    bare = sorted(n for n, c in listed.items() if 'params' not in c or not c.get('result') or c.get('thread') not in ('bridge', 'game'))
+    check('commands.list: every documented method of the host, each with its params, result and thread',
+          not missing and not bare and len(listed) == len(documented), {'missing': missing, 'bare': bare})
+    unknown = []
+    for name in sorted(documented):
+        if name in NOT_CALLED or name == 'hello':
+            continue
+        r = b.call(name, {})
+        if not r['ok'] and 'unknown method' in str(r.get('error', '')).lower():
+            unknown.append(name)
+    check('every documented method is answered (none is an unknown method)', not unknown, unknown)
+    # and the other way: each method the host's code compares a name with is documented (`hello` is in the prose)
+    handled = set()
+    for f in os.listdir(os.path.join(ROOT, 'host')):
+        if f.endswith('.cpp'):
+            text = open(os.path.join(ROOT, 'host', f), encoding='utf-8').read()
+            handled |= set(re.findall(r'method\s*[=!]=\s*"([a-z0-9_.]+)"', text))
+    undocumented = sorted(handled - set(documented) - {'hello'})
+    check('every method the host answers is documented in docs/PROTOCOL.md', not undocumented, undocumented)
 
 
 def boxes_tests(b):
@@ -829,6 +867,7 @@ def main():
         files_tests(b)
         heavy_tests(b)
         boxes_tests(b)
+        methods_tests(b)
         r = b.call('nonexistent.method')
         check('an unknown method: an error', not r['ok'])
         tail = '\n'.join(b.call('log.tail', {'lines': 400})['result'])
