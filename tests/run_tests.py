@@ -937,6 +937,14 @@ def main():
         check('shader.shadows off: no longer wanted', r['ok'] and not r['result']['wanted'], r)
         r = b.call('shader.survey')
         check('shader.survey with no game: an error, saying why', not r['ok'] and 'no game' in str(r), r)
+        # the x87: the stand-in game keeps it at 24 bits, as the game's Direct3D does
+        r = b.call('kit.fpu')
+        check('a mod\'s callback runs with the x87 at 53 bits: 1/3 on the x87 is the double nearest a third',
+              r['ok'] and r['result']['bits'] == 53 and r['result']['third'] == '0.33333333333333331', r)
+        r = b.call('fpu.state')
+        f = r.get('result', {})
+        check('fpu.state: the game\'s word at 24 bits as its frame came in and went back, 53 for the mods, scopes raised',
+              r['ok'] and f['game']['bits'] == 24 and f['frame_exit']['bits'] == 24 and f['mods']['bits'] == 53 and f['raised'] > 0, r)
         r = b.call('scene.pieces')
         check('scene.pieces with no game: none, saying there is no focus', r['ok'] and r['result']['pieces'] == 0 and 'scene.focus' in str(r), r)
         r = b.call('files.game', {'match': '*', 'limit': 3})
@@ -1030,6 +1038,9 @@ def main():
             proc.kill()
             out, _ = proc.communicate()
     check('the harness exits cleanly', proc.returncode == 0, out.decode(errors='replace'))
+    text = out.decode(errors='replace')
+    check('the x87 given back to the game at 24 bits after every frame (the mods\' callbacks ran at 53)',
+          re.search(r'x87 at 24 bits after [1-9][0-9]* frames, 0 given back otherwise', text) is not None, text[-400:])
     check('files: a mod\'s file answers before the first frame (the game\'s first tables)',
           "before the first frame, tables\\test.txt is 'files_b'" in out.decode(errors='replace'), out.decode(errors='replace'))
     print('ALL PASSED' if not failures else '%d FAILED: %s' % (len(failures), ', '.join(failures)))

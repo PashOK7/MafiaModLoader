@@ -172,6 +172,7 @@ bool Hook(uintptr_t at, void *detour, void **orig, const char *name) {
 // One frame of the loader, on the game thread: mods start at the first one (after the loader lock, before any
 // mission), then the bridge's commands, posted calls and the frame event.
 void Frame() {
+    FpuFrameEnter();   // (fpu.cpp: the game's x87 word, as it comes in)
     LARGE_INTEGER now;
     QueryPerformanceCounter(&now);
     float dt = g_last.QuadPart ? static_cast<float>(now.QuadPart - g_last.QuadPart) / static_cast<float>(g_freq.QuadPart) : 0.0f;
@@ -207,6 +208,7 @@ void Frame() {
     MmlEvent ev = Event(MML_EVENT_FRAME);
     ev.dt = dt;
     Dispatch(ev);
+    FpuFrameExit();    // (and as it goes back: the game's again)
 }
 
 const char *GameBuild() { return g_build; }

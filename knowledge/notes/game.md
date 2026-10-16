@@ -533,6 +533,9 @@ autosplitter; kept outside it, not ported). Checked against the above:
 
 ## How the game's world reaches Direct3D (measured 2026-10-17, both labs; host/shaders.cpp shader.survey)
 
+- **ours** The game thread's x87 control word as the game enters the loader's frame: `0x007F` in both builds (24
+  bits of precision, round to nearest, every exception masked): the game's Direct3D made without
+  `D3DCREATE_FPU_PRESERVE` (measured 2026-10-17, `fpu.state`; host/fpu.cpp raises it to `0x027F` around the mods).
 - **ours** A texture shared from Direct3D 9Ex to Direct3D 11 (R32F, a render target) drawn with
   `D3DRS_COLORWRITEENABLE` red only: Direct3D 11 read it as its clear value and none of the draws, while Direct3D 9
   read the draws (an NVIDIA RTX 3070 under dxwrapper's 9Ex, 2026-10-17). Written with every channel, both see it.

@@ -1226,6 +1226,27 @@ if (H->file_source("maps\\crate.bmp", who, sizeof who)) { /* a mod's file answer
 - `H->service_publish` / `service_find`: a versioned table of functions other mods call; find it again after
   `MML_EVENT_SERVICES_CHANGED`. `H->post`: run something on the game thread from another thread.
 
+### Doubles on the game thread
+
+The game's Direct3D leaves the game thread's x87 at 24 bits of precision (`0x007F`, both builds), and 32-bit code
+computes part of its double arithmetic on the x87: at 24 bits a double comes out as a float. The loader runs every
+call into a mod (its events, commands, posted calls, graphics passes, menu callbacks, load and unload) with the x87
+at 53 bits and gives the game its own word back after, so a mod's doubles are doubles, as in the offline tests.
+`call fpu.state` shows the game's word and the mods'.
+
+- **A detour on a game function** (`H->hook`) is called by the game itself and runs with the game's 24 bits. One
+  that needs doubles sets 53 bits and gives the game's word back before it returns:
+
+  ```c
+  unsigned int old, tmp;
+  _controlfp_s(&old, 0, 0);
+  _controlfp_s(&tmp, _PC_53, _MCW_PC);
+  /* ... double maths ... */
+  _controlfp_s(&tmp, old & _MCW_PC, _MCW_PC);
+  ```
+- A game function a mod calls from its callbacks runs with the mod's 53 bits (its float maths a little more precise
+  there). A mod's own threads have their own word (53 bits, Windows' default).
+
 ### Measuring the frame
 
 Every entry the loader makes into a mod is timed (each event by name, its passes, its views' functions, commands,

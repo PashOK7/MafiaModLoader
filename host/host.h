@@ -183,6 +183,16 @@ bool ConfigSetLive(MmlMod *mod, const char *key, const std::string &valueJson);
 void ConfigFlush(MmlMod *mod);
 std::string ConfigDefaultJson(MmlMod *mod, const char *key);
 std::string ConfigValueJson(MmlMod *mod, const char *key);
+// the x87's precision around the mods' code (fpu.cpp): FpuDouble sets 53 bits (when it was 24) and returns the word
+// it found, FpuRestore gives it back; the game's own word as it entered the loader's frame
+uint16_t FpuWord();
+void FpuSet(uint16_t w);
+uint16_t FpuDouble();
+void FpuRestore(uint16_t w);
+uint16_t FpuGameWord();
+void FpuFrameEnter();
+void FpuFrameExit();
+bool FpuMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 // the mods' settings in the game's Options > Mods (panel.cpp)
 void PanelInit();
 bool PanelMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);

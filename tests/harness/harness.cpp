@@ -8,6 +8,7 @@
 #include <windows.h>
 #include <cstdio>
 #include <cstdlib>
+#include <float.h>
 #include <string>
 
 extern "C" __declspec(dllexport) __declspec(noinline) int harness_add(int a, int b) {
@@ -48,13 +49,22 @@ int main(int argc, char **argv) {
     }
     printf("harness: running (pid %lu)\n", GetCurrentProcessId());
     fflush(stdout);
+    // the x87 at 24 bits, as the game's Direct3D leaves it (no D3DCREATE_FPU_PRESERVE): the loader must give it back
+    // so after each frame, whatever its mods did
+    unsigned int cw = 0;
+    _controlfp_s(&cw, _PC_24, _MCW_PC);
+    unsigned frames = 0, changed = 0;
     DWORD end = GetTickCount() + seconds * 1000u;
     while (GetTickCount() < end) {
         pump();
+        frames++;
+        _controlfp_s(&cw, 0, 0);
+        if ((cw & _MCW_PC) != _PC_24) { changed++; _controlfp_s(&cw, _PC_24, _MCW_PC); }
         if (GetFileAttributesA((dir + "quit").c_str()) != INVALID_FILE_ATTRIBUTES) break;
         Sleep(16);
     }
     DeleteFileA((dir + "quit").c_str());
+    printf("harness: the x87 at 24 bits after %u frames, %u given back otherwise\n", frames, changed);
     printf("harness: done (harness_add(2, 3) = %d)\n", harness_add(2, 3));
     return 0;
 }

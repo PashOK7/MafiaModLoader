@@ -91,20 +91,42 @@ void Faulted(MmlMod *m, const char *where, DWORD code) {
     snprintf(code8, sizeof code8, "%08X", static_cast<unsigned>(code));
     EventsRecord("MOD_FAULTED", json({{"name", Who(m)}, {"where", where}, {"exception", code8}, {"at", DescribeAddress(t_faultAt)}}).dump());
 }
+// Every call into a mod goes through one of these: behind the fault guard, with the x87 at 53 bits (fpu.cpp) and the
+// game's word given back after, a fault too.
 DWORD SafeEvent(MmlEventFn fn, const MmlEvent *ev, void *user) {
-    __try { fn(ev, user); return 0; } __except (NoteFault(GetExceptionInformation())) { return GetExceptionCode(); }
+    uint16_t fpu = FpuDouble();
+    DWORD r = 0;
+    __try { fn(ev, user); } __except (NoteFault(GetExceptionInformation())) { r = GetExceptionCode(); }
+    FpuRestore(fpu);
+    return r;
 }
 DWORD SafeCommand(MmlCommandFn fn, const char *args, MmlReply *r, void *user, int *rc) {
-    __try { *rc = fn(args, r, user); return 0; } __except (NoteFault(GetExceptionInformation())) { return GetExceptionCode(); }
+    uint16_t fpu = FpuDouble();
+    DWORD e = 0;
+    __try { *rc = fn(args, r, user); } __except (NoteFault(GetExceptionInformation())) { e = GetExceptionCode(); }
+    FpuRestore(fpu);
+    return e;
 }
 DWORD SafeLoad(MmlModLoadFn fn, const MmlHost *h, MmlMod *m, int *rc) {
-    __try { *rc = fn(h, m); return 0; } __except (NoteFault(GetExceptionInformation())) { return GetExceptionCode(); }
+    uint16_t fpu = FpuDouble();
+    DWORD r = 0;
+    __try { *rc = fn(h, m); } __except (NoteFault(GetExceptionInformation())) { r = GetExceptionCode(); }
+    FpuRestore(fpu);
+    return r;
 }
 DWORD SafeUnload(MmlModUnloadFn fn, MmlMod *m) {
-    __try { fn(m); return 0; } __except (NoteFault(GetExceptionInformation())) { return GetExceptionCode(); }
+    uint16_t fpu = FpuDouble();
+    DWORD r = 0;
+    __try { fn(m); } __except (NoteFault(GetExceptionInformation())) { r = GetExceptionCode(); }
+    FpuRestore(fpu);
+    return r;
 }
 DWORD SafePosted(void (*fn)(void *), void *user) {
-    __try { fn(user); return 0; } __except (NoteFault(GetExceptionInformation())) { return GetExceptionCode(); }
+    uint16_t fpu = FpuDouble();
+    DWORD r = 0;
+    __try { fn(user); } __except (NoteFault(GetExceptionInformation())) { r = GetExceptionCode(); }
+    FpuRestore(fpu);
+    return r;
 }
 
 void ServicesChanged(const std::string &name) {
@@ -1218,6 +1240,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (ConfigMethod(method, paramsJson, reply, &ok)) return ok;
     if (MenusMethod(method, paramsJson, reply, &ok)) return ok;
     if (PanelMethod(method, paramsJson, reply, &ok)) return ok;
+    if (FpuMethod(method, paramsJson, reply, &ok)) return ok;
     if (ScriptMethod(method, paramsJson, reply, &ok)) return ok;
     if (CollideMethod(method, paramsJson, reply, &ok)) return ok;
     if (StateMethod(method, paramsJson, reply, &ok)) return ok;

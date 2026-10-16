@@ -67,13 +67,18 @@ void __declspec(noinline) Raw(void *fn, DWORD ecxv, DWORD edxv, const DWORD *arg
     r->st0Full = full;
 }
 
+// (the game's function with the game's own x87 word, whatever the caller's: fpu.cpp)
 DWORD SafeRaw(void *fn, DWORD ecxv, DWORD edxv, const DWORD *args, DWORD n, Regs *r, DWORD *where) {
+    uint16_t fpu = FpuWord();
+    FpuSet(FpuGameWord());
+    DWORD e = 0;
     __try {
         Raw(fn, ecxv, edxv, args, n, r);
-        return 0;
     } __except (*where = reinterpret_cast<DWORD>(GetExceptionInformation()->ExceptionRecord->ExceptionAddress), EXCEPTION_EXECUTE_HANDLER) {
-        return GetExceptionCode();
+        e = GetExceptionCode();
     }
+    FpuRestore(fpu);
+    return e;
 }
 
 std::string Hex8(DWORD v) {

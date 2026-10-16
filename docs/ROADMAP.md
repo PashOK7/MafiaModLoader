@@ -371,6 +371,14 @@ What is done, what comes next and later, and what is known to be missing or wron
   an upsample that keep depth edges, about 0.2 ms of GPU at 1280x960. Seen alike in the 1.2 and 1.0 labs (the
   shadows in the air under the trees and behind the buildings; the owner saw the rays from the buildings). Found:
   with only red written to the R32F map, Direct3D 11 saw the map as cleared (knowledge/notes/game.md).
+- **Doubles in the mods' code on the game thread** (2026-10-17; a gap the settings panel found, the owner asked to
+  fix it): measured in both builds, the game enters the loader's frame with the x87 at 24 bits (`0x007F`: its
+  Direct3D made without `D3DCREATE_FPU_PRESERVE`), so 32-bit code's doubles came out as floats wherever the x87
+  computed them. Every call into a mod (mods.cpp's Safe* gates: events, commands, posted calls, passes, menus, load,
+  unload) and the loader's own pages now run at 53 bits (`0x027F`) and give the game its word back, a fault too;
+  `native.call` calls the game with the game's word. `fpu.state`. The stand-in game of the tests keeps 24 bits as the
+  game does: a mod's 1/3 on the x87 is the double, and the stand-in gets its 24 bits back after every frame. Seen in
+  the 1.2 and 1.0 labs (the panel's values written clean: 0.0152, not 0.015200000256).
 - **A tuning panel** (2026-10-17; item 18, the owner put it before the order's 8): Options > Mods (`optionsb`, both
   builds) lists the loaded mods whose `mod.json` has `"settings"`; each opens a page of the game's own controls
   (sliders, check boxes, selectors) made from it, changes made live (config.cpp `ConfigSetLive`: the mod told at the
@@ -845,14 +853,11 @@ merged, sorted by importance):
   the scene views (mirrors) take rules too but were not looked at. The constants are read from the device at each
   draw a rule takes (Get* calls: on a pure device they would fail; dxwrapper's is not pure). The cost was not
   measured above the game's 62.5 frames a second.
-- **Doubles on the game thread are float-precise where x87 computes them** (found 2026-10-17 by the settings panel:
-  `round(x * 1e6) / 1e6` on the game thread came out as the nearest float, `7.519532` as `7.519532203674316`): the
-  game's Direct3D is most likely made without `D3DCREATE_FPU_PRESERVE`, leaving the x87 in 24-bit precision, and
-  32-bit MSVC computes what the CRT's maths functions return (through ST0) on the x87. The GPU is not touched (the
-  shaders' constants are floats anyway); what is: the loader's and the mods' double maths on the game thread (a
-  physics step's accumulations, long time counters, far coordinates), and a mod that is exact in the offline tests
-  and not in the game. To do: the control word measured in both builds, then the loader's own work and the mods'
-  callbacks on the game thread run with 53-bit precision (`_controlfp_s`) and the game's mode given back after.
+- **The x87 around the mods' code** (host/fpu.cpp): a mod's detour on a game function (`hook`) is called by the game
+  and runs with the game's 24-bit word (it sets 53 bits itself when it needs doubles: MODDING "Doubles on the game
+  thread"); a game function a mod calls from its callbacks runs with the mod's 53 bits (the game's x87 maths a little
+  more precise there: nothing seen to change). The loader's own code outside the mods' calls and its pages (its
+  hooks, the bridge's methods) keeps the game's word.
 - **The sun's shadow and the game's lights** (host/shadows.cpp, block 7c): the casters are block 6d's meshes drawn
   by the host, not what the game draws: people cast no shadow (skinned on the CPU at their draw), billboards (the
   countryside's far forest) none, and alpha-tested faces (leaves, fences) cast as whole quads (a tree's shadow is a

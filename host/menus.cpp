@@ -218,8 +218,10 @@ void CallTramp(void *p) {
 bool OwnerAlive(MmlMod *mod) { return LoaderOwned(mod) || ModAlive(mod); }
 
 void Deliver(MmlMod *mod, MmlMenuFn fn, void *user, int id, const std::string &what) {
-    if (LoaderOwned(mod)) {   // the loader's own: its code, called as it is
+    if (LoaderOwned(mod)) {   // the loader's own: its code, called as it is (with the x87 at 53 bits, as a mod's)
+        uint16_t fpu = FpuDouble();
         if (fn) fn(id, user);
+        FpuRestore(fpu);
         return;
     }
     if (!mod) {   // the bridge's own: told in the log, kept for menu.items

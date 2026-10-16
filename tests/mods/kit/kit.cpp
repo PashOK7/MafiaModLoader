@@ -436,6 +436,24 @@ int PropMore(const char *, MmlReply *r, void *) {
     return 0;
 }
 
+// The x87's precision as a mod's callback runs: its control word and 1/3 divided on the x87 itself (at 24 bits it
+// would be the float nearest a third).
+int Fpu(const char *, MmlReply *r, void *) {
+    unsigned short cw;
+    double one = 1, three = 3, third;
+    __asm {
+        fnstcw cw
+        fld one
+        fdiv three
+        fstp third
+    }
+    int pc = (cw >> 8) & 3;
+    char out[96];
+    snprintf(out, sizeof out, "{\"bits\":%d,\"third\":\"%.17g\"}", pc == 0 ? 24 : pc == 2 ? 53 : pc == 3 ? 64 : 0, third);
+    H->reply_append(r, out, static_cast<size_t>(-1));
+    return 0;
+}
+
 // The game's files and models with no game: no archives (the mods' files only), no model.
 int Models(const char *, MmlReply *r, void *) {
     if (!MML_HAS(H, model_close)) { H->reply_error(r, "the loader has no model_close"); return 1; }
@@ -536,6 +554,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->command(mod, "water", "world_water, zone_watch with no game", Water, nullptr);
     host->command(mod, "prop_more", "a prop's animation and physics with no game", PropMore, nullptr);
     host->command(mod, "models", "the game's files and models with no game", Models, nullptr);
+    host->command(mod, "fpu", "the x87's precision in a mod's callback: 1/3 divided on the x87", Fpu, nullptr);
     host->command(mod, "control", "key_capture, action_capture, player_lock, vehicle_hook, vehicle_body with no game", Control, nullptr);
     host->command(mod, "sound", "sound_play and the rest, music_play and the rest with no game", Sound, nullptr);
     host->command(mod, "effects","car_exhaust, exhaust_hook, particle_def(_set) with no game", Effects, nullptr);

@@ -1403,3 +1403,17 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   change seen by the mod at once, Back to the list, the file written.
 - **Tests**: offline ALL PASSED (the panel read from a test mod's manifest: a slider in %, one with a unit, a check
   box, a choice, a slider with no max left out; panel.open refused with no game).
+
+## 2026-10-17: doubles in the mods' code on the game thread
+
+- **Measured first** (`fpu.state`, both builds): the game enters the loader's frame with the x87 control word
+  `0x007F`: 24 bits of precision. The settings panel's rounded values had come out as the nearest floats.
+- **Made** `host/fpu.cpp`: the precision raised to 53 bits (only the precision bits) in mods.cpp's Safe* gates, the
+  one way into a mod's code (events, commands, posted calls, passes, menu callbacks, load, unload), and around the
+  loader's own pages; the game's word given back after, a fault too; `native.call` calls the game with the game's
+  word. A mod's detour on a game function keeps the game's word (it is the game's call): MODDING says how a detour
+  gets doubles.
+- **Tests**: the stand-in game now keeps 24 bits as the game does; a test mod divides 1/3 on the x87 in a command
+  (the double, not the float) and the stand-in checks after every frame that it got its 24 bits back.
+- **In both labs** alike: the game `0x007F`, the mods `0x027F`, the frame given back at `0x007F`, the panel's values
+  written clean, sun_shafts drawn.
