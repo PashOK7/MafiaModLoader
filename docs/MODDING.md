@@ -96,7 +96,8 @@ mml::entry!(load);   // mml_mod_api, mml_mod_load, mml_mod_unload
 - **Callbacks are closures** (`Fn + 'static`), freed at the unload (or when their timer, zone or use-point is
   removed). They run on the game thread, one at a time, and may be entered again from inside themselves (a call into
   the host that sends an event): keep their state in `Cell` / `RefCell` behind an `Rc`. `Host` is `Copy` and not
-  `Send`; `host.poster()` is, for a thread of the mod's own (`poster.post(|host| ...)` runs at the next frame).
+  `Send`; `host.poster()` is, for a thread of the mod's own (`poster.post(|host| ...)` runs at the next frame; one
+  that has not run when the mod unloads is dropped then, unrun).
   `host.on_unload(...)` runs at the unload, before the closures are freed: what must survive a reload goes there.
 - **A panic** is caught at the edge of the mod, logged (`panicked in a command: <message> at src/lib.rs:12`) and
   raised as the exception `0xE0525553` (`mml::PANIC_EXCEPTION`): the loader takes it as any fault of a mod's (the
@@ -108,7 +109,9 @@ mml::entry!(load);   // mml_mod_api, mml_mod_load, mml_mod_unload
 - `tests/mods/kit_rs`: every part of the safe layer checked: `kit_rs.offline` with no game (the offline tests),
   `kit_rs.live` in a running freeride (47 checks, each area against the host's own answers and the game's layouts;
   twice: the second sees the first's scans), `kit_rs.view` (a scene view seen by a pass), `kit_rs.page` (a menu
-  page). In a lab: copy `build/x86/harness/mml/mods/kit_rs` into the lab's `mml/mods`, `mod.load` it, and take it
+  page), `kit_rs.d3d9 {"on": true}` (the game's Direct3D 9 device in RENDER_WORLD: a square drawn), `kit_rs.item`
+  (a pause menu item, `{"move": true}` moves it by `MenuItem::set`). The offline tests also fail when a member of
+  `MmlHost` has no safe method in the crate. In a lab: copy `build/x86/harness/mml/mods/kit_rs` into the lab's `mml/mods`, `mod.load` it, and take it
   out after.
 
 ## 2. Build it, put it into the game, look

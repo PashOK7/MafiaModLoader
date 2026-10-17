@@ -639,7 +639,15 @@ What is done, what comes next and later, and what is known to be missing or wron
   game's world matrix, back1 by FindChild, the car's body and its whole state; the async parts at the second call:
   10148 and 9833 triangles captured, the particles', vehicles' and exhaust hooks called thousands of times, the
   scenery scanned); a scene view seen by a pass (427 and 430 frames), a menu page of Rust's controls built by the
-  game and closed by its Back button, in both builds.
+  game and closed by its Back button, in both builds. Then what was left open: the offline tests fail when a member
+  of `MmlHost` has no safe method (169, all covered); a call posted and not run is freed at the unload (kit_rs posts
+  one in its own unload: its drop logged at each of 10 reloads, never run); the game's Direct3D 9 device from Rust in
+  RENDER_WORLD (its viewport 1280x960 read, a magenta square cleared into the world's picture, under the menus, in
+  both builds); `MenuItem::set` in the pause menu (the item moved from under Options to under Load Game and renamed,
+  one item, its click reaching the closure, in both builds); 10 reloads of kit_rs: 0 MB, 0 handles, 0 threads from
+  the fourth on (the second and third +2 and +1 threads, -2.5 and -1.2 MB, no thread in the mod's code: warming).
+  `mml::game` covers the C++ game headers whole (racing.h holds only the layouts, the scripts' table its two
+  lookups).
 
 ## Next, by importance
 
@@ -884,13 +892,6 @@ merged, sorted by importance):
 
 ## Known gaps
 
-- **The Rust crate** (sdk/rust/mml): a call posted (`Poster`) that the unload drops leaks its closure (the host
-  drops a post of a mod that is gone; the box is the posting thread's). `mml::game` ports game.h's helpers and
-  mathx.h's math; racing.h's and the scripts' tables come as data, with no helpers over them (debug_views' race and
-  triggers views are C++). A new member of `MmlHost` needs its wrapper written by hand (`sys.rs` follows mml.h by
-  itself; nothing yet fails when a member has no safe method). The Rust side of the graphics is checked in the labs
-  by depth_pulse_rs (a pass) and kit_rs (a scene view seen by a pass); no Rust mod draws in RENDER_WORLD with the
-  Direct3D 9 device yet.
 
 - **A game folder no ANSI code page spells** (a Cyrillic name on a 1252 system, a CJK one on a 1251 system): the
   game, the loader and the mods' own files work there (both labs, 2026-10-17), but **dxwrapper does not**: its

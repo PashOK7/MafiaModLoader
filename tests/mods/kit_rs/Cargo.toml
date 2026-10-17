@@ -8,7 +8,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-mml = { path = "../../../sdk/rust/mml", features = ["json"] }
+mml = { path = "../../../sdk/rust/mml", features = ["json", "windows"] }
 serde = { version = "1", features = ["derive"] }
 
 [build-dependencies]

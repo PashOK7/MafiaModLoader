@@ -15,6 +15,14 @@ use serde::{Deserialize, Serialize};
 
 static POSTED: AtomicU32 = AtomicU32::new(0);
 
+/// Held by a call posted at the unload, which never runs: its drop is logged when the unload frees it
+struct PostedAtUnload;
+impl Drop for PostedAtUnload {
+    fn drop(&mut self) {
+        mml::info!(mml::host(), "kit_rs: a call posted at the unload dropped unrun");
+    }
+}
+
 struct Dropped(Host);
 impl Drop for Dropped {
     fn drop(&mut self) {
@@ -136,9 +144,53 @@ fn load(host: Host) -> Result<(), String> {
     });
 
     let f = frames.clone();
+    // the game's own Direct3D 9 device in RENDER_WORLD (typed by the feature "windows"): its viewport read and a
+    // magenta square cleared into the world's picture, under the HUD
+    let d9 = Rc::new(Cell::new((false, 0u32, 0u32, 0u32))); // (on, frames, viewport width, height)
+    let d = d9.clone();
+    host.subscribe(EventType::RENDER_WORLD, move |ev| {
+        let (on, n, _, _) = d.get();
+        if !on || !ev.world() {
+            return;
+        }
+        let Some(dev) = host.d3d9_device() else { return };
+        let mut vp = mml::windows::Win32::Graphics::Direct3D9::D3DVIEWPORT9::default();
+        unsafe {
+            if dev.GetViewport(&mut vp).is_err() {
+                return;
+            }
+            let r = mml::windows::Win32::Graphics::Direct3D9::D3DRECT { x1: 20, y1: 140, x2: 120, y2: 240 };
+            let _ = dev.Clear(1, &r, mml::windows::Win32::Graphics::Direct3D9::D3DCLEAR_TARGET as u32, 0xFFFF00FF, 1.0, 0);
+        }
+        d.set((true, n + 1, vp.Width, vp.Height));
+    });
+    let d = d9.clone();
+    host.command("d3d9", "the game's Direct3D 9 device in RENDER_WORLD: {\"on\": true} draws a square; what it saw", move |args| {
+        let (on, n, w, h) = d.get();
+        let on = if args.contains("true") { true } else if args.contains("false") { false } else { on };
+        d.set((on, n, w, h));
+        Ok(format!("{{\"on\":{on},\"frames\":{n},\"viewport\":[{w},{h}],\"device8\":{}}}", !host.render_device(8).is_null()))
+    });
+
+    // an item of the pause menu, moved by MenuItem::set: under Options (108) first, then under Load Game (103)
+    let clicks = Rc::new(Cell::new(0u32));
+    let item = Rc::new(std::cell::RefCell::new(None::<mml::MenuItem>));
+    let (cl, it) = (clicks.clone(), item.clone());
+    host.command("item", "a pause menu item ({\"move\": true}: under Load Game, renamed); its clicks", move |args| {
+        if it.borrow().is_none() {
+            let c = cl.clone();
+            *it.borrow_mut() = host.menu_item("gamemenu", 108, "kit_rs: under Options", move |_| c.set(c.get() + 1));
+        }
+        let moved = args.contains("true") && it.borrow().as_ref().is_some_and(|i| i.set(103, "kit_rs: moved"));
+        Ok(format!("{{\"handle\":{},\"moved\":{moved},\"clicks\":{}}}", it.borrow().as_ref().map_or(0, |i| i.handle()), cl.get()))
+    });
+
+    let poster = host.poster();
     host.on_unload(move || {
         host.state_put("loads", &loads.to_le_bytes());
         host.state_put_json("frames", &f.get());
+        let held = PostedAtUnload;
+        poster.post(move |h| mml::error!(h, "kit_rs: a call posted at the unload ran ({})", core::mem::size_of_val(&held)));
     });
     mml::info!(host, "kit_rs loaded (load {loads})");
     Ok(())

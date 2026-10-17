@@ -856,6 +856,17 @@ def rust_tests(b):
                           os.path.join(ROOT, 'tools', 'rust_sys', 'Cargo.toml'), '--', '--check'],
                          capture_output=True, text=True)
     check('sdk/rust/mml/src/sys.rs is what mml.h gives (tools/rust_sys --check)', gen.returncode == 0, gen.stdout + gen.stderr)
+    # every member of MmlHost has its safe method in the crate (a call through f! or host_fn! names it)
+    rs = os.path.join(ROOT, 'sdk', 'rust', 'mml', 'src')
+    sysrs = open(os.path.join(rs, 'sys.rs'), encoding='utf-8').read()
+    body = sysrs[sysrs.index('pub struct MmlHost {'):]
+    body = body[:body.index('\n}\n')]
+    members = [m for m in re.findall(r'\n    pub (\w+):', body) if m not in ('size', 'api_version')]
+    src = ''.join(open(f, encoding='utf-8').read() for f in glob.glob(os.path.join(rs, '**', '*.rs'), recursive=True)
+                  if os.path.basename(f) != 'sys.rs')
+    used = set(re.findall(r'(?:f!|host_fn!)\(\s*[\w.]+,\s*(\w+)\)', src))
+    missing = [m for m in members if m not in used]
+    check('sdk/rust/mml: a safe method for every member of MmlHost (%d)' % len(members), len(members) > 150 and not missing, missing)
     gen = subprocess.run([sys.executable, os.path.join(ROOT, 'tools', 'gen_rust_game.py'), '--check'], capture_output=True, text=True)
     check('sdk/rust/mml/src/game/tables.rs is what the game headers give (tools/gen_rust_game.py --check)', gen.returncode == 0, gen.stdout)
     r = b.call('kit_rs.offline')
@@ -888,6 +899,8 @@ def rust_tests(b):
     check('kit_rs: state across the reload (bytes and JSON)', after['loads'] == 2 and after['frames'] >= before['frames'], (before, after))
     tail = '\n'.join(b.call('log.tail', {'lines': 100})['result'])
     check('kit_rs: what its closures held dropped at the unload', 'kit_rs: its closures dropped' in tail, tail[-600:])
+    check('kit_rs: a call posted at the unload dropped there, never run',
+          'kit_rs: a call posted at the unload dropped unrun' in tail and 'posted at the unload ran' not in tail, tail[-600:])
     # the example
     r = b.call('hello_rust.status')
     check('hello_rust: status', r['ok'] and r['result']['loads'] == 1 and r['result']['game'] == 'unknown', r)

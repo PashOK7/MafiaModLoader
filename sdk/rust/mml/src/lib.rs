@@ -230,6 +230,9 @@ pub unsafe fn __unload(_module: *mut sys::MmlMod) {
     if let Some(l) = with(|l| (std::mem::take(&mut l.owned), std::mem::take(&mut l.grave))) {
         guard("unload", move || drop(l));
     }
+    // the calls posted that will not run (the host drops them with the mod)
+    let posted = POSTED.lock().map(|mut p| std::mem::take(&mut *p)).unwrap_or_default();
+    guard("unload", move || drop(posted));
     *LOADED.0.get() = None;
     let _ = std::panic::take_hook();
 }
@@ -572,9 +575,22 @@ unsafe extern "C-unwind" fn on_script<F: FnOnce(&ScriptResult) + 'static>(r: *co
         }
     })
 }
-unsafe extern "C-unwind" fn on_post<F: FnOnce(Host) + Send + 'static>(user: *mut c_void) {
-    let f = Box::from_raw(user as *mut F);
-    guard("a posted call", move || f(host()))
+/// The calls posted and not run yet, by their id (the host's user pointer): any thread adds, the game thread takes;
+/// what is left at the unload is dropped there (the host drops a gone mod's posts unrun).
+type Posted = Box<dyn FnOnce(Host) + Send>;
+static POSTED: Mutex<Vec<(usize, Posted)>> = Mutex::new(Vec::new());
+static POST_ID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(1);
+
+unsafe extern "C-unwind" fn on_post(user: *mut c_void) {
+    let id = user as usize;
+    let f = POSTED.lock().ok().and_then(|mut p| p.iter().position(|e| e.0 == id).map(|i| p.swap_remove(i).1));
+    if let Some(f) = f {
+        guard("a posted call", move || f(host()))
+    }
+}
+/// posted calls still waiting
+pub fn posted_waiting() -> usize {
+    POSTED.lock().map_or(0, |p| p.len())
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -604,9 +620,12 @@ unsafe impl Send for Poster {}
 unsafe impl Sync for Poster {}
 impl Poster {
     pub fn post<F: FnOnce(Host) + Send + 'static>(&self, f: F) {
-        let user = Box::into_raw(Box::new(f)) as *mut c_void;
+        let id = POST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if let Ok(mut p) = POSTED.lock() {
+            p.push((id, Box::new(f)));
+        }
         let h = self.0;
-        unsafe { f!(h, post)(h.module, as_c!(on_post::<F>, *mut c_void), user) }
+        unsafe { f!(h, post)(h.module, as_c!(on_post, *mut c_void), id as *mut c_void) }
     }
 }
 

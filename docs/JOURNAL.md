@@ -2005,3 +2005,22 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   depth_pulse_rs's ring from above, a scene view seen by a pass, a page of the game's controls from Rust closed by
   its Back; 10 reloads of depth_pulse_rs: 0 MB, 0 handles, 0 threads. kit_rs taken out of the labs again,
   depth_pulse_rs left off in their manifests. Offline: ALL PASSED, mcp_smoke ALL PASSED.
+
+## 2026-10-17: what was left open in Rust, done
+
+- **The owner** asked why the open items were left: there was no reason; "not seen in the game" is the next step,
+  not an end. Each is done and seen in both labs:
+  - **A member without a safe method fails the tests** (run_tests.py: every `pub` member of sys.rs's MmlHost named
+    by an `f!` or `host_fn!` call in the crate; 169, none missing).
+  - **Posted calls**: kept in the mod's own list by an id (the host's user pointer), taken by the trampoline, the
+    rest dropped at the unload (the host drops a gone mod's posts unrun, so nothing calls them after). kit_rs posts
+    one inside its own `on_unload`: "dropped unrun" logged at each of 10 reloads, never run.
+  - **Direct3D 9 in RENDER_WORLD** (kit_rs `d3d9`): `host.d3d9_device()` typed, GetViewport 1280x960, a magenta
+    square by Clear in the world's picture (under the pause menu, which the world goes on drawing behind).
+  - **`MenuItem::set`** (kit_rs `item`): the item under Options, then moved under Load Game and renamed: one item at
+    the menu's next opening, its click (menu.click by its id 104) counted by the closure.
+- **The reload loop of kit_rs**: the first reload measures the game's whole start (the mod was loaded with it), the
+  second and third +2 and +1 threads, -2.5 and -1.2 MB, then 0 for the rest; no thread was left in the mod's code
+  (the loader names one): the process warming, as the C++ mods' loops show.
+- The roadmap's last Rust gap was partly wrong: racing.h has only layouts in C++ too, and the scripts' table only
+  its two lookups, both in mml::game.
