@@ -323,8 +323,97 @@ Rule *RuleFor(IDirect3DDevice9 *d) {
 }
 
 using DipFn = HRESULT(STDMETHODCALLTYPE *)(IDirect3DDevice9 *, D3DPRIMITIVETYPE, INT, UINT, UINT, UINT, UINT);
+bool Compile(const std::string &src, const char *entry, const char *target, std::vector<uint8_t> *out, std::string *err);
+
+// ---- the scene drawn from the sun (shadows.cpp, view.cpp ViewDrawShadow): every face group into the map as its
+// depth, cut out where the game's alpha test cuts it; what lets light through (blended without a test, added) and the
+// backdrop (the sky: drawn with the camera's view without its position) left out
+const char kShadowHlsl[] = R"(
+#include "mml/game.hlsli"
+struct I { float3 pos : POSITION; float4 color : COLOR0; float2 uv0 : TEXCOORD0; float2 uv1 : TEXCOORD1; };
+struct O { float4 pos : POSITION; float4 color : COLOR0; float2 uv : TEXCOORD0; float z : TEXCOORD1; };
+O vs(I i) {
+    O o;
+    o.pos = mul(mul(mul(float4(i.pos, 1), mml_World), mml_View), mml_Proj);
+    o.color = i.color;
+    o.uv = mml_Stage0.z > 0.5 ? i.uv1 : i.uv0;
+    o.z = o.pos.z / o.pos.w;
+    return o;
+}
+float4 ps(O i) : COLOR0 {
+    float a = mml_FixedStage(mml_Stage0, tex2D(mml_Tex0, i.uv), i.color, i.color).a;   // (the game's alpha test cuts on it)
+    // a slope-scaled bias: the depth's own change across a texel added, so the receivers' constant bias stays small
+    float slope = max(abs(ddx(i.z)), abs(ddy(i.z)));
+    return float4(i.z + slope * 1.5, 0, 0, a);
+}
+)";
+IDirect3DVertexShader9 *g_shadowVs;
+IDirect3DPixelShader9 *g_shadowPs;
+IDirect3DDevice9 *g_shadowDev;
+bool g_shadowFailed;
+std::string g_shadowWhy;
+float g_shadowBack[16];       // the backdrop's view for this drawing
+unsigned g_shadowDraws, g_shadowFaces, g_shadowSkipped, g_shadowCut;
+float g_shadowVP[16];          // the world to the map as the drawing set it (its first world draw: View x Projection)
+bool g_shadowVPSet;
+
+bool MakeShadowShaders(IDirect3DDevice9 *d) {
+    if (g_shadowDev == d && g_shadowVs && g_shadowPs) return true;
+    if (g_shadowFailed && g_shadowDev == d) return false;
+    if (g_shadowDev != d) { g_shadowVs = nullptr; g_shadowPs = nullptr; }   // (another device: the old one's went with it)
+    g_shadowDev = d;
+    std::vector<uint8_t> vs, ps;
+    std::string err;
+    if (!Compile(kShadowHlsl, "vs", "vs_3_0", &vs, &err) || !Compile(kShadowHlsl, "ps", "ps_3_0", &ps, &err) ||
+        FAILED(d->CreateVertexShader(reinterpret_cast<const DWORD *>(vs.data()), &g_shadowVs)) ||
+        FAILED(d->CreatePixelShader(reinterpret_cast<const DWORD *>(ps.data()), &g_shadowPs))) {
+        g_shadowWhy = err.empty() ? "the device refused the depth shaders" : err;
+        g_shadowFailed = true;
+        return false;
+    }
+    return true;
+}
+
+bool ShadowDraw(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex, UINT verts, UINT start, UINT n, DipFn dip, HRESULT *hr) {
+    DWORD blend = 0, test = 0, dst = 0;
+    d->GetRenderState(D3DRS_ALPHABLENDENABLE, &blend);
+    d->GetRenderState(D3DRS_ALPHATESTENABLE, &test);
+    if (blend) d->GetRenderState(D3DRS_DESTBLEND, &dst);
+    D3DMATRIX v{};
+    d->GetTransform(D3DTS_VIEW, &v);
+    bool sky = !memcmp(&v, g_shadowBack, sizeof g_shadowBack);
+    if (sky || (blend && (!test || dst == D3DBLEND_ONE))) { g_shadowSkipped++; *hr = S_OK; return true; }   // (left out: no light stopped)
+    if (!MakeShadowShaders(d)) { *hr = S_OK; return true; }
+    if (!g_shadowVPSet) {   // (what the map is read with is what it was drawn with)
+        D3DMATRIX p{};
+        d->GetTransform(D3DTS_PROJECTION, &p);
+        Mul(v, p, reinterpret_cast<D3DMATRIX *>(g_shadowVP));
+        g_shadowVPSet = true;
+    }
+    float c[kRegs * 4];
+    Constants(d, c);
+    IDirect3DVertexShader9 *oldVs = nullptr;
+    IDirect3DPixelShader9 *oldPs = nullptr;
+    d->GetVertexShader(&oldVs);
+    d->GetPixelShader(&oldPs);
+    d->SetVertexShaderConstantF(0, c, kRegs);
+    d->SetPixelShaderConstantF(0, c, kRegs);
+    d->SetVertexShader(g_shadowVs);
+    d->SetPixelShader(g_shadowPs);
+    if (blend) { d->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE); g_shadowCut++; }   // (a fence's cut-outs: tested, not blended)
+    *hr = dip(d, t, base, minIndex, verts, start, n);
+    if (blend) d->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);   // (as LS3D left it: its own cache of the states holds)
+    d->SetVertexShader(oldVs);
+    d->SetPixelShader(oldPs);
+    if (oldVs) oldVs->Release();
+    if (oldPs) oldPs->Release();
+    g_shadowDraws++;
+    g_shadowFaces += n;
+    return true;
+}
 
 bool Draw(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex, UINT verts, UINT start, UINT n, DipFn dip, HRESULT *hr) {
+    if (ShadowViewNow()) return ShadowDraw(d, t, base, minIndex, verts, start, n, dip, hr);
     if (g_surveyWanted && g_group.where == MML_GEOM_FRAME) Survey(d, n);
     if (g_rules.empty()) return false;
     Rule *r = RuleFor(d);
@@ -412,11 +501,25 @@ void Release(Rule &r) {
 
 } // namespace
 
-bool ShadersWanted() { return !g_rules.empty() || g_surveyWanted; }
+bool ShadersWanted() { return !g_rules.empty() || g_surveyWanted || ShadowViewNow(); }
+
+void ShadersShadowBegin(const float backView[16]) {
+    memcpy(g_shadowBack, backView, sizeof g_shadowBack);
+    g_shadowDraws = g_shadowFaces = g_shadowSkipped = g_shadowCut = 0;
+    g_shadowVPSet = false;
+}
+void ShadersShadowStats(unsigned *draws, unsigned *faces, unsigned *skipped, unsigned *cut, float viewProj[16], std::string *why) {
+    if (g_shadowVPSet) memcpy(viewProj, g_shadowVP, sizeof g_shadowVP);
+    *draws = g_shadowDraws;
+    *faces = g_shadowFaces;
+    *skipped = g_shadowSkipped;
+    *cut = g_shadowCut;
+    *why = g_shadowWhy;
+}
 
 void ShadersGroupBegin(int kind, void *visual, uint8_t *entry, int where) {
     g_group = Group{};
-    if (!where) return;
+    if (!where && !ShadowViewNow()) return;   // (the drawing from the sun is neither the frame nor a mod's view)
     const void *group = At<const void *>(entry, kEntryGroup);
     const void *mat = group ? At<const void *>(group, kGroupMaterial) : nullptr;
     g_group.active = true;
@@ -548,6 +651,8 @@ bool ShadersMethod(const std::string &method, const std::string &paramsJson, std
             if (!p.value("on", true)) {
                 ShaderShadows(nullptr, nullptr);
             } else {
+                std::string casters = p.value("casters", "");
+                ShadowsTune(p.value("sun_distance", 0.0f), casters == "game" ? 1 : casters == "meshes" ? 0 : -1);
                 MmlShadowSettings ss{p.value("size", 2048), p.value("extent", 60.0f), p.value("bias", 0.0f)};
                 ShaderShadows(nullptr, &ss);
             }

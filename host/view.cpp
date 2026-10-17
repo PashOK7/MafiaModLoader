@@ -79,6 +79,7 @@ QueueFn oQueue;
 const float *g_holdPos;
 void *g_holdSector;
 bool g_drawing;
+bool g_shadowDrawing;   // (the scene drawn from the sun for shadows.cpp: no mod's view, no stage-1 work)
 unsigned g_serial = 0xB0000000u;   // the views' camera serials: apart from the game camera's (and mafia-ragdoll's)
 LARGE_INTEGER g_freq;
 
@@ -295,7 +296,7 @@ DWORD SafeCamera(void *scene, uint8_t **cam) {
 }
 
 int __stdcall ViewStage(int stage, int, int) {
-    if (stage == 1) {
+    if (stage == 1 && !g_shadowDrawing) {
         RenderViewWorld(g_stageHandle);
         GfxViewStage1();
     }
@@ -360,9 +361,87 @@ void DrawOne(View &v, void *driver, void *scene, uint8_t *cam, RenderFn render) 
     v.ms = v.drawn == 1 ? ms : v.ms * 0.9 + ms * 0.1;
 }
 
+// ---- the scene from the sun (shadows.cpp): LS3D's own orthographic camera
+constexpr int kVtSetOrthoScale = 0x60, kVtSetOrtho = 0x64;   // stdcall(this, float) / (this, bool): the projections again
+using SetBoolFn = int(__stdcall *)(void *cam, char on);
+
+// The camera made orthographic at `world` (rows: right, up, forward, the eye), `half` metres each way, its depth from
+// nearZ to farZ; its sector held at the game camera's. False with why: nothing changed.
+bool PutOrtho(uint8_t *cam, const float world[16], float half, float nearZ, float farZ, CamSaved *saved, std::string *why) {
+    if (At<uint8_t>(cam, kCamOrtho)) { *why = "the game camera is orthographic"; return false; }
+    if (!(half > 0.01f) || !(farZ > nearZ + 0.01f) || !(nearZ > 0.001f)) { *why = "an empty box"; return false; }
+    SaveCam(cam, saved);
+    Slot<SetBoolFn>(cam, kVtSetOrtho)(cam, 1);
+    Slot<SetFloatFn>(cam, kVtSetOrthoScale)(cam, 1.0f / half);
+    Slot<SetFloatFn>(cam, kVtSetAspect)(cam, 1.0f);
+    Slot<SetRangeFn>(cam, kVtSetRange)(cam, nearZ, farZ);
+    memcpy(cam + kCamWorld, world, 64);
+    At<uint32_t>(cam, kCamFlags) = saved->flags | kWorldValid;
+    At<uint32_t>(cam, kCamSerial) = g_serial++;
+    if (g_serial < 0xB0000000u || g_serial >= 0xC0000000u) g_serial = 0xB0000000u;
+    g_holdPos = reinterpret_cast<const float *>(cam + kCamWorld + 48);
+    g_holdSector = At<void *>(cam, 0x3F8);   // the camera's: the eye is above the city, in no room
+    Slot<UpdateFn>(cam, kVtUpdate)(cam, nullptr);
+    g_holdSector = nullptr;
+    return true;
+}
+
+bool PutShadow(void *scene, uint8_t *cam, const float world[16], float half, float nearZ, float farZ, int size, std::string *why) {
+    if (!PutOrtho(cam, world, half, nearZ, farZ, &g_saved.cam, why)) return false;
+    g_saved.callback = At<void *>(scene, kSceneCallback);
+    g_saved.mask = At<uint32_t>(scene, kSceneMask);
+    g_saved.listener = At<void *>(scene, kSceneListener);
+    g_saved.lensCount = At<uint32_t>(scene, kSceneLensCount);
+    memcpy(g_saved.rect, static_cast<uint8_t *>(scene) + kSceneRect, sizeof g_saved.rect);
+    g_put = true;
+    g_putScene = scene;
+    At<void *>(scene, kSceneCallback) = reinterpret_cast<void *>(&ViewStage);   // (stage 1: nothing in this view)
+    At<uint32_t>(scene, kSceneMask) = 1u << 1;
+    At<void *>(scene, kSceneListener) = nullptr;
+    At<uint32_t>(scene, kSceneLensCount) = 0;
+    int32_t rect[4] = {0, 0, size, size};
+    memcpy(static_cast<uint8_t *>(scene) + kSceneRect, rect, sizeof rect);
+    return true;
+}
+DWORD SafePutShadow(void *scene, uint8_t *cam, const float world[16], float half, float nearZ, float farZ, int size, std::string *why, bool *ok) {
+    __try { *ok = PutShadow(scene, cam, world, half, nearZ, farZ, size, why); return 0; } __except (EXCEPTION_EXECUTE_HANDLER) {
+        *ok = false;
+        DWORD code = GetExceptionCode();
+        SafeRestore();
+        return code;
+    }
+}
+
 } // namespace
 
-int ViewDrawingNow() { return g_drawing ? g_stageHandle : 0; }
+int ViewDrawingNow() { return g_drawing && !g_shadowDrawing ? g_stageHandle : 0; }
+bool ShadowViewNow() { return g_shadowDrawing; }
+
+bool ViewDrawShadow(void *driver, void *scene, RenderFn render, const float world[16], float half, float nearZ, float farZ, int size,
+                    float viewProj[16], float backView[16], std::string *why) {
+    if (!game::g_ls3d || !game::g_exe || g_drawing) { *why = "no game, or a view is being drawn"; return false; }
+    if (!EnsureHooks()) { *why = g_hookWhy; return false; }
+    uint8_t *cam = nullptr;
+    if (SafeCamera(scene, &cam) || !cam) { *why = "the scene's camera is not LS3D's I3D_camera"; return false; }
+    bool ok = false;
+    DWORD code = SafePutShadow(scene, cam, world, half, nearZ, farZ, size, why, &ok);
+    if (!ok) { if (code) *why = "a fault while the camera was set"; return false; }
+    memcpy(viewProj, cam + kCamViewProj, 64);
+    memcpy(backView, cam + kCamBackView, 64);
+    ShadersShadowBegin(backView);   // (shaders.cpp: the sky told apart by its view)
+    g_stageHandle = 0;
+    g_drawing = true;
+    g_shadowDrawing = true;
+    DWORD rc = SafeRender(render, driver, scene);
+    g_shadowDrawing = false;
+    g_drawing = false;
+    DWORD bc = SafeRestore();
+    char hex[16];
+    snprintf(hex, sizeof hex, "%08X", static_cast<unsigned>(rc ? rc : bc));
+    if (rc) { *why = std::string("a fault inside LS3D's drawing (exception ") + hex + ")"; return false; }
+    if (bc) { *why = "a fault while the camera was put back"; return false; }
+    return true;
+}
 
 // ---- the frame's own camera overridden: one owner (the last mod that asked, or the bridge's camera.set)
 namespace {

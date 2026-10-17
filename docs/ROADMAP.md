@@ -861,10 +861,16 @@ merged, sorted by importance):
 - **The sun's shadow and the game's lights** (host/shadows.cpp, block 7c): the casters are block 6d's meshes drawn
   by the host, not what the game draws: people cast no shadow (skinned on the CPU at their draw), billboards (the
   countryside's far forest) none, and alpha-tested faces (leaves, fences) cast as whole quads (a tree's shadow is a
-  solid star: seen 2026-10-17). The proper way, to be measured first: the map drawn by LS3D itself through a scene
-  view from the sun, its camera orthographic (LS3D's own: I3D_camera +0x15C the flag, +0x160 the scale, its projection
-  made by 1000B400 in 1.2's LS3DF), so everything is drawn as the game draws it; what LS3D's LOD choice and its
-  sectors' culling make of a camera above the scene decides it. One map of a fixed extent around the camera (no
+  solid star: seen 2026-10-17). The proper way is built and kept as an option (`shader.shadows {"casters": "game"}`,
+  2026-10-17): LS3D draws the scene from the sun with its own orthographic camera (I3D_camera's SetOrthogonal, vtable
+  +0x64, and SetOrthoScale +0x60; 1000B930 and 1000B8D0 in 1.2's LS3DF; its update builds a box frustum for it), each
+  face group written as its depth with the game's alpha test kept (leaves cut out: seen), the sky and what lets light
+  through left out, LS3D's clear made "nothing"; the map read with the drawing's own matrices (the ground in the map
+  matched the ground: measured). What stops it: LS3D leaves out most objects from such a camera (101 face groups,
+  1953 triangles with its eye 250 m away; 63 with it 60 m away; the meshes' way finds about 200 and 10 000; houses,
+  cars and people missing: measured in both builds, the same with a perspective camera at that pose), so it is not the
+  default. Next: where LS3D's drawing drops a visual for a camera (its LOD by distance and size on the screen, its
+  sectors' visibility), read in Render's visibility pass. One map of a fixed extent around the camera (no
   cascades: past it, lit); the box of the scene's meshes moves when the camera has gone a quarter of it, and a mesh
   first met is in the map from meshes.cpp's next scan (0.25 s). The scene views (mirrors) sample the frame's map
   (drawn around the game camera, not the view's eye); not looked at in a view. The lights a draw gets are the eight

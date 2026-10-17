@@ -1,13 +1,19 @@
 // What per-object shading needs beyond the game's own draw (mml.h shader_shadows; docs/MODDING.md "Shaders on the
 // game's own drawing"): a shadow map from the sun, the game's lights near each draw.
 //
-// The shadow map: before the mission's world is drawn, the host draws the depth of what is around the camera as
-// seen from the scene's sun (lights.cpp scene_sun) into a texture of its own on the game's Direct3D 9 device (R32F,
-// an orthographic box following the camera, its texels snapped so it does not shimmer), every Direct3D state put
-// back after (a state block of everything, the render target, the depth buffer). The casters: the scene's meshes
-// around the camera (meshes.cpp, a box of the host's own) and the cars near it as they are posed now; their
-// vertices uploaded once a mesh into managed buffers. The rules' shaders find it at sampler 2 with its matrix in
-// game.hlsli's registers.
+// The shadow map: before the mission's world is drawn (after the frame's camera is set, before the mods' scene
+// views), the host draws the depth of what is around the camera as seen from the scene's sun (lights.cpp scene_sun)
+// into a texture of its own on the game's Direct3D 9 device (R32F, an orthographic box following the camera, its
+// texels snapped so it does not shimmer). The casters, two ways:
+//   - "meshes" (the default): the scene's meshes around the camera (meshes.cpp, a box of the host's own) and the cars
+//     near it as they are posed now, drawn by the host (their vertices uploaded once a mesh into managed buffers),
+//     every Direct3D state put back after (a state block of everything, the render target, the depth buffer). No
+//     people, no billboards, alpha-tested faces whole (ROADMAP Known gaps).
+//   - "game" (shader.shadows casters "game", not yet the default): LS3D itself draws the scene from an orthographic
+//     camera of its own (view.cpp ViewDrawShadow), each face group written as its depth by shaders.cpp with the
+//     game's alpha test kept; only the target, depth buffer and viewport put back (LS3D keeps a cache of the states
+//     it set). LS3D leaves out most objects from such a camera (measured: Known gaps), so it stays an option.
+// The rules' shaders find the map at sampler 2 with its matrix in game.hlsli's registers.
 //
 // The game's lights: the scene's point and spot lights that are on (lights.cpp), up to eight whose range reaches
 // the drawn visual's bounding sphere, nearest first, in game.hlsli's registers at each draw a rule takes.
@@ -20,6 +26,7 @@
 #include <cstring>
 #include <unordered_map>
 #include <vector>
+#include "json.hpp"
 #include "mml/game/game.h"
 
 namespace host {
@@ -202,28 +209,79 @@ void LightMatrix(const float eye[3], const float toSun[3], float extent, int siz
     MulM(view, proj, out);
 }
 
-void Pass(IDirect3DDevice9 *d) {
-    LARGE_INTEGER f, t0, t1;
-    QueryPerformanceFrequency(&f);
-    QueryPerformanceCounter(&t0);
-    g_valid = false;
-    g_frames++;
-    MmlShadowSettings s{};
-    for (const Want &w : g_wants) {
-        s.size = std::max(s.size, w.s.size);
-        s.extent = std::max(s.extent, w.s.extent);
-        s.bias = std::max(s.bias, w.s.bias);
-    }
-    int size = s.size >= 4096 ? 4096 : s.size >= 2048 ? 2048 : s.size >= 1024 ? 1024 : 512;
-    g_extent = s.extent > 1 ? s.extent : 60.0f;
-    g_biasM = s.bias > 0 ? s.bias : kDefaultBiasM;
-    g_bias = g_biasM / kDepth;
-    float toSun[3], col[3], amb[3];
-    if (!SceneSun(toSun, col, amb) || toSun[1] < 0.05f) { g_why = "no sun above the horizon"; return; }
-    MmlRenderCamera cam{};
-    if (!RenderCamera(&cam)) { g_why = "no camera"; return; }
-    float eye[3] = {cam.eye.x, cam.eye.y, cam.eye.z};
-    if (!Make(d, size)) return;
+// ---- the casters as the game draws them: LS3D's own drawing of the scene from the sun (view.cpp ViewDrawShadow, an
+// orthographic camera of LS3D's), every face group written as its depth by shaders.cpp (its alpha test kept: leaves
+// and fences cut out; what lets light through and the sky left out); people as posed, billboards turned to the sun.
+using ClearFn = HRESULT(STDMETHODCALLTYPE *)(IDirect3DDevice9 *, DWORD, const D3DRECT *, DWORD, D3DCOLOR, float, DWORD);
+ClearFn oClear;
+bool g_clearHooked, g_clearTried;
+constexpr int kVtClear = 43;   // IDirect3DDevice9's
+float g_sunDistance = 250.0f;   // the sun's eye this far from the camera (shader.shadows sun_distance)
+constexpr float kBelow = 150.0f;   // the depth this far past the camera
+// LS3D clears its target with the scene's background: the map's clear is "nothing", 1
+HRESULT STDMETHODCALLTYPE hkClear(IDirect3DDevice9 *d, DWORD n, const D3DRECT *r, DWORD flags, D3DCOLOR color, float z, DWORD stencil) {
+    if (ShadowViewNow()) color = 0xFFFFFFFF;
+    return oClear(d, n, r, flags, color, z, stencil);
+}
+bool EnsureClear(IDirect3DDevice9 *d, std::string *why) {
+    if (g_clearHooked) return true;
+    if (g_clearTried) { *why = "the device's Clear is not hooked"; return false; }
+    g_clearTried = true;
+    uintptr_t at = reinterpret_cast<uintptr_t>((*reinterpret_cast<void ***>(d))[kVtClear]);
+    if (!HookAdd(nullptr, at, reinterpret_cast<void *>(&hkClear), reinterpret_cast<void **>(&oClear), why)) return false;
+    g_clearHooked = true;
+    return true;
+}
+
+bool g_castersGame;            // LS3D drawing the casters (shader.shadows casters "game"): not yet the default, see ROADMAP
+std::string g_mode = "none";   // "game": LS3D's drawing; "meshes": the host's own (when the game's could not be)
+std::string g_gameWhy;         // why the game's drawing was not used
+unsigned g_skipped, g_cut;
+float g_range = kDepth;        // the map's depth, metres
+
+bool PassGame(IDirect3DDevice9 *d, void *driver, void *scene, RenderFn render, const float eye[3], const float toSun[3], int size) {
+    std::string why;
+    if (!driver || !scene || !render) { g_gameWhy = "not inside the frame's drawing"; return false; }
+    if (!GeomEnsureHooks(&why) || !GeomEnsureDip(&why) || !EnsureClear(d, &why)) { g_gameWhy = why; return false; }
+    V3 z = Norm({-toSun[0], -toSun[1], -toSun[2]});
+    V3 up = std::fabs(z.y) > 0.99f ? V3{1, 0, 0} : V3{0, 1, 0};
+    V3 x = Norm(Cross(up, z)), y = Cross(z, x);
+    float texel = 2 * g_extent / static_cast<float>(size);
+    V3 c{eye[0], eye[1], eye[2]};
+    float cx = std::floor(Dot(c, x) / texel) * texel, cy = std::floor(Dot(c, y) / texel) * texel, cz = Dot(c, z);   // (snapped: no shimmer)
+    V3 focus{x.x * cx + y.x * cy + z.x * cz, x.y * cx + y.y * cy + z.y * cz, x.z * cx + y.z * cy + z.z * cz};
+    V3 sun{focus.x - z.x * g_sunDistance, focus.y - z.y * g_sunDistance, focus.z - z.z * g_sunDistance};
+    float world[16] = {x.x, x.y, x.z, 0, y.x, y.y, y.z, 0, z.x, z.y, z.z, 0, sun.x, sun.y, sun.z, 1};
+    const float nearZ = 1.0f, farZ = g_sunDistance + kBelow;
+    IDirect3DSurface9 *rt = nullptr, *ds = nullptr;
+    D3DVIEWPORT9 oldVp{};
+    d->GetRenderTarget(0, &rt);
+    d->GetDepthStencilSurface(&ds);
+    d->GetViewport(&oldVp);
+    d->SetRenderTarget(0, g_mapSurface);
+    d->SetDepthStencilSurface(g_mapDepth);
+    D3DVIEWPORT9 vp{0, 0, static_cast<DWORD>(size), static_cast<DWORD>(size), 0, 1};
+    d->SetViewport(&vp);
+    oClear(d, 0, nullptr, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, 0xFFFFFFFF, 1.0f, 0);
+    float viewProj[16], back[16];
+    bool ok = ViewDrawShadow(driver, scene, render, world, g_extent, nearZ, farZ, size, viewProj, back, &why);
+    // (only what was changed here is put back: LS3D keeps a cache of the states it set, and they are on the device)
+    d->SetRenderTarget(0, rt);
+    d->SetDepthStencilSurface(ds);
+    d->SetViewport(&oldVp);
+    if (rt) rt->Release();
+    if (ds) ds->Release();
+    if (!ok) { g_gameWhy = why; return false; }
+    memcpy(g_lightVP, viewProj, sizeof g_lightVP);   // (the camera's; the drawing's own below when it drew anything)
+    g_range = farZ - nearZ;
+    std::string err;
+    ShadersShadowStats(&g_casters, &g_triangles, &g_skipped, &g_cut, g_lightVP, &err);
+    if (!err.empty()) { g_gameWhy = err; return false; }
+    g_gameWhy.clear();
+    return true;
+}
+
+void PassMeshes(IDirect3DDevice9 *d, const float eye[3], const float toSun[3], int size) {
     // the casters: the scene around the camera (meshes.cpp scans the box of the host's own) and the cars near it
     // (the box moved only when the camera has gone a quarter of it: a new box makes meshes.cpp scan at once)
     static float s_at[3] = {1e30f, 0, 0};
@@ -302,6 +360,39 @@ void Pass(IDirect3DDevice9 *d) {
                 ++it;
             }
         }
+    g_range = kDepth;
+}
+
+void Pass(IDirect3DDevice9 *d, void *driver, void *scene, RenderFn render) {
+    LARGE_INTEGER f, t0, t1;
+    QueryPerformanceFrequency(&f);
+    QueryPerformanceCounter(&t0);
+    g_valid = false;
+    g_frames++;
+    MmlShadowSettings s{};
+    for (const Want &w : g_wants) {
+        s.size = std::max(s.size, w.s.size);
+        s.extent = std::max(s.extent, w.s.extent);
+        s.bias = std::max(s.bias, w.s.bias);
+    }
+    int size = s.size >= 4096 ? 4096 : s.size >= 2048 ? 2048 : s.size >= 1024 ? 1024 : 512;
+    g_extent = s.extent > 1 ? s.extent : 60.0f;
+    g_biasM = s.bias > 0 ? s.bias : kDefaultBiasM;
+    float toSun[3], col[3], amb[3];
+    if (!SceneSun(toSun, col, amb) || toSun[1] < 0.05f) { g_why = "no sun above the horizon"; return; }
+    MmlRenderCamera cam{};
+    if (!RenderCamera(&cam)) { g_why = "no camera"; return; }
+    float eye[3] = {cam.eye.x, cam.eye.y, cam.eye.z};
+    if (!Make(d, size)) return;
+    if (g_castersGame && PassGame(d, driver, scene, render, eye, toSun, size)) {
+        g_mode = "game";
+    } else {
+        if (!g_castersGame) g_gameWhy.clear();
+        PassMeshes(d, eye, toSun, size);
+        g_mode = "meshes";
+        g_skipped = g_cut = 0;
+    }
+    g_bias = g_biasM / g_range;
     g_valid = true;
     g_why.clear();
     QueryPerformanceCounter(&t1);
@@ -329,6 +420,10 @@ void LightsNow() {
 } // namespace
 
 bool ShadowsWanted() { return !g_wants.empty(); }
+void ShadowsTune(float sunDistance, int casters) {
+    if (sunDistance >= 5 && sunDistance <= 2000) g_sunDistance = sunDistance;
+    if (casters >= 0) g_castersGame = casters == 1;
+}
 
 bool ShaderShadows(MmlMod *mod, const MmlShadowSettings *s) {
     g_wants.erase(std::remove_if(g_wants.begin(), g_wants.end(), [&](const Want &w) { return w.mod == mod; }), g_wants.end());
@@ -344,12 +439,12 @@ void ShadowsModGone(MmlMod *mod) {
     if (had) ShaderShadows(mod, nullptr);
 }
 
-void ShadowsBeforeWorld() {   // (render.cpp: the mission's world is about to be drawn)
+void ShadowsBeforeWorld(void *driver, void *scene, RenderFn render) {   // (render.cpp: before the mission's world is drawn)
     g_valid = false;
     if (g_wants.empty()) return;
     auto *d = static_cast<IDirect3DDevice9 *>(RenderDevice(9));
     if (!d) { g_why = "no Direct3D 9 device (a wrapper's)"; return; }
-    __try { Pass(d); } __except (EXCEPTION_EXECUTE_HANDLER) { g_valid = false; g_why = "the pass faulted"; }
+    __try { Pass(d, driver, scene, render); } __except (EXCEPTION_EXECUTE_HANDLER) { g_valid = false; g_why = "the pass faulted"; }
 }
 
 void ShadowsMissionClose() {   // (the meshes' buffers keyed by pointers meshes.cpp lets go)
@@ -417,16 +512,15 @@ bool ShadowsShared(void **handle, unsigned *made, float viewProj[16], float info
     return true;
 }
 
-void ShadowsState(std::string *json) {
-    char b[600];
-    snprintf(b, sizeof b,
-             "{\"shared\":%s,\"wanted\":%s,\"drawn\":%s,\"size\":%d,\"extent\":%.1f,\"bias\":%.4f,\"casters\":%u,\"triangles\":%u,\"pass_ms\":%.2f,"
-             "\"meshes_uploaded\":%zu,\"lights\":%zu,\"sun\":%s,\"why\":\"%s\"}",
-             g_shared ? "true" : "false",
-             g_wants.empty() ? "false" : "true", g_valid ? "true" : "false", g_size, g_extent, g_biasM, g_casters, g_triangles, g_passMs,
-             g_buffers.size(), g_lights.size(), g_haveSun ? "true" : "false",
-             !g_wants.empty() && !g_valid && g_why.empty() ? "no frame of the mission's world drawn since" : g_why.c_str());
-    *json = b;
+void ShadowsState(std::string *out) {
+    using json = nlohmann::json;
+    json j = {{"wanted", !g_wants.empty()}, {"drawn", g_valid}, {"casters_by", g_mode}, {"size", g_size}, {"extent", g_extent},
+              {"bias", g_biasM}, {"depth_m", g_range}, {"casters", g_casters}, {"triangles", g_triangles}, {"left_out", g_skipped},
+              {"cut_out", g_cut}, {"pass_ms", std::round(g_passMs * 100) / 100}, {"meshes_uploaded", g_buffers.size()},
+              {"lights", g_lights.size()}, {"sun", g_haveSun}, {"shared", g_shared != nullptr},
+              {"why", !g_wants.empty() && !g_valid && g_why.empty() ? std::string("no frame of the mission's world drawn since") : g_why}};
+    if (!g_gameWhy.empty()) j["game_why"] = g_gameWhy;   // (why LS3D's drawing was not used: the host's own meshes then)
+    *out = j.dump(-1, ' ', false, json::error_handler_t::replace);
 }
 
 } // namespace host

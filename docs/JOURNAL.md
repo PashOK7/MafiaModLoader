@@ -1417,3 +1417,21 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   (the double, not the float) and the stand-in checks after every frame that it got its 24 bits back.
 - **In both labs** alike: the game `0x007F`, the mods `0x027F`, the frame given back at `0x007F`, the panel's values
   written clean, sun_shafts drawn.
+
+## 2026-10-17 (night): the shadow map drawn by LS3D, an option for now
+
+- **Made**: view.cpp `ViewDrawShadow` (LS3D's own orthographic camera: SetOrthogonal, SetOrthoScale, its update's box
+  frustum), shaders.cpp's depth drawing in that view (the game's alpha test kept, the sky told apart by its view, what
+  lets light through left out, a fence blended and tested drawn as a cut-out with its blending put back for LS3D's
+  cache of states), shadows.cpp's two ways (`casters`: "meshes" the default, "game"), the device's Clear hooked so
+  LS3D's clear is "nothing" in the map; the map read with the drawing's own matrices.
+- **Found on the way**: no group reached the depth shader at first: `ShadersGroupBegin` leaves a group inactive when
+  it is neither the frame's nor a view's; the drawing from the sun now counts.
+- **Measured**: the ground in the map matches the ground (a debug view of the map's depth against each point's);
+  leaves are cut out; but LS3D leaves out most visuals for such a camera (about 100 face groups against the meshes'
+  200 and their 10 000 triangles; houses, cars, people missing), the same with a perspective camera at that pose, and
+  fewer with its eye nearer. Left as an option (Known gaps: where LS3D drops a visual is the next thing to read); the
+  meshes stay the default. The owner asked to drop such a hunt overnight and go on.
+- **In both labs**: the default map as before (the trees' and the building's shadows), `casters: "game"` drawn without
+  harm to the frame.
+- **Tests**: offline ALL PASSED.

@@ -321,8 +321,9 @@ bool ShadersMethod(const std::string &method, const std::string &paramsJson, std
 // the shadow map from the sun and the game's lights near a draw (shadows.cpp)
 bool ShaderShadows(MmlMod *mod, const MmlShadowSettings *s);   // null s: the mod no longer wants it
 bool ShadowsWanted();
+void ShadowsTune(float sunDistance, int casters);   // (shader.shadows) sun_distance; casters 1 LS3D's drawing, 0 the meshes, -1 as it is
 void ShadowsModGone(MmlMod *mod);
-void ShadowsBeforeWorld();                // (render.cpp) the pass, before the mission's world is drawn
+void ShadowsBeforeWorld(void *driver, void *scene, int(__stdcall *render)(void *, void *));   // (render.cpp) the pass, before the world
 void ShadowsMissionClose();
 void ShadowsConstants(const void *visual, float *c);   // game.hlsli's c76..c116 for a draw of this visual
 ::IDirect3DBaseTexture9 *ShadowsTexture();  // the map drawn this frame, or null
@@ -490,6 +491,14 @@ void ViewsDraw(void *driver, void *scene, RenderFn render);   // (render.cpp) be
 void RenderViewWorld(int handle);         // (render.cpp) MML_EVENT_VIEW_WORLD sent, the device's state kept
 bool ViewMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 int ViewDrawingNow();                     // the scene view LS3D is drawing now (its handle), 0: none
+// the scene drawn by LS3D from an orthographic camera at `world` (rows right, up, forward, eye), `half` metres each
+// way, depth nearZ..farZ, into the targets the caller has bound (size x size): its view x projection and the backdrop's
+// view out (shadows.cpp's map); ShadowViewNow: that drawing is under way
+bool ViewDrawShadow(void *driver, void *scene, RenderFn render, const float world[16], float half, float nearZ, float farZ, int size,
+                    float viewProj[16], float backView[16], std::string *why);
+bool ShadowViewNow();
+void ShadersShadowBegin(const float backView[16]);   // (shaders.cpp) the drawing from the sun begins
+void ShadersShadowStats(unsigned *draws, unsigned *faces, unsigned *skipped, unsigned *cut, float viewProj[16], std::string *why);
 // the frame's camera overridden (view.cpp): camera_override; camera.state, camera.set, camera.release
 int CameraOverride(MmlMod *mod, MmlViewFn fn, void *user);
 void FrameCameraBegin(void *scene);       // (render.cpp) before the views and the frame's own drawing
