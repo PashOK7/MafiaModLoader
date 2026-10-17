@@ -11,12 +11,13 @@
 // What is drawn, each part a setting of its own:
 // - `route`: the waypoints (+0x24 of each record: the point HumanMoveTo is given) as crosses joined by lines (green;
 //   the one he walks to in yellow), and each waypoint's gate, the passage A..B the route was built through (grey);
-// - `trail`: his walk over the last stretch (cyan), and where he stands now (red);
+// - `trail`: his walk over the last `trail_s` seconds of the world's time (cyan), and where he stands now (red);
 // - `steer`: the point he walks to now (magenta, with a line from him), the point where the game counts the
 //   waypoint reached with its radius (orange circle), and the detour points around a blocker (blue) while he
 //   follows them (state 2).
 // Only the people within `range` metres of the camera are drawn. One the game has not ticked for a few seconds
-// (his route ended, a cutscene) is dropped, as is one the game destroys; every one when the mission closes.
+// (his route ended, a cutscene) is dropped, as is one the game destroys; every one when the mission closes. Time
+// here is the world's: the mission's ticks summed, so a pause stops it.
 //
 // The layout (read in both builds' code: Tick, GetNormalWaypoint 1.2 0x501C60 / 1.0 0x40BF30, isLastNormalWaypoint,
 // GetNextSpecWaypoint 1.2 0x501EF0 / 1.0 0x40C1C0): the normal waypoints are a vector of 0x3C-byte records at +0x1C
@@ -39,6 +40,8 @@ MmlMod *M;
 bool g_on = true;
 bool g_showRoute = true, g_showTrail = true, g_showSteer = true;
 float g_range = 150.0f;
+double g_trailS = 10.0;          // the walk kept, in seconds of the world's time
+double g_clock = 0;              // the world's time: the mission's ticks summed (seconds)
 
 // ---- the game's ai_path, per build
 struct Layout {
@@ -72,9 +75,9 @@ constexpr size_t kMaxNodes = 1024, kMaxSpec = 64;   // more is not a route (memo
 typedef char(__fastcall *TickFn)(void *self, void *edx, uint32_t a1, void *owner, uint32_t a3, uint32_t a4);
 void *g_orig = nullptr;          // the chain's original (the loader keeps it right while hooks come and go)
 
-constexpr size_t kTrailMax = 900;
+constexpr size_t kTrailMax = 4000;     // places a walker keeps at most, whatever `trail_s` says
 constexpr size_t kMaxWalkers = 32;
-constexpr DWORD kExpireMs = 4000;   // one not ticked for this long (the game running) is dropped
+constexpr double kExpireS = 4.0;       // one not ticked for this long (of the world's time) is dropped
 
 struct V { float x, y, z; };
 V operator+(V a, V b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
@@ -88,7 +91,7 @@ struct Node { V a, b, pos; uint32_t web = 0, kind = 0; };
 struct Walker {
     uintptr_t owner = 0, path = 0;
     unsigned long long ticks = 0;
-    DWORD ms = 0;                // the last time the game ticked him
+    double seen = 0;             // the last time the game ticked him (g_clock)
     std::vector<Node> nodes;     // the route's waypoints
     std::vector<V> spec;         // the detour points
     int cursor = -1, specCursor = -1;
@@ -97,8 +100,11 @@ struct Walker {
     float arriveR = 0;
     V now{};
     bool nowOk = false;
-    std::vector<V> trail;        // his places, a little apart
-    size_t routeStart = 0;       // the trail's index when this route began (the walk measured against it)
+    struct Place { V p; double t; };
+    std::vector<Place> trail;    // his places, a little apart, each with the time he was last there
+    double routeStart = 0;       // when this route began (the walk since is measured against it)
+    V routeOrigin{};             // where he stood then: the route as walked starts there, then its first waypoint
+    bool routeOriginOk = false;
     V routeFirst{}, routeLast{}; // the route told by its ends: a new one is often made at the old one's address
 };
 std::vector<Walker> g_walkers;
@@ -130,7 +136,7 @@ void Snapshot(uintptr_t path, uintptr_t owner) {
     if (!w) {
         if (g_walkers.size() >= kMaxWalkers) {   // the one the game has not ticked the longest makes room
             size_t oldest = 0;
-            for (size_t k = 1; k < g_walkers.size(); k++) if (g_walkers[k].ms < g_walkers[oldest].ms) oldest = k;
+            for (size_t k = 1; k < g_walkers.size(); k++) if (g_walkers[k].seen < g_walkers[oldest].seen) oldest = k;
             g_walkers.erase(g_walkers.begin() + static_cast<std::ptrdiff_t>(oldest));
         }
         g_walkers.emplace_back();
@@ -138,7 +144,7 @@ void Snapshot(uintptr_t path, uintptr_t owner) {
         w->owner = owner;
     }
     w->path = path;
-    w->ms = GetTickCount();
+    w->seen = g_clock;
     w->ticks++;
     std::memcpy(&w->cursor, hdr + kCursor, 4);
     std::memcpy(&w->specCursor, hdr + kSpecCursor, 4);
@@ -172,7 +178,9 @@ void Snapshot(uintptr_t path, uintptr_t owner) {
         if (Len(first - w->routeFirst) > 0.01f || Len(last - w->routeLast) > 0.01f) {   // another route: the walk measured anew
             w->routeFirst = first;
             w->routeLast = last;
-            w->routeStart = w->trail.size();
+            w->routeStart = g_clock;
+            w->routeOrigin = w->now;            // (his place at the last tick: this one's is read below)
+            w->routeOriginOk = w->nowOk;
         }
     }
     w->spec.clear();
@@ -189,13 +197,27 @@ void Snapshot(uintptr_t path, uintptr_t owner) {
                H->frame_world(M, reinterpret_cast<void *>(static_cast<uintptr_t>(frame)), m);
     if (w->nowOk) {
         w->now = {m[12], m[13], m[14]};
-        if (w->trail.empty() || Len(w->now - w->trail.back()) > 0.2f) {
-            w->trail.push_back(w->now);
-            if (w->trail.size() > kTrailMax) {
-                w->trail.erase(w->trail.begin());
-                if (w->routeStart) w->routeStart--;
-            }
+        if (w->trail.empty() || Len(w->now - w->trail.back().p) > 0.2f) {
+            w->trail.push_back({w->now, g_clock});
+            if (w->trail.size() > kTrailMax) w->trail.erase(w->trail.begin());
+        } else {
+            w->trail.back().t = g_clock;   // still there: a person standing keeps his place in the trail
         }
+    }
+}
+
+// the world's time goes on: the walk older than `trail_s` is let go, a walker not ticked for long is dropped
+void OnMissionTick(const MmlEvent *ev, void *) {
+    g_clock += ev->dt;
+    for (size_t k = g_walkers.size(); k-- > 0;) {
+        Walker &w = g_walkers[k];
+        if (g_clock - w.seen > kExpireS) {
+            g_walkers.erase(g_walkers.begin() + static_cast<std::ptrdiff_t>(k));
+            continue;
+        }
+        size_t old = 0;
+        while (old < w.trail.size() && g_clock - w.trail[old].t > g_trailS) old++;
+        if (old) w.trail.erase(w.trail.begin(), w.trail.begin() + static_cast<std::ptrdiff_t>(old));
     }
 }
 
@@ -210,12 +232,6 @@ void OnFrame(const MmlEvent *, void *) {
     float o[3], d[3];
     g_eyeOk = H->camera_ray(M, 400, 300, o, d) != 0;
     if (g_eyeOk) g_eye = {o[0], o[1], o[2]};
-    const DWORD now = GetTickCount();
-    const bool running = H->mission_state() == MML_MISSION_RUNNING;
-    for (size_t k = g_walkers.size(); k-- > 0;) {
-        if (!running) { g_walkers[k].ms = now; continue; }   // a paused world ticks nobody: nobody is dropped for it
-        if (now - g_walkers[k].ms > kExpireMs) g_walkers.erase(g_walkers.begin() + static_cast<std::ptrdiff_t>(k));
-    }
 }
 
 // ---- drawing (device lines, as the other world views)
@@ -259,7 +275,7 @@ void OnRenderWorld(const MmlEvent *ev, void *) {
             }
         }
         if (g_showTrail) {
-            for (size_t k = 1; k < w.trail.size(); k++) Seg(v, w.trail[k - 1], w.trail[k], kCyan);
+            for (size_t k = 1; k < w.trail.size(); k++) Seg(v, w.trail[k - 1].p, w.trail[k].p, kCyan);
             Cross(v, w.now, 0.4f, kRed);
         }
         if (g_showSteer && (w.state == 1 || w.state == 2)) {
@@ -304,6 +320,7 @@ void ReadSettings() {
     g_showTrail = H->config_number(M, "trail", 1) != 0;
     g_showSteer = H->config_number(M, "steer", 1) != 0;
     g_range = static_cast<float>(H->config_number(M, "range", 150));
+    g_trailS = std::fmax(0.5, H->config_number(M, "trail_s", 10));
     H->hotkey(M, H->config_string(M, "hotkey", "F6"), [](void *) { g_on = !g_on; H->config_set(M, "show", g_on ? "true" : "false"); }, nullptr);
 }
 
@@ -315,20 +332,23 @@ void OnEvent(const MmlEvent *ev, void *) {
             if (g_walkers[k].owner == reinterpret_cast<uintptr_t>(ev->actor)) g_walkers.erase(g_walkers.begin() + static_cast<std::ptrdiff_t>(k));
 }
 
-// how far a walk lies from its route in the ground plane (x, z): every place since the route began (the last 150 at
-// most) against the polyline through the waypoints; the mean and the largest distance
+// how far a walk lies from its route in the ground plane (x, z): every place of the kept trail since the route began
+// against the route as walked (from where he stood when it began, then through the waypoints); the mean and the
+// largest distance
 void WalkOffset(const Walker &w, float &meanM, float &maxM, size_t &n) {
     meanM = maxM = 0;
     n = 0;
-    if (w.nodes.size() < 2 || w.trail.empty()) return;
-    size_t first = w.routeStart < w.trail.size() ? w.routeStart : w.trail.size();
-    if (w.trail.size() - first > 150) first = w.trail.size() - 150;
+    std::vector<V> line;
+    if (w.routeOriginOk) line.push_back(w.routeOrigin);
+    for (const Node &node : w.nodes) line.push_back(node.pos);
+    if (line.size() < 2) return;
     double sum = 0;
-    for (size_t i = first; i < w.trail.size(); i++) {
-        const V p = w.trail[i];
+    for (const Walker::Place &place : w.trail) {
+        if (place.t < w.routeStart) continue;
+        const V p = place.p;
         float best = 1e9f;
-        for (size_t k = 1; k < w.nodes.size(); k++) {
-            const V a = w.nodes[k - 1].pos, b = w.nodes[k].pos;
+        for (size_t k = 1; k < line.size(); k++) {
+            const V a = line[k - 1], b = line[k];
             const float dx = b.x - a.x, dz = b.z - a.z;
             const float len2 = dx * dx + dz * dz;
             float t = len2 > 1e-6f ? ((p.x - a.x) * dx + (p.z - a.z) * dz) / len2 : 0.0f;
@@ -352,19 +372,19 @@ void Vec(std::string &out, V v) {
 // actor_route.state: every walker the game ticked, as data
 int State(const char *, MmlReply *reply, void *) {
     std::string out = "{\"walkers\":[";
-    const DWORD now = GetTickCount();
     for (size_t k = 0; k < g_walkers.size(); k++) {
         const Walker &w = g_walkers[k];
         float meanM = 0, maxM = 0;
         size_t samples = 0;
         WalkOffset(w, meanM, maxM, samples);
+        const double span = w.trail.empty() ? 0 : g_clock - w.trail.front().t;
         char b[512];
         snprintf(b, sizeof b,
-                 "%s{\"owner\":\"0x%08llX\",\"path\":\"0x%08llX\",\"ticks\":%llu,\"ms_ago\":%lu,\"state\":%u,\"cursor\":%d,"
-                 "\"spec_cursor\":%d,\"arrive_radius\":%.3f,\"trail\":%zu,"
+                 "%s{\"owner\":\"0x%08llX\",\"path\":\"0x%08llX\",\"ticks\":%llu,\"s_ago\":%.3f,\"state\":%u,\"cursor\":%d,"
+                 "\"spec_cursor\":%d,\"arrive_radius\":%.3f,\"trail\":{\"places\":%zu,\"s\":%.2f,\"keep_s\":%.2f},"
                  "\"walk_vs_route\":{\"samples\":%zu,\"mean_m\":%.3f,\"max_m\":%.3f},",
                  k ? "," : "", static_cast<unsigned long long>(w.owner), static_cast<unsigned long long>(w.path), w.ticks,
-                 static_cast<unsigned long>(now - w.ms), w.state, w.cursor, w.specCursor, w.arriveR, w.trail.size(),
+                 g_clock - w.seen, w.state, w.cursor, w.specCursor, w.arriveR, w.trail.size(), span, g_trailS,
                  samples, meanM, maxM);
         out += b;
         out += "\"now\":";
@@ -417,6 +437,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     }
     ReadSettings();
     host->subscribe(mod, MML_EVENT_FRAME, OnFrame, nullptr);
+    host->subscribe(mod, MML_EVENT_MISSION_TICK, OnMissionTick, nullptr);
     host->subscribe(mod, MML_EVENT_RENDER_WORLD, OnRenderWorld, nullptr);
     host->subscribe(mod, MML_EVENT_CONFIG_CHANGED, OnEvent, nullptr);
     host->subscribe(mod, MML_EVENT_MISSION_CLOSE, OnEvent, nullptr);

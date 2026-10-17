@@ -14,6 +14,14 @@
       {"key": "hotkey", "label": "Shown and hidden", "kind": "key"},
       {"key": "route", "label": "The route: waypoints and their gates"},
       {"key": "trail", "label": "The walk: where he has been and where he is"},
+      {
+        "key": "trail_s",
+        "label": "The walk kept for",
+        "min": 1,
+        "max": 120,
+        "step": 1,
+        "unit": "s"
+      },
       {"key": "steer", "label": "Where he walks to now, detours"},
       {
         "key": "range",
