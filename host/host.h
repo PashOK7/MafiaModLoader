@@ -377,6 +377,7 @@ void CapturesRemove(MmlMod *mod);
 int PlayerLock(MmlMod *mod, int on);
 int VehicleHook(MmlMod *mod, MmlVehicleFn fn, void *user);
 int VehicleBody(void *car, MmlVehicleBody *read, const MmlVehicleBody *write);
+int VehicleKinds(MmlMod *mod, unsigned kinds);   // which vehicles the hook is told of (MML_VEHICLES_*)
 void ControlModGone(MmlMod *mod);         // (its unload) its vehicle hook dropped, its lock let go
 void ControlMissionClose();               // (the mission closes) the lock forgotten
 bool ControlMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);

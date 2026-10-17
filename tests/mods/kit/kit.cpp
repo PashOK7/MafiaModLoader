@@ -293,9 +293,10 @@ int ControlStep(MmlVehicleStep *, void *) { return 0; }
 int Control(const char *, MmlReply *r, void *) {
     if (!MML_HAS(H, vehicle_body)) { H->reply_error(r, "the loader has no control"); return 1; }
     MmlVehicleBody b{};
-    char out[160];
-    snprintf(out, sizeof out, "{\"key\":%d,\"action\":%d,\"lock\":%d,\"hook\":%d,\"unhook\":%d,\"body\":%d}", H->key_capture(M, 17, 1), H->action_capture(M, 0, 1),
-             H->player_lock(M, 1), H->vehicle_hook(M, ControlStep, nullptr), H->vehicle_hook(M, nullptr, nullptr), H->vehicle_body(M, nullptr, &b, nullptr));
+    char out[200];
+    snprintf(out, sizeof out, "{\"key\":%d,\"action\":%d,\"lock\":%d,\"hook\":%d,\"unhook\":%d,\"body\":%d,\"kinds\":%d}", H->key_capture(M, 17, 1),
+             H->action_capture(M, 0, 1), H->player_lock(M, 1), H->vehicle_hook(M, ControlStep, nullptr), H->vehicle_hook(M, nullptr, nullptr),
+             H->vehicle_body(M, nullptr, &b, nullptr), MML_HAS(H, vehicle_kinds) ? H->vehicle_kinds(M, MML_VEHICLES_CARS | MML_VEHICLES_AIRPLANES) : -1);
     H->reply_append(r, out, static_cast<size_t>(-1));
     return 0;
 }

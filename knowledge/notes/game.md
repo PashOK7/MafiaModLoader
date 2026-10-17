@@ -151,6 +151,21 @@ the function named.
   0x41E690 (1.0 0x465760), what the scripts' CAR_REPAIR calls (it calls `C_car::Reset`). Seen: repair, then load,
   gives the saved size back exactly.
 
+### The airplane (read 2026-10-17 in both builds, run in both labs; host/control.cpp)
+
+- **code** `C_airplane` (actor type 0x16, 0x3F0 bytes; st0rm94's structs/airplane.md) is made only from a scene's
+  placement: the freeride Extreme has `Letadlo` (idle at 64 m over the airfield, flight state 0) and `UfoTalir`;
+  MISE10 and MISE16 one each. Its vtable (1.2 0x623318, 1.0 0x63B7C0) has AI at slot 13 and Update at 14, both
+  thiscall(plane, unsigned ms) ret 4, the same fields in both builds.
+- **code** AI: with the flight state +0xB4 not 0 (1 the route, 2 the take-off run: the scripts' `airplane_start`,
+  `airplane_start2`), AI_fly moves the place (+0x24) along the facing (+0x30) at the speed (+0xB8), the facing aimed
+  at the route's point, the rotation (+0xD0, {w, x, y, z}) a slerp of the nodes' (+0xF0, +0x100 by +0xBC); then
+  always the propellers (blades or the blur disc by the speed against +0x7C), the sounds' fades, the damage gauge.
+- **code** Update: the model frame's local place and rotation from +0x24 and +0xD0 (its parent the primary sector:
+  the world); only while the flight state is not 0, the six collision proxies (DynUpdate) and the matrices at +0x184;
+  always, people within 1.6 m of its engines struck.
+- **game** The model's nose is its frame's +z (the facing and the frame's z row were the same at the start).
+
 ### What older tools said (TrackMafia, Telemetry2, LiveDelta)
 
 Racing tools made before this repository (a ghost car replayed from recorded laps, lap telemetry, an

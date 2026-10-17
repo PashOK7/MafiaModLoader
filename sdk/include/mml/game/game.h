@@ -184,6 +184,11 @@ inline const char *MissionName() {
 // The fields' offsets differ between the builds: they come from game_build.h (each read in the game's code and
 // seen in the running 1.2 game). Positions are metres, the world's; +y is up.
 constexpr int kActorTypeCar = 4;
+// C_airplane (game_build.h planeAI): the same layout in both builds
+constexpr int kActorTypeAirplane = 0x16;
+constexpr int kPlaneState = 0xB4;   // int: 0 idle, 1 flying its route, 2 the take-off run
+constexpr int kPlaneSpeed = 0xB8;   // float, m/s along the facing (kActorFacing)
+constexpr int kPlaneRot   = 0xD0;   // Q {w, x, y, z}: what Update gives the model frame (its local rotation)
 constexpr int kHumanVehicle = 0x98;   // C_human: the vehicle he is in (a car, a tram), or null
 
 // The car the player sits in now; null on foot (or in a tram).

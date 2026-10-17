@@ -510,6 +510,18 @@ What is done, what comes next and later, and what is known to be missing or wron
   800x600 units); `camera.set` (an agent's camera held for a time), `camera.release`, `camera.state`. The example
   `mods/examples/orbit_cam` (an orbit around the player while he is played, a label over his head) seen in the 1.2
   and 1.0 labs; `camera.set` from above the taxi in both; offline tests with no game.
+- **Another kind of vehicle: the game's airplane** (2026-10-17; item 14's rest, block 8c of the order): the game's
+  `C_airplane` (the freeride Extreme's plane and saucer, two missions' planes) flown by a mod: `vehicle_kinds(mod,
+  MML_VEHICLES_AIRPLANES)` and the mod's `vehicle_hook` is told of each airplane's AI step (`kind`
+  `MML_VEHICLE_AIRPLANE`); returning 1 the route's flight is left out (its AI runs with its flight state 0: the
+  propellers, the sounds and the damage gauge go on) and the body is the plane's: place, rotation, speed and facing;
+  the Update after it moves its collision too. `vehicle_body` and `vehicle.body` read and write an airplane's body;
+  `vehicle.move {car, velocity, turn, ms}` is the bridge's own driver for a car or an airplane (an agent flies the
+  plane somewhere, or tries a vehicle's surroundings). game_build.h `planeAI`, `planeUpdate` (slots 13 and 14 of its
+  vtable, read in both builds: the same fields), check_builds.py's checks. Seen in the 1.2 and 1.0 labs alike: the
+  Extreme's idle plane lifted 24 m and turned (its model and its collision box there: a ray met it), rolled 70
+  degrees (its frame's axes the body's), flown in a climbing circle by a probe mod (cars no longer told once it asked
+  for airplanes only).
 - **A mod's keys chosen in the game's menus** (2026-10-17; item 14's rest, block 8b of the order): a `"key"` row of the
   tuning panel (Options > Mods): a click waits for the next key with its modifiers (input.cpp's key taken: the game
   gets no key meanwhile, the key taken kept from it until it is let go; Esc keeps the setting) and makes it the mod's
@@ -565,8 +577,8 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
    as its fixed pipeline does (the same picture, checked by screenshots in both labs: the starting point a mod
    copies and changes), *7c* what per-object shading needs further (a shadow map from the sun through the scene
    views; the lights near an object).
-8. *(8a done 2026-10-17: the game's camera modes and a field of view it keeps; 8b: a mod's keys chosen in the game's
-   menus; see "Done".)* The camera and control (item 9's rest: the game's own camera logic; item 14's rest: a mod's actions in the
+8. *(Done 2026-10-17: 8a, the game's camera modes and a field of view it keeps; 8b, a mod's keys chosen in the game's
+   menus; 8c, the game's airplane flown by a mod; see "Done". Left: Known gaps.)* The camera and control (item 9's rest: the game's own camera logic; item 14's rest: a mod's actions in the
    controls menu, another kind of vehicle).
 9. The agent's tools (items 24, 25 and the snapshots in Later: structures by name, crash triage in one call,
    restore points).
@@ -664,8 +676,9 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
 13. *(Done 2026-10-16: see "Done"; what is left: Known gaps.)* **Sound** (F K P C S W). The game's sounds and a mod's own (item 2) played in 2D or in 3D at a point or attached
     to a frame, looped, their volume and pitch changed live (an engine's note follows its revolutions), stopped;
     the music.
-14. *(14a done 2026-10-16: keys and actions kept from the game, the player locked, a car's physics replaced; see
-    "Done". Left: actions in the game's controls menu, another kind of vehicle; Known gaps.)* **Control** (K P F V). A mod's keys and buttons taken so the game does not also act on them; actions of a mod's
+14. *(14a done 2026-10-16: keys and actions kept from the game, the player locked, a car's physics replaced; 2026-10-17
+    a mod's keys on its settings page and the game's airplane flown by a mod; see "Done". Left: actions in the game's
+    controls menu, riding a vehicle that is not a car; Known gaps.)* **Control** (K P F V). A mod's keys and buttons taken so the game does not also act on them; actions of a mod's
     own, bindable in the game's controls menu like its own; the player's movement handed to a mod (a skateboard
     moves him, the game's walking stands aside) and given back; a vehicle's physics replaced by a mod's (a plane's
     flight on a car's or an airplane actor's body: `C_airplane` exists); entering, leaving and seats of a mod's
@@ -808,8 +821,13 @@ merged, sorted by importance):
   are not made: the menu's rows are fixed binding slots the profile saves (60 in 1.2); growing them means the
   bindings' vector, the held/pressed arrays and the profile's copy (`G_LoadSaveClass + 0x1F4`), not read yet. A mod
   binds its keys through its settings (`hotkey`, `key_down`) and captures them. **Seats and the using-objects of a
-  mod's vehicle** are the game's car's (`actor_seat`); a vehicle of another kind (a plane actor, `C_airplane`) was
-  not tried. In a replaced step the wheels are not run (their suspension and turning stay as they were) and the
+  mod's vehicle** are the game's car's (`actor_seat`). **The airplane** (`C_airplane`, block 8c) is flown by a mod
+  but nobody rides it: it has no seats or using-objects; the player aboard would be a person standing in a moving
+  vehicle as in the tram (C_human +0x98 its owner, his model in its frame, TestMoveCollInOwner), not tried with a
+  plane. Given back to the game, a plane flying its route turns back to it from where it is (its AI steers to the
+  route's point): read in AI_fly, not seen (the Extreme's plane stands idle until a script starts it, and
+  `airplane_start` needs a route's number of the scene's web: not looked for). Its AI's own collision test (AI_fly's
+  sphere test) is left out with its flight; the mod tests its way itself (`world_sweep`). In a replaced step the wheels are not run (their suspension and turning stay as they were) and the
   sectors are not relinked by the host (a car flown 60 m drew fine; far flights not tried). The player's lock is
   the scripts' (a mission's own lock and unlock act on the same flag).
 - **Sound** (host/sound.cpp, item 13): **heard by no one yet**: every check was made on LS3D's and DirectSound's

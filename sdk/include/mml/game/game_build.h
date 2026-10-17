@@ -427,6 +427,16 @@ struct ExeBuild {
     // its name[16] at +0x30, flags at +0x40}: "P Behind", "C Chase"...).
     uintptr_t cameraSetMode, cameraModeTable;
     int gameCamera;
+    // The airplane (host/control.cpp; st0rm94's structs/airplane.md, its layout the same in both builds: every field
+    // AI and Update touch read in both): C_airplane, actor type 0x16, made only from a scene's placement (the
+    // freeride Extreme's "Letadlo" and "UfoTalir", MISE10 and MISE16). planeAI: its vtable slot 13 (+0x34),
+    // thiscall(plane, unsigned ms) ret 4: when its flight state (+0xB4: 0 idle, 1 its route, 2 the take-off run) is
+    // not 0, the route's flight (C_airplane::AI_fly: the position +0x24 moved along the facing +0x30 times the speed
+    // +0xB8, the rotation +0xD0 a slerp of the nodes'), the speed's ramps and the engine's sound; then always the
+    // propellers, the sounds' fades and the damage's gauge. planeUpdate: slot 14 (+0x38), thiscall(plane, unsigned ms)
+    // ret 4: the model frame put at +0x24 with the rotation +0xD0; when the flight state is not 0 the six collision
+    // proxies follow it (g_collision::DynUpdate); people near its engines are struck.
+    uintptr_t planeAI, planeUpdate;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -607,6 +617,8 @@ inline const ExeBuild kExe12 = {
     0x47C3A0, 0x45EE90, 0x460000, 0x38C,
     // the game's camera (2026-10-17: st0rm94's G_Camera::SetMode twin; the table G_Camera::Begin scans)
     0x5ED400, 0x638700, 0x4C,
+    // the airplane (2026-10-17: slots 13 and 14 of the vtable C_airplane's constructor 0x409390 puts, 0x623318)
+    0x40BC10, 0x40BEC0,
 };
 
 inline const ExeBuild kExe10 = {
@@ -721,6 +733,8 @@ inline const ExeBuild kExe10 = {
     0x4CDE20, 0x4C41A0, 0x4C53F0, 0x3B0,
     // the game's camera (2026-10-17: st0rm94's camera_set_mode and g_camera_mode_table)
     0x5D4D10, 0x650450, 0x4C,
+    // the airplane (2026-10-17: slots 13 and 14 of the vtable airplane_ctor 0x44EF50 puts, 0x63B7C0)
+    0x4516E0, 0x451990,
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,

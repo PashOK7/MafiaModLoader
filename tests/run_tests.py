@@ -974,10 +974,14 @@ def main():
             r = b.call(method, params)
             check(f'{method} with no game: an error, saying why', not r['ok'] and 'no game' in str(r), r)
         r = b.call('kit.control')
-        check('key_capture, action_capture, player_lock, vehicle_hook, vehicle_body with no game: none (letting a hook go: done)',
-              r['ok'] and r['result'] == {'key': 0, 'action': 0, 'lock': 0, 'hook': 0, 'unhook': 1, 'body': 0}, r)
+        check('key_capture, action_capture, player_lock, vehicle_hook, vehicle_body, vehicle_kinds with no game: none (letting a hook go: done)',
+              r['ok'] and r['result'] == {'key': 0, 'action': 0, 'lock': 0, 'hook': 0, 'unhook': 1, 'body': 0, 'kinds': 0}, r)
         r = b.call('control.state')
-        check('control.state with no game: nothing locked, no hook', r['ok'] and r['result']['locked'] is False and r['result']['vehicle_hook'] == 'none', r)
+        check('control.state with no game: nothing locked, no hook, no airplanes, nothing moving',
+              r['ok'] and r['result']['locked'] is False and r['result']['vehicle_hook'] == 'none' and r['result']['airplanes'] is False
+              and r['result']['moving'] == 0 and r['result']['flown'] == 0, r)
+        r = b.call('vehicle.move', {'car': '0x1000', 'velocity': [0, 1, 0]})
+        check('vehicle.move with no game: an error, saying why', not r['ok'] and 'no actors' in str(r), r)
         r = b.call('player.lock', {'on': True})
         check('player.lock with no game: an error, saying why', not r['ok'] and 'not known' in str(r), r)
         r = b.call('input.capture', {'action': 'Forwards'})

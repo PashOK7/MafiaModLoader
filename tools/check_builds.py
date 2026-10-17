@@ -982,6 +982,37 @@ def main(a):
               f'{name} cameraSetMode: ret 8, Begin called')
     a, b = norm(g12.insn(e12['cameraSetMode'] - 0x400000)), norm(g10.insn(e10['cameraSetMode'] - 0x400000))
     check(a == b, f'cameraSetMode: 1.2 "{a}" vs 1.0 "{b}"')
+    # The airplane (host/control.cpp): planeAI and planeUpdate are slots 13 and 14 of the vtable C_airplane's
+    # constructor puts, each thiscall with ret 4; AI tests the flight state +0xB4 first; both touch the same fields in
+    # both builds (game.h kPlaneState, kPlaneSpeed, kPlaneRot).
+    ctors = {'1.2': 0x409390, '1.0': 0x44EF50}
+    fields = {}
+    for name, (exe, ls, gexe, gls) in builds.items():
+        if not exe['planeAI']:
+            continue
+        vt = None
+        for i in gexe.md.disasm(gexe.at(ctors[name] - 0x400000, 0x170), ctors[name]):
+            m = re.match(r'dword ptr \[esi\], (0x[0-9a-f]+)$', i.op_str)
+            if i.mnemonic == 'mov' and m:
+                vt = int(m.group(1), 16)
+            if i.mnemonic == 'ret':
+                break
+        slots = [int.from_bytes(gexe.at(vt - 0x400000 + s * 4, 4), 'little') for s in (13, 14)] if vt else []
+        check(slots == [exe['planeAI'], exe['planeUpdate']], f'{name} planeAI, planeUpdate: slots 13 and 14 of the airplane\'s vtable')
+        for f, n in (('planeAI', 0x2B0), ('planeUpdate', 0x670)):
+            body = list(gexe.md.disasm(gexe.at(exe[f] - 0x400000, n), exe[f]))
+            ret = next((i for i in body if i.mnemonic == 'ret'), None)
+            check(ret is not None and ret.op_str == '4', f'{name} {f}: ret 4')
+            seen = set()
+            for i in body[:body.index(ret) + 1] if ret else body:
+                seen.update(int(m.group(1), 16) for m in re.finditer(r'\[e[a-z]{2} \+ (0x[0-9a-f]+)\]', i.op_str))
+            fields.setdefault(f, []).append(seen)
+            if f == 'planeAI':
+                check(any(i.op_str == 'dword ptr [esi + 0xb4], ebp' for i in body[:10]), f'{name} planeAI tests the flight state +0xB4 first')
+        check({0xB4, 0xB8, 0xD0, 0x24}.issubset(fields['planeAI'][-1]) and {0xB4, 0xD0, 0x68}.issubset(fields['planeUpdate'][-1]),
+              f'{name} the airplane\'s fields: +0x24, +0xB4, +0xB8, +0xD0 (AI), +0x68, +0xB4, +0xD0 (Update)')
+    if all(len(v) == 2 for v in fields.values()) and fields:
+        check(all(v[0] == v[1] for v in fields.values()), 'the airplane: AI and Update touch the same fields in both builds')
     print('ALL PASSED' if not fails else f'{fails} FAILED')
     return 1 if fails else 0
 

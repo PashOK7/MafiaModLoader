@@ -1463,3 +1463,21 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **In both labs**: F9 (1.0) and F10 (1.2) taken from the page and saved, the new key toggling the effect, Esc keeping
   the one there.
 - **Tests**: offline ALL PASSED (a "key" row read from a manifest).
+
+## 2026-10-17 (night): another kind of vehicle, the game's airplane (block 8c of the order)
+
+- **Read**: st0rm94's structs/airplane.md (C_airplane, type 0x16: its flight state +0xB4, speed +0xB8, rotation
+  +0xD0, the route's nodes), 1.2's AI (0x40BC10), AI_fly and Update (0x40BEC0): the flight moves the place along the
+  facing at the speed and slerps the rotation between the nodes; Update gives the model frame the place and the
+  rotation and, only while the plane flies, moves its six collision proxies. Both builds' vtables found from the
+  constructors (1.2 0x623318, 1.0 0x63B7C0): slots 13 and 14, ret 4, the same fields touched (check_builds.py).
+- **Made**: control.cpp's airplane steps (AI and Update hooked when first asked for), `vehicle_kinds` in mml.h (a
+  mod's vehicle hook told of airplanes once it asks; the step's `kind`), `vehicle_body` on airplanes (the velocity
+  and turn a mod wrote kept for its next step: the plane keeps only a speed), `vehicle.move` (the bridge's driver
+  for a car or an airplane).
+- **In both labs**, the freeride Extreme's plane (`Letadlo`, idle at 64 m): `vehicle.move` lifted and turned it, the
+  frame at the same place to the millimetre in both builds; a ray found its collision box there; a 70-degree roll's
+  axes the frame's; a throwaway probe mod (not committed) flew it in a climbing circle through `vehicle_hook`, cars no
+  longer told to it once it asked for airplanes only. The plane given back to its route was not seen (it stands
+  until a script starts it: Known gaps).
+- **Tests**: offline ALL PASSED (`vehicle_kinds`, `vehicle.move` with no game).

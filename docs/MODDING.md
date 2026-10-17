@@ -677,8 +677,18 @@ H->vehicle_hook(M, OnStep, NULL);
   (placed as the game's Move places it), the car kept awake (Tick's rest counters started again, so it falls
   under the game's physics at once when the mod lets it go). One mod at a time. `vehicle_body` reads or writes a
   car's body at any time.
+- **An airplane flown by a mod**: the game's airplane (`C_airplane`: the freeride Extreme's plane over the city and
+  its flying saucer, the planes of two missions) has no rigid body: its AI flies a route. `H->vehicle_kinds(M,
+  MML_VEHICLES_CARS | MML_VEHICLES_AIRPLANES)` and the same function is told of each airplane's AI step too
+  (`s->kind == MML_VEHICLE_AIRPLANE`, `s->player` 0); returning 1 the route's flight is left out and the body is the
+  plane's: its place, its rotation (the model's axes), its speed `|velocity|` along the velocity's direction (the
+  propellers' blur and the engine's sound follow the speed); its collision moves with it, its propellers, sounds and
+  damage gauge go on. The velocity and turn the mod wrote come back in the next step's body (the plane keeps only a
+  speed). Let go (return 0), it turns back to its route from where it is. Find one with `call actors` (type 22).
 - `call input.capture {"key": "W"}` / `{"action": "Accelerate"}` / `{"all": true, "on": false}`, `player.lock
-  {"on"}`, `vehicle.body {"car", "pos", "velocity", "turn"}`, `control.state`.
+  {"on"}`, `vehicle.body {"car", "pos", "velocity", "turn"}` (a car or an airplane), `vehicle.move {"car",
+  "velocity", "turn", "ms"}` (the host moves a car or an airplane by them, the game's physics or flight left out:
+  to try a vehicle's surroundings, or fly the plane somewhere), `control.state`.
 - `mods/examples/hover` (not enabled by default): F8 and the player's car floats `height` metres over the ground
   under it (the game's own ray), Accelerate and Brake push it, the steering turns it; F8 again and it drops back.
 

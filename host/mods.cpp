@@ -503,6 +503,7 @@ int H_ActionCapture(MmlMod *m, int slot, int on) { return Alive(m) && ActionCapt
 int H_PlayerLock(MmlMod *m, int on) { return Alive(m) ? PlayerLock(m, on) : 0; }
 int H_VehicleHook(MmlMod *m, MmlVehicleFn fn, void *user) { return Alive(m) ? VehicleHook(m, fn, user) : 0; }
 int H_VehicleBody(MmlMod *m, void *car, MmlVehicleBody *read, const MmlVehicleBody *write) { return Alive(m) ? VehicleBody(car, read, write) : 0; }
+int H_VehicleKinds(MmlMod *m, unsigned kinds) { return Alive(m) ? VehicleKinds(m, kinds) : 0; }
 int H_ZoneAdd(MmlMod *m, const float pos[3], float radius, void *frame, MmlZoneFn fn, void *user) {
     std::string err;
     int id = Alive(m) && fn ? ZoneAdd(m, pos, radius, frame, fn, user, &err) : 0;
@@ -1155,6 +1156,7 @@ void ModsInit() {
     g_host.game_camera = H_GameCamera;
     g_host.game_camera_mode = H_GameCameraMode;
     g_host.game_camera_fov = H_GameCameraFov;
+    g_host.vehicle_kinds = H_VehicleKinds;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();

@@ -87,7 +87,8 @@ Taps can also start with the game, before its first frame: `"taps": ["5409D0 n=4
 | `music.stop` | `music` or `all` | stopped and released |
 | `music.game` | `on` (false: the game's city music faded out and kept off) | `city_music` |
 | `player.lock` | `on` (default true) | the player's own control locked (the scripts' PLAYER_LOCKCONTROLS) or given back: `locked` |
-| `vehicle.body` | `car` (`"car"` default, `"0x..."`), and to write: `pos`, `velocity`, `turn` ([x, y, z]) | the car's body: `pos`, `velocity`, `turn`, `forward`, `right`, `up` |
+| `vehicle.body` | `car` (`"car"` default, `"0x..."`: a car or an airplane), and to write: `pos`, `velocity`, `turn` ([x, y, z]) | the vehicle's body: `kind` (`car`, `airplane`), `pos`, `velocity`, `turn`, `forward`, `right`, `up` (an airplane's velocity is its facing times its speed, unless it was flown) |
+| `vehicle.move` | `car` (a car or an airplane), `velocity`, `turn` ([x, y, z], m/s and rad/s), `ms` (default 1000, 0 stops) | the vehicle moved by them each step for `ms`, the game's physics or flight left out (a mod's `vehicle_hook` goes first): `car`, `kind`, `ms`, `moving` |
 | `interact.list` | | `items` (each `id`, `kind` zone, use or timer, `by`; a zone's and a use-point's `at`, `radius`, `inside`, `label`, `text_id`; a timer's `ms`, `left`, `repeat`, `fired`), `player`, `on_foot`, `using_objects` (the hooks), `action_menus`, `picked` |
 | `zone.add` | `at` [x, y, z] (default: where the player is), or `on` an actor and `bone`, `pos`; `radius` (3); `who` (`player` default, `people`, `cars`, `all`, or an actor) | `id`, `at`, `who`: the crossings go to `events.since` (ZONE_ENTERED, ZONE_LEFT, with the `actor`) |
 | `use.add` | as `zone.add`, `radius` (2), `label` (its line in the game's Action choice menu) | `id`, `at`: the player's taking it goes to `events.since` (USED) |
@@ -101,7 +102,7 @@ Taps can also start with the game, before its first frame: `"taps": ["5409D0 n=4
 | `save.get` | `mod` (default the bridge's), `key`, `scope` (`"slot"` default, `"profile"`) | `value` (text, or `{"hex"}`), `size` |
 | `save.put` | `key`, `value` (a string, or JSON kept as its text; empty: removed), `scope` | the bridge's own key put: written with the next save (`slot`) or at once (`profile`) |
 | `hud.list` | | `markers` (each `id`, `by`, `label`, `flags`, `at`, `radar`, `compass`), `pictures` (`id`, `by`, `file`, `alpha`, `w`, `h`), `compass_by`, `hud_flags`, `compass_target` |
-| `control.state` | | `lock_known`, `locked`, `locked_by`, `vehicle_hook` (a mod or `none`), `engine` (the step's hook), `steps`, `skipped` (steps a mod made), `faults` |
+| `control.state` | | `lock_known`, `locked`, `locked_by`, `vehicle_hook` (a mod or `none`), `engine` (the step's hook), `steps`, `skipped` (steps a mod made), `faults`, `airplanes` (the hook is told of them), `airplane` (their hooks), `airplane_steps`, `airplane_skipped`, `flown` (airplanes whose last step was not the game's), `moving` (`vehicle.move`'s) |
 | `lights.list` | `type` (`point`, `spot`, `directional`, `ambient`, `fog`), `all` (the lights that are off too), `max` (100), `rescan` | the scene's light frames: `count`, `kinds`, `lights` (`light`, `name`, `type`, `on`, `color`, `power`, `range`, `cone`, `pos`, `dir`, `sectors`), `sun` (`to_sun`, `color`, `ambient`) |
 | `light.set` | `light` (from `lights.list`), `color`, `power`, `range` ([near, far]), `on` | the light changed through LS3D's setters; the light after |
 | `state.money` | `set` or `add` | the freeride's money (`money`, null with no game; `shown`: the HUD shows it), set through the game's `C_game::SetScore` |

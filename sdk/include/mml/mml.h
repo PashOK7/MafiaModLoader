@@ -757,7 +757,10 @@ typedef struct MmlSoundState {
     float pos[3];           /* a 3D sound's place in the world now */
 } MmlSoundState;
 
-/* A car's body (vehicle_body, vehicle_hook below): what the game's physics integrates, in the world's axes. */
+/* A vehicle's body (vehicle_body, vehicle_hook below), in the world's axes: a car's is what the game's physics
+ * integrates; an airplane's (C_airplane: the freeride Extreme's plane and saucer, two missions') is its place and its
+ * rotation, its velocity the facing times its speed (it flies where it points) and no turn, unless a mod or the bridge
+ * flew its last step: then the velocity and turn written then. */
 typedef struct MmlVehicleBody {
     float pos[3];           /* the body's position (metres) */
     float axes[3][3];       /* forward, right, up: unit vectors (the model frame's z, x and y rows) */
@@ -766,12 +769,22 @@ typedef struct MmlVehicleBody {
 } MmlVehicleBody;
 typedef struct MmlVehicleStep {
     uint32_t size;
-    void *car;              /* the car (an actor of type 4) */
+    void *car;              /* the vehicle: a car (an actor of type 4) or an airplane (kind) */
     float dt;               /* this step's time (s): the frame's, cut by the game into Move's substeps */
     int player;             /* the player's car */
     MmlVehicleBody body;    /* before the step; written by the mod when it returns 1 */
+    int kind;               /* the vehicle's actor type: MML_VEHICLE_CAR or MML_VEHICLE_AIRPLANE (absent in a loader
+                             * before airplanes: check size; then a car) */
 } MmlVehicleStep;
-/* Return 1: the game's physics skipped for this car's step, `body` is where the car is after it; 0: the game steps. */
+#define MML_VEHICLE_CAR 4
+#define MML_VEHICLE_AIRPLANE 0x16
+/* vehicle_kinds' bits: which vehicles a mod's vehicle_hook is told of (cars only until it asks) */
+#define MML_VEHICLES_CARS 1u
+#define MML_VEHICLES_AIRPLANES 2u
+/* Return 1: the game's physics skipped for this vehicle's step, `body` is where it is after it; 0: the game steps.
+ * An airplane's step skipped is its route's flight (its propellers, sounds and damage gauge go on; its collision
+ * follows the body; the speed it is given is |velocity|, its facing the velocity's direction); given back (0), it
+ * turns back to its route from where it is. */
 typedef int (*MmlVehicleFn)(MmlVehicleStep *step, void *user);
 
 /* Interaction (zone_add, use_point_add, timer_add below). inside: 1 entered, 0 left; actor: who crossed (the player,
@@ -1390,6 +1403,12 @@ typedef struct MmlHost {
     int (*game_camera)(MmlMod *mod, MmlGameCamera *out);
     int (*game_camera_mode)(MmlMod *mod, int mode);
     int (*game_camera_fov)(MmlMod *mod, float fov);
+
+    /* ---- another kind of vehicle (both builds; docs/MODDING.md "Control").
+     * vehicle_kinds: which vehicles this mod's vehicle_hook is told of (MML_VEHICLES_*; cars only until it asks):
+     * MML_VEHICLES_AIRPLANES adds the game's airplanes (their steps' kind MML_VEHICLE_AIRPLANE, dt their AI's).
+     * vehicle_body reads and writes an airplane's body as a car's. 0: not known for this build. Game thread. */
+    int (*vehicle_kinds)(MmlMod *mod, unsigned kinds);
 } MmlHost;
 
 #define MML_ZONE_PLAYER 0x1u
