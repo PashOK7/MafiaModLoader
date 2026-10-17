@@ -172,7 +172,7 @@ A separate 64-bit process, so it outlives the game: it launches and closes the g
 when the game is gone, opens crash dumps (`minidump`, Mozilla's), and deploys builds. It talks to the host through
 the bridge only. Tools: `game_status`, `game_launch`, `game_close`, `call` (any method), `commands_list`, `mem_read`,
 `mem_write`, `log_tail`, `mods_list`, `mod_reload`, `where`, `tap`, `crash_triage`, `crash_list`, `crash_inspect`,
-`deploy`, `kb_search`, `kb_function`, `inspect`, `screenshot`, `input`. (Drawing, settings and the car need no tools of their own:
+`deploy`, `kb_search`, `kb_function`, `inspect`, `restore`, `screenshot`, `input`. (Drawing, settings and the car need no tools of their own:
 `call draw.text`, `call config.set`, `call car`.) `game_launch` takes `go`, `profile` and the freeride's densities
 (the start) and returns once the player exists. `screenshot` asks the loader for the next frame, turns the raw file
 into `<n>.jpg` (`shot.rs`: shrunk by a whole factor to `max_width`, the newest 200 kept) and returns it as MCP image

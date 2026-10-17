@@ -69,7 +69,7 @@ def main():
     want = {'game_status', 'call', 'commands_list', 'mem_read', 'mem_write', 'log_tail', 'mods_list', 'mod_reload',
             'where', 'game_launch', 'game_close', 'crash_list', 'crash_inspect', 'deploy', 'kb_search', 'kb_function', 'tap',
             'screenshot', 'input', 'script', 'script_commands', 'spawn', 'teleport', 'give', 'profile', 'wait', 'watch',
-            'inspect', 'crash_triage'}
+            'inspect', 'crash_triage', 'restore'}
     check('tools/list has every tool', want <= tools, want - tools)
 
     if os.path.exists(os.path.join(ROOT, 'knowledge', 'game.exe', 'strings.local.csv')):   # (tools/kb_strings.py made it)
@@ -147,6 +147,10 @@ def main():
         check('call config.set null: the setting gone again', ok and '"known": false' in text, text)
         ok, text = c.tool('call', {'method': 'car'})
         check('call car with no game: an error result that says so', not ok and 'not known' in text, text)
+        ok, text = c.tool('restore')
+        check('restore with nothing asked: the list (none here)', ok and '"points": []' in text, text)
+        ok, text = c.tool('restore', {'save': 'smoke'})
+        check('restore save with no game: refused, saying so', not ok and 'not a known build' in text, text)
         check('the instructions tell of the kit', all(w in c.info.get('instructions', '') for w in ('draw.text', 'config.set', 'new_mod.py')))
         check('the instructions tell of the HUD', all(w in c.info.get('instructions', '') for w in ('hud.marker', 'hud.console', 'draw.picture')))
     finally:

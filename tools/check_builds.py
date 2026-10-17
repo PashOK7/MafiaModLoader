@@ -674,6 +674,18 @@ def main(a):
         d = disps(gls, gls.base + w['morph'], 0x100)
         check(ls['vbStride'] // 4 * 4 == ls['vbStride'] and (ls['vbD3d'] in d) and (ls['vbStride'] in d or
               ls['vbStride'] // 4 in d), f'{name} LS3DF vertex buffer stride/D3D in the morph update')
+    # Restore points (host/saves.cpp; game.h kGameState, kSaveSuppress): the game loop loads the save slot when
+    # C_game +0x48 is 3 (mov ecx, [edx + 0x48]; ...; cmp ecx, 3; ...; call saveGameLoad), and SaveGameFromScript
+    # reads and clears the manager's one-shot flag +0x1D4 (its first instructions).
+    loops = {'1.2': (0x5BE9EB, 0x6072F0), '1.0': (0x5F97D5, 0x559320)}
+    for name, (exe, ls, gexe, gls) in builds.items():
+        at, from_script = loops[name]
+        ins = list(capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_32).disasm(gexe.at(at - 0x400000, 0x40), at))
+        text = [f'{i.mnemonic} {i.op_str}' for i in ins]
+        check(len(text) > 12 and text[2] == 'mov ecx, dword ptr [edx + 0x48]' and 'cmp ecx, 3' in text
+              and f'call {exe["saveGameLoad"]:#x}' in text, f'{name} the game loop loads the slot on C_game +0x48 == 3: {text[:13]}')
+        ins = list(capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_32).disasm(gexe.at(from_script - 0x400000, 0x20), from_script))
+        check(any('+ 0x1d4]' in i.op_str for i in ins[:4]), f'{name} SaveGameFromScript reads +0x1D4 first')
     # The start (host/start.cpp): 1.2's menus' vtables hold their command handlers at +0x24, 1.0's screens their
     # ticks at +0x14 (read in the decompile: the profile menu's takes 100 + i, the main menu's 990105, the freeride
     # menu's 201, and the freeride menu's kind is the field its handler reads); PlayVideo starts with its frame.

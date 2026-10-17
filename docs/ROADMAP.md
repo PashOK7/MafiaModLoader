@@ -556,6 +556,18 @@ What is done, what comes next and later, and what is known to be missing or wron
   the events, the mods; with the game running, the mods that faulted in this run. Seen in both labs on a crash made on
   purpose (the player's frame pointer spoiled): `C_game::Tick+0x328` (1.2) and its 1.0 twin `+0x302`, called from
   `C_mission::Tick` under the loader's mission hook; in 1.0 also through `MafiaRagdolls.asi`'s.
+- **Restore points** (2026-10-17; "State snapshots" from Later, block 9c of the order): `restore.save` (the game's
+  SaveGameSave, whole: every actor and program of the mission and the mods' state, into slot 599, which no save of
+  the game uses, then moved to `mml\restore\<name>.*`, the game's slot put back), `restore.load` (copied back, C_game's
+  state set to "load": the game loop loads it at its own place; then the slot put back, the one-shot flag that skips
+  the next script save cleared, RESTORE_LOADED), `restore.list`, `restore.delete`; MCP `restore` (a load returns once
+  loaded, with the player); a save already in slot 599 stops them. Found and fixed on the way: a load in the same
+  mission was told as the player's doing (happen.cpp's money and items compared with the frame before the load:
+  MONEY_CHANGED of the whole difference, counted as spent by the statistics): `HappenGameLoaded` takes them anew.
+  Seen in both labs: the freeride (the car moved back from 90 m away, the money, a spawned car gone, the mods' state,
+  0.3 s), a chapter (1.0's Salieri's bar, 1.2's Old Prison: the player put back to the centimetre, the mission going on
+  with its objective), another mission's point opening that mission and back; the profiles' saves byte for byte as
+  they were.
 - **People, skeletons, poses** (2026-10-16; item 6, block 6a): the host keeps every `C_human` (`humans_list`,
   `human_player`), a person's skeleton by the bones' names (`human_skeleton`: 18 joints, the pelvis, the root), a
   pose written for the frame's drawing (`bone_set` in `RENDER_BEGIN`, each posed model updated once after);
@@ -600,7 +612,7 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
 8. *(Done 2026-10-17: 8a, the game's camera modes and a field of view it keeps; 8b, a mod's keys chosen in the game's
    menus; 8c, the game's airplane flown by a mod; see "Done". Left: Known gaps.)* The camera and control (item 9's rest: the game's own camera logic; item 14's rest: a mod's actions in the
    controls menu, another kind of vehicle).
-9. *(9a done 2026-10-17: structures by name, item 24; 9b, crash triage in one call, item 25; see "Done".)* The agent's tools (items 24, 25 and the
+9. *(Done 2026-10-17: 9a structures by name, item 24; 9b crash triage in one call, item 25; 9c restore points; see "Done".)* The agent's tools (items 24, 25 and the
    snapshots in Later: structures by name, crash triage in one call, restore points).
 10. Mod languages (Later: the Rust crate; LuaJIT script mods).
 11. Orders for the people made (item 26).
@@ -747,8 +759,9 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
 
 ## Later
 
-- **State snapshots for experiments** (a car's state is there: `car.save` / `car.restore`): the game's own save and
-  load used as a restore point, to repeat an experiment from the same moment.
+- *(Done 2026-10-17, block 9c: restore points; see "Done".)* **State snapshots for experiments** (a car's state is
+  there: `car.save` / `car.restore`): the game's own save and load used as a restore point, to repeat an experiment
+  from the same moment.
 - **Rust mods**: a crate `mml` over `mml.h` (types, a safe wrapper, a `#[mml_mod]` entry macro), an example, built
   for `i686-pc-windows-msvc`.
 - **The knowledge base for 1.0**: only 1.2's decompile is imported; 1.0 addresses are named through their 1.2 twins,
@@ -797,6 +810,13 @@ merged, sorted by importance):
 
 ## Known gaps
 
+- **Restore points** (host/saves.cpp, `restore`): a point is the game's own save, so it holds what the game saves:
+  what it does not (a sound playing, a particle in the air, the camera's smoothing, a mod's state it did not put at
+  GAME_SAVING) is not put back; mods are told GAME_LOADED with slot 599. Made in a mission in play only (not in the
+  main menu or the pause menu); a load waits for the pause menu to close. Saving in the middle of a cutscene, a car
+  chase's scripted part or a race was not tried; neither were the extreme freeride and the racing. A point is of its
+  build (1.2's will not load in 1.0) and is loaded into the profile selected. 1.0's slot 599 is known free only
+  because its missions are 1.2's (its texts do not name the freerides' saves): a save found there stops the points.
 - **Crash triage** (host/crash.cpp, `crash_triage`): the stack is a scan checked by the calls' targets, not an
   unwind: an indirect call (a vtable's, a pointer's) cannot be checked, so a leftover after one may stay (seen: an
   LS3DF address between C_game::Tick and C_mission::Tick); a function longer than 32 KiB would lose its caller. The
@@ -857,7 +877,9 @@ merged, sorted by importance):
   a profile's saves: read in the code only). The saves were made in the tests by calling SaveGameSave from the
   bridge, not at the game's own save points: in 1.2 the save made so at the start of "Old Prison" loaded into a
   Game Over (the game's file shrank from 3733 to 1215 bytes; restored from a copy); the mod's state came back all
-  the same. A save in the story is made by the scripts (SaveGameFromScript, which calls SaveGameSave): not tried.
+  the same. Found 2026-10-17 (block 9c): SaveGameSave's argument 0 keeps only the temporary actors (the scripts'
+  AUTOSAVEGAME), which is what that save had; a whole save (1) of Old Prison's start loads in place and the mission
+  goes on (`restore`). A save in the story is made by the scripts (SaveGameFromScript, which calls SaveGameSave): not tried.
 - **Control** (host/control.cpp, input.cpp, item 14a): **actions of a mod's own in the game's controls menu**
   are not made: the menu's rows are fixed binding slots the profile saves (60 in 1.2); growing them means the
   bindings' vector, the held/pressed arrays and the profile's copy (`G_LoadSaveClass + 0x1F4`), not read yet. A mod

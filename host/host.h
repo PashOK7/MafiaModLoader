@@ -532,6 +532,9 @@ void HappenInit();                        // (game_hooks.cpp) once the build is 
 void HappenHit(void *human, void *attacker);
 void HappenFrame();                       // every frame of a loaded mission
 void HappenMissionClosed();
+// A save loaded in the mission (a restore point, the Game Over's retry, an arrest: the mission not closed) or a new
+// game: what the frames compare (the money, each person's items and state) taken anew, not told as changes.
+void HappenGameLoaded();
 
 // ---- people and their skeletons (humans.cpp): humans.list, human.skeleton, human.pose
 void HumansCreated(void *human);          // (game_hooks.cpp) C_human's constructor

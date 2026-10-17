@@ -931,6 +931,14 @@ def main():
         check('save.put, save.get, save.state with no game: the bridge\'s key kept, not hooked',
               r['ok'] and r2['ok'] and r2['result']['value'] == 'kept' and r3['ok'] and r3['result']['hooked'] is False
               and {'mod': 'bridge', 'key': 'note', 'size': 4} in r3['result']['slot_keys'], (r, r2, r3))
+        r = b.call('restore.list')
+        check('restore.list: none yet, the folder told', r['ok'] and r['result']['points'] == [] and r['result']['dir'].endswith('restore\\'), r)
+        r = b.call('restore.save', {'name': 'start'})
+        check('restore.save with no game: refused, saying so', not r['ok'] and 'not a known build' in r.get('error', ''), r)
+        r = b.call('restore.save', {'name': '../x'})
+        check('restore.save: a name that is not one refused', not r['ok'] and 'name:' in r.get('error', ''), r)
+        r = b.call('restore.load', {'name': 'start'})
+        check('restore.load with no game: refused', not r['ok'], r)
         r = b.call('kit.anims')
         check('human_anim_play, _stop, _replace, _state, human_get_up with no game: refused, nothing faults',
               r['ok'] and r['result'] == {'play': -1, 'stop': 0, 'replace': 0, 'state': 0, 'untouched': 1, 'get_up': 0}, r)

@@ -1528,3 +1528,27 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   581 calls of C_human::Update from C_actor::Tick in the report.
 - **Tests**: offline (a mod's fault's stack names the mod; a crash: the dump, the report, its stack, log, taps,
   events, mods), mcp_smoke (crash_triage with no crash, with a mod's fault, after a crash), ALL PASSED.
+
+## 2026-10-17: restore points (block 9c of the order)
+
+- **Read**: SaveGameSave's argument is which actors it writes: 1 every actor of the mission (g_vActors, their programs
+  with them), 0 only C_game's temporary ones; the scripts' AUTOSAVEGAME passes 0, AUTOSAVEGAMEFULL 1. That is the
+  1215-byte bridge save of 2026-10-16 that loaded into a Game Over. The game loop loads the save slot when C_game
+  +0x48 is 3 (an arrest, the Game Over's retry set it), at its own place, in place when it is the same mission;
+  SaveGameLoad sets the one-shot flag +0x1D4 that skips the next script save. Both builds the same
+  (check_builds.py).
+- **Tried by hand first** (1.0 freeride): slot 599 set, SaveGameSave(1) by native.call (112 KB), the car moved and
+  the money changed, C_game +0x48 = 3: everything back in 0.3 s, the flag set and the slot left at 599 (both put back
+  by hand, the file removed).
+- **Made**: host/saves.cpp `restore.save`, `restore.load`, `restore.list`, `restore.delete` (slot 599 used only
+  between a save and its move, or a load and its end; the game's slot and the flag put back; a save of the game's
+  found there stops them); MCP `restore`; game.h kGameState, kSaveSuppress.
+- **Found and fixed**: a load in the mission was told as changes (MONEY_CHANGED of the whole difference, items),
+  and the statistics counted it as money spent: happen.cpp takes its baselines anew at every load and new game.
+  The tests' money had gone into the labs' loader statistics: put back from the copies.
+- **Found**: slot 599 is free by 1.2's texts (5591..5599 none); 1.0's texts do not name the freerides' saves, so its
+  slot is free by its missions being 1.2's: the guard stays.
+- **In both labs**: the freeride (car, money, a spawned car, the mods' state), a chapter (Salieri's bar in 1.0, Old
+  Prison in 1.2: put back to the centimetre after a 40 m teleport, the mission going on with its objective), another
+  mission's point opened and back (1.2..3.7 s); the saves of both labs byte for byte as before (copies compared).
+- **Tests**: offline (restore.* with no game), mcp_smoke (`restore` list and refusal), check_builds ALL PASSED.

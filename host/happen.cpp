@@ -364,5 +364,6 @@ void HappenFrame() {
 }
 
 void HappenMissionClosed() { g_seen.clear(); g_pending.clear(); g_money = INT_MIN; }
+void HappenGameLoaded() { g_seen.clear(); g_pending.clear(); g_money = INT_MIN; }
 
 } // namespace host

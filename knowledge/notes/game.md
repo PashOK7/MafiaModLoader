@@ -15,6 +15,18 @@ any of them up with `kb_function`.
 - **code** Profiles are `savegame\mafia%03d.sav`, saves `savegame\mafia%03d.%03d` (code 0x605260..0x606150,
   `G_LoadSaveClass`). The freeride menu's image is `freeride0.bmp` (0x5E1920). Racing records: `savegame\mr%03u.sav`,
   `savegame\mrtimes.sav`, `records\%s`.
+- **code**, **game** Saving and loading (read 2026-10-17 in both builds, run in both labs; host/saves.cpp's restore
+  points): `SaveGameSave(quick)` writes the game's state, the AI groups and then the actors: `quick` 1 every actor of
+  the mission (`g_vActors`, with their programs: C_program saves its registers and place), 0 only the temporary ones
+  (C_game's). The scripts' AUTOSAVEGAME saves with 0, AUTOSAVEGAMEFULL with 1, both through SaveGameFromScript
+  (SaveGameCreate(id - 5000), SaveGameSave, ProfileSave). A chapter's first save is 439 bytes (1.0's 050): loading it
+  opens the mission anew. A whole save is 55..210 KB (Salieri's bar, Old Prison; the freeride 112 KB). The game loop
+  (GameLoopSingle1, both builds) loads the save slot when C_game `+0x48` is 3 (0 playing, 1 leaving): an arrest (the
+  police manager's tick) and the Game Over screen's control 0x4FD set it; a save of the same mission is loaded in
+  place (0.3 s), another mission's opens it (1.2..3.7 s). SaveGameLoad sets the manager's one-shot flag `+0x1D4`, and
+  the next SaveGameFromScript is skipped (a program saved inside AUTOSAVEGAME runs it again). 1.2 names each save by
+  the text 5000 + slot, up to 5590 "Freeride Extreme - Subquest" (5591..5599 none); 1.0's texts name the chapters
+  only (5570 none, though the freeride saves 570).
 - **game** From the launch to the freeride (recorded with `tap` while a person clicked, then driven by the loader's
   start, `host/start.cpp`):
   1. `InitSystem` (0x5BF5A0) plays `logo1`, `logo3`, `logo2` with `PlayVideo` (0x55D460), then

@@ -87,8 +87,11 @@ player), `zone.add {"at", "radius", "who"}`, `timer.add {"ms"}`, then `wait {"ty
 compass pointing; `"at"` a place), `hud.console {"text"}`, `hud.help {"text"}`, `draw.picture {"file": "2sight.bmp",
 "alpha": "2sight+.bmp"}` (the game's `maps\` or a mod's `files\Maps\`), `hud.list`. **Saves**: `save.state`,
 `save.put {"key", "value"}` (written beside the game's next save; `"scope": "profile"` at once), `save.get`; `wait
-{"types": "GAME_LOADED"}`. Never call SaveGameSave by hand where it matters: outside the game's save points it can
-make a save that loads into a Game Over (copy the save first).
+{"types": "GAME_LOADED"}`. **Restore points**: `restore {"save": "before"}` keeps the game as it is (the game's own
+save, whole: every actor, the mission's programs, the mods' state; in `mml\restore`, the profile's saves untouched),
+`restore {"load": "before"}` puts it back by the game's own load and returns once loaded: an experiment repeated
+from the same moment. Never call SaveGameSave by hand: its `quick` 0 (the scripts' AUTOSAVEGAME) keeps only the
+temporary actors, the save that once loaded into a Game Over; `restore` saves whole and leaves the game's slots alone.
 `script {code, act, flt, owner}` runs a
 program on the game's own script machine (the missions' language: teleport, spawn copies, weapons, deaths, cars,
 weather, traffic, camera; docs/SCRIPTS.md has the recipes), `script_commands {query}` tells a command's arguments. It returns the

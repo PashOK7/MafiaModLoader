@@ -288,6 +288,22 @@ struct KbSearchArgs {
 }
 
 #[derive(Deserialize, JsonSchema)]
+struct RestoreArgs {
+    /// Keep the game as it is now under this name (letters, digits, `_`, `-`, `.`): the game's own save, whole.
+    #[serde(default)]
+    save: Option<String>,
+    /// Put the game back to that point (it returns once the game has loaded it, with the player's state).
+    #[serde(default)]
+    load: Option<String>,
+    /// Remove a point.
+    #[serde(default)]
+    delete: Option<String>,
+    /// Seconds to wait for a load (default 60: another mission's point opens that mission).
+    #[serde(default)]
+    timeout_s: Option<f64>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 struct InspectArgs {
     /// The object: an address ("0x0A1B2C30", "Game.exe+0x2F9464"), or "player", "car" (driven now, else last),
     /// "mission", "game" (C_game), each followed by fields if wanted: "player.inventory", "player.vehicle",
@@ -970,6 +986,42 @@ impl Server {
         Ok(pretty(&v))
     }
 
+    /// Restore points: repeat an experiment from the same moment. `save` keeps the game as it is now (every actor,
+    /// the mission's programs, the mods' state: the game's own save, whole, in mml\restore; the profile's saves and
+    /// its list untouched), `load` puts the game back there by the game's own load (at the game loop's next frame;
+    /// another mission's point opens that mission) and returns once it is loaded, with the player's state;
+    /// `delete` removes one; with none of them, the list. A mission in play only (not the main menu; a load waits
+    /// for the pause menu to close).
+    #[tool]
+    async fn restore(&self, Parameters(a): Parameters<RestoreArgs>) -> Out {
+        if let Some(n) = a.save {
+            return self.call_value("restore.save", json!({"name": n}), None).await.map(|v| pretty(&v));
+        }
+        if let Some(n) = a.delete {
+            return self.call_value("restore.delete", json!({"name": n}), None).await.map(|v| pretty(&v));
+        }
+        let Some(n) = a.load else {
+            return self.call_value("restore.list", json!({}), None).await.map(|v| pretty(&v));
+        };
+        let mut seq = self.bridge.call("events.since", json!({"seq": u64::MAX, "limit": 1}), 3000).await?["latest"].as_u64().unwrap_or(0);
+        let asked = self.call_value("restore.load", json!({"name": n}), None).await?;
+        let begun = std::time::Instant::now();
+        let timeout = a.timeout_s.unwrap_or(60.0).max(1.0);
+        loop {
+            if let Ok(r) = self.bridge.call("events.since", json!({"seq": seq, "types": "RESTORE_LOADED", "limit": 1}), 3000).await {
+                if let Some(e) = r["events"].as_array().and_then(|v| v.first()) {
+                    let player = self.call_value("player", json!({}), None).await.unwrap_or(Value::Null);
+                    return Ok(pretty(&json!({"loaded": e["data"], "player": player})));
+                }
+                seq = seq.max(r["latest"].as_u64().unwrap_or(seq));
+            }
+            if begun.elapsed().as_secs_f64() > timeout {
+                return Err(format!("{n}: asked ({asked}), not loaded in {timeout:.0} s (a menu open? the game loop loads it once it runs)"));
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    }
+
     /// An object of the running game read by its structure (knowledge/structs: the SDK's fields, the classes read
     /// from both builds' constructors, st0rm94's fields carried to 1.2): its class told by its vtable, every field
     /// named, typed and valued for the build running, pointers named (a class, a frame's name, a module's place)
@@ -1050,7 +1102,7 @@ The game's own menus, extended (real controls, not an overlay): `call menu.state
 controls}` opens a page made by the game from control descriptions; a mod does the same with menu_item, menu_open. \
 A new mod: python tools/new_mod.py <id>, then docs/MODDING.md (mods/examples/telemetry is a complete one). \
 The loop for a mod: edit -> build (cmake --build --preset x86-release) -> \
-deploy -> call its commands -> log_tail. After a crash: crash_triage (the verdict, the named stack, the log, the taps' and the events' last ones, in one call). \
+deploy -> call its commands -> log_tail. A moment to come back to: restore {save: name}, then restore {load: name} (the game's own save and load, whole). After a crash: crash_triage (the verdict, the named stack, the log, the taps' and the events' last ones, in one call). \
 The world without a program: `spawn {car | human, at, in}` makes a car or a person of any model (the game's car list: \
 `call world.cars`), `teleport {actor, to}` moves one, `give {actor, item}` arms by name (`call world.items`), \
 `call world.seat {actor, car, seat}`, `world.remove {actor}`; mods: actor_spawn, actor_teleport, give_item, actor_seat. \

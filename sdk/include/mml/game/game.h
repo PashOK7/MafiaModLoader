@@ -53,6 +53,12 @@ constexpr int kMissionGame = 0x24;
 constexpr int kMissionScene = 0x10;   // I3D_scene* the game renders each frame (found with `rstat`)
 constexpr int kGamePlayer  = 0xE4;
 constexpr int kGameScore = 0x3640, kGameScoreShown = 0x363E;   // the freeride's money (int), and whether the HUD shows it
+// C_game's state, read by the game loop every frame (GameLoopSingle1, both builds): 0 playing, 1 leaving, 3: load the
+// save slot (G_LoadSaveClass + saveSlot) now, at the loop's own place, as an arrest and the Game Over screen's retry do.
+constexpr int kGameState = 0x48, kGameStateLoad = 3;
+// G_LoadSaveClass's one-shot flag (a byte, both builds): SaveGameLoad sets it, and the next SaveGameFromScript is
+// skipped and clears it (a program saved inside AUTOSAVEGAME runs that command again once loaded).
+constexpr int kSaveSuppress = 0x1D4;
 // The shot queue (C_game::NewShoot fills it, the bullets' tick C_game::TickShoot moves and resolves it; both builds):
 // a vector at +0x1D8 (begin, end +0x1DC) of 0x5C-byte records: +0x00 where from, +0x0C the way to where it ends (the
 // static world's impact NewShoot found with testLine, or the weapon's reach), +0x1C where the bullet is now, +0x28 the

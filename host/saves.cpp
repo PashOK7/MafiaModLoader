@@ -16,8 +16,21 @@
 // u32 size, the bytes}. Written to a .tmp, the old file deleted, the new one renamed into place.
 //
 // Bridge methods: save.state, save.get {mod, key, scope}, save.put {key, value, scope} (the bridge's own keys).
+//
+// Restore points (restore.save, restore.load, restore.list, restore.delete): an experiment repeated from the same
+// moment, by the game's own save and load. restore.save calls SaveGameSave whole (quick = 1: every actor of the
+// mission and its programs; 0, the scripts' AUTOSAVEGAME, keeps only the temporary actors and is what made a bridge's
+// save load into a Game Over once) into slot 599, which no save of the game uses (1.2 names each save by its text
+// 5000 + slot: 5590 "Freeride Extreme - Subquest" is the last, 5591..5599 are none; 1.0's texts name the chapters
+// only, its missions are the same; a save found in slot 599 all the same stops the restore points, never
+// overwritten), then moves the file and its mods' state to <game>\mml\restore\<name>.*; the
+// slot the game had is put back, so the profile's own saves and its list are untouched. restore.load copies them back
+// into slot 599 and sets C_game's state to "load" (game.h kGameState): the game loop loads it at its own place, the
+// mission opened again only when the point is another mission's; then the slot is put back, the one-shot flag that
+// skips the next script save cleared (the point was not made by a script), the files removed, RESTORE_LOADED told.
 #include "host.h"
 #include <cstdio>
+#include <cctype>
 #include <cstring>
 #include <map>
 #include <mutex>
@@ -54,6 +67,10 @@ DeleteFn oDelete;
 bool g_hooked;
 
 const game::ExeBuild &E() { return game::Exe(); }
+
+// restore points
+constexpr int kRestoreSlot = 599;
+struct Restoring { bool active = false; std::string name, mission; int prevSlot = -1, prevSlotNow = -1; DWORD started = 0; } g_restoring;
 
 template <class F> DWORD Guarded(F &f) {
     __try { f(); return 0; } __except (EXCEPTION_EXECUTE_HANDLER) { return GetExceptionCode(); }
@@ -178,6 +195,11 @@ int __fastcall hkSave(void *mgr, void *edx, int quick) {
     return r;
 }
 
+void SetSlot(int slot) {
+    auto f = [&] { game::at<int>(reinterpret_cast<void *>(E().loadSave), E().saveSlot) = slot; };
+    Guarded(f);
+}
+
 int __fastcall hkLoad(void *mgr, void *edx) {
     int profile = ProfileNow(), slot = SlotNow();
     {
@@ -190,6 +212,24 @@ int __fastcall hkLoad(void *mgr, void *edx) {
         g_loads++;
     }
     int r = oLoad(mgr, edx);
+    if (g_restoring.active && slot == kRestoreSlot) {
+        // a restore point loaded: the game's slot, its next script save and the files as they were
+        Restoring done = g_restoring;
+        g_restoring.active = false;
+        SetSlot(done.prevSlot);
+        auto f = [&] { game::at<uint8_t>(mgr, game::kSaveSuppress) = 0; };
+        Guarded(f);
+        DeleteFileA(GameSaveFile(profile, kRestoreSlot).c_str());
+        DeleteFileA(SlotFile(profile, kRestoreSlot).c_str());
+        {
+            std::lock_guard<std::recursive_mutex> g(g_lock);
+            g_slotNow = done.prevSlotNow;
+        }
+        HLOG("restore point '%s' loaded (%s) in %u ms", done.name.c_str(), MissionName(), static_cast<unsigned>(GetTickCount() - done.started));
+        EventsRecord("RESTORE_LOADED", json({{"name", done.name}, {"mission", MissionName()},
+                                             {"ms", GetTickCount() - done.started}}).dump());
+    }
+    HappenGameLoaded();   // (the money and the items as loaded are no change the player made)
     Tell(MML_EVENT_GAME_LOADED, slot, profile);
     return r;
 }
@@ -202,6 +242,7 @@ void __fastcall hkNew(void *mgr, void *edx) {
         g_slotNow = -1;
         g_news++;
     }
+    HappenGameLoaded();
     Tell(MML_EVENT_GAME_LOADED, -1, ProfileNow());
 }
 
@@ -231,6 +272,164 @@ int __fastcall hkDelete(void *mgr, void *edx, unsigned index) {
 }
 
 std::string Who(MmlMod *mod) { return mod ? ModIdOf(mod) : "bridge"; }
+
+// ---- restore points
+std::string RestoreDir() { return MmlDir() + "restore\\"; }
+
+bool RestoreName(const std::string &n) {
+    if (n.empty() || n.size() > 48) return false;
+    for (char c : n) if (!isalnum(static_cast<unsigned char>(c)) && c != '_' && c != '-' && c != '.') return false;
+    return n[0] != '.';
+}
+
+DWORD CallSave() {   // SaveGameSave through its hooked entry (hkSave: the mods put their state, the .mml written)
+    auto save = reinterpret_cast<SaveFn>(E().saveGameSave);
+    __try { save(reinterpret_cast<void *>(E().loadSave), nullptr, 1); return 0; }
+    __except (EXCEPTION_EXECUTE_HANDLER) { return GetExceptionCode(); }
+}
+
+bool FileSize(const std::string &path, uint64_t *size) {
+    WIN32_FILE_ATTRIBUTE_DATA a;
+    if (!GetFileAttributesExA(path.c_str(), GetFileExInfoStandard, &a)) return false;
+    *size = (static_cast<uint64_t>(a.nFileSizeHigh) << 32) | a.nFileSizeLow;
+    return true;
+}
+
+// Slot 599 must be free: a save there is not ours (ours never stays) and is never overwritten.
+bool SlotFree(int profile, std::string *err) {
+    if (GetFileAttributesA(GameSaveFile(profile, kRestoreSlot).c_str()) == INVALID_FILE_ATTRIBUTES) return true;
+    *err = GameSaveFile(profile, kRestoreSlot) + " holds a save the loader did not make: no restore points while it is there (move it away)";
+    return false;
+}
+
+bool Move(const std::string &from, const std::string &to) {
+    DeleteFileA(to.c_str());
+    return MoveFileA(from.c_str(), to.c_str()) != FALSE;
+}
+
+json ReadMeta(const std::string &name) {
+    FILE *f = fopen((RestoreDir() + name + ".json").c_str(), "rb");
+    if (!f) return nullptr;
+    std::string s;
+    char b[4096];
+    size_t n;
+    while ((n = fread(b, 1, sizeof b, f)) > 0) s.append(b, n);
+    fclose(f);
+    return json::parse(s, nullptr, false);
+}
+
+// restore.save {name}: the game as it is now, whole, kept under a name.
+json RestoreSave(const json &p, std::string *err) {
+    std::string name = p.value("name", "");
+    if (!RestoreName(name)) { *err = "name: 1..48 letters, digits, '_', '-' or '.'"; return nullptr; }
+    if (!game::g_exe || !g_hooked) { *err = "not a known build of the game (or its saves are not hooked)"; return nullptr; }
+    if (g_restoring.active) { *err = "a restore point is being loaded"; return nullptr; }
+    std::string mission = MissionName();
+    if (MissionState() != MML_MISSION_RUNNING || mission.empty() || mission == "00menu") {
+        *err = "no mission being played (the main menu, a load or the pause menu): a restore point is a game in play"; return nullptr;
+    }
+    int profile = ProfileNow(), prev = SlotNow(), prevNow = g_slotNow;
+    if (profile < 0) { *err = "no profile"; return nullptr; }
+    if (!SlotFree(profile, err)) return nullptr;
+    DWORD t0 = GetTickCount();
+    SetSlot(kRestoreSlot);
+    DWORD code = CallSave();
+    SetSlot(prev);
+    {
+        std::lock_guard<std::recursive_mutex> g(g_lock);
+        g_slotNow = prevNow;
+    }
+    std::string sav = GameSaveFile(profile, kRestoreSlot), mml = SlotFile(profile, kRestoreSlot);
+    uint64_t bytes = 0;
+    if (code || !FileSize(sav, &bytes)) {
+        DeleteFileA(sav.c_str());
+        DeleteFileA(mml.c_str());
+        char b[96];
+        snprintf(b, sizeof b, "SaveGameSave %s", code ? "faulted" : "wrote no file");
+        *err = b;
+        return nullptr;
+    }
+    CreateDirectoryA(RestoreDir().c_str(), nullptr);
+    std::string base = RestoreDir() + name;
+    if (!Move(sav, base + ".sav")) { DeleteFileA(sav.c_str()); DeleteFileA(mml.c_str()); *err = "cannot move the save to " + base + ".sav"; return nullptr; }
+    bool mods = GetFileAttributesA(mml.c_str()) != INVALID_FILE_ATTRIBUTES;
+    DeleteFileA((base + ".mml").c_str());
+    if (mods && !Move(mml, base + ".mml")) mods = false;
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    char made[32];
+    snprintf(made, sizeof made, "%04d-%02d-%02d %02d:%02d:%02d", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+    json meta = {{"name", name}, {"mission", mission}, {"build", GameBuild()}, {"profile", profile}, {"made", made},
+                 {"bytes", bytes}, {"mods_state", mods}};
+    FILE *f = fopen((base + ".json").c_str(), "wb");
+    if (f) { std::string s = meta.dump(1); fwrite(s.data(), 1, s.size(), f); fclose(f); }
+    meta["ms"] = GetTickCount() - t0;
+    HLOG("restore point '%s' saved (%s, %u bytes)", name.c_str(), mission.c_str(), static_cast<unsigned>(bytes));
+    return meta;
+}
+
+// restore.load {name}: the game loop loads it at its next frame (RESTORE_LOADED tells when).
+json RestoreLoad(const json &p, std::string *err) {
+    std::string name = p.value("name", "");
+    if (!RestoreName(name)) { *err = "name: 1..48 letters, digits, '_', '-' or '.'"; return nullptr; }
+    if (!game::g_exe || !g_hooked) { *err = "not a known build of the game (or its saves are not hooked)"; return nullptr; }
+    if (g_restoring.active) { *err = "a restore point is being loaded already: '" + g_restoring.name + "'"; return nullptr; }
+    std::string base = RestoreDir() + name;
+    json meta = ReadMeta(name);
+    if (GetFileAttributesA((base + ".sav").c_str()) == INVALID_FILE_ATTRIBUTES || !meta.is_object()) {
+        *err = "no restore point '" + name + "' (restore.list)"; return nullptr;
+    }
+    if (meta.value("build", "") != GameBuild()) { *err = "the point was made in the game " + meta.value("build", "?") + ", this is " + GameBuild(); return nullptr; }
+    void *g = game::Game();
+    int profile = ProfileNow();
+    if (!g || profile < 0 || MissionName() == std::string("00menu") || MissionState() == MML_MISSION_LOADING) {
+        *err = "no game being played to load it into (a mission, not the main menu or a load)"; return nullptr;
+    }
+    int state = -1;
+    auto rs = [&] { state = game::at<int>(g, game::kGameState); };
+    if (Guarded(rs) || state != 0) { *err = "the game is leaving or loading already (its state " + std::to_string(state) + ")"; return nullptr; }
+    if (!SlotFree(profile, err)) return nullptr;
+    std::string sav = GameSaveFile(profile, kRestoreSlot), mml = SlotFile(profile, kRestoreSlot);
+    if (!CopyFileA((base + ".sav").c_str(), sav.c_str(), TRUE)) { *err = "cannot copy the point into " + sav; return nullptr; }
+    DeleteFileA(mml.c_str());
+    if (GetFileAttributesA((base + ".mml").c_str()) != INVALID_FILE_ATTRIBUTES) CopyFileA((base + ".mml").c_str(), mml.c_str(), FALSE);
+    g_restoring.active = true;
+    g_restoring.name = name;
+    g_restoring.mission = meta.value("mission", "");
+    g_restoring.prevSlot = SlotNow();
+    {
+        std::lock_guard<std::recursive_mutex> lk(g_lock);
+        g_restoring.prevSlotNow = g_slotNow;
+    }
+    g_restoring.started = GetTickCount();
+    SetSlot(kRestoreSlot);
+    auto ws = [&] { game::at<int>(g, game::kGameState) = game::kGameStateLoad; };
+    if (Guarded(ws)) {
+        g_restoring.active = false;
+        SetSlot(g_restoring.prevSlot);
+        DeleteFileA(sav.c_str());
+        DeleteFileA(mml.c_str());
+        *err = "cannot set the game's state";
+        return nullptr;
+    }
+    return {{"loading", name}, {"mission", meta.value("mission", "")}, {"same_mission", meta.value("mission", "") == MissionName()},
+            {"note", "the game loop loads it at its next frame (not while the pause menu is open): RESTORE_LOADED tells when"}};
+}
+
+json RestoreList() {
+    json out = json::array();
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA((RestoreDir() + "*.sav").c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE) return out;
+    do {
+        std::string n = fd.cFileName;
+        n.resize(n.size() - 4);
+        json m = ReadMeta(n);
+        out.push_back(m.is_object() ? m : json({{"name", n}, {"note", "no .json beside it"}}));
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+    return out;
+}
 
 } // namespace
 
@@ -283,6 +482,29 @@ size_t SaveGetAs(const std::string &who, int scope, const char *key, void *data,
 }
 
 bool SavesMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok) {
+    if (method.compare(0, 8, "restore.") == 0) {
+        if (method != "restore.save" && method != "restore.load" && method != "restore.list" && method != "restore.delete") return false;
+        *ok = false;
+        json p = json::parse(paramsJson.empty() ? "null" : paramsJson, nullptr, false);
+        if (!p.is_object()) p = json::object();
+        std::string err;
+        json r;
+        if (method == "restore.save") r = RestoreSave(p, &err);
+        else if (method == "restore.load") r = RestoreLoad(p, &err);
+        else if (method == "restore.list") r = {{"dir", RestoreDir()}, {"points", RestoreList()}};
+        else {
+            std::string name = p.value("name", "");
+            if (!RestoreName(name) || GetFileAttributesA((RestoreDir() + name + ".sav").c_str()) == INVALID_FILE_ATTRIBUTES) err = "no restore point '" + name + "'";
+            else {
+                for (const char *ext : {".sav", ".mml", ".json"}) DeleteFileA((RestoreDir() + name + ext).c_str());
+                r = {{"deleted", name}};
+            }
+        }
+        if (!err.empty()) { *reply = method + ": " + err; return true; }
+        *reply = r.dump(-1, ' ', false, json::error_handler_t::replace);
+        *ok = true;
+        return true;
+    }
     if (method != "save.state" && method != "save.get" && method != "save.put") return false;
     *ok = false;
     json p = json::parse(paramsJson.empty() ? "null" : paramsJson, nullptr, false);
