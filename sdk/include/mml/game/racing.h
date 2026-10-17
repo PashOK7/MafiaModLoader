@@ -27,6 +27,7 @@ struct RacingLayout {
     int entrantGate;          // C_opponent: the gate the racer heads for (a C_racing_gate*)
     int entrantPlace;         // C_opponent: its place, 1 first (the HUD's "Pos n/racers")
     int entrantLap;           // C_opponent: laps completed (the HUD shows it plus one)
+    int carProbe;             // C_car: the AI probe point A, global (three floats): the point the gate test reads (0: not known)
 };
 
 inline constexpr int kRacerSlots = 20;        // the live array's length in both builds
@@ -51,6 +52,7 @@ inline constexpr RacingLayout kRacing12 = {
     0x54,      // entrantGate
     0x5C,      // entrantPlace
     0x64,      // entrantLap
+    0x2098,    // carProbe: C_car::GetAIPos(car, 1) returned car + 0x2098 (checked by calling it in the running 1.2 race)
 };
 
 // 1.0 (Game.exe 1.0): g_racing at 0x6F958C (racing.md); the player's name at C_racing+0x40.
@@ -65,6 +67,7 @@ inline constexpr RacingLayout kRacing10 = {
     0x5C,      // entrantGate
     0x64,      // entrantPlace
     0x6C,      // entrantLap
+    0x1FD8,    // carProbe: C_car::GetAIPos(car, 1) returned car + 0x1FD8 (checked by calling it in the running 1.0 race)
 };
 
 // The layout of the build running, or null when it is not a build the mod knows (Detect first).

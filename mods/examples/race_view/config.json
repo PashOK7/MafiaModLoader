@@ -6,6 +6,13 @@
   "gates": true,
   "racers": true,
   "targets": true,
+  "trace": false,
+  "paint": true,
+  "paint_width": 3,
+  "zone_alpha": 0.1,
+  "trail": true,
+  "laps": true,
+  "probe": true,
   "range": 300,
   "label_range": 120
 }

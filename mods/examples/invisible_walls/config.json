@@ -1,0 +1,11 @@
+{
+  // The defaults of invisible_walls' settings (Options > Mods > Invisible walls changes them in the game; they are kept
+  // in <game>\mml\data\invisible_walls\config.json; `config.set {"mod": "invisible_walls", "key": ..., "value": ...}` too).
+  "show": true,
+  "hotkey": "F9",
+  "range": 60,
+  "grid": 1,
+  "period": 8,
+  "strength": 1,
+  "color": "#4DD9FF"
+}

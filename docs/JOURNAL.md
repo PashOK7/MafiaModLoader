@@ -1671,3 +1671,135 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Tests**: run_tests ALL PASSED; check_paths: nothing found.
 - **Not done**: `check_builds.py` does not cover racing.h's addresses (the mod's name check guards them at run time);
   the cost of a frame with the race (13 racers, about 8 reads each) is not measured; nothing committed.
+
+## 2026-10-17: the race's lap glitch, seen in 1.2 with the race trace
+
+- **Asked** (the owner): how a race "skip" speedrun works; logs of a run in 1.2. The owner drove the race (mission
+  06-03) and the trace below is that run.
+- **Made**: race_view's `trace` setting (off by default; `config.set {"mod": "race_view", "key": "trace", "value": true}`):
+  each racer's lap, gate and place when they change, a gate reached by more than one step (a "JUMP": lost, or moved),
+  the player's car jumping more than 10 m at over 80 m/s, and the player's position every 5 s. Written to the loader's
+  log (`log_tail`); the header gives the player's entrant and the addresses of its gate, lap and place.
+- **Seen** (1.2, one run; the log's times in ms of the game's clock): the player drives gates 0..11 normally from
+  8.19 s to 8.23 s (about 1 min of play). At 8.231 s the gate goes 11 -> 12 and the place 12 -> 4; at 8.233 s the gate
+  goes 12 -> 0 (-12 steps, "lost": the place 4 -> 1). Then the car stays on the hill beside gates 10-11 (x 280..320,
+  z 230..300) and each crossing of the line x = 317.3 forward gives a lap: laps 1..5 at 8.238, 8.245, 8.256, 8.264,
+  8.270 s; between them each time the gate goes 2 -> 0 (lost again). 5 laps in about 37 s after the glitch, instead of
+  about 6.7 min of driving. At 8.274 s the lap goes 5 -> 4 (the car crossed back); no heartbeat after 8.275 s.
+- **Watches** (hardware write watches on the player's lap and gate fields, 1.2): the lap field is written only by
+  `C_racing::DoGates` (+0x8F: 5 increments, +0x2EF: 1 decrement: the same six as the trace). The gate pointer is
+  written by DoGates at +0x296 (21), +0x337 (5), +0x315 (1).
+- **Matches** `re/ext/.../racing/lap-gates-and-lap-glitch.md` (its author's, from the PC build: its numbers are 1.0's;
+  the same rules are seen here in 1.2): the finish zone is the strip between the infinite lines of gate 26 and gate 0;
+  a lost racer gets the first gate whose zone holds the car (gate 0 for a car on the hill); a forward step from gate 0
+  is a lap. The doc calls the hill "checkpoint 9": in race_view's numbering it is gates 10-11.
+- **Not checked**: that the race ends after lap 5 in 1.2 (no screen of it); the lap glitch in 1.0's lab with this
+  trace; the trace code is not committed.
+
+## 2026-10-17: the gate test drawn (race_view, follow-up)
+
+- **Read** (1.2 `C_racing::TestGate` 0x557DD0, `InternTestGate` 0x557F00, `TestAllGates` 0x557E80, `C_car::GetAIPos`
+  0x429510): the racer's zone test uses the car's AI probe point A, not its centre: `GetAIPos(car, 1)` stores it at
+  `car+0x2098` (1.2) and `car+0x1FD8` (1.0, the PC table's place). Checked by calling the game's own function in both
+  running races: the probe is 2.38 m from the car's centre in both builds (ahead of it), so the probe offset is not
+  the cause of the glitch. The zone: `InternTestGate` tests the probe between the INFINITE lines of the gate's
+  predecessor and of the gate itself (t 0 on the first, 1 on the second); `TestGate` tries the current gate, then the
+  next, then the previous; in none: `TestAllGates` takes the first gate from 0 whose zone holds the probe.
+- **Made** (race_view, settings `lines`, `trail`, `probe`): every gate's infinite line within range (gate 0's yellow,
+  the current green, its neighbours blue), the probe's path coloured by its answer (green current, blue next, orange
+  previous, red lost), the probe now with its answer (ours and the game's `t` at +0x4C), and the laps counted where
+  the probe was. `racing.h`: `carProbe` (1.2 0x2098, 1.0 0x1FD8). `race_view.state` has the probe.
+- **Checked**: our `t` against the game's `t` in both builds: 0.685 vs 0.669 (1.2) and 0.691 vs 0.675 (1.0): the same
+  0.016 gap, the probe read a second before the game's write (the probe changes about once a second). A zero probe
+  (not yet computed before the first test of the race) is no probe.
+- **The finish** (1.2 run, the results screen): the race ended on the 5th lap crossing (8.270 s of the log), the
+  screen says "You finished 1st", total 1:38.614 (the real time from the start, about 99 s by the log), and 12 lap
+  entries, the short ones (5.5 to 20 s) being the glitch laps and the counter's back-and-forth.
+- **Not done**: the place field and the HUD disagreed at the grid in 1.0 (9 against 7, read a second apart: not
+  checked further); nothing committed.
+
+## 2026-10-17: the race's lines painted on the world (race_view, `gfx`)
+
+- **Asked** (the owner): the gate lines, the zone and the probe drawn in the world like paint on the ground, not as
+  overlay lines (they went through walls and under the ground, and their depth was not readable).
+- **Principle**: `depth_pulse`'s (the scanner's wave): a graphics pass (Direct3D 11) reads the frame's linear depth
+  and finds each pixel's world point (`ScenePoint`). A gate's line is infinite in the ground plane, so the set of
+  world points at a distance s from it is a vertical plane: where a surface meets that plane, the surface gets the
+  paint. Walls and the ground are painted where they cross it, what stands in front hides it, nothing shows under the
+  ground. The zone (between the infinite lines of the previous and the current gate) is shaded the same way. The probe
+  is a ring of device lines on the car's ground, the path and the racers' poles and targets are device lines drawn at
+  `RENDER_WORLD` (depth-tested, as `world_marker`).
+- **Made**: `mods/examples/race_view/race_view.hlsl` (`PsRace`: the lines one pixel wide, antialiased; the current gate's
+  real segment brighter than its extension; the fog fades it), `race_view.cpp` (`PaintPass` through `gfx_pass`, the
+  constants in `cbuffer RacePaint` b1, 1152 bytes; `OnRenderWorld`; the unload releases the pass's objects), the
+  overlay lines and poles removed (the labels stay: text is the overlay's job), `"gfx": true` in `mod.json`.
+- **Found**: a mod with `gfx` gets a device without multisampling only if it is ENABLED when the game starts
+  (`host/gfx.cpp` `ModsWantingGfx`: `e->enabled && e->gfx`): a mod loaded at run time (`mod.load`) on the game's 4x
+  device leaves the pass off (`gfx.state` says "multisampled ... the game is started again"). The labs' copies of
+  `mod.json` are enabled for the test (the repository's stays `false` as every example's). A reload of a gfx mod is
+  clean: `free_mb 0`, 2 handles, 0 threads since the unload's release of the pass's objects (before: 6 handles,
+  -211 MB of address space, the objects were never released).
+- **Checked**: `gfx.state` "on" in both labs (the pass 0.003 ms of CPU in 1.0, 0.02 ms in 1.2). A top-down view
+  (`camera.set` over the finish gate): the real gate's segment is the bright bar across the track and the infinite
+  line runs on the grass beyond the track edges, where there is ground. The race in both labs: the current gate's
+  line on the ground and up the hill's slope, the probe ring under the car, the racers' poles and target lines.
+- **Not checked**: the trail's path on the hill during the glitch in a live drive (the state shows the path's points
+  and the lines drawn: 26 at the start); the zone's shading far from the car; nothing committed.
+
+## 2026-10-17: invisible walls shown (invisible_walls, a graphics pass)
+
+- **Asked** (the owner, standing at one in 1.0 on the hill beside gates 10-11): the walls nothing draws, shown as a
+  shader in the world.
+- **Found**: the static collision's triangles carry a material (`MmlShape::flags >> 24`, the game's surface number):
+  material 33 is a wall with no drawing, 50 m wide and up to 90 m high beside the hill's road (1.0: triangles with a
+  horizontal normal at x 248..351, z 268..316, y 29..91; `world.shapes` and `world.ray` both name them surface 33).
+  1.2 has the same material along the start straight (z about -155, up to 55 m high). The walls are triangles, not
+  boxes.
+- **Made**: `mods/examples/invisible_walls`: every 250 ms the static world's triangles of the material within 60 m of
+  the player are read (`world_shapes`), the nearest 128 kept; the pass (`invisible_walls.hlsl`, `PsWalls`) tests each
+  pixel's ray (the frame's `ViewRay`, its parameter the linear depth) against them and paints the nearest hit that is
+  in front of the scene (or over the sky): a translucent face, a glowing edge, a grid in the wall's plane, a fresnel
+  rim and a band rising through the wall every 8 s. Settings: show (F9), material, range, grid, period, strength,
+  colour. `invisible_walls.state` gives the walls near the player.
+- **Found** (the first run faulted): `game::Detect` is needed before any game helper (here `game::Player`), and
+  `game::ActorWorldPos` dereferences the frame directly: the player's frame is read through `H->mem_read` and
+  `H->frame_world`, as `race_view` does.
+- **In 1.0**: the wall beside the car: the grid's face on the hill's side, the edge on the grass, the top in the sky,
+  the tree in front of it hides it by depth. Cost: 0.125 ms on the GPU, 0.004 ms on the CPU.
+- **Not checked**: the start straight's walls in 1.2 in the picture (the state there finds them: not looked at), the
+  walls of other missions, whether material 33 is always a wall nothing draws (the screenshot shows none where it
+  stands); nothing committed.
+
+## 2026-10-17: the settings page: long labels, and the material that could not be put back
+
+- **Asked** (the owner, from the page in 1.0): a label that is too long runs over its slider (the material's, the
+  race view's); the material, once changed, hides the walls and cannot be set back except by Defaults.
+- **Found** (`host/panel.cpp`): a label is a 160 px box at x 30 and the slider starts at x 200, so about 20 characters
+  of the game's font fit. A slider's value is shown as a percentage of its range unless the manifest says
+  `"show": "value"`: the material (0..255) showed "13%" for 33, and 32 and 34 showed "13%" too, so the page could not
+  say which value hides the walls. The apply path (0..1 -> value, snapped to the step) is correct: `config.get`
+  shows the value the page sets.
+- **Made**: `LabelLines` in `host/panel.cpp`: a label longer than 20 characters takes two lines, split at the last
+  space that fits (the second line cut at 20 if still longer); a two-line row is 36 px, its control centred between
+  the lines, a one-line row stays 25 px. The second line's control id is `kLabel2` (600). The manifests: the
+  material shows its number (`"show": "value"`); the race view's labels shortened to two lines of at most 20 characters.
+- **Checked** in 1.0 and 1.2 (screenshots of both pages): every label is on two lines or one, none runs over its
+  control. Material: the page shows 33 and the walls are back at 33 (`config.set`: 8 walls at the start straight).
+- **Not fixed** (a known gap): a mouse click on the material's bar moves it about 3 values a click at the 800x600
+  coordinates, and the keyboard arrows about 10% a press: exact values need the real window's finer mouse, or a
+  typed value (no such control yet). The page does not refresh its values when they change from elsewhere (the
+  material read 57 on the page while the config said 33).
+- **Logs**: no fault in 1.2 or 1.0 after the restart; the one warning in 1.0 is a second page opened over the first.
+- **Not committed.**
+
+## 2026-10-17: the material slider removed (invisible_walls)
+
+- **Asked** (the owner): why a slider for the material when nothing but 33 shows a wall. The answer: the slider was
+  there to find other no-draw walls. The state command now counts the triangles by material near the player
+  (`materials`): at the start straight 1.0 shows 0: 11, 1: 12, 33: 8, 4: 40, so the other materials there are the road
+  and the grass, not walls. The owner decided: the slider goes, 33 stays (`kWallMaterial`).
+- **Made**: the control out of `mod.json`, the key out of `config.json`; `kWallMaterial = 33` in the code.
+- **Checked** in 1.0: the state reports material 33 and 8 walls at the start; the page has no material row; a reload
+  of the mod without a mission change: handles +4, threads +1, free -1.3 MB (before, a reload gave 0: not yet
+  explained, not chased; the measure also counts whatever the game loads in the same window).
+- **Not committed.**
