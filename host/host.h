@@ -46,6 +46,9 @@ bool PatchImport(HMODULE module, const char *dll, const char *fn, void *replacem
 // ---- crash reports and the main thread (crash.cpp)
 void EnsureCrashFilter();      // ours first; called at start and every frame (others may install theirs later)
 std::string Where();           // what the game's main thread is doing (any thread)
+// A thread's call stack from a context of its own (the faulting thread's, in a filter): its eip, then the likely
+// return addresses on its stack (code with a call right before it), at most cap; the count.
+int StackOf(const CONTEXT *c, uintptr_t *out, int cap);
 void SetMainThread(DWORD tid);
 DWORD MainThread();
 
@@ -64,6 +67,7 @@ void RunPosted();                         // host.post callbacks, game thread
 // A command: "mod.reload" etc. (the host's) or a mod's; game thread. ok false: reply is an error message.
 bool ExecCommand(const std::string &method, const std::string &paramsJson, std::string *reply);
 std::string ModsList();                   // JSON
+std::string ModAt(uintptr_t addr);        // the mod whose code holds an address ("hook_b", "hook_b, an old load"), "" for none
 std::string CommandsList();               // JSON
 // For the host's other parts (a mod is its live load; a reload makes a new one):
 const char *ModIdOf(const MmlMod *mod);   // "host" for null

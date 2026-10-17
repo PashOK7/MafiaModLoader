@@ -788,6 +788,31 @@ impl Server {
         crash::inspect(a.file).map(|v| kb::annotate(&pretty(&v)))
     }
 
+    /// Start here after a crash: everything about it in one answer. The newest dump (or `file`) with the report the
+    /// loader wrote beside it: a verdict (what, where, through whose code: the loader, a mod, or the game alone), the
+    /// call stack with the game's functions and the mods named, the access and its region, the registers, the log's
+    /// last lines, the taps' last calls, the last events, the mods and the mission. When the game is running: also
+    /// the mods that faulted in this run (the game went on), each with its stack.
+    #[tool(annotations(read_only_hint = true))]
+    async fn crash_triage(&self, Parameters(a): Parameters<CrashArgs>) -> Out {
+        let crash = crash::triage(a.file);
+        let mut out = json!({});
+        let mut running = false;
+        if let Ok(p) = self.bridge.call("ping", json!({}), 2000).await {
+            running = true;
+            let ev = self.bridge.call("events.since", json!({"seq": 0, "types": "MOD_FAULTED"}), 3000).await.unwrap_or(Value::Null);
+            let faults = ev["events"].as_array().cloned().unwrap_or_default();
+            out["running"] = json!({"pid": p["pid"], "build": p["build"], "uptime_s": p["uptime_s"],
+                                    "faults": if faults.is_empty() { json!("no mod faulted in this run") } else { json!(faults) }});
+        }
+        match crash {
+            Ok(c) => out["crash"] = c,
+            Err(e) if running => out["crash"] = json!(e),
+            Err(e) => return Err(e),
+        }
+        Ok(kb::annotate(&pretty(&out)))
+    }
+
     /// Watch any function of the running game without writing a hook: who calls it, with what arguments (ECX, the
     /// stack), what memory behind them holds (strings shown as text), what it returns. Start a tap, let the game (or
     /// the user) do the thing, then "show <id>". Works before the first frame too (during the intro videos).
@@ -1025,7 +1050,7 @@ The game's own menus, extended (real controls, not an overlay): `call menu.state
 controls}` opens a page made by the game from control descriptions; a mod does the same with menu_item, menu_open. \
 A new mod: python tools/new_mod.py <id>, then docs/MODDING.md (mods/examples/telemetry is a complete one). \
 The loop for a mod: edit -> build (cmake --build --preset x86-release) -> \
-deploy -> call its commands -> log_tail. After a crash: crash_list, crash_inspect, log_tail with previous. \
+deploy -> call its commands -> log_tail. After a crash: crash_triage (the verdict, the named stack, the log, the taps' and the events' last ones, in one call). \
 The world without a program: `spawn {car | human, at, in}` makes a car or a person of any model (the game's car list: \
 `call world.cars`), `teleport {actor, to}` moves one, `give {actor, item}` arms by name (`call world.items`), \
 `call world.seat {actor, car, seat}`, `world.remove {actor}`; mods: actor_spawn, actor_teleport, give_item, actor_seat. \

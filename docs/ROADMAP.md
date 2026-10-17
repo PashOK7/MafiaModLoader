@@ -546,6 +546,16 @@ What is done, what comes next and later, and what is known to be missing or wron
   told as C_player by its vtable (0x63C908, 0x625878), its weapons (the Thompson's 50 and 100 rounds), its frames by
   name, its car (C_car by its vtable) and the car's C_Vehicle with st0rm94's carried fields reading in 1.2 what they
   read in 1.0 (the speed limiter's 1000.5, the throttle's ramp, the engine's timer), the game's camera and its mode.
+- **Crash triage in one call** (2026-10-17; item 25, block 9b of the order): the crash filter's stack is the likely
+  calls (code with a call before it, a direct call's target holding a frame above: what finished calls left is
+  dropped), and beside each dump a report of what dies with the process (the stack with the mods named, the log's
+  last lines, the taps' last calls, the last events, the mods, the mission), written on a thread of its own with a
+  time limit; the dump again without the heaps when the full one fails (a partial copy, seen in the stand-in and in
+  1.2); a mod's fault with its stack (log, `MOD_FAULTED`). MCP `crash_triage`: the verdict (what, where, the nearest
+  code not the game's: a mod, the loader, another ASI), the named stack, the access, the registers, the log, the taps,
+  the events, the mods; with the game running, the mods that faulted in this run. Seen in both labs on a crash made on
+  purpose (the player's frame pointer spoiled): `C_game::Tick+0x328` (1.2) and its 1.0 twin `+0x302`, called from
+  `C_mission::Tick` under the loader's mission hook; in 1.0 also through `MafiaRagdolls.asi`'s.
 - **People, skeletons, poses** (2026-10-16; item 6, block 6a): the host keeps every `C_human` (`humans_list`,
   `human_player`), a person's skeleton by the bones' names (`human_skeleton`: 18 joints, the pelvis, the root), a
   pose written for the frame's drawing (`bone_set` in `RENDER_BEGIN`, each posed model updated once after);
@@ -590,7 +600,7 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
 8. *(Done 2026-10-17: 8a, the game's camera modes and a field of view it keeps; 8b, a mod's keys chosen in the game's
    menus; 8c, the game's airplane flown by a mod; see "Done". Left: Known gaps.)* The camera and control (item 9's rest: the game's own camera logic; item 14's rest: a mod's actions in the
    controls menu, another kind of vehicle).
-9. *(9a done 2026-10-17: structures by name, item 24; see "Done".)* The agent's tools (items 24, 25 and the
+9. *(9a done 2026-10-17: structures by name, item 24; 9b, crash triage in one call, item 25; see "Done".)* The agent's tools (items 24, 25 and the
    snapshots in Later: structures by name, crash triage in one call, restore points).
 10. Mod languages (Later: the Rust crate; LuaJIT script mods).
 11. Orders for the people made (item 26).
@@ -729,7 +739,8 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
     a car hits a person, a body falls into the river, an exhaust in a tunnel, a camera turned, a prop held in a hand.
 24. *(Done 2026-10-17: see "Done".)* **Structures by name** (A). `inspect <addr> as C_human` (and other classes):
     fields named and typed from `game.h` and the decompile's layouts, kept in `knowledge/` as tables of offsets.
-25. **Crash triage in one call** (A; from Later): the named stack, the log's last lines and the last taps' calls.
+25. *(Done 2026-10-17: see "Done".)* **Crash triage in one call** (A; from Later): the named stack, the log's last
+    lines and the last taps' calls.
 26. **Orders for the people made** (A, for test scenes). Walk or drive to a place, follow, attack, flee: the AI's own
     jobs and the mission commands that give them, as `world.*`; the scripts' events (`setplayerfireevent`...) to a
     program of the loader's; people's models listed.
@@ -786,6 +797,15 @@ merged, sorted by importance):
 
 ## Known gaps
 
+- **Crash triage** (host/crash.cpp, `crash_triage`): the stack is a scan checked by the calls' targets, not an
+  unwind: an indirect call (a vtable's, a pointer's) cannot be checked, so a leftover after one may stay (seen: an
+  LS3DF address between C_game::Tick and C_mission::Tick); a function longer than 32 KiB would lose its caller. The
+  game's own frames are named through the knowledge base (1.0's through their 1.2 twins); LS3DF 1.0's and the mods'
+  are module+offset (no PDB read). A crash on a thread whose stack the filter cannot see (a stack overflow's guard
+  page) has only the faulting address. The full dump fails with a partial copy (0x8007012B) in the stand-in game and
+  sometimes in 1.2: it is written again without the heaps, so an object a crash points into may be missing. A hang
+  is not a crash: `where` stays the tool for it. A fault that kills the process without an exception (a fast fail)
+  writes nothing.
 - **The structures** (knowledge/structs, `inspect`): st0rm94's fields are carried to 1.2 only where the paired
   functions touch them (690 of 1329 stay 1.0's: the AI's, the police's and other classes whose functions were not
   paired, and fields only read through a pointer elsewhere); a carried field is the accesses' majority, not seen one

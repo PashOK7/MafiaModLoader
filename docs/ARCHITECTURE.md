@@ -171,8 +171,8 @@ except the intro videos), on the game thread, where `LoadLibrary` is safe.
 A separate 64-bit process, so it outlives the game: it launches and closes the game, reads the loader's log file
 when the game is gone, opens crash dumps (`minidump`, Mozilla's), and deploys builds. It talks to the host through
 the bridge only. Tools: `game_status`, `game_launch`, `game_close`, `call` (any method), `commands_list`, `mem_read`,
-`mem_write`, `log_tail`, `mods_list`, `mod_reload`, `where`, `tap`, `crash_list`, `crash_inspect`, `deploy`,
-`kb_search`, `kb_function`, `screenshot`, `input`. (Drawing, settings and the car need no tools of their own:
+`mem_write`, `log_tail`, `mods_list`, `mod_reload`, `where`, `tap`, `crash_triage`, `crash_list`, `crash_inspect`,
+`deploy`, `kb_search`, `kb_function`, `inspect`, `screenshot`, `input`. (Drawing, settings and the car need no tools of their own:
 `call draw.text`, `call config.set`, `call car`.) `game_launch` takes `go`, `profile` and the freeride's densities
 (the start) and returns once the player exists. `screenshot` asks the loader for the next frame, turns the raw file
 into `<n>.jpg` (`shot.rs`: shrunk by a whole factor to `max_width`, the newest 200 kept) and returns it as MCP image
@@ -182,8 +182,17 @@ screenshot).
 
 The knowledge base (`kb.rs`, `knowledge/README.md`) is loaded once from `knowledge/<module>/*.csv`: functions sorted
 by address (an address finds the function holding it), the call graph both ways, our names; the decompiled code is
-read on demand from `reverse_dir` (`mml.config.json`) by the function's line range. `crash_inspect` and `where` pass
-their text through it, so `Game.exe+0x...` and `LS3DF.dll+0x...` get the function's name.
+read on demand from `reverse_dir` (`mml.config.json`) by the function's line range. `crash_triage`, `crash_inspect`
+and `where` pass their text through it, so `Game.exe+0x...` and `LS3DF.dll+0x...` get the function's name.
+
+A crash (host/crash.cpp, mcp/src/crash.rs): the host's filter takes the faulting thread's stack (code addresses with
+a call right before them, kept when the call can lead to the frames above: a direct call's target, its jumps
+followed, holds one of them), logs it, writes the minidump (without the heaps when the full one fails) and, on a
+thread of its own with a time limit (the crashing thread may hold a lock), `Game_<pid>_<time>.json` beside it: what
+dies with the process (the stack with the mods named, the log's last lines, the taps' last calls, the last events,
+the mods, the mission). `crash_triage` reads both and the log, names the frames and writes a verdict: what, where,
+and the nearest code that is not the game's (a mod, the loader, another ASI). A mod's fault caught by the host's
+gates gets the same stack in its log line and its `MOD_FAULTED` event.
 
 ## Files in the game folder
 

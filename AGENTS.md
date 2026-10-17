@@ -118,7 +118,10 @@ needs no thread, window or Windows hook of its own. Try things without a mod: `c
 **Ask the knowledge base first** (`knowledge/README.md`): `kb_search` finds functions of Game.exe and LS3DF.dll
 (1.2) by name, class, signature or a string they use, our own names and the notes; `kb_function` gives one function's
 facts, callers, callees and its decompiled code (read from a reverse folder of full decompiles, `reverse_dir` in
-`mml.config.json`; never committed). `crash_inspect` and `where` name the functions they show. **An object by its
+`mml.config.json`; never committed). **After a crash, `crash_triage` first**: the verdict (what, where, through whose
+code: a mod, the loader, another ASI), the named stack, the log's last lines, the taps' last calls and the last
+events, from the report the loader writes beside each dump (`crash_inspect` opens a dump alone). `crash_triage` and
+`where` name the functions they show. **An object by its
 structure**: `inspect {"at": "player"}` (or `"car.vehicle"`, `"game.camera"`, `"player.inventory"`, an address) tells
 its class by its vtable and gives every field named, typed and valued for the build running, pointers named and
 followed (`depth`), `gaps` the dwords no field covers yet; `inspect {"as": "C_human"}` a layout with both builds'

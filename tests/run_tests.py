@@ -14,6 +14,7 @@ Exit code 0: all passed.
 
     cmake --build --preset x86-release && python tests/run_tests.py
 """
+import glob
 import json
 import os
 import re
@@ -495,6 +496,52 @@ def boxes_tests(b):
     check('boxes: back to the defaults: a device again, two threads', s4['gpu']['device'] and s4['threads'] == 2, s4)
 
 
+def crash_tests():
+    """A crash nobody handles (the harness's `crash` file): the dump and, beside it, the report of what dies with the
+    process (the stack, the log, the taps' calls, the events, the mods)."""
+    crash_dir = os.path.join(HARNESS, 'mml', 'crash')
+    shutil.rmtree(crash_dir, ignore_errors=True)
+    info_path = os.path.join(HARNESS, 'mml', 'bridge.json')
+    if os.path.exists(info_path):
+        os.remove(info_path)
+    proc = subprocess.Popen([os.path.join(HARNESS, 'mml_harness.exe'), '--seconds', '30'], cwd=HARNESS,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    for _ in range(100):
+        if os.path.exists(info_path):
+            break
+        time.sleep(0.05)
+    time.sleep(0.5)
+    b = Bridge(json.load(open(info_path)))
+    target = next((h['target'] for h in b.call('hooks.list')['result'] if h['target'].startswith('mml_harness.exe')), None)
+    if target:
+        b.call('tap', {'cmd': target + ' n=2'})
+    b.call('hook_a.call', {'a': 2, 'b': 3})
+    open(os.path.join(HARNESS, 'crash'), 'w').close()
+    try:
+        proc.communicate(timeout=20)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.communicate()
+    check('a crash: the harness ended by it', proc.returncode not in (0, None), proc.returncode)
+    dumps = sorted(glob.glob(os.path.join(crash_dir, '*.dmp')))
+    reports = sorted(glob.glob(os.path.join(crash_dir, '*.json')))
+    check('a crash: its dump and the report beside it', len(dumps) == 1 and len(reports) == 1 and
+          reports[0][:-5] == dumps[0][:-4], (dumps, reports))
+    if not reports:
+        return
+    r = json.load(open(reports[0]))
+    check('the report: the exception, a write to address 0, on the main thread',
+          r.get('exception') == 'C0000005' and r.get('access', {}).get('kind') == 'write' and r['access'].get('address') == '0x00000000'
+          and r.get('main_thread') is True, {k: r.get(k) for k in ('exception', 'access', 'main_thread')})
+    st = r.get('stack', [])
+    check('the report: the stack from the crashing function into the harness\'s frame loop',
+          len(st) >= 2 and all(s.startswith('mml_harness.exe+0x') for s in st[:2]), st)
+    check('the report: the log\'s last lines, the crash in them', any('exception C0000005' in l for l in r.get('log', [])), r.get('log', [])[-5:])
+    check('the report: the taps\' last calls', any('1 calls' in t for t in r.get('taps', [])), r.get('taps'))
+    check('the report: the last events and the mods', r.get('events') and any(m.get('id') == 'hook_a' for m in r.get('mods', [])),
+          (r.get('events', [])[-2:], r.get('mods')))
+
+
 def files_tests(b):
     """A mod's own files in the game: rw_data's dtaOpen (the stand-in's) answered from the mods' files\\ folders.
     files_a ships files alone (no DLL, load order 40); files_b (50) ships two and opens names as the game does."""
@@ -748,6 +795,8 @@ def main():
         ev = r['result']['events'] if r['ok'] else []
         check('events.since: the fault kept, found by type and by a field (any case)', len(ev) == 1 and ev[0]['data']['where'] == 'hook_b.crash'
               and ev[0]['seq'] > 0, r)
+        stack = ev[0]['data'].get('stack', []) if ev else []
+        check('the fault\'s call stack: the mod\'s code first, named', stack and '(mod hook_b)' in stack[0] and len(stack) >= 2, stack)
         r = b.call('events.since', {'types': ['MOD_UNLOADED', 'MOD_LOADED'], 'filter': {'name': 'hook_b'}})
         kinds = [e['type'] for e in r['result']['events']] if r['ok'] else []
         check('events.since: hook_b loaded, then unloaded after its fault', kinds[:1] == ['MOD_LOADED'] and 'MOD_UNLOADED' in kinds, r)
@@ -1054,6 +1103,7 @@ def main():
           re.search(r'x87 at 24 bits after [1-9][0-9]* frames, 0 given back otherwise', text) is not None, text[-400:])
     check('files: a mod\'s file answers before the first frame (the game\'s first tables)',
           "before the first frame, tables\\test.txt is 'files_b'" in out.decode(errors='replace'), out.decode(errors='replace'))
+    crash_tests()
     print('ALL PASSED' if not failures else '%d FAILED: %s' % (len(failures), ', '.join(failures)))
     return 0 if not failures else 1
 

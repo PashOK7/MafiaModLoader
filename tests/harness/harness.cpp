@@ -4,7 +4,8 @@
 // pumps the loader's frames at 60 Hz, as the game's frame limiter would; a stand-in rw_data.dll (rw_data.cpp) is
 // loaded before it, as Game.exe imports the game's file layer. It exports harness_add, a function the test
 // mods hook (two of them on the same function: the hook chains). It quits when a file named `quit` appears next to
-// it, or after `--seconds N` (default 120).
+// it, or after `--seconds N` (default 120); a file named `crash` makes it crash, an exception nobody handles (the
+// loader's crash report is tested so).
 #include <windows.h>
 #include <cstdio>
 #include <cstdlib>
@@ -17,7 +18,12 @@ extern "C" __declspec(dllexport) __declspec(noinline) int harness_add(int a, int
     return x + y;
 }
 
+extern "C" __declspec(dllexport) __declspec(noinline) void harness_crash(volatile int *p) {
+    *p = 1;
+}
+
 int main(int argc, char **argv) {
+    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);   // a crash ends it, no Windows dialog
     int seconds = 120;
     for (int i = 1; i + 1 < argc; i++) if (!strcmp(argv[i], "--seconds")) seconds = atoi(argv[i + 1]);
     char path[MAX_PATH];
@@ -61,6 +67,10 @@ int main(int argc, char **argv) {
         _controlfp_s(&cw, 0, 0);
         if ((cw & _MCW_PC) != _PC_24) { changed++; _controlfp_s(&cw, _PC_24, _MCW_PC); }
         if (GetFileAttributesA((dir + "quit").c_str()) != INVALID_FILE_ATTRIBUTES) break;
+        if (GetFileAttributesA((dir + "crash").c_str()) != INVALID_FILE_ATTRIBUTES) {
+            DeleteFileA((dir + "crash").c_str());
+            harness_crash(nullptr);
+        }
         Sleep(16);
     }
     DeleteFileA((dir + "quit").c_str());

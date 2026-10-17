@@ -1506,3 +1506,25 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   fields read in 1.2 what they read in 1.0.
 - **Tests**: Rust unit tests (the types, the tables), mcp_smoke (a layout, both builds' offsets, kb_search's fields,
   an unknown build refused), offline ALL PASSED.
+
+## 2026-10-17: crash triage in one call (block 9b of the order)
+
+- **Made**: host/crash.cpp: the faulting thread's stack is the code addresses with a call right before them, a direct
+  call kept only when its target (its jumps followed: a hooked function's, an import's thunk) holds one of the frames
+  above (the first version kept every leftover: ntdll's four times in the stand-in, a loader address between
+  C_game::Tick and the LS3D frame in 1.2); the report beside each dump, written on its own thread with a 4 s limit
+  (the crashing thread may hold the log's, the events' or a tap's lock): the stack with the mods named, the log's
+  last 60 lines, the taps' last calls, the last 40 events, the mods, the mission; the dump written again without the
+  heaps when the full one fails. mods.cpp: a mod's fault gets the same stack (its log line, `MOD_FAULTED` `stack`,
+  `touched`). MCP `crash_triage`: a verdict (what, where, the nearest code not the game's, and whether the game's own
+  code ran from there), the frames named (1.0's through their twins), the taps' callers named, the running game's
+  faults. The stand-in game crashes on a `crash` file (no Windows dialog).
+- **Found**: MiniDumpWriteDump fails with 0x8007012B (a partial copy) in the stand-in and in 1.2 (in 1.0 it was
+  written whole): the heaps are what it cannot copy. The 1.0 lab runs `scripts\MafiaRagdolls.asi` (mafia-ragdoll's
+  mod) in the loader's mode: it is on the crash's stack (it reads the player's frame, and hooks the mission's tick);
+  `lab.py status` does not tell of it.
+- **In both labs**: a crash made on purpose (the player's frame pointer set to 0x10): `C_game::Tick+0x328` (1.2),
+  its twin `+0x302` (1.0), a read of 0xBC, called from C_mission::Tick under the loader's mission hook; the taps'
+  581 calls of C_human::Update from C_actor::Tick in the report.
+- **Tests**: offline (a mod's fault's stack names the mod; a crash: the dump, the report, its stack, log, taps,
+  events, mods), mcp_smoke (crash_triage with no crash, with a mod's fault, after a crash), ALL PASSED.

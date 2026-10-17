@@ -69,7 +69,7 @@ def main():
     want = {'game_status', 'call', 'commands_list', 'mem_read', 'mem_write', 'log_tail', 'mods_list', 'mod_reload',
             'where', 'game_launch', 'game_close', 'crash_list', 'crash_inspect', 'deploy', 'kb_search', 'kb_function', 'tap',
             'screenshot', 'input', 'script', 'script_commands', 'spawn', 'teleport', 'give', 'profile', 'wait', 'watch',
-            'inspect'}
+            'inspect', 'crash_triage'}
     check('tools/list has every tool', want <= tools, want - tools)
 
     if os.path.exists(os.path.join(ROOT, 'knowledge', 'game.exe', 'strings.local.csv')):   # (tools/kb_strings.py made it)
@@ -166,6 +166,29 @@ def main():
     ok, text = c.tool('deploy', {'mods': ['freeride_picture']})
     check('deploy again: unchanged files are left alone', ok and 'freeride0.bmp' not in text and 'mod.json' not in text, text)
     shutil.rmtree(pic, ignore_errors=True)
+    # crash_triage: a mod's fault in a running game, then a crash nobody handles (the harness's `crash` file)
+    shutil.rmtree(os.path.join(HARNESS, 'mml', 'crash'), ignore_errors=True)
+    harness = subprocess.Popen([os.path.join(HARNESS, 'mml_harness.exe'), '--seconds', '30'], cwd=HARNESS,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        time.sleep(1.0)
+        ok, text = c.tool('crash_triage')
+        check('crash_triage with no crash yet, the game running: nothing faulted, no dumps',
+              ok and 'no mod faulted in this run' in text and '"crash"' in text, text[:400])
+        c.tool('call', {'method': 'hook_b.crash'})
+        ok, text = c.tool('crash_triage')
+        check('crash_triage: a mod\'s fault in this run, with its stack', ok and '"MOD_FAULTED"' in text and '(mod hook_b)' in text, text[:600])
+        open(os.path.join(HARNESS, 'crash'), 'w').close()
+        harness.wait(timeout=20)
+    finally:
+        if harness.poll() is None:
+            harness.kill()
+    time.sleep(0.3)
+    ok, text = c.tool('crash_triage')
+    check('crash_triage after a crash: the verdict (a write of address 0 in the game\'s own code), the stack, the log, the mods',
+          ok and 'an access violation (C0000005) at mml_harness.exe+0x' in text and 'a write of 0x00000000' in text
+          and 'a null pointer' in text and '"stack"' in text and 'exception C0000005' in text and 'hook_b' in text, text[:900])
+    shutil.rmtree(os.path.join(HARNESS, 'mml', 'crash'), ignore_errors=True)
     c.close()
     print('ALL PASSED' if not failures else '%d FAILED: %s' % (len(failures), ', '.join(failures)))
     return 0 if not failures else 1

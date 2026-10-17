@@ -1,16 +1,23 @@
 // Crash reports and the main thread's whereabouts (see host.h).
 //
-// An exception nobody handles (the game would die) is logged (module and offset, the access, the registers, the code
-// addresses on the faulting thread's stack: return addresses and leftovers, a hint rather than an exact call stack)
-// and written as a minidump to <game>\mml\crash\Game_<pid>_<time>.dmp with the heaps and every region's state, so an
-// object a crash points into can be looked at afterwards (mcp: crash_list, crash_inspect). Exceptions caught by __try
-// never get here. The game or a wrapper may install a filter later: EnsureCrashFilter, every frame, puts ours back in
-// front and chains to theirs.
+// An exception nobody handles (the game would die) is logged (module and offset, the access, the registers, the call
+// stack: the faulting thread's likely return addresses, code with a call right before it) and written as a minidump
+// to <game>\mml\crash\Game_<pid>_<time>.dmp with the heaps and every region's state, so an object a crash points into
+// can be looked at afterwards; beside it Game_<pid>_<time>.json, what dies with the process: the stack with the mods
+// named, the log's last lines, the taps' last calls, the last events, the mods and the mission (mcp: crash_triage,
+// crash_list, crash_inspect). Exceptions caught by __try never get here (a mod's fault: mods.cpp, with its stack too).
+// The game or a wrapper may install a filter later: EnsureCrashFilter, every frame, puts ours back in front and
+// chains to theirs.
 #include "host.h"
 #include <cstdio>
 #include <cstring>
+#include "json.hpp"
+
+using json = nlohmann::json;
 
 namespace host {
+json EventsSince(const json &p, std::string *err);   // (events.cpp)
+
 namespace {
 LPTOP_LEVEL_EXCEPTION_FILTER g_prevFilter;
 volatile LONG g_crashing;
@@ -36,17 +43,58 @@ bool IsCode(uintptr_t addr) {
     return (mi.Protect & (PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)) != 0;
 }
 
-void LogStackScan(const CONTEXT *c) {
-    const uintptr_t *sp = reinterpret_cast<const uintptr_t *>(c->Esp);
-    const uintptr_t *top = reinterpret_cast<const uintptr_t *>(reinterpret_cast<NT_TIB *>(NtCurrentTeb())->StackBase);
-    for (int found = 0; sp < top && found < 48; sp++) {
-        char name[64];
-        uintptr_t rva;
-        if (!IsCode(*sp) || !ModuleOf(reinterpret_cast<const void *>(*sp), name, sizeof name, &rva)) continue;
-        Log(MML_LOG_ERROR, "crash", "  [esp+%04X] %s+0x%X", static_cast<unsigned>(reinterpret_cast<uintptr_t>(sp) - c->Esp),
-            name, static_cast<unsigned>(rva));
-        found++;
+// A likely return address: code whose bytes right before it are a call (E8 rel32, or FF /2: a register, [reg],
+// [reg+d8], [reg+d32], [abs32], with or without an index byte). Leftovers of finished calls pass too: a stack scan is
+// close to the calls, not exact (the game's code keeps no frame pointers).
+bool AfterCall(uintptr_t v) {
+    if (v < 0x10000 || !IsCode(v) || !IsCode(v - 7)) return false;
+    const uint8_t *p = reinterpret_cast<const uint8_t *>(v);
+    auto reg2 = [](uint8_t modrm) { return (modrm & 0x38) == 0x10; };   // the /2 of FF
+    if (p[-5] == 0xE8) return true;
+    if (p[-2] == 0xFF && reg2(p[-1]) && (p[-1] >> 6 == 3 || (p[-1] >> 6 == 0 && (p[-1] & 7) != 4 && (p[-1] & 7) != 5))) return true;
+    if (p[-3] == 0xFF && reg2(p[-2]) && ((p[-2] >> 6 == 1 && (p[-2] & 7) != 4) || (p[-2] >> 6 == 0 && (p[-2] & 7) == 4))) return true;
+    if (p[-4] == 0xFF && reg2(p[-3]) && p[-3] >> 6 == 1 && (p[-3] & 7) == 4) return true;
+    if (p[-6] == 0xFF && reg2(p[-5]) && ((p[-5] >> 6 == 2 && (p[-5] & 7) != 4) || p[-5] == 0x15)) return true;
+    if (p[-7] == 0xFF && reg2(p[-6]) && p[-6] >> 6 == 2 && (p[-6] & 7) == 4) return true;
+    return false;
+}
+
+std::string Frame(uintptr_t pc) {
+    std::string mod = ModAt(pc);
+    return DescribeAddress(pc) + (mod.empty() ? "" : " (mod " + mod + ")");
+}
+
+// What dies with the process, written beside the dump on a thread of its own: the crashing thread may hold the lock
+// of the log, the events or a tap, so the report gives up after a few seconds rather than hang the exit.
+struct Report {
+    std::string file;
+    json head;
+};
+DWORD WINAPI WriteReport(void *arg) {
+    Report *r = static_cast<Report *>(arg);
+    json j = r->head;
+    j["build"] = GameBuild();
+    j["frames"] = Frames();
+    j["mission"] = {{"name", MissionName()}, {"state", MissionState()}};
+    j["mods"] = json::parse(ModsList(), nullptr, false);
+    j["log"] = LogTail(60);
+    std::string taps = tap::Command("list");
+    json shown = json::array();
+    for (int i = 0; i < 16; i++) {
+        if (taps.find("tap " + std::to_string(i) + " ") != std::string::npos) shown.push_back(tap::Command("show " + std::to_string(i) + " 8"));
     }
+    j["taps"] = shown;
+    std::string err;
+    uint64_t last = EventsSince(json{{"seq", 0}, {"limit", 1}}, &err).value("latest", static_cast<uint64_t>(0));
+    j["events"] = EventsSince(json{{"seq", last > 40 ? last - 40 : 0}}, &err)["events"];
+    std::string text = j.dump(1);
+    HANDLE f = CreateFileA(r->file.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (f != INVALID_HANDLE_VALUE) {
+        DWORD wrote = 0;
+        WriteFile(f, text.data(), static_cast<DWORD>(text.size()), &wrote, nullptr);
+        CloseHandle(f);
+    }
+    return 0;
 }
 
 typedef BOOL(WINAPI *MiniDumpWriteDumpFn)(HANDLE, DWORD, HANDLE, int, void *, void *, void *);
@@ -71,7 +119,9 @@ LONG WINAPI CrashFilter(EXCEPTION_POINTERS *ep) {
             static_cast<unsigned>(c->Eax), static_cast<unsigned>(c->Ebx), static_cast<unsigned>(c->Ecx),
             static_cast<unsigned>(c->Edx), static_cast<unsigned>(c->Esi), static_cast<unsigned>(c->Edi),
             static_cast<unsigned>(c->Ebp), static_cast<unsigned>(c->Esp));
-        LogStackScan(c);
+        uintptr_t pcs[32];
+        int npc = StackOf(c, pcs, 32);
+        for (int i = 0; i < npc; i++) Log(MML_LOG_ERROR, "crash", "  %s %s", i ? "from" : "at  ", Frame(pcs[i]).c_str());
         std::string dir = MmlDir() + "crash\\";
         CreateDirectoryA(dir.c_str(), nullptr);
         SYSTEMTIME t;
@@ -89,12 +139,41 @@ LONG WINAPI CrashFilter(EXCEPTION_POINTERS *ep) {
             // (every region's state) | WithThreadInfo 0x1000
             const int type = 0x1 | 0x4 | 0x20 | 0x40 | 0x100 | 0x200 | 0x800 | 0x1000;
             BOOL ok = write(GetCurrentProcess(), GetCurrentProcessId(), f, type, &info, nullptr, nullptr);
-            Log(MML_LOG_ERROR, "crash", "dump %s %s", file, ok ? "written" : "failed");
+            DWORD why = ok ? 0 : GetLastError();
+            bool lean = false;
+            if (!ok) {
+                // a region that cannot be read whole (0x8007012B, a partial copy: seen in the stand-in game) fails the
+                // whole dump: again without the heaps and what they point to, the stacks, modules and regions kept
+                SetFilePointer(f, 0, nullptr, FILE_BEGIN);
+                SetEndOfFile(f);
+                ok = write(GetCurrentProcess(), GetCurrentProcessId(), f, 0x1 | 0x4 | 0x20 | 0x100 | 0x800 | 0x1000, &info, nullptr, nullptr);
+                lean = ok != FALSE;
+            }
+            if (ok) Log(MML_LOG_ERROR, "crash", "dump %s written%s", file, lean ? " without the heaps (the full dump failed)" : "");
+            else Log(MML_LOG_ERROR, "crash", "dump %s failed (error 0x%08X)", file, static_cast<unsigned>(why));
         } else {
             Log(MML_LOG_ERROR, "crash", "no dump (MiniDumpWriteDump %s, file %s)", write ? "found" : "missing",
                 f != INVALID_HANDLE_VALUE ? "open" : "not open");
         }
         if (f != INVALID_HANDLE_VALUE) CloseHandle(f);
+        // the report beside the dump (kept to the end of the process: the thread may outlive the wait)
+        Report *rep = new Report;
+        rep->file = std::string(file, strlen(file) - 4) + ".json";
+        char code[16];
+        snprintf(code, sizeof code, "%08X", static_cast<unsigned>(er->ExceptionCode));
+        rep->head = {{"exception", code}, {"at", Frame(reinterpret_cast<uintptr_t>(er->ExceptionAddress))},
+                     {"thread", GetCurrentThreadId()}, {"main_thread", GetCurrentThreadId() == g_mainTid}};
+        if (av) rep->head["access"] = {{"kind", er->ExceptionInformation[0] == 1 ? "write" : er->ExceptionInformation[0] == 8 ? "execute" : "read"},
+                                       {"address", DescribeAddress(er->ExceptionInformation[1])}};
+        json stack = json::array();
+        for (int i = 0; i < npc; i++) stack.push_back(Frame(pcs[i]));
+        rep->head["stack"] = stack;
+        HANDLE th = CreateThread(nullptr, 0, WriteReport, rep, 0, nullptr);
+        if (th) {
+            DWORD w = WaitForSingleObject(th, 4000);
+            Log(MML_LOG_ERROR, "crash", "report %s %s", rep->file.c_str(), w == WAIT_OBJECT_0 ? "written" : "not finished (a lock held by the crashing thread?)");
+            CloseHandle(th);
+        }
     }
     LONG r = g_prevFilter ? g_prevFilter(ep) : EXCEPTION_CONTINUE_SEARCH;
     inside = false;
@@ -107,6 +186,56 @@ void EnsureCrashFilter() {
     if (prev == CrashFilter) return;
     if (prev) HLOG("crash filter: another one (%p) was installed; ours runs first and chains to it", reinterpret_cast<void *>(prev));
     g_prevFilter = prev;
+}
+
+namespace {
+uint32_t Read32(uintptr_t a) {
+    uint32_t v = 0;
+    return MemRead(a, &v, 4) ? v : 0;
+}
+// Where a direct call goes (E8 rel32, FF 15 [abs32] read): its target and the jumps it starts with followed (a
+// hooked function's jmp to its detour, an import's thunk), up to four places; 0 places: an indirect call.
+int CallTargets(uintptr_t ret, uintptr_t *t) {
+    const uint8_t *p = reinterpret_cast<const uint8_t *>(ret);
+    uintptr_t g = 0;
+    if (p[-5] == 0xE8) g = ret + static_cast<int32_t>(Read32(ret - 4));
+    else if (p[-6] == 0xFF && p[-5] == 0x15) g = Read32(Read32(ret - 4));
+    int n = 0;
+    while (g && IsCode(g) && n < 4) {
+        t[n++] = g;
+        uint8_t b0 = 0, b1 = 0;
+        if (!MemRead(g, &b0, 1)) break;
+        MemRead(g + 1, &b1, 1);
+        if (b0 == 0xE9) g = g + 5 + static_cast<int32_t>(Read32(g + 1));
+        else if (b0 == 0xEB) g = g + 2 + static_cast<int8_t>(b1);
+        else if (b0 == 0xFF && b1 == 0x25) g = Read32(Read32(g + 2));
+        else break;
+    }
+    return n;
+}
+} // namespace
+
+// The scan keeps a code address with a call before it only when the call can lead to the frames above it: a direct
+// call's target (its jumps followed) must hold one of the last frames kept (within 32 KiB of its start: the game's
+// functions are shorter); an indirect call cannot be checked and is kept. What a finished call left on the stack is
+// dropped so, mostly.
+int StackOf(const CONTEXT *c, uintptr_t *out, int cap) {
+    int n = 0;
+    if (cap > 0) out[n++] = c->Eip;
+    const uintptr_t *sp = reinterpret_cast<const uintptr_t *>(c->Esp);
+    const uintptr_t *top = reinterpret_cast<const uintptr_t *>(reinterpret_cast<NT_TIB *>(NtCurrentTeb())->StackBase);
+    if (sp >= top || top - sp > 0x40000) return n;   // not this thread's stack
+    for (; sp < top && n < cap; sp++) {
+        uintptr_t v = *sp;
+        if (!AfterCall(v) || v == out[n - 1]) continue;
+        uintptr_t t[4];
+        int nt = CallTargets(v, t);
+        bool leads = nt == 0;
+        for (int k = 0; k < nt && !leads; k++)
+            for (int f = n - 1; f >= 0 && f >= n - 4 && !leads; f--) leads = out[f] >= t[k] && out[f] < t[k] + 0x8000;
+        if (leads) out[n++] = v;
+    }
+    return n;
 }
 
 void SetMainThread(DWORD tid) { g_mainTid = tid; }

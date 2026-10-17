@@ -74,9 +74,12 @@ const char *Who(const MmlMod *m) { return m ? m->entry->id.c_str() : "?"; }
 
 // ---- calls into mods, each behind __try: a fault marks the mod for unloading instead of killing the game
 thread_local uintptr_t t_faultAt, t_faultData;   // the last fault caught: where, and the address it touched
+thread_local uintptr_t t_faultStack[16];          // and its call stack (crash.cpp StackOf)
+thread_local int t_faultDepth;
 int NoteFault(EXCEPTION_POINTERS *x) {
     t_faultAt = reinterpret_cast<uintptr_t>(x->ExceptionRecord->ExceptionAddress);
     t_faultData = x->ExceptionRecord->NumberParameters >= 2 ? x->ExceptionRecord->ExceptionInformation[1] : 0;
+    t_faultDepth = StackOf(x->ContextRecord, t_faultStack, 16);
     return EXCEPTION_EXECUTE_HANDLER;
 }
 void Faulted(MmlMod *m, const char *where, DWORD code) {
@@ -89,7 +92,17 @@ void Faulted(MmlMod *m, const char *where, DWORD code) {
         static_cast<unsigned>(code), DescribeAddress(t_faultAt).c_str(), touched, where);
     char code8[16];
     snprintf(code8, sizeof code8, "%08X", static_cast<unsigned>(code));
-    EventsRecord("MOD_FAULTED", json({{"name", Who(m)}, {"where", where}, {"exception", code8}, {"at", DescribeAddress(t_faultAt)}}).dump());
+    json stack = json::array();
+    std::string line;
+    for (int i = 0; i < t_faultDepth; i++) {
+        std::string mod = ModAt(t_faultStack[i]);
+        stack.push_back(DescribeAddress(t_faultStack[i]) + (mod.empty() ? "" : " (mod " + mod + ")"));
+        line += (i ? " < " : "") + stack.back().get<std::string>();
+    }
+    if (!line.empty()) Log(MML_LOG_ERROR, "host", "  its stack: %s", line.c_str());
+    json data = {{"name", Who(m)}, {"where", where}, {"exception", code8}, {"at", DescribeAddress(t_faultAt)}, {"stack", stack}};
+    if (code == EXCEPTION_ACCESS_VIOLATION) data["touched"] = DescribeAddress(t_faultData);
+    EventsRecord("MOD_FAULTED", data.dump());
 }
 // Every call into a mod goes through one of these: behind the fault guard, with the x87 at 53 bits (fpu.cpp) and the
 // game's word given back after, a fault too.
@@ -1363,6 +1376,16 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (r.error || rc != 0) { *reply = r.text.empty() ? "command failed (" + std::to_string(rc) + ")" : r.text; return false; }
     *reply = r.text.empty() ? "null" : r.text;
     return true;
+}
+
+std::string ModAt(uintptr_t addr) {
+    HMODULE m = nullptr;
+    if (!addr || !GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                     reinterpret_cast<const char *>(addr), &m) || !m)
+        return "";
+    for (auto &e : g_mods) if (e->dll == m) return e->id;
+    for (const Kept &k : g_kept) if (k.dll == m) return k.id + ", an old load";
+    return "";
 }
 
 std::string ModsList() {
