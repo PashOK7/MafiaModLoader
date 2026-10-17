@@ -208,6 +208,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     mml_add_mod(engine_note ${CMAKE_SOURCE_DIR}/mods/examples/engine_note mods/examples/engine_note/engine_note.cpp)
     mml_add_mod(hover ${CMAKE_SOURCE_DIR}/mods/examples/hover mods/examples/hover/hover.cpp)
     mml_add_mod(trigger_view ${CMAKE_SOURCE_DIR}/mods/examples/trigger_view mods/examples/trigger_view/trigger_view.cpp)
+    mml_add_mod(race_view ${CMAKE_SOURCE_DIR}/mods/examples/race_view mods/examples/race_view/race_view.cpp)
     # (tools/new_mod.py adds a mod's line above this one)
 
     # ---- offline tests: a stand-in game that loads the loader and pumps its frames (tests/run_tests.py)

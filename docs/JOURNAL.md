@@ -1636,3 +1636,38 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **In both labs at once**: launched together into their freerides (8.7 s, ports 47101 and 47100, each its folder's
   mutex), two 3 s `wait`s in 3.0 s, trigger_view loaded and listed in both, screenshots of both; closed by their
   pids.
+
+## 2026-10-17: race view
+
+- **Asked**: a debug view for the race of mission 06-03 "Before The Race" (the autodrom, `mise06-autodrom`): trigger_view
+  draws the scripts' triggers, nothing of the race.
+- **Read**: 06-03 is the lab profile's save 105 (439 bytes: the chapter's start, loads the mission anew). The race
+  is started by `racing_mission6_init` (1.2 `RacingMisse06` 0x549D00, which writes `g_pRacing` at 0x646DBC; 1.0's
+  `g_racing` at 0x6F958C, racing.md). The race's menu before the start: "Opponents:" (`damageanddifficulty`, OK is
+  id 500) in 1.2; 1.0 has no difficulty choice and starts after its cutscene.
+- **Found, live in both labs** (C_racing's circuit, its 27 gates, the 13 racers, the HUD's place and lap checked
+  against the readings: 1.2 at the start 7 of 13 then 12 of 13; 1.0 12 of 13 and lap 1 of 5):
+  - 1.2: the circuit at +0x2C, the player's entrant embedded at +0x3C ("Tommy Angelo" at its +0), the 20 live racer
+    slots at +0x238, laps +0x28C; the gates vector at the circuit's +0x44 (begin, end at +0x48). An entrant: car +0x28,
+    the player's C_player +0x2C, zone t +0x4C, its gate +0x54, place +0x5C, laps +0x64.
+  - 1.0: the circuit +0x30, the player's entrant +0x40, the slots +0x228, laps +0x27C; the gates at +0x44; an entrant:
+    zone +0x4C, gate +0x5C, place +0x64, laps +0x6C. Where the two builds' tables (racing.md's PC column is 1.0's)
+    differ, the value is the one read here.
+  - A gate: its track node at +0, its outer marker at +4, the midpoint at +8 (the average of the two nodes: the
+    error is 0.0000 in both builds), the next gate at +0x14, its number at +0x1C. A web node starts with its position.
+  - The racers' tick (1.2 0x555E40 calls 0x553310 = C_opponent::Tick for each slot): a tap on 0x553310 gave the
+    entrants at once.
+- **Mistake, found and fixed**: the 1.2 gate vector was read as +0x40 by hand from a hex dump; the word list (the
+  dump with indices) says +0x44, the same as 1.0's. A second mistake: the gates were read once, when the circuit was
+  chosen, before the race builds them (`C_racing::GameInit`): the cache is keyed on the circuit and its vector's
+  begin and end now.
+- **Made**: `sdk/include/mml/game/racing.h` (both builds' layouts, `game::Racing()` by `g_exe`); `mods/examples/race_view`
+  (gates as lines, numbered; racers as poles, labels with place, name, gate, lap and zone, lines to their targets;
+  F8; `race_view.state`: the race as data, the gates, the midpoint check, each racer). The player's name "Tommy
+  Angelo" at the layout's place is the check that a build's layout is right: nothing is drawn otherwise.
+- **In both labs**: 1.2 into the race (OK clicked in "Opponents:"), 1.0 into it after its cutscene; the state of both:
+  27 gates, midpoint error 0, places 1..13 with no repeat, the player at 12 of 13 and lap 0; screenshots of both
+  (gate labels, the player's yellow gate, a pole and a target line per racer).
+- **Tests**: run_tests ALL PASSED; check_paths: nothing found.
+- **Not done**: `check_builds.py` does not cover racing.h's addresses (the mod's name check guards them at run time);
+  the cost of a frame with the race (13 racers, about 8 reads each) is not measured; nothing committed.

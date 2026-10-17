@@ -1,0 +1,11 @@
+{
+  // The defaults of race_view's settings (Options > Mods > Race view changes them in the game; they are kept in
+  // <game>\mml\data\race_view\config.json; `config.set {"mod": "race_view", "key": ..., "value": ...}` too).
+  "show": true,
+  "hotkey": "F8",
+  "gates": true,
+  "racers": true,
+  "targets": true,
+  "range": 300,
+  "label_range": 120
+}

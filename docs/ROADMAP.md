@@ -596,6 +596,16 @@ What is done, what comes next and later, and what is known to be missing or wron
   told when full (`draw.state` `dropped_last_frame`; the view's areas once took it whole and hid its detectors with
   no word). Seen in both labs: 1.2's Old Prison (46 detectors, 4 areas, the crowbar's "Pick up crowbar"), the
   freerides' music and district areas, 1.0's Salieri's bar.
+- **Race view** (2026-10-17; `mods/examples/race_view`, `sdk/include/mml/game/racing.h`): the race of mission 6 (06-03
+  "Before The Race", the autodrom `mise06-autodrom`) drawn in the world: each gate as the line between its track
+  node and its outer marker (numbered, 0 the finish, the player's gate yellow), each racer as a pole with its label
+  (place, name, gate, lap of 5, zone t) and a line to the gate it heads for. `race_view.state` gives the race as
+  data and checks the layout (each gate's midpoint against its two nodes: 0 in both builds). The racing layouts of
+  both builds in racing.h (C_racing, its circuit's gates, the entrants: `racing.md`'s PC table is 1.0's; 1.2's
+  differ: the gates at +0x44 in both, the entrant's gate +0x54 in 1.2 and +0x5C in 1.0, place +0x5C and +0x64, lap
+  +0x64 and +0x6C). Seen in both labs in the race: 27 gates, places 1..13 with no repeat (the player 12 of 13 in
+  both, the HUD's own), laps 0 of 5. The mod draws only a race whose player is named "Tommy Angelo" (the layout's
+  check); outside a race nothing.
 - **People, skeletons, poses** (2026-10-16; item 6, block 6a): the host keeps every `C_human` (`humans_list`,
   `human_player`), a person's skeleton by the bones' names (`human_skeleton`: 18 joints, the pelvis, the root), a
   pose written for the frame's drawing (`bone_set` in `RENDER_BEGIN`, each posed model updated once after);
