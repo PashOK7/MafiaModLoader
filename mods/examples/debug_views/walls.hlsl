@@ -1,4 +1,4 @@
-// invisible_walls' pass (invisible_walls.cpp): the walls of the static world that nothing draws, shown where the frame's
+// debug_views, walls: the pass (walls.cpp): the walls of the static world that nothing draws, shown where the frame's
 // depth says they are in front of what is drawn (or over the sky). Each pixel's ray (from the camera, through the
 // pixel: ViewRay's forward component is 1, so the ray parameter is the linear depth) is tested against every wall
 // triangle; the nearest hit nearer than the scene is shaded.

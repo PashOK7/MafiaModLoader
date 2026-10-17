@@ -1804,6 +1804,31 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   explained, not chased; the measure also counts whatever the game loads in the same window).
 - **Not committed.**
 
+## 2026-10-17: the scope's breath and the shot (aim_debug, measured in 1.0; not settled)
+
+- **Asked** (the owner): the scope's crosshair breathes, the bullet seems to ignore it: where does the shot really go?
+- **Made**: `mods/examples/aim_debug`: per frame the crosshair ray (`camera_ray` at the screen's centre) and its history;
+  per player shot (`MML_EVENT_SHOT`, the game's own `dir`) the angles to the crosshair in the same frame, to the closest
+  ray of the history (and its age), to the breath's centre (the average of the last 3 s) and to the weapon's frames
+  (the player's offsets 0x564, 0x568, 0x56C, 0x570); the strike (`BULLET_HIT`); the picture as drawn (`render_camera`'s
+  view and proj, p * view * proj). In the world (device lines at RENDER_WORLD): the crosshair ray (cyan), its path over
+  the last seconds (green), the last shot (yellow) and the strike (red). `aim_debug.state` gives all of it as data.
+- **Measured** (1.0, Mosin-Nagant in the scope, the player standing still):
+  - the crosshair's point at 30 m is on the drawn picture's centre (`picture.cross` 399.7..400.5, 299.5..300.8 of
+    400, 300): the picture is not shifted (`proj_offset` 0, 0);
+  - breath: the crosshair moves up to 0.2..3 degrees in a few seconds (`sway_deg_max`);
+  - shots: 0.0000 deg from the crosshair in one shot (its match 0.0 to a frame 47..93 ms earlier), 0.2094 deg in two
+    others, with no frame of the last 4 s closer than 0.09..0.11 deg; the weapon's frames are 4..170 deg off (not the
+    source); the breath's centre is 0.14..0.20 deg off the shot as well.
+- **Open**: which vector the game uses for the shot (the logical aim, updated per tick, or the camera at another
+  moment). The next step is C_player's aim fields (the mouse-driven angles) read at the shot, and the same test with
+  the breath at its largest.
+- **Note**: the lab's player moved between calls (not by the agent): the mission was restarted by the owner for the
+  ammo. The mod survives a mission restart.
+- **Removed** (the owner, the same day: the mod was rough, and what he wanted to know he had learnt from it). The
+  measurements above stay as they were; aim_debug was never committed.
+
+
 ## 2026-10-17: an actor's route (actor_route; read in both builds' code, seen on Sara of mission 07-02 in both labs)
 
 - **Found**: a person sent along a route walks in `ai_path::Tick` (1.2 0x5026C0, 1.0 0x40C970), thiscall
@@ -1848,3 +1873,35 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Seen**: 1.2 city freeride, 13 traffic cars: the way 0.02 to 0.33 m from the drawn path, the target on it; the
   drawing on a car turning at a crossing. 1.0, 15-07 (restore point `sergio_chase`): the chase car's 137-node path,
   its way 0.51 m from it at speed (1.86 at most), the path drawn along the street.
+
+## 2026-10-17: debug_views (four views in one mod), tabs on the settings pages, the traffic's cars left out
+
+- **Asked** (the owner): the debug views made one mod, its settings in tabs that never run off the screen; the routes
+  of the traffic's own cars left out (only the missions' actors).
+- **The traffic's cars**: told by the call their `C_driver::Tick` comes from, `C_traffic_car::AI` + 0xD5B in both builds
+  (1.2 0x4B099B, 1.0 0x4FC7DB; the E8 call checked at load). The detour is the hook chain's first link, entered by the
+  thunk's jmp, so `_ReturnAddress()` is the game's call (behind another mod's detour it would be that detour's, and
+  the car drawn). Setting `routes.traffic`, off: their cars are not even copied. Seen: 1.2 city, 0 drivers off, 14
+  on (all traffic); 1.0 15-07, the chase car alone (137 nodes, not traffic).
+- **debug_views** (`mods/examples/debug_views`): routes (F6, was actor_route), triggers (F7, trigger_view), race (F8,
+  race_view), walls (F9, invisible_walls), a file each (`git mv`: their history kept), each with its own Load and
+  Unload (views.h), hooks, events, command (`debug_views.routes.state`, `.triggers.list`, `.race.state`,
+  `.walls.state`) and its settings under its section of the config (`"routes.show"`: a `SECTION` prefix glued to
+  every key at compile time). Both shaders in its build. The four old mods are gone (their folders in the labs too;
+  a lab's `mml\data\<old id>\config.json` stays, unread: 1.0's actor_route had range 500, trail 3 s, hidden).
+  Triggers and race no longer draw their 2D lines and labels while a menu stops the world (they went over the
+  settings' own page). aim_debug removed.
+- **Settings sections and tabs** (host/panel.cpp): a manifest's `"sections"` (title, controls); a section whose rows
+  do not fit the 600 units is cut into parts of about the same height. Tabs as the game's Controls has them
+  (optionsc1: Player, Car, Other as buttons at the bottom, then Reset to Defaults and Back, the window titled with
+  the tab): buttons in the bottom row before Defaults and Back (a row of their own past four), the window 580 wide
+  and titled "Debug views: Routes". A tab closes the page and opens the other once the game has let the first go
+  (`MenuPageIsOpen`, new, both builds). The first try, a selector at the page's top, was not clear to the owner.
+  - The underline (the focus): the game gives it to the page's lowest id when it makes it (1.2; 1.0 the first
+    record); a focus flag in the definition only added a second underline. The tab shown gets the first id and the
+    first record: its underline says which tab is open (seen in both builds with the cursor elsewhere).
+  - The race's labels shortened to one line: its 14 rows on one tab. `panel.state` gives `sections` and `parts`,
+    `panel.open {mod, part}` a tab by number or name; tests: the kit's 20-row section cut 11 and 9.
+- **Seen**: 1.2 and 1.0, the four views loaded, the page's tabs clicked as a player would (Routes, Race, back), Walls
+  opened by `panel.open` with its underline. Offline: ALL PASSED (one run before had boxes' 20 reloads lose 2 handles
+  a reload, not again in the next: not chased).

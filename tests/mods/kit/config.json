@@ -3,5 +3,6 @@
   "speed": 12.5,
   "name": "kit",
   "hotkey": "F7",
-  "overlay": { "x": 10, "on": true }
+  "overlay": { "x": 10, "on": true },
+  "many": { "k0": true, "k1": true, "k2": true, "k3": true, "k4": true, "k5": true, "k6": true, "k7": true, "k8": true, "k9": true, "k10": true, "k11": true, "k12": true, "k13": true, "k14": true, "k15": true, "k16": true, "k17": true, "k18": true, "k19": true }
 }

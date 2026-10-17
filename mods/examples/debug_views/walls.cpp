@@ -1,4 +1,4 @@
-// invisible_walls: the walls of the static world that have no drawing (collision only), painted in the frame.
+// debug_views, walls: the walls of the static world that have no drawing (collision only), painted in the frame.
 //
 // What they are: the game's static collision has triangles of a material (the surface number in the game's own
 // table: MmlHit's flags >> 24, MmlShape's flags the same): material 33 is a wall nothing draws, the race's barriers
@@ -8,7 +8,7 @@
 // is in front, it hides the wall. The look is a glowing edge, a grid over the face, a fresnel rim and a band that rises
 // through it every few seconds.
 //
-// Commands: invisible_walls.state (the walls near the player, their corners and normals, counts by material).
+// Commands: debug_views.walls.state (the walls near the player, their corners and normals, counts by material).
 // Settings (config.json): show and the hotkey (F9), the range the walls are read within, the grid's
 // cell, the band's period, the colour and the strength.
 #include <windows.h>
@@ -23,6 +23,9 @@
 #include "mml/game/game_build.h"
 #include "mml/game/game.h"
 #include "shaders/PsWalls.h"
+#include "views.h"
+
+#define SECTION "walls."   // its settings' keys, under its section of the config
 
 namespace {
 const MmlHost *H;
@@ -49,7 +52,7 @@ ID3D11PixelShader *g_ps;
 ID3D11Buffer *g_cb;
 unsigned g_madeFor;                // the device generation they were made on
 
-// cbuffer Walls (b1), its layout in invisible_walls.hlsl
+// cbuffer Walls (b1), its layout in walls.hlsl
 struct WallsCb {
     float meta[4];                 // x: the walls, y: the grid's cell, z: the edge's width (m), w: the band's period (s)
     float colour[4];               // rgb, a: the strength
@@ -67,18 +70,18 @@ template <class T> T R(uintptr_t a) {
 }
 
 void ReadSettings() {
-    S.show = H->config_number(M, "show", 1) != 0;
-    S.range = static_cast<float>(H->config_number(M, "range", 60));
-    S.grid = static_cast<float>(H->config_number(M, "grid", 1));
-    S.period = static_cast<float>(H->config_number(M, "period", 8));
-    S.strength = static_cast<float>(H->config_number(M, "strength", 1));
-    const char *c = H->config_string(M, "color", "#4DD9FF");
+    S.show = H->config_number(M, SECTION "show", 1) != 0;
+    S.range = static_cast<float>(H->config_number(M, SECTION "range", 60));
+    S.grid = static_cast<float>(H->config_number(M, SECTION "grid", 1));
+    S.period = static_cast<float>(H->config_number(M, SECTION "period", 8));
+    S.strength = static_cast<float>(H->config_number(M, SECTION "strength", 1));
+    const char *c = H->config_string(M, SECTION "color", "#4DD9FF");
     if (*c == '#') c++;
     unsigned v = static_cast<unsigned>(strtoul(c, nullptr, 16));
     S.color[0] = ((v >> 16) & 255) / 255.0f;
     S.color[1] = ((v >> 8) & 255) / 255.0f;
     S.color[2] = (v & 255) / 255.0f;
-    H->hotkey(M, H->config_string(M, "hotkey", "F9"), [](void *) { S.show = !S.show; H->config_set(M, "show", S.show ? "true" : "false"); }, nullptr);
+    H->hotkey(M, H->config_string(M, SECTION "hotkey", "F9"), [](void *) { S.show = !S.show; H->config_set(M, SECTION "show", S.show ? "true" : "false"); }, nullptr);
 }
 
 // The walls around the player: the static world's triangles of the material, in a box of `range` metres (game thread).
@@ -108,7 +111,7 @@ void Scan() {
         static bool warned;
         if (!warned) {
             warned = true;
-            H->log(M, MML_LOG_WARN, "invisible_walls: the box holds %d shapes, the first %d are read", total, n);
+            H->log(M, MML_LOG_WARN, "walls: the box holds %d shapes, the first %d are read", total, n);
         }
     }
     if (n <= 0) return;
@@ -177,7 +180,7 @@ void OnFrame(const MmlEvent *, void *) {
     if (GetTickCount() - g_scanAt > 250) Scan();
 }
 
-// invisible_walls.state: the walls near the player as data
+// debug_views.walls.state: the walls near the player as data
 int State(const char *, MmlReply *reply, void *) {
     std::string out = "{\"material\":" + std::to_string(kWallMaterial) + ",\"walls\":" + std::to_string(g_walls.size()) +
                       ",\"shapes_seen\":" + std::to_string(g_seen) + ",\"show\":" + (S.show ? "true" : "false") + ",\"first\":[";
@@ -200,25 +203,23 @@ int State(const char *, MmlReply *reply, void *) {
 }
 } // namespace
 
-MML_EXPORT uint32_t mml_mod_api(void) { return MML_API_VERSION; }
-
-MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
+int WallsLoad(const MmlHost *host, MmlMod *mod) {
     H = host;
     M = mod;
     if (!MML_HAS(host, world_shapes)) return 1;   // a loader older than this mod
     g_game = game::Detect(host->module_base("LS3DF.dll"));   // the build's addresses (before the game is touched)
-    if (!g_game) host->log(mod, MML_LOG_WARN, "invisible_walls: not a known build of the game: nothing is read");
+    if (!g_game) host->log(mod, MML_LOG_WARN, "walls: not a known build of the game: nothing is read");
     ReadSettings();
     host->subscribe(mod, MML_EVENT_FRAME, OnFrame, nullptr);
     host->subscribe(mod, MML_EVENT_CONFIG_CHANGED, [](const MmlEvent *, void *) { ReadSettings(); }, nullptr);
     if (MML_HAS(host, gfx_pass) && host->gfx_pass(mod, 110, Pass, nullptr) <= 0)
-        host->log(mod, MML_LOG_WARN, "invisible_walls: the graphics bridge refused the pass (gfx_state says why)");
-    host->command(mod, "state", "the walls near the player: their material, count, and the nearest corners and normals", State, nullptr);
-    host->log(mod, MML_LOG_INFO, "invisible_walls loaded (game %s)", host->game_build());
+        host->log(mod, MML_LOG_WARN, "walls: the graphics bridge refused the pass (gfx_state says why)");
+    host->command(mod, "walls.state", "the walls near the player: their material, count, and the nearest corners and normals", State, nullptr);
+    host->log(mod, MML_LOG_INFO, "walls loaded (game %s)", host->game_build());
     return 0;
 }
 
-MML_EXPORT void mml_mod_unload(MmlMod *) {
+void WallsUnload() {
     SafeRelease(g_ps);
     SafeRelease(g_cb);
 }

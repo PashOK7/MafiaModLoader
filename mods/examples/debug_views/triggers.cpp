@@ -1,4 +1,4 @@
-// trigger_view: the mission scripts' triggers drawn where they are in the world: a debug view for mission and mod
+// debug_views, triggers: the mission scripts' triggers drawn where they are in the world: a debug view for mission and mod
 // authors.
 //
 // What the scripts test, in the colours of its state, over the frame (the lines show through walls):
@@ -11,7 +11,7 @@
 // - Areas (I3D_area, LS3D's frames of type 14: closed meshes the scripts test with ISPOINTINAREA): their edges, green
 //   with the player inside (the area's own CheckPoint), brighter when a program's ISPOINTINAREA names it.
 //
-// The hotkey (F7) shows and hides it; Options > Mods > Trigger view has the rest. `trigger_view.list` gives what is
+// The hotkey (F7) shows and hides it; Options > Mods > Debug views > Triggers has the rest. `debug_views.triggers.list` gives what is
 // drawn as data. The scripts' programs are read where every detector and person with a script keeps theirs (game.h
 // kProgram*), the commands named by the build running (mml/game/script_commands.h). What is near is drawn (`range`),
 // a straight edge as one line cut at the camera's near plane: the frame holds 4096 items for every mod together.
@@ -25,6 +25,9 @@
 #include "mml/game/game_build.h"
 #include "mml/game/game.h"
 #include "mml/game/script_commands.h"
+#include "views.h"
+
+#define SECTION "triggers."   // its settings' keys, under its section of the config
 
 namespace {
 const MmlHost *H;
@@ -269,7 +272,7 @@ void Refresh() {
     P3 pp{};
     if (!player || !FrameWorldPos(R<uintptr_t>(reinterpret_cast<uintptr_t>(player) + game::kActorFrame), &pp)) return;
     uint32_t ptype = R<uint32_t>(reinterpret_cast<uintptr_t>(player) + game::kHumanType);
-    float range = static_cast<float>(H->config_number(M, "range", 150));
+    float range = static_cast<float>(H->config_number(M, SECTION "range", 150));
     int opInrange = game::ScriptOpcode("detector_inrange"), opArea = game::ScriptOpcode("ispointinarea");
     std::vector<void *> actors;
     if (!SafeListActors(&actors)) actors.clear();
@@ -391,18 +394,19 @@ void Label(const P3 &w, const std::vector<std::string> &lines, uint32_t argb) {
 void DrawDetectors(const P3 &pp, float labels);
 
 void OnFrame(const MmlEvent *, void *) {
-    if (!g_on || !g_game || H->mission_state() == MML_MISSION_NONE) return;
+    // (its lines and labels are 2D, drawn over everything: not over a menu that stops the world, the settings' own)
+    if (!g_on || !g_game || H->mission_state() == MML_MISSION_NONE || H->mission_state() == MML_MISSION_PAUSED) return;
     Refresh();
     g_placed.clear();
     void *player = game::Player();
     P3 pp{};
     if (!player || !FrameWorldPos(R<uintptr_t>(reinterpret_cast<uintptr_t>(player) + game::kActorFrame), &pp)) return;
     ReadCamera();
-    const float labels = static_cast<float>(H->config_number(M, "label_range", 50));
+    const float labels = static_cast<float>(H->config_number(M, SECTION "label_range", 50));
     // the detectors first: what they draw is near; the areas (a district is hundreds of metres) after them
-    if (H->config_number(M, "detectors", 1) != 0) DrawDetectors(pp, labels);
-    if (H->config_number(M, "areas", 1) == 0) return;
-    const float range = static_cast<float>(H->config_number(M, "range", 150));
+    if (H->config_number(M, SECTION "detectors", 1) != 0) DrawDetectors(pp, labels);
+    if (H->config_number(M, SECTION "areas", 1) == 0) return;
+    const float range = static_cast<float>(H->config_number(M, SECTION "range", 150));
     for (const Area &a : g_areas) {
         if (a.verts.empty() || (!a.inside && BoxDistance(a.lo, a.hi, pp) > range)) continue;
         uint32_t col = a.inside ? 0xFF40FF60u : a.scripted ? 0xFFFF40FFu : 0x90C040C0u;
@@ -420,11 +424,11 @@ void DrawDetectors(const P3 &pp, float labels) {
         // a detector whose script has ended tests nothing any more: dim, its label only close by
         const bool ended = d.command == "its script ended" || d.command == "no script";
         uint32_t col = d.counted ? 0xFF40FF60u : ended ? 0xA0A0A0A0u : 0xFFFFD040u;
-        if (H->config_number(M, "inrange", 1) != 0)
+        if (H->config_number(M, SECTION "inrange", 1) != 0)
             for (float r : d.radii) Sphere(d.pos, r, ended ? 0x40A0A0A0u : d.counted ? 0xC040FF60u : 0x80FFD040u);
         // where the Action key finds it: the point 0.8 m before the player and 0.9 m up within this cylinder
-        if (d.waitUse && d.useReach > 0 && H->config_number(M, "use", 1) != 0) Cylinder(d.usePos, d.useReach, game::kUseHeight, 0xC040E0FFu);
-        if (H->config_number(M, "boxes", 1) != 0)
+        if (d.waitUse && d.useReach > 0 && H->config_number(M, SECTION "use", 1) != 0) Cylinder(d.usePos, d.useReach, game::kUseHeight, 0xC040E0FFu);
+        if (H->config_number(M, SECTION "boxes", 1) != 0)
             for (const std::vector<P3> &c : d.boxes) {
                 static const int e[12][2] = {{0, 1}, {2, 3}, {4, 5}, {6, 7}, {0, 2}, {1, 3}, {4, 6}, {5, 7}, {0, 4}, {1, 5}, {2, 6}, {3, 7}};
                 for (const auto &k : e) Line3(c[k[0]], c[k[1]], 0xFFFF8030u);
@@ -453,8 +457,8 @@ void DrawDetectors(const P3 &pp, float labels) {
 }
 
 void ReadSettings() {
-    g_on = H->config_number(M, "show", 1) != 0;
-    H->hotkey(M, H->config_string(M, "hotkey", "F7"), [](void *) { g_on = !g_on; H->config_set(M, "show", g_on ? "true" : "false"); }, nullptr);
+    g_on = H->config_number(M, SECTION "show", 1) != 0;
+    H->hotkey(M, H->config_string(M, SECTION "hotkey", "F7"), [](void *) { g_on = !g_on; H->config_set(M, SECTION "show", g_on ? "true" : "false"); }, nullptr);
 }
 
 void OnEvent(const MmlEvent *ev, void *) {
@@ -462,7 +466,7 @@ void OnEvent(const MmlEvent *ev, void *) {
     if (ev->type == MML_EVENT_MISSION_LOADED || ev->type == MML_EVENT_MISSION_CLOSE) { g_areas.clear(); g_areasAt = 0; }
 }
 
-// trigger_view.list: what is drawn, as data
+// debug_views.triggers.list: what is drawn, as data
 int List(const char *, MmlReply *reply, void *) {
     if (!g_game) { H->reply_append(reply, "not a known build of the game", static_cast<size_t>(-1)); return 1; }
     Refresh();
@@ -507,9 +511,7 @@ int List(const char *, MmlReply *reply, void *) {
 }
 } // namespace
 
-MML_EXPORT uint32_t mml_mod_api(void) { return MML_API_VERSION; }
-
-MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
+int TriggersLoad(const MmlHost *host, MmlMod *mod) {
     H = host;
     M = mod;
     if (!MML_HAS(host, camera_project) || !MML_HAS(host, frame_world)) return 1;   // a loader older than this mod
@@ -519,9 +521,9 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->subscribe(mod, MML_EVENT_CONFIG_CHANGED, OnEvent, nullptr);
     host->subscribe(mod, MML_EVENT_MISSION_LOADED, OnEvent, nullptr);
     host->subscribe(mod, MML_EVENT_MISSION_CLOSE, OnEvent, nullptr);
-    host->command(mod, "list", "the scripts' triggers near the player: detectors (place, command, signal, radii, use point, boxes) and the scene's areas", List, nullptr);
-    host->log(mod, MML_LOG_INFO, "trigger_view loaded (game %s)", host->game_build());
+    host->command(mod, "triggers.list", "the scripts' triggers near the player: detectors (place, command, signal, radii, use point, boxes) and the scene's areas", List, nullptr);
+    host->log(mod, MML_LOG_INFO, "triggers loaded (game %s)", host->game_build());
     return 0;
 }
 
-MML_EXPORT void mml_mod_unload(MmlMod *) {}
+void TriggersUnload() {}

@@ -220,7 +220,7 @@ bool Queue(std::vector<Item> *to, const Item &it) {
 }
 
 // A mod's item for this frame; one past the frame's kMaxItems (every mod's together) is dropped, counted, and the
-// mod told once in the log (else a mod drawing much hides what it, or another mod, draws after: trigger_view's
+// mod told once in the log (else a mod drawing much hides what it, or another mod, draws after: debug_views' triggers'
 // areas once took the whole frame and its detectors were not drawn, with no word).
 unsigned g_droppedNow, g_droppedLast;
 std::vector<MmlMod *> g_told;   // mods told that the frame was full

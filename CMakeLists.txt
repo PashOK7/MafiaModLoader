@@ -207,12 +207,10 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     mml_add_mod(props_demo ${CMAKE_SOURCE_DIR}/mods/examples/props_demo mods/examples/props_demo/props_demo.cpp)
     mml_add_mod(engine_note ${CMAKE_SOURCE_DIR}/mods/examples/engine_note mods/examples/engine_note/engine_note.cpp)
     mml_add_mod(hover ${CMAKE_SOURCE_DIR}/mods/examples/hover mods/examples/hover/hover.cpp)
-    mml_add_mod(trigger_view ${CMAKE_SOURCE_DIR}/mods/examples/trigger_view mods/examples/trigger_view/trigger_view.cpp)
-    mml_add_mod(race_view ${CMAKE_SOURCE_DIR}/mods/examples/race_view mods/examples/race_view/race_view.cpp
-        SHADERS race_view.hlsl:PsRace:ps_5_0)
-    mml_add_mod(invisible_walls ${CMAKE_SOURCE_DIR}/mods/examples/invisible_walls mods/examples/invisible_walls/invisible_walls.cpp
-        SHADERS invisible_walls.hlsl:PsWalls:ps_5_0)
-    mml_add_mod(actor_route ${CMAKE_SOURCE_DIR}/mods/examples/actor_route mods/examples/actor_route/actor_route.cpp)
+    mml_add_mod(debug_views ${CMAKE_SOURCE_DIR}/mods/examples/debug_views mods/examples/debug_views/debug_views.cpp
+        mods/examples/debug_views/routes.cpp mods/examples/debug_views/triggers.cpp mods/examples/debug_views/race.cpp
+        mods/examples/debug_views/walls.cpp
+        SHADERS race.hlsl:PsRace:ps_5_0 walls.hlsl:PsWalls:ps_5_0)
     # (tools/new_mod.py adds a mod's line above this one)
 
     # ---- offline tests: a stand-in game that loads the loader and pumps its frames (tests/run_tests.py)

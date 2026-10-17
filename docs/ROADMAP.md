@@ -587,19 +587,19 @@ What is done, what comes next and later, and what is known to be missing or wron
   (not any Game.exe). Seen: the 1.2 and the 1.0 labs launched at once into their freerides (8.7 s), two 3 s waits
   in 3.0 s, trigger_view in both, screenshots of both; offline (two folders, the same folder again, a junction, a
   game holding the game's own mutex) and mcp_smoke (`game` on a second stand-in game).
-- **Trigger view** (2026-10-17; `mods/examples/trigger_view`): the mission scripts' triggers drawn in the world, a
+- **Trigger view** (2026-10-17; now `mods/examples/debug_views`, triggers): the mission scripts' triggers drawn in the world, a
   debug view for mission and mod authors: detectors (their command now, signal, DETECTOR_INRANGE's radii, a use
   point's reach as the Action key finds it and its menu line, DETECTOR_WAITFORHIT's boxes) and the scene's areas
-  (ISPOINTINAREA's meshes, the player inside); `trigger_view.list` as data. With it the SDK's `script_commands.h`
+  (ISPOINTINAREA's meshes, the player inside); `debug_views.triggers.list` as data. With it the SDK's `script_commands.h`
   (each command's number in both builds: `game::ScriptCommandName`, `game::ScriptOpcode`; `{` and `}` were missing
   from the table), the detectors', programs' and areas' layouts in game.h, and the host's frame of 4096 drawn items
   told when full (`draw.state` `dropped_last_frame`; the view's areas once took it whole and hid its detectors with
   no word). Seen in both labs: 1.2's Old Prison (46 detectors, 4 areas, the crowbar's "Pick up crowbar"), the
   freerides' music and district areas, 1.0's Salieri's bar.
-- **Race view** (2026-10-17; `mods/examples/race_view`, `sdk/include/mml/game/racing.h`): the race of mission 6 (06-03
+- **Race view** (2026-10-17; now `mods/examples/debug_views`, race; `sdk/include/mml/game/racing.h`): the race of mission 6 (06-03
   "Before The Race", the autodrom `mise06-autodrom`) drawn in the world: each gate as the line between its track
   node and its outer marker (numbered, 0 the finish, the player's gate yellow), each racer as a pole with its label
-  (place, name, gate, lap of 5, zone t) and a line to the gate it heads for. `race_view.state` gives the race as
+  (place, name, gate, lap of 5, zone t) and a line to the gate it heads for. `debug_views.race.state` gives the race as
   data and checks the layout (each gate's midpoint against its two nodes: 0 in both builds). The racing layouts of
   both builds in racing.h (C_racing, its circuit's gates, the entrants: `racing.md`'s PC table is 1.0's; 1.2's
   differ: the gates at +0x44 in both, the entrant's gate +0x54 in 1.2 and +0x5C in 1.0, place +0x5C and +0x64, lap
@@ -859,7 +859,7 @@ merged, sorted by importance):
 - **The frame's drawn items** (host/draw.cpp): 4096 for every mod together, first come first served: a mod that
   draws much can leave none to the mods after it (now told: the log, `draw.state` `dropped_last_frame`); no share
   per mod.
-- **Trigger view** (mods/examples/trigger_view): the scene is walked for areas every 3 s (3.6 ms that frame in Old
+- **Trigger view** (mods/examples/debug_views, triggers): the scene is walked for areas every 3 s (3.6 ms that frame in Old
   Prison); people with a script (C_entity) are read only for the areas they test, not drawn; a detector's radii are
   every DETECTOR_INRANGE of its program, not the one it waits in; a use point in a frame's space was not met (its
   matrix is applied as the game applies it, not seen).

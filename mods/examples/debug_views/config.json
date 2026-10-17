@@ -1,0 +1,56 @@
+{
+  // The defaults of debug_views, a section a view (Options > Mods > Debug views changes them in the game, a tab a
+  // section; they are kept in <game>\mml\data\debug_views\config.json; `config.set {"mod": "debug_views", "key":
+  // "routes.trail_s", "value": 5}` too). routes: whose routes are drawn (people, cars; the traffic's own cars off),
+  // their parts (the route, where each is sent now, the way gone and for how long). triggers: the mission scripts'
+  // detectors and areas. race: the race of mission 6. walls: the walls nothing draws. Each view's key shows and hides
+  // it.
+  "routes": {
+    "show": true,
+    "hotkey": "F6",
+    "people": true,
+    "cars": true,
+    "traffic": false,
+    "route": true,
+    "steer": true,
+    "trail": true,
+    "trail_s": 10,
+    "range": 150
+  },
+  "triggers": {
+    "show": true,
+    "hotkey": "F7",
+    "detectors": true,
+    "inrange": true,
+    "use": true,
+    "boxes": true,
+    "areas": true,
+    "range": 150,
+    "label_range": 50
+  },
+  "race": {
+    "show": true,
+    "hotkey": "F8",
+    "gates": true,
+    "racers": true,
+    "targets": true,
+    "trace": false,
+    "paint": true,
+    "paint_width": 3,
+    "zone_alpha": 0.1,
+    "trail": true,
+    "laps": true,
+    "probe": true,
+    "range": 300,
+    "label_range": 120
+  },
+  "walls": {
+    "show": true,
+    "hotkey": "F9",
+    "range": 60,
+    "grid": 1,
+    "period": 8,
+    "strength": 1,
+    "color": "#4DD9FF"
+  }
+}

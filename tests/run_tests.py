@@ -198,8 +198,18 @@ def kit_tests(b):
     check('panel.state: a slider with no max is left out (the log says why)', 'broken' not in c, c)
     check('panel.state: a "key" row shows the hotkey setting', c.get('hotkey', {}).get('kind') == 'key' and
           c['hotkey']['shown'] == c['hotkey']['value'] and c['hotkey']['shown'], c)
+    parts = kit[0].get('parts', []) if kit else []
+    labels = [p['label'] for p in parts]
+    check('panel.state: the controls and a section of 20 rows, cut to fit the screen: three tabs (two parts of about '
+          'the same height, 11 and 9 rows, the two-line label in the second)',
+          labels == ['Kit', 'Many 1/2', 'Many 2/2'] and len(parts[1]['keys']) == 11 and len(parts[2]['keys']) == 9 and
+          parts[2]['keys'][-1] == 'many.k19' and [s['title'] for s in kit[0]['sections']] == ['', 'Many'], parts)
+    check('panel.state: the sections\' controls listed with the others (a key under the section\'s name)',
+          c.get('many.k3', {}).get('kind') == 'check' and c['many.k3']['value'] is True, c.get('many.k3'))
     r = b.call('panel.open', {'mod': 'kit'})
     check('panel.open with no game: refused, saying why', not r['ok'] and 'page' in str(r), r)
+    r = b.call('panel.open', {'mod': 'kit', 'part': 'Many 3/2'})
+    check('panel.open of a part the page has not: refused, saying where they are listed', not r['ok'] and 'panel.state' in str(r), r)
 
     # the data folder
     r = b.call('kit.write')

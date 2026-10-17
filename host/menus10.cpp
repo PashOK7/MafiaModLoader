@@ -886,6 +886,8 @@ void PageClose(MmlMod *mod, bool bridge) {
     if (Page *p = PageOf(mod, bridge)) Close(p);
 }
 
+bool PageIsOpen(MmlMod *mod, bool bridge) { return PageOf(mod, bridge) != nullptr; }
+
 int PageText(MmlMod *mod, bool bridge, int id, const char *text) {
     Page *p = PageOf(mod, bridge);
     if (!p || !text) return 0;

@@ -979,6 +979,11 @@ void MenuPageClose(MmlMod *mod) {
     if (Page *p = mod ? PageOf(mod, false) : nullptr) ClosePage(p);
 }
 
+bool MenuPageIsOpen(MmlMod *mod) {
+    if (!mod) return false;
+    return m10::Known() ? m10::PageIsOpen(mod, false) : PageOf(mod, false) != nullptr;
+}
+
 namespace {
 // A page's text or value: on its control when the game has made it, and kept for when it makes it (a page waits
 // for the pause menu first; it is made again by nothing else).

@@ -6,4 +6,12 @@
     { "key": "hotkey", "label": "Hotkey", "kind": "key" },
     { "key": "name", "label": "Name", "options": ["kit", { "value": "other", "label": "Another" }] },
     { "key": "broken", "label": "No max", "min": 0 }
-  ] } }
+  ], "sections": [ { "title": "Many", "controls": [
+    { "key": "many.k0", "label": "Check 0" }, { "key": "many.k1", "label": "Check 1" }, { "key": "many.k2", "label": "Check 2" },
+    { "key": "many.k3", "label": "Check 3" }, { "key": "many.k4", "label": "Check 4" }, { "key": "many.k5", "label": "Check 5" },
+    { "key": "many.k6", "label": "Check 6" }, { "key": "many.k7", "label": "Check 7" }, { "key": "many.k8", "label": "Check 8" },
+    { "key": "many.k9", "label": "Check 9" }, { "key": "many.k10", "label": "Check 10" }, { "key": "many.k11", "label": "Check 11" },
+    { "key": "many.k12", "label": "Check 12" }, { "key": "many.k13", "label": "Check 13" }, { "key": "many.k14", "label": "Check 14" },
+    { "key": "many.k15", "label": "Check 15" }, { "key": "many.k16", "label": "Check 16" }, { "key": "many.k17", "label": "Check 17" },
+    { "key": "many.k18", "label": "Check 18" }, { "key": "many.k19", "label": "Check 19 with a label of two lines" }
+  ] } ] } }

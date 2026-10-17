@@ -1,4 +1,4 @@
-// race_view: the race of mission 6 (06-03 "Before The Race", the autodrom) drawn where it is in the world: a debug view
+// debug_views, race: the race of mission 6 (06-03 "Before The Race", the autodrom) drawn where it is in the world: a debug view
 // for mod and mission authors.
 //
 // What it draws, over the frame (the lines show through walls):
@@ -6,7 +6,7 @@
 //   marker, numbered (0 is the finish). The gate the player heads for is yellow, the others grey.
 // - Racers: a pole over each car, its label (place, name, the gate it heads for, its lap of the race), and a line
 //   from it to that gate (targets). The player is green.
-// The F8 hotkey shows and hides it; Options > Mods > Race view has the rest. `race_view.state` gives the race as
+// The F8 hotkey shows and hides it; Options > Mods > Debug views > Race has the rest. `debug_views.race.state` gives the race as
 // data, and checks the layout: each gate's midpoint against the average of its two nodes (the layout is right when
 // the error is zero).
 #include <windows.h>
@@ -23,6 +23,9 @@
 #include <d3d11.h>
 #include <cstring>
 #include "shaders/PsRace.h"
+#include "views.h"
+
+#define SECTION "race."   // its settings' keys, under its section of the config
 
 namespace {
 const MmlHost *H;
@@ -392,7 +395,7 @@ void DrawProbe(float range, float labels) {
     for (const Racer &r : g_racers) if (r.player) player = &r;
     if (!player || !player->posOk) return;
     const P3 pp = player->pos;
-    if (g_test.ok && H->config_number(M, "probe", 1) != 0 && Len(g_test.probe - pp) < labels) {
+    if (g_test.ok && H->config_number(M, SECTION "probe", 1) != 0 && Len(g_test.probe - pp) < labels) {
         const Analysis &a = g_test;
         uint32_t col = a.result == 0 ? 0xFF40FF60u : a.result == 1 ? 0xFF60A0FFu : a.result == -1 ? 0xFFFFA040u : 0xFFFF4040u;
         const char *zone = a.result == 0 ? "in the current gate's zone" : a.result == 1 ? "in the NEXT gate's zone"
@@ -419,13 +422,13 @@ struct WorldVertex { float x, y, z; uint32_t color; };   // D3DFVF_XYZ | D3DFVF_
 size_t g_worldLines;             // the lines the last RENDER_WORLD drew (for the state)
 void OnRenderWorld(const MmlEvent *ev, void *) {
     if (!g_on || !g_race || !MML_EVENT_HAS(ev, world) || !ev->world) return;
-    const bool trail = H->config_number(M, "trail", 1) != 0 && g_trail.size() >= 2;
-    const bool laps = H->config_number(M, "laps", 1) != 0 && !g_lapMarks.empty();
+    const bool trail = H->config_number(M, SECTION "trail", 1) != 0 && g_trail.size() >= 2;
+    const bool laps = H->config_number(M, SECTION "laps", 1) != 0 && !g_lapMarks.empty();
     const Racer *player = nullptr;
     for (const Racer &r : g_racers) if (r.player) player = &r;
     if (!player || !player->posOk) return;
     const P3 pp = player->pos;
-    const float range = static_cast<float>(H->config_number(M, "range", 300));
+    const float range = static_cast<float>(H->config_number(M, SECTION "range", 300));
     auto *d = static_cast<IDirect3DDevice9 *>(H->render_device(9));
     if (!d) return;
     std::vector<WorldVertex> v;
@@ -445,14 +448,14 @@ void OnRenderWorld(const MmlEvent *ev, void *) {
             v.push_back({m.at.x, m.at.y + 8.0f, m.at.z, 0xFFFFE040u});
         }
     }
-    if (H->config_number(M, "racers", 1) != 0) {   // a pole over each racer, and a line from him to his gate (targets)
+    if (H->config_number(M, SECTION "racers", 1) != 0) {   // a pole over each racer, and a line from him to his gate (targets)
         for (const Racer &r : g_racers) {
             if (!r.posOk || Len(r.pos - pp) > range) continue;
             if (r.player) {   // the player's pole only: the AI racers have none (their targets stay)
                 v.push_back({r.pos.x, r.pos.y + 0.2f, r.pos.z, 0xFF40FF60u});
                 v.push_back({r.pos.x, r.pos.y + 3.0f, r.pos.z, 0xFF40FF60u});
             }
-            if (H->config_number(M, "targets", 1) != 0) {
+            if (H->config_number(M, SECTION "targets", 1) != 0) {
                 const uint32_t tcol = r.player ? 0xC040FF60u : 0x60FFE040u;
                 for (const Gate &g : g_gates) {
                     if (g.ptr != r.gate) continue;
@@ -462,7 +465,7 @@ void OnRenderWorld(const MmlEvent *ev, void *) {
             }
         }
     }
-    if (g_test.ok && H->config_number(M, "probe", 1) != 0 && Len(g_test.probe - pp) < range) {
+    if (g_test.ok && H->config_number(M, SECTION "probe", 1) != 0 && Len(g_test.probe - pp) < range) {
         // a ring on the ground under the probe (the car's height: the probe is about 0.9 m above it)
         const float y = pp.y + 0.05f, r = 0.9f;
         const int segs = 24;
@@ -510,7 +513,7 @@ void DrawRace(float range, float labels) {
     ReadCamera();
     uintptr_t playerGate = 0;
     for (const Racer &r : g_racers) if (r.player) playerGate = r.gate;
-    if (H->config_number(M, "gates", 1) != 0) {
+    if (H->config_number(M, SECTION "gates", 1) != 0) {
         for (const Gate &g : g_gates) {
             float d = Len(g.mid - pp);
             if (d > range) continue;
@@ -522,13 +525,13 @@ void DrawRace(float range, float labels) {
             }
         }
     }
-    if (H->config_number(M, "racers", 1) == 0) return;
+    if (H->config_number(M, SECTION "racers", 1) == 0) return;
     for (const Racer &r : g_racers) {
         if (!r.posOk) continue;
         float d = Len(r.pos - pp);
         if (d > range) continue;
         uint32_t col = r.player ? 0xFF40FF60u : 0xFFFFFFFFu;
-        if (H->config_number(M, "targets", 1) != 0) {
+        if (H->config_number(M, SECTION "targets", 1) != 0) {
         }
         if (d < labels) {
             char a[96], b[96];
@@ -540,10 +543,10 @@ void DrawRace(float range, float labels) {
     }
 }
 
-// ---- the paint: the gates, the player's zone and the car's probe painted on the world's surfaces (race_view.hlsl), in
+// ---- the paint: the gates, the player's zone and the car's probe painted on the world's surfaces (race.hlsl), in
 // the graphics bridge's pass. The lines are the gates' infinite lines: where a surface of the world meets the vertical
 // plane through a gate, so the paint lies on what is there and what stands in front hides it.
-struct PaintCb {   // cbuffer RacePaint (b1), its layout in race_view.hlsl
+struct PaintCb {   // cbuffer RacePaint (b1), its layout in race.hlsl
     float seg[32][4], kind[32][4], colour[5][4], zone[4], probe[4], style[4];
 };
 static_assert(sizeof(PaintCb) == 1152, "RacePaint's layout");
@@ -610,23 +613,25 @@ void PaintPass(const MmlGfxFrame *f, void *) {
 }
 
 void OnFrame(const MmlEvent *, void *) {
-    if (!g_on || !g_game || H->mission_state() == MML_MISSION_NONE) return;
+    // (its labels are 2D, drawn over everything: not over a menu that stops the world, the settings' own; nothing
+    // moves meanwhile)
+    if (!g_on || !g_game || H->mission_state() == MML_MISSION_NONE || H->mission_state() == MML_MISSION_PAUSED) return;
     Refresh();
     Trace();
     g_placed.clear();
-    const float range = static_cast<float>(H->config_number(M, "range", 300));
-    const float labels = static_cast<float>(H->config_number(M, "label_range", 120));
+    const float range = static_cast<float>(H->config_number(M, SECTION "range", 300));
+    const float labels = static_cast<float>(H->config_number(M, SECTION "label_range", 120));
     DrawRace(range, labels);
     DrawProbe(range, labels);
 }
 
 void ReadSettings() {
-    g_on = H->config_number(M, "show", 1) != 0;
-    g_trace = H->config_number(M, "trace", 0) != 0;
-    g_paint = H->config_number(M, "paint", 1) != 0;
-    g_paintWidth = static_cast<float>(H->config_number(M, "paint_width", 2));
-    g_zoneAlpha = static_cast<float>(H->config_number(M, "zone_alpha", 0.10));
-    H->hotkey(M, H->config_string(M, "hotkey", "F8"), [](void *) { g_on = !g_on; H->config_set(M, "show", g_on ? "true" : "false"); }, nullptr);
+    g_on = H->config_number(M, SECTION "show", 1) != 0;
+    g_trace = H->config_number(M, SECTION "trace", 0) != 0;
+    g_paint = H->config_number(M, SECTION "paint", 1) != 0;
+    g_paintWidth = static_cast<float>(H->config_number(M, SECTION "paint_width", 2));
+    g_zoneAlpha = static_cast<float>(H->config_number(M, SECTION "zone_alpha", 0.10));
+    H->hotkey(M, H->config_string(M, SECTION "hotkey", "F8"), [](void *) { g_on = !g_on; H->config_set(M, SECTION "show", g_on ? "true" : "false"); }, nullptr);
 }
 
 void OnEvent(const MmlEvent *ev, void *) {
@@ -637,7 +642,7 @@ void OnEvent(const MmlEvent *ev, void *) {
     }
 }
 
-// race_view.state: the race as data, and the layout's check
+// debug_views.race.state: the race as data, and the layout's check
 int State(const char *, MmlReply *reply, void *) {
     if (!g_game || !game::Racing()) { H->reply_append(reply, "not a known build of the game", static_cast<size_t>(-1)); return 1; }
     Refresh();
@@ -672,9 +677,7 @@ int State(const char *, MmlReply *reply, void *) {
 }
 } // namespace
 
-MML_EXPORT uint32_t mml_mod_api(void) { return MML_API_VERSION; }
-
-MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
+int RaceLoad(const MmlHost *host, MmlMod *mod) {
     H = host;
     M = mod;
     if (!MML_HAS(host, camera_project) || !MML_HAS(host, frame_world)) return 1;   // a loader older than this mod
@@ -687,13 +690,13 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->subscribe(mod, MML_EVENT_MISSION_CLOSE, OnEvent, nullptr);
     host->subscribe(mod, MML_EVENT_RENDER_WORLD, OnRenderWorld, nullptr);
     if (MML_HAS(host, gfx_pass) && host->gfx_pass(mod, 100, PaintPass, nullptr) <= 0)
-        host->log(mod, MML_LOG_WARN, "race_view: the graphics bridge refused the paint pass (gfx_state says why)");
-    host->command(mod, "state", "the race as data: the circuit, its gates (numbers, nodes), the racers (place, lap, gate, zone, car) and the layout check (midpoint_error 0 when right)", State, nullptr);
-    host->log(mod, MML_LOG_INFO, "race_view loaded (game %s)", host->game_build());
+        host->log(mod, MML_LOG_WARN, "race: the graphics bridge refused the paint pass (gfx_state says why)");
+    host->command(mod, "race.state", "the race as data: the circuit, its gates (numbers, nodes), the racers (place, lap, gate, zone, car) and the layout check (midpoint_error 0 when right)", State, nullptr);
+    host->log(mod, MML_LOG_INFO, "race loaded (game %s)", host->game_build());
     return 0;
 }
 
-MML_EXPORT void mml_mod_unload(MmlMod *) {
+void RaceUnload() {
     SafeRelease(g_paintPs);   // the paint's Direct3D 11 objects: the device is the bridge's, these are ours
     SafeRelease(g_paintCb);
 }

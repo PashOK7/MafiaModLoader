@@ -198,6 +198,7 @@ void MenusFrame();                        // every frame: a page that waits for 
 int MenuItemAdd(MmlMod *mod, const char *menu, int afterId, const char *text, MmlMenuFn fn, void *user);
 int MenuPageOpen(MmlMod *mod, const char *name, const MmlMenuControl *controls, int count, MmlMenuFn fn, void *user);
 void MenuPageClose(MmlMod *mod);
+bool MenuPageIsOpen(MmlMod *mod);         // the owner's page is made or waits to be (1.2: until the game deletes it)
 int MenuPageText(MmlMod *mod, int id, const char *text);
 int MenuPageValue(MmlMod *mod, int id, float value);
 int MenuPageGetValue(MmlMod *mod, int id, float *value);

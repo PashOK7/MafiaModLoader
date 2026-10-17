@@ -1,4 +1,4 @@
-// actor_route: the route each person and each car the game moves is following, the point it is sent to now and the
+// debug_views, routes: the route each person and each car the game moves is following, the point it is sent to now and the
 // way it goes, drawn in the world (both builds).
 //
 // People. The game walks a person along a route in ai_path::Tick (1.2 0x5026C0, 1.0 0x40C970), thiscall(ai_path
@@ -15,6 +15,10 @@
 // 0x8000: an edge). FillStartValues (1.2 0x43F050, 1.0 0x485EC0) puts the point the car drives to at +0x6C: the
 // cursor's node's lane point, the lane its own, or the node before's when both nodes are edges. The traffic's paths
 // are a few nodes long and made anew as the car goes; a chase's runs across the city.
+//
+// The traffic's own cars (those C_traffic_car::AI drives, 1.2 0x4AFC40, 1.0 0x4FBA80) are left out unless `traffic` is
+// on: they are told by the call their tick comes from (the one at +0xD5B in both builds). A traffic car a chase takes
+// over (the police's) is ticked from the chase, and drawn.
 //
 // What is drawn, each part a setting of its own (`people`, `cars` choose whose):
 // - `route`: a person's waypoints (+0x24 of each record) as crosses joined by lines (green; the one he walks to in
@@ -40,15 +44,19 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
+#include <intrin.h>
 #include <string>
 #include <vector>
 #include "mml/mml.h"
+#include "views.h"
+
+#define SECTION "routes."   // its settings' keys, under its section of the config
 
 namespace {
 const MmlHost *H;
 MmlMod *M;
 bool g_on = true;
-bool g_showPeople = true, g_showCars = true;
+bool g_showPeople = true, g_showCars = true, g_showTraffic = false;
 bool g_showRoute = true, g_showTrail = true, g_showSteer = true;
 float g_range = 150.0f;
 double g_trailS = 10.0;          // the way kept, in seconds of the world's time
@@ -61,11 +69,13 @@ struct Layout {
     uintptr_t normal;        // ai_path: vector<ai_path_node>: begin, end at +4
     uintptr_t spec;          // ai_path: vector<ai_path_specnode>: begin, end at +4
     uintptr_t driverTick;    // C_driver::Tick
+    uintptr_t trafficCall;   // C_traffic_car::AI's call of it (+0xD5B in both builds): the traffic's cars
 };
 constexpr Layout kLayouts[] = {
-    {"1.2", 0x005026C0, 0x1C, 0x2C, 0x0043C4F0},
-    {"1.0", 0x0040C970, 0x04, 0x14, 0x00483360},
+    {"1.2", 0x005026C0, 0x1C, 0x2C, 0x0043C4F0, 0x004B099B},
+    {"1.0", 0x0040C970, 0x04, 0x14, 0x00483360, 0x004FC7DB},
 };
+uintptr_t g_trafficReturn = 0;   // where that call returns (0: not found in this Game.exe, every car is drawn)
 const Layout *g_layout = nullptr;
 // both builds' ai_path::Tick start so (sub esp,18h; push ebx/ebp/esi/edi; mov edi,[esp+30h]; mov bl,20h; mov esi,ecx;
 // mov ebp,[edi+68h]), and C_driver::Tick so (sub esp,144h; push ebx/ebp; mov ebp,ecx; push esi/edi; mov eax,[ebp+10h];
@@ -207,6 +217,7 @@ struct CarNode {
 // one car the game drives, as the last tick of its C_driver left it
 struct Driver {
     uintptr_t driver = 0, car = 0;
+    bool traffic = false;        // ticked by the traffic (C_traffic_car::AI)
     unsigned long long ticks = 0;
     double seen = 0, pathRead = -1;
     uint32_t pathBegin = 0, pathEnd = 0;
@@ -302,16 +313,22 @@ void SnapshotPath(uintptr_t path, uintptr_t owner) {
 }
 
 // ---- cars: copied at the end of C_driver::Tick, the path again when it is another or a while has passed
-void SnapshotDriver(uintptr_t driver) {
+void SnapshotDriver(uintptr_t driver, bool traffic) {
     uint8_t hdr[kDrvHeaderBytes];
     if (!H->mem_read(driver, hdr, sizeof hdr)) return;
     uint32_t car = 0, begin = 0, end = 0;
     std::memcpy(&car, hdr + kDrvCar, 4);
+    if (traffic && !g_showTraffic) {   // the traffic's car, not wanted: not copied (one a chase took is again)
+        for (size_t k = g_drivers.size(); k-- > 0;)
+            if (g_drivers[k].car == car) g_drivers.erase(g_drivers.begin() + static_cast<std::ptrdiff_t>(k));
+        return;
+    }
     const long long n = VecCount(hdr, kDrvPath, kCarNodeBytes, kMaxCarNodes, begin, end);
     if (!car || n <= 0) return;   // no car or no path: the game's Tick did nothing either
     Driver &d = Slot(g_drivers, [&](const Driver &x) { return x.car == car; }, kMaxDrivers);
     d.driver = driver;
     d.car = car;
+    d.traffic = traffic;
     d.seen = g_clock;
     d.ticks++;
     std::memcpy(&d.cursor, hdr + kDrvCursor, 4);
@@ -346,9 +363,12 @@ char __fastcall PathDetour(void *self, void *edx, uint32_t a1, void *owner, uint
     SnapshotPath(reinterpret_cast<uintptr_t>(self), reinterpret_cast<uintptr_t>(owner));
     return r;
 }
+// (the traffic's cars are told by the call they come from: this detour is the chain's first, entered by the thunk's
+// jmp, so its return address is the game's call; behind another mod's detour it is that detour, and the car drawn)
 char __fastcall DriverDetour(void *self, void *edx, int dtMs) {
+    const bool traffic = g_trafficReturn && reinterpret_cast<uintptr_t>(_ReturnAddress()) == g_trafficReturn;
     const char r = reinterpret_cast<DriverTickFn>(g_driverOrig)(self, edx, dtMs);
-    SnapshotDriver(reinterpret_cast<uintptr_t>(self));
+    SnapshotDriver(reinterpret_cast<uintptr_t>(self), traffic);
     return r;
 }
 
@@ -454,7 +474,7 @@ void OnRenderWorld(const MmlEvent *ev, void *) {
     if (g_showPeople)
         for (const Walker &w : g_walkers) if (inRange(w.way)) DrawWalker(v, w);
     if (g_showCars)
-        for (const Driver &c : g_drivers) if (inRange(c.way)) DrawDriver(v, c);
+        for (const Driver &c : g_drivers) if ((!c.traffic || g_showTraffic) && inRange(c.way)) DrawDriver(v, c);
     if (v.empty()) return;
     D3DMATRIX world = {};
     world._11 = world._22 = world._33 = world._44 = 1;
@@ -482,15 +502,16 @@ void OnRenderWorld(const MmlEvent *ev, void *) {
 }
 
 void ReadSettings() {
-    g_on = H->config_number(M, "show", 1) != 0;
-    g_showPeople = H->config_number(M, "people", 1) != 0;
-    g_showCars = H->config_number(M, "cars", 1) != 0;
-    g_showRoute = H->config_number(M, "route", 1) != 0;
-    g_showTrail = H->config_number(M, "trail", 1) != 0;
-    g_showSteer = H->config_number(M, "steer", 1) != 0;
-    g_range = static_cast<float>(H->config_number(M, "range", 150));
-    g_trailS = std::fmax(0.5, H->config_number(M, "trail_s", 10));
-    H->hotkey(M, H->config_string(M, "hotkey", "F6"), [](void *) { g_on = !g_on; H->config_set(M, "show", g_on ? "true" : "false"); }, nullptr);
+    g_on = H->config_number(M, SECTION "show", 1) != 0;
+    g_showPeople = H->config_number(M, SECTION "people", 1) != 0;
+    g_showCars = H->config_number(M, SECTION "cars", 1) != 0;
+    g_showTraffic = H->config_number(M, SECTION "traffic", 0) != 0;
+    g_showRoute = H->config_number(M, SECTION "route", 1) != 0;
+    g_showTrail = H->config_number(M, SECTION "trail", 1) != 0;
+    g_showSteer = H->config_number(M, SECTION "steer", 1) != 0;
+    g_range = static_cast<float>(H->config_number(M, SECTION "range", 150));
+    g_trailS = std::fmax(0.5, H->config_number(M, SECTION "trail_s", 10));
+    H->hotkey(M, H->config_string(M, SECTION "hotkey", "F6"), [](void *) { g_on = !g_on; H->config_set(M, SECTION "show", g_on ? "true" : "false"); }, nullptr);
 }
 
 void OnEvent(const MmlEvent *ev, void *) {
@@ -527,7 +548,7 @@ void WayJson(std::string &out, const Way &w, const std::vector<V> &route) {
     Vec(out, w.now);
 }
 
-// actor_route.state: every person and car the game ticked, as data
+// debug_views.routes.state: every person and car the game ticked, as data
 int State(const char *, MmlReply *reply, void *) {
     std::string out = "{\"walkers\":[";
     char b[512];
@@ -568,9 +589,9 @@ int State(const char *, MmlReply *reply, void *) {
     out += "],\"drivers\":[";
     for (size_t k = 0; k < g_drivers.size(); k++) {
         const Driver &d = g_drivers[k];
-        snprintf(b, sizeof b, "%s{\"car\":\"0x%08llX\",\"driver\":\"0x%08llX\",\"ticks\":%llu,\"s_ago\":%.3f,\"cursor\":%u,\"nodes\":%zu,",
-                 k ? "," : "", static_cast<unsigned long long>(d.car), static_cast<unsigned long long>(d.driver), d.ticks,
-                 g_clock - d.seen, d.cursor, d.nodes.size());
+        snprintf(b, sizeof b, "%s{\"car\":\"0x%08llX\",\"driver\":\"0x%08llX\",\"traffic\":%s,\"ticks\":%llu,\"s_ago\":%.3f,\"cursor\":%u,\"nodes\":%zu,",
+                 k ? "," : "", static_cast<unsigned long long>(d.car), static_cast<unsigned long long>(d.driver),
+                 d.traffic ? "true" : "false", d.ticks, g_clock - d.seen, d.cursor, d.nodes.size());
         out += b;
         std::vector<V> route;
         for (const CarNode &n : d.nodes) route.push_back(n.Pos());
@@ -601,32 +622,38 @@ int State(const char *, MmlReply *reply, void *) {
 bool HookAt(uintptr_t at, const uint8_t *start, size_t n, void *detour, void **orig, const char *what) {
     uint8_t got[32];
     if (n > sizeof got || !H->mem_read(at, got, n) || std::memcmp(got, start, n) != 0) {
-        H->log(M, MML_LOG_WARN, "actor_route: %s is not at 0x%08X in this Game.exe", what, static_cast<unsigned>(at));
+        H->log(M, MML_LOG_WARN, "routes: %s is not at 0x%08X in this Game.exe", what, static_cast<unsigned>(at));
         return false;
     }
     if (!H->hook(M, at, detour, orig)) {
-        H->log(M, MML_LOG_WARN, "actor_route: %s could not be hooked", what);
+        H->log(M, MML_LOG_WARN, "routes: %s could not be hooked", what);
         return false;
     }
     return true;
 }
 } // namespace
 
-MML_EXPORT uint32_t mml_mod_api(void) { return MML_API_VERSION; }
-
-MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
+int RoutesLoad(const MmlHost *host, MmlMod *mod) {
     H = host;
     M = mod;
     if (!MML_HAS(host, hook) || !MML_HAS(host, frame_world) || !MML_HAS(host, camera_ray)) return 1;   // a loader older than this mod
     for (const Layout &l : kLayouts)
         if (std::strcmp(host->game_build(), l.build) == 0) g_layout = &l;
     if (!g_layout) {
-        host->log(mod, MML_LOG_ERROR, "actor_route: game %s has no layout here", host->game_build());
+        host->log(mod, MML_LOG_ERROR, "routes: game %s has no layout here", host->game_build());
         return 1;
     }
     const bool people = HookAt(g_layout->pathTick, kPathTickStart, sizeof kPathTickStart, reinterpret_cast<void *>(&PathDetour), &g_pathOrig, "ai_path::Tick");
     const bool cars = HookAt(g_layout->driverTick, kDriverTickStart, sizeof kDriverTickStart, reinterpret_cast<void *>(&DriverDetour), &g_driverOrig, "C_driver::Tick");
     if (!people && !cars) return 1;
+    // the traffic's call of C_driver::Tick: an E8 call there, to it (else every car is drawn as one of the missions')
+    uint8_t call[5];
+    int32_t rel = 0;
+    if (cars && host->mem_read(g_layout->trafficCall, call, sizeof call) && call[0] == 0xE8 &&
+        (std::memcpy(&rel, call + 1, 4), g_layout->trafficCall + 5 + rel == g_layout->driverTick))
+        g_trafficReturn = g_layout->trafficCall + 5;
+    else if (cars)
+        host->log(mod, MML_LOG_WARN, "routes: the traffic's call of C_driver::Tick is not at 0x%08X: its cars are not told apart", static_cast<unsigned>(g_layout->trafficCall));
     ReadSettings();
     host->subscribe(mod, MML_EVENT_FRAME, OnFrame, nullptr);
     host->subscribe(mod, MML_EVENT_MISSION_TICK, OnMissionTick, nullptr);
@@ -634,9 +661,9 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->subscribe(mod, MML_EVENT_CONFIG_CHANGED, OnEvent, nullptr);
     host->subscribe(mod, MML_EVENT_MISSION_CLOSE, OnEvent, nullptr);
     host->subscribe(mod, MML_EVENT_ACTOR_DESTROYED, OnEvent, nullptr);
-    host->command(mod, "state", "every person and car the game moves along a route: its waypoints or path, the point it is sent to, its way against the route", State, nullptr);
-    host->log(mod, MML_LOG_INFO, "actor_route loaded (game %s; people %s, cars %s)", host->game_build(), people ? "on" : "off", cars ? "on" : "off");
+    host->command(mod, "routes.state", "every person and car the game moves along a route: its waypoints or path, the point it is sent to, its way against the route", State, nullptr);
+    host->log(mod, MML_LOG_INFO, "routes loaded (game %s; people %s, cars %s)", host->game_build(), people ? "on" : "off", cars ? "on" : "off");
     return 0;
 }
 
-MML_EXPORT void mml_mod_unload(MmlMod *) {}
+void RoutesUnload() {}

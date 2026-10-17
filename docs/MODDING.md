@@ -98,7 +98,7 @@ float w = H->draw_text_width(MML_FONT_SMALL, 14, "how wide is this");
 - **4096 items a frame**, every mod's together: what a mod queues past them is dropped (the log says so once, and
   `call draw.state` counts `dropped_last_frame`). A mod that draws in the world (lines over the scene) draws what is
   near, and one line a straight edge: cut it at the camera's near plane rather than into many pieces
-  (mods/examples/trigger_view, `Line3`).
+  (mods/examples/debug_views/triggers.cpp, `Line3`).
 - It is the game's own 2D drawing, at the end of its 2D pass (over the HUD and the menus), so `screenshot` shows
   it. Nothing is drawn while the game loads.
 - A fault while your items are drawn turns your drawing off until the mod is reloaded (the log says so); the game
@@ -140,9 +140,9 @@ H->render_camera(&cam);          /* view, proj (the device's), eye, axes, fields
   the camera now).
 - `mods/examples/world_marker` (not enabled by default): a diamond and a beam over the player, fixed-function
   Direct3D 9, hidden by what stands in front (`world_marker.at {x, y, z}` puts it anywhere).
-- `mods/examples/trigger_view` (not enabled by default): lines over the frame instead (through walls), with
-  `camera_project`: the mission scripts' detectors and areas, a debug view (F7; Options > Mods > Trigger view;
-  `trigger_view.list`). It reads the scripts' programs and names their commands with `mml/game/script_commands.h`
+- `mods/examples/debug_views` (not enabled by default), its triggers view: lines over the frame instead (through
+  walls), with `camera_project`: the mission scripts' detectors and areas (F7; Options > Mods > Debug views >
+  Triggers; `debug_views.triggers.list`). It reads the scripts' programs and names their commands with `mml/game/script_commands.h`
   (`game::ScriptCommandName(opcode)`, `game::ScriptOpcode("detector_inrange")`: the numbers differ between the builds).
 - Mods that use `game.h` (the player, cars) call `game::Detect(H->module_base("LS3DF.dll"))` in `mml_mod_load`
   first: its helpers read the build's addresses.
@@ -1208,8 +1208,18 @@ seen while it is dragged; the file in the data folder is written once the change
 - **The page**: the title (`title`, else the mod's `name` up to a colon), a row a control, **Defaults** (every key on
   the page back to `config.json`'s) and **Back**. Esc on the page returns to the list, and on the list to Options,
   as the game's own pages do. A key is a path (`"overlay.x"`), as for `config_number`.
-- `call panel.state` shows what the panel made of every mod's block (each control's kind, value and what is shown);
-  `call panel.open {"mod": "<id>"}` opens a page without the clicks. A control the panel cannot make (a slider with
+- **Sections** (a mod of several parts): `"sections": [{"title": "Routes", "controls": [...]}, ...]` in place of (or
+  after) `"controls"`. Each is a tab, as the game's own Controls page has them (Player, Car, Other): buttons along the
+  bottom of the page before Defaults and Back (a row of their own above them past four), the page titled with the
+  tab shown ("Debug views: Routes"); a tab makes the page again with its controls (Defaults resets that tab's). Keys
+  under a section's name keep them apart in `config.json` (`"routes.show"`, `{"routes": {"show": true}}`):
+  mods/examples/debug_views does so.
+- **The page never runs off the screen**: a section (or the one list) whose rows do not fit in the 600 units is cut
+  into parts of about the same height, "Race 1/2", "Race 2/2", tabs as the sections are (some 17 rows of one line
+  fit a page). Short labels (20 characters: one line) keep a section whole.
+- `call panel.state` shows what the panel made of every mod's block (each control's kind, value and what is shown,
+  its sections and the parts its page is cut into); `call panel.open {"mod": "<id>", "part": "Race 2/2"}` opens a
+  page (a part by its number or its name) without the clicks. A control the panel cannot make (a slider with
   no `max`, a choice with no `options`) is left out, and the log says why.
 
 ### A mod's own files in the game

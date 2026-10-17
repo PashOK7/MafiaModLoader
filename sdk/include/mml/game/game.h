@@ -227,7 +227,7 @@ inline std::string TextUtf8(const char *text) {
 // seen in the running 1.2 game). Positions are metres, the world's; +y is up.
 constexpr int kActorTypeCar = 4;
 
-// The scripts' triggers (mods/examples/trigger_view; knowledge/structs, read in both builds: the same offsets).
+// The scripts' triggers (mods/examples/debug_views, triggers; knowledge/structs, read in both builds: the same offsets).
 // C_detector, actor kind 5: an invisible actor running a script (st0rm94's structs/detector.md). Its program is
 // embedded at kDetProgram; DETECTOR_INRANGE counts the people within a radius whose human type (C_human +0x5FC)
 // meets kDetInrangeMask (0x1 the player); kDetSignal the byte DETECTOR_SETSIGNAL / ISSIGNAL use; while

@@ -46,6 +46,7 @@ void ModRemoved(MmlMod *mod);                   // before its items leave the re
 int PageOpen(MmlMod *mod, bool bridge, const char *name, const MmlMenuControl *controls, int count, MmlMenuFn fn, void *user,
              std::string *err);
 void PageClose(MmlMod *mod, bool bridge);
+bool PageIsOpen(MmlMod *mod, bool bridge);      // its page is made or waits to be (not one that is closing)
 int PageText(MmlMod *mod, bool bridge, int id, const char *text);
 int PageValue(MmlMod *mod, bool bridge, int id, float value);
 int PageGetValue(MmlMod *mod, bool bridge, int id, float *value);

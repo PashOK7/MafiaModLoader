@@ -1,4 +1,4 @@
-// race_view's paint (race_view.cpp, Pass): the race's gates, the player's gate zone and the car's probe point painted on
+// debug_views, race: the paint (race.cpp, Pass): the race's gates, the player's gate zone and the car's probe point painted on
 // the world's surfaces, from the frame's depth. A gate's line is infinite in the ground plane (x, z): it is painted
 // wherever a surface of the world meets its vertical plane, so it lies on the ground where there is ground and on the
 // walls it crosses, and what stands in front of it hides it. The part between the gate's two nodes is painted

@@ -214,7 +214,7 @@ autosplitter; kept outside it, not ported). Checked against the above:
   (constant at 0x624058); a pedestrian hit (type 5) knocks down fully above strength 16 (0x624078). Falling and
   landing damage is hit type 6 (from 0x57B660).
 
-## A person's route: ai_path (read 2026-10-17 in both builds' code, seen in both labs; mods/examples/actor_route)
+## A person's route: ai_path (read 2026-10-17 in both builds' code, seen in both labs; mods/examples/debug_views, routes)
 
 - **code** `ai_path::Tick` (1.2 0x5026C0, 1.0 0x40C970): thiscall `(ai_path*, uint, C_human *owner, bool, bool)`,
   ret 0x10, every tick for a person sent along a route. It hands `HumanMoveTo` (1.2 0x446470, 1.0 0x4B0280;
@@ -242,7 +242,7 @@ autosplitter; kept outside it, not ported). Checked against the above:
   His container offsets are 1.0's; 1.2's differ (above). Reported to him:
   https://github.com/st0rm94/mafia-reverse-engineering-export/issues/2
 
-## A car's path: C_driver (read 2026-10-17 in both builds' code, seen in both labs; mods/examples/actor_route)
+## A car's path: C_driver (read 2026-10-17 in both builds' code, seen in both labs; mods/examples/debug_views, routes)
 
 - **code** Every car the game drives has a `C_driver`: the traffic (`C_traffic_car::AI`, 1.2 0x4AFC40 calls it),
   a chase (`C_sledovacka::TickDriver`, 1.2 0x4A2A80: mission 15-07's Sergio), the police and the racers.
