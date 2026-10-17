@@ -1,0 +1,11 @@
+{
+  "id": "hello_rust",
+  "name": "Hello (Rust): a native mod in Rust through the mml crate",
+  "version": "0.1.0",
+  "type": "native",
+  "entry": "hello_rust.dll",
+  "enabled": false,
+  "builds": ["1.2", "1.0"],
+  "load_order": 100,
+  "depends": ["core"]
+}

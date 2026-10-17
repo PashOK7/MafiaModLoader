@@ -612,6 +612,19 @@ What is done, what comes next and later, and what is known to be missing or wron
   `humans.list`, `human.skeleton`, `human.pose` (held for a time). The example `mods/examples/puppet` (a wave, a
   T-pose) seen in both labs on the screen and in a scene view's mirror; offline tests with no game.
 
+- **Mods in Rust** (2026-10-17; the order's item 10): the crate `sdk/rust/mml`. `mml::sys` is the whole of `mml.h`
+  made by bindgen (`tools/rust_sys`, committed, checked by the offline tests; its layouts asserted at compile time
+  for i686: MmlHost 684 bytes, MmlEvent 84, as the C side); over it a safe layer: closures for events, commands,
+  hotkeys, menus' items, scripts, timers, zones and use-points (freed at the unload, or when removed), `command_json`
+  with serde types, state and settings, memory, hooks, the world's actors, the game's state, the HUD's lines, sound;
+  the rest through `host_fn!` (each member checked against the loader's table). A panic is logged with its place and
+  raised as `0xE0525553` into the loader's fault guard (the trampolines are `extern "C-unwind"`). `mml::entry!(load)`
+  makes the exports. CMake's `mml_add_rust_mod` runs cargo (`build/x86/rust`), `tools/new_mod.py --rust` makes one.
+  The example `hello_rust` seen in the 1.2 and 1.0 labs (its line on the frame, a car spawned, the console's lines,
+  a hotkey rebound by `config.set`, 10 reloads: 0 MB, 0 handles, 0 threads a reload, its counts kept); offline:
+  the test mod `kit_rs` (typed params, errors, a timer, `post` from a thread, state across a reload, the closures
+  dropped at the unload, a panic faulting the mod as a C mod's fault).
+
 ## Next, by importance
 
 **The goal** (the owner, 2026-10-14): a toolkit strong enough for whatever mod a user can think of, written by another
@@ -652,7 +665,7 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
    controls menu, another kind of vehicle).
 9. *(Done 2026-10-17: 9a structures by name, item 24; 9b crash triage in one call, item 25; 9c restore points; see "Done".)* The agent's tools (items 24, 25 and the
    snapshots in Later: structures by name, crash triage in one call, restore points).
-10. Mod languages (Later: the Rust crate; no script mods: Lua dropped).
+10. *(Done 2026-10-17: the Rust crate; see "Done". No script mods: Lua dropped.)* Mod languages.
 11. Orders for the people made (item 26).
 12. Tests in the real game, as scripts of steps (item 23).
 13. *(Done 2026-10-17, before 8 at the owner's wish; see "Done".)* The tuning panel (item 18).
@@ -801,8 +814,7 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
 - *(Done 2026-10-17, block 9c: restore points; see "Done".)* **State snapshots for experiments** (a car's state is
   there: `car.save` / `car.restore`): the game's own save and load used as a restore point, to repeat an experiment
   from the same moment.
-- **Rust mods**: a crate `mml` over `mml.h` (types, a safe wrapper, a `#[mml_mod]` entry macro), an example, built
-  for `i686-pc-windows-msvc`.
+- *(Done 2026-10-17; see "Done".)* **Rust mods**.
 - **The knowledge base for 1.0**: only 1.2's decompile is imported; 1.0 addresses are named through their 1.2 twins,
   and 1.0's menus (which have no twins) are read in st0rm94's annotated decompile (`re/ext/...`): import its names
   for 1.0 (`kb_search` on a 1.0 address).
@@ -848,7 +860,19 @@ merged, sorted by importance):
   sound, control, interaction, the HUD, a mod's state in the saves); animations joined item 6, queries item 8,
   the game's events item 7, a mod's own camera and world-to-screen item 9.
 
+2026-10-17, the Rust crate:
+
+- **"A `#[mml_mod]` entry macro"**: an attribute macro needs a proc-macro crate of its own (syn, quote) in every
+  mod's build for what one declarative macro does: `mml::entry!(load)` makes the three exports around a plain
+  `fn load(host) -> Result<(), E>`.
+
 ## Known gaps
+
+- **The Rust crate's safe layer** (sdk/rust/mml): it wraps what most mods use; the graphics bridge and its passes,
+  scene views, the camera override, geometry, shaders, props, the meshes, the models, people's skeletons and
+  animations, particles, the weather, the vehicles' hook, the menus' pages and services are reached through
+  `mml::sys` and `host_fn!` (unsafe, as in C), to be wrapped as Rust mods need them. The game's layouts
+  (`game.h`, `game_build.h`) have no Rust form. A call posted (`Poster`) that the unload drops leaks its closure.
 
 - **A game folder no ANSI code page spells** (a Cyrillic name on a 1252 system, a CJK one on a 1251 system): the
   game, the loader and the mods' own files work there (both labs, 2026-10-17), but **dxwrapper does not**: its

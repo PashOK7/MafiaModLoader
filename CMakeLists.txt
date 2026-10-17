@@ -174,6 +174,52 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
         add_custom_target(files_${id} ALL ${cmds} COMMENT "${id}: a mod of files" VERBATIM)
     endfunction()
 
+    # mml_add_rust_mod(<id> <dir> [DEST <folder>]): a native mod in Rust (docs/MODDING.md "Mods in Rust"): the crate
+    # in <dir> (a cdylib named <id>, on sdk/rust/mml) built by cargo for i686-pc-windows-msvc into <build>/rust (one
+    # target folder for every Rust mod: the mml crate and the dependencies built once), then <id>.dll, its .pdb,
+    # mod.json, config.json and files\ copied to <out>/mml/mods/<id>/ (or DEST: a test mod's, not a mod of the build).
+    # Cargo runs at every build of the target (it knows what changed). No cargo, or no i686 target installed: the
+    # Rust mods are left out, saying so (`rustup target add i686-pc-windows-msvc`).
+    find_program(MML_CARGO cargo HINTS $ENV{USERPROFILE}/.cargo/bin)
+    find_program(MML_RUSTC rustc HINTS $ENV{USERPROFILE}/.cargo/bin)
+    set(MML_RUST OFF)
+    if(MML_CARGO AND MML_RUSTC)
+        execute_process(COMMAND ${MML_RUSTC} --print sysroot OUTPUT_VARIABLE rust_sysroot OUTPUT_STRIP_TRAILING_WHITESPACE)
+        if(EXISTS ${rust_sysroot}/lib/rustlib/i686-pc-windows-msvc)
+            set(MML_RUST ON)
+        else()
+            message(WARNING "Rust mods left out: no i686-pc-windows-msvc target (rustup target add i686-pc-windows-msvc)")
+        endif()
+    else()
+        message(STATUS "Rust mods left out: no cargo")
+    endif()
+    function(mml_add_rust_mod id dir)
+        cmake_parse_arguments(PARSE_ARGV 2 arg "" "DEST" "")
+        if(NOT MML_RUST)
+            return()
+        endif()
+        if(arg_DEST)
+            set(dest ${arg_DEST})
+        else()
+            set_property(GLOBAL APPEND PROPERTY MML_MODS ${id})
+            set(dest ${MML_OUT}/mml/mods/${id})
+        endif()
+        set(tdir ${CMAKE_BINARY_DIR}/rust)
+        set(built ${tdir}/i686-pc-windows-msvc/$<IF:$<CONFIG:Debug>,debug,release>)
+        set(cmds COMMAND ${MML_CARGO} build --manifest-path ${dir}/Cargo.toml --target i686-pc-windows-msvc
+                     --target-dir ${tdir} $<$<NOT:$<CONFIG:Debug>>:--release>
+                 COMMAND ${CMAKE_COMMAND} -E make_directory ${dest}
+                 COMMAND ${CMAKE_COMMAND} -E copy_if_different ${built}/${id}.dll ${built}/${id}.pdb ${dest}
+                 COMMAND ${CMAKE_COMMAND} -E copy_if_different ${dir}/mod.json ${dest}/mod.json)
+        if(EXISTS ${dir}/config.json)
+            list(APPEND cmds COMMAND ${CMAKE_COMMAND} -E copy_if_different ${dir}/config.json ${dest}/config.json)
+        endif()
+        if(EXISTS ${dir}/files)
+            list(APPEND cmds COMMAND ${CMAKE_COMMAND} -E copy_directory ${dir}/files ${dest}/files)
+        endif()
+        add_custom_target(rust_${id} ALL ${cmds} WORKING_DIRECTORY ${dir} COMMENT "${id}: a mod in Rust (cargo)" VERBATIM)
+    endfunction()
+
     mml_add_mod(core ${CMAKE_SOURCE_DIR}/mods/core mods/core/core.cpp)
     target_include_directories(mod_core PRIVATE third_party/json)
     mml_add_mod(hello_c ${CMAKE_SOURCE_DIR}/mods/examples/hello_c mods/examples/hello_c/hello.c)
@@ -213,6 +259,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
         mods/examples/debug_views/routes.cpp mods/examples/debug_views/triggers.cpp mods/examples/debug_views/race.cpp
         mods/examples/debug_views/walls.cpp
         SHADERS race.hlsl:PsRace:ps_5_0 walls.hlsl:PsWalls:ps_5_0)
+    mml_add_rust_mod(hello_rust ${CMAKE_SOURCE_DIR}/mods/examples/hello_rust)
     # (tools/new_mod.py adds a mod's line above this one)
 
     # The mods this build defines: <out>/mml/build_mods.txt, one id a line (written only when it changes), which deploy
@@ -257,6 +304,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     mml_add_test_mod(kit)
     mml_add_test_mod(heavy)
     mml_add_test_mod(files_b)   # (its files\ folder and files_a, a mod of files alone, are copied by run_tests.py)
+    mml_add_rust_mod(kit_rs ${CMAKE_SOURCE_DIR}/tests/mods/kit_rs DEST ${CMAKE_BINARY_DIR}/harness/mml/mods/kit_rs)
     # its libraries in its folder: one it imports, one it loads by name (each load's own folder: host/lifecycle.cpp)
     foreach(lib heavylib heavyrt)
         add_library(testlib_${lib} SHARED tests/mods/heavy/${lib}.c)

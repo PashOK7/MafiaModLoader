@@ -1,0 +1,7 @@
+{
+  // The defaults of hello_rust's settings (changes: `config.set {"mod": "hello_rust", "key": "show", "value": false}`
+  // or <game>\mml\data\hello_rust\config.json). Read again as they change.
+  "show": true,            // the line at the top left: the mission, the player's place, health and money
+  "hotkey": "Ctrl+F9",     // a line in the game's console: where the player is
+  "car": "Bolt-Thrower"    // what `hello_rust.spawn` makes when no car is named (`call world.cars` lists them)
+}

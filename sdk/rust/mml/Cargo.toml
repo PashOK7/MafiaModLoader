@@ -1,0 +1,16 @@
+[package]
+name = "mml"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+publish = false
+description = "MafiaModLoader's mod kit for Rust: the C ABI of mml.h (sys) and a safe layer over it"
+license = "MIT"
+
+[features]
+# commands with typed parameters and replies, settings and saved state as serde types
+json = ["dep:serde", "dep:serde_json"]
+
+[dependencies]
+serde = { version = "1", optional = true }
+serde_json = { version = "1", optional = true }

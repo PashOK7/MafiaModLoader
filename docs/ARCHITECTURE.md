@@ -17,7 +17,7 @@
       │                                                         │  hotkeys, settings, data folders
       │                                                         └─ mods: mml\mods\<id>\ (each hot-reloadable)
       │                                                              ├─ core   (the game's live state)
-      │                                                              ├─ telemetry, hello_c, your mods (C, C++, Rust...)
+      │                                                              ├─ telemetry, hello_c, hello_rust, your mods (C, C++, Rust...)
       │                                                              └─ (to come) the sidecar link
    (to come) mml-sidecar64.exe: 64-bit mods, past the 32-bit address space, shared memory with the game
 ```

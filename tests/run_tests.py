@@ -847,15 +847,75 @@ def files_tests(b):
     check('files: files_b back over files_a', opn('tables\\test.txt').get('text') == 'files_b')
 
 
+def rust_tests(b):
+    """The Rust mod kit (sdk/rust/mml): kit_rs (tests/mods/kit_rs) and the example hello_rust, through the bridge."""
+    if not RUST:
+        print('SKIPPED: the Rust mods (no kit_rs.dll: cargo or the i686-pc-windows-msvc target missing at the configure)')
+        return
+    gen = subprocess.run(['cargo', 'run', '--release', '--quiet', '--manifest-path',
+                          os.path.join(ROOT, 'tools', 'rust_sys', 'Cargo.toml'), '--', '--check'],
+                         capture_output=True, text=True)
+    check('sdk/rust/mml/src/sys.rs is what mml.h gives (tools/rust_sys --check)', gen.returncode == 0, gen.stdout + gen.stderr)
+    s = b.call('kit_rs.status')
+    r = s.get('result') or {}
+    check('kit_rs: loaded, its id, folder, settings (a string, a number, a missing key\'s default), no game',
+          s['ok'] and r['loads'] == 1 and r['id'] == 'kit_rs' and r['dir_ends'] and r['name'] == 'kit_rs'
+          and r['speed'] == 12.5 and r['missing'] == -7 and r['build'] == 'unknown' and r['mission'] == '', s)
+    time.sleep(0.2)
+    check('kit_rs: its FRAME handler runs', b.call('kit_rs.status')['result']['frames'] > r['frames'])
+    check('kit_rs: typed params (serde)', b.call('kit_rs.add', {'a': 2, 'b': 40}).get('result') == 42)
+    r = b.call('kit_rs.add', {'a': 2})
+    check('kit_rs: params missing: an error saying so', not r['ok'] and 'params' in str(r) and 'b' in str(r), r)
+    r = b.call('kit_rs.fail')
+    check('kit_rs: an Err is an error reply', not r['ok'] and 'refused on purpose' in str(r), r)
+    r = b.call('kit_rs.timer')
+    check('kit_rs: a timer added (it waits for the mission\'s time) and removed; one of 0 ms refused: None',
+          r['ok'] and r['result']['id'] > 0 and r['result']['removed'] and r['result']['zero_refused'], r)
+    check('kit_rs: post from another thread', b.call('kit_rs.post').get('result') is True)
+    time.sleep(0.2)
+    check('kit_rs: ... run on the game thread at a frame', b.call('kit_rs.status')['result']['posted'] == 1)
+    before = b.call('kit_rs.status')['result']
+    r = b.call('mod.reload', {'id': 'kit_rs'})
+    check('kit_rs: reloaded', r['ok'] and r['result']['generation'] == 2, r)
+    after = b.call('kit_rs.status')['result']
+    check('kit_rs: state across the reload (bytes and JSON)', after['loads'] == 2 and after['frames'] >= before['frames'], (before, after))
+    tail = '\n'.join(b.call('log.tail', {'lines': 100})['result'])
+    check('kit_rs: what its closures held dropped at the unload', 'kit_rs: its closures dropped' in tail, tail[-600:])
+    # the example
+    r = b.call('hello_rust.status')
+    check('hello_rust: status', r['ok'] and r['result']['loads'] == 1 and r['result']['game'] == 'unknown', r)
+    check('hello_rust: say', b.call('hello_rust.say', {'text': 'hi from the tests'})['ok'])
+    r = b.call('hello_rust.spawn')
+    check('hello_rust: spawn with no game: an error saying why', not r['ok'] and 'no player' in str(r), r)
+    # a panic: logged with its message and place, then a fault of the mod's as a C mod's
+    r = b.call('kit_rs.panic')
+    check('kit_rs: a panic in a command: an error reply', not r['ok'] and 'faulted' in str(r), r)
+    time.sleep(0.2)
+    loaded = {m['id']: m['loaded'] for m in b.call('mods.list')['result']}
+    check('kit_rs: unloaded at the next frame, the game goes on', loaded.get('kit_rs') is False and b.call('ping')['ok'], loaded)
+    tail = '\n'.join(b.call('log.tail', {'lines': 100})['result'])
+    check('kit_rs: the panic logged: its message and its place',
+          re.search(r'panicked in a command: kit_rs panics on purpose at .*lib\.rs:\d+', tail) is not None, tail[-800:])
+    r = b.call('events.since', {'types': 'MOD_FAULTED', 'filter': {'name': 'kit_rs'}})
+    ev = r['result']['events'] if r['ok'] else []
+    check('kit_rs: MOD_FAULTED with the panic\'s exception (E0525553)', len(ev) == 1 and ev[0]['data']['exception'].upper() == 'E0525553', r)
+    r = b.call('mod.load', {'id': 'kit_rs'})
+    check('kit_rs: loaded again after its fault', r['ok'] and b.call('kit_rs.add', {'a': 1, 'b': 1}).get('result') == 2, r)
+
+
+RUST = os.path.exists(os.path.join(HARNESS, 'mml', 'mods', 'kit_rs', 'kit_rs.dll'))
+
+
 def main():
     # the harness's game folder: the loader, the test mods and the shipped ones
     mods = os.path.join(HARNESS, 'mml', 'mods')
-    for mod in ('core', 'hello_c', 'boxes'):
+    shipped = ('core', 'hello_c', 'boxes') + (('hello_rust',) if RUST else ())
+    for mod in shipped:
         shutil.rmtree(os.path.join(mods, mod), ignore_errors=True)
         shutil.copytree(os.path.join(OUT, 'mml', 'mods', mod), os.path.join(mods, mod))
     # the examples ship disabled; the harness loads hello_c and boxes from the start (boxes' world kept across the
     # loads boxes_tests makes)
-    for mod in ('hello_c', 'boxes'):
+    for mod in shipped[1:]:
         manifest = os.path.join(mods, mod, 'mod.json')
         with open(manifest) as f:
             text = f.read()
@@ -1262,6 +1322,7 @@ def main():
         files_tests(b)
         heavy_tests(b)
         boxes_tests(b)
+        rust_tests(b)
         methods_tests(b)
         r = b.call('nonexistent.method')
         check('an unknown method: an error', not r['ok'])

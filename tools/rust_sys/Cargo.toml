@@ -1,0 +1,9 @@
+[package]
+name = "rust_sys"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "sdk/rust/mml/src/sys.rs made from sdk/include/mml/mml.h by bindgen"
+
+[dependencies]
+bindgen = { version = "0.71", default-features = false, features = ["runtime"] }

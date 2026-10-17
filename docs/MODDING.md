@@ -30,6 +30,59 @@ MML_EXPORT void mml_mod_unload(MmlMod *mod) { ... }
 `host` is a table of functions; `mod` is this load of the mod (pass it back to the host). Plain C works too
 (`mods/examples/hello_c`); C++ mods may include the game's layouts (`mml/game/game.h`).
 
+### Mods in Rust
+
+```bat
+python tools/new_mod.py my_mod --rust
+```
+
+makes `Cargo.toml` (a `cdylib` on the crate `sdk/rust/mml`, its `json` feature on), `.cargo/config.toml` (the
+target `i686-pc-windows-msvc`: the game is 32-bit, so `cargo build` in the folder makes the DLL it loads),
+`src/lib.rs` (the same working frame as the C++ one), `mod.json`, `config.json`, and the line
+`mml_add_rust_mod(my_mod ...)` in `CMakeLists.txt`: the CMake build runs cargo (every Rust mod in one target folder,
+`build/x86/rust`) and copies the DLL, its `.pdb` (the fault reports and `crash_triage` name its functions) and the
+manifests as for a C++ mod; `deploy` takes it the same way. Once: `rustup target add i686-pc-windows-msvc` (without
+it the configure leaves the Rust mods out and says so).
+
+```rust
+fn load(host: mml::Host) -> Result<(), String> {
+    let frames = std::rc::Rc::new(std::cell::Cell::new(0u32));
+    let f = frames.clone();
+    host.subscribe(mml::EventType::FRAME, move |_| f.set(f.get() + 1));
+    host.command_json("status", "frames seen", move |()| Ok(frames.get()));   // serde params and reply
+    mml::info!(host, "hello from Rust (game {})", host.game_build());
+    Ok(())                                                                     // Err: not loaded, logged
+}
+mml::entry!(load);   // mml_mod_api, mml_mod_load, mml_mod_unload
+```
+
+- **The crate** has two layers. `mml::sys` is all of `mml.h` as it is (made by `tools/rust_sys` with bindgen and
+  committed: no libclang needed to build a mod; `tests/run_tests.py` checks it is what `mml.h` gives): every struct,
+  constant and host function, the named enums as newtypes (`EventType::FRAME`, `Font::SMALL`). Over it a safe layer
+  ([`sdk/rust/mml/src/lib.rs`](../sdk/rust/mml/src/lib.rs)): the log (`info!`, `warn!`...), memory (`read::<T>`,
+  `write`), hooks (`hook` with a `static Original`), events (`subscribe`, `Event`'s accessors), commands
+  (`command`, `command_json`), state across reloads (`state_put`, `state_get`, `_json`), settings, drawing, keys,
+  actions and hotkeys (`Hotkey::rebind`), the mission, menus' items, the script machine (`script_run`, its end a
+  closure), the world's actors (`player`, `humans`, `spawn_car`, `spawn_human`, `teleport`, `give_item`, `seat`,
+  `position`, `world_ray`, `camera_project`), the game's state (money, health, items), the HUD's lines, sound,
+  timers, zones and use-points. What it does not wrap is one call away: `mml::host_fn!(host, vehicle_kinds)` gives
+  the host's function, checked against the loader's table (`None` from a loader without it), to call with
+  `host.module()`.
+- **Callbacks are closures** (`Fn + 'static`), freed at the unload (or when their timer, zone or use-point is
+  removed). They run on the game thread, one at a time, and may be entered again from inside themselves (a call into
+  the host that sends an event): keep their state in `Cell` / `RefCell` behind an `Rc`. `Host` is `Copy` and not
+  `Send`; `host.poster()` is, for a thread of the mod's own (`poster.post(|host| ...)` runs at the next frame).
+  `host.on_unload(...)` runs at the unload, before the closures are freed: what must survive a reload goes there.
+- **A panic** is caught at the edge of the mod, logged (`panicked in a command: <message> at src/lib.rs:12`) and
+  raised as the exception `0xE0525553` (`mml::PANIC_EXCEPTION`): the loader takes it as any fault of a mod's (the
+  mod unloaded at the next frame, `MOD_FAULTED`, the game goes on). Keep `panic = "unwind"` (Cargo's default): with
+  `"abort"` a panic ends the game. A faulted mod's `on_unload` does not run (as a C mod's `mml_mod_unload`).
+- The game's layouts (`mml/game/game.h`, `game_build.h`) are C++ only: in Rust the host's functions, `inspect` and
+  `mem_read` over MCP for a layout, `host.read` for a field.
+- `mods/examples/hello_rust`: hello_c's counts kept across reloads, a line at the top left (the mission, the
+  player's place, health, money), a hotkey from the settings bound again when they change, and `hello_rust.status`,
+  `.say {"text"}`, `.spawn {"car"}` (a car of the game's list 6 m in front of the player).
+
 ## 2. Build it, put it into the game, look
 
 ```bat
@@ -1457,5 +1510,6 @@ high-resolution timer if asked, and shows the frame rate and the game's clock st
 
 ## Not there yet
 
-A Rust crate, 64-bit sidecar mods: `docs/ROADMAP.md`. Mods are native (a DLL through the C ABI); there are no
-script mods (Lua was considered and dropped, 2026-10-17).
+64-bit sidecar mods: `docs/ROADMAP.md`. Mods are native (a DLL through the C ABI: C, C++, Rust through
+`sdk/rust/mml`, or anything that exports C functions); there are no script mods (Lua was considered and dropped,
+2026-10-17).

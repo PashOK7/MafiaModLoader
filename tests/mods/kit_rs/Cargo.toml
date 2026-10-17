@@ -1,0 +1,15 @@
+[package]
+name = "kit_rs"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+mml = { path = "../../../sdk/rust/mml", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+
+[profile.release]
+debug = true

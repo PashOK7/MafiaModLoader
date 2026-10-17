@@ -1,0 +1,3 @@
+# `cargo build` in this folder makes the 32-bit DLL the game loads (the CMake build passes the same target)
+[build]
+target = "i686-pc-windows-msvc"

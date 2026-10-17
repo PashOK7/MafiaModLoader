@@ -1,0 +1,16 @@
+[package]
+name = "hello_rust"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]   # hello_rust.dll, the mod's "entry"
+
+[dependencies]
+mml = { path = "../../../sdk/rust/mml", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+
+[profile.release]
+debug = true              # a .pdb beside the DLL: the loader's fault reports and crash_triage name its functions
+# panic stays "unwind" (Cargo's default): mml catches a panic, logs it and hands it to the loader's fault guard

@@ -1945,3 +1945,32 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   leftover `smoke_removed` in the build's output and a player's mod in the game's: every listed mod there, the
   leftover skipped and named, the player's mod in `others` and untouched; named mods the build does not define
   skipped, nothing copied. The running session keeps the old server until its next start.
+
+## 2026-10-17: mods in Rust
+
+- **The crate** `sdk/rust/mml`: `sys.rs` made from mml.h by bindgen 0.71.1 (`tools/rust_sys`, LLVM's libclang on
+  this machine; `--check` in the offline tests). mml.h's comments follow their members, so clang would hand each to
+  the next member: no comments in sys.rs (mml.h is the documentation). The named enums are newtypes (an unknown
+  value from a newer loader is no undefined behaviour), their variants without the prefix; the anonymous ones plain
+  `c_int` constants. The layout asserts are compile-time for i686 (MmlHost 684, MmlEvent 84): the crate refuses
+  any other target with a message saying which.
+- **Panics and faults**: the loader calls a mod behind `__try`/`__except`, which unwinds through the mod's frames.
+  An `extern "C"` Rust function aborts when anything unwinds through it, so every trampoline (and the exports) is
+  `extern "C-unwind"` (cast to the C types: the same cdecl). A panic is caught there (`catch_unwind`), its message
+  and place taken from a panic hook of the mod's (each Rust DLL has its own std), logged, and raised as the
+  exception 0xE0525553: the loader's guard takes it as any fault (MOD_FAULTED, unloaded at the next frame).
+- **Closures**: boxed and handed to the host as its `user`; freed at the unload, a one-shot timer's and a script's
+  after their call, a removed zone's, use-point's or timer's when no closure of the mod runs (a closure may remove
+  itself). The host's registrations go after `mml_mod_unload`, so the boxes freed in it are never called again.
+- **A wrong test of mine**: "a timer with no mission is refused" failed; the host keeps a timer with no mission (it
+  counts the mission's time, `timer_add` refuses only ms <= 0), as interact.cpp says and the C kit's test checks.
+  The test now adds one, removes it, and has 0 ms refused. And `command_json` first refused the bridge's `{}` for a
+  command of no parameters (`()` takes only null): no parameters is now `null` or `{}`, whichever the type takes.
+- **The build**: `mml_add_rust_mod` (cargo per mod, one target folder `build/x86/rust`; the DLL, its .pdb, the
+  manifests copied); no cargo or no i686 target: the Rust mods left out at the configure, saying so. Cargo reads a
+  `.cargo/config.toml` from the folder it runs in, not the manifest's: the build passes `--target` itself and runs
+  cargo in the mod's folder; the generator's own build stays in `tools/rust_sys/target` (ignored).
+- **Seen**: 1.2 and 1.0 freerides at once: hello_rust's line on the frame, `spawn` (a Bolt-Thrower 6 m ahead),
+  `say` and Ctrl+F9 in the game's console, the hotkey moved to Ctrl+F11 by `config.set` (the old one silent, the new
+  one counted), 10 reloads each: 0 MB, 0 handles, 0 threads a reload, the counts kept (load 11). Offline: ALL
+  PASSED (the new `rust_tests`), mcp_smoke ALL PASSED.
