@@ -8,7 +8,9 @@ server (`kb_search`, `kb_function`) and the loader uses to name addresses (`cras
 | `<module>/functions.csv` | every function: address, name, class, signature, topics, its lines in the decompile (the strings column is empty: the game's text is not committed) | `tools/kb_import.py` |
 | `<module>/calls.csv` | the call graph (caller, callee) | `tools/kb_import.py` |
 | `<module>/strings.local.csv` | **made on your machine**, not committed: the strings each function uses, read from your own 1.2 `Game.exe` and `LS3DF.dll` (`python tools/kb_strings.py`, a few seconds); `kb_search` finds functions by them | `tools/kb_strings.py` |
-| `<module>/names.csv` | **our own names**: functions, labels (code sites, data) found in the running game and in other projects | by hand, plus `game_build.h` rows from `kb_import.py` |
+| `<module>/names.csv` | **our own names**: functions, labels (code sites, data) found in the running game and in other projects | by hand, `ghidra_write rename` (1.2), plus `game_build.h` rows from `kb_import.py` |
+| `<module>/names_10.csv` | our own names of **1.0** addresses (same columns); `where` and `crash_triage` in 1.0 name an address by them before the 1.2 twin's | `ghidra_write rename` in the 1.0 project |
+| `<module>/annotations.csv` | our comments and prototypes for each build (`build,address,kind,text,source`, kind `comment` or `proto`) | `ghidra_write comment`, `proto` |
 | `<module>/external.csv` | **other projects' names the repository may carry**: st0rm94's 1.0 names carried to 1.2 (shared by him for everyone's use), each address checked against the game's files; `source` says whose, `note` how it was found | `tools/kb_external.py` |
 | `<module>/external.local.csv` | **made on your machine**, not committed: the other projects' names (MafiaOnline, Oakwood, reM, mafia-re, IGraph's methods from mEdit), from your own clones of them in `re/ext/` (their terms do not let us redistribute them) | `tools/kb_external.py` |
 | `game.exe/twins_10.csv` | the 1.0 twin of each 1.2 function that could be paired by its code (va12, va10, how) | `tools/kb_external.py` |
@@ -39,6 +41,18 @@ server (`kb_search`, `kb_function`) and the loader uses to name addresses (`cras
   other project's into `external.local.csv`, which stays on your machine.
 - **Your own game**: `python tools/kb_strings.py` (the 1.2 lab of `mml.config.json`, or `--game12`) reads the
   strings each function uses into `strings.local.csv`. Nothing of the game's own text is in the repository.
+
+## Ghidra: both builds, read and written
+
+The knowledge base is also every build's Ghidra project's source (`re/ghidra/`, never committed, a cache):
+`python tools/deps.py ghidra` once (Ghidra 12.1.4 pinned, its PyGhidra venv; a JDK 21 or later), then `python
+tools/ghidra_cli.py setup` imports both labs' Game.exe and LS3DF.dll, analyses them, makes functions of the code
+reached only through pointers, and puts on them what this folder says: the names by rank (`tools/ghidra_names.py`:
+other projects' < st0rm94's < the SDK's < MafiaReverse's < ours; the SDK's names that lose kept as aliases), 1.0's
+through `twins_10.csv`, MafiaReverse's signatures as prototypes, our annotations. Agents ask with MCP `ghidra_read`
+(decompile, asm, callers, xrefs, vtable, twin...), `ghidra_find` (who uses a field's offset, strings, pointers,
+names) and `ghidra_write` (rename, comment, proto: saved into the project and into this folder at once; `forget`
+takes ours back), `build` "1.2" or "1.0"; `tools/ghidra_cli.py` is the same from a terminal.
 
 ## On a new machine
 

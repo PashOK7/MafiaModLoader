@@ -649,6 +649,19 @@ What is done, what comes next and later, and what is known to be missing or wron
   `mml::game` covers the C++ game headers whole (racing.h holds only the layouts, the scripts' table its two
   lookups).
 
+- **Both builds in Ghidra** (2026-10-18; from Later, the owner: "all the tools, organised properly", the 1.0 port and
+  every service's search for "who calls, who writes" having been done by hand): Ghidra 12.1.4 pinned in
+  `tools/deps.py ghidra` (its PyGhidra venv from the archive's own wheels), a project a build in `re/ghidra/` (a
+  cache: `tools/ghidra_cli.py setup` makes it from the labs' binaries and the repository), a resident server a build
+  (`tools/ghidra_server.py`, both builds at once), MCP `ghidra_read`, `ghidra_find`, `ghidra_write`. The projects
+  carry the knowledge base's names by rank (`tools/ghidra_names.py`; the SDK's game_build.h names, which mafia-ragdoll
+  also gave, kept as aliases beside the decompile's class names: `at=humanHit` is C_human::Hit), 1.0's through the
+  twins, MafiaReverse's signatures as prototypes (__usercall and values of unknown types left out; 4117 of 1.2's
+  4833), and the code reached only through pointers made functions (1.2 Game.exe 4258 -> 5891 functions). What is
+  written goes into the project and the repository at once (names.csv, names_10.csv, annotations.csv); `forget`
+  takes it back; `where` and `crash_triage` name 1.0 addresses by names_10.csv first. Tests: run_tests.py (the names
+  and prototypes, with no Ghidra), mcp_smoke.py (the tools from cold servers, both builds).
+
 ## Next, by importance
 
 **The goal** (the owner, 2026-10-14): a toolkit strong enough for whatever mod a user can think of, written by another
@@ -842,8 +855,7 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
 - **The knowledge base for 1.0**: only 1.2's decompile is imported; 1.0 addresses are named through their 1.2 twins,
   and 1.0's menus (which have no twins) are read in st0rm94's annotated decompile (`re/ext/...`): import its names
   for 1.0 (`kb_search` on a 1.0 address).
-- **Ghidra behind MCP** (mafia-ragdoll's `ghq`): xrefs, renames, comments written into the project; `kb_function`
-  already gives the decompile, so only when cross-references by hand become the slow part.
+- *(Done 2026-10-18; see "Done".)* **Ghidra behind MCP**.
 - **Publishing**: CI for the offline tests.
 
 ## Taken out or changed

@@ -34,6 +34,8 @@ pub struct Module {
     pub source: &'static str,    // the decompile in the reverse folder
     pub funcs: Vec<Func>,        // by address
     pub names: Vec<Name>,        // by address
+    /// 1.0's own names (names_10.csv: what agents named in the 1.0 Ghidra project), by 1.0 address
+    pub names10: Vec<Name>,
     pub callers: HashMap<u32, Vec<u32>>,
     pub callees: HashMap<u32, Vec<u32>>,
 }
@@ -98,7 +100,15 @@ fn load_module(dir: &PathBuf, name: &'static str, base: u32, source: &'static st
         }
     }
     names.sort_by_key(|n| n.addr);
-    Ok(Module { name, base, source, funcs, names, callers, callees })
+    let mut names10 = vec![];
+    if let Ok(mut rd) = csv::Reader::from_path(d.join("names_10.csv")) {
+        for r in rd.records().flatten() {
+            let Some(addr) = hex(&r[0]) else { continue };
+            names10.push(Name { addr, kind: r[1].into(), name: r[2].into(), source: r[3].into(), note: r[4].into() });
+        }
+    }
+    names10.sort_by_key(|n| n.addr);
+    Ok(Module { name, base, source, funcs, names, names10, callers, callees })
 }
 
 pub fn get() -> Result<&'static Kb, String> {
@@ -292,7 +302,8 @@ pub fn function(key: &str, with_code: bool, max_lines: usize) -> Result<Value, S
     Ok(v)
 }
 
-/// A name for an address of the running build's image. The knowledge base is 1.2's: in 1.0 a Game.exe address is
+/// A name for an address of the running build's image. The knowledge base is 1.2's: in 1.0 an address takes the 1.0 name
+/// agents gave its function (names_10.csv, the 1.0 Ghidra project's), else a Game.exe address is
 /// named through its function's 1.2 twin (twins_10.csv) and marked so, an LS3DF address or an unpaired function's
 /// not at all (a 1.2 name on a 1.0 address would be a wrong name).
 fn name_for(kb: &Kb, module: &str, addr: u32) -> Option<String> {
@@ -300,10 +311,26 @@ fn name_for(kb: &Kb, module: &str, addr: u32) -> Option<String> {
     if crate::game::current_build() != "1.0" {
         return m.containing(addr).and_then(|f| m.best_name(f).map(|n| format!(" ({}+0x{:X})", n, addr - f.addr)));
     }
-    if module != "game.exe" { return None; }
-    let i = kb.twins10.partition_point(|t| t.0 <= addr);
-    if i == 0 { return None; }
-    let (a10, a12) = kb.twins10[i - 1];
+    name_10(m, if module == "game.exe" { &kb.twins10 } else { &[] }, addr)
+}
+
+/// A 1.0 address's name: 1.0's own (names_10.csv) of the function starting nearest below when it is nearer than the
+/// start of the nearest twin (or an exact label of its own), else the 1.2 twin's name with the offset kept inside it.
+fn name_10(m: &Module, twins10: &[(u32, u32)], addr: u32) -> Option<String> {
+    let own = {
+        let i = m.names10.partition_point(|n| n.addr <= addr);
+        (i > 0).then(|| &m.names10[i - 1]).filter(|n| n.addr == addr || (n.kind == "function" && addr - n.addr < 0x10000))
+    };
+    let twin = {
+        let i = twins10.partition_point(|t| t.0 <= addr);
+        (i > 0).then(|| twins10[i - 1])
+    };
+    if let Some(n) = own {
+        if twin.is_none_or(|(a10, _)| n.addr >= a10) {
+            return Some(format!(" ({}+0x{:X}, 1.0)", n.name, addr - n.addr));
+        }
+    }
+    let (a10, a12) = twin?;
     let f = m.at(a12)?;
     // the offset must stay inside the 1.2 twin (taken to end where the next 1.2 function starts)
     let next = m.funcs.iter().find(|g| g.addr > a12).map(|g| g.addr).unwrap_or(a12 + 0x10000);
@@ -341,4 +368,36 @@ pub fn annotate(text: &str) -> String {
         format!("{}{}", &c[0], name_for(kb, &module, base + off).unwrap_or_default())
     })
     .into_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn name(addr: u32, kind: &str, n: &str) -> Name {
+        Name { addr, kind: kind.into(), name: n.into(), source: "mml".into(), note: String::new() }
+    }
+    fn func(addr: u32, n: &str) -> Func {
+        Func { addr, name: n.into(), class: String::new(), signature: String::new(), topics: String::new(), strings: String::new(), src: (0, 0) }
+    }
+
+    #[test]
+    fn a_1_0_address_takes_its_own_name_when_nearer_than_the_twin() {
+        let m = Module {
+            name: "game.exe", base: 0x400000, source: "", funcs: vec![func(0x500000, "C_x::A"), func(0x500100, "C_x::B")],
+            names: vec![], names10: vec![name(0x600050, "function", "C_y::Own"), name(0x600400, "label", "aSite")],
+            callers: HashMap::new(), callees: HashMap::new(),
+        };
+        let twins = [(0x600000, 0x500000), (0x600300, 0x500100)];
+        // inside the twin, before the own name: the twin's
+        assert_eq!(name_10(&m, &twins, 0x600010).as_deref(), Some(" (C_x::A+0x10, 1.0; 1.2 twin 00500000)"));
+        // past the own name's start, the twin's start further below: the own name
+        assert_eq!(name_10(&m, &twins, 0x600060).as_deref(), Some(" (C_y::Own+0x10, 1.0)"));
+        // a twin starting after the own name: the twin's again
+        assert_eq!(name_10(&m, &twins, 0x600310).as_deref(), Some(" (C_x::B+0x10, 1.0; 1.2 twin 00500100)"));
+        // an own label exactly: itself, a label is no function past its address
+        assert_eq!(name_10(&m, &twins, 0x600400).as_deref(), Some(" (aSite+0x0, 1.0)"));
+        // LS3DF (no twins), no own name: none
+        assert_eq!(name_10(&m, &[], 0x400000), None);
+    }
 }

@@ -101,6 +101,35 @@ def two_games(c):
     shutil.rmtree(second, ignore_errors=True)
 
 
+def ghidra_checks(c):
+    """The ghidra_* tools: with Ghidra and the projects there (tools/deps.py ghidra, tools/ghidra_cli.py setup), both
+    builds asked at once; without them, an error saying what to run."""
+    made = all(os.path.isdir(os.path.join(ROOT, 're', 'ghidra', p + '.rep')) for p in ('mafia12', 'mafia10'))
+    if not (os.path.exists(os.path.join(ROOT, 'third_party', '_deps', 'ghidra', 'ghidraRun.bat')) and made):
+        ok, text = c.tool('ghidra_read', {'op': 'function', 'at': '5762A0'})
+        check('ghidra_read with no Ghidra or no projects: an error saying what to run', not ok and 'ghidra' in text, text)
+        print('SKIPPED: the Ghidra projects (python tools/deps.py ghidra; python tools/ghidra_cli.py setup)')
+        return
+    ok, text = c.tool('ghidra_read', {'op': 'function', 'at': 'humanHit'})
+    check('ghidra_read function: 1.2, by an SDK alias, the decompile\'s class name', ok and 'C_human::Hit @ 5762A0' in text, text)
+    ok, text = c.tool('ghidra_read', {'op': 'decompile', 'at': 'C_mission::Tick', 'max': 5})
+    check('ghidra_read decompile: by a class name', ok and 'C_mission::Tick @ 5407E0' in text, text[:300])
+    ok, text = c.tool('ghidra_read', {'op': 'twin', 'at': 'C_human::Hit'})
+    check('ghidra_read twin: 1.2 -> 1.0', ok and '1.0 496710' in text, text)
+    ok, text = c.tool('ghidra_read', {'op': 'function', 'at': '496710', 'build': '1.0'})
+    check('ghidra_read in 1.0: the twin, named through the pair', ok and 'C_human::Hit @ 496710' in text and '(1.0)' in text, text)
+    ok, text = c.tool('ghidra_read', {'op': 'callers', 'at': 'C_human::Hit', 'max': 3})
+    check('ghidra_read callers', ok and 'references to C_human::Hit' in text, text)
+    ok, text = c.tool('ghidra_find', {'op': 'imm', 'value': '644', 'writes': True, 'max': 3})
+    check('ghidra_find imm: the writes of a field\'s offset', ok and 'instructions use 0x644' in text and 'MOV' in text, text)
+    ok, text = c.tool('ghidra_find', {'op': 'functions', 'regex': '^C_mission::Open$'})
+    check('ghidra_find functions: by a name', ok and '1 functions' in text, text)
+    ok, text = c.tool('ghidra_read', {'op': 'rename', 'at': '5762A0'})
+    check('ghidra_read refuses a write op', not ok and 'op is one of' in text, text)
+    ok, text = c.tool('ghidra_read', {'op': 'function', 'at': '5762A0', 'build': '2.0'})
+    check('ghidra_read: an unknown build refused', not ok and '"1.2" or "1.0"' in text, text)
+
+
 def main():
     c = Client()
     check('initialize: the server tells agents how to use it', 'game_status' in (c.info.get('instructions') or ''), c.info)
@@ -108,7 +137,7 @@ def main():
     want = {'game_status', 'call', 'commands_list', 'mem_read', 'mem_write', 'log_tail', 'mods_list', 'mod_reload',
             'where', 'game_launch', 'game_close', 'crash_list', 'crash_inspect', 'deploy', 'kb_search', 'kb_function', 'tap',
             'screenshot', 'input', 'script', 'script_commands', 'spawn', 'teleport', 'give', 'profile', 'wait', 'watch',
-            'inspect', 'crash_triage', 'restore'}
+            'inspect', 'crash_triage', 'restore', 'ghidra_read', 'ghidra_find', 'ghidra_write'}
     check('tools/list has every tool', want <= tools, want - tools)
 
     if os.path.exists(os.path.join(ROOT, 'knowledge', 'game.exe', 'strings.local.csv')):   # (tools/kb_strings.py made it)
@@ -281,6 +310,7 @@ def main():
           ok and 'an access violation (C0000005) at mml_harness.exe+0x' in text and 'a write of 0x00000000' in text
           and 'a null pointer' in text and '"stack"' in text and 'exception C0000005' in text and 'hook_b' in text, text[:900])
     shutil.rmtree(os.path.join(HARNESS, 'mml', 'crash'), ignore_errors=True)
+    ghidra_checks(c)   # (last: a Ghidra server's first start takes its time, the harness's games have theirs)
     c.close()
     print('ALL PASSED' if not failures else '%d FAILED: %s' % (len(failures), ', '.join(failures)))
     return 0 if not failures else 1

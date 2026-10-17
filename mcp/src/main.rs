@@ -13,6 +13,7 @@ mod kb;
 mod script;
 mod shot;
 mod structs;
+mod ghidra;
 
 use base64::Engine;
 use rmcp::{
@@ -324,6 +325,106 @@ struct InspectArgs {
     /// Also the non-zero dwords no field covers, as integers and floats: what is not named yet.
     #[serde(default)]
     gaps: Option<bool>,
+}
+
+#[derive(Deserialize, Serialize, JsonSchema)]
+struct GhidraReadArgs {
+    /// "decompile" (the function holding `at`, made a function if none is there), "asm" (from `at`, the names of
+    /// what each instruction refers to), "function" (entry, size, prototype, where its name came from, references,
+    /// callees), "callers" (call sites, and pointers to it: vtables), "callees" (every call in it, direct or not),
+    /// "xrefs" (every reference to `at`: reads, writes, calls, data), "vtable" (a table of pointers, each named),
+    /// "bytes", "twin" (the other build's function paired with it by its code), "status" (the project).
+    #[serde(skip_serializing)]
+    op: String,
+    /// "1.2" (default) or "1.0": each build has its own project and server; both may be asked at once.
+    #[serde(default, skip_serializing)]
+    build: Option<String>,
+    /// An address: 0x5762A0 or 5762A0 (Game.exe; from 0x10000000 LS3DF.dll), "ls3d+1AAE0" (an LS3DF RVA, as the
+    /// loader writes them), "game+0x1762A0", or a name ("C_human::Hit", "humanHit").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    at: Option<String>,
+    /// decompile: only the lines matching this regex (with `context` lines around them).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    grep: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    context: Option<u32>,
+    /// decompile: a line range "40-90".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    range: Option<String>,
+    /// At most this many lines or items (decompile 400, the lists 80).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    max: Option<u32>,
+    /// asm: instructions (40); vtable: entries (32); bytes: bytes (32).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    count: Option<u32>,
+}
+
+#[derive(Deserialize, Serialize, JsonSchema)]
+struct GhidraFindArgs {
+    /// "imm" (instructions using `value` as an immediate or a displacement such as [ECX + 0x670]: who touches a
+    /// structure's field), "string" (defined strings matching `regex`, with the functions using them), "find"
+    /// (where the image holds `what`: a 32-bit value, a pointer no code names, or a byte pattern "8B 4C 24"),
+    /// "names" (the names given in this project; `all`: the imported ones too), "functions" (by a name regex).
+    #[serde(skip_serializing)]
+    op: String,
+    /// "1.2" (default) or "1.0".
+    #[serde(default, skip_serializing)]
+    build: Option<String>,
+    /// imm: the value, hex ("670").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    value: Option<String>,
+    /// string, functions: a regex (case-insensitive).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    regex: Option<String>,
+    /// find: a hex value or a byte pattern with spaces.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    what: Option<String>,
+    /// "game" or "ls3d" (default both).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    module: Option<String>,
+    /// imm: only in the function holding this address.
+    #[serde(default, rename = "in", skip_serializing_if = "Option::is_none")]
+    in_: Option<String>,
+    /// imm: only instructions writing to memory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    writes: Option<bool>,
+    /// imm: only instructions whose text matches this regex ("CALL": calls of a vtable slot).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    text: Option<String>,
+    /// names: the imported names too.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    all: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    max: Option<u32>,
+}
+
+#[derive(Deserialize, Serialize, JsonSchema)]
+struct GhidraWriteArgs {
+    /// "rename" (a function at its entry, else a label; "C_x::Method" puts it into the class), "comment" (a
+    /// function's plate comment at its entry, else a comment before the instruction), "proto" (a C prototype:
+    /// "int __thiscall Hit(C_human *this, int type)"), "make_function", "unfunction" (a function wrongly made;
+    /// its name stays as a label), "sync" (the knowledge base's names and annotations onto the project again).
+    /// rename, comment and proto are saved into the project and recorded in the repository at once:
+    /// knowledge/<module>/names.csv (1.2) or names_10.csv (1.0), annotations.csv.
+    #[serde(skip_serializing)]
+    op: String,
+    /// "1.2" (default) or "1.0".
+    #[serde(default, skip_serializing)]
+    build: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    at: Option<String>,
+    /// rename: the new name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    /// rename: how it was found (the names.csv note).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    note: Option<String>,
+    /// comment: the text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    text: Option<String>,
+    /// proto: the C prototype.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    proto: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -1062,6 +1163,37 @@ impl Server {
         let mut v = ins.inspect(addr, s, &opts).await?;
         v["how"] = json!(how);
         Ok(pretty(&v))
+    }
+
+    /// Read the game's code in Ghidra, either build (`build` "1.2" or "1.0": a project each, both modules, the
+    /// knowledge base's names on them): a function decompiled, its disassembly, callers, callees, every reference
+    /// to an address, a vtable, the other build's twin. Where kb_function has no answer (1.0, cross-references,
+    /// a function the decompile split): this. tools/ghidra_cli.py is the same from a terminal.
+    #[tool(annotations(read_only_hint = true))]
+    async fn ghidra_read(&self, Parameters(a): Parameters<GhidraReadArgs>) -> Out {
+        ghidra::check(&a.op, ghidra::READ, "ghidra_read")?;
+        let args = serde_json::to_value(&a).map_err(|e| e.to_string())?;
+        ghidra::ask(a.build.as_deref().unwrap_or("1.2"), &a.op, args).await
+    }
+
+    /// Search the game's code in Ghidra, either build: who uses a value or touches a structure's field (an
+    /// immediate or a displacement), the strings and who uses them, where the image holds a pointer or a byte
+    /// pattern, the names given, functions by name.
+    #[tool(annotations(read_only_hint = true))]
+    async fn ghidra_find(&self, Parameters(a): Parameters<GhidraFindArgs>) -> Out {
+        ghidra::check(&a.op, ghidra::FIND, "ghidra_find")?;
+        let args = serde_json::to_value(&a).map_err(|e| e.to_string())?;
+        ghidra::ask(a.build.as_deref().unwrap_or("1.2"), &a.op, args).await
+    }
+
+    /// Write what was learned into the build's Ghidra project and the repository at once: a name (into
+    /// knowledge/<module>/names.csv or names_10.csv), a comment, a prototype (annotations.csv), a function made or
+    /// removed. The projects are a cache made from the repository (`python tools/ghidra_cli.py setup`).
+    #[tool]
+    async fn ghidra_write(&self, Parameters(a): Parameters<GhidraWriteArgs>) -> Out {
+        ghidra::check(&a.op, ghidra::WRITE, "ghidra_write")?;
+        let args = serde_json::to_value(&a).map_err(|e| e.to_string())?;
+        ghidra::ask(a.build.as_deref().unwrap_or("1.2"), &a.op, args).await
     }
 
     /// One function of the game: its facts, callers and callees (named where known), and its decompiled code.

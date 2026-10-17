@@ -2024,3 +2024,25 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   (the loader names one): the process warming, as the C++ mods' loops show.
 - The roadmap's last Rust gap was partly wrong: racing.h has only layouts in C++ too, and the scripts' table only
   its two lookups, both in mml::game.
+
+## 2026-10-18: both builds in Ghidra
+
+- **The owner**: the Ghidra item had sat in Later on the argument "until cross-references by hand become the slow
+  part"; the journal shows they had been the slow part all along (the 1.0 port, every service's "who calls, who
+  writes"). Made properly: mafia-ragdoll's `ghq.py` (its server, its PyGhidra calls that work on 12.1.4) was the
+  reference, not a dependency: its paths, its locks and its projects stay that project's.
+- **Install**: Ghidra 12.1.4 (the newest, 2026-09-21; the release's SHA-256) in `third_party/_deps/ghidra`, an
+  optional pin of `tools/deps.py` (570 MB: not fetched by a plain `deps.py`); the venv from the archive's own
+  PyGhidra 3.1.0 and JPype wheels (no index). The JDK: Corretto 21 is installed, but `java` on the PATH is 17:
+  `java_home()` picks a 21+ (mml.config.json `java_home`, JAVA_HOME, Program Files).
+- **The projects**: analysed headless (1.2 Game.exe 242 s, LS3DF 83 s; 1.0 250 s and 73 s). Ghidra left 51 557
+  (1.2) and 53 885 (1.0) instructions outside functions: `orphans fix=1` made 1560, 752, 1382 and 901 functions,
+  none left outside.
+- **Found on the way**: the CLI first called `tools/ghidra.py` shadowed Ghidra's own Java package `ghidra` in the
+  server's process (PyGhidra's `from ghidra import GhidraApplicationLayout` found the script): renamed
+  `ghidra_cli.py`. `CParserUtils.parseSignature(None, ...)` is ambiguous to JPype; the ServiceProvider overload
+  dereferences null; the DataTypeManagerService one takes it. Its parser takes no calling convention: taken out
+  and set on the definition. Names with spaces (operators) are kept by Ghidra with `_`: compared so, a second sync
+  changes nothing. An export's label of a name made the function's rename a duplicate: the label goes.
+- **Ranks**: game_build.h's rows in names.csv (and mafia-ragdoll's names, which are the same vocabulary) had first
+  outranked the decompile's class names (`humanHit` over C_human::Hit): they are aliases now.

@@ -923,10 +923,47 @@ def rust_tests(b):
     check('kit_rs: loaded again after its fault', r['ok'] and b.call('kit_rs.add', {'a': 1, 'b': 1}).get('result') == 2, r)
 
 
+def ghidra_names_tests():
+    """What the Ghidra projects are given (tools/ghidra_names.py), with no Ghidra: the ranks, the SDK's aliases, 1.0's
+    names through the twins, the prototypes made from the decompile's signatures, a name and an annotation written
+    and forgotten (in a copy of the knowledge base)."""
+    import tempfile
+    sys.path.insert(0, os.path.join(ROOT, 'tools'))
+    import ghidra_names as g
+    n12 = g.names('Game.exe', '1.2')
+    check('ghidra names: 1.2 C_human::Hit (the decompile\'s) over the SDK\'s humanHit, kept as an alias',
+          n12.best[0x5762A0].name == 'C_human::Hit' and 'humanHit' in n12.aliases.get(0x5762A0, []), n12.best.get(0x5762A0))
+    n10 = g.names('Game.exe', '1.0')
+    check('ghidra names: 1.0 named through the twins (C_human::Hit at 496710), the SDK\'s 1.0 tables',
+          n10.best[0x496710].name == 'C_human::Hit' and len(n10.best) > 2500, n10.best.get(0x496710))
+    sig = g.c_signature
+    check('ghidra prototypes: thiscall\'s first argument left out (whatever its name), an unknown class pointer void *',
+          sig('C_actor *__thiscall sub_445290(C_actor *lpMem, char a2)') == 'void * __thiscall f(char a2)'
+          and sig('int __thiscall f(_DWORD *this, int a2, float *a3)') == 'int __thiscall f(int a2, float * a3)', sig('C_actor *__thiscall sub_445290(C_actor *lpMem, char a2)'))
+    check('ghidra prototypes: registers and values of an unknown type refused',
+          sig('int __userpurge sub_430142@<eax>(int a1@<edi>, int a2)') is None and sig('int __cdecl f(S_vector v)') is None
+          and sig('void sub_401030()') == 'void f(void)')
+    check('ghidra names: a namespace split outside templates', g.split_name('std::vector<a::b>::push_back') == (['std', 'vector<a::b>'], 'push_back'))
+    with tempfile.TemporaryDirectory() as tmp:
+        kb = g.KB
+        try:
+            g.KB = tmp
+            g.record_name('Game.exe', '1.0', 0x401000, 'function', 'C_t::A', 'a test')
+            g.record_annotation('Game.exe', '1.0', 0x401000, 'proto', 'int f(void)')
+            had = [g.rows(g.names_file('Game.exe', '1.0')), g.annotations('Game.exe', '1.0')]
+            gone = g.forget('Game.exe', '1.0', 0x401000)
+            check('ghidra names: written (names_10.csv, annotations.csv) and forgotten, the files gone with their rows',
+                  had[0][0]['name'] == 'C_t::A' and had[1][0]['kind'] == 'proto' and len(gone) == 2
+                  and not os.path.exists(g.names_file('Game.exe', '1.0')), (had, gone))
+        finally:
+            g.KB = kb
+
+
 RUST = os.path.exists(os.path.join(HARNESS, 'mml', 'mods', 'kit_rs', 'kit_rs.dll'))
 
 
 def main():
+    ghidra_names_tests()
     # the harness's game folder: the loader, the test mods and the shipped ones
     mods = os.path.join(HARNESS, 'mml', 'mods')
     shipped = ('core', 'hello_c', 'boxes') + (('hello_rust',) if RUST else ())
