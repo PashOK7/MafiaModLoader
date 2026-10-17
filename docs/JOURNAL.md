@@ -1831,3 +1831,20 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   trail and the ticks stood still. The walk is now measured from where he stood when the route began: after a
   route made anew mid-walk the way to its first waypoint was counted as an offset (1.2 m); now 0.11 m (1.0).
 - **Not committed.**
+
+## 2026-10-17: the cars' paths (actor_route; read in both builds' code, seen in both labs)
+
+- **Asked** (the owner): the route a car the game drives follows, as for the people (15-07's chase of Sergio as the
+  example).
+- **Found**: every driven car has a `C_driver` (traffic, chases, police, racers), ticked by `C_driver::Tick` (1.2
+  0x43C4F0, 1.0 0x483360: the same code and the same offsets in both). Its path is a vector of 0x70-byte nodes, four
+  lane points each and the lane taken; `+0x6C` the point it steers to, on the segment before the cursor's node, a
+  look-ahead (8.5 m in town, 41 m at the chase's speed). knowledge/notes/game.md, "A car's path".
+- **Mod**: actor_route hooks `C_driver::Tick` too (only on its known first bytes) and copies the path at the end
+  of the tick, the nodes again when the vector moves or every 0.25 s of the world's time. Drawn: the path through
+  the taken lanes (blue, the node driven to in white, those behind dimmer), each node's lanes across the road
+  (grey), the steering point (magenta) and the way gone (cyan). Settings `people` and `cars` choose whose; the
+  labels made short (one line each).
+- **Seen**: 1.2 city freeride, 13 traffic cars: the way 0.02 to 0.33 m from the drawn path, the target on it; the
+  drawing on a car turning at a crossing. 1.0, 15-07 (restore point `sergio_chase`): the chase car's 137-node path,
+  its way 0.51 m from it at speed (1.86 at most), the path drawn along the street.

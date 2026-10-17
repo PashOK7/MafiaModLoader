@@ -1,13 +1,15 @@
 {
-  // The defaults of actor_route: every walking person's route (its waypoints and their gates), walk (his trail) and
-  // steering (the point he walks to, where the game counts it reached, the detour points), each on or off on its
-  // own; the walk is kept for `trail_s` seconds of the world's time (a pause stops it); the persons within `range`
-  // metres of the camera are drawn; F6 shows and hides all.
+  // The defaults of actor_route: whose routes are drawn (`people`: the people the game walks along a route; `cars`:
+  // the cars it drives), and which parts: the route (waypoints and their gates; a car's path and its lanes), where
+  // each is sent now (`steer`) and the way it went (`trail`), kept for `trail_s` seconds of the world's time (a pause
+  // stops it); those within `range` metres of the camera are drawn; F6 shows and hides all.
   "show": true,
   "hotkey": "F6",
+  "people": true,
+  "cars": true,
   "route": true,
+  "steer": true,
   "trail": true,
   "trail_s": 10,
-  "steer": true,
   "range": 150
 }

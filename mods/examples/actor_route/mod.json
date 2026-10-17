@@ -1,6 +1,6 @@
 {
   "id": "actor_route",
-  "name": "Actor routes: the route, the walk and the point the game walks him to, of every person sent along a route, drawn in the world",
+  "name": "Actor routes: the route of every person and car the game moves, where it is sent now and the way it went, drawn in the world",
   "version": "0.1.0",
   "type": "native",
   "entry": "actor_route.dll",
@@ -11,18 +11,20 @@
     "title": "Actor routes",
     "controls": [
       {"key": "show", "label": "Shown"},
-      {"key": "hotkey", "label": "Shown and hidden", "kind": "key"},
-      {"key": "route", "label": "The route: waypoints and their gates"},
-      {"key": "trail", "label": "The walk: where he has been and where he is"},
+      {"key": "hotkey", "label": "Show and hide", "kind": "key"},
+      {"key": "people", "label": "People"},
+      {"key": "cars", "label": "Cars"},
+      {"key": "route", "label": "Routes"},
+      {"key": "steer", "label": "Where sent now"},
+      {"key": "trail", "label": "The way gone"},
       {
         "key": "trail_s",
-        "label": "The walk kept for",
+        "label": "Way kept for",
         "min": 1,
         "max": 120,
         "step": 1,
         "unit": "s"
       },
-      {"key": "steer", "label": "Where he walks to now, detours"},
       {
         "key": "range",
         "label": "Drawn within",

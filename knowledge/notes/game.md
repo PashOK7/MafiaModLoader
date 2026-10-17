@@ -242,6 +242,26 @@ autosplitter; kept outside it, not ported). Checked against the above:
   His container offsets are 1.0's; 1.2's differ (above). Reported to him:
   https://github.com/st0rm94/mafia-reverse-engineering-export/issues/2
 
+## A car's path: C_driver (read 2026-10-17 in both builds' code, seen in both labs; mods/examples/actor_route)
+
+- **code** Every car the game drives has a `C_driver`: the traffic (`C_traffic_car::AI`, 1.2 0x4AFC40 calls it),
+  a chase (`C_sledovacka::TickDriver`, 1.2 0x4A2A80: mission 15-07's Sergio), the police and the racers.
+  `C_driver::Tick` (1.2 0x43C4F0, 1.0 0x483360): thiscall `(C_driver*, int dt_ms)`, ret 4, returns a char (0
+  without a car or a path). The fields used here are at the same offsets in both builds: the car `+0x10`, the
+  path a vector of 0x70-byte nodes at `+0x160` (begin `+0x164`, end `+0x168`; Tick divides by 0x70 into `+0x64`),
+  the node it drives to `+0x170` (`+0x174` the one before), the point it steers to `+0x6C`.
+- **code** A node: four lane points across the road at `+0x00`, `+0x0C`, `+0x18`, `+0x24` (some equal), the lane
+  taken a byte at `+0x44`, flags a word at `+0x60` (0x8000: an edge). FillStartValues (1.2 0x43F050, 1.0
+  0x485EC0) puts the cursor node's lane point at `+0x6C`, the lane its own byte's, or the node before's when both
+  nodes have 0x8000. PathCorrection (1.2 0x43FF30, 1.0 0x486D70) then moves `+0x6C` back along the segment
+  towards the car.
+- **game** `+0x6C` lies on the segment from the node before to the cursor's node: about 8.2 to 8.6 m in front of a
+  traffic car in town (13 cars, 1.2), 41 m in front of the chase car at speed (1.0); the node itself when it is
+  nearer. The cars' way follows the line through the nodes' taken lanes: traffic 0.02 to 0.33 m from it on average
+  (1.2 and 1.0), the chase car 0.51 m (1.86 at most, 94 samples at speed, 1.0).
+- **game** A traffic car's path is 6 to 8 nodes, the cursor at 1 to 5, made anew as it goes; the chase's path in
+  15-07 is 137 nodes across the city. Its `dt_ms` was 10 in every call tapped (1.0).
+
 ## The start's other ways (host/start.cpp; read 2026-10-14, run in both labs)
 
 - **code** `MafiaEntryPoint`'s switch on the main menu's result (the jump table at 0x5BF4C4, result − 17) opens:
