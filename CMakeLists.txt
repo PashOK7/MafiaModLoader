@@ -212,6 +212,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
         SHADERS race_view.hlsl:PsRace:ps_5_0)
     mml_add_mod(invisible_walls ${CMAKE_SOURCE_DIR}/mods/examples/invisible_walls mods/examples/invisible_walls/invisible_walls.cpp
         SHADERS invisible_walls.hlsl:PsWalls:ps_5_0)
+    mml_add_mod(actor_route ${CMAKE_SOURCE_DIR}/mods/examples/actor_route mods/examples/actor_route/actor_route.cpp)
     # (tools/new_mod.py adds a mod's line above this one)
 
     # ---- offline tests: a stand-in game that loads the loader and pumps its frames (tests/run_tests.py)

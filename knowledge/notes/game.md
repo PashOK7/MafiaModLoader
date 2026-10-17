@@ -214,6 +214,33 @@ autosplitter; kept outside it, not ported). Checked against the above:
   (constant at 0x624058); a pedestrian hit (type 5) knocks down fully above strength 16 (0x624078). Falling and
   landing damage is hit type 6 (from 0x57B660).
 
+## A person's route: ai_path (read 2026-10-17 in both builds' code, seen in both labs; mods/examples/actor_route)
+
+- **code** `ai_path::Tick` (1.2 0x5026C0, 1.0 0x40C970): thiscall `(ai_path*, uint, C_human *owner, bool, bool)`,
+  ret 0x10, every tick for a person sent along a route. It hands `HumanMoveTo` (1.2 0x446470, 1.0 0x4B0280;
+  fastcall: ECX the person, EDX `&path+0x74`, then five stack arguments) the point at `+0x74`, and counts the
+  waypoint reached when he is within `sqrt(+0x90)` of the point at `+0x80`; then `GetNextNormalWaypoint` stages the
+  next one. State `+0x8C`: 1 a waypoint, 2 a detour point (`+0x74` is then the detour point; `+0x80` stays the
+  waypoint's), 3 invalidated, 4 abandoned; cursors `+0x58` (waypoints), `+0x5C` (detour points).
+- **code** The waypoints are a vector of 0x3C-byte records at `+0x1C` in 1.2, `+0x04` in 1.0; the detour points a
+  vector of 0x18-byte records (the point first) at `+0x2C` in 1.2, `+0x14` in 1.0 (1.2: GetNormalWaypoint
+  0x501C60, isLastNormalWaypoint 0x501F90, GetNextSpecWaypoint 0x501EF0; 1.0: 0x40BF30, 0x40C260, 0x40C1C0). The
+  rest of the object is at the same offsets in both builds.
+- **code** A record (both builds): gate A `+0x00`, gate B `+0x0C` (the passage the route was built through, across
+  the pavement: 2 to 5 m apart), the waypoint `+0x24` (what is copied to `+0x74`, where the person walks), a web
+  node's index `+0x34`, its kind `+0x38`: 0 reached at the gates' midpoint (copied to `+0x80`), 1 and 2 at the web
+  node (`[[mission]+0x2C]+4`, 30-byte nodes, the position first; the reach the node's `+0x10 & 0xFFFF` times a
+  constant). The waypoint is near the gates' midpoint, not always on it.
+- **game** Sara's walk of mission 07-02 (both labs) lies 0.06 m from the line through her route's waypoints on
+  average, 0.13 m at most, on a stretch without detours. Gate A alone (read as "the waypoint" at first) lies 1 to
+  3.5 m to one side: what looked like an offset of the walk was the wrong field.
+- **game** A route object lives a few seconds: the person's actions free it and build a new one, often at the old
+  one's address (the same size, 0x9C); a pointer to it kept past its tick soon points at another object (a menu
+  was found there). Read it inside the tick, and tell routes apart by their waypoints, not by their address.
+- **ours** st0rm94's `structs/ai_path.md` (1.0) calls `+0x74` the "staged point" and `+0x80` "where the actor is
+  actually steering": in the code `+0x74` is what HumanMoveTo walks to and `+0x80` only the arrival test's centre.
+  His container offsets are 1.0's; 1.2's differ (above).
+
 ## The start's other ways (host/start.cpp; read 2026-10-14, run in both labs)
 
 - **code** `MafiaEntryPoint`'s switch on the main menu's result (the jump table at 0x5BF4C4, result − 17) opens:

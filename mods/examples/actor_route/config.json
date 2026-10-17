@@ -1,0 +1,11 @@
+{
+  // The defaults of actor_route: every walking person's route (its waypoints and their gates), walk (his trail) and
+  // steering (the point he walks to, where the game counts it reached, the detour points), each on or off on its
+  // own; the persons within `range` metres of the camera are drawn; F6 shows and hides all.
+  "show": true,
+  "hotkey": "F6",
+  "route": true,
+  "trail": true,
+  "steer": true,
+  "range": 150
+}

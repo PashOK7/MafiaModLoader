@@ -1,0 +1,28 @@
+{
+  "id": "actor_route",
+  "name": "Actor routes: the route, the walk and the point the game walks him to, of every person sent along a route, drawn in the world",
+  "version": "0.1.0",
+  "type": "native",
+  "entry": "actor_route.dll",
+  "enabled": false,
+  "load_order": 100,
+  "depends": [],
+  "settings": {
+    "title": "Actor routes",
+    "controls": [
+      {"key": "show", "label": "Shown"},
+      {"key": "hotkey", "label": "Shown and hidden", "kind": "key"},
+      {"key": "route", "label": "The route: waypoints and their gates"},
+      {"key": "trail", "label": "The walk: where he has been and where he is"},
+      {"key": "steer", "label": "Where he walks to now, detours"},
+      {
+        "key": "range",
+        "label": "Drawn within",
+        "min": 20,
+        "max": 500,
+        "step": 10,
+        "unit": "m"
+      }
+    ]
+  }
+}

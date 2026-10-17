@@ -1803,3 +1803,27 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   of the mod without a mission change: handles +4, threads +1, free -1.3 MB (before, a reload gave 0: not yet
   explained, not chased; the measure also counts whatever the game loads in the same window).
 - **Not committed.**
+
+## 2026-10-17: an actor's route (actor_route; read in both builds' code, seen on Sara of mission 07-02 in both labs)
+
+- **Found**: a person sent along a route walks in `ai_path::Tick` (1.2 0x5026C0, 1.0 0x40C970), thiscall
+  `(ai_path*, uint, C_human*, bool, bool)`, ret 0x10. It gives `HumanMoveTo` the point at `+0x74` and counts the
+  waypoint reached within `sqrt(+0x90)` of `+0x80`. The waypoints are 0x3C-byte records (gate A `+0x00`, gate B
+  `+0x0C`, the waypoint `+0x24`, web node `+0x34`, kind `+0x38`) in a vector at `+0x1C` (1.2) / `+0x04` (1.0); the
+  detour points at `+0x2C` / `+0x14`; the rest at the same offsets in both. All in knowledge/notes/game.md
+  ("A person's route").
+- **The first version was wrong** (an earlier session, not committed): it drew a record's first three floats (gate
+  A, one side of the passage) as the waypoint, and `+0x80` as the point the person steers to. So it measured her
+  walk 1.2 to 3.5 m off "the route" and looked for a cause: there was none, the field was the wrong one. Its hook
+  declared the uint and the first bool as floats (passed on through x87 loads, a bool's garbage bits could change);
+  it read the route object from the frame event, after the game had freed it (the game over menu was found at the
+  address it held), and took a new route at the old address for the same route. st0rm94's `ai_path.md` (1.0)
+  names `+0x80` the steering point; the code says otherwise (the note says where).
+- **Mod, redone**: `mods/examples/actor_route`, both builds (a layout per build; the hook only on Tick's known
+  first bytes). It copies the route inside its hook, while the game holds it, and reads no game memory later; a
+  new route is told by its waypoints. Drawn: the waypoints and their gates, the walk, the point he walks to, the
+  arrival circle, the detour points. Walkers go when the game destroys them or the mission closes.
+- **Seen**: 1.0 (restore point `sara_walk`): her walk on a 9-waypoint route lies 0.06 m from it on average, 0.13 m
+  at most; `+0x80` is the gates' midpoint, `+0x74` the record's `+0x24`, on the kind-0 waypoints she walked to (kind 1 and 2 not seen current). 1.2 (save
+  130 "07-02", restore point `sara_start`): the same layout read at the 1.2 offsets, drawn on her walk.
+- **Not committed.**
