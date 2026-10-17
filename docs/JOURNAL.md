@@ -1552,3 +1552,6 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   Prison in 1.2: put back to the centimetre after a 40 m teleport, the mission going on with its objective), another
   mission's point opened and back (1.2..3.7 s); the saves of both labs byte for byte as before (copies compared).
 - **Tests**: offline (restore.* with no game), mcp_smoke (`restore` list and refusal), check_builds ALL PASSED.
+- **Later the same day**: at the owner's word mafia-ragdoll's files were taken out of the 1.0 lab
+  (`scripts\MafiaRagdolls.asi`, `MafiaRagdolls.log`, `ragdoll_models.idx`, kept in `Mafia10LAB-backup\ragdoll-2026-10-17`;
+  the ragdoll is to be made again on the loader): the game starts without it, only the loader's ASI loaded.
