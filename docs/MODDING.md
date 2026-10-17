@@ -1457,4 +1457,5 @@ high-resolution timer if asked, and shows the frame rate and the game's clock st
 
 ## Not there yet
 
-LuaJIT script mods, a Rust crate, 64-bit sidecar mods: `docs/ROADMAP.md`.
+A Rust crate, 64-bit sidecar mods: `docs/ROADMAP.md`. Mods are native (a DLL through the C ABI); there are no
+script mods (Lua was considered and dropped, 2026-10-17).

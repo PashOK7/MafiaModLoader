@@ -1919,3 +1919,9 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   mcp_smoke: a mod switched on in the game's folder stays on and its file is not touched; a changed manifest is put
   over it with the lab's `enabled` kept. The session that built it still runs the old server (its deploy would
   switch the labs' debug_views off again): the new one from the next session on.
+
+## 2026-10-17: Lua dropped
+
+- **The owner**: no script mods; Lua (LuaJIT) is out for good. Mods stay native, through the C ABI. LuaJIT is no
+  longer pinned in `tools/deps.py` (its local download removed); README, ARCHITECTURE, MODDING, AGENTS and the
+  roadmap say so ("Taken out or changed").

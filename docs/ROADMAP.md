@@ -11,8 +11,8 @@ What is done, what comes next and later, and what is known to be missing or wron
   work on both, so everything for both is tested in both labs (at the end of a block of work, or at once where 1.0's
   code differs; not every small test); a mod made for one build is worked on and tested in that build's lab only
   (`"builds"` in its `mod.json`). The labs are listed in `mml.config.json` (`labs`); agents switch between them.
-- Mods in any native language through one C ABI. (LuaJIT scripts were listed here too; the owner says the roadmap
-  was the agents' work, so they are parked until the owner confirms them: "Taken out or changed".)
+- Mods in any native language through one C ABI. No script mods: Lua (LuaJIT) was dropped for good (the owner,
+  2026-10-17; "Taken out or changed").
 - A 64-bit sidecar for what only exists for 64 bits (the owner, 2026-10-14: "what if a user wants a modern
   technology such as the latest PhysX, which runs only on 64 bits?"): the game stays 32-bit, a 64-bit process beside
   it hosts such libraries (PhysX 5, and the like: GPU and ML runtimes), connected to the game by shared memory.
@@ -652,7 +652,7 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
    controls menu, another kind of vehicle).
 9. *(Done 2026-10-17: 9a structures by name, item 24; 9b crash triage in one call, item 25; 9c restore points; see "Done".)* The agent's tools (items 24, 25 and the
    snapshots in Later: structures by name, crash triage in one call, restore points).
-10. Mod languages (Later: the Rust crate; LuaJIT script mods).
+10. Mod languages (Later: the Rust crate; no script mods: Lua dropped).
 11. Orders for the people made (item 26).
 12. Tests in the real game, as scripts of steps (item 23).
 13. *(Done 2026-10-17, before 8 at the owner's wish; see "Done".)* The tuning panel (item 18).
@@ -824,8 +824,9 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
   Python.
 - **"LuaJIT script mods"** and **"`lua.eval` for agents"**: argued as "a hypothesis tried in five lines without
   building a DLL", which `mem_read` / `mem_write`, `tap`, the script machine and hot reload now cover; the one thing
-  missing, calling any game function by its address, is item 21. Parked until someone wants mods written in Lua
-  (`tools/deps.py` still pins LuaJIT): to be confirmed with the owner.
+  missing, calling any game function by its address, is item 21. Dropped for good by the owner (2026-10-17: a
+  Lua runtime would serve people writing gameplay scripts, not the agents who write the mods here); LuaJIT is no
+  longer pinned in `tools/deps.py`.
 - **"The 64-bit sidecar"** was taken out as having no user, and put back the same day by the owner: modern libraries
   (the latest PhysX first) exist only for 64 bits; item 19.
 

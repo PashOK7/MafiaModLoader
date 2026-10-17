@@ -160,7 +160,7 @@ reversing a system anew.
 | `tests/` | `harness/` (the stand-in game), `mods/` (test mods: `hook_a`, `hook_b`, `kit`), `run_tests.py`, `mcp_smoke.py` |
 | `docs/SCRIPTS.md` | the game's script machine: the language, the registers, tested recipes |
 | `tools/` | `lab.py` (the lab's modes, install), `deps.py` (pinned downloads), `check_builds.py` (the address tables against the game's files), `kb_import.py` (the knowledge base from MafiaReverse), `kb_external.py` (other projects' names, checked), `kb_structs.py` (the structures: classes, fields, vtables of both builds), `start.py` (launch into a profile and the freeride), `new_mod.py` (a new mod: its folder, manifest, settings, CMake line), `replace.py` (exact text edits), `gen_methods.py` (`host/methods.inc` from docs/PROTOCOL.md) |
-| `third_party/` | MinHook, nlohmann/json (vendored); `_deps/` (downloaded: Ultimate ASI Loader, LuaJIT, Jolt Physics: the build fetches what it builds) |
+| `third_party/` | MinHook, nlohmann/json (vendored); `_deps/` (downloaded: Ultimate ASI Loader, Jolt Physics: the build fetches what it builds) |
 
 ## Facts that cost time to find
 

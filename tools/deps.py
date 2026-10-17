@@ -20,9 +20,6 @@ PINNED = {
     # Ultimate ASI Loader v9.7.4 (x86, with PDB), MIT; the hash is the one GitHub publishes for the asset
     'ual': ('https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases/download/v9.7.4/Ultimate-ASI-Loader.zip',
             '952cebfc30d525afc2bdbaca954329d405ded3aa688a83027354dae14dfd5c5f'),
-    # LuaJIT, branch v2.1 at commit 634daf2453559fd5e0ec282f3b7aedaa09e9f344 (2026-10-13), MIT
-    'luajit': ('https://github.com/LuaJIT/LuaJIT/archive/634daf2453559fd5e0ec282f3b7aedaa09e9f344.zip',
-               '48f9fabc6c58d610044df1b460083fbf5842f642e3a7c367545990f94da4d002'),
     # Jolt Physics v5.6.0, commit e77f175595e64cb44218cc9d9d56fc365ad0e36a (2026-07-11), MIT: the rigid bodies for
     # mods, built for x86 by CMakeLists.txt (target Jolt). The archive's 1250 files were compared with a clone of
     # the tag (mafia-ragdoll's, whose 577 unit tests pass on the 32-bit build): all identical.

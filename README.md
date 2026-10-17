@@ -77,7 +77,7 @@ python tools/kb_strings.py                            :: the knowledge base's st
 ## License
 
 MIT ([LICENSE](LICENSE)). Third-party libraries keep their own licenses: MinHook and nlohmann/json (vendored),
-Ultimate ASI Loader, LuaJIT and Jolt Physics (downloaded by `tools/deps.py`).
+Ultimate ASI Loader and Jolt Physics (downloaded by `tools/deps.py`).
 
 Unofficial fan project, not affiliated with 2K, Take-Two Interactive or Illusion Softworks. Mafia: The City of Lost
 Heaven is a trademark of Take-Two Interactive Software, Inc. You need your own copy of the game; no game files are

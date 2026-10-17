@@ -13,7 +13,6 @@ Fetched by `tools/deps.py` (see the table in that script for the exact URLs and 
 
 | What | Why |
 |---|---|
-| LuaJIT 2.1 (pinned commit) | the Lua runtime for script mods (JIT, FFI) |
 | Ultimate ASI Loader (pinned release, x86) | loads `MafiaModLoader.asi` into the game (as `dinput8.dll`) |
 | Jolt Physics 5.6.0 (pinned commit, MIT) | rigid bodies, joints, ragdolls for mods: built for x86 by `CMakeLists.txt` (target `Jolt`, its 32-bit SSE2 configuration, `/MT`), fetched by the first configure; `mods/examples/boxes` uses it |
 
