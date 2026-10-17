@@ -225,6 +225,13 @@ reversing a system anew.
   (animated): `call geom.survey` finds such names. A car teleported onto the river drowns Tommy (Game Over: `call
   menu.click {"id": 1000}` retries). A safe place to look at it, both builds: the city freeride (`"kind": "city"`),
   `teleport {"to": [-1598.48, -6.2, -30.8], "dir": [-0.38, 0, -0.92]}`, the embankment by Little Italy's bridge.
+- **Every path in the loader is UTF-8** (players keep the game in `C:\Игры\Mafia`): files through `host/paths.cpp`
+  (`FileOpen`, `ListDir`, `PathMove`... the wide functions), never `fopen` or an `...A` function on a path; a mod
+  uses `mml/path.h`'s `mml_fopen`. The game's own names are in the system's code page (`AcpPath`, `AcpToUtf8`), its
+  texts in its language's (`game::TextUtf8` before a reply, a log line, `draw_text`); json is dumped with
+  `error_handler_t::replace`. An ANSI path once threw in json's dump and crashed every start in a Cyrillic folder:
+  `tools/check_paths.py` (in the offline tests) refuses an ANSI path function or a strict dump anywhere; a line that
+  must keep one says why with `ansi-ok:`.
 - **The MCP server's own binary is locked while your session runs it**: to build a new one, rename
   `mcp/target/release/mml-mcp.exe` first (Windows allows that), build, and test the new one with a client of your
   own (`tests/mcp_smoke.py` shows how); the session gets it at its next start.

@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 #include "mml/mml.h"
+#include "mml/path.h"
 
 namespace {
 const MmlHost *H;
@@ -96,7 +97,7 @@ int Add(const char *args, MmlReply *r, void *) {
 }
 int Write(const char *args, MmlReply *r, void *) {
     std::string path = std::string(H->mod_data_dir(M)) + Arg(args, "file"), text = Arg(args, "text");
-    FILE *f = fopen(path.c_str(), "wb");
+    FILE *f = mml_fopen(path.c_str(), "wb");
     if (!f) { H->reply_error(r, "cannot write"); return 1; }
     fwrite(text.data(), 1, text.size(), f);
     fclose(f);

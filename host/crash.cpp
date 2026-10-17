@@ -28,10 +28,9 @@ bool ModuleOf(const void *addr, char *name, int cap, uintptr_t *rva) {
     if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                             static_cast<const char *>(addr), &m) || !m)
         return false;
-    char path[MAX_PATH];
-    if (!GetModuleFileNameA(m, path, MAX_PATH)) return false;
-    const char *base = strrchr(path, '\\');
-    snprintf(name, cap, "%s", base ? base + 1 : path);
+    std::string path = ModulePath(m);
+    if (path.empty()) return false;
+    snprintf(name, cap, "%s", path.c_str() + path.find_last_of('\\') + 1);
     *rva = reinterpret_cast<uintptr_t>(addr) - reinterpret_cast<uintptr_t>(m);
     return true;
 }
@@ -87,8 +86,8 @@ DWORD WINAPI WriteReport(void *arg) {
     std::string err;
     uint64_t last = EventsSince(json{{"seq", 0}, {"limit", 1}}, &err).value("latest", static_cast<uint64_t>(0));
     j["events"] = EventsSince(json{{"seq", last > 40 ? last - 40 : 0}}, &err)["events"];
-    std::string text = j.dump(1);
-    HANDLE f = CreateFileA(r->file.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    std::string text = j.dump(1, ' ', false, json::error_handler_t::replace);
+    HANDLE f = PathCreateFile(r->file, GENERIC_WRITE, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL);
     if (f != INVALID_HANDLE_VALUE) {
         DWORD wrote = 0;
         WriteFile(f, text.data(), static_cast<DWORD>(text.size()), &wrote, nullptr);
@@ -123,15 +122,15 @@ LONG WINAPI CrashFilter(EXCEPTION_POINTERS *ep) {
         int npc = StackOf(c, pcs, 32);
         for (int i = 0; i < npc; i++) Log(MML_LOG_ERROR, "crash", "  %s %s", i ? "from" : "at  ", Frame(pcs[i]).c_str());
         std::string dir = MmlDir() + "crash\\";
-        CreateDirectoryA(dir.c_str(), nullptr);
+        MakeDir(dir);
         SYSTEMTIME t;
         GetLocalTime(&t);
-        char file[MAX_PATH];
+        char file[1024];   // (UTF-8: a folder of MAX_PATH characters takes up to three bytes each)
         snprintf(file, sizeof file, "%sGame_%u_%04d%02d%02d_%02d%02d%02d.dmp", dir.c_str(), static_cast<unsigned>(GetCurrentProcessId()),
                  t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond);
         HMODULE dbghelp = LoadLibraryA("dbghelp.dll");
         auto write = dbghelp ? reinterpret_cast<MiniDumpWriteDumpFn>(GetProcAddress(dbghelp, "MiniDumpWriteDump")) : nullptr;
-        HANDLE f = CreateFileA(file, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        HANDLE f = PathCreateFile(file, GENERIC_WRITE, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL);
         if (write && f != INVALID_HANDLE_VALUE) {
             struct { DWORD tid; EXCEPTION_POINTERS *ep; BOOL client; } info = {GetCurrentThreadId(), ep, FALSE};
             // WithDataSegs 0x1 | WithHandleData 0x4 | WithUnloadedModules 0x20 | WithIndirectlyReferencedMemory 0x40 |

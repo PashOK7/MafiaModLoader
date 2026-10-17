@@ -35,7 +35,7 @@
 #include <set>
 #include "json.hpp"
 #include "menus_shared.h"
-#include "mml/game/game_build.h"
+#include "mml/game/game.h"
 
 using json = nlohmann::json;
 
@@ -1102,15 +1102,7 @@ std::string MenuDefName(uintptr_t menu) { return m10::Known() ? m10::Name(menu) 
 // 0x238 bytes whose +4 is the language's two letters: menuLang). The text database of that language
 // (tables\textdb_<ll>.def) is written in that language's Windows code page: Czech in 1250 (the game's own), the
 // western ones in 1252 (seen in the French 1.0 lab: 0xE8 is the "è" of "Piège", which 1250 read as "č").
-unsigned GameCodePage() {
-    uint16_t lang = 0;
-    if (game::g_exe && game::Exe().menuLang) MemRead(game::Exe().menuLang, &lang, 2);
-    char ll[3] = {static_cast<char>(lang & 0xFF), static_cast<char>(lang >> 8), 0};
-    for (char &c : ll) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
-    if (!strcmp(ll, "cz") || !strcmp(ll, "cs") || !strcmp(ll, "pl") || !strcmp(ll, "hu") || !strcmp(ll, "sk")) return 1250;
-    if (!strcmp(ll, "ru")) return 1251;
-    return 1252;
-}
+unsigned GameCodePage() { return game::TextCodePage(); }   // (the SDK's: mods read it the same way)
 
 uintptr_t MenuClassOf(uintptr_t menu) {
     uintptr_t vptr = R32(menu);

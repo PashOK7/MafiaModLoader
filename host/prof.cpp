@@ -370,7 +370,7 @@ bool ProfMethod(const std::string &method, const std::string &paramsJson, std::s
         if (id) {
             std::lock_guard<std::mutex> lk(g_reportMx);
             if (!g_report.is_null() && g_report.value("id", 0) == id) *reply = g_report.dump(-1, ' ', false, json::error_handler_t::replace);
-            else *reply = json({{"id", id}, {"done", false}, {"running", g_sampling.load()}}).dump();
+            else *reply = json({{"id", id}, {"done", false}, {"running", g_sampling.load()}}).dump(-1, ' ', false, json::error_handler_t::replace);
             return true;
         }
         if (g_sampling) { *ok = false; *reply = "prof.sample: a run is going on (prof.sample {id})"; return true; }
@@ -384,7 +384,7 @@ bool ProfMethod(const std::string &method, const std::string &paramsJson, std::s
         g_sampleSeconds = seconds;
         g_sampling = true;
         std::thread(Run, me, seconds).detach();   // (it ends by itself after `seconds`; nothing waits for it)
-        *reply = json({{"id", g_sampleId}, {"seconds", seconds}, {"next", "prof.sample {id} once it ran"}}).dump();
+        *reply = json({{"id", g_sampleId}, {"seconds", seconds}, {"next", "prof.sample {id} once it ran"}}).dump(-1, ' ', false, json::error_handler_t::replace);
         return true;
     }
     *ok = false;

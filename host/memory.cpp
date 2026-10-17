@@ -74,9 +74,8 @@ std::string DescribeAddress(uintptr_t addr) {
     HMODULE m = nullptr;
     if (addr && GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                                    reinterpret_cast<const char *>(addr), &m) && m) {
-        char path[MAX_PATH] = "";
-        GetModuleFileNameA(m, path, MAX_PATH);
-        const char *name = strrchr(path, '\\') ? strrchr(path, '\\') + 1 : path;
+        std::string path = ModulePath(m);
+        const char *name = path.c_str() + path.find_last_of('\\') + 1;
         snprintf(out, sizeof out, "%s+0x%X", name, static_cast<unsigned>(addr - reinterpret_cast<uintptr_t>(m)));
     } else {
         snprintf(out, sizeof out, "0x%08X", static_cast<unsigned>(addr));

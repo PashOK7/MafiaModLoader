@@ -71,7 +71,7 @@ Counts Read(int scope) {
     return FromJson(json::parse(s, nullptr, false));
 }
 void Write(int scope, const Counts &c) {
-    std::string s = ToJson(c).dump(), err;
+    std::string s = ToJson(c).dump(-1, ' ', false, json::error_handler_t::replace), err;
     if (!SavePutAs(kOwner, scope, kKey, s.data(), s.size(), &err) && scope == MML_SAVE_PROFILE && err != "no profile selected yet")
         HWARN("stats: %s", err.c_str());
 }
@@ -215,7 +215,7 @@ int ProfileSaves(int *slots, int max) {
     for (int s = 0; s < kSlots; s++) {
         char name[64];
         snprintf(name, sizeof name, "savegame\\mafia%03d.%03d", profile, s);
-        if (GetFileAttributesA((GameDir() + name).c_str()) == INVALID_FILE_ATTRIBUTES) continue;
+        if (!PathExists(GameDir() + name)) continue;
         if (slots && n < max) slots[n] = s;
         n++;
     }

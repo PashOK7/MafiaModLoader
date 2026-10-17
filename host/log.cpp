@@ -15,11 +15,11 @@ const char *kLevel[] = {"debug", "info", "warn", "error"};
 
 void Open() {
     std::string dir = MmlDir() + "logs\\";
-    CreateDirectoryA(MmlDir().c_str(), nullptr);
-    CreateDirectoryA(dir.c_str(), nullptr);
+    MakeDir(MmlDir());
+    MakeDir(dir);
     // the previous run's log is kept: a crash at the game's exit is often looked at only after the next start
-    MoveFileExA((dir + "mml.log").c_str(), (dir + "mml.prev.log").c_str(), MOVEFILE_REPLACE_EXISTING);
-    g_file = fopen((dir + "mml.log").c_str(), "w");
+    PathMove(dir + "mml.log", dir + "mml.prev.log", MOVEFILE_REPLACE_EXISTING);
+    g_file = FileOpen(dir + "mml.log", "w");
 }
 } // namespace
 

@@ -568,6 +568,15 @@ What is done, what comes next and later, and what is known to be missing or wron
   0.3 s), a chapter (1.0's Salieri's bar, 1.2's Old Prison: the player put back to the centimetre, the mission going on
   with its objective), another mission's point opening that mission and back; the profiles' saves byte for byte as
   they were.
+- **A game folder of any name** (2026-10-17; a speedrunner's report: every start crashed in a Cyrillic folder):
+  every path in the host is UTF-8 and Windows is asked through its wide functions (host/paths.cpp); the mods' own
+  files reach the game's ANSI file layer through rw_data's CreateFileA link, opened by their wide path (any folder's
+  name); json is dumped with the replace handler everywhere in the host (a name in the game's code page threw once);
+  `draw_text` takes UTF-8 (turned into the code page of the game's fonts) and `game::TextUtf8` turns the game's texts
+  into UTF-8; `mml/path.h` for mods. **Kept so** by `tools/check_paths.py` in the offline tests: no ANSI path
+  function, file stream by a narrow path, `std::filesystem` or strict json dump in the host, the SDK, the mods and the
+  tests. Seen in both labs through junctions named `Игра` and `Mafia ☃ 試` (the game, the mods, a mod's file read by
+  the game's own rw_data); offline in the same two names.
 - **People, skeletons, poses** (2026-10-16; item 6, block 6a): the host keeps every `C_human` (`humans_list`,
   `human_player`), a person's skeleton by the bones' names (`human_skeleton`: 18 joints, the pelvis, the root), a
   pose written for the frame's drawing (`bone_set` in `RENDER_BEGIN`, each posed model updated once after);
@@ -811,6 +820,13 @@ merged, sorted by importance):
 
 ## Known gaps
 
+- **A game folder no ANSI code page spells** (a Cyrillic name on a 1252 system, a CJK one on a 1251 system): the
+  game, the loader and the mods' own files work there (both labs, 2026-10-17), but **dxwrapper does not**: its
+  `d3d8.dll` stub looks for `dxwrapper.dll` by an ANSI path, shows "Could not find DxWrapper.dll functions will be
+  disabled!" and the game draws on plain Direct3D 8, where the loader's Direct3D 9 services (the graphics passes,
+  the shaders on the game's drawing, the scene views) are not offered. Not the loader's code; a player whose folder
+  is named in the system's own code page (Cyrillic on a Russian Windows) is not affected. Paths longer than
+  MAX_PATH are not handled anywhere (nor by the game).
 - **Restore points** (host/saves.cpp, `restore`): a point is the game's own save, so it holds what the game saves:
   what it does not (a sound playing, a particle in the air, the camera's smoothing, a mod's state it did not put at
   GAME_SAVING) is not put back; mods are told GAME_LOADED with slot 599. Made in a mission in play only (not in the

@@ -90,8 +90,11 @@ float w = H->draw_text_width(MML_FONT_SMALL, 14, "how wide is this");
 - **Coordinates**: the menus' virtual units, whatever the resolution: the screen is 800 wide and 600 high, (0, 0)
   the top left corner. A text's size is its line height in these units (the HUD's money is 40, a menu's button 30).
 - **Colours**: `0xAARRGGBB`. **Fonts** (the game's own): `MML_FONT_SMALL` (plain), `MML_FONT_BIG` (bold, the
-  HUD's numbers), `MML_FONT_TITLE` (the menus' handwriting). Text is in the game's encoding (ASCII is safe), about
-  100 characters a call. `MML_DRAW_LEFT`, `_CENTER`, `_RIGHT`: what `x` is.
+  HUD's numbers), `MML_FONT_TITLE` (the menus' handwriting). Text is UTF-8, about 100 characters a call: the host
+  turns it into the code page of the game's fonts (its language's: 1250, 1251 or 1252; a character with no place
+  there is a `?`). A text read from the game (its texts, its frames' names) is in that code page:
+  `game::TextUtf8(text)` (mml/game/game.h) before drawing it, logging it or putting it in a reply. `MML_DRAW_LEFT`,
+  `_CENTER`, `_RIGHT`: what `x` is.
 - It is the game's own 2D drawing, at the end of its 2D pass (over the HUD and the menus), so `screenshot` shows
   it. Nothing is drawn while the game loads.
 - A fault while your items are drawn turns your drawing off until the mod is reloaded (the log says so); the game
@@ -1157,6 +1160,10 @@ H->config_set(M, "finish", "{\"x\": 1.5, \"z\": -2}");           /* any JSON val
 - Agents change settings with `call config.set {"mod": "<id>", "key": "units", "value": "mph"}` and read them with
   `config.get`: no settings window is needed.
 - Never write into the mod's own folder: a deploy replaces it.
+- **Paths are UTF-8** (`game_dir`, `mod_dir`, `mod_data_dir`, `file_source`, `file_add`'s): players keep the game in
+  folders of any name (`C:\Игры\Mafia`). `fopen` and the ANSI functions (`CreateFileA`, `LoadLibraryA`...) read a
+  path in the system's code page and fail on such a folder: open files with `mml/path.h`'s `mml_fopen(path, "rb")`,
+  or widen the path (`mml_widen`) for the wide functions (`CreateFileW`, `FindFirstFileW`).
 
 ### Settings in the game's Options (a page with no code)
 

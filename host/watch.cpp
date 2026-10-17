@@ -177,7 +177,7 @@ bool WatchMethod(const std::string &method, const std::string &paramsJson, std::
         Apply();
         *ok = true;
         *reply = json({{"id", w.id}, {"addr", Hex8(static_cast<uint32_t>(addr))}, {"where", DescribeAddress(addr)}, {"mode", mode}, {"len", len},
-                       {"value", Hex8(v)}, {"next", "let the game run, then watch.show {id}"}}).dump();
+                       {"value", Hex8(v)}, {"next", "let the game run, then watch.show {id}"}}).dump(-1, ' ', false, json::error_handler_t::replace);
         return true;
     }
     if (method == "watch.clear") {
@@ -187,7 +187,7 @@ bool WatchMethod(const std::string &method, const std::string &paramsJson, std::
         for (Watch &w : g_w) if (w.on && (all || w.id == id)) { w.on = false; n++; }
         Apply();
         *ok = true;
-        *reply = json({{"cleared", n}}).dump();
+        *reply = json({{"cleared", n}}).dump(-1, ' ', false, json::error_handler_t::replace);
         return true;
     }
     int id = p.value("id", 0);

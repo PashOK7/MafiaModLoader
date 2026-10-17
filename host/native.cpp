@@ -106,7 +106,7 @@ bool Word(const json &a, DWORD *out, std::string *err) {
         *out = static_cast<DWORD>(v);
         return true;
     }
-    *err = "an argument not understood: " + a.dump();
+    *err = "an argument not understood: " + a.dump(-1, ' ', false, json::error_handler_t::replace);
     return false;
 }
 

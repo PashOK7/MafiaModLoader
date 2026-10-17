@@ -56,7 +56,7 @@ std::string File() { return MmlDir() + "items.json"; }
 void Load() {
     if (g_loaded) return;
     g_loaded = true;
-    std::ifstream f(File(), std::ios::binary);
+    std::ifstream f(Wide(File()), std::ios::binary);
     if (!f) return;
     std::stringstream ss;
     ss << f.rdbuf();
@@ -73,12 +73,12 @@ void Save() {
     for (const auto &kv : g_ids) items[kv.first] = kv.second;
     std::string tmp = File() + ".tmp";
     {
-        std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
+        std::ofstream f(Wide(tmp), std::ios::binary | std::ios::trunc);
         f << json({{"note", "the ids of the mods' items (MafiaModLoader): kept so the saves holding them find them again"},
-                   {"items", items}}).dump(2);
+                   {"items", items}}).dump(2, ' ', false, json::error_handler_t::replace);
     }
-    DeleteFileA(File().c_str());
-    if (!MoveFileA(tmp.c_str(), File().c_str())) HWARN("items: cannot write %s", File().c_str());
+    PathDelete(File());
+    if (!PathMove(tmp, File())) HWARN("items: cannot write %s", File().c_str());
 }
 
 // The game's own text of an id is free for us: none, or blank.

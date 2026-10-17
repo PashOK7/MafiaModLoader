@@ -103,7 +103,7 @@ std::string GameSaveFile(int profile, int slot) {
 
 bool ReadBlobs(const std::string &path, Blobs *out) {
     out->clear();
-    FILE *f = fopen(path.c_str(), "rb");
+    FILE *f = FileOpen(path, "rb");
     if (!f) return false;
     std::vector<char> d;
     char buf[65536];
@@ -142,11 +142,11 @@ bool WriteBlobs(const std::string &path, const Blobs &b) {
     uint32_t count = 0;
     for (const auto &m : b) count += static_cast<uint32_t>(m.second.size());
     if (!count) {   // nothing to keep: no file
-        DeleteFileA(path.c_str());
+        PathDelete(path);
         return true;
     }
     std::string tmp = path + ".tmp";
-    FILE *f = fopen(tmp.c_str(), "wb");
+    FILE *f = FileOpen(tmp, "wb");
     if (!f) { g_lastError = "cannot write " + tmp; return false; }
     const uint32_t head[3] = {kMagic, 1, count};
     bool ok = fwrite(head, 4, 3, f) == 3;
@@ -158,9 +158,9 @@ bool WriteBlobs(const std::string &path, const Blobs &b) {
                  fwrite(k.first.data(), 1, kl, f) == kl && fwrite(&size, 4, 1, f) == 1 && fwrite(k.second.data(), 1, size, f) == size;
         }
     ok = fclose(f) == 0 && ok;
-    if (!ok) { DeleteFileA(tmp.c_str()); g_lastError = "writing " + tmp + " failed"; return false; }
-    DeleteFileA(path.c_str());   // (a rename over an open file is refused; a reader keeps the old one)
-    if (!MoveFileA(tmp.c_str(), path.c_str())) { g_lastError = "cannot rename " + tmp; return false; }
+    if (!ok) { PathDelete(tmp); g_lastError = "writing " + tmp + " failed"; return false; }
+    PathDelete(path);   // (a rename over an open file is refused; a reader keeps the old one)
+    if (!PathMove(tmp, path)) { g_lastError = "cannot rename " + tmp; return false; }
     return true;
 }
 
@@ -186,7 +186,7 @@ int __fastcall hkSave(void *mgr, void *edx, int quick) {
     Tell(MML_EVENT_GAME_SAVING, slot, profile);   // (the mods put their state now)
     int r = oSave(mgr, edx, quick);
     std::lock_guard<std::recursive_mutex> g(g_lock);
-    if (profile >= 0 && slot >= 0 && GetFileAttributesA(GameSaveFile(profile, slot).c_str()) != INVALID_FILE_ATTRIBUTES) {
+    if (profile >= 0 && slot >= 0 && PathExists(GameSaveFile(profile, slot))) {
         g_lastFile = SlotFile(profile, slot);
         if (WriteBlobs(g_lastFile, g_slot)) g_saves++;
         else Log(MML_LOG_WARN, "host", "saves: %s", g_lastError.c_str());
@@ -219,15 +219,15 @@ int __fastcall hkLoad(void *mgr, void *edx) {
         SetSlot(done.prevSlot);
         auto f = [&] { game::at<uint8_t>(mgr, game::kSaveSuppress) = 0; };
         Guarded(f);
-        DeleteFileA(GameSaveFile(profile, kRestoreSlot).c_str());
-        DeleteFileA(SlotFile(profile, kRestoreSlot).c_str());
+        PathDelete(GameSaveFile(profile, kRestoreSlot));
+        PathDelete(SlotFile(profile, kRestoreSlot));
         {
             std::lock_guard<std::recursive_mutex> g(g_lock);
             g_slotNow = done.prevSlotNow;
         }
         HLOG("restore point '%s' loaded (%s) in %u ms", done.name.c_str(), MissionName(), static_cast<unsigned>(GetTickCount() - done.started));
         EventsRecord("RESTORE_LOADED", json({{"name", done.name}, {"mission", MissionName()},
-                                             {"ms", GetTickCount() - done.started}}).dump());
+                                             {"ms", GetTickCount() - done.started}}).dump(-1, ' ', false, json::error_handler_t::replace));
     }
     HappenGameLoaded();   // (the money and the items as loaded are no change the player made)
     Tell(MML_EVENT_GAME_LOADED, slot, profile);
@@ -256,16 +256,10 @@ int __fastcall hkDelete(void *mgr, void *edx, unsigned index) {
     int r = oDelete(mgr, edx, index);
     if (profile >= 0) {
         std::lock_guard<std::recursive_mutex> g(g_lock);
-        DeleteFileA(ProfileFile(profile).c_str());
+        PathDelete(ProfileFile(profile));
         char pat[64];
         snprintf(pat, sizeof pat, "savegame\\mafia%03d.*.mml", profile);
-        WIN32_FIND_DATAA fd;
-        HANDLE h = FindFirstFileA((GameDir() + pat).c_str(), &fd);
-        if (h != INVALID_HANDLE_VALUE) {
-            do DeleteFileA((GameDir() + "savegame\\" + fd.cFileName).c_str());
-            while (FindNextFileA(h, &fd));
-            FindClose(h);
-        }
+        for (const FoundFile &fd : ListDir(GameDir() + pat)) PathDelete(GameDir() + "savegame\\" + fd.name);
         g_profiles.erase(profile);
     }
     return r;
@@ -290,25 +284,25 @@ DWORD CallSave() {   // SaveGameSave through its hooked entry (hkSave: the mods 
 
 bool FileSize(const std::string &path, uint64_t *size) {
     WIN32_FILE_ATTRIBUTE_DATA a;
-    if (!GetFileAttributesExA(path.c_str(), GetFileExInfoStandard, &a)) return false;
+    if (!PathAttributesEx(path, &a)) return false;
     *size = (static_cast<uint64_t>(a.nFileSizeHigh) << 32) | a.nFileSizeLow;
     return true;
 }
 
 // Slot 599 must be free: a save there is not ours (ours never stays) and is never overwritten.
 bool SlotFree(int profile, std::string *err) {
-    if (GetFileAttributesA(GameSaveFile(profile, kRestoreSlot).c_str()) == INVALID_FILE_ATTRIBUTES) return true;
+    if (!PathExists(GameSaveFile(profile, kRestoreSlot))) return true;
     *err = GameSaveFile(profile, kRestoreSlot) + " holds a save the loader did not make: no restore points while it is there (move it away)";
     return false;
 }
 
 bool Move(const std::string &from, const std::string &to) {
-    DeleteFileA(to.c_str());
-    return MoveFileA(from.c_str(), to.c_str()) != FALSE;
+    PathDelete(to);
+    return PathMove(from, to);
 }
 
 json ReadMeta(const std::string &name) {
-    FILE *f = fopen((RestoreDir() + name + ".json").c_str(), "rb");
+    FILE *f = FileOpen(RestoreDir() + name + ".json", "rb");
     if (!f) return nullptr;
     std::string s;
     char b[4096];
@@ -342,18 +336,18 @@ json RestoreSave(const json &p, std::string *err) {
     std::string sav = GameSaveFile(profile, kRestoreSlot), mml = SlotFile(profile, kRestoreSlot);
     uint64_t bytes = 0;
     if (code || !FileSize(sav, &bytes)) {
-        DeleteFileA(sav.c_str());
-        DeleteFileA(mml.c_str());
+        PathDelete(sav);
+        PathDelete(mml);
         char b[96];
         snprintf(b, sizeof b, "SaveGameSave %s", code ? "faulted" : "wrote no file");
         *err = b;
         return nullptr;
     }
-    CreateDirectoryA(RestoreDir().c_str(), nullptr);
+    MakeDir(RestoreDir());
     std::string base = RestoreDir() + name;
-    if (!Move(sav, base + ".sav")) { DeleteFileA(sav.c_str()); DeleteFileA(mml.c_str()); *err = "cannot move the save to " + base + ".sav"; return nullptr; }
-    bool mods = GetFileAttributesA(mml.c_str()) != INVALID_FILE_ATTRIBUTES;
-    DeleteFileA((base + ".mml").c_str());
+    if (!Move(sav, base + ".sav")) { PathDelete(sav); PathDelete(mml); *err = "cannot move the save to " + base + ".sav"; return nullptr; }
+    bool mods = PathExists(mml);
+    PathDelete(base + ".mml");
     if (mods && !Move(mml, base + ".mml")) mods = false;
     SYSTEMTIME st;
     GetLocalTime(&st);
@@ -361,8 +355,8 @@ json RestoreSave(const json &p, std::string *err) {
     snprintf(made, sizeof made, "%04d-%02d-%02d %02d:%02d:%02d", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
     json meta = {{"name", name}, {"mission", mission}, {"build", GameBuild()}, {"profile", profile}, {"made", made},
                  {"bytes", bytes}, {"mods_state", mods}};
-    FILE *f = fopen((base + ".json").c_str(), "wb");
-    if (f) { std::string s = meta.dump(1); fwrite(s.data(), 1, s.size(), f); fclose(f); }
+    FILE *f = FileOpen(base + ".json", "wb");
+    if (f) { std::string s = meta.dump(1, ' ', false, json::error_handler_t::replace); fwrite(s.data(), 1, s.size(), f); fclose(f); }
     meta["ms"] = GetTickCount() - t0;
     HLOG("restore point '%s' saved (%s, %u bytes)", name.c_str(), mission.c_str(), static_cast<unsigned>(bytes));
     return meta;
@@ -376,7 +370,7 @@ json RestoreLoad(const json &p, std::string *err) {
     if (g_restoring.active) { *err = "a restore point is being loaded already: '" + g_restoring.name + "'"; return nullptr; }
     std::string base = RestoreDir() + name;
     json meta = ReadMeta(name);
-    if (GetFileAttributesA((base + ".sav").c_str()) == INVALID_FILE_ATTRIBUTES || !meta.is_object()) {
+    if (!PathExists(base + ".sav") || !meta.is_object()) {
         *err = "no restore point '" + name + "' (restore.list)"; return nullptr;
     }
     if (meta.value("build", "") != GameBuild()) { *err = "the point was made in the game " + meta.value("build", "?") + ", this is " + GameBuild(); return nullptr; }
@@ -390,9 +384,9 @@ json RestoreLoad(const json &p, std::string *err) {
     if (Guarded(rs) || state != 0) { *err = "the game is leaving or loading already (its state " + std::to_string(state) + ")"; return nullptr; }
     if (!SlotFree(profile, err)) return nullptr;
     std::string sav = GameSaveFile(profile, kRestoreSlot), mml = SlotFile(profile, kRestoreSlot);
-    if (!CopyFileA((base + ".sav").c_str(), sav.c_str(), TRUE)) { *err = "cannot copy the point into " + sav; return nullptr; }
-    DeleteFileA(mml.c_str());
-    if (GetFileAttributesA((base + ".mml").c_str()) != INVALID_FILE_ATTRIBUTES) CopyFileA((base + ".mml").c_str(), mml.c_str(), FALSE);
+    if (!PathCopy(base + ".sav", sav, true)) { *err = "cannot copy the point into " + sav; return nullptr; }
+    PathDelete(mml);
+    if (PathExists(base + ".mml")) PathCopy(base + ".mml", mml, false);
     g_restoring.active = true;
     g_restoring.name = name;
     g_restoring.mission = meta.value("mission", "");
@@ -407,8 +401,8 @@ json RestoreLoad(const json &p, std::string *err) {
     if (Guarded(ws)) {
         g_restoring.active = false;
         SetSlot(g_restoring.prevSlot);
-        DeleteFileA(sav.c_str());
-        DeleteFileA(mml.c_str());
+        PathDelete(sav);
+        PathDelete(mml);
         *err = "cannot set the game's state";
         return nullptr;
     }
@@ -418,16 +412,12 @@ json RestoreLoad(const json &p, std::string *err) {
 
 json RestoreList() {
     json out = json::array();
-    WIN32_FIND_DATAA fd;
-    HANDLE h = FindFirstFileA((RestoreDir() + "*.sav").c_str(), &fd);
-    if (h == INVALID_HANDLE_VALUE) return out;
-    do {
-        std::string n = fd.cFileName;
+    for (const FoundFile &fd : ListDir(RestoreDir() + "*.sav")) {
+        std::string n = fd.name;
         n.resize(n.size() - 4);
         json m = ReadMeta(n);
         out.push_back(m.is_object() ? m : json({{"name", n}, {"note", "no .json beside it"}}));
-    } while (FindNextFileA(h, &fd));
-    FindClose(h);
+    }
     return out;
 }
 
@@ -494,9 +484,9 @@ bool SavesMethod(const std::string &method, const std::string &paramsJson, std::
         else if (method == "restore.list") r = {{"dir", RestoreDir()}, {"points", RestoreList()}};
         else {
             std::string name = p.value("name", "");
-            if (!RestoreName(name) || GetFileAttributesA((RestoreDir() + name + ".sav").c_str()) == INVALID_FILE_ATTRIBUTES) err = "no restore point '" + name + "'";
+            if (!RestoreName(name) || !PathExists(RestoreDir() + name + ".sav")) err = "no restore point '" + name + "'";
             else {
-                for (const char *ext : {".sav", ".mml", ".json"}) DeleteFileA((RestoreDir() + name + ext).c_str());
+                for (const char *ext : {".sav", ".mml", ".json"}) PathDelete(RestoreDir() + name + ext);
                 r = {{"deleted", name}};
             }
         }
@@ -554,7 +544,7 @@ bool SavesMethod(const std::string &method, const std::string &paramsJson, std::
             int scope;
             if (!scopeOf(&scope)) { *reply = "scope: \"slot\" (default) or \"profile\""; return true; }
             std::string key = p.value("key", ""), err;
-            std::string value = p.contains("value") ? (p["value"].is_string() ? p["value"].get<std::string>() : p["value"].dump()) : "";
+            std::string value = p.contains("value") ? (p["value"].is_string() ? p["value"].get<std::string>() : p["value"].dump(-1, ' ', false, json::error_handler_t::replace)) : "";
             if (!SavePut(nullptr, scope, key.c_str(), value.data(), value.size(), &err)) { *reply = "save.put: " + err; return true; }
             *reply = dump({{"key", key}, {"size", value.size()}, {"scope", scope == MML_SAVE_SLOT ? "slot" : "profile"}});
         }

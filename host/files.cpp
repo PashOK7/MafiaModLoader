@@ -20,6 +20,12 @@
 // sharing (rw_data's own CreateFileA import, only during that call): a file can be replaced while the game reads it
 // (the game goes on reading the old one until it closes it).
 //
+// Names: rw_data is an ANSI layer (a path in the system's code page), the mods' files may be anywhere (a game in
+// "C:\Игры\Mafia" on a system whose code page has no Cyrillic). Its dtaOpen hands the name it is given to
+// CreateFileA as it is (rw_data 0x100018A0, the same file in 1.2 and 1.0), so that same link opens a mod's file by
+// its wide path (CreateFileW): a folder of any name. Without the link (the import not
+// found) the file is given by its code page's spelling or its short name, and left out when it has neither.
+//
 // Changes on disk: each loaded mod's files\ folder is watched (a change notification, looked at every frame, read
 // again a quarter of a second after the last change), file_add's files are looked at once a second. A name whose
 // answer changed (content, a file come or gone, another mod's in its place) is logged and every mod gets
@@ -59,11 +65,12 @@ DtaOpenFn gDtaOpen;                    // the export: what the game calls (every
 DtaReadFn gDtaRead;
 DtaSeekFn gDtaSeek;
 DtaCloseFn gDtaClose;
-CreateFileAFn oCreateFileA;            // rw_data's import, as it was
-thread_local bool t_shareAll;          // this thread's dtaOpen opens a mod's file: share writing and deleting
+CreateFileAFn oCreateFileA;            // rw_data's import, as it was (null: not linked)
+thread_local const char *t_name;       // this thread's dtaOpen opens a mod's file: the name rw_data was given,
+thread_local const std::wstring *t_wide;   // and the file's wide path (CreateFileW, sharing writing and deleting)
 
 struct Src {                           // one file a mod ships for a name
-    std::string mod, path;
+    std::string mod, path, acp;        // its file (UTF-8), and as rw_data's dtaOpen is given it (NameForRw)
     int order = 0;
     bool added = false;                // file_add's (else the files\ folder's)
     uint64_t time = 0, size = 0;
@@ -78,7 +85,7 @@ struct ModFiles {
 };
 std::map<std::string, ModFiles> g_mods;         // by id (game thread, and Init)
 
-struct Answer { std::string mod, path; uint64_t time = 0, size = 0; };
+struct Answer { std::string mod, path, acp; uint64_t time = 0, size = 0; std::wstring wide; };
 SRWLOCK g_lock = SRWLOCK_INIT;                  // g_answers, g_all: read by any thread that opens a file
 std::map<std::string, Answer> g_answers;        // each name's file, the last mod's in load order
 std::map<std::string, std::vector<Src>> g_all;  // each name's files, in load order
@@ -128,40 +135,52 @@ bool GameName(const char *in, std::string *out) {
     return !out->empty();
 }
 
+// A name a mod or the bridge gives (UTF-8) as the game's (GameName, in the system's code page as the game asks).
+bool GameNameOf(const char *utf8, std::string *out) { return utf8 && GameName(AcpOf(utf8).c_str(), out); }
+std::string NameUtf8(const std::string &name) { return AcpToUtf8(name.c_str()); }   // a game name for JSON
+
 bool Stat(const std::string &path, uint64_t *time, uint64_t *size) {
     WIN32_FILE_ATTRIBUTE_DATA d;
-    if (!GetFileAttributesExA(path.c_str(), GetFileExInfoStandard, &d) || (d.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) return false;
+    if (!PathAttributesEx(path, &d) || (d.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) return false;
     *time = (static_cast<uint64_t>(d.ftLastWriteTime.dwHighDateTime) << 32) | d.ftLastWriteTime.dwLowDateTime;
     *size = (static_cast<uint64_t>(d.nFileSizeHigh) << 32) | d.nFileSizeLow;
     return true;
 }
 
+// The name rw_data's dtaOpen is given for a mod's file (see "Names" above). With the CreateFileA link any name does,
+// as the link opens the file by its wide path: the code page's spelling when it has one and fits rw_data's MAX_PATH
+// (rw_data's own log and messages show it), else a short stand-in. False: the game cannot open it (no link, and no
+// ANSI name).
+bool NameForRw(const std::string &path, std::string *out, const char *mod) {
+    bool spelled;
+    *out = AcpPath(path, &spelled);
+    if (spelled && out->size() < MAX_PATH) return true;
+    if (oCreateFileA) {
+        *out = "mml-file";
+        return true;
+    }
+    Log(MML_LOG_WARN, mod, "files: %s: %s for the game's ANSI file layer and rw_data's CreateFileA is not linked: left out",
+        path.c_str(), spelled ? "the path is too long" : "the system's code page cannot spell the path");
+    return false;
+}
+
 // Every file under root (a folder, trailing backslash), by its game name.
 void ScanDir(const std::string &root, const std::string &rel, ModFiles *m, int depth) {
     if (depth > 16) return;
-    WIN32_FIND_DATAA fd;
-    HANDLE h = FindFirstFileA((root + rel + "*").c_str(), &fd);
-    if (h == INVALID_HANDLE_VALUE) return;
-    do {
-        std::string n = fd.cFileName;
-        if (n == "." || n == "..") continue;
-        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) { ScanDir(root, rel + n + "\\", m, depth + 1); continue; }
+    for (const FoundFile &fd : ListDir(root + rel + "*")) {
+        const std::string &n = fd.name;
+        if (fd.dir()) { ScanDir(root, rel + n + "\\", m, depth + 1); continue; }
         std::string low = Lower(n);
         if (low.size() > 7 && low.compare(low.size() - 7, 7, ".mmltmp") == 0) continue;   // a deploy's copy on its way
-        if (root.size() + rel.size() + n.size() >= MAX_PATH) {   // (rw_data copies a name into MAX_PATH bytes)
-            Log(MML_LOG_WARN, m->id.c_str(), "files: %s%s%s: the path is too long for the game (%d characters at most): left out",
-                root.c_str(), rel.c_str(), n.c_str(), MAX_PATH - 1);
-            continue;
-        }
         Src s;
         s.mod = m->id;
         s.order = m->order;
         s.path = root + rel + n;
-        s.time = (static_cast<uint64_t>(fd.ftLastWriteTime.dwHighDateTime) << 32) | fd.ftLastWriteTime.dwLowDateTime;
-        s.size = (static_cast<uint64_t>(fd.nFileSizeHigh) << 32) | fd.nFileSizeLow;
-        m->files[Lower(rel + n)] = s;
-    } while (FindNextFileA(h, &fd));
-    FindClose(h);
+        if (!NameForRw(s.path, &s.acp, m->id.c_str())) continue;
+        s.time = (static_cast<uint64_t>(fd.written.dwHighDateTime) << 32) | fd.written.dwLowDateTime;
+        s.size = fd.size;
+        m->files[Lower(AcpOf(rel + n))] = s;
+    }
 }
 
 void ScanMod(ModFiles *m) {
@@ -173,15 +192,15 @@ void ScanMod(ModFiles *m) {
         s.order = m->order;
         s.path = kv.second;
         s.added = true;
-        if (Stat(s.path, &s.time, &s.size)) m->files[kv.first] = s;
+        if (Stat(s.path, &s.time, &s.size) && NameForRw(s.path, &s.acp, m->id.c_str())) m->files[kv.first] = s;
     }
 }
 
 void Watch(ModFiles *m) {
     if (m->watch != INVALID_HANDLE_VALUE) return;
-    DWORD a = GetFileAttributesA(m->filesDir.c_str());
+    DWORD a = PathAttributes(m->filesDir);
     if (a == INVALID_FILE_ATTRIBUTES || !(a & FILE_ATTRIBUTE_DIRECTORY)) return;
-    m->watch = FindFirstChangeNotificationA(m->filesDir.c_str(), TRUE, FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME |
+    m->watch = FindFirstChangeNotificationW(Wide(m->filesDir).c_str(), TRUE, FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME |
                                             FILE_NOTIFY_CHANGE_SIZE | FILE_NOTIFY_CHANGE_LAST_WRITE);
 }
 void Unwatch(ModFiles *m) {
@@ -203,7 +222,7 @@ std::vector<std::string> Rebuild() {
     std::map<std::string, std::string> pictures;
     for (auto &kv : all) {
         const Src &w = kv.second.back();
-        answers[kv.first] = Answer{w.mod, w.path, w.time, w.size};
+        answers[kv.first] = Answer{w.mod, w.path, w.acp, w.time, w.size, Wide(w.path)};
         size_t dot = kv.first.rfind('.');
         std::string ext = dot == std::string::npos ? "" : kv.first.substr(dot + 1);
         if (ext == "bmp" || ext == "tga" || ext == "dds") pictures[kv.first.substr(0, dot)] = kv.first;
@@ -283,11 +302,12 @@ std::string PresaveOf(const std::string &name) {
 // ---- the hooks
 uint32_t __stdcall hkDtaOpen(const char *path, int direct) {
     if (g_count.load(std::memory_order_relaxed) > 0 && path) {
-        std::string name, file, picture;
+        std::string name, file, acp, picture;
+        std::wstring wide;
         if (GameName(path, &name)) {
             AcquireSRWLockShared(&g_lock);
             auto it = g_answers.find(name);
-            if (it != g_answers.end()) file = it->second.path;
+            if (it != g_answers.end()) { file = it->second.path; acp = it->second.acp; wide = it->second.wide; }
             else picture = PresaveOf(name);
             ReleaseSRWLockShared(&g_lock);
         }
@@ -300,10 +320,12 @@ uint32_t __stdcall hkDtaOpen(const char *path, int direct) {
             return kNone;
         }
         if (!file.empty()) {
-            t_shareAll = true;
-            uint32_t h = oDtaOpen(file.c_str(), 0);
+            t_name = acp.c_str();
+            t_wide = &wide;
+            uint32_t h = oDtaOpen(acp.c_str(), 0);
             DWORD code = GetLastError();
-            t_shareAll = false;
+            t_name = nullptr;
+            t_wide = nullptr;
             std::lock_guard<std::mutex> lk(g_opensMx);
             if (h != kNone) {
                 g_opens[name]++;
@@ -319,7 +341,9 @@ uint32_t __stdcall hkDtaOpen(const char *path, int direct) {
 
 HANDLE WINAPI hkCreateFileA(LPCSTR name, DWORD access, DWORD share, LPSECURITY_ATTRIBUTES sa, DWORD disposition, DWORD flags,
                             HANDLE tmpl) {
-    if (t_shareAll) share |= FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
+    if (t_wide && name && !strcmp(name, t_name))   // a mod's file: by its wide path, sharing writing and deleting
+        return CreateFileW(t_wide->c_str(), access, share | FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, sa,
+                           disposition, flags, tmpl);
     return oCreateFileA(name, access, share, sa, disposition, flags, tmpl);
 }
 
@@ -359,7 +383,7 @@ std::string Hex(const std::vector<uint8_t> &b) {
 } // namespace
 
 void FilesInit() {
-    g_gameDirLower = Lower(GameDir());
+    g_gameDirLower = Lower(AcpPath(GameDir()));   // (the game's own names are in the system's code page)
     HMODULE rw = GetModuleHandleA("rw_data.dll");
     if (!rw) { HWARN("files: rw_data.dll is not loaded: the mods' files are not given to the game"); return; }
     auto open = reinterpret_cast<DtaOpenFn>(GetProcAddress(rw, "_dtaOpen@8"));
@@ -375,8 +399,8 @@ void FilesInit() {
     gDtaOpen = open;
     void *old = nullptr;
     if (PatchImport(rw, "kernel32.dll", "CreateFileA", reinterpret_cast<void *>(&hkCreateFileA), &old)) oCreateFileA = reinterpret_cast<CreateFileAFn>(old);
-    else HWARN("files: rw_data.dll's CreateFileA import not found: a mod's file the game holds open cannot be replaced meanwhile");
-    if (!oCreateFileA) oCreateFileA = CreateFileA;
+    else HWARN("files: rw_data.dll's CreateFileA import not found: the mods' files are given by their ANSI names (a folder "
+               "the system's code page cannot spell leaves them out), and one the game holds open cannot be replaced meanwhile");
     HLOG("files: rw_data.dll's dtaOpen hooked (the mods' files answer the game's names)");
 }
 
@@ -477,7 +501,7 @@ void FilesFrame() {
 int FilesAdd(MmlMod *mod, const char *name, const char *path) {
     ModFiles *m = ModOf(mod);
     std::string n;
-    if (!m || !GameName(name, &n)) {
+    if (!m || !GameNameOf(name, &n)) {
         Log(MML_LOG_WARN, ModIdOf(mod), "file_add: '%s' is not a name inside the game's folder", name ? name : "");
         return 0;
     }
@@ -508,7 +532,7 @@ void FilesNames(std::vector<std::pair<std::string, std::string>> *out) {
 
 int FilesSource(const char *name, char *path, int size) {
     std::string n, file;
-    if (!GameName(name, &n)) return 0;
+    if (!GameNameOf(name, &n)) return 0;
     AcquireSRWLockShared(&g_lock);
     auto it = g_answers.find(n);
     if (it != g_answers.end()) file = it->second.path;
@@ -523,7 +547,7 @@ int FilesSource(const char *name, char *path, int size) {
 
 int64_t FilesRead(const char *name, void *buf, size_t cap, int flags) {
     std::string n;
-    if (!GameName(name, &n)) return -1;
+    if (!GameNameOf(name, &n)) return -1;
     std::vector<uint8_t> data;
     int64_t size = ReadFile_(n, (flags & MML_FILE_GAME) != 0, 0, buf ? &data : nullptr, buf ? cap : 0);
     if (size >= 0 && buf && !data.empty()) memcpy(buf, data.data(), data.size());
@@ -540,7 +564,7 @@ bool FilesMethod(const std::string &method, const std::string &paramsJson, std::
     try {
         if (method == "files.list") {
             // {mod, name: a part of the names}: the mods with files and every name they answer
-            std::string mod = p.value("mod", ""), part = Lower(p.value("name", ""));
+            std::string mod = p.value("mod", ""), part = Lower(AcpOf(p.value("name", "")));
             json mods = json::array(), files = json::array();
             for (auto &kv : g_mods) {
                 if (!mod.empty() && kv.first != mod) continue;
@@ -566,7 +590,7 @@ bool FilesMethod(const std::string &method, const std::string &paramsJson, std::
                 const Src &w = kv.second.back();
                 json under = json::array();
                 for (size_t i = kv.second.size() - 1; i-- > 0;) under.push_back(kv.second[i].mod);
-                json f = {{"name", kv.first}, {"mod", w.mod}, {"path", w.path}, {"size", w.size}, {"opens", opens[kv.first]}};
+                json f = {{"name", NameUtf8(kv.first)}, {"mod", w.mod}, {"path", w.path}, {"size", w.size}, {"opens", opens[kv.first]}};
                 if (w.added) f["added"] = true;
                 if (!under.empty()) f["over"] = under;
                 files.push_back(f);
@@ -580,8 +604,8 @@ bool FilesMethod(const std::string &method, const std::string &paramsJson, std::
         }
         if (method == "files.which" || method == "files.read") {
             std::string raw = p.value("name", ""), n;
-            if (!GameName(raw.c_str(), &n)) { *reply = "name: a file's name inside the game's folder (\"tables\\\\credits.def\")"; return true; }
-            json out = {{"name", n}};
+            if (!GameNameOf(raw.c_str(), &n)) { *reply = "name: a file's name inside the game's folder (\"tables\\\\credits.def\")"; return true; }
+            json out = {{"name", NameUtf8(n)}};
             AcquireSRWLockShared(&g_lock);
             auto it = g_all.find(n);
             if (it != g_all.end()) {
@@ -612,7 +636,7 @@ bool FilesMethod(const std::string &method, const std::string &paramsJson, std::
             size_t size = std::min<size_t>(p.value("size", 256), 65536);
             std::vector<uint8_t> data;
             int64_t total = ReadFile_(n, game, offset, &data, size);
-            if (total < 0) { *reply = "files.read: " + n + ": the game has no such file" + std::string(game ? " of its own" : ""); return true; }
+            if (total < 0) { *reply = "files.read: " + NameUtf8(n) + ": the game has no such file" + std::string(game ? " of its own" : ""); return true; }
             out["source"] = game || !out.contains("mod") ? "game" : "mod";
             if (game) { out.erase("mod"); out.erase("path"); out.erase("over"); }
             out["size"] = total;

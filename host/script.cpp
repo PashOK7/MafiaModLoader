@@ -167,7 +167,7 @@ void End(Script *s, int state, const std::string &why, bool tell) {
     const char *names[] = {"running", "done", "failed", "stopped"};
     if (state == MML_SCRIPT_DONE) HLOG("script %d of %s: done (%u ticks)", s->id, ModIdOf(s->mod), s->ticks);
     else HWARN("script %d of %s: %s: %s", s->id, ModIdOf(s->mod), names[state], why.c_str());
-    EventsRecord("SCRIPT_ENDED", json({{"id", s->id}, {"owner", ModIdOf(s->mod)}, {"state", names[state]}, {"why", why}}).dump());
+    EventsRecord("SCRIPT_ENDED", json({{"id", s->id}, {"owner", ModIdOf(s->mod)}, {"state", names[state]}, {"why", why}}).dump(-1, ' ', false, json::error_handler_t::replace));
     if (!tell || !s->mod || !s->fn || !ModAlive(s->mod)) return;
     MmlScriptResult r{};
     r.size = sizeof r;

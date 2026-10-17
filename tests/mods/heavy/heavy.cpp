@@ -31,7 +31,8 @@ int IntArg(const char *args, const char *key, int def) {
 
 void PathOf(HMODULE m, char *out, size_t cap) {
     out[0] = 0;
-    if (m) GetModuleFileNameA(m, out, static_cast<DWORD>(cap));
+    wchar_t w[MAX_PATH];   // (UTF-8 in the reply: the folder may have any name)
+    if (m && GetModuleFileNameW(m, w, MAX_PATH)) WideCharToMultiByte(CP_UTF8, 0, w, -1, out, static_cast<int>(cap), nullptr, nullptr);
     for (char *c = out; *c; c++) if (*c == '\\') *c = '/';   // (no escaping needed in the reply)
 }
 

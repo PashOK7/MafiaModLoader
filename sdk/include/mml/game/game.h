@@ -4,9 +4,18 @@
 // docs/VERSIONS.md).
 #pragma once
 #include <cstdint>
+#include <string>
 #include <vector>
 #include "game_build.h"
 #include "mathx.h"
+
+extern "C" {   // (kernel32's, as windows.h declares them: TextUtf8 below, without windows.h in a header)
+__declspec(dllimport) int __stdcall MultiByteToWideChar(unsigned int code_page, unsigned long flags, const char *str,
+                                                        int len, wchar_t *wide, int wide_len);
+__declspec(dllimport) int __stdcall WideCharToMultiByte(unsigned int code_page, unsigned long flags, const wchar_t *wide,
+                                                        int wide_len, char *str, int len, const char *default_char,
+                                                        int *used_default);
+}
 
 namespace game {
 
@@ -184,6 +193,33 @@ inline const char *MissionName() {
     void *m = Mission();
     const char *name = m && Exe().missionName ? at<const char *>(m, Exe().missionName) : nullptr;
     return name ? name : "";
+}
+
+// ---- the game's texts. They (tables\textdb_<ll>.def, the menus, the names) are in the code page of the game's
+// language, whatever the system's: 1250 Czech, Polish, Hungarian, Slovak; 1251 Russian; 1252 the rest (the two
+// letters at Exe().menuLang; a French "é" read in 1251 is a "й"). What a mod hands the host (draw_text, a reply, a
+// log line) is UTF-8: TextUtf8 turns a game text into it.
+inline unsigned TextCodePage() {
+    if (!g_exe || !Exe().menuLang) return 1252;
+    uint16_t lang = *reinterpret_cast<const uint16_t *>(Exe().menuLang);
+    char a = static_cast<char>((lang & 0xFF) | 0x20), b = static_cast<char>((lang >> 8) | 0x20);   // (lower case)
+    auto is = [&](const char *ll) { return a == ll[0] && b == ll[1]; };
+    if (is("cz") || is("cs") || is("pl") || is("hu") || is("sk")) return 1250;
+    if (is("ru")) return 1251;
+    return 1252;
+}
+inline std::string TextUtf8(const char *text) {
+    if (!text || !*text) return std::string();
+    int n = MultiByteToWideChar(TextCodePage(), 0, text, -1, nullptr, 0);
+    if (n <= 0) return std::string();
+    std::wstring w(n, L'\0');
+    MultiByteToWideChar(TextCodePage(), 0, text, -1, &w[0], n);
+    int m = WideCharToMultiByte(65001 /* CP_UTF8 */, 0, w.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if (m <= 1) return std::string();
+    std::string s(m, '\0');
+    WideCharToMultiByte(65001, 0, w.c_str(), -1, &s[0], m, nullptr, nullptr);
+    s.pop_back();   // (the terminator)
+    return s;
 }
 
 // ---- the car. A C_car is an actor of type 4; its rigid body, a C_Vehicle, is inside it (C_car + Exe().vehicle).

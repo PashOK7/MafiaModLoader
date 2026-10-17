@@ -46,9 +46,9 @@ std::vector<Result> g_results;    // the last few
 
 std::string WriteShot(int id, uint32_t w, uint32_t h, const uint8_t *bits, int pitch) {
     std::string dir = MmlDir() + "shots\\";
-    CreateDirectoryA(dir.c_str(), nullptr);
+    MakeDir(dir);
     std::string path = dir + std::to_string(id) + ".bgra";
-    FILE *f = fopen(path.c_str(), "wb");
+    FILE *f = FileOpen(path, "wb");
     if (!f) return "cannot write " + path;
     uint32_t head[4] = {0x534C4D4D, w, h, 0};
     fwrite(head, 4, 4, f);

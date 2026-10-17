@@ -9,6 +9,7 @@
 #include <cstring>
 #include <string>
 #include "mml/mml.h"
+#include "mml/path.h"
 
 namespace {
 const MmlHost *H;
@@ -520,7 +521,7 @@ int Poke(const char *args, MmlReply *r, void *) {
 
 int Write(const char *, MmlReply *r, void *) {
     std::string path = std::string(H->mod_data_dir(M)) + "note.txt";
-    FILE *f = fopen(path.c_str(), "w");
+    FILE *f = mml_fopen(path.c_str(), "w");
     if (!f) { H->reply_error(r, "cannot write into the data folder"); return 1; }
     fputs("kit was here\n", f);
     fclose(f);

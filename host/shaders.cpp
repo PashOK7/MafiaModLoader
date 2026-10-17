@@ -182,7 +182,7 @@ void Survey(IDirect3DDevice9 *d, UINT prims) {
     if (ps) ps->Release();
     st["kind"] = g_group.kind == 1 ? "object" : g_group.kind == 2 ? "lightmapped" : "billboard";
     st["pass"] = g_group.pass;
-    std::string key = st.dump();
+    std::string key = st.dump(-1, ' ', false, json::error_handler_t::replace);
     Combo &c = g_combos[key];
     if (!c.draws) c.states = st;
     c.draws++;

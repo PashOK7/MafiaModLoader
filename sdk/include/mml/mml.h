@@ -10,6 +10,9 @@
  * - What a mod registers (hooks, event handlers, commands, services) is removed by the loader when the mod unloads:
  *   a mod never leaves a pointer into its own code behind.
  * - Memory functions never fault: they return 0 when an address cannot be read or written.
+ * - Every string is UTF-8, paths too (game_dir, mod_dir, mod_data_dir, file_add, file_source): the game may be in a
+ *   folder of any name ("C:\Игры\Mafia"). Open a path with a wide function (_wfopen, CreateFileW), not fopen:
+ *   mml/path.h has mml_fopen and mml_widen.
  *
  * A mod exports:
  *   MML_EXPORT int  mml_mod_load(const MmlHost *host, MmlMod *mod);   0: loaded; else it is unloaded again
@@ -887,9 +890,10 @@ typedef struct MmlHost {
 
     /* ---- drawing in the game's frame (see MmlFont above). Call these every frame the thing is to be seen (from
      * MML_EVENT_FRAME: every frame, the menus and the pause too; or MML_EVENT_MISSION_TICK): what is queued is
-     * drawn once, in the frame being made, and dropped. A text is in the game's own encoding (ASCII is safe) and
-     * at most about 100 characters a call. A fault while a mod's items are drawn turns that mod's drawing off
-     * until it is reloaded (the log tells); the game goes on. */
+     * drawn once, in the frame being made, and dropped. A text is UTF-8 (turned into the code page of the game's
+     * fonts: a character that has none there is a '?'; game::TextUtf8 turns a game text into UTF-8) and at most
+     * about 100 characters a call. A fault while a mod's items are drawn turns that mod's drawing off until it is
+     * reloaded (the log tells); the game goes on. */
     void (*draw_text)(MmlMod *mod, float x, float y, float size, uint32_t argb, int font, int align, const char *text);
     float (*draw_text_width)(int font, float size, const char *text);   /* in the same units; 0 with no game */
     void (*draw_line)(MmlMod *mod, float x0, float y0, float x1, float y1, uint32_t argb);

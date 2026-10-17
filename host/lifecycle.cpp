@@ -20,12 +20,6 @@ bool InDir(const std::string &path, const std::string &dir) {
     return path.size() > dir.size() && !_strnicmp(path.c_str(), dir.c_str(), dir.size());
 }
 
-std::string ModulePath(HMODULE m) {
-    char path[MAX_PATH * 2];
-    DWORD n = GetModuleFileNameA(m, path, sizeof path);
-    return n ? std::string(path, n) : std::string();
-}
-
 // This process's threads by id. NtGetNextThread walks only ours (a Toolhelp snapshot walks every thread of the
 // system: about 30 ms here, at each unload); the snapshot stays for a Windows without it.
 std::vector<DWORD> ThreadIds() {
@@ -118,18 +112,12 @@ uintptr_t StartAddress(HANDLE thread) {   // where the thread began (ThreadQuery
 }
 
 void DeleteTree(const std::string &dir) {   // one level of folders is all the live folder has
-    WIN32_FIND_DATAA fd;
-    HANDLE h = FindFirstFileA((dir + "*").c_str(), &fd);
-    if (h != INVALID_HANDLE_VALUE) {
-        do {
-            if (fd.cFileName[0] == '.' && (!fd.cFileName[1] || (fd.cFileName[1] == '.' && !fd.cFileName[2]))) continue;
-            std::string p = dir + fd.cFileName;
-            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) DeleteTree(p + "\\");
-            else DeleteFileA(p.c_str());
-        } while (FindNextFileA(h, &fd));
-        FindClose(h);
+    for (const FoundFile &fd : ListDir(dir + "*")) {
+        std::string p = dir + fd.name;
+        if (fd.dir()) DeleteTree(p + "\\");
+        else PathDelete(p);
     }
-    RemoveDirectoryA(dir.c_str());   // (a file still mapped stays, and its folder with it)
+    RemoveDir(dir);   // (a file still mapped stays, and its folder with it)
 }
 } // namespace
 
@@ -161,42 +149,36 @@ ProcessMeasure MeasureProcess() {
 
 bool LiveCopy(const std::string &srcDir, const std::string &entry, const std::string &liveDir, const std::string &entryPath,
               std::vector<std::string> *libs, std::string *err) {
-    CreateDirectoryA((MmlDir() + "live\\").c_str(), nullptr);
-    if (!CreateDirectoryA(liveDir.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) {
+    MakeDir(MmlDir() + "live\\");
+    if (!MakeDir(liveDir)) {
         *err = "cannot make " + liveDir;
         return false;
     }
-    if (!CopyFileA((srcDir + entry).c_str(), entryPath.c_str(), FALSE)) { *err = "cannot copy " + srcDir + entry; return false; }
-    WIN32_FIND_DATAA fd;
-    HANDLE h = FindFirstFileA((srcDir + "*.dll").c_str(), &fd);
-    if (h == INVALID_HANDLE_VALUE) return true;
-    bool ok = true;
-    do {
-        if ((fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || !_stricmp(fd.cFileName, entry.c_str())) continue;
-        if (!CopyFileA((srcDir + fd.cFileName).c_str(), (liveDir + fd.cFileName).c_str(), FALSE)) {
-            *err = std::string("cannot copy its library ") + fd.cFileName;
-            ok = false;
-            break;
+    if (!PathCopy(srcDir + entry, entryPath, false)) { *err = "cannot copy " + srcDir + entry; return false; }
+    for (const FoundFile &fd : ListDir(srcDir + "*.dll")) {
+        if (fd.dir() || !_stricmp(fd.name.c_str(), entry.c_str())) continue;
+        if (!PathCopy(srcDir + fd.name, liveDir + fd.name, false)) {
+            *err = "cannot copy its library " + fd.name;
+            return false;
         }
-        libs->push_back(fd.cFileName);
-    } while (FindNextFileA(h, &fd));
-    FindClose(h);
-    return ok;
+        libs->push_back(fd.name);
+    }
+    return true;
 }
 
 DllDirScope::DllDirScope(const std::string &dir) {
-    char prev[MAX_PATH * 2];
-    DWORD n = GetDllDirectoryA(sizeof prev, prev);
-    had = n > 0 && n < sizeof prev;
-    if (had) previous.assign(prev, n);
-    SetDllDirectoryA(dir.c_str());
+    wchar_t prev[MAX_PATH * 2];
+    DWORD n = GetDllDirectoryW(MAX_PATH * 2, prev);
+    had = n > 0 && n < MAX_PATH * 2;
+    if (had) previous = Utf8Of(prev, static_cast<int>(n));
+    SetDllDirectoryW(Wide(dir).c_str());
 }
-DllDirScope::~DllDirScope() { SetDllDirectoryA(had ? previous.c_str() : nullptr); }
+DllDirScope::~DllDirScope() { SetDllDirectoryW(had ? Wide(previous).c_str() : nullptr); }
 
 std::vector<std::string> LibsElsewhere(const std::string &liveDir, const std::vector<std::string> &libs) {
     std::vector<std::string> out;
     for (const std::string &name : libs) {
-        HMODULE m = GetModuleHandleA(name.c_str());
+        HMODULE m = GetModuleHandleW(Wide(name).c_str());
         if (!m) continue;   // not loaded (yet): the mod may load it later
         std::string path = ModulePath(m);
         if (!InDir(path, liveDir)) out.push_back(name + " is " + path);
@@ -256,16 +238,12 @@ void LiveCleanAll() {
     // what earlier runs left (this run's folders are deleted as their loads unload); a file of a game still running
     // is mapped and stays
     std::string dir = MmlDir() + "live\\";
-    WIN32_FIND_DATAA fd;
-    HANDLE h = FindFirstFileA((dir + "*").c_str(), &fd);
-    if (h == INVALID_HANDLE_VALUE) return;
-    do {
-        if (fd.cFileName[0] == '.') continue;
-        std::string p = dir + fd.cFileName;
-        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) DeleteTree(p + "\\");
-        else DeleteFileA(p.c_str());   // (the copies of the loader's before 2026-10-14 sat here as files)
-    } while (FindNextFileA(h, &fd));
-    FindClose(h);
+    for (const FoundFile &fd : ListDir(dir + "*")) {
+        if (fd.name[0] == '.') continue;
+        std::string p = dir + fd.name;
+        if (fd.dir()) DeleteTree(p + "\\");
+        else PathDelete(p);   // (the copies of the loader's before 2026-10-14 sat here as files)
+    }
 }
 
 } // namespace host

@@ -102,7 +102,7 @@ void Faulted(MmlMod *m, const char *where, DWORD code) {
     if (!line.empty()) Log(MML_LOG_ERROR, "host", "  its stack: %s", line.c_str());
     json data = {{"name", Who(m)}, {"where", where}, {"exception", code8}, {"at", DescribeAddress(t_faultAt)}, {"stack", stack}};
     if (code == EXCEPTION_ACCESS_VIOLATION) data["touched"] = DescribeAddress(t_faultData);
-    EventsRecord("MOD_FAULTED", data.dump());
+    EventsRecord("MOD_FAULTED", data.dump(-1, ' ', false, json::error_handler_t::replace));
 }
 // Every call into a mod goes through one of these: behind the fault guard, with the x87 at 53 bits (fpu.cpp) and the
 // game's word given back after, a fault too.
@@ -635,7 +635,7 @@ int H_GeomCapture(MmlMod *m, const char *pattern, MmlGeomFn fn, void *user) {
 
 // ---- manifests
 bool ReadManifest(const std::string &dir, const std::string &folder, ModEntry *e, std::string *err) {
-    std::ifstream f(dir + "mod.json");
+    std::ifstream f(Wide(dir + "mod.json"));
     if (!f) { *err = "no mod.json"; return false; }
     try {
         json j = json::parse(f, nullptr, true, true);   // comments allowed
@@ -730,7 +730,7 @@ bool LoadModDll(ModEntry *e, std::string *err) {
     std::vector<std::string> libs;
     if (!LiveCopy(e->dir, e->entry, liveDir, path, &libs, err)) { LiveRemove(liveDir); return false; }
     DllDirScope dllDir(liveDir);   // (a library loaded by a bare name in mml_mod_load is found in the load's folder)
-    HMODULE dll = LoadLibraryExA(path.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+    HMODULE dll = PathLoadLibrary(path, LOAD_WITH_ALTERED_SEARCH_PATH);
     if (!dll) {
         DWORD code = GetLastError();
         *err = "LoadLibrary failed (" + std::to_string(code) + ")";
@@ -831,7 +831,7 @@ bool UnloadMod(ModEntry *e, const char *why) {
         e->lastUnload = json{{"generation", e->generation}, {"why", why}};
         e->current = nullptr;
         Log(MML_LOG_INFO, "host", "mod %s unloaded (%s)", e->id.c_str(), why);
-        EventsRecord("MOD_UNLOADED", json({{"name", e->id}, {"why", why}}).dump());
+        EventsRecord("MOD_UNLOADED", json({{"name", e->id}, {"why", why}}).dump(-1, ' ', false, json::error_handler_t::replace));
         return true;
     }
     // A thread still in the load's code (one the mod started and did not stop, or a library's worker): freeing the
@@ -877,7 +877,7 @@ bool UnloadMod(ModEntry *e, const char *why) {
     // (the whole process's numbers over the load's life: the game's own changes are in them too)
     Log(MML_LOG_INFO, "host", "mod %s unloaded (%s); since its load: address space free %+.1f MB (largest block %+.1f MB), "
         "handles %+d, threads %+d", e->id.c_str(), why, freeMb, largestMb, handles, threads);
-    EventsRecord("MOD_UNLOADED", json({{"name", e->id}, {"why", why}}).dump());
+    EventsRecord("MOD_UNLOADED", json({{"name", e->id}, {"why", why}}).dump(-1, ' ', false, json::error_handler_t::replace));
     for (const std::string &s : gone) ServicesChanged(s);
     return true;
 }
@@ -886,17 +886,14 @@ bool UnloadMod(ModEntry *e, const char *why) {
 // until they are reloaded.
 void Scan() {
     std::string root = MmlDir() + "mods\\";
-    CreateDirectoryA(root.c_str(), nullptr);
-    WIN32_FIND_DATAA fd;
-    HANDLE h = FindFirstFileA((root + "*").c_str(), &fd);
-    if (h == INVALID_HANDLE_VALUE) return;
-    do {
-        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || fd.cFileName[0] == '.') continue;
-        std::string dir = root + fd.cFileName + "\\";
+    MakeDir(root);
+    for (const FoundFile &fd : ListDir(root + "*")) {
+        if (!fd.dir() || fd.name[0] == '.') continue;
+        std::string dir = root + fd.name + "\\";
         ModEntry tmp;
         std::string err;
-        if (!ReadManifest(dir, fd.cFileName, &tmp, &err)) {
-            HWARN("mods\\%s: %s", fd.cFileName, err.c_str());
+        if (!ReadManifest(dir, fd.name, &tmp, &err)) {
+            HWARN("mods\\%s: %s", fd.name.c_str(), err.c_str());
             continue;
         }
         ModEntry *e = ById(tmp.id);
@@ -909,8 +906,7 @@ void Scan() {
         if (e->current) continue;
         e->name = tmp.name; e->version = tmp.version; e->type = tmp.type; e->entry = tmp.entry; e->enabled = tmp.enabled;
         e->order = tmp.order; e->depends = tmp.depends; e->builds = tmp.builds; e->gfx = tmp.gfx; e->dir = tmp.dir;
-    } while (FindNextFileA(h, &fd));
-    FindClose(h);
+    }
     std::stable_sort(g_mods.begin(), g_mods.end(), [](const std::unique_ptr<ModEntry> &a, const std::unique_ptr<ModEntry> &b) {
         return a->order != b->order ? a->order < b->order : a->id < b->id;
     });
@@ -961,7 +957,7 @@ json ModValue(const ModEntry &e) {
     if (!kept.empty()) j["kept_generations"] = kept;
     return j;
 }
-std::string ModJson(const ModEntry &e) { return ModValue(e).dump(); }
+std::string ModJson(const ModEntry &e) { return ModValue(e).dump(-1, ' ', false, json::error_handler_t::replace); }
 } // namespace
 
 const char *ModIdOf(const MmlMod *mod) { return LoaderOwned(mod) ? "mml" : mod ? mod->entry->id.c_str() : "host"; }
@@ -979,7 +975,7 @@ bool ModDirById(const std::string &id, std::string *dir) {
 }
 std::string ModSettingsJson(const MmlMod *mod) {
     if (!Alive(mod) || mod->entry->settings.is_null()) return std::string();
-    return mod->entry->settings.dump();
+    return mod->entry->settings.dump(-1, ' ', false, json::error_handler_t::replace);
 }
 std::string ModNameOf(const MmlMod *mod) { return Alive(mod) ? mod->entry->name : std::string(); }
 std::vector<MmlMod *> ModsLoaded() {
@@ -1343,7 +1339,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
                                  {"largest_free_mb", std::round((last.largestFreeMb - first.largestFreeMb) / times * 100) / 100},
                                  {"handles", static_cast<double>(last.handles - first.handles) / times},
                                  {"threads", static_cast<double>(last.threads - first.threads) / times}};
-            *reply = out.dump();
+            *reply = out.dump(-1, ' ', false, json::error_handler_t::replace);
             return true;
         }
         if (method != "mod.load") UnloadMod(e, method == "mod.reload" ? "reload" : "mod.unload");
@@ -1406,7 +1402,7 @@ std::string CommandsList() {
     for (const MethodDoc &m : kMethods)
         out.push_back({{"name", m.name}, {"owner", "host"}, {"thread", m.thread}, {"params", m.params}, {"result", m.result}});
     for (auto &kv : g_commands) out.push_back({{"name", kv.first}, {"owner", Who(kv.second.mod)}, {"help", kv.second.help}});
-    return out.dump();
+    return out.dump(-1, ' ', false, json::error_handler_t::replace);
 }
 
 } // namespace host

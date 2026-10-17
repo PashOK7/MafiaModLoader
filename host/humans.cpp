@@ -306,7 +306,7 @@ bool HumansMethod(const std::string &method, const std::string &paramsJson, std:
         }
     }
     if (p.value("clear", false)) { g_held.erase(std::remove_if(g_held.begin(), g_held.end(), [&](const Held &o) { return o.human == h; }), g_held.end()); }
-    *reply = json({{"actor", Hex(h)}, {"held", held}, {"ms", static_cast<int>(until - GetTickCount())}, {"poses_held", g_held.size()}}).dump();
+    *reply = json({{"actor", Hex(h)}, {"held", held}, {"ms", static_cast<int>(until - GetTickCount())}, {"poses_held", g_held.size()}}).dump(-1, ' ', false, json::error_handler_t::replace);
     return true;
 }
 

@@ -14,6 +14,7 @@
 #include <winsock2.h>
 #include <windows.h>
 #include <cstdint>
+#include <cstdio>
 #include <string>
 #include <vector>
 #include "mml/mml.h"
@@ -22,9 +23,41 @@ struct IDirect3DBaseTexture9;   // (d3d9.h's: shadows.cpp's map)
 
 namespace host {
 
-// ---- paths (set once at start)
+// ---- paths (set once at start). Every path the host keeps is UTF-8: the bridge's JSON, the log, the mods' ABI
+// (game_dir, mod_dir, mod_data_dir). Windows is asked through its wide (W) functions, here (paths.cpp), so a game
+// in a folder of any name works whatever the system's code page (an ANSI path once threw in json's dump at the
+// start, in a Cyrillic folder: 2026-10-17). The game's own names are in the system's code page (CP_ACP): AcpPath
+// gives a path to the game's ANSI functions (rw_data's dtaOpen), AcpToUtf8 takes one from it.
 const std::string &GameDir();   // the game's folder, trailing backslash
 const std::string &MmlDir();    // <game>\mml\ (trailing backslash)
+std::wstring Wide(const std::string &utf8);
+std::string Utf8Of(const wchar_t *wide, int n = -1);   // n: characters, -1: up to the terminator
+std::string AcpToUtf8(const char *acp);
+std::string AcpOf(const std::string &utf8);   // a name (not a file on disk) in the system's code page, best guess
+// For the game's ANSI functions: the path in the system's code page when it spells every character, else its short
+// (8.3) form (ASCII when the volume makes short names; the file must exist), else the code page's best guess
+// (*spelled false: an ANSI function cannot open it by that name).
+std::string AcpPath(const std::string &utf8, bool *spelled = nullptr);
+std::string ModulePath(HMODULE module);   // a loaded module's file, "" when unknown
+FILE *FileOpen(const std::string &path, const char *mode);   // _wfopen
+DWORD PathAttributes(const std::string &path);               // INVALID_FILE_ATTRIBUTES when it is not there
+bool PathExists(const std::string &path);
+bool PathAttributesEx(const std::string &path, WIN32_FILE_ATTRIBUTE_DATA *out);
+bool MakeDir(const std::string &path);                       // true: made, or it was there
+bool RemoveDir(const std::string &path);
+bool PathDelete(const std::string &path);
+bool PathMove(const std::string &from, const std::string &to, DWORD flags = 0);   // MoveFileExW's flags
+bool PathCopy(const std::string &from, const std::string &to, bool failIfExists);
+HANDLE PathCreateFile(const std::string &path, DWORD access, DWORD share, DWORD disposition, DWORD flags);
+HMODULE PathLoadLibrary(const std::string &path, DWORD flags);
+struct FoundFile {
+    std::string name;           // UTF-8
+    DWORD attributes;
+    uint64_t size;
+    FILETIME written;
+    bool dir() const { return (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0; }
+};
+std::vector<FoundFile> ListDir(const std::string &pattern);  // FindFirstFileW's matches ("dir\\*.dll"), no "." or ".."
 
 // ---- log (log.cpp): <game>\mml\logs\mml.log, the previous run's kept as mml.prev.log
 void Log(MmlLogLevel level, const char *who, const char *fmt, ...);

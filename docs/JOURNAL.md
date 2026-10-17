@@ -1555,3 +1555,44 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Later the same day**: at the owner's word mafia-ragdoll's files were taken out of the 1.0 lab
   (`scripts\MafiaRagdolls.asi`, `MafiaRagdolls.log`, `ragdoll_models.idx`, kept in `Mafia10LAB-backup\ragdoll-2026-10-17`;
   the ragdoll is to be made again on the loader): the game starts without it, only the loader's ASI loaded.
+
+## 2026-10-17: a game folder named in Cyrillic
+
+- **Reported** (a speedrunner trying the test archive): the game crashes at its start when its folder has Russian
+  letters in its name, and starts without MafiaModLoader.asi.
+- **Reproduced** in the stand-in game copied to `Игры\Мафия`: exit 0xC0000409, a C++ exception (E06D7363) on the
+  bridge's thread, named from the PDB: json's dump of `mml\bridge.json` (bridge.cpp). The loader read its folder
+  with GetModuleFileNameA (the system's code page, 1251 here), json takes only UTF-8: invalid UTF-8 threw, nothing
+  caught it.
+- **Made**: every path in the host is UTF-8 and Windows is asked through its wide functions (host/paths.cpp: Wide,
+  FileOpen, ListDir, PathMove... about 100 calls in 20 files moved to them). The game's own names stay in the
+  system's code page: a mod's file is given to rw_data's dtaOpen by AcpPath (the code page's spelling, else the
+  short name), and the names the mods and the bridge give are turned into the game's (files.cpp GameNameOf). The SDK
+  says paths are UTF-8 (mml.h) and gives `mml/path.h` (mml_fopen, mml_widen); telemetry, boxes and the test mods
+  use it. bridge.json and the crash report are dumped with json's replace handler too.
+- **Tests**: unicode_dir_tests (the stand-in game in a Cyrillic folder and in one no code page spells: bridge.json,
+  ping, the mods, a mod's data folder, files.which, the log, a clean exit; a mod's file through the stand-in
+  rw_data's CreateFileA where the folder can be spelled); the stand-in game loads its DLLs by wide paths, as Windows
+  loads the game's. Offline and mcp_smoke ALL PASSED.
+- **In both labs**, each started through a junction named `build\Игра 1.0` / `build\Игра 1.2` (game_dir pointed
+  there, put back after): the freeride, core and telemetry loaded, freeride_picture's file read through
+  the game's own rw_data (`files.read`: source mod), a setting written into the data folder, the log in UTF-8.
+- **Later the same day, so that it does not come back** (the owner: "never again a problem with Cyrillic in the
+  path"):
+  - **Read**: rw_data's dtaOpen (0x100018A0, the same file in both labs) hands the name it is given to its
+    CreateFileA import as it is, and does nothing else with it on that path: the loader's link on that import now
+    opens a mod's file by its wide path (CreateFileW), so a folder no code page spells works too (it had been left
+    out on W:, a volume with no 8.3 names).
+  - **Found**: 38 json dumps in the host without the replace handler (events, saves, items, replies): a game name in
+    its code page there would throw, uncaught on the game thread; all have it now. `draw_text` was documented as
+    "the game's encoding" while mml.h said every string is UTF-8, and the bridge's `draw.text` handed JSON's UTF-8
+    to the fonts as it was: it takes UTF-8 now (valid UTF-8 past ASCII turned into the fonts' code page, anything
+    else drawn as before). `game::TextCodePage` / `game::TextUtf8` in game.h (the host's GameCodePage is it).
+  - **Made**: `tools/check_paths.py`, run by the offline tests: no ANSI path function (fopen, CreateFileA,
+    GetModuleFileNameA...), file stream by a narrow path, std::filesystem, or strict json dump in host, sdk, mods
+    and tests (self-tested on a probe file; it found the heavy test mod's GetModuleFileNameA).
+  - **In both labs**, through junctions `build\Игра 1.x` and `build\Mafia ☃ 試 1.x`: the freeride, a mod's file read
+    by the game's rw_data (`source: mod`). In `Mafia ☃ 試` dxwrapper's stub cannot find its DLL (an ANSI path: its
+    dialog, then plain Direct3D 8): Known gaps. `lab.py status` counts any Game.exe as the lab's (the owner's own game
+    from another folder was running): conservative on purpose, left.
+

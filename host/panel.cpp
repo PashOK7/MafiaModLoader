@@ -91,7 +91,7 @@ bool ParseSettings(MmlMod *mod, Settings *out, std::string *why) {
             for (const json &o : c["options"]) {
                 json v = o.is_object() ? o.value("value", json()) : o;
                 k.values.push_back(v);
-                k.labels.push_back(o.is_object() ? o.value("label", v.dump()) : v.is_string() ? v.get<std::string>() : v.dump());
+                k.labels.push_back(o.is_object() ? o.value("label", v.dump(-1, ' ', false, json::error_handler_t::replace)) : v.is_string() ? v.get<std::string>() : v.dump(-1, ' ', false, json::error_handler_t::replace));
             }
         } else {
             k.kind = kSlider;
@@ -154,7 +154,7 @@ std::string Shown(const Control &k, MmlMod *mod) {
     if (k.kind == kChoice) {
         json v = j.empty() ? json() : json::parse(j, nullptr, false);
         for (size_t i = 0; i < k.values.size(); i++) if (k.values[i] == v) return k.labels[i];
-        return v.dump();
+        return v.dump(-1, ' ', false, json::error_handler_t::replace);
     }
     double v = Number(j, k.min);
     if (k.percent) snprintf(b, sizeof b, "%d%%", static_cast<int>(std::lround(ToSlider(k, v) * 100)));
@@ -210,7 +210,7 @@ void OnModPage(int id, void *) {
     if (k.kind == kCheck) value = v > 0.5f;
     else if (k.kind == kChoice) value = k.values[std::min(k.values.size() - 1, static_cast<size_t>(std::max(0.0f, v)))];
     else value = FromSlider(k, v);
-    ConfigSetLive(mod, k.key.c_str(), value.dump());
+    ConfigSetLive(mod, k.key.c_str(), value.dump(-1, ' ', false, json::error_handler_t::replace));
     if (k.kind == kSlider) MenuPageText(kLoaderPage, kValue + i, Shown(k, mod).c_str());
 }
 
@@ -309,7 +309,7 @@ void PanelFrame() {
     g_grabbing = -1;
     if (!mod || !Find(g_pageMod, &s) || i >= static_cast<int>(s.controls.size())) return;
     const Control &k = s.controls[static_cast<size_t>(i)];
-    if (r > 0) ConfigSetLive(mod, k.key.c_str(), json(combo).dump());
+    if (r > 0) ConfigSetLive(mod, k.key.c_str(), json(combo).dump(-1, ' ', false, json::error_handler_t::replace));
     MenuPageText(kLoaderPage, kInput + i, Shown(k, mod).c_str());
 }
 
@@ -328,7 +328,7 @@ bool PanelMethod(const std::string &method, const std::string &paramsJson, std::
         std::string mod = p.value("mod", ""), err;
         bool done = mod.empty() ? OpenList(&err) : OpenModPage(mod, &err);
         if (!done) { *reply = "panel.open: " + err; return true; }
-        *reply = json{{"opened", mod.empty() ? "mods" : mod}}.dump();
+        *reply = json{{"opened", mod.empty() ? "mods" : mod}}.dump(-1, ' ', false, json::error_handler_t::replace);
         *ok = true;
         return true;
     }

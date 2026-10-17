@@ -219,6 +219,26 @@ bool Queue(std::vector<Item> *to, const Item &it) {
     return true;
 }
 
+// The game's fonts draw its texts' code page (GameCodePage); the mods and the bridge give UTF-8. A text that is UTF-8
+// with more than ASCII in it is turned into the game's; anything else (ASCII, or a text already in the game's code
+// page, as mml.h asked before 2026-10-17: its bytes past 0x7F are seldom valid UTF-8) is drawn as it is.
+std::string ForFont(const char *text) {
+    if (!text) return std::string();
+    bool ascii = true;
+    for (const char *p = text; *p && ascii; ++p) ascii = static_cast<unsigned char>(*p) < 0x80;
+    if (ascii) return text;
+    int n = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, -1, nullptr, 0);
+    if (n <= 0) return text;
+    std::wstring w(n, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, text, -1, &w[0], n);
+    int m = WideCharToMultiByte(GameCodePage(), 0, w.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if (m <= 1) return text;
+    std::string s(m, '\0');
+    WideCharToMultiByte(GameCodePage(), 0, w.c_str(), -1, &s[0], m, nullptr, nullptr);
+    s.pop_back();
+    return s;
+}
+
 Item TextItem(MmlMod *mod, float x, float y, float size, uint32_t argb, int font, int align, const char *text) {
     Item it{};
     it.owner = mod;
@@ -297,12 +317,12 @@ void DrawFrame() {
 
 void DrawText(MmlMod *mod, float x, float y, float size, uint32_t argb, int font, int align, const char *text) {
     if (!mod || Off(mod) || !text || !*text || !(size > 0.0f)) return;
-    Queue(&g_frame, TextItem(mod, x, y, size, argb, font, align, text));
+    Queue(&g_frame, TextItem(mod, x, y, size, argb, font, align, ForFont(text).c_str()));
 }
 
 float DrawTextWidth(int font, float size, const char *text) {
     if (!g_hooked || !text || !(size > 0.0f) || font < 0 || font >= MML_FONT_COUNT_) return 0.0f;
-    return SafeTextWidth(font, size, text);
+    return SafeTextWidth(font, size, ForFont(text).c_str());
 }
 
 void DrawLine(MmlMod *mod, float x0, float y0, float x1, float y1, uint32_t argb) {
@@ -385,7 +405,7 @@ bool DrawMethod(const std::string &method, const std::string &paramsJson, std::s
             if (text.empty()) { *reply = "text: what to write; x, y (800x600 units), size (default 20), color (\"#AARRGGBB\"), font (0 small, 1 big, 2 title), align (\"left\", \"center\", \"right\"), ms"; return true; }
             std::string align = p.value("align", "left");
             it = TextItem(nullptr, p.value("x", 0.0f), p.value("y", 0.0f), p.value("size", 20.0f), Colour(p, "color"), p.value("font", 0),
-                          align == "center" ? MML_DRAW_CENTER : align == "right" ? MML_DRAW_RIGHT : MML_DRAW_LEFT, text.c_str());
+                          align == "center" ? MML_DRAW_CENTER : align == "right" ? MML_DRAW_RIGHT : MML_DRAW_LEFT, ForFont(text.c_str()).c_str());
             if (!(it.c > 0.0f)) { *reply = "size: above 0"; return true; }
         } else if (method == "draw.rect") {
             it = ShapeItem(nullptr, p.value("filled", true) ? kRect : kFrame, p.value("x", 0.0f), p.value("y", 0.0f), p.value("w", 0.0f),

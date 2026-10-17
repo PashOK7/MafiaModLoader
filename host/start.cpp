@@ -437,12 +437,12 @@ void StartInit() {
     if (!game::g_exe || !game::Exe().menuTop || !game::Exe().menuProfileVt) return;
     g_menuOk = true;
     std::string path = MmlDir() + "start.json";
-    std::ifstream f(path);
+    std::ifstream f(Wide(path));
     if (!f) return;
     json r;
     try { r = json::parse(f, nullptr, true, true); } catch (const std::exception &ex) { HWARN("start.json: %s", ex.what()); }
     f.close();
-    DeleteFileA(path.c_str());   // asked for once: the next launch is the usual one
+    PathDelete(path);   // asked for once: the next launch is the usual one
     if (!r.is_object()) return;
     g_req.active = true;
     g_req.started = GetTickCount();

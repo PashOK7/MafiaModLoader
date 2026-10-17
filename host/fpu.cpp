@@ -86,7 +86,7 @@ bool FpuMethod(const std::string &method, const std::string &, std::string *repl
                 {"bridge_call", {{"word", Hex(now)}, {"bits", Bits(now)}}},
                 {"mods", {{"word", Hex(mods)}, {"bits", Bits(mods)}}},
                 {"scopes", g_entries}, {"raised", g_raised}};
-    *reply = out.dump();
+    *reply = out.dump(-1, ' ', false, json::error_handler_t::replace);
     *ok = true;
     return true;
 }

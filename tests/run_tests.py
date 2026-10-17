@@ -27,6 +27,8 @@ import time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HARNESS = os.path.join(ROOT, 'build', 'x86', 'harness')
 OUT = os.path.join(ROOT, 'build', 'x86', 'out')
+for _stream in (sys.stdout, sys.stderr):   # (a folder's name in a line: a console or a pipe in any code page)
+    _stream.reconfigure(errors='backslashreplace')
 
 
 class Bridge:
@@ -394,6 +396,8 @@ NOT_CALLED = {'mods.rescan', 'mod.reload', 'mod.load', 'mod.unload', 'gfx.reset'
 def methods_tests(b):
     gen = subprocess.run([sys.executable, os.path.join(ROOT, 'tools', 'gen_methods.py'), '--check'], capture_output=True, text=True)
     check('host/methods.inc is what docs/PROTOCOL.md gives (tools/gen_methods.py --check)', gen.returncode == 0, gen.stdout)
+    gen = subprocess.run([sys.executable, os.path.join(ROOT, 'tools', 'check_paths.py')], capture_output=True, text=True)
+    check('no ANSI path and no strict json dump in the sources (tools/check_paths.py)', gen.returncode == 0, gen.stdout)
     sys.path.insert(0, os.path.join(ROOT, 'tools'))
     import gen_methods
     documented = {name: thread for name, thread, _, _ in gen_methods.rows()}
@@ -540,6 +544,86 @@ def crash_tests():
     check('the report: the taps\' last calls', any('1 calls' in t for t in r.get('taps', [])), r.get('taps'))
     check('the report: the last events and the mods', r.get('events') and any(m.get('id') == 'hook_a' for m in r.get('mods', [])),
           (r.get('events', [])[-2:], r.get('mods')))
+
+
+def unicode_dir_tests():
+    """The game in a folder whose name is not ASCII (a player's "C:\\Игры\\Mafia"): every path the loader keeps is
+    UTF-8 and Windows is asked through its wide functions (an ANSI path once threw in json's dump at the bridge's
+    start: 2026-10-17). The harness's folder copied under such names: the bridge's file and replies, the log, the
+    mods loaded, a mod's data folder, and a mod's file given to the game's ANSI file layer (in the system's code page,
+    or by the folder's short name when the code page has no spelling for it)."""
+    import ctypes
+    root = os.path.join(ROOT, 'build', 'x86', 'harness_unicode')
+    # Cyrillic (the system's code page spells it where it is 1251, not where it is 1252), then a name no ANSI code
+    # page spells
+    for name in ('Игры Мафия', 'Mafia \u2603 \u8a66'):
+        shutil.rmtree(root, ignore_errors=True)
+        game = os.path.join(root, name)
+        shutil.copytree(HARNESS, game)
+        for sub in ('live', 'logs', 'crash', 'data', 'shots', 'restore'):
+            shutil.rmtree(os.path.join(game, 'mml', sub), ignore_errors=True)
+        for mod in ('boxes', 'heavy', 'hello_c'):   # (not needed here; boxes makes a Direct3D device)
+            shutil.rmtree(os.path.join(game, 'mml', 'mods', mod), ignore_errors=True)
+        for stale in (os.path.join(game, 'mml', 'bridge.json'), os.path.join(game, 'quit'), os.path.join(game, 'crash')):
+            if os.path.exists(stale):
+                os.remove(stale)
+        acp = 'cp%d' % ctypes.windll.kernel32.GetACP()
+        try:
+            game.encode(acp)
+            spelled = True
+        except UnicodeEncodeError:
+            buf = ctypes.create_unicode_buffer(1024)
+            n = ctypes.windll.kernel32.GetShortPathNameW(game, buf, 1024)
+            spelled = 0 < n < 1024 and all(ord(c) < 128 for c in buf.value)   # the volume makes short names
+        tag = 'a folder named %r: ' % name
+        info_path = os.path.join(game, 'mml', 'bridge.json')
+        proc = subprocess.Popen([os.path.join(game, 'mml_harness.exe'), '--seconds', '30'], cwd=game,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        for _ in range(200):
+            if os.path.exists(info_path) or proc.poll() is not None:
+                break
+            time.sleep(0.05)
+        time.sleep(0.3)
+        try:
+            info = json.load(open(info_path, encoding='utf-8')) if os.path.exists(info_path) else {}
+            check(tag + 'bridge.json written, UTF-8, the game\'s folder in it',
+                  os.path.normcase(info.get('game_dir', '')) == os.path.normcase(game + os.sep), info)
+            if info:
+                b = Bridge(info)
+                r = b.call('ping')
+                check(tag + 'ping: the game\'s folder', r['ok'] and os.path.normcase(r['result']['game_dir']) == os.path.normcase(game + os.sep), r)
+                time.sleep(0.2)
+                r = b.call('mods.list')
+                loaded = {m['id']: m['loaded'] for m in r['result']} if r['ok'] else {}
+                check(tag + 'mods loaded: core, kit, hook_a, files_b', all(loaded.get(m) for m in ('core', 'kit', 'hook_a', 'files_b')), loaded)
+                r = b.call('kit.write')
+                want = os.path.join(game, 'mml', 'data', 'kit', 'note.txt')
+                check(tag + 'mod_data_dir: the mod writes there (mml_fopen)', r['ok'] and os.path.normcase(r['result']) == os.path.normcase(want)
+                      and os.path.exists(want), r)
+                r = b.call('files.which', {'name': 'tables\\test.txt'})
+                check(tag + 'files.which: the mod\'s file, its path', r['ok'] and r['result'].get('mod') == 'files_b' and
+                      os.path.normcase(r['result'].get('path', '')).startswith(os.path.normcase(game)), r)
+                tail = '\n'.join(b.call('log.tail', {'lines': 50})['result'])
+                check(tag + 'log.tail: the folder in the loader\'s first line', name in tail, tail[:400])
+        finally:
+            open(os.path.join(game, 'quit'), 'w').close()
+            try:
+                out, _ = proc.communicate(timeout=15)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                out, _ = proc.communicate()
+        text = out.decode(errors='replace')
+        check(tag + 'the harness exits cleanly (no crash)', proc.returncode == 0, (proc.returncode, text[-400:]))
+        check(tag + 'a mod\'s file given to the game\'s ANSI file layer before the first frame (%s)'
+              % ('by its ANSI name' if spelled else 'no ANSI name: opened by its wide path'),
+              "before the first frame, tables\\test.txt is 'files_b'" in text, text[-400:])
+        log = os.path.join(game, 'mml', 'logs', 'mml.log')
+        try:
+            body = open(log, encoding='utf-8').read()
+            check(tag + 'the log file: UTF-8, the folder in it', name in body, body[:300])
+        except (OSError, UnicodeDecodeError) as e:
+            check(tag + 'the log file: UTF-8, the folder in it', False, e)
+    shutil.rmtree(root, ignore_errors=True)
 
 
 def files_tests(b):
@@ -1112,6 +1196,7 @@ def main():
     check('files: a mod\'s file answers before the first frame (the game\'s first tables)',
           "before the first frame, tables\\test.txt is 'files_b'" in out.decode(errors='replace'), out.decode(errors='replace'))
     crash_tests()
+    unicode_dir_tests()
     print('ALL PASSED' if not failures else '%d FAILED: %s' % (len(failures), ', '.join(failures)))
     return 0 if not failures else 1
 

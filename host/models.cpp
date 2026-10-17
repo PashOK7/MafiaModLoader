@@ -75,8 +75,8 @@ bool ReadAt(HANDLE f, uint64_t off, void *buf, uint32_t n) {
 }
 
 int ScanArchive(const ArchiveKey &a, std::map<std::string, GameFile> *out) {
-    HANDLE f = CreateFileA((GameDir() + a.name).c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-                           OPEN_EXISTING, FILE_FLAG_RANDOM_ACCESS, nullptr);
+    HANDLE f = PathCreateFile(GameDir() + a.name, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                              OPEN_EXISTING, FILE_FLAG_RANDOM_ACCESS);
     if (f == INVALID_HANDLE_VALUE) return -1;
     uint32_t k1 = a.k1 ^ kKeyXor1, k2 = a.k2 ^ kKeyXor2;
     int n = 0;
@@ -118,23 +118,18 @@ int ScanArchive(const ArchiveKey &a, std::map<std::string, GameFile> *out) {
     return n;
 }
 
-// The game's folder's own files under the folders the archives hold (the game opens them first).
+// The game's folder's own files under the folders the archives hold (the game opens them first). rel is UTF-8; the
+// names are kept as the archives' are, in the system's code page (the game's names).
 void ScanFolder(const std::string &rel, int depth, std::map<std::string, GameFile> *out) {
     if (depth > 6) return;
-    WIN32_FIND_DATAA fd;
-    HANDLE h = FindFirstFileA((GameDir() + rel + "*").c_str(), &fd);
-    if (h == INVALID_HANDLE_VALUE) return;
-    do {
-        std::string n = fd.cFileName;
-        if (n == "." || n == "..") continue;
-        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-            ScanFolder(rel + n + "\\", depth + 1, out);
+    for (const FoundFile &fd : ListDir(GameDir() + rel + "*")) {
+        if (fd.dir()) {
+            ScanFolder(rel + fd.name + "\\", depth + 1, out);
         } else {
-            std::string name = rel + n;
-            (*out)[Lower(name)] = {name, "folder", fd.nFileSizeLow};
+            std::string name = AcpOf(rel + fd.name);
+            (*out)[Lower(name)] = {name, "folder", static_cast<uint32_t>(fd.size)};
         }
-    } while (FindNextFileA(h, &fd));
-    FindClose(h);
+    }
 }
 
 void Scan() {
@@ -151,11 +146,8 @@ void Scan() {
     }
     std::map<std::string, GameFile> loose;
     for (auto &kv : tops) {
-        WIN32_FIND_DATAA fd;
-        HANDLE h = FindFirstFileA((GameDir() + kv.first).c_str(), &fd);
-        if (h == INVALID_HANDLE_VALUE) continue;
-        FindClose(h);
-        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ScanFolder(std::string(fd.cFileName) + "\\", 1, &loose);
+        std::vector<FoundFile> top = ListDir(GameDir() + AcpToUtf8(kv.first.c_str()));
+        if (!top.empty() && top[0].dir()) ScanFolder(top[0].name + "\\", 1, &loose);
     }
     g_files.swap(archives);
     for (auto &kv : loose) g_files[kv.first] = kv.second;   // (the folder's before the archives')

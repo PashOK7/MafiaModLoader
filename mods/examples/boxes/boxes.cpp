@@ -38,6 +38,7 @@
 #include <string>
 #include <vector>
 #include "mml/mml.h"
+#include "mml/path.h"
 
 #include "shaders/VsBox.h"        // the build's: const BYTE kVsBox[] (fxc /Fh)
 #include "shaders/PsBox.h"
@@ -552,7 +553,7 @@ bool Snapshot(const std::string &path, std::string *err) {
         ih.biHeight = h;          // bottom-up
         ih.biPlanes = 1;
         ih.biBitCount = 32;
-        FILE *f = fopen(path.c_str(), "wb");
+        FILE *f = mml_fopen(path.c_str(), "wb");
         if (f) {
             fwrite(&fh, sizeof fh, 1, f);
             fwrite(&ih, sizeof ih, 1, f);

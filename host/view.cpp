@@ -532,7 +532,7 @@ bool CameraMethod(const std::string &method, const std::string &paramsJson, std:
     };
     if (method == "camera.release") {
         g_heldCam.on = false;
-        *reply = json({{"held", false}, {"override", g_ov.fn ? ModIdOf(g_ov.mod) : "none"}}).dump();
+        *reply = json({{"held", false}, {"override", g_ov.fn ? ModIdOf(g_ov.mod) : "none"}}).dump(-1, ' ', false, json::error_handler_t::replace);
         return true;
     }
     if (method == "camera.set") {
@@ -548,7 +548,7 @@ bool CameraMethod(const std::string &method, const std::string &paramsJson, std:
         float f[3] = {h.fwd[0], h.fwd[1], h.fwd[2]};
         if (!Normalize(f)) { *ok = false; *reply = "camera.set: the eye and the point are the same"; return true; }
         g_heldCam = h;
-        *reply = json({{"held", true}, {"ms", static_cast<int>(h.until - GetTickCount())}, {"note", "drawn from the next frame; camera.release gives it back"}}).dump();
+        *reply = json({{"held", true}, {"ms", static_cast<int>(h.until - GetTickCount())}, {"note", "drawn from the next frame; camera.release gives it back"}}).dump(-1, ' ', false, json::error_handler_t::replace);
         return true;
     }
     json out = {{"override", g_ov.fn ? ModIdOf(g_ov.mod) : (g_heldCam.on ? "the bridge (camera.set)" : "none")}, {"frames_overridden", g_ovFrames},
@@ -615,7 +615,7 @@ bool ViewMethod(const std::string &method, const std::string &paramsJson, std::s
         if (p.contains("rect") && p["rect"].is_array() && p["rect"].size() == 4)
             for (int i = 0; i < 4; i++) rect[i] = p["rect"][i].get<float>();
         GfxViewShow(handle, rect);
-        *reply = json({{"handle", handle}, {"rect", {rect[0], rect[1], rect[2], rect[3]}}, {"shown", rect[2] > 0}}).dump();
+        *reply = json({{"handle", handle}, {"rect", {rect[0], rect[1], rect[2], rect[3]}}, {"shown", rect[2] > 0}}).dump(-1, ' ', false, json::error_handler_t::replace);
         return true;
     }
     json views = json::array();

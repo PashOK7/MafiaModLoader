@@ -95,9 +95,8 @@ std::string At(uint32_t a) {
     HMODULE m = nullptr;
     if (a && GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                                 (LPCSTR)(uintptr_t)a, &m) && m) {
-        char path[MAX_PATH] = "";
-        GetModuleFileNameA(m, path, MAX_PATH);
-        const char *name = strrchr(path, '\\') ? strrchr(path, '\\') + 1 : path;
+        std::string path = ModulePath(m);
+        const char *name = path.c_str() + path.find_last_of('\\') + 1;
         uint32_t rva = a - (uint32_t)(uintptr_t)m;
         if (m == GetModuleHandleA(nullptr)) snprintf(buf, sizeof buf, "%X", a);
         else if (!_stricmp(name, "LS3DF.dll")) snprintf(buf, sizeof buf, "ls3d+%X", rva);

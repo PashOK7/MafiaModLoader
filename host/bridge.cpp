@@ -130,11 +130,10 @@ json Modules() {
     json out = json::array();
     if (!EnumProcessModules(GetCurrentProcess(), mods, sizeof mods, &need)) return out;
     for (DWORD i = 0; i < need / sizeof(HMODULE) && i < 1024; i++) {
-        char path[MAX_PATH] = "";
+        std::string path = ModulePath(mods[i]);
         MODULEINFO mi{};
-        GetModuleFileNameA(mods[i], path, MAX_PATH);
         GetModuleInformation(GetCurrentProcess(), mods[i], &mi, sizeof mi);
-        out.push_back({{"name", strrchr(path, '\\') ? strrchr(path, '\\') + 1 : path}, {"base", reinterpret_cast<uintptr_t>(mi.lpBaseOfDll)},
+        out.push_back({{"name", path.substr(path.find_last_of('\\') + 1)}, {"base", reinterpret_cast<uintptr_t>(mi.lpBaseOfDll)},
                        {"size", mi.SizeOfImage}, {"path", path}});
     }
     return out;
@@ -185,7 +184,7 @@ json Handle(const json &req, bool *authed) {
     // the game thread's
     Job job;
     job.method = method;
-    job.params = params.dump();
+    job.params = params.dump(-1, ' ', false, json::error_handler_t::replace);
     int timeout = params.is_object() ? params.value("timeout_ms", 5000) : 5000;
     {
         std::unique_lock<std::mutex> lk(g_mx);
@@ -253,7 +252,7 @@ DWORD WINAPI ServerThread(void *) {
     }
     // written once the port is known: clients read the port and the token from it
     json info = {{"port", g_port}, {"token", g_token}, {"pid", GetCurrentProcessId()}, {"game_dir", GameDir()}, {"api", MML_API_VERSION}};
-    std::ofstream(MmlDir() + "bridge.json") << info.dump(2);
+    std::ofstream(Wide(MmlDir() + "bridge.json")) << info.dump(2, ' ', false, json::error_handler_t::replace);
     HLOG("bridge: listening on 127.0.0.1:%d", g_port);
     for (;;) {
         SOCKET s = accept(ls, nullptr, nullptr);
@@ -273,7 +272,7 @@ void BridgeStart() {
     tap::Init();
     {
         // <game>\mml\config.json: {"bridge_port": 47100, "taps": ["5409D0 n=4 ptr=1:32 log", ...]}
-        std::ifstream f(MmlDir() + "config.json");
+        std::ifstream f(Wide(MmlDir() + "config.json"));
         if (f) {
             try {
                 json cfg = json::parse(f, nullptr, true, true);
@@ -288,7 +287,7 @@ void BridgeStart() {
     char tok[33];
     snprintf(tok, sizeof tok, "%08x%08x%08x%08x", rd(), rd(), rd(), rd());
     g_token = tok;
-    DeleteFileA((MmlDir() + "bridge.json").c_str());   // a stale one would send clients to the last run's port
+    PathDelete(MmlDir() + "bridge.json");   // a stale one would send clients to the last run's port
     CreateThread(nullptr, 0, ServerThread, nullptr, 0, nullptr);
 }
 

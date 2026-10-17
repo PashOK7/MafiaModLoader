@@ -42,21 +42,21 @@ std::string DataDirOf(const std::string &id) {
     auto it = g_dataDirs.find(id);
     if (it != g_dataDirs.end()) return it->second;
     std::string root = MmlDir() + "data\\", dir = root + id + "\\";
-    CreateDirectoryA(root.c_str(), nullptr);
-    CreateDirectoryA(dir.c_str(), nullptr);
+    MakeDir(root);
+    MakeDir(dir);
     return g_dataDirs[id] = dir;
 }
 
 // A file's last write time (0: no such file).
 uint64_t FileTime(const std::string &path) {
     WIN32_FILE_ATTRIBUTE_DATA d;
-    if (!GetFileAttributesExA(path.c_str(), GetFileExInfoStandard, &d)) return 0;
+    if (!PathAttributesEx(path, &d)) return 0;
     return (static_cast<uint64_t>(d.ftLastWriteTime.dwHighDateTime) << 32) | d.ftLastWriteTime.dwLowDateTime;
 }
 
 // An object from a JSON file; false (and why) when it is there and cannot be used. No file: an empty object.
 bool ReadObject(const std::string &path, json *out, std::string *err) {
-    std::ifstream f(path);
+    std::ifstream f(Wide(path));
     if (!f) { *out = json::object(); return true; }
     try {
         json j = json::parse(f, nullptr, true, true);
@@ -160,11 +160,11 @@ json Patched(const json &from, const char *key, const json &value) {
 bool WriteChanges(const std::string &id, const json &changes, std::string *err) {
     std::string path = DataDirOf(id) + "config.json", tmp = path + ".tmp";
     {
-        std::ofstream f(tmp, std::ios::trunc);
+        std::ofstream f(Wide(tmp), std::ios::trunc);
         if (!f) { *err = "cannot write " + tmp; return false; }
         f << changes.dump(2, ' ', false, json::error_handler_t::replace) << "\n";
     }
-    if (!MoveFileExA(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING)) { *err = "cannot write " + path; return false; }
+    if (!PathMove(tmp, path, MOVEFILE_REPLACE_EXISTING)) { *err = "cannot write " + path; return false; }
     return true;
 }
 

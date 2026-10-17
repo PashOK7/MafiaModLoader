@@ -476,12 +476,12 @@ bool GeomMethod(const std::string &method, const std::string &paramsJson, std::s
         int w = where == "frame" ? MML_GEOM_FRAME : where == "views" ? MML_GEOM_VIEWS : MML_GEOM_FRAME | MML_GEOM_VIEWS;
         int h = AddRule(nullptr, p.value("pattern", "").c_str(), w, &err);
         if (!h) return fail("geom.hide: " + err);
-        *reply = json({{"handle", h}, {"pattern", Lower(p.value("pattern", "").c_str())}, {"where", where}}).dump();
+        *reply = json({{"handle", h}, {"pattern", Lower(p.value("pattern", "").c_str())}, {"where", where}}).dump(-1, ' ', false, json::error_handler_t::replace);
         return true;
     }
     if (method == "geom.show") {
         RemoveRules(nullptr, p.value("handle", 0));
-        *reply = json({{"rules", g_rules.size()}}).dump();
+        *reply = json({{"rules", g_rules.size()}}).dump(-1, ' ', false, json::error_handler_t::replace);
         return true;
     }
     if (method == "geom.survey") {
@@ -489,7 +489,7 @@ bool GeomMethod(const std::string &method, const std::string &paramsJson, std::s
         if (!id) {
             if (!EnsureHooks()) return fail("geom.survey: " + g_hookWhy);
             if (!g_surveyWanted) { g_surveyWanted = g_nextId++; g_seen.clear(); }
-            *reply = json({{"id", g_surveyWanted}, {"done", false}, {"next", "geom.survey {id} after a frame of the mission's world"}}).dump();
+            *reply = json({{"id", g_surveyWanted}, {"done", false}, {"next", "geom.survey {id} after a frame of the mission's world"}}).dump(-1, ' ', false, json::error_handler_t::replace);
             return true;
         }
         for (const SurveyDone &s : g_surveys)
@@ -508,7 +508,7 @@ bool GeomMethod(const std::string &method, const std::string &paramsJson, std::s
                 *reply = r.dump(-1, ' ', false, json::error_handler_t::replace);
                 return true;
             }
-        *reply = json({{"id", id}, {"done", false}}).dump();
+        *reply = json({{"id", id}, {"done", false}}).dump(-1, ' ', false, json::error_handler_t::replace);
         return true;
     }
     if (method == "geom.capture") {
@@ -520,12 +520,12 @@ bool GeomMethod(const std::string &method, const std::string &paramsJson, std::s
             if (!EnsureHooks()) return fail("geom.capture: " + g_hookWhy);
             int cid = g_nextId++;
             g_captures.push_back(std::unique_ptr<Capture>(new Capture{nullptr, cid, Lower(pat.c_str()), nullptr, nullptr}));
-            *reply = json({{"id", cid}, {"done", false}, {"next", "geom.capture {id} after a frame of the mission's world"}}).dump();
+            *reply = json({{"id", cid}, {"done", false}, {"next", "geom.capture {id} after a frame of the mission's world"}}).dump(-1, ' ', false, json::error_handler_t::replace);
             return true;
         }
         for (const auto &c : g_captures)
             if (!c->mod && c->id == id) {
-                *reply = c->done ? c->result.dump(-1, ' ', false, json::error_handler_t::replace) : json({{"id", id}, {"done", false}}).dump();
+                *reply = c->done ? c->result.dump(-1, ' ', false, json::error_handler_t::replace) : json({{"id", id}, {"done", false}}).dump(-1, ' ', false, json::error_handler_t::replace);
                 return true;
             }
         return fail("geom.capture: no such capture");

@@ -25,6 +25,7 @@
 #include <cstring>
 #include <string>
 #include "mml/mml.h"
+#include "mml/path.h"
 #include "mml/game/game_build.h"
 #include "mml/game/game.h"
 
@@ -128,19 +129,19 @@ std::string BestPath() { return std::string(H->mod_data_dir(M)) + "best_" + g_mi
 void LoadBest() {
     g_best = 0;
     if (g_mission.empty()) return;
-    if (FILE *f = fopen(BestPath().c_str(), "r")) {
+    if (FILE *f = mml_fopen(BestPath().c_str(), "r")) {
         if (fscanf(f, "%f", &g_best) != 1 || !(g_best > 0)) g_best = 0;
         fclose(f);
     }
 }
 
 void SaveBest() {
-    if (FILE *f = fopen(BestPath().c_str(), "w")) {
+    if (FILE *f = mml_fopen(BestPath().c_str(), "w")) {
         fprintf(f, "%.3f\n", g_best);
         fclose(f);
     }
     // and every finished lap, one line each
-    if (FILE *f = fopen((std::string(H->mod_data_dir(M)) + "laps.csv").c_str(), "a")) {
+    if (FILE *f = mml_fopen((std::string(H->mod_data_dir(M)) + "laps.csv").c_str(), "a")) {
         SYSTEMTIME t;
         GetLocalTime(&t);
         fprintf(f, "%04d-%02d-%02d %02d:%02d:%02d,%s,%.3f\n", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond, g_mission.c_str(), g_last);

@@ -24,7 +24,8 @@ uint32_t Add(HANDLE f) {
 }
 HANDLE Get(uint32_t h) { return h < g_files.size() ? g_files[h] : INVALID_HANDLE_VALUE; }
 HANDLE Open(const std::string &path) {
-    return CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    return CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,   // ansi-ok: the game's rw_data does so
+                       OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
 }
 } // namespace
 

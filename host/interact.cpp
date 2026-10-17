@@ -137,7 +137,7 @@ void Tell(Item &it, const char *type, void *actor = nullptr) {
         snprintf(b, sizeof b, "0x%08X", static_cast<unsigned>(reinterpret_cast<uintptr_t>(actor)));
         d["actor"] = b;
     }
-    EventsRecord(type, d.dump());
+    EventsRecord(type, d.dump(-1, ' ', false, json::error_handler_t::replace));
 }
 
 // An actor's model's world position (in a car: the car's place for its crew, as for the player).

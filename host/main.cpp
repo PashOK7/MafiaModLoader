@@ -15,14 +15,12 @@ const std::string &GameDir() { return g_gameDir; }
 const std::string &MmlDir() { return g_mmlDir; }
 
 void Init() {
-    char path[MAX_PATH];
-    GetModuleFileNameA(nullptr, path, MAX_PATH);
-    g_gameDir = path;
-    g_gameDir = g_gameDir.substr(0, g_gameDir.find_last_of("\\/") + 1);
+    std::string exe = ModulePath(nullptr);
+    g_gameDir = exe.substr(0, exe.find_last_of("\\/") + 1);
     g_mmlDir = g_gameDir + "mml\\";
-    CreateDirectoryA(g_mmlDir.c_str(), nullptr);
+    MakeDir(g_mmlDir);
     SetMainThread(GetCurrentThreadId());
-    HLOG("MafiaModLoader (API %u) loaded into %s", MML_API_VERSION, path);
+    HLOG("MafiaModLoader (API %u) loaded into %s", MML_API_VERSION, exe.c_str());
     EnsureCrashFilter();
     if (GameHooksInstall()) {
         HLOG("game: Mafia %s", GameBuild());
