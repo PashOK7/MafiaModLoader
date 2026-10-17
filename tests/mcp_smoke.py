@@ -62,6 +62,45 @@ class Client:
         self.p.wait(timeout=5)
 
 
+def two_games(c):
+    """Games side by side (the loader gives each folder its own one-at-a-time mutex): a second stand-in game in
+    another folder, reached by the tools' `game` (a folder; a lab's build in the labs), each its own bridge."""
+    second = os.path.join(ROOT, 'build', 'x86', 'harness_second')
+    shutil.rmtree(second, ignore_errors=True)
+    shutil.copytree(HARNESS, second, ignore=shutil.ignore_patterns('live', 'logs', 'crash', 'data', 'shots', 'restore',
+                                                                    'boxes', 'heavy', 'hello_c', 'bridge.json', 'quit'))
+    shutil.copy(os.path.join(HARNESS, 'mml_harness.exe'), os.path.join(second, 'Game.exe'))   # (a folder `game` takes)
+    p = subprocess.Popen([os.path.join(second, 'mml_harness.exe'), '--seconds', '30'], cwd=second,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        time.sleep(1.5)
+        listed = {t['name']: t for t in c.request('tools/list')['tools']}
+        check('tools/list: `game` on the tools that touch a game, not on the knowledge base\'s',
+              'game' in listed['call']['inputSchema'].get('properties', {}) and 'game' in listed['game_status']['inputSchema'].get('properties', {})
+              and 'game' not in listed['kb_search']['inputSchema'].get('properties', {}), listed['call']['inputSchema'])
+        ok1, one = c.tool('call', {'method': 'ping'})
+        ok2, two = c.tool('call', {'method': 'ping', 'game': second})
+        a, b = (json.loads(t) if ok else {} for t, ok in ((one, ok1), (two, ok2)))
+        check('`game`: two games at once, each its own bridge (another pid, its own folder)',
+              ok1 and ok2 and a.get('pid') != b.get('pid')
+              and os.path.normcase(b.get('game_dir', '')) == os.path.normcase(second + os.sep), (one, two))
+        ok, text = c.tool('call', {'method': 'hook_a.call', 'params': {'a': 2, 'b': 3}, 'game': second})
+        check('`game`: a mod command in the second game', ok and text.strip() == '30', text)
+        ok, text = c.tool('log_tail', {'lines': 200, 'game': second})
+        check('`game`: the second game\'s log', ok and 'harness_second' in text, text[-300:])
+        ok, text = c.tool('game_status', {'game': 'no such lab'})
+        check('`game`: an unknown one refused, the labs named', not ok and 'not a lab' in text, text)
+        ok, text = c.tool('call', {'method': 'ping'})
+        check('the default game still answers after the other\'s calls', ok and json.loads(text).get('pid') == a.get('pid'), text)
+    finally:
+        open(os.path.join(second, 'quit'), 'w').close()
+        try:
+            p.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            p.kill()
+    shutil.rmtree(second, ignore_errors=True)
+
+
 def main():
     c = Client()
     check('initialize: the server tells agents how to use it', 'game_status' in (c.info.get('instructions') or ''), c.info)
@@ -153,6 +192,7 @@ def main():
         check('restore save with no game: refused, saying so', not ok and 'not a known build' in text, text)
         check('the instructions tell of the kit', all(w in c.info.get('instructions', '') for w in ('draw.text', 'config.set', 'new_mod.py')))
         check('the instructions tell of the HUD', all(w in c.info.get('instructions', '') for w in ('hud.marker', 'hud.console', 'draw.picture')))
+        two_games(c)
     finally:
         open(os.path.join(HARNESS, 'quit'), 'w').close()
         harness.wait(timeout=10)

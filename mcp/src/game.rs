@@ -28,14 +28,50 @@ pub fn repo_root() -> Option<PathBuf> {
     None
 }
 
-pub fn game_dir() -> Result<PathBuf, String> {
-    if let Ok(d) = std::env::var("MML_GAME_DIR") { return Ok(PathBuf::from(d)); }
+tokio::task_local! {
+    /// The game a tool call is for (its `game` argument: main.rs sets it around the call).
+    static GAME: PathBuf;
+}
+
+/// Runs `f` for the game in `dir` (None: the default game).
+pub async fn with_game<F: std::future::Future>(dir: Option<PathBuf>, f: F) -> F::Output {
+    match dir {
+        Some(d) => GAME.scope(d, f).await,
+        None => f.await,
+    }
+}
+
+fn config() -> Result<Value, String> {
     let root = repo_root().ok_or("cannot find the repository (set MML_REPO or MML_GAME_DIR)")?;
     let cfg = root.join("mml.config.json");
     let text = std::fs::read_to_string(&cfg)
         .map_err(|_| format!("no {}: copy mml.config.example.json there and set game_dir (or set MML_GAME_DIR)", cfg.display()))?;
-    let v: Value = serde_json::from_str(&text).map_err(|e| format!("{}: {e}", cfg.display()))?;
-    v["game_dir"].as_str().map(PathBuf::from).ok_or_else(|| format!("{}: no game_dir", cfg.display()))
+    serde_json::from_str(&text).map_err(|e| format!("{}: {e}", cfg.display()))
+}
+
+/// The game's folder: the call's (`game`), else MML_GAME_DIR, else mml.config.json's game_dir.
+pub fn game_dir() -> Result<PathBuf, String> {
+    if let Ok(d) = GAME.try_with(|d| d.clone()) { return Ok(d); }
+    if let Ok(d) = std::env::var("MML_GAME_DIR") { return Ok(PathBuf::from(d)); }
+    config()?["game_dir"].as_str().map(PathBuf::from).ok_or_else(|| "mml.config.json: no game_dir".to_string())
+}
+
+/// The labs of mml.config.json (`labs`: a build -> its folder), in their order.
+pub fn labs() -> Vec<(String, PathBuf)> {
+    let Ok(cfg) = config() else { return vec![] };
+    cfg["labs"].as_object().map(|o| {
+        o.iter().filter_map(|(k, v)| v.as_str().map(|p| (k.clone(), PathBuf::from(p)))).collect()
+    }).unwrap_or_default()
+}
+
+/// A tool's `game`: a lab's build ("1.2", "1.0": mml.config.json's `labs`) or a game's folder (one with Game.exe).
+pub fn resolve(game: &str) -> Result<PathBuf, String> {
+    let labs = labs();
+    if let Some((_, dir)) = labs.iter().find(|(b, _)| b == game) { return Ok(dir.clone()); }
+    let dir = PathBuf::from(game);
+    if dir.join("Game.exe").exists() { return Ok(dir); }
+    let known: Vec<String> = labs.iter().map(|(b, d)| format!("\"{b}\" ({})", d.display())).collect();
+    Err(format!("game \"{game}\": not a lab ({}) nor a folder with Game.exe", if known.is_empty() { "none in mml.config.json".into() } else { known.join(", ") }))
 }
 
 pub fn bridge_info() -> Option<Value> {
@@ -45,6 +81,14 @@ pub fn bridge_info() -> Option<Value> {
 
 pub fn bridge_pid() -> Option<u32> {
     bridge_info()?.get("pid")?.as_u64().map(|p| p as u32)
+}
+
+/// The pid of the game running with the loader in `dir` (its bridge.json's, alive), if any.
+pub fn running_pid(dir: &Path) -> Option<u32> {
+    let text = std::fs::read_to_string(dir.join("mml").join("bridge.json")).ok()?;
+    let v: Value = serde_json::from_str(&text).ok()?;
+    let pid = v.get("pid")?.as_u64()? as u32;
+    alive(pid).then_some(pid)
 }
 
 pub fn alive(pid: u32) -> bool {

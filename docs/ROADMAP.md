@@ -577,6 +577,16 @@ What is done, what comes next and later, and what is known to be missing or wron
   function, file stream by a narrow path, `std::filesystem` or strict json dump in the host, the SDK, the mods and the
   tests. Seen in both labs through junctions named `Игра` and `Mafia ☃ 試` (the game, the mods, a mod's file read by
   the game's own rw_data); offline in the same two names.
+- **Games side by side** (2026-10-17; the owner: "you must always be able to run your own copy, 1.2 and 1.0 in
+  one test"): Game.exe quits at its entry when its mutex "Mafia Launcher Super Mutex Shit" exists (one Mafia on the
+  machine; MafiaEntryPoint 1.2 0x5BEBE0, 1.0 0x5F99B0); the loader gives it a mutex of its folder (by its volume and
+  file index: a junction is the same folder), made first thing, so games of different folders run together and a
+  second game of a running one's folder quits without touching its log or bridge.json. The MCP server takes `game`
+  on every tool that touches a game (a lab's build or a folder; one bridge connection a game, calls to different
+  games at the same time), `game_status` lists every lab's game; `lab.py` tells a lab's game by its process's path
+  (not any Game.exe). Seen: the 1.2 and the 1.0 labs launched at once into their freerides (8.7 s), two 3 s waits
+  in 3.0 s, trigger_view in both, screenshots of both; offline (two folders, the same folder again, a junction, a
+  game holding the game's own mutex) and mcp_smoke (`game` on a second stand-in game).
 - **Trigger view** (2026-10-17; `mods/examples/trigger_view`): the mission scripts' triggers drawn in the world, a
   debug view for mission and mod authors: detectors (their command now, signal, DETECTOR_INRANGE's radii, a use
   point's reach as the Action key finds it and its menu line, DETECTOR_WAITFORHIT's boxes) and the scene's areas

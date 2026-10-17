@@ -10,9 +10,16 @@ missing) and the end of `docs/JOURNAL.md`. Keep the roadmap and the journal curr
 
 - **Only the game folders in `mml.config.json`** (the user's own file, not in the repository): `game_dir`, the one
   in use, and `labs`, one folder a build (`{"1.2": ..., "1.0": ...}`). Never search the disk for other installs; a
-  build with no lab listed: ask the user for its folder. Switching between the listed labs is the agent's to do as
-  the work needs (`python tools/lab.py use 1.0`, then `mode loader` if `status` says so); put `game_dir` back where it
-  was when the work is done.
+  build with no lab listed: ask the user for its folder. **Both labs run at the same time**: every MCP tool that
+  touches a game takes `game` (`"1.2"`, `"1.0"`), so work for both builds is tested in both at once
+  (`game_launch {"game": "1.2", ...}` beside `{"game": "1.0", ...}`); `game_dir` is only the default.
+  `python tools/lab.py use 1.0` changes that default (then `mode loader` if `status` says so); put `game_dir` back
+  where it was when the work is done.
+- **The user's own game is no reason to wait**: the loader gives the game's one-at-a-time mutex to each folder, so a
+  lab's game starts beside a game the user plays from another folder (with or without the loader). Only a second
+  game of the same folder is refused, as the game refuses it. `game_status` lists every lab's game; a game outside
+  the labs is the user's: never close it. The labs' saves are the agent's to use (the user keeps a backup; 1.2's and
+  1.0's saves are the same format: one save may be copied to test both labs).
 - **Builds: what the work is for says where it is tested.** The loader, the SDK (`mml.h`, `game_build.h`,
   `game.h`), the MCP server and every shipped mod (`mods/core`, `mods/examples`) are for both builds, 1.2 and 1.0;
   a mod is for the builds its `mod.json` names in `"builds"` (absent: both). Work for both builds is seen working in

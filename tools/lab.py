@@ -73,8 +73,7 @@ def use(build):
     found = build_of(game)
     if found != build:
         sys.exit('%s is %s, not %s (its LS3DF.dll)' % (game, found, build))
-    if running(game) or running(cfg['game_dir']):
-        sys.exit('a game is running: close it first (game_close)')
+    # (only the default game changes: a game running in either lab goes on, reached by the MCP tools' `game`)
     if not same_dir(cfg['game_dir'], game):
         cfg['game_dir'] = game
         with open(CFG, 'w') as f:
@@ -86,11 +85,35 @@ def use(build):
         print('next: python tools/lab.py mode loader')
 
 
+def process_paths():
+    """Every running process's executable (the ones this user may ask: the game runs as the user)."""
+    import ctypes
+    from ctypes import wintypes
+    psapi, k32 = ctypes.WinDLL('psapi'), ctypes.WinDLL('kernel32')
+    k32.OpenProcess.restype = wintypes.HANDLE
+    k32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    k32.QueryFullProcessImageNameW.argtypes = (wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD))
+    k32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    pids = (wintypes.DWORD * 8192)()
+    got = wintypes.DWORD()
+    psapi.EnumProcesses(pids, ctypes.sizeof(pids), ctypes.byref(got))
+    paths = []
+    for pid in pids[:got.value // ctypes.sizeof(wintypes.DWORD)]:
+        h = k32.OpenProcess(0x1000, False, pid)   # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            continue
+        buf, n = ctypes.create_unicode_buffer(1024), wintypes.DWORD(1024)
+        if k32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(n)):
+            paths.append(buf.value)
+        k32.CloseHandle(h)
+    return paths
+
+
 def running(game):
-    out = subprocess.run(['tasklist', '/FO', 'CSV', '/NH'], capture_output=True, text=True).stdout
-    exe = os.path.join(game, 'Game.exe').lower()
-    # tasklist has no paths: a Game.exe running is enough to refuse (the check is conservative)
-    return any(line.lower().startswith('"game.exe"') for line in out.splitlines()) and os.path.exists(exe)
+    """A game of this folder runs (its Game.exe, the folder compared through junctions): the player's own game in
+    another folder, or the other lab's, does not count (the loader lets games of different folders run together)."""
+    exe = os.path.normcase(os.path.realpath(os.path.join(game, 'Game.exe')))
+    return any(os.path.normcase(os.path.realpath(p)) == exe for p in process_paths())
 
 
 def sha(path):

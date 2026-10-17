@@ -1,7 +1,11 @@
-//! The bridge client: one connection to the loader, made (and the token read) on first use, made again when the
-//! game restarts. One request at a time (the bridge answers in order).
+//! The bridge client: one connection to the loader of each game (by its folder: the call's `game`, else the
+//! default), made (and the token read) on first use, made again when that game restarts. One request at a time to
+//! a game (its bridge answers in order); games side by side are asked at the same time.
 
 use serde_json::{Value, json};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
@@ -13,17 +17,26 @@ struct Conn {
     pid: u64,
 }
 
+type Slot = Arc<Mutex<Option<Conn>>>;
+
 pub struct Bridge {
-    conn: Mutex<Option<Conn>>,
+    conns: std::sync::Mutex<HashMap<PathBuf, Slot>>,
 }
 
 impl Bridge {
     pub fn new() -> Self {
-        Self { conn: Mutex::new(None) }
+        Self { conns: std::sync::Mutex::new(HashMap::new()) }
+    }
+
+    /// The connection of the game this call is for.
+    fn slot(&self) -> Result<Slot, String> {
+        let dir = crate::game::game_dir()?;
+        let mut map = self.conns.lock().map_err(|_| "the bridge's table is poisoned")?;
+        Ok(map.entry(dir).or_default().clone())
     }
 
     pub async fn reset(&self) {
-        *self.conn.lock().await = None;
+        if let Ok(slot) = self.slot() { *slot.lock().await = None; }
     }
 
     async fn connect() -> Result<Conn, String> {
@@ -63,7 +76,8 @@ impl Bridge {
 
     /// A request; a broken or stale connection (the game restarted) is made again once.
     pub async fn call(&self, method: &str, params: Value, timeout_ms: u64) -> Result<Value, String> {
-        let mut guard = self.conn.lock().await;
+        let slot = self.slot()?;
+        let mut guard = slot.lock().await;
         for attempt in 0..2 {
             let current_pid = crate::game::bridge_info().and_then(|i| i["pid"].as_u64()).unwrap_or(0);
             if guard.as_ref().map_or(true, |c| c.pid != current_pid) {

@@ -548,6 +548,80 @@ def crash_tests():
           (r.get('events', [])[-2:], r.get('mods')))
 
 
+def instances_tests():
+    """Games side by side: Game.exe quits when its one-at-a-time mutex is there already (the stand-in game makes it as
+    the game's entry does); the loader gives it a mutex of its folder. Two folders run together, each with its own
+    bridge (the next free port); the same folder again quits, and so does a junction to it; a game without the loader
+    holding the game's own mutex (a player's) does not stop ours."""
+    import ctypes
+    root = os.path.join(ROOT, 'build', 'x86', 'harness_instances')
+    shutil.rmtree(root, ignore_errors=True)
+    games = [os.path.join(root, n) for n in ('a', 'b')]
+    for game in games:
+        shutil.copytree(HARNESS, game, ignore=shutil.ignore_patterns('live', 'logs', 'crash', 'data', 'shots', 'restore',
+                                                                      'boxes', 'heavy', 'hello_c', 'bridge.json', 'quit'))
+    k32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    k32.CreateMutexW.restype = ctypes.c_void_p
+    k32.CreateMutexW.argtypes = (ctypes.c_void_p, ctypes.c_int, ctypes.c_wchar_p)
+    player = k32.CreateMutexW(None, 0, 'Mafia Launcher Super Mutex Shit')   # a game without the loader, running
+
+    def start(game):
+        return subprocess.Popen([os.path.join(game, 'mml_harness.exe'), '--seconds', '30'], cwd=game,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+
+    def bridge_of(game, proc):
+        p = os.path.join(game, 'mml', 'bridge.json')
+        for _ in range(200):
+            if os.path.exists(p) or proc.poll() is not None:
+                break
+            time.sleep(0.05)
+        time.sleep(0.3)
+        return json.load(open(p, encoding='utf-8')) if os.path.exists(p) else {}
+
+    procs = []
+    try:
+        procs = [start(g) for g in games]
+        infos = [bridge_of(g, p) for g, p in zip(games, procs)]
+        check('two folders\' games run together (the game\'s own mutex held by another game meanwhile)',
+              all(p.poll() is None for p in procs) and all(infos), [p.poll() for p in procs])
+        if all(infos):
+            pings = [Bridge(i).call('ping') for i in infos]
+            check('each its own bridge: other ports, its own folder',
+                  infos[0]['port'] != infos[1]['port'] and all(r['ok'] for r in pings)
+                  and [os.path.normcase(r['result']['game_dir']) for r in pings] == [os.path.normcase(g + os.sep) for g in games],
+                  (infos, pings))
+        again = start(games[0])
+        out, _ = again.communicate(timeout=20)
+        check('the same folder again quits, as the game does', again.returncode == 3 and b'another game is running' in out,
+              (again.returncode, out[-300:]))
+        link = os.path.join(root, 'a_link')
+        subprocess.run(['cmd', '/c', 'mklink', '/J', link, games[0]], capture_output=True)
+        if os.path.isdir(link):
+            again = start(link)
+            out, _ = again.communicate(timeout=20)
+            check('the same folder through a junction quits too', again.returncode == 3, (again.returncode, out[-300:]))
+            os.rmdir(link)
+        log = open(os.path.join(games[0], 'mml', 'logs', 'mml.log'), encoding='utf-8').read()
+        check('the running game\'s log is its own still (not turned over by the second), the folder\'s mutex in it',
+              "the game's one-at-a-time mutex is this folder's" in log and log.count('MafiaModLoader (API') == 1, log[:600])
+        after = bridge_of(games[0], procs[0])
+        check('the running game\'s bridge.json is its own still', after.get('pid') == infos[0].get('pid')
+              and Bridge(after).call('ping')['ok'], after)
+    finally:
+        for g, p in zip(games, procs):
+            open(os.path.join(g, 'quit'), 'w').close()
+        for p in procs:
+            try:
+                p.communicate(timeout=15)
+            except subprocess.TimeoutExpired:
+                p.kill()
+                p.communicate()
+        if player:
+            k32.CloseHandle(ctypes.c_void_p(player))
+    check('both exit cleanly', all(p.returncode == 0 for p in procs), [p.returncode for p in procs])
+    shutil.rmtree(root, ignore_errors=True)
+
+
 def unicode_dir_tests():
     """The game in a folder whose name is not ASCII (a player's "C:\\Игры\\Mafia"): every path the loader keeps is
     UTF-8 and Windows is asked through its wide functions (an ANSI path once threw in json's dump at the bridge's
@@ -1198,6 +1272,7 @@ def main():
     check('files: a mod\'s file answers before the first frame (the game\'s first tables)',
           "before the first frame, tables\\test.txt is 'files_b'" in out.decode(errors='replace'), out.decode(errors='replace'))
     crash_tests()
+    instances_tests()
     unicode_dir_tests()
     print('ALL PASSED' if not failures else '%d FAILED: %s' % (len(failures), ', '.join(failures)))
     return 0 if not failures else 1

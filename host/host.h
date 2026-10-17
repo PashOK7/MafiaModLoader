@@ -65,6 +65,7 @@ void LogV(MmlLogLevel level, const char *who, const char *fmt, va_list ap);
 #define HLOG(...) ::host::Log(MML_LOG_INFO, "host", __VA_ARGS__)
 #define HWARN(...) ::host::Log(MML_LOG_WARN, "host", __VA_ARGS__)
 std::vector<std::string> LogTail(size_t lines);   // the last lines (any thread)
+void LogQuiet();                                  // no log file from now on (main.cpp: a second game of a folder)
 
 // ---- memory (memory.cpp): any thread, never faults
 bool MemRead(uintptr_t addr, void *dst, size_t n);

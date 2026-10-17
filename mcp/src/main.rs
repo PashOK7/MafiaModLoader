@@ -631,14 +631,19 @@ impl Server {
     #[tool(annotations(read_only_hint = true))]
     async fn game_status(&self) -> Out {
         let dir = game::game_dir()?;
+        // every lab: is a game of it running with the loader (its bridge.json's pid alive)
+        let labs: Vec<Value> = game::labs().into_iter().map(|(build, d)| {
+            let pid = game::running_pid(&d);
+            json!({"game": build, "dir": d, "running": pid.is_some(), "pid": pid})
+        }).collect();
         let ping = self.bridge.call("ping", json!({}), 3000).await;
         match ping {
             Ok(p) => {
                 let mods = self.bridge.call("mods.list", json!({}), 3000).await.unwrap_or(Value::Null);
-                Ok(pretty(&json!({"running": true, "game_dir": dir, "ping": p, "mods": mods})))
+                Ok(pretty(&json!({"running": true, "game_dir": dir, "ping": p, "mods": mods, "labs": labs})))
             }
-            Err(e) => Ok(pretty(&json!({"running": false, "game_dir": dir, "why": e,
-                "hint": "game_launch starts it; log_tail reads the last run's log from disk"}))),
+            Err(e) => Ok(pretty(&json!({"running": false, "game_dir": dir, "why": e, "labs": labs,
+                "hint": "game_launch starts it; log_tail reads the last run's log from disk; `game` picks a lab"}))),
         }
     }
 
@@ -752,7 +757,10 @@ impl Server {
             if let Ok(p) = self.bridge.call("ping", json!({}), 1500).await {
                 if p.get("pid").and_then(|v| v.as_u64()) == Some(pid as u64) { ping = Some(p); break; }
             }
-            if !game::alive(pid) { return Err(format!("Game.exe (pid {pid}) exited; log_tail shows why")); }
+            if !game::alive(pid) {
+                return Err(format!("Game.exe (pid {pid}) exited; log_tail shows why (a game of this folder already \
+                                    running makes another quit at once: one game a folder, as the game allows)"));
+            }
         }
         let Some(ping) = ping else {
             return Err(format!("Game.exe started (pid {pid}) but the bridge did not answer in {wait} s: is MafiaModLoader.asi installed and Ultimate ASI Loader present?"));
@@ -1088,7 +1096,10 @@ impl Server {
 }
 
 const INSTRUCTIONS: &str = "MafiaModLoader: the live Mafia (2002) game, from the inside. \
-game_status first (is it running?); game_launch / game_close start and stop it. \
+game_status first (is it running? and every lab's state); game_launch / game_close start and stop it. Several \
+games run side by side, one a folder (the 1.2 and the 1.0 labs together, beside a player's own): every tool that \
+touches a game takes `game` (\"1.2\", \"1.0\": mml.config.json's labs, or a game's folder; default its game_dir), \
+and calls to different games run at the same time. \
 `call` reaches every bridge method and mod command (commands_list lists them): the core mod answers \
 `game`, `player`, `car` (the player's car: speed, gear, fuel...; `car.save` / `car.restore` its whole state), \
 `humans`, `actors`, `frame`, `frames.find`. mem_read / mem_write read and write any address \
@@ -1128,10 +1139,54 @@ happened: `events.since` (or the wait tool); the frame: `prof.state` (or the pro
 `view.state`, `geom.survey`; any game function: `native.call {at, conv, this, args, ret}`; who writes a field: \
 the watch tool.";
 
+/// The tools that do not touch a game (no `game` argument).
+const NO_GAME: &[&str] = &["kb_search", "kb_function", "script_commands"];
+const GAME_ARG: &str = "Which game, when several run side by side: a lab's build (\"1.2\", \"1.0\": mml.config.json's \
+`labs`) or a game's folder. Default: mml.config.json's game_dir. Each game has its own bridge, log, crashes and \
+deploy; calls to different games run at the same time.";
+
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for Server {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(INSTRUCTIONS)
+    }
+
+    /// Every tool that touches a game takes `game` (GAME_ARG): it is taken out of the arguments and the call runs
+    /// for that game's folder (game::with_game).
+    async fn call_tool(
+        &self,
+        mut request: rmcp::model::CallToolRequestParams,
+        context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<rmcp::model::CallToolResponse, rmcp::ErrorData> {
+        let game = request.arguments.as_mut().and_then(|a| a.remove("game"));
+        let dir = match game {
+            None | Some(Value::Null) => None,
+            Some(Value::String(g)) => match game::resolve(&g) {
+                Ok(d) => Some(d),
+                Err(e) => return Ok(CallToolResult::error(vec![ContentBlock::text(e)]).into()),
+            },
+            Some(v) => return Ok(CallToolResult::error(vec![ContentBlock::text(format!("game: a string, not {v}"))]).into()),
+        };
+        let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
+        game::with_game(dir, self.tool_router.call(tcc)).await
+    }
+
+    async fn list_tools(
+        &self,
+        _request: Option<rmcp::model::PaginatedRequestParams>,
+        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<rmcp::model::ListToolsResult, rmcp::ErrorData> {
+        let mut tools = self.tool_router.list_all();
+        for t in tools.iter_mut().filter(|t| !NO_GAME.contains(&t.name.as_ref())) {
+            let mut schema = (*t.input_schema).clone();
+            let props = schema.entry("properties").or_insert_with(|| json!({}));
+            if let Some(p) = props.as_object_mut() {
+                p.insert("game".into(), json!({"type": ["string", "null"], "default": null, "description": GAME_ARG}));
+            }
+            schema.entry("type").or_insert_with(|| json!("object"));
+            t.input_schema = Arc::new(schema);
+        }
+        Ok(rmcp::model::ListToolsResult::with_all_items(tools))
     }
 }
 

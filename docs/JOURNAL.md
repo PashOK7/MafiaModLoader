@@ -1613,3 +1613,26 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   detectors: the commands they wait in, their radii, the crowbar's "used within 1.22 m: Pick up crowbar", a
   door's box to hit; 4 areas tested by the scripts), 1.0's freeride and Salieri's bar (1.0's command numbers named).
   Cost: 0.6 ms a frame, 3.6 ms the frame that walks the scene for areas (every 3 s; 12 000 frames in Old Prison).
+
+## 2026-10-17: games side by side
+
+- **Asked** (the owner): the agent must always be able to start its own game, whatever the owner runs (a game the
+  owner had open from another folder at the start of the day had kept the agent's checks guessing), and test 1.2
+  and 1.0 in parallel in one test; the labs' saves are the agent's (the owner keeps a backup; the builds' saves are
+  the same format).
+- **Read**: Game.exe's entry (MafiaEntryPoint, 1.2 0x5BEBE0, 1.0 0x5F99B0) makes the mutex "Mafia Launcher Super
+  Mutex Shit" and quits with no word when it existed: one Mafia on the machine. The loader's bridge already took
+  the next free port; the MCP server knew one game (game_dir); lab.py counted any Game.exe as the lab's.
+- **Made**: host/main.cpp makes a mutex of the game's folder first thing (its volume serial and file index: a
+  junction is the same folder) and links Game.exe's CreateMutexA import to it: other folders run together, the
+  same folder twice is refused as the game refuses it, and the second one's loader leaves the running one's log,
+  bridge.json and hooks alone. The MCP server: `game` on every tool that touches a game (call_tool takes it out and
+  runs the call in that folder's task-local scope; list_tools adds it to the schemas), one bridge connection a game,
+  `game_status` with every lab. lab.py: a lab's game by its process's path (EnumProcesses,
+  QueryFullProcessImageNameW, realpath through junctions); `use` no longer refuses while a game runs.
+- **Tests**: offline instances_tests (two folders together while another game holds the game's own mutex, each its
+  bridge; the same folder again and through a junction quit; the running one's log and bridge.json untouched),
+  mcp_smoke two_games (`game` on a second stand-in folder: ping, a mod command, its log; an unknown game refused).
+- **In both labs at once**: launched together into their freerides (8.7 s, ports 47101 and 47100, each its folder's
+  mutex), two 3 s `wait`s in 3.0 s, trigger_view loaded and listed in both, screenshots of both; closed by their
+  pids.

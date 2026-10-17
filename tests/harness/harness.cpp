@@ -38,6 +38,13 @@ int main(int argc, char **argv) {
     if (!loader) { printf("harness: cannot load MafiaModLoader.asi (%lu)\n", GetLastError()); return 1; }
     auto pump = reinterpret_cast<void (*)()>(GetProcAddress(loader, "mml_host_pump"));
     if (!pump) { printf("harness: no mml_host_pump\n"); return 1; }
+    // the game's one-at-a-time check, as its entry makes it (after the loader, as Ultimate ASI Loader loads it before
+    // the game's code): the loader gives it this folder's mutex (run_tests.py's instances_tests)
+    CreateMutexA(nullptr, FALSE, "Mafia Launcher Super Mutex Shit");
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        printf("harness: another game is running: quitting, as the game does\n");
+        return 3;
+    }
     // a file read before the first frame, as the game reads its first tables: a mod's file answers already
     using DtaOpenFn = unsigned(__stdcall *)(const char *, int);
     using DtaReadFn = unsigned(__stdcall *)(unsigned, void *, unsigned);
