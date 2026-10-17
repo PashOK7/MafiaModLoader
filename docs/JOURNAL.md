@@ -1826,4 +1826,8 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Seen**: 1.0 (restore point `sara_walk`): her walk on a 9-waypoint route lies 0.06 m from it on average, 0.13 m
   at most; `+0x80` is the gates' midpoint, `+0x74` the record's `+0x24`, on the kind-0 waypoints she walked to (kind 1 and 2 not seen current). 1.2 (save
   130 "07-02", restore point `sara_start`): the same layout read at the 1.2 offsets, drawn on her walk.
+- **The walk kept for `trail_s` seconds** (10 by default, on the settings page) of the world's time (the mission's
+  ticks summed: a pause keeps it). Seen in both labs: 9.97 s kept at 10, 2.96 s at 3; the pause menu open, the
+  trail and the ticks stood still. The walk is now measured from where he stood when the route began: after a
+  route made anew mid-walk the way to its first waypoint was counted as an offset (1.2 m); now 0.11 m (1.0).
 - **Not committed.**
