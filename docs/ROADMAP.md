@@ -661,6 +661,13 @@ What is done, what comes next and later, and what is known to be missing or wron
   written goes into the project and the repository at once (names.csv, names_10.csv, annotations.csv); `forget`
   takes it back; `where` and `crash_triage` name 1.0 addresses by names_10.csv first. Tests: run_tests.py (the names
   and prototypes, with no Ghidra), mcp_smoke.py (the tools from cold servers, both builds).
+- **The knowledge base for 1.0** (2026-10-18; from Later): st0rm94's names at their own 1.0 addresses,
+  every one (`knowledge/game.exe/external_10.csv`, 5028, by `tools/kb_external.py`; 2288 of them have no 1.2 twin:
+  1.0's own code, its menus). His export's binary is another no-CD copy of the same build (the same size, another
+  MD5): 4911 of his 5098 addresses start a function in the 1.0 lab's Game.exe in Ghidra, 112 lie inside one, 75 in
+  none. The 1.0 Ghidra project takes them (2801 names -> 5082), `where` and `crash_triage` name 1.0 addresses by
+  them (ours in names_10.csv over them), `kb_search` finds them in `functions_10`. 1.0 has no decompile of its own
+  in the knowledge base (`kb_function` stays 1.2's): `ghidra_read` with build "1.0" decompiles it.
 
 ## Next, by importance
 
@@ -852,9 +859,7 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
   there: `car.save` / `car.restore`): the game's own save and load used as a restore point, to repeat an experiment
   from the same moment.
 - *(Done 2026-10-17; see "Done".)* **Rust mods**.
-- **The knowledge base for 1.0**: only 1.2's decompile is imported; 1.0 addresses are named through their 1.2 twins,
-  and 1.0's menus (which have no twins) are read in st0rm94's annotated decompile (`re/ext/...`): import its names
-  for 1.0 (`kb_search` on a 1.0 address).
+- *(Done 2026-10-18; see "Done".)* **The knowledge base for 1.0**.
 - *(Done 2026-10-18; see "Done".)* **Ghidra behind MCP**.
 - **Publishing**: CI for the offline tests.
 

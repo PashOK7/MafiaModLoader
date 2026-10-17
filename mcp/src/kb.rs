@@ -100,14 +100,16 @@ fn load_module(dir: &PathBuf, name: &'static str, base: u32, source: &'static st
         }
     }
     names.sort_by_key(|n| n.addr);
-    let mut names10 = vec![];
-    if let Ok(mut rd) = csv::Reader::from_path(d.join("names_10.csv")) {
+    // 1.0's own: st0rm94's at his addresses (external_10.csv), ours (names_10.csv) over them at one address
+    let mut by_addr = std::collections::BTreeMap::new();
+    for file in ["external_10.csv", "names_10.csv"] {
+        let Ok(mut rd) = csv::Reader::from_path(d.join(file)) else { continue };
         for r in rd.records().flatten() {
             let Some(addr) = hex(&r[0]) else { continue };
-            names10.push(Name { addr, kind: r[1].into(), name: r[2].into(), source: r[3].into(), note: r[4].into() });
+            by_addr.insert(addr, Name { addr, kind: r[1].into(), name: r[2].into(), source: r[3].into(), note: r[4].into() });
         }
     }
-    names10.sort_by_key(|n| n.addr);
+    let names10: Vec<Name> = by_addr.into_values().collect();
     Ok(Module { name, base, source, funcs, names, names10, callers, callees })
 }
 
@@ -202,7 +204,26 @@ pub fn search(query: &str, module: Option<&str>, limit: usize) -> Result<Value, 
     let q = query.to_lowercase();
     let notes = search_notes(&q, limit);
     let functions = search_functions(&q, module, limit)?;
-    Ok(json!({ "notes": notes, "functions": functions }))
+    let functions_10 = search_10(&q, module, limit)?;
+    Ok(json!({ "notes": notes, "functions": functions, "functions_10": functions_10 }))
+}
+
+/// 1.0's own names (st0rm94's at his addresses, ours from the 1.0 Ghidra project) matching a name, a note or an
+/// address of the 1.0 image; ghidra_read with build "1.0" reads the code there.
+fn search_10(q: &str, module: Option<&str>, limit: usize) -> Result<Value, String> {
+    let kb = get()?;
+    let mut out = vec![];
+    for m in &kb.modules {
+        if module.is_some_and(|x| !x.eq_ignore_ascii_case(m.name)) { continue; }
+        for n in &m.names10 {
+            if n.name.to_lowercase().contains(q) || n.note.to_lowercase().contains(q) || format!("{:08x}", n.addr).contains(q) {
+                out.push(json!({ "module": m.name, "address_10": format!("{:08X}", n.addr), "kind": n.kind, "name": n.name,
+                                 "source": n.source, "note": n.note }));
+                if out.len() >= limit { return Ok(json!(out)); }
+            }
+        }
+    }
+    Ok(json!(out))
 }
 
 fn search_functions(q: &str, module: Option<&str>, limit: usize) -> Result<Value, String> {

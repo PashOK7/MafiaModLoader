@@ -936,6 +936,10 @@ def ghidra_names_tests():
     n10 = g.names('Game.exe', '1.0')
     check('ghidra names: 1.0 named through the twins (C_human::Hit at 496710), the SDK\'s 1.0 tables',
           n10.best[0x496710].name == 'C_human::Hit' and len(n10.best) > 2500, n10.best.get(0x496710))
+    tw10 = set(g.twins().values())
+    own = [n for at, n in n10.best.items() if at not in tw10 and n.source == 'st0rm94']
+    check('ghidra names: 1.0 takes st0rm94\'s own names of functions with no 1.2 twin (external_10.csv)',
+          len(own) > 2000 and len(n10.best) > 5000, (len(own), len(n10.best)))
     sig = g.c_signature
     check('ghidra prototypes: thiscall\'s first argument left out (whatever its name), an unknown class pointer void *',
           sig('C_actor *__thiscall sub_445290(C_actor *lpMem, char a2)') == 'void * __thiscall f(char a2)'

@@ -2046,3 +2046,14 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   changes nothing. An export's label of a name made the function's rename a duplicate: the label goes.
 - **Ranks**: game_build.h's rows in names.csv (and mafia-ragdoll's names, which are the same vocabulary) had first
   outranked the decompile's class names (`humanHit` over C_human::Hit): they are aliases now.
+
+## 2026-10-18: the knowledge base for 1.0
+
+- **st0rm94's own 1.0 names** (`knowledge/game.exe/external_10.csv`, `tools/kb_external.py`): all 5028 named
+  functions of his export at their 1.0 addresses; until now only the 2741 paired with a 1.2 twin reached the
+  repository (carried to 1.2). His binary is not the lab's (another MD5, the same 2 486 272 bytes: two no-CD copies
+  of the build; he says his PE timestamp was overwritten by the crack), so it was checked first in the 1.0 Ghidra
+  project: 4911 of his 5098 addresses start a function, 112 lie inside one (joined by Ghidra), 75 in none. The
+  regeneration left the other tables as they were (only their line endings).
+- **Where they go**: the 1.0 Ghidra project (2801 names -> 5082; 71 functions made at his addresses), `where` and
+  `crash_triage` in 1.0 (names_10.csv, then his, then the 1.2 twin's), `kb_search`'s `functions_10`.

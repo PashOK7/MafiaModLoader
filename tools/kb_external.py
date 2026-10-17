@@ -21,6 +21,7 @@ Writes:
   knowledge/<module>/external.csv         address,kind,name,source,note: the sources in PUBLISHED (committed)
   knowledge/<module>/external.local.csv   the same for every other source (ignored by git: this machine's)
   knowledge/game.exe/twins_10.csv     va12,va10,how: the 1.0 twin of each 1.2 function that could be paired
+  knowledge/game.exe/external_10.csv  st0rm94's names at their own 1.0 addresses (committed: his to share)
   knowledge/game.exe/script_commands.csv   opcode,command,handler,opcode_10,handler_10: the mission scripts'
       commands of both builds, read from the binaries themselves (the keyword table DecodeInstruction builds,
       emulated; the dispatcher's jump table)
@@ -451,6 +452,19 @@ def main():
         game_rows.append(['%08X' % va12, 'function', ps2 or name, 'st0rm94', note])
     write_csv(os.path.join(KB, 'game.exe', 'twins_10.csv'), ['va12', 'va10', 'how'],
               [['%08X' % va12, '%08X' % va10, how] for va10, (va12, how) in sorted(tw.items(), key=lambda kv: kv[1][0])])
+    # his names at their own 1.0 addresses, every one (2288 of them have no 1.2 twin: 1.0's own code, its menus):
+    # the 1.0 Ghidra project's and where / crash_triage's in 1.0. Checked 2026-10-18 against the 1.0 lab's
+    # Game.exe in Ghidra: 4911 of his 5098 addresses start a function there, 112 lie inside one (Ghidra joined
+    # them), 75 in none: the same code (his is another no-CD copy of the same build, the same size).
+    rows10 = []
+    for va10, (name, ps2) in sorted(st.items()):
+        if re.match(r'(FUN|thunk|LAB)_', name):
+            continue
+        note = '1.0 name %s' % name if ps2 else ''
+        if va10 in tw:
+            note = (note + '; ' if note else '') + '1.2 twin %08X (%s)' % tw[va10]
+        rows10.append(['%08X' % va10, 'function', ps2 or name, 'st0rm94', note])
+    write_csv(os.path.join(KB, 'game.exe', 'external_10.csv'), ['address', 'kind', 'name', 'source', 'note'], rows10)
 
     # the script commands
     n12, arms12, def12 = script_table(a.game12, '1.2')

@@ -12,8 +12,9 @@ name has a rank; at one address the highest is the primary name:
 
 The SDK's names are the loader's vocabulary, not better names: one that is not the primary is kept as a second
 name at its address (an alias: `at=humanHit` still finds C_human::Hit). 1.0 takes every 1.2 name of a function that
-has a twin (knowledge/game.exe/twins_10.csv) at the twin's address, at the rank it has in 1.2, then its own: the SDK's
-1.0 tables and names_10.csv. Prototypes: MafiaReverse's signatures (functions.csv), turned into C Ghidra parses,
+has a twin (knowledge/game.exe/twins_10.csv) at the twin's address, at the rank it has in 1.2, then its own:
+st0rm94's at his 1.0 addresses (external_10.csv, rank 2: the twinless functions too), the SDK's 1.0 tables and
+names_10.csv. Prototypes: MafiaReverse's signatures (functions.csv), turned into C Ghidra parses,
 where they are plain enough (`c_signature`); ours in knowledge/<module>/annotations.csv (`build,address,kind,text,
 source`, kind proto or comment) over them.
 """
@@ -143,6 +144,9 @@ def names(module, build):
         for at12, n in n12.best.items():
             if at12 in tw and n.kind in ('function', 'sdk'):
                 ns.put(Name(tw[at12], 'function', n.name, n.source + ' (1.2 %08X)' % at12, n.rank))
+        # st0rm94's own names at their 1.0 addresses (external_10.csv): every function of his, the twinless too
+        for r in rows(path(module, 'external_10.csv')):
+            ns.put(Name(int(r['address'], 16), r['kind'], r['name'], r['source'], 2))
     for at, field in sdk_tables('1.0'):
         if (at >= 0x10000000) == (module == 'LS3DF.dll'):
             ns.put(Name(at, 'sdk', field, SDK, 3))

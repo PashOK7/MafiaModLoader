@@ -13,6 +13,7 @@ server (`kb_search`, `kb_function`) and the loader uses to name addresses (`cras
 | `<module>/annotations.csv` | our comments and prototypes for each build (`build,address,kind,text,source`, kind `comment` or `proto`) | `ghidra_write comment`, `proto` |
 | `<module>/external.csv` | **other projects' names the repository may carry**: st0rm94's 1.0 names carried to 1.2 (shared by him for everyone's use), each address checked against the game's files; `source` says whose, `note` how it was found | `tools/kb_external.py` |
 | `<module>/external.local.csv` | **made on your machine**, not committed: the other projects' names (MafiaOnline, Oakwood, reM, mafia-re, IGraph's methods from mEdit), from your own clones of them in `re/ext/` (their terms do not let us redistribute them) | `tools/kb_external.py` |
+| `game.exe/external_10.csv` | st0rm94's names at **their own 1.0 addresses**, every one of his functions (the twinless too: 1.0's own code); the 1.0 Ghidra project, `where`, `crash_triage` and `kb_search` (`functions_10`) in 1.0 | `tools/kb_external.py` |
 | `game.exe/twins_10.csv` | the 1.0 twin of each 1.2 function that could be paired by its code (va12, va10, how) | `tools/kb_external.py` |
 | `game.exe/script_commands.csv` | the mission scripts' commands: opcode, name, handler in 1.2; opcode, handler in 1.0 (read from the binaries) | `tools/kb_external.py` |
 | `notes/*.md` | findings that do not fit a table: formats, layouts, how things work (`notes/external.md`: the other projects and where to read them by topic) | by hand |

@@ -1086,7 +1086,8 @@ impl Server {
 
     /// Search the game's knowledge base (every function of Game.exe and LS3DF.dll 1.2 from the full decompiles:
     /// names, classes, signatures, topics, the strings each uses; our own names from knowledge/<module>/names.csv;
-    /// the matching lines of the notes in knowledge/notes). Start here for any question about the game.
+    /// 1.0's names, st0rm94's and ours, by their 1.0 addresses in `functions_10`; the matching lines of the notes in
+    /// knowledge/notes). Start here for any question about the game.
     #[tool(annotations(read_only_hint = true))]
     async fn kb_search(&self, Parameters(a): Parameters<KbSearchArgs>) -> Out {
         let limit = a.limit.unwrap_or(40);

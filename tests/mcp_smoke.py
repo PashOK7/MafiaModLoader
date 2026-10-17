@@ -147,6 +147,9 @@ def main():
     check('kb_search: by a name', ok and '005' in text, text)
     ok, text = c.tool('kb_search', {'query': 'pedCarHit'})
     check('kb_search: our own names (names.csv)', ok and '0044CA50' in text, text)
+    ok, text = c.tool('kb_search', {'query': '00401060', 'module': 'game.exe'})
+    check('kb_search: a 1.0 address, by st0rm94\'s own 1.0 names (functions_10)', ok and '"address_10": "00401060"' in text
+          and 'ai_logs::Init' in text, text[-500:])
     ok, text = c.tool('kb_search', {'query': 'ISD0'})
     check('kb_search: the notes', ok and 'notes/rw_data.md' in text, text)
     ok, text = c.tool('kb_function', {'key': 'game+0x1409D0', 'max_lines': 30})
