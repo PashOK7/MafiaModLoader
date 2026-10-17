@@ -239,7 +239,8 @@ autosplitter; kept outside it, not ported). Checked against the above:
   was found there). Read it inside the tick, and tell routes apart by their waypoints, not by their address.
 - **ours** st0rm94's `structs/ai_path.md` (1.0) calls `+0x74` the "staged point" and `+0x80` "where the actor is
   actually steering": in the code `+0x74` is what HumanMoveTo walks to and `+0x80` only the arrival test's centre.
-  His container offsets are 1.0's; 1.2's differ (above).
+  His container offsets are 1.0's; 1.2's differ (above). Reported to him:
+  https://github.com/st0rm94/mafia-reverse-engineering-export/issues/2
 
 ## The start's other ways (host/start.cpp; read 2026-10-14, run in both labs)
 
