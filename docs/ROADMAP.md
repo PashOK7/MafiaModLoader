@@ -588,7 +588,7 @@ V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselv
 
 **The order of work** (the owner, 2026-10-16; one block at a time, each seen in both labs): the functions themselves
 matter, not example mods for them (no "fishing" example for items 15 and 16).
-1. Item 17, a mod's state in the game's saves.
+1. *(Done 2026-10-16; see "Done".)* Item 17, a mod's state in the game's saves.
 2. *(Done 2026-10-16.)* People and animations (item 6's rest: animations played and blended, getting up, traffic pedestrians' hits,
    1.0's fields).
 3. *(Done 2026-10-16.)* The events still missing (item 7's rest: what a bullet struck, a car striking a person or a
@@ -624,8 +624,8 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
 1. *(Done 2026-10-15: a heavy mod's lifecycle, the loader's part and the build's part; see "Done". The number is
    kept so the items' numbers stay.)*
 2. *(Done 2026-10-15: a mod's own files in the game; see "Done".)*
-3. **Render events and the graphics bridge** (W S V; R for posing). In three blocks: *3a, the render events*, *3b, the bridge*, *3c, the 2D pass for mods* (done
-   2026-10-15, see "Done"; what is left: Known gaps). As it was asked: the game's Direct3D 9Ex device (dxwrapper);
+3. *(Done 2026-10-15: 3a the render events, 3b the bridge, 3c the 2D pass for mods; see "Done". What is left: Known
+   gaps.)* **Render events and the graphics bridge** (W S V; R for posing). As it was asked: the game's Direct3D 9Ex device (dxwrapper);
    one Direct3D 11 device beside it on the same adapter, shared by every mod: the frame's colour and depth (the depth
    buffer swapped for a readable one before the world is drawn), the frame's constants (camera, projection, the
    sun's direction and colour, the fog, the ambient light, read from the device), the mods' passes in order into one
@@ -642,7 +642,8 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
 5. *(Done 2026-10-16: see "Done"; what is left: Known gaps.)* **Measuring the frame** (W S V R P; from Later). Each mod's time in each event and pass (CPU), the GPU timers of
    item 3, the game thread's sampling profiler, on the bridge and MCP: water and VR live within a frame's budget
    (11 ms at 90 Hz). Reference: `prof.h`, `gpu_timer.h`, `sampler.cpp`.
-27. **Shaders on the game's own drawing** (W S V and every mod that changes the look: per-pixel light, normal maps,
+27. *(Done 2026-10-17: 7a the service, 7b the reference shaders, 7c the sun's shadow map and the lights near a draw
+    (blocks of the order); see "Done". What is left: Known gaps.)* **Shaders on the game's own drawing** (W S V and every mod that changes the look: per-pixel light, normal maps,
     reflections on cars, wet streets, shadows; the owner, 2026-10-17). Item 3's passes see the finished frame (its
     colour, depth, camera): what a surface is made of, its normal, its light are gone by then. The game draws with
     Direct3D 8's fixed pipeline (no shaders of its own: the lights, the lightmaps' second texture, alpha test, fog are
@@ -673,7 +674,7 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
    whom, a car entered, left or stolen, an item picked up, money changed, a mission's objective done, the mission
    won or failed: today only a hit on a `C_human` and the missions' opening and closing are told. Reference:
    `hits.cpp`, `knock.cpp`, core.cpp's shot hook.
-8. *(8a done 2026-10-16: the questions in `mml.h` (a ray, a sweep, the actors near a point, the collision's shapes, the
+8. *(Done: 8a 2026-10-16, the questions in `mml.h` (a ray, a sweep, the actors near a point, the collision's shapes, the
    ground under a point) answered by the game's own tests; the water's height (6a), the files each model came from and
    the `.4ds` read (6c), the drawn triangles around a place and cars' meshes posed (6d); see "Done". What is left:
   Known gaps.)* **The world's geometry and questions about it** (R S W K P F). The file each loaded model came from (hooked from
@@ -683,9 +684,9 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
    every mod. Questions in `mml.h` (not only C++'s `game.h`): a ray, a sweep, what overlaps a box or sphere, the
    ground's and the water's height under a point, the actors near a point. Reference: `scenery.cpp`,
    `visual_meshes.cpp`, `collision.cpp`, `game_collision.cpp`, `model_index.cpp`, `model4ds.cpp`, `car_meshes.cpp`.
-9. *(9a done 2026-10-16: the frame drawn from a mod's camera, a world point on the screen and back; 8a of the order
-   2026-10-17: the game's camera modes and a field of view it keeps; see "Done". Left: its distance, an aim from
-   another camera: Known gaps.)* **The camera** (V R K P). The game's camera read and set (position, orientation, field of view, near/far), its
+9. *(Done: 9a 2026-10-16, the frame drawn from a mod's camera, a world point on the screen and back; 8a of the order
+   2026-10-17, the game's camera modes and a field of view it keeps; see "Done". What is left (its distance, an aim
+   from another camera): Known gaps.)* **The camera** (V R K P). The game's camera read and set (position, orientation, field of view, near/far), its
    projection replaced after the camera's own update (VR's per-eye frusta), the view decoupled from the aim, a camera
    of a mod's own following its own rules (a skateboard's, a plane's chase camera), a free camera; a world point to
    the screen and a screen point to a ray (markers, aiming). Reference: `freecam.cpp`, `ragcam.cpp`,
@@ -708,9 +709,9 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
 13. *(Done 2026-10-16: see "Done"; what is left: Known gaps.)* **Sound** (F K P C S W). The game's sounds and a mod's own (item 2) played in 2D or in 3D at a point or attached
     to a frame, looped, their volume and pitch changed live (an engine's note follows its revolutions), stopped;
     the music.
-14. *(14a done 2026-10-16: keys and actions kept from the game, the player locked, a car's physics replaced; 2026-10-17
-    a mod's keys on its settings page and the game's airplane flown by a mod; see "Done". Left: actions in the game's
-    controls menu, riding a vehicle that is not a car; Known gaps.)* **Control** (K P F V). A mod's keys and buttons taken so the game does not also act on them; actions of a mod's
+14. *(Done: 14a 2026-10-16, keys and actions kept from the game, the player locked, a car's physics replaced;
+    2026-10-17, a mod's keys on its settings page and the game's airplane flown by a mod; see "Done". What is left
+    (actions in the game's controls menu, riding a vehicle that is not a car): Known gaps.)* **Control** (K P F V). A mod's keys and buttons taken so the game does not also act on them; actions of a mod's
     own, bindable in the game's controls menu like its own; the player's movement handed to a mod (a skateboard
     moves him, the game's walking stands aside) and given back; a vehicle's physics replaced by a mod's (a plane's
     flight on a car's or an airplane actor's body: `C_airplane` exists); entering, leaving and seats of a mod's
