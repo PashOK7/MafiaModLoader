@@ -536,6 +536,16 @@ What is done, what comes next and later, and what is known to be missing or wron
   `cameraModeTable`, `gameCamera`, checked by check_builds.py. Seen in the 1.2 and 1.0 labs: the bonnet's, the driver's
   head's and the eyes' cameras by the game's own code, 103 degrees held through the camera's changes and getting out of
   the car, the game's 70 back.
+- **Structures by name** (2026-10-17; item 24, block 9a of the order): `knowledge/structs/` (131 structures, 1412
+  fields) made by `tools/kb_structs.py` from the SDK's headers (their fields named once, their offsets read from
+  them), both builds' constructors (36 vtables in 1.2, 29 of them in 1.0, the actor kinds, the base classes, the
+  members embedded, the sizes) and st0rm94's 1.0 fields carried to 1.2 by aligning the paired functions' memory
+  accesses (639 carried, 690 left at 1.0 only); MCP `inspect` (an object's class by its vtable, every field valued
+  for the build running, pointers named and followed, paths like `player.inventory` and `game.camera`, the dwords no
+  field covers; a layout with no game), `kb_search` finding fields. Seen in the 1.0 and 1.2 labs alike: the player
+  told as C_player by its vtable (0x63C908, 0x625878), its weapons (the Thompson's 50 and 100 rounds), its frames by
+  name, its car (C_car by its vtable) and the car's C_Vehicle with st0rm94's carried fields reading in 1.2 what they
+  read in 1.0 (the speed limiter's 1000.5, the throttle's ramp, the engine's timer), the game's camera and its mode.
 - **People, skeletons, poses** (2026-10-16; item 6, block 6a): the host keeps every `C_human` (`humans_list`,
   `human_player`), a person's skeleton by the bones' names (`human_skeleton`: 18 joints, the pelvis, the root), a
   pose written for the frame's drawing (`bone_set` in `RENDER_BEGIN`, each posed model updated once after);
@@ -580,8 +590,8 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
 8. *(Done 2026-10-17: 8a, the game's camera modes and a field of view it keeps; 8b, a mod's keys chosen in the game's
    menus; 8c, the game's airplane flown by a mod; see "Done". Left: Known gaps.)* The camera and control (item 9's rest: the game's own camera logic; item 14's rest: a mod's actions in the
    controls menu, another kind of vehicle).
-9. The agent's tools (items 24, 25 and the snapshots in Later: structures by name, crash triage in one call,
-   restore points).
+9. *(9a done 2026-10-17: structures by name, item 24; see "Done".)* The agent's tools (items 24, 25 and the
+   snapshots in Later: structures by name, crash triage in one call, restore points).
 10. Mod languages (Later: the Rust crate; LuaJIT script mods).
 11. Orders for the people made (item 26).
 12. Tests in the real game, as scripts of steps (item 23).
@@ -717,8 +727,8 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
 23. **Tests in the real game, as scripts of steps** (A). Python over the bridge (`tests/game/`): start, spawn,
     teleport, input, wait for an event, check a value, screenshot; pass or fail. First cases from the measuring mods:
     a car hits a person, a body falls into the river, an exhaust in a tunnel, a camera turned, a prop held in a hand.
-24. **Structures by name** (A). `inspect <addr> as C_human` (and other classes): fields named and typed from
-    `game.h` and the decompile's layouts, kept in `knowledge/` as tables of offsets.
+24. *(Done 2026-10-17: see "Done".)* **Structures by name** (A). `inspect <addr> as C_human` (and other classes):
+    fields named and typed from `game.h` and the decompile's layouts, kept in `knowledge/` as tables of offsets.
 25. **Crash triage in one call** (A; from Later): the named stack, the log's last lines and the last taps' calls.
 26. **Orders for the people made** (A, for test scenes). Walk or drive to a place, follow, attack, flee: the AI's own
     jobs and the mission commands that give them, as `world.*`; the scripts' events (`setplayerfireevent`...) to a
@@ -776,6 +786,17 @@ merged, sorted by importance):
 
 ## Known gaps
 
+- **The structures** (knowledge/structs, `inspect`): st0rm94's fields are carried to 1.2 only where the paired
+  functions touch them (690 of 1329 stay 1.0's: the AI's, the police's and other classes whose functions were not
+  paired, and fields only read through a pointer elsewhere); a carried field is the accesses' majority, not seen one
+  by one (those of C_actor, C_human, C_car and C_Vehicle read the same in both labs). LS3D's classes (I3D_frame...)
+  have no vtables in the table (their constructors are in LS3DF, not read) and their st0rm94 fields were carried
+  through Game.exe's accesses only: `sector`, `mesh` on a model frame read values that are not pointers (seen in
+  1.0, the build he reversed). C_Vehicle's 1.0 vtable was not found (its constructor has no paired twin); embedded
+  C_Vehicle has no size. An object's class is told by its vtable only (an actor's kind is not used). The SDK's
+  `vehInertiaA`, `vehInertiaB` are left out: 1.0's GetRVelMassJ reads the body's matrix pair there (vehMatrix's
+  offsets) where 1.2's reads the pair after it (`knowledge/notes/vehicle_physics.md`). Found with `gaps`, not named:
+  G_Camera `+0x08` held the player (1.2, in a car).
 - **A mod's own files** (host/files.cpp): seen in the 1.2 lab with a menu's picture only; a model, a sound, an
   animation and a table of a mod's were not loaded in the game (they come through the same `dtaOpen`: about 720
   models, 240 sounds and 50 tables a freeride's load); in the 1.0 lab only the menu's picture was seen. A table the game reads only at its start, and which tables those are, was not listed.

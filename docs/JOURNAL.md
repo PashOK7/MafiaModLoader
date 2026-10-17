@@ -1481,3 +1481,28 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   longer told to it once it asked for airplanes only. The plane given back to its route was not seen (it stands
   until a script starts it: Known gaps).
 - **Tests**: offline ALL PASSED (`vehicle_kinds`, `vehicle.move` with no game).
+
+## 2026-10-17: structures by name (block 9a of the order)
+
+- **Read**: what holds layouts: game.h and game_build.h (the SDK's fields, per build), st0rm94's structs/*.md (1.0's
+  fields in C blocks, with his confidence tags), the 1.2 decompile (fields named, but no type definitions: no offsets
+  to take). 1.0 and 1.2 layouts move in steps (C_Vehicle: 1.2's + 0x7C), so st0rm94's offsets could not be taken as
+  1.2's.
+- **Made** `tools/kb_structs.py` -> `knowledge/structs/` (structs.csv, fields.csv): the SDK's fields named once and
+  their offsets read from the headers; each class's vtable, actor kind, base and embedded members from its
+  constructor in both builds (which registers hold `this` + n), its size from the `new` before it; st0rm94's fields
+  carried to 1.2 by aligning each paired function's instructions with its twin's and voting on the displacements, a
+  vote against the step of the sure fields around it refused (it had placed two of C_Vehicle's fields on 1.0's
+  offsets: other objects' accesses). MCP `inspect` (mcp/src/structs.rs): an object's class by its vtable, its fields
+  valued, pointers named (a class, a frame's name, a module's place) and followed, paths (`player.inventory`,
+  `car.vehicle`, `game.camera`), `gaps`; a layout with no game; `kb_search` finds fields.
+- **Checked against what was known**: the constructors' kinds (human 3, player 2, car 4, airplane 0x16, entity 0x1B)
+  and the airplane's vtables (game_build.h) are what was known; C_car's sizes 0x221C and 0x21F4 are game_build.h's
+  `carSize`, C_public_physics's `physSize`.
+- **Found**: game_build.h's `vehInertiaA` 1.0 is `vehMatrix`'s offset: 1.0's GetRVelMassJ reads the body's matrix pair
+  where 1.2's reads the next pair (knowledge/notes/vehicle_physics.md). Not a wrong offset (each is what its build
+  reads), but not one field: left out of the tables. With `gaps`: G_Camera +0x08 holds the player (in a car, 1.2).
+- **In both labs**: the player told by its vtable, its inventory and frames, its car and C_Vehicle; st0rm94's carried
+  fields read in 1.2 what they read in 1.0.
+- **Tests**: Rust unit tests (the types, the tables), mcp_smoke (a layout, both builds' offsets, kb_search's fields,
+  an unknown build refused), offline ALL PASSED.

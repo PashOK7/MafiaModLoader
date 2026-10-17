@@ -1,0 +1,1413 @@
+struct,offset,offset_10,name,type,source,note
+ai_action,,0x0,type,u32,st0rm94,[H] THE TYPE ID (0x00..0x2a) (entity.md; 1.2 not carried: no access in the paired code)
+ai_action,,0x4,uid,u32,st0rm94,[H] from ai_action_generate_UID() (entity.md; 1.2 not carried: no access in the paired code)
+ai_action,,0x8,expiry,u32,st0rm94,[H] the caller's expiry seed (entity.md; 1.2 not carried: no access in the paired code)
+ai_action,,0xC,expiry2,u32,st0rm94,[H] the SAME value written twice by every factory (entity.md; 1.2 not carried: no access in the paired code)
+ai_action,,0x10,start_ms,u32,st0rm94,[M] world clock stamp (`*(*(g_act_mission+0x24)+0x2b0c)`) (entity.md; 1.2 not carried: no access in the paired code)
+ai_action,,0x14,inner_size,u32,st0rm94,[H] size of the inner payload (varies per type - see 6b) (entity.md; 1.2 not carried: no access in the paired code)
+ai_action,,0x18,_zero_18,u32,st0rm94,[H] zeroed by every factory (entity.md; 1.2 not carried: no access in the paired code)
+ai_action,,0x1C,_zero_1c,u32,st0rm94,[H] zeroed by every factory (entity.md; 1.2 not carried: no access in the paired code)
+ai_action,,0x20,inner,ptr,st0rm94,[H] the per-type payload (a second operator_new) (entity.md; 1.2 not carried: no access in the paired code)
+ai_action_manager,0x0,0x0,jobs_alloc,allocator_t,st0rm94,"[H] MSVC's empty std::allocator member, padded to 4 (ai_action_manager.md; 1.2 carried: 64 of 64 accesses)"
+ai_action_manager,0x4,0x4,jobs_begin,ptr,st0rm94,"[H] = C_entity+0x1168, which is exactly what (ai_action_manager.md; 1.2 carried: 90 of 90 accesses)"
+ai_action_manager,0x8,0x8,jobs_end,ptr,st0rm94,[H] count = (end - begin) >> 2 (ai_action_manager.md; 1.2 carried: 120 of 120 accesses)
+ai_action_manager,0xC,0xC,jobs_cap_end,ptr,st0rm94,[H] one past the last ALLOCATED slot (ai_action_manager.md; 1.2 carried: 21 of 21 accesses)
+ai_action_manager,0x10,0x10,idles_alloc,allocator_t,st0rm94,[H] (ai_action_manager.md; 1.2 carried: 8 of 10 accesses)
+ai_action_manager,0x14,0x14,idles_begin,ptr,st0rm94,[H] ai_action_manager_add_idle / _new_idle / (ai_action_manager.md; 1.2 carried: 25 of 27 accesses)
+ai_action_manager,0x18,0x18,idles_end,ptr,st0rm94,[H] (ai_action_manager.md; 1.2 carried: 22 of 22 accesses)
+ai_action_manager,,0x1C,idles_cap_end,ptr,st0rm94,"[H] (ai_action_manager.md; 1.2 not carried: accesses disagree {'0x10': 2, '0x1C': 1})"
+ai_action_manager,0x20,0x20,modifiers_alloc,allocator_t,st0rm94,[H] (ai_action_manager.md; 1.2 carried: 21 of 21 accesses)
+ai_action_manager,0x24,0x24,modifiers_begin,ptr,st0rm94,[H] ai_action_manager_add_modifier / _new_modifier / (ai_action_manager.md; 1.2 carried: 25 of 25 accesses)
+ai_action_manager,0x28,0x28,modifiers_end,ptr,st0rm94,[H] (ai_action_manager.md; 1.2 carried: 18 of 18 accesses)
+ai_action_manager,,0x2C,modifiers_cap_end,ptr,st0rm94,[H] (ai_action_manager.md; 1.2 not carried: no access in the paired code)
+ai_action_manager,0x30,0x30,uid_counter,u32,st0rm94,[H] the monotonically increasing action-UID source (ai_action_manager.md; 1.2 carried: 3 of 3 accesses)
+ai_blob,,0x0,pos,f32[3],st0rm94,[H] the owner frame's origin with **y + 1.0** - (ai_blob_log.md; 1.2 not carried: no access in the paired code)
+ai_blob,,0xC,dir,f32[3],st0rm94,[H] normalised: the owner frame's forward vector (ai_blob_log.md; 1.2 not carried: no access in the paired code)
+ai_blob,,0x18,emitted_ms,u32,st0rm94,[H] game clock at emission - drives the 500 ms (ai_blob_log.md; 1.2 not carried: no access in the paired code)
+ai_blob,,0x1C,flags,u32,st0rm94,[H] see §1b (ai_blob_log.md; 1.2 not carried: no access in the paired code)
+ai_blob,,0x20,owner,ptr:C_human,st0rm94,[H] the emitting human (ai_blob_log.md; 1.2 not carried: no access in the paired code)
+ai_blob_log,0x0,0x0,ring,ai_blob[16],st0rm94,[H] 16 slots x 0x24 = 0x240 - see §1a (ai_blob_log.md; 1.2 carried: 59 of 59 accesses)
+ai_blob_log,0x240,0x240,cursor,u32,st0rm94,[H] index of the NEWEST blob (ai_blob_log.md; 1.2 carried: 4 of 4 accesses)
+ai_character,0x0,0x0,stat_delta_0,f32,st0rm94,[H] zeroed by ai_character_init (ai_character.md; 1.2 carried: 9 of 9 accesses)
+ai_character,0x4,0x4,intelligence_delta,f32,st0rm94,[H] per-instance delta (ai_character.md; 1.2 carried: 13 of 13 accesses)
+ai_character,0x8,0x8,morale_delta,f32,st0rm94,[H] per-instance delta (ai_character.md; 1.2 carried: 9 of 9 accesses)
+ai_character,0xC,0xC,stat_delta_3,f32,st0rm94,[H] zeroed by ai_character_init (ai_character.md; 1.2 carried: 9 of 9 accesses)
+ai_character,0x10,0x10,aggression_delta,f32,st0rm94,[H] per-instance delta (ai_character.md; 1.2 carried: 10 of 10 accesses)
+ai_character,0x14,0x14,sight_delta,f32,st0rm94,[H] per-instance delta (ai_character.md; 1.2 carried: 6 of 6 accesses)
+ai_character,0x18,0x18,hearing_delta,f32,st0rm94,[H] per-instance delta (ai_character.md; 1.2 carried: 14 of 14 accesses)
+ai_character,0x1C,0x1C,stat_delta_7,f32,st0rm94,[H] zeroed by ai_character_init (ai_character.md; 1.2 carried: 15 of 15 accesses)
+ai_character,,0x20,stat_delta_8,f32,st0rm94,[H] zeroed by ai_character_init (ai_character.md; 1.2 not carried: accesses disagree {'0x20': 1})
+ai_character,0x24,0x24,cfg,ptr,st0rm94,[H] -> the OWNING C_entity (NOT serialized) (ai_character.md; 1.2 carried: 17 of 17 accesses)
+ai_character_log,,0x0,target,ptr:C_actor,st0rm94,[H] who this log is about (ai_logs.md; 1.2 not carried: no access in the paired code)
+ai_character_log,,0x4,death_mark,u32,st0rm94,[H] 0x29a marks a DEATH-witnessed log (ai_logs.md; 1.2 not carried: no access in the paired code)
+ai_character_log,,0x8,relation,u32,st0rm94,"[H] relationship class 0..3, assigned once at creation by (ai_logs.md; 1.2 not carried: no access in the paired code)"
+ai_character_log,,0xC,enemy_damage,f32,st0rm94,[H] damage this target dealt to MY ENEMIES (ai_logs.md; 1.2 not carried: no access in the paired code)
+ai_character_log,,0x10,own_damage,f32,st0rm94,[H] damage this target dealt to ME (ai_logs.md; 1.2 not carried: no access in the paired code)
+ai_character_log,,0x14,friend_damage,f32,st0rm94,[H] damage this target dealt to MY FRIENDS (ai_logs.md; 1.2 not carried: no access in the paired code)
+ai_character_log,,0x18,contact_ts,u32,st0rm94,[H] contact-window open stamp (ai_logs.md; 1.2 not carried: no access in the paired code)
+ai_character_log,,0x1C,expire_ts,u32,st0rm94,[H] contact-window expiry deadline (ai_logs.md; 1.2 not carried: no access in the paired code)
+ai_character_log,,0x20,event_ts,u32,st0rm94,"[H] last event stamp, written by ai_logs_event (ai_logs.md; 1.2 not carried: no access in the paired code)"
+ai_character_log,,0x24,last_seen,u32,st0rm94,"[H] ai_logs_tick, when ai_sensors_can_see fires (ai_logs.md; 1.2 not carried: no access in the paired code)"
+ai_character_log,,0x28,last_heard,u32,st0rm94,"[H] ai_logs_tick, when ai_sensors_can_hear fires (ai_logs.md; 1.2 not carried: no access in the paired code)"
+ai_character_log,,0x2C,last_smelled,u32,st0rm94,"[H] ai_logs_tick, when ai_sensors_can_smell fires (ai_logs.md; 1.2 not carried: no access in the paired code)"
+ai_character_log,,0x30,last_aimed,u32,st0rm94,"[H] visible AND target aiming (C_human+0x1e5, the aimed (ai_logs.md; 1.2 not carried: no access in the paired code)"
+ai_character_log,,0x34,last_shot,u32,st0rm94,[H] heard AND target fired <250 ms ago (ai_logs.md; 1.2 not carried: no access in the paired code)
+ai_character_log,,0x38,next_poll_ts,u32,st0rm94,[H] sense re-poll gate (ai_logs.md; 1.2 not carried: no access in the paired code)
+ai_character_log,,0x3C,attitude_bias,f32,st0rm94,[H] input bias (ai_logs.md; 1.2 not carried: no access in the paired code)
+ai_character_log,,0x40,attitude_ema,f32,st0rm94,"[H] smoothed attitude, folded (3*bias + ema) * 0.25 on reset (ai_logs.md; 1.2 not carried: no access in the paired code)"
+ai_character_log,,0x44,attitude,f32,st0rm94,"[H] morale-shaped attitude, clamped at 0 (ai_logs.md; 1.2 not carried: no access in the paired code)"
+ai_character_log,,0x48,threat,f32,st0rm94,[H] exposure-weighted threat — what BOTH max-threat pickers (ai_logs.md; 1.2 not carried: no access in the paired code)
+ai_character_log,,0x4C,anger,f32,st0rm94,[H] (aggression + 0.5) scaled (ai_logs.md; 1.2 not carried: no access in the paired code)
+ai_character_log,,0x50,fear,f32,st0rm94,[H] (1 - morale) scaled (ai_logs.md; 1.2 not carried: no access in the paired code)
+ai_corner_hide_info,,0x0,corner,ptr:ai_seg_corner,st0rm94,[H] the chosen corner (check_seg.md; 1.2 not carried: no access in the paired code)
+ai_corner_hide_info,,0x4,hide_pos,f32[3],st0rm94,[H] where to stand (check_seg.md; 1.2 not carried: no access in the paired code)
+ai_corner_hide_info,,0x10,hide_dir,f32[3],st0rm94,[H] which way to face (y forced to 0) (check_seg.md; 1.2 not carried: no access in the paired code)
+ai_corner_hide_info,,0x1C,side,u32,st0rm94,[H] 0 or 1 - which side of the corner (check_seg.md; 1.2 not carried: no access in the paired code)
+ai_corner_hide_info,,0x20,distance,f32,st0rm94,[H] distance from the query position (check_seg.md; 1.2 not carried: no access in the paired code)
+ai_fight_followship,,0x4,members_begin,ptr:ai_fight_member,st0rm94,[H] (ai_fight_manager.md; 1.2 not carried: no access in the paired code)
+ai_fight_followship,,0x8,members_end,ptr:ai_fight_member,st0rm94,[H] count = (end - begin) / 0x14 (ai_fight_manager.md; 1.2 not carried: no access in the paired code)
+ai_fight_followship,,0x10,centre,f32[3],st0rm94,[H] the party's mean member position - (ai_fight_manager.md; 1.2 not carried: no access in the paired code)
+ai_fight_followship,,0x28,spread_sq,f32,st0rm94,[H] MAX squared distance from any member to (ai_fight_manager.md; 1.2 not carried: no access in the paired code)
+ai_fight_followship,,0x2C,form_deadline_ms,u32,st0rm94,[H] mission clock (ai_fight_manager.md; 1.2 not carried: no access in the paired code)
+ai_fight_followship,,0x30,kind,u32,st0rm94,[H] 1 = CAR party (set by new_car_party) (ai_fight_manager.md; 1.2 not carried: no access in the paired code)
+ai_fight_followship,,0x3C,key_holder,ptr:C_entity,st0rm94,[H] a representative member (ai_fight_manager.md; 1.2 not carried: no access in the paired code)
+ai_fight_followship,,0x40,commander,ptr:C_actor,st0rm94,[H] the party leader (ai_fight_manager.md; 1.2 not carried: no access in the paired code)
+ai_fight_followship,,0x44,car,ptr:C_car,st0rm94,[H] the party's vehicle (kind == 1) (ai_fight_manager.md; 1.2 not carried: no access in the paired code)
+ai_fight_member,,0x0,entity,ptr:C_entity,st0rm94,[H] the member (ai_fight_manager.md; 1.2 not carried: no access in the paired code)
+ai_fight_member,,0x4,order,u32,st0rm94,[H] the member's order code (below) (ai_fight_manager.md; 1.2 not carried: no access in the paired code)
+ai_fight_member,,0x8,_unk_08,u32,st0rm94,[U] 0 from add_car_member (ai_fight_manager.md; 1.2 not carried: no access in the paired code)
+ai_fight_member,,0xC,state,u32,st0rm94,[M] join_party: 1 if the entity belongs to an (ai_fight_manager.md; 1.2 not carried: no access in the paired code)
+ai_fight_member,,0x10,_unk_10,u32,st0rm94,[U] 0 when join_party creates the record (ai_fight_manager.md; 1.2 not carried: no access in the paired code)
+ai_fight_modes,0x0,0x0,w_in0,f32,st0rm94,[H] weight on scoring input 0 \ set once by (ai_fight_modes.md; 1.2 carried: 23 of 23 accesses)
+ai_fight_modes,0x4,0x4,w_in1,f32,st0rm94,[H] weight on scoring input 1 | ai_fight_modes_init (ai_fight_modes.md; 1.2 carried: 11 of 11 accesses)
+ai_fight_modes,0x8,0x8,w_in2,f32,st0rm94,[H] weight on scoring input 2 | per mode (§2a) (ai_fight_modes.md; 1.2 carried: 8 of 8 accesses)
+ai_fight_modes,0xC,0xC,w_in3,f32,st0rm94,[H] weight on scoring input 3 / (ai_fight_modes.md; 1.2 carried: 6 of 6 accesses)
+ai_fight_modes,0x10,0x10,w_hit,f32,st0rm94,[H] weight on damage credit (ai_fight_modes_apply_hit) (ai_fight_modes.md; 1.2 carried: 7 of 7 accesses)
+ai_fight_modes,0x14,0x14,total,f32,st0rm94,[H] the mode's current total (ai_fight_modes.md; 1.2 carried: 13 of 13 accesses)
+ai_fight_modes,0x18,0x18,hit_stat,f32,st0rm94,[H] accumulated damage credit/debit (ai_fight_modes.md; 1.2 carried: 6 of 6 accesses)
+ai_fight_modes,0x1C,0x1C,viability,f32,st0rm94,"[H] per-mode gain, refreshed by the tick (§4) (ai_fight_modes.md; 1.2 carried: 6 of 6 accesses)"
+ai_fight_modes,0x20,0x20,last_used,u32,st0rm94,[H] mission clock when the mode stopped being active (ai_fight_modes.md; 1.2 carried: 5 of 5 accesses)
+ai_fight_modes,0x24,0x24,pref_score,f32,st0rm94,"[H] external preference, ai_fight_modes_set_mode_score (ai_fight_modes.md; 1.2 carried: 7 of 7 accesses)"
+ai_fight_modes,0x28,0x28,pref_at,u32,st0rm94,[H] mission clock of that write (ai_fight_modes.md; 1.2 carried: 3 of 3 accesses)
+ai_fight_modes,,0x2C,finish_req,u8,st0rm94,[H] finish REQUEST byte: set by (ai_fight_modes.md; 1.2 not carried: accesses disagree {'0x2C': 1})
+ai_fight_modes,0x30,0x30,work,ptr,st0rm94,[H] slot 2 only: a 0x24-byte block from init (ai_fight_modes.md; 1.2 carried: 2 of 2 accesses)
+ai_fight_modes,0x138,0x138,active_mode,u32,st0rm94,[H] the mode the NPC is in (ai_fight_modes.md; 1.2 carried: 8 of 8 accesses)
+ai_fight_modes,0x13C,0x13C,prev_mode,u32,st0rm94,[H] the previous active_mode (ai_fight_modes.md; 1.2 carried: 5 of 5 accesses)
+ai_fight_modes,0x140,0x140,cursor,u32,st0rm94,"[H] round-robin refresh cursor, advanced (n+1) % 6 (ai_fight_modes.md; 1.2 carried: 15 of 15 accesses)"
+ai_fight_modes,0x144,0x144,next_update,u32,st0rm94,[H] mission clock deadline (ai_fight_modes.md; 1.2 carried: 7 of 7 accesses)
+ai_fight_modes,0x148,0x148,enemy,ptr:C_actor,st0rm94,[H] current enemy (ai_fight_modes.md; 1.2 carried: 5 of 5 accesses)
+ai_fight_modes,0x14C,0x14C,owner,ptr:C_entity,st0rm94,"[H] owner backpointer, stored by init (ai_fight_modes.md; 1.2 carried: 14 of 14 accesses)"
+ai_follow_group,,0x0,_alloc,u8,st0rm94,[H] the follower vector's MSVC empty-allocator byte: (ai_follow_manager.md; 1.2 not carried: no access in the paired code)
+ai_follow_group,,0x4,followers_begin,ptr,st0rm94,[H] (ai_follow_manager.md; 1.2 not carried: no access in the paired code)
+ai_follow_group,,0x8,followers_end,ptr,st0rm94,[H] count = (end - begin) >> 2 (ai_follow_manager.md; 1.2 not carried: no access in the paired code)
+ai_follow_group,,0xC,followers_cap,ptr,st0rm94,[H] (ai_follow_manager.md; 1.2 not carried: no access in the paired code)
+ai_follow_group,,0x10,destination,f32[3],st0rm94,[H] an S_vector (ai_follow_manager.md; 1.2 not carried: no access in the paired code)
+ai_follow_group,,0x1C,_unused_1c,u32,st0rm94,[H] a declared member no code path sets: copied (ai_follow_manager.md; 1.2 not carried: no access in the paired code)
+ai_follow_group,,0x20,flags,u32,st0rm94,[H] bit 0x01 = a destination is set at +0x10 (ai_follow_manager.md; 1.2 not carried: no access in the paired code)
+ai_follow_group,,0x24,state,u32,st0rm94,"[H] 0..5, the state machine in §3 (ai_follow_manager.md; 1.2 not carried: no access in the paired code)"
+ai_follow_group,,0x28,retry_deadline,u32,st0rm94,"[H] mission clock + 7000 ms, set by event 4 (ai_follow_manager.md; 1.2 not carried: no access in the paired code)"
+ai_follow_group,,0x2C,task_deadline,u32,st0rm94,"[H] mission clock + 6000 ms, armed on dispatch (ai_follow_manager.md; 1.2 not carried: no access in the paired code)"
+ai_follow_group,,0x30,leader,ptr:C_actor,st0rm94,[H] the group key - every lookup matches on this (ai_follow_manager.md; 1.2 not carried: no access in the paired code)
+ai_follow_group,,0x34,linked_car,ptr:C_car,st0rm94,[H] the car whose dispatched task failed (bit 0x20) (ai_follow_manager.md; 1.2 not carried: no access in the paired code)
+ai_ghost,0x0,0x0,_alloc,u8,st0rm94,[H] MSVC std::vector empty-allocator byte: (ai_ghost.md; 1.2 carried: 7 of 7 accesses)
+ai_ghost,0x4,0x4,begin,ptr:ai_ghost_actor,st0rm94,[H] == C_entity+0x126c (ai_ghost.md; 1.2 carried: 7 of 7 accesses)
+ai_ghost,0x8,0x8,end,ptr:ai_ghost_actor,st0rm94,[H] count = (end - begin) / 0x1c (ai_ghost.md; 1.2 carried: 11 of 11 accesses)
+ai_ghost,0xC,0xC,cap,ptr:ai_ghost_actor,st0rm94,[H] (ai_ghost.md; 1.2 carried: 2 of 2 accesses)
+ai_ghost,0x10,0x10,changed_flag,u8,st0rm94,[H] set to 1 whenever the list is modified or (ai_ghost.md; 1.2 carried: 2 of 2 accesses)
+ai_ghost_actor,,0x0,pos,f32[3],st0rm94,[H] the object's WORLD position at the moment it (ai_ghost.md; 1.2 not carried: no access in the paired code)
+ai_ghost_actor,,0xC,expiry_ms,u32,st0rm94,[H] absolute mission clock (ai_ghost.md; 1.2 not carried: no access in the paired code)
+ai_ghost_actor,,0x10,drift_radius_sq,f32,st0rm94,[H] squared distance the REAL object may move away (ai_ghost.md; 1.2 not carried: no access in the paired code)
+ai_ghost_actor,,0x14,actor,ptr:C_actor,st0rm94,[H] who the object belongs to (ai_ghost.md; 1.2 not carried: no access in the paired code)
+ai_ghost_actor,,0x18,coll_object,ptr,st0rm94,[H] tDynamicCollObject* - the specific collidable (ai_ghost.md; 1.2 not carried: no access in the paired code)
+ai_group_event,,0x0,kind,u32,st0rm94,[H] only kind 1 is dispatched (ai_group.md; 1.2 not carried: no access in the paired code)
+ai_group_event,,0x4,deadline,u32,st0rm94,[H] absolute ms (ai_group.md; 1.2 not carried: no access in the paired code)
+ai_group_event,,0x8,damage,f32,st0rm94,[H] its ADDRESS is the data argument handed to (ai_group.md; 1.2 not carried: no access in the paired code)
+ai_group_event,,0xC,caster,ptr:C_actor,st0rm94,"[H] its +0x5d alive byte gates the whole dispatch, and (ai_group.md; 1.2 not carried: no access in the paired code)"
+ai_group_event,,0x10,subject,ptr:C_actor,st0rm94,[H] what the event is about: passed to (ai_group.md; 1.2 not carried: no access in the paired code)
+ai_group_member,,0x0,entity,ptr:C_entity,st0rm94,[H] the member (ai_group.md; 1.2 not carried: no access in the paired code)
+ai_group_member,,0x4,role,u32,st0rm94,[H] see the role table below (ai_group.md; 1.2 not carried: no access in the paired code)
+ai_loc,0x0,0x0,cached_pos,f32[3],st0rm94,[H] the owner frame's origin at the last refresh (ai_loc.md; 1.2 carried: 13 of 13 accesses)
+ai_loc,0xC,0xC,node_a,u32,st0rm94,[H] resolved C_web_node ARRAY INDEX (ai_loc.md; 1.2 carried: 10 of 10 accesses)
+ai_loc,0x10,0x10,node_b,u32,st0rm94,[H] second node index - the other end of the (ai_loc.md; 1.2 carried: 5 of 5 accesses)
+ai_loc,,0x14,connection_idx,u32,st0rm94,[H] index of the web connection the owner is (ai_loc.md; 1.2 not carried: accesses disagree {'0x14': 1})
+ai_loc,0x18,0x18,flags,u32,st0rm94,[H] see §1a (ai_loc.md; 1.2 carried: 11 of 11 accesses)
+ai_loc,0x1C,0x1C,last_refresh_ms,u32,st0rm94,[H] mission clock at the last refresh (ai_loc.md; 1.2 carried: 3 of 3 accesses)
+ai_loc,,0x20,_alloc,u8,st0rm94,[H] MSVC std::vector empty-allocator byte (ai_loc.md; 1.2 not carried: accesses disagree {'0x20': 1})
+ai_loc,0x24,0x24,stats_begin,ptr:ai_seg_stat,st0rm94,[H] vector<ai_seg_stat> - the nearby specials (ai_loc.md; 1.2 carried: 8 of 8 accesses)
+ai_loc,,0x28,stats_end,ptr:ai_seg_stat,st0rm94,[H] count = (end - begin) >> 4 (ai_loc.md; 1.2 not carried: no access in the paired code)
+ai_loc,0x2C,0x2C,stats_cap,ptr:ai_seg_stat,st0rm94,"[H] freed by `vector_dispose_at_0x24`, an ICF (ai_loc.md; 1.2 carried: 4 of 4 accesses)"
+ai_loc,0x30,0x30,owner,ptr:C_actor,st0rm94,[H] set once by ai_loc_init (ai_loc.md; 1.2 carried: 2 of 2 accesses)
+ai_logs,,0x0,hdr,u32[8],st0rm94,"[H] 0x20 bytes: zeroed by ai_logs_init, saved and loaded (ai_logs.md; 1.2 not carried: accesses disagree {'0x0': 1})"
+ai_logs,,0x20,_alloc,u8,st0rm94,[H] the vector's MSVC allocator byte: ai_logs_event and (ai_logs.md; 1.2 not carried: no access in the paired code)
+ai_logs,0x24,0x24,begin,ptr:ai_character_log,st0rm94,"[H] the LOG VECTOR (begin) = C_entity+0xeac, the (ai_logs.md; 1.2 carried: 3 of 3 accesses)"
+ai_logs,,0x28,end,ptr:ai_character_log,st0rm94,[H] one past the last log (ai_logs.md; 1.2 not carried: accesses disagree {'0x28': 1})
+ai_logs,,0x2C,cap,ptr:ai_character_log,st0rm94,[M] the MSVC vector's capacity word (ai_logs.md; 1.2 not carried: no access in the paired code)
+ai_logs,,0x30,owner,ptr:C_entity,st0rm94,"[H] owner backpointer, stored by ai_logs_init (ai_logs.md; 1.2 not carried: no access in the paired code)"
+ai_manager,,0x0,check_builder,ai_check_builder,st0rm94,[H] no fields (ai_manager.md; 1.2 not carried: no access in the paired code)
+ai_manager,,0x4,clusters,check_seg_clusters,st0rm94,[H] = 0x0065521c (ai_manager.md; 1.2 not carried: no access in the paired code)
+ai_manager,,0xC,wayfind,ai_wayfind,st0rm94,[H] = 0x00655224 (ai_manager.md; 1.2 not carried: no access in the paired code)
+ai_manager,,0x58,wayfind_vec,std_vector,st0rm94,[H] IS ai_wayfind+0x4c — see §3a (ai_manager.md; 1.2 not carried: no access in the paired code)
+ai_manager,,0x90,board,police_board,st0rm94,[H] = 0x006552a8 (ai_manager.md; 1.2 not carried: no access in the paired code)
+ai_manager,,0xC4,groups,ai_groups,st0rm94,[H] = 0x006552dc (ai_manager.md; 1.2 not carried: no access in the paired code)
+ai_manager,,0xEC,follow,ai_follow_manager,st0rm94,[H] = 0x00655304 (ai_manager.md; 1.2 not carried: no access in the paired code)
+ai_manager,,0x100,fight,ai_fight_manager,st0rm94,[H] = 0x00655318 (ai_manager.md; 1.2 not carried: no access in the paired code)
+ai_manager,,0x110,tail_a,std_vector,st0rm94,[H] ONE 0x20-byte member with two vectors (ai_manager.md; 1.2 not carried: no access in the paired code)
+ai_manager,,0x120,tail_b,std_vector,st0rm94,[H] (§3b) (ai_manager.md; 1.2 not carried: no access in the paired code)
+ai_path,0x0,0x0,_alloc_normal,u8,st0rm94,[H] allocator byte of the NORMAL vector (ai_path.md; 1.2 carried: 118 of 118 accesses)
+ai_path,0x4,0x4,normal_begin,ptr:ai_path_node,st0rm94,"[H] NORMAL waypoint container, stride 0x3c (ai_path.md; 1.2 carried: 127 of 145 accesses)"
+ai_path,0x8,0x8,normal_end,ptr:waypoint,st0rm94,The route proper - see §1a (ai_path.md; 1.2 carried: 133 of 142 accesses)
+ai_path,0xC,0xC,normal_cap,ptr:waypoint,st0rm94,[H] (ai_path.md; 1.2 carried: 12 of 13 accesses)
+ai_path,0x10,0x10,_alloc_spec,u8,st0rm94,[H] allocator byte of the SPEC vector (ai_path.md; 1.2 carried: 46 of 50 accesses)
+ai_path,,0x14,spec_begin,ptr:ai_path_specnode,st0rm94,"[H] SPEC waypoint container, stride 0x18 (ai_path.md; 1.2 not carried: accesses disagree {'0x2C': 7, '0x14': 5})"
+ai_path,,0x18,spec_end,ptr,st0rm94,"Detour points (ai_path.md; 1.2 not carried: accesses disagree {'0x30': 7, '0x18': 3})"
+ai_path,,0x1C,spec_cap,ptr,st0rm94,[H] ai_path_update_spec_waypoints (ai_path.md; 1.2 not carried: accesses disagree {'0x34': 1})
+ai_path,0x38,0x20,_alloc_side,u8,st0rm94,[H] allocator byte of the PASS-SIDE vector (ai_path.md; 1.2 carried: 4 of 4 accesses)
+ai_path,,0x24,side_begin,ptr:ai_actor_evading,st0rm94,"[H] PASS-SIDE container, stride 0x10: one (ai_path.md; 1.2 not carried: accesses disagree {'0x24': 31, '0x3C': 20, '0x2B0C': 1})"
+ai_path,0x40,0x28,side_end,ptr:ai_actor_evading,st0rm94,record per blocker the searches went round (ai_path.md; 1.2 carried: 6 of 6 accesses)
+ai_path,0x2C,0x2C,side_cap,ptr:ai_actor_evading,st0rm94,[H] with the side taken (§1d) (ai_path.md; 1.2 carried: 14 of 15 accesses)
+ai_path,,0x30,blocked,blocked_con,st0rm94,"[H] 0x10 bytes, see §1c (ai_path.md; 1.2 not carried: accesses disagree {'0x48': 4, '0x30': 2})"
+ai_path,0x40,0x40,last_actor_pos,f32[3],st0rm94,[H] the actor position cached at the end of the (ai_path.md; 1.2 carried: 7 of 7 accesses)
+ai_path,,0x4C,blocker_pos,f32[3],st0rm94,"[H] the world position of the blocker the last (ai_path.md; 1.2 not carried: its accesses say 0xC, the fields around it move by +0x0)"
+ai_path,0x58,0x58,normal_cursor,i32,st0rm94,[H] index into the +0x04 container (ai_path.md; 1.2 carried: 22 of 23 accesses)
+ai_path,0x5C,0x5C,spec_cursor,i32,st0rm94,[H] index into the +0x14 container (ai_path.md; 1.2 carried: 6 of 6 accesses)
+ai_path,0x60,0x60,delay_until,i32,st0rm94,"[H] mission_clock + 1000 ms, armed by (ai_path.md; 1.2 carried: 11 of 11 accesses)"
+ai_path,0x64,0x64,no_progress,i32,st0rm94,[H] the blocked/no-progress accumulator (ai_path.md; 1.2 carried: 25 of 25 accesses)
+ai_path,0x68,0x68,door_to_open,ptr:C_door,st0rm94,"[H] a closed door (kind 6, door+0x70 == 1) a (ai_path.md; 1.2 carried: 38 of 38 accesses)"
+ai_path,0x6C,0x6C,spec_corner,u32,st0rm94,[H] which of the blocker's footprint corners the (ai_path.md; 1.2 carried: 3 of 3 accesses)
+ai_path,0x70,0x70,spec_inserted,u8,st0rm94,[H] a search level inserted its spec waypoint (ai_path.md; 1.2 carried: 19 of 19 accesses)
+ai_path,0x71,0x71,blocked_flag,u8,st0rm94,[H] set when a blocker is standing in the way (ai_path.md; 1.2 carried: 5 of 5 accesses)
+ai_path,0x74,0x74,staged_point,f32[3],st0rm94,[H] the current waypoint's own position (ai_path.md; 1.2 carried: 11 of 11 accesses)
+ai_path,0x80,0x80,staged_target,f32[3],st0rm94,[H] where the actor is actually steering: the (ai_path.md; 1.2 carried: 8 of 8 accesses)
+ai_path,0x8C,0x8C,state,u32,st0rm94,[H] 0 = none · 1 = following a normal waypoint · (ai_path.md; 1.2 carried: 19 of 19 accesses)
+ai_path,0x90,0x90,tolerance_sq,f32,st0rm94,[H] arrival radius^2 for staged_target (ai_path.md; 1.2 carried: 6 of 6 accesses)
+ai_path,,0x94,_unused_94,u32,st0rm94,"no access in any ai_path method, in the builder (ai_path.md; 1.2 not carried: no access in the paired code)"
+ai_path,0x98,0x98,cached_blocker,ptr,st0rm94,[H] the TYPE-1 SPECIAL of the map segment (ai_path.md; 1.2 carried: 6 of 6 accesses)
+ai_seg_corner,,0x0,pos,f32[3],st0rm94,[H] the corner position - the LOS ray's origin and (check_seg.md; 1.2 not carried: no access in the paired code)
+ai_seg_corner,,0xC,dir_a,f32[2],st0rm94,"[H] a 2D (x, z) direction (check_seg.md; 1.2 not carried: no access in the paired code)"
+ai_seg_corner,,0x14,dir_b,f32[2],st0rm94,"[H] a 2D (x, z) direction (check_seg.md; 1.2 not carried: no access in the paired code)"
+ai_seg_corner,,0x1C,dir_c,f32[2],st0rm94,"[H] a 2D (x, z) direction (check_seg.md; 1.2 not carried: no access in the paired code)"
+ai_seg_corner,,0x24,radius,f32,st0rm94,[H] the same float check_seg_is_pos_in_any_special (check_seg.md; 1.2 not carried: no access in the paired code)
+ai_seg_corner,,0x28,angle_tolerance,f32,st0rm94,[H] scaled x1.25 before every angle comparison (check_seg.md; 1.2 not carried: no access in the paired code)
+ai_seg_corner,,0x2C,_unread,u32[3],st0rm94,[U] never touched by either build's corner code (check_seg.md; 1.2 not carried: no access in the paired code)
+ai_seg_stat,,0x0,type,u32,st0rm94,[H] the special's check_seg type code: 1/2/4/8 (ai_loc.md; 1.2 not carried: no access in the paired code)
+ai_seg_stat,,0x4,last_seen_ms,u32,st0rm94,"[H] mission clock, refreshed on every re-observation (ai_loc.md; 1.2 not carried: no access in the paired code)"
+ai_seg_stat,,0x8,hit_count,u32,st0rm94,[H] how many refreshes this record has had (ai_loc.md; 1.2 not carried: no access in the paired code)
+ai_seg_stat,,0xC,payload,ptr,st0rm94,[H] the special's payload pointer - THE RECORD KEY (ai_loc.md; 1.2 not carried: no access in the paired code)
+ai_sensors,0x0,0x0,visual,ai_visual_contact[8],st0rm94,[H] stride 0x18 (§1c) (ai_sensors.md; 1.2 carried: 52 of 52 accesses)
+ai_sensors,,0xC0,sound,ai_sound_contact[8],st0rm94,"[H] stride 0x20, from the disassembly (§1b, §1c): (ai_sensors.md; 1.2 not carried: no access in the paired code)"
+ai_sensors,,0x1C0,smell,ai_smell_contact[8],st0rm94,[H] stride 0x1c (§1c) (ai_sensors.md; 1.2 not carried: no access in the paired code)
+ai_sensors,0x2A0,0x2A0,owner,ptr:C_entity,st0rm94,[H] owning entity (ai_sensors.md; 1.2 carried: 8 of 8 accesses)
+ai_sensors,0x2A4,0x2A4,min_value,f32[3],st0rm94,[H] visual / sound / smell (+0x2a4 / +0x2a8 / +0x2ac) (ai_sensors.md; 1.2 carried: 10 of 10 accesses)
+ai_sensors,0x2B0,0x2B0,max_value,f32[3],st0rm94,[H] visual / sound / smell (+0x2b0 / +0x2b4 / +0x2b8) (ai_sensors.md; 1.2 carried: 10 of 10 accesses)
+ai_sensors,0x2BC,0x2BC,min_index,u32[3],st0rm94,[H] visual / sound / smell (+0x2bc / +0x2c0 / +0x2c4) (ai_sensors.md; 1.2 carried: 7 of 7 accesses)
+ai_sensors,0x2C8,0x2C8,max_index,u32[3],st0rm94,[H] visual / sound / smell (+0x2c8 / +0x2cc / +0x2d0) (ai_sensors.md; 1.2 carried: 6 of 6 accesses)
+ai_space_coverage,,0x0,score,f32[8],st0rm94,"[H] live per-direction scores, dir 0..7 (ai_space_coverage.md; 1.2 not carried: accesses disagree {'0x0': 1})"
+ai_space_coverage,,0x20,bias,f32[8],st0rm94,[H] persistent per-direction biases (see §3) (ai_space_coverage.md; 1.2 not carried: no access in the paired code)
+ai_space_coverage,,0x40,anchor,f32[3],st0rm94,[H] the world position the evaluation is pinned to (ai_space_coverage.md; 1.2 not carried: no access in the paired code)
+ai_space_coverage,,0x4C,cooldown_ms,u32,st0rm94,[H] mission clock (ai_space_coverage.md; 1.2 not carried: no access in the paired code)
+ai_space_coverage,,0x50,permit_mask,u32,st0rm94,"[H] 1 bit per direction, from the space probe (ai_space_coverage.md; 1.2 not carried: no access in the paired code)"
+ai_space_coverage,,0x54,probe_threshold,f32,st0rm94,[H] the probe's optional out-float: the mean of the (ai_space_coverage.md; 1.2 not carried: no access in the paired code)
+ai_space_coverage,,0x58,chosen_dir,u32,st0rm94,"[H] 0..7, or 0x29a = none/unset (ai_space_coverage.md; 1.2 not carried: no access in the paired code)"
+ai_talkman,,0x0,enabled,u8,st0rm94,[H] ai_talkman_init sets 1 (ai_talkman.md; 1.2 not carried: no access in the paired code)
+ai_talkman,,0x4,slots,talk_slot[4],st0rm94,"[H] four scheduler slots, stride 0x24, +0x04..+0x93: (ai_talkman.md; 1.2 not carried: no access in the paired code)"
+ai_talkman,,0x94,owner,ptr:C_entity,st0rm94,"[H] stored by ai_talkman_init, passed to human_new_scream (ai_talkman.md; 1.2 not carried: no access in the paired code)"
+ai_visual_contact,,0x0,first_ms,u32,st0rm94,[H] = last_ms when the contact is inserted (ai_sensors.md; 1.2 not carried: no access in the paired code)
+ai_visual_contact,,0x0,first_ms_0,u32,st0rm94,[H] = last_ms when the contact is inserted (ai_sensors.md; 1.2 not carried: no access in the paired code)
+ai_visual_contact,,0x0,time_ms,u32,st0rm94,[H] (ai_sensors.md; 1.2 not carried: no access in the paired code)
+ai_visual_contact,,0x4,last_ms,u32,st0rm94,[H] refreshed by every update (ai_sensors.md; 1.2 not carried: no access in the paired code)
+ai_visual_contact,,0x4,last_ms_4,u32,st0rm94,[H] (ai_sensors.md; 1.2 not carried: no access in the paired code)
+ai_visual_contact,,0x4,type,u32,st0rm94,[H] 2 = gunfire (ai_sensors.md; 1.2 not carried: no access in the paired code)
+ai_visual_contact,,0x8,pos,f32[3],st0rm94,[H] where the sound was (ai_sensors.md; 1.2 not carried: no access in the paired code)
+ai_visual_contact,,0x8,state,u32,st0rm94,[H] 0 / 1 / 2 (ai_sensors.md; 1.2 not carried: no access in the paired code)
+ai_visual_contact,,0x8,state_8,u32,st0rm94,[H] 0 / 1 / 2 (ai_sensors.md; 1.2 not carried: no access in the paired code)
+ai_visual_contact,,0xC,actor,ptr:C_actor,st0rm94,[H] the seen actor (ai_sensors.md; 1.2 not carried: no access in the paired code)
+ai_visual_contact,,0xC,blob,ptr:ai_blob,st0rm94,[H] OWNED (ai_sensors.md; 1.2 not carried: no access in the paired code)
+ai_visual_contact,,0x10,actor_10,ptr:C_actor,st0rm94,[H] the blob's owner (ai_blob+0x20) (ai_sensors.md; 1.2 not carried: no access in the paired code)
+ai_visual_contact,,0x10,strength,f32,st0rm94,"[H] 0..1, gated by 1.05 - sight (ai_sensors.md; 1.2 not carried: no access in the paired code)"
+ai_visual_contact,,0x14,smoothed,f32,st0rm94,[H] the EMA (ai_sensors.md; 1.2 not carried: no access in the paired code)
+ai_visual_contact,,0x14,source,ptr:C_actor,st0rm94,[H] the scan key (ai_sensors.md; 1.2 not carried: no access in the paired code)
+ai_visual_contact,,0x14,strength_14,f32,st0rm94,[H] 1.0 when built (ai_sensors.md; 1.2 not carried: no access in the paired code)
+ai_visual_contact,,0x18,intensity,f32,st0rm94,[H] (ai_sensors.md; 1.2 not carried: no access in the paired code)
+ai_visual_contact,,0x18,smoothed_18,f32,st0rm94,[H] the EMA (ai_sensors.md; 1.2 not carried: no access in the paired code)
+ai_visual_contact,,0x1C,smoothed_1c,f32,st0rm94,[H] the EMA (ai_sensors.md; 1.2 not carried: no access in the paired code)
+ai_wayfind,,0x0,cb_start_pos,f32[3],st0rm94,[H] published by the callback strategies (ai_wayfind.md; 1.2 not carried: no access in the paired code)
+ai_wayfind,,0xC,cb_end_pos,f32[3],st0rm94,[H] published by the two directed strategies only (ai_wayfind.md; 1.2 not carried: no access in the paired code)
+ai_wayfind,,0x18,cb_direction,f32[3],st0rm94,[H] normalised (ai_wayfind.md; 1.2 not carried: no access in the paired code)
+ai_wayfind,,0x24,cb_result,f32[3],st0rm94,[H] written BY the goal callback (ai_wayfind.md; 1.2 not carried: no access in the paired code)
+ai_wayfind,,0x30,cb_goal_dist_sq,f32,st0rm94,"[H] directed v3: max(dist^2, param), a floor (ai_wayfind.md; 1.2 not carried: no access in the paired code)"
+ai_wayfind,,0x34,_unused_34,u32,st0rm94,[H] never accessed: no absolute reference to (ai_wayfind.md; 1.2 not carried: no access in the paired code)
+ai_wayfind,,0x38,cb_range,f32,st0rm94,[H] flee: radius^2 clamped at 400.0 (= 20 units) (ai_wayfind.md; 1.2 not carried: no access in the paired code)
+ai_wayfind,,0x3C,cb_forward_mode,i32,st0rm94,"[H] 0/1/2, read by both forward callbacks (ai_wayfind.md; 1.2 not carried: no access in the paired code)"
+ai_wayfind,,0x40,cb_target_node,u32,st0rm94,[H] v3: the target's cached node (ai_wayfind.md; 1.2 not carried: no access in the paired code)
+ai_wayfind,,0x44,cb_target_next,u32,st0rm94,[H] v3: the target's alternate node (ai_wayfind.md; 1.2 not carried: no access in the paired code)
+ai_wayfind,,0x48,cb_field_48,u8,st0rm94,[H] stored 0 by v2 and v3 before the search and (ai_wayfind.md; 1.2 not carried: no access in the paired code)
+ai_wayfind,,0x4C,route,std_vector,st0rm94,[H] the ROUTE: std::vector<uint> of node indices (ai_wayfind.md; 1.2 not carried: no access in the paired code)
+ai_wayfind,,0x5C,checkpoint_ctr,ptr,st0rm94,[H] a DIFFERENT container: the 0x10-stride (ai_wayfind.md; 1.2 not carried: no access in the paired code)
+ai_wayfind,,0x60,start_pos,f32[3],st0rm94,[H] written by ai_wayfind_resolve_start_node (ai_wayfind.md; 1.2 not carried: no access in the paired code)
+ai_wayfind,,0x6C,end_pos,f32[3],st0rm94,[H] written by ai_wayfind_resolve_end_node (ai_wayfind.md; 1.2 not carried: no access in the paired code)
+ai_wayfind,,0x78,status,u32,st0rm94,"[H] bit 0 = start resolve failed, bit 1 = end (ai_wayfind.md; 1.2 not carried: no access in the paired code)"
+ai_wayfind,,0x7C,start_node,u32,st0rm94,"[H] node index, 0xffffffff = unresolved (ai_wayfind.md; 1.2 not carried: no access in the paired code)"
+ai_wayfind,,0x80,end_node,u32,st0rm94,"[H] node index, 0xffffffff = unresolved (ai_wayfind.md; 1.2 not carried: no access in the paired code)"
+C_actor,0x0,0x0,vtable,ptr,st0rm94,[H] = g_actor_vt (actor.md; 1.2 carried: 265 of 265 accesses)
+C_actor,0x4,0x4,track_flags,u8,st0rm94,[H] C_actor_track mode flags (§1a) (actor.md; 1.2 carried: 148 of 148 accesses)
+C_actor,0x8,0x8,track,ptr,st0rm94,[H] the C_actor_track keyframe track (actor.md; 1.2 carried: 157 of 157 accesses)
+C_actor,0xC,0xC,ref_count,u16,st0rm94,[H] REFERENCE COUNT (actor.md; 1.2 carried: 41 of 41 accesses)
+C_actor,0x10,0x10,kind,i32,game.h,kActorType; st0rm94: kind
+C_actor,0x14,0x14,class_id,i32,st0rm94,"[H] branch tag: 1 base, 2 C_human, 3 C_car_ex (actor.md; 1.2 carried: 13 of 13 accesses)"
+C_actor,0x18,0x18,net_guid,u32,st0rm94,[H] network GUID (actor.md; 1.2 carried: 15 of 15 accesses)
+C_actor,0x1C,0x1C,act_state,i32,st0rm94,"[H] 0 active, 1 inactive, 2 switched off (§1d) (actor.md; 1.2 carried: 5 of 5 accesses)"
+C_actor,0x20,0x20,ai_driven,u8,st0rm94,[H] actor_tick's per-frame slot selector: 0 selects (actor.md; 1.2 carried: 4 of 4 accesses)
+C_actor,0x24,0x24,position,f32[3],game.h,kActorPos; st0rm94: cached_world_pos
+C_actor,0x30,0x30,facing,f32[3],game.h,kActorFacing; st0rm94: cached_forward
+C_actor,0x3C,0x3C,position_3c,f32[3],st0rm94,[H] placement position (actor.md; 1.2 carried: 5 of 5 accesses)
+C_actor,0x48,0x48,rotation,f32[4],st0rm94,"[H] placement quaternion, normalized on push (actor.md; 1.2 carried: 11 of 11 accesses)"
+C_actor,0x58,0x58,frame_parent,ptr,st0rm94,[H] saved frame parent (placement round trip) (actor.md; 1.2 carried: 11 of 11 accesses)
+C_actor,0x5C,0x5C,frame_visible,u8,st0rm94,[H] saved frame visibility byte (same round trip) (actor.md; 1.2 carried: 4 of 4 accesses)
+C_actor,0x5D,0x5D,alive,u8,game.h,kActorAlive; st0rm94: alive
+C_actor,0x5E,0x5E,dead,u8,game.h,kActorDead; st0rm94: death_processed
+C_actor,0x5F,0x5F,in_camera_sector,u8,st0rm94,[H] recomputed every tick (actor.md; 1.2 carried: 4 of 4 accesses)
+C_actor,0x60,0x60,pending_track_event,ptr,st0rm94,[H] the recorder event record queued for the (actor.md; 1.2 carried: 2 of 2 accesses)
+C_actor,0x64,0x64,owns_frame_owner_block,u8,st0rm94,[H] 1 = actor_game_init allocated the frame's (actor.md; 1.2 carried: 3 of 3 accesses)
+C_actor,0x65,0x65,save_excluded,u8,st0rm94,[H] 1 = the savegame skips this actor (runtime (actor.md; 1.2 carried: 3 of 3 accesses)
+C_actor,,0x66,scene_placed,u8,st0rm94,[H] 1 = placed by the scene .bin loader (actor.md; 1.2 not carried: accesses disagree {'0x66': 1})
+C_actor,0x68,0x68,frame,ptr:I3D_frame,game.h,kActorFrame; st0rm94: frame
+C_actor,0x6C,0x6C,owns_frame,u8,st0rm94,[H] 1 = actor_dtor releases the frame (actor.md; 1.2 carried: 8 of 8 accesses)
+C_actor_shot,0x70,0x70,emitter,ptr,st0rm94,"[H] renderer object, factory type 4 (actor_shot.md; 1.2 carried: 12 of 12 accesses)"
+C_actor_shot,0x74,0x74,weapon_id,i32,st0rm94,[H] index into g_game_item_table (actor_shot.md; 1.2 carried: 8 of 8 accesses)
+C_actor_shot,0x78,0x78,interval_ms,i32,st0rm94,[H] countdown to the next shot (actor_shot.md; 1.2 carried: 8 of 8 accesses)
+C_actor_shot,0x7C,0x7C,enabled,i8,st0rm94,[H] firing gate (actor_shot.md; 1.2 carried: 3 of 3 accesses)
+C_actor_shot,0x84,0x84,use_frame_dir,i8,st0rm94,[H] aim along the frame forward vector (actor_shot.md; 1.2 carried: 2 of 2 accesses)
+C_actor_shot,0x88,0x88,particle_handle,i32,st0rm94,"[H] muzzle particle, -1 = none (actor_shot.md; 1.2 carried: 5 of 5 accesses)"
+C_airplane,0x70,0x70,acceleration,f32,st0rm94,[H] 5.0f - speed gained per second (airplane.md; 1.2 carried: 2 of 2 accesses)
+C_airplane,0x74,0x74,takeoff_speed,f32,st0rm94,[H] 25.0f - the state-2 run accelerates to it (airplane.md; 1.2 carried: 2 of 2 accesses)
+C_airplane,0x78,0x78,initial_speed,f32,st0rm94,[H] 0.0f - airplane_game_init copies it to +0xb8 (airplane.md; 1.2 carried: 2 of 2 accesses)
+C_airplane,0x7C,0x7C,blur_swap_speed,f32,st0rm94,[H] 5.0f - above it the blades swap to the blur disc (airplane.md; 1.2 carried: 2 of 2 accesses)
+C_airplane,,0x80,route_speed,f32,st0rm94,[H] 9.0f - the state-1 cruise speed (airplane.md; 1.2 not carried: accesses disagree {'0x80': 1})
+C_airplane,0x84,0x84,scale,f32,st0rm94,[M] 1.0f (airplane.md; 1.2 carried: 3 of 3 accesses)
+C_airplane,0x88,0x88,pitch_min,f32,st0rm94,[H] 0.8f - engine-sound pitch at standstill (airplane.md; 1.2 carried: 3 of 3 accesses)
+C_airplane,0x8C,0x8C,pitch_max,f32,st0rm94,[H] 1.5f - engine-sound pitch at takeoff speed (airplane.md; 1.2 carried: 2 of 2 accesses)
+C_airplane,0x90,0x90,sound_id_engine,i32,st0rm94,[H] 0x82 \_ the 12-byte block SaveData (airplane.md; 1.2 carried: 2 of 2 accesses)
+C_airplane,,0x94,sound_id_b,i32,st0rm94,[H] 0x83 | writes in one dtaWrite (airplane.md; 1.2 not carried: accesses disagree {'0x94': 1})
+C_airplane,,0x98,sound_id_c,i32,st0rm94,"[H] 0x84 _/ SOUND ids, not anim ids (airplane.md; 1.2 not carried: accesses disagree {'0x98': 1})"
+C_airplane,0x9C,0x9C,initial_prop_speed,f32,st0rm94,[H] 0.01f - airplane_game_init copies it to +0x13c (airplane.md; 1.2 carried: 4 of 4 accesses)
+C_airplane,0xA0,0xA0,prop_speed_max,f32,st0rm94,[H] 0.1f — propeller angular-speed cap (airplane.md; 1.2 carried: 2 of 2 accesses)
+C_airplane,0xA4,0xA4,prop_speed_rate,f32,st0rm94,[H] 0.015f — its ramp rate per ms (airplane.md; 1.2 carried: 2 of 2 accesses)
+C_airplane,0xA8,0xA8,damage_max,f32,st0rm94,[H] 400.0f — the HUD gauge's denominator (airplane.md; 1.2 carried: 3 of 3 accesses)
+C_airplane,0xAC,0xAC,particle_kind_lo,i32,st0rm94,[H] 9 — effect spawned below half damage (airplane.md; 1.2 carried: 6 of 6 accesses)
+C_airplane,0xB0,0xB0,particle_kind_hi,i32,st0rm94,[H] 6 — effect spawned at zero damage (airplane.md; 1.2 carried: 2 of 2 accesses)
+C_airplane,0xB4,0xB4,flight_state,i32,game.h,kPlaneState; st0rm94: flight_state
+C_airplane,0xB8,0xB8,speed,f32,game.h,kPlaneSpeed; st0rm94: speed
+C_airplane,0xBC,0xBC,segment_t,f32,st0rm94,[H] zeroed by airplane_pick_next_web_node (airplane.md; 1.2 carried: 2 of 2 accesses)
+C_airplane,0xD0,0xD0,rotation,f32[4],game.h,kPlaneRot
+C_airplane,0x110,0x110,node_cur,ptr:C_web_node,st0rm94,[H] saved/loaded as an INDEX (/0x1e) (airplane.md; 1.2 carried: 5 of 5 accesses)
+C_airplane,0x114,0x114,node_next,ptr:C_web_node,st0rm94,[H] same (airplane.md; 1.2 carried: 4 of 4 accesses)
+C_airplane,,0x118,prop_meshes_a,vector,st0rm94,[H] slow-blade meshes (airplane.md; 1.2 not carried: accesses disagree {'0x118': 1})
+C_airplane,,0x128,prop_meshes_b,vector,st0rm94,[H] blur-disc meshes (airplane.md; 1.2 not carried: accesses disagree {'0x128': 1})
+C_airplane,,0x138,prop_angle,f32,st0rm94,"[H] shared blade angle, wraps at 2*pi (airplane.md; 1.2 not carried: accesses disagree {'0x138': 1})"
+C_airplane,,0x13C,prop_speed,f32,st0rm94,[H] ramps toward +0xa0 at rate +0xa4 (airplane.md; 1.2 not carried: no access in the paired code)
+C_airplane,,0x140,prop_axis,f32[3],st0rm94,[H] rotation axis passed to each mesh (airplane.md; 1.2 not carried: no access in the paired code)
+C_airplane,,0x14C,sound,ptr[3],st0rm94,[H] I3D sound emitters (create_sounds) (airplane.md; 1.2 not carried: accesses disagree {'0x14C': 1})
+C_airplane,0x158,0x158,sound_prev,i32,st0rm94,"[H] outgoing slot, -1 = none (airplane.md; 1.2 carried: 2 of 2 accesses)"
+C_airplane,0x15C,0x15C,sound_cur,i32,st0rm94,"[H] incoming slot, -1 = none (airplane.md; 1.2 carried: 4 of 4 accesses)"
+C_airplane,0x160,0x160,vol_prev,f32,st0rm94,[H] fades out over 6000 ms (airplane.md; 1.2 carried: 2 of 2 accesses)
+C_airplane,0x164,0x164,vol_cur,f32,st0rm94,"[H] fades in over 6000 ms, clamped 1.0 (airplane.md; 1.2 carried: 3 of 3 accesses)"
+C_airplane,0x168,0x168,prop_blur_visible,i8,st0rm94,[H] drives prop_meshes_b (airplane.md; 1.2 carried: 3 of 3 accesses)
+C_airplane,0x169,0x169,prop_blades_visible,i8,st0rm94,[H] drives prop_meshes_a (airplane.md; 1.2 carried: 3 of 3 accesses)
+C_airplane,0x16A,0x16A,damage_hud_shown,i8,st0rm94,[H] airplane_hud_damage_toggle's flag (airplane.md; 1.2 carried: 2 of 2 accesses)
+C_airplane,,0x16C,dyn_coll_a,ptr,st0rm94,[H] tDynamicCollObject* (airplane.md; 1.2 not carried: no access in the paired code)
+C_airplane,,0x170,dyn_coll_b,ptr,st0rm94,[H] tDynamicCollObject* (airplane.md; 1.2 not carried: no access in the paired code)
+C_airplane,,0x174,dyn_coll,ptr[4],st0rm94,[H] the 4-slot array (airplane.md; 1.2 not carried: no access in the paired code)
+C_airplane,0x1C4,0x1C4,node_id,i32,st0rm94,"[H] = 0x29a (the project-wide ""none"") (airplane.md; 1.2 carried: 2 of 2 accesses)"
+C_airplane,0x1C8,0x1C8,damage_a,f32,st0rm94,[H] numerator of the HUD gauge fill (airplane.md; 1.2 carried: 3 of 3 accesses)
+C_airplane,0x1CC,0x1CC,damage_b,f32,st0rm94,[H] the other numerator (airplane.md; 1.2 carried: 3 of 3 accesses)
+C_airplane,,0x1D0,particle_a,i32,st0rm94,[H] -1 = none (airplane.md; 1.2 not carried: accesses disagree {'0x1D0': 1})
+C_airplane,,0x1D4,particle_b,i32,st0rm94,[H] -1 = none (airplane.md; 1.2 not carried: accesses disagree {'0x1D4': 1})
+C_airplane,,0x1D8,particle_kind_a,i32,st0rm94,[H] which kind is live on engine A (airplane.md; 1.2 not carried: no access in the paired code)
+C_airplane,,0x1DC,particle_kind_b,i32,st0rm94,[H] ditto engine B — the swap guard (airplane.md; 1.2 not carried: no access in the paired code)
+C_animations_machine_de_luxe,0x8,0x8,anim_object,ptr,st0rm94,[H] the I3D animation/model object (anim_machine.md; 1.2 carried: 98 of 98 accesses)
+C_animations_machine_de_luxe,0xC,0xC,flags,u8[7],st0rm94,[M] 7 byte-flags written by SetAnim (+0xc..+0x12) (anim_machine.md; 1.2 carried: 15 of 15 accesses)
+C_animations_machine_de_luxe,0x14,0x14,f_14,u32,st0rm94,[U] written by SetAnim (anim_machine.md; 1.2 carried: 19 of 19 accesses)
+C_animations_machine_de_luxe,0x18,0x18,f_18,u32,st0rm94,[U] written by SetAnim (anim_machine.md; 1.2 carried: 9 of 9 accesses)
+C_animations_machine_de_luxe,0x1C,0x1C,active_track,u32,st0rm94,[H] index of the ACTIVE track/clip (anim_machine.md; 1.2 carried: 8 of 8 accesses)
+C_animations_machine_de_luxe,0x20,0x20,blend_block,u32[8],st0rm94,[M] +0x20..+0x3c — per-clip blend/weight params (SetAnim) (anim_machine.md; 1.2 carried: 6 of 6 accesses)
+C_animations_machine_de_luxe,0x40,0x40,matrix,f32[16],st0rm94,[H] 4x4 recompiled bone matrix (anim_machine.md; 1.2 carried: 5 of 5 accesses)
+C_animations_machine_de_luxe,0x70,0x70,translation,f32[3],st0rm94,[H] ...then ZEROES +0x70/+0x74/+0x78 — i.e (anim_machine.md; 1.2 carried: 12 of 12 accesses)
+C_animations_machine_de_luxe,0x80,0x80,pose_block,u32[8],st0rm94,[M] +0x80..+0x9c — second transform/pose block (anim_machine.md; 1.2 carried: 21 of 21 accesses)
+C_animations_machine_de_luxe,0xDC,0xDC,misc_block,u32[6],st0rm94,[M] +0xdc..+0xf0 — written by SetAnim (anim_machine.md; 1.2 carried: 2 of 2 accesses)
+C_animations_machine_de_luxe,0xF4,0xF4,ext_active,u8,st0rm94,[H] extended (overlay) animation is active (anim_machine.md; 1.2 carried: 11 of 11 accesses)
+C_animations_machine_de_luxe,0xF5,0xF5,ext_blending_out,u8,st0rm94,[H] extended anim is blending out (anim_machine.md; 1.2 carried: 8 of 8 accesses)
+C_animations_machine_de_luxe,0xFC,0xFC,ext_time,u32,st0rm94,[H] extended-anim time/phase (reset to 0 on blend-out) (anim_machine.md; 1.2 carried: 4 of 4 accesses)
+C_animations_machine_de_luxe,0x100,0x100,ext_blend,f32,st0rm94,[H] extended-anim blend time (anim_machine.md; 1.2 carried: 4 of 4 accesses)
+C_animations_machine_de_luxe,0x104,0x104,ext_flag,u8,st0rm94,[M] cleared on both blend-out paths (anim_machine.md; 1.2 carried: 5 of 5 accesses)
+C_animations_machine_de_luxe,0x10E,0x10E,ext_clip_id,i16,st0rm94,[H] the extended anim's CLIP ID (anim_machine.md; 1.2 carried: 6 of 6 accesses)
+C_animations_machine_de_luxe,0x110,0x110,locked,u8,st0rm94,[H] 1 = the machine is frozen: every animation entry (anim_machine.md; 1.2 carried: 9 of 9 accesses)
+C_animations_machine_de_luxe,0x114,0x114,tail_block,u32[4],st0rm94,[M] +0x114..+0x120 — written by SetAnim (anim_machine.md; 1.2 carried: 3 of 3 accesses)
+C_blood,0x0,0x0,alloc,u8,st0rm94,[H] STL allocator byte (blood.md; 1.2 carried: 12 of 12 accesses)
+C_blood,0x0,0x0,pos,f32[3],st0rm94,"[H] current position, integrated by blood_tick (blood.md; 1.2 carried: 12 of 12 accesses)"
+C_blood,0x4,0x4,begin,ptr,st0rm94,[H] vector<C_blood*> — the live drops (blood.md; 1.2 carried: 22 of 22 accesses)
+C_blood,0x8,0x8,end,ptr,st0rm94,[H] (blood.md; 1.2 carried: 25 of 25 accesses)
+C_blood,0xC,0xC,cap,ptr,st0rm94,[H] (blood.md; 1.2 carried: 4 of 4 accesses)
+C_blood,0xC,0xC,vel,f32[3],st0rm94,[H] velocity (blood.md; 1.2 carried: 4 of 4 accesses)
+C_blood,0x18,0x18,size,f32,st0rm94,[H] decal size scale (blood.md; 1.2 carried: 2 of 2 accesses)
+C_blood,0x1C,0x1C,texture,i32,st0rm94,"[H] index into C_game+0x29bc, the 10 decal textures (blood.md; 1.2 carried: 2 of 2 accesses)"
+C_blood,0x20,0x20,grow_in,u8,st0rm94,[H] placer argument 10: the decal grows in (§5c) (blood.md; 1.2 carried: 2 of 2 accesses)
+C_bottle,,0x1B,owner_slot,i8,st0rm94,[H] peer slot (bottle.md; 1.2 not carried: no access in the paired code)
+C_bottle,,0x6D,may_broadcast,i8,st0rm94,[H] ctor = 1 (bottle.md; 1.2 not carried: accesses disagree {'0x6D': 1})
+C_bottle,0x70,0x70,flight_dir,f32[3],st0rm94,[H] normalised (bottle.md; 1.2 carried: 5 of 5 accesses)
+C_bottle,0x7C,0x7C,flight_speed,f32,st0rm94,[H] |impulse| (bottle.md; 1.2 carried: 9 of 9 accesses)
+C_bottle,0x80,0x80,fall_accum,f32,st0rm94,[H] flight ends when this passes 50.0 (bottle.md; 1.2 carried: 12 of 12 accesses)
+C_bottle,0x84,0x84,landed_sets_state,i8,st0rm94,[H] chooses act-state 1 vs 2 at flight end (bottle.md; 1.2 carried: 3 of 3 accesses)
+C_bottle,,0x88,restitution,f32,st0rm94,[H] speed kept per bounce (bottle.md; 1.2 not carried: accesses disagree {'0x88': 1})
+C_bottle,0x8C,0x8C,contact_normal,f32[3],st0rm94,[H] ground normal of the last bounce (bottle.md; 1.2 carried: 2 of 2 accesses)
+C_bottle,,0x98,tumble_rate,f32[3],st0rm94,[H] 3x rand_float (bottle.md; 1.2 not carried: no access in the paired code)
+C_bottle,0xA4,0xA4,radius,f32,st0rm94,[H] half the bound-volume diagonal (bottle.md; 1.2 carried: 8 of 8 accesses)
+C_bottle,0xA8,0xA8,frame_axis,f32[3],st0rm94,"[H] second axis for SetDir3, tumbled each tick (bottle.md; 1.2 carried: 3 of 3 accesses)"
+C_bottle,0xB4,0xB4,coll,tDynamicCollObject,st0rm94,"[H] 0x48 bytes, zeroed by the ctor (bottle.md; 1.2 carried: 2 of 2 accesses)"
+C_bottle,,0xC4,coll_pos,f32[3],st0rm94,[H] the proxy's position mirror (bottle.md; 1.2 not carried: accesses disagree {'0xC4': 1})
+C_bottle,0xFC,0xFC,coll_registered,i8,st0rm94,[H] ctor = 1 (bottle.md; 1.2 carried: 3 of 3 accesses)
+C_bottle,0x100,0x100,bounce_count,i32,st0rm94,[H] +1 per ground contact (bottle.md; 1.2 carried: 2 of 2 accesses)
+C_bottle,0x104,0x104,on_ground,i8,st0rm94,[H] the ground ray hit this tick (bottle.md; 1.2 carried: 3 of 3 accesses)
+C_bottle,,0x108,net_pos,f32[3],st0rm94,[H] last received authoritative position (bottle.md; 1.2 not carried: no access in the paired code)
+C_bottle,,0x114,net_vel,f32[3],st0rm94,[H] its velocity (bottle.md; 1.2 not carried: no access in the paired code)
+C_bottle,,0x120,net_gravity,f32,st0rm94,[H] the fall term applied while extrapolating (bottle.md; 1.2 not carried: accesses disagree {'0x120': 1})
+C_bottle,,0x124,send_pending,i32,st0rm94,[M] cleared after a broadcast (bottle.md; 1.2 not carried: no access in the paired code)
+C_bottle,0x128,0x128,broadcast_on,i8,st0rm94,[H] ctor = 1 (bottle.md; 1.2 carried: 2 of 2 accesses)
+C_bottle,0x12C,0x12C,ground_material,i32,st0rm94,[H] surface material of the ground hit (bottle.md; 1.2 carried: 3 of 3 accesses)
+C_bottle,,0x130,ground_dyn_obj,ptr,st0rm94,"[H] dynamic object the ground ray hit, else 0 (bottle.md; 1.2 not carried: accesses disagree {'0x130': 1})"
+C_bottle,,0x134,ray_all_layers,i8,st0rm94,"[H] ground-ray mask: 0 = mask 2, 1 = every layer (bottle.md; 1.2 not carried: accesses disagree {'0x134': 1})"
+C_box,0x70,0x70,half_extent,f32[3],st0rm94,[H] written by box_recompute_dimensions_from_frame (box.md; 1.2 carried: 13 of 13 accesses)
+C_box,0x7C,0x7C,solver_phase,i32,st0rm94,[M] set to 2 by both contact passes (box.md; 1.2 carried: 10 of 10 accesses)
+C_box,0x80,0x80,state_read_idx,i32,st0rm94,[H] index of the live state buffer (box.md; 1.2 carried: 9 of 9 accesses)
+C_box,0x84,0x84,state_write_idx,i32,st0rm94,[H] index of the back buffer (box.md; 1.2 carried: 2 of 2 accesses)
+C_box,,0x88,corner_local,f32[24],st0rm94,[M] local corner points (box.md; 1.2 not carried: accesses disagree {'0x88': 1})
+C_box,,0xE8,resting_on,ptr:C_box,st0rm94,[H] boxes stacked on this one (box.md; 1.2 not carried: accesses disagree {'0xE8': 1})
+C_box,0xFC,0xFC,resting_count,i32,st0rm94,[H] cleared by box_wake_resting_bodies (box.md; 1.2 carried: 7 of 7 accesses)
+C_box,,0x104,sleep_counter,i32,st0rm94,[H] set to 5 on any external impulse (box.md; 1.2 not carried: accesses disagree {'0x104': 1})
+C_box,0x110,0x110,inv_mass,f32,st0rm94,[H] every impulse denominator (box.md; 1.2 carried: 10 of 10 accesses)
+C_box,0x114,0x114,mass,f32,st0rm94,[H] the gravity term is g * mass (box.md; 1.2 carried: 11 of 11 accesses)
+C_box,0x124,0x124,inertia_diag,f32[3],st0rm94,"[H] +0x124/+0x128/+0x12c, angular damping (box.md; 1.2 carried: 4 of 4 accesses)"
+C_box,0x130,0x130,state,S_box_state[2],st0rm94,[H] stride 200 (0xc8) (box.md; 1.2 carried: 3 of 3 accesses)
+C_box,0x388,0x388,linear_damping,f32,st0rm94,[H] default 0.32 (0x3ea3d70a) (box.md; 1.2 carried: 2 of 2 accesses)
+C_box,0x38C,0x38C,angular_damping,f32,st0rm94,[H] default 0.5 (box.md; 1.2 carried: 3 of 3 accesses)
+C_box,0x390,0x390,force_accum,f32[3],st0rm94,[H] box_add_impulse_at_point -> box_accumulate_forces (box.md; 1.2 carried: 3 of 3 accesses)
+C_box,0x39C,0x39C,torque_accum,f32[3],st0rm94,"[H] r x F, same producer/consumer pair (box.md; 1.2 carried: 4 of 4 accesses)"
+C_box,0x3A8,0x3A8,impulse_pending,i8,st0rm94,[M] cleared by box_add_impulse_at_point (box.md; 1.2 carried: 3 of 3 accesses)
+C_box,,0x3B0,step_counter,i32,st0rm94,"[M] bumped by box_integrate_state (box.md; 1.2 not carried: accesses disagree {'0x38C': 3, '0x3B0': 2})"
+C_box,,0x3B4,contact_pos,f32[90],st0rm94,"[H] the contact ring (box.md; 1.2 not carried: its accesses say 0x390, the fields around it move by +0x0)"
+C_box,,0x51C,contact_depth,f32[30],st0rm94,[H] matched to 0.01 by the slot acquire (box.md; 1.2 not carried: no access in the paired code)
+C_box,0x60C,0x60C,contact_cursor,i32,st0rm94,"[H] ring head, modulo 0x1e (box.md; 1.2 carried: 5 of 5 accesses)"
+C_box,0x610,0x610,contact_count,i32,st0rm94,[H] live entries (box.md; 1.2 carried: 6 of 6 accesses)
+C_box,,0x614,corner_world_a,f32[24],st0rm94,[H] +0x88 under one pose (box.md; 1.2 not carried: no access in the paired code)
+C_box,,0x674,corner_world_b,f32[24],st0rm94,[H] +0x88 under the other pose (box.md; 1.2 not carried: no access in the paired code)
+C_box,0x9F4,0x9F4,contact_counter,i32,st0rm94,[H] reset/bumped by both contact passes (box.md; 1.2 carried: 7 of 7 accesses)
+C_box,,0x9F8,deepest_depth,f32,st0rm94,"[H] seeded -1.0 by box_collect_contacts, which (box.md; 1.2 not carried: no access in the paired code)"
+C_box,0xB68,0xB68,awake,i8,st0rm94,[H] 0 = asleep (box.md; 1.2 carried: 4 of 4 accesses)
+C_box,0xB69,0xB69,just_woke,i8,st0rm94,[H] read by box_track_record_key (box.md; 1.2 carried: 2 of 2 accesses)
+C_box,0xC34,0xC34,dyn_coll,tDynamicCollObject,st0rm94,[H] 0x12 dwords (box.md; 1.2 carried: 5 of 5 accesses)
+C_box,0xC7C,0xC7C,dyn_coll_frame,ptr:I3D_frame,st0rm94,[H] the `dyn*` frame it was built from (box.md; 1.2 carried: 3 of 3 accesses)
+C_box,0xC80,0xC80,density,f32,st0rm94,[H] default 50.0 (box.md; 1.2 carried: 5 of 5 accesses)
+C_box,0xC84,0xC84,tunable_b,f32,st0rm94,[H] default 0.4 (box.md; 1.2 carried: 6 of 6 accesses)
+C_box,0xC88,0xC88,tunable_c,f32,st0rm94,[H] default 2.5 (box.md; 1.2 carried: 4 of 4 accesses)
+C_box,0xC8C,0xC8C,restitution,f32,st0rm94,[H] default 0.6 (box.md; 1.2 carried: 5 of 5 accesses)
+C_box,0xC90,0xC90,is_cylinder,i8,st0rm94,"[H] set = an upright cylinder, not a box (§1e) (box.md; 1.2 carried: 6 of 6 accesses)"
+C_box,,0xC94,bound_radius,f32,st0rm94,"[H] |half_extent|, from box_game_init (box.md; 1.2 not carried: no access in the paired code)"
+C_box,,0xC9C,net_pos,f32[3],st0rm94,"[H] replication band, see §1c (box.md; 1.2 not carried: no access in the paired code)"
+C_box,,0xCA8,net_lin_vel,f32[3],st0rm94,[H] (box.md; 1.2 not carried: no access in the paired code)
+C_box,,0xCB4,net_rot,f32[4],st0rm94,[H] (box.md; 1.2 not carried: no access in the paired code)
+C_box,,0xCC4,net_rot_prev,f32[4],st0rm94,[M] seeded equal to net_rot by box_game_init (box.md; 1.2 not carried: no access in the paired code)
+C_box,,0xCD4,net_pending,i32,st0rm94,[M] cleared by the sender (box.md; 1.2 not carried: no access in the paired code)
+C_box,,0xCD8,net_flags,u32,st0rm94,[H] bit map in §1c (box.md; 1.2 not carried: no access in the paired code)
+C_box,,0xCDC,unused_cdc,i32,st0rm94,[H] zeroed by box_init (box.md; 1.2 not carried: no access in the paired code)
+C_box_new,,0x208,base_state_a,i32,st0rm94,"[M] C_PhThing field, zeroed by GameInit (box_new.md; 1.2 not carried: no access in the paired code)"
+C_box_new,,0x20C,base_state_b,f32,st0rm94,"[M] C_PhThing field, set to -1.0 (box_new.md; 1.2 not carried: no access in the paired code)"
+C_box_new,,0x210,base_state_c,i32,st0rm94,"[M] C_PhThing field, zeroed (box_new.md; 1.2 not carried: no access in the paired code)"
+C_box_new,0x38C,0x3B0,is_box,i8,st0rm94,"[H] 1 = S_THING_BOX, 0 = S_THING_WHEEL (box_new.md; 1.2 carried: 3 of 3 accesses)"
+C_box_new,0x390,0x3B4,wheel_radius,f32,st0rm94,[H] default 1.0 (wheel only) (box_new.md; 1.2 carried: 3 of 3 accesses)
+C_box_new,0x394,0x3B8,wheel_param,f32,st0rm94,[H] default 1.0 (wheel only) -> C_PhThing +0x21c (box_new.md; 1.2 carried: 3 of 3 accesses)
+C_box_new,0x398,0x3BC,mass,f32,st0rm94,[H] default 10.0 (box_new.md; 1.2 carried: 7 of 7 accesses)
+C_box_new,0x39C,0x3C0,friction,f32,st0rm94,[H] default 0.5 (box_new.md; 1.2 carried: 3 of 3 accesses)
+C_box_new,0x3A0,0x3C4,damping,f32,st0rm94,[H] default 0.01 (wheel only) (box_new.md; 1.2 carried: 3 of 3 accesses)
+C_box_new,,0x3C8,touched,i8,st0rm94,"[H] set by Collision and Hit, cleared by GameInit (box_new.md; 1.2 not carried: no access in the paired code)"
+C_Break_plain_glass,0x0,0x0,restore_alloc,i8,st0rm94,[M] MSVC allocator byte of the vector below (glass_shatter.md; 1.2 carried: 20 of 20 accesses)
+C_Break_plain_glass,0x4,0x4,restore_begin,ptr,st0rm94,[H] panes kept for restore (glass_shatter.md; 1.2 carried: 13 of 13 accesses)
+C_Break_plain_glass,0x8,0x8,restore_end,ptr,st0rm94,the original frame here when its bool arg (glass_shatter.md; 1.2 carried: 10 of 10 accesses)
+C_Break_plain_glass,,0xC,restore_cap,ptr,st0rm94,"is set, after bumping its refcount (glass_shatter.md; 1.2 not carried: no access in the paired code)"
+C_Break_plain_glass,0x10,0x10,pane_alloc,i8,st0rm94,[H] allocator byte (glass_shatter.md; 1.2 carried: 5 of 5 accesses)
+C_Break_plain_glass,,0x14,pane_begin,ptr:S_DICE,st0rm94,[H] the live broken panes (glass_shatter.md; 1.2 not carried: accesses disagree {'0x14': 1})
+C_Break_plain_glass,0x18,0x18,pane_end,ptr:S_DICE,st0rm94,[H] (glass_shatter.md; 1.2 carried: 3 of 3 accesses)
+C_Break_plain_glass,,0x1C,pane_cap,ptr:S_DICE,st0rm94,[H] (glass_shatter.md; 1.2 not carried: no access in the paired code)
+C_Break_plain_glass,,0x20,pool,ptr:S_DICE,st0rm94,"[H] the fixed ring of pane slots, allocated by (glass_shatter.md; 1.2 not carried: no access in the paired code)"
+C_Break_plain_glass,0x24,0x24,ring_cursor,i32,st0rm94,[H] advanced modulo pool_slots when a pane (glass_shatter.md; 1.2 carried: 3 of 3 accesses)
+C_Break_plain_glass,,0x28,pool_slots,i32,st0rm94,[H] the Init argument: how many broken panes (glass_shatter.md; 1.2 not carried: no access in the paired code)
+C_Break_plain_glass,,0x2C,gravity_x,f32,st0rm94,[H] 0.0 (glass_shatter.md; 1.2 not carried: accesses disagree {'0x2C': 1})
+C_Break_plain_glass,,0x30,gravity_y,f32,st0rm94,[H] -8.0 (0xc1000000) (glass_shatter.md; 1.2 not carried: no access in the paired code)
+C_Break_plain_glass,,0x34,gravity_z,f32,st0rm94,[H] 0.0 (glass_shatter.md; 1.2 not carried: no access in the paired code)
+C_bridge,0x74,0x74,coll_a_begin,ptr:S_BridgeCol,st0rm94,"[H] deck collision panels, stride 0x84 (bridge.md; 1.2 carried: 4 of 4 accesses)"
+C_bridge,0x78,0x78,coll_a_end,ptr:S_BridgeCol,st0rm94,[H] (bridge.md; 1.2 carried: 4 of 4 accesses)
+C_bridge,0x7C,0x7C,coll_a_cap,ptr:S_BridgeCol,st0rm94,[H] (bridge.md; 1.2 carried: 3 of 3 accesses)
+C_bridge,0x84,0x84,coll_b_begin,ptr:S_BridgeCol,st0rm94,[H] second panel set (the second leaf) (bridge.md; 1.2 carried: 6 of 6 accesses)
+C_bridge,0x88,0x88,coll_b_end,ptr:S_BridgeCol,st0rm94,[H] (bridge.md; 1.2 carried: 15 of 15 accesses)
+C_bridge,0x8C,0x8C,coll_b_cap,ptr:S_BridgeCol,st0rm94,[H] (bridge.md; 1.2 carried: 2 of 2 accesses)
+C_bridge,0x90,0x90,paired_frame,ptr:I3D_frame,st0rm94,"[H] the second leaf, found by bridge_init (bridge.md; 1.2 carried: 5 of 5 accesses)"
+C_bridge,0x94,0x94,machinery_sound,ptr:I3D_sound,st0rm94,[H] created by bridge_game_init (bridge.md; 1.2 carried: 22 of 22 accesses)
+C_bridge,0x98,0x98,siren_sound,ptr:I3D_sound,st0rm94,[H] created by bridge_game_init (bridge.md; 1.2 carried: 7 of 7 accesses)
+C_bridge,0xB4,0xB4,dyn_coll,ptr:tDynamicCollObject,st0rm94,"[H] inserted while raised, erased when down (bridge.md; 1.2 carried: 4 of 4 accesses)"
+C_bridge,0x138,0x138,act_state,i32,st0rm94,"[H] C_actor act state: 1 while cycling, 7 idle (bridge.md; 1.2 carried: 3 of 3 accesses)"
+C_bridge,0x13C,0x13C,frozen,i8,st0rm94,[H] set by bridge_shut_down (bridge.md; 1.2 carried: 8 of 8 accesses)
+C_bridge,0x140,0x140,bridge_index,i32,st0rm94,[H] 0 or 1 — indexes the global bank (§2) (bridge.md; 1.2 carried: 15 of 15 accesses)
+C_bridge,0x144,0x144,state,i32,st0rm94,"[H] the 6-state cycle, §1b (bridge.md; 1.2 carried: 9 of 9 accesses)"
+C_bridge,0x148,0x148,angle,f32,st0rm94,"[H] current deck angle, radians (bridge.md; 1.2 carried: 12 of 12 accesses)"
+C_bridge,0x14C,0x14C,angle_applied,f32,st0rm94,[H] last angle written to the frame (bridge.md; 1.2 carried: 2 of 2 accesses)
+C_bridge,0x150,0x150,phase_timer_ms,i32,st0rm94,[H] counts down within the current state (bridge.md; 1.2 carried: 20 of 20 accesses)
+C_bridge,0x154,0x154,blink_timer_ms,i32,st0rm94,"[H] warning-light blink, re-armed at 600 ms (bridge.md; 1.2 carried: 7 of 7 accesses)"
+C_bridge,0x158,0x158,blink_on,i8,st0rm94,[H] toggled by bridge_update (bridge.md; 1.2 carried: 7 of 7 accesses)
+C_bridge,0x15C,0x15C,hold_ms,u32,st0rm94,[H] bridge_ai returns while non-zero (bridge.md; 1.2 carried: 5 of 5 accesses)
+C_bridge,0x160,0x160,idle_period_ms,i32,st0rm94,[H] default 120000 (bridge.md; 1.2 carried: 2 of 2 accesses)
+C_bridge,0x164,0x164,warn_ms,i32,st0rm94,[H] default 4000 (bridge.md; 1.2 carried: 2 of 2 accesses)
+C_bridge,0x168,0x168,raise_ms,i32,st0rm94,[H] default 30000 (bridge.md; 1.2 carried: 3 of 3 accesses)
+C_bridge,0x16C,0x16C,up_dwell_ms,i32,st0rm94,[H] default 10000 (bridge.md; 1.2 carried: 2 of 2 accesses)
+C_bridge,0x170,0x170,lower_ms,i32,st0rm94,[H] default 20000 (bridge.md; 1.2 carried: 3 of 3 accesses)
+C_bridge,0x174,0x174,reverse_dir,i8,st0rm94,"[H] when clear, bridge_ai negates the angle (bridge.md; 1.2 carried: 2 of 2 accesses)"
+C_bridge,0x178,0x178,angle_max,f32,st0rm94,[H] 0x3f5f66f3 = 0.8727 rad = 50 degrees (bridge.md; 1.2 carried: 6 of 6 accesses)
+C_bridge,0x17C,0x17C,snd_wait_clear,i32,st0rm94,"[H] 0x71, played entering state 2 (bridge.md; 1.2 carried: 2 of 2 accesses)"
+C_bridge,0x180,0x180,snd_raising,i32,st0rm94,"[H] 0x72, played entering state 3 (bridge.md; 1.2 carried: 2 of 2 accesses)"
+C_bridge,0x184,0x184,snd_up,i32,st0rm94,"[H] 0x73, played entering state 4 (bridge.md; 1.2 carried: 2 of 2 accesses)"
+C_bridge,0x188,0x188,snd_lowering,i32,st0rm94,"[H] 0x74, played entering state 5 (bridge.md; 1.2 carried: 2 of 2 accesses)"
+C_bridge,0x18C,0x18C,snd_machinery_go,i32,st0rm94,"[H] 0xb6, played on the machinery emitter (bridge.md; 1.2 carried: 2 of 2 accesses)"
+C_bridge,0x190,0x190,snd_siren,i32,st0rm94,"[H] 0xb5, played on the siren emitter (bridge.md; 1.2 carried: 2 of 2 accesses)"
+C_cache_base_block,0x0,0x0,blocks_alloc,u8,st0rm94,[H] STL allocator byte (cache_base_block.md; 1.2 carried: 15 of 15 accesses)
+C_cache_base_block,0x4,0x4,blocks_begin,ptr,st0rm94,"[H] vector<S_cache_base_block>, stride 0x74 (cache_base_block.md; 1.2 carried: 26 of 26 accesses)"
+C_cache_base_block,0x8,0x8,blocks_end,ptr,st0rm94,[H] — the loaded blocks (cache_base_block.md; 1.2 carried: 15 of 15 accesses)
+C_cache_base_block,,0xC,blocks_cap,ptr,st0rm94,[H] (cache_base_block.md; 1.2 not carried: accesses disagree {'0xC': 1})
+C_cache_base_block,,0x10,model_sets_alloc,u8,st0rm94,[H] STL allocator byte (cache_base_block.md; 1.2 not carried: accesses disagree {'0x10': 1})
+C_cache_base_block,0x14,0x14,model_sets_begin,ptr,st0rm94,"[H] vector<S_cache_model_set>, stride 0x14 (cache_base_block.md; 1.2 carried: 12 of 12 accesses)"
+C_cache_base_block,0x18,0x18,model_sets_end,ptr,st0rm94,[H] — one per distinct model name (cache_base_block.md; 1.2 carried: 6 of 6 accesses)
+C_cache_base_block,,0x1C,model_sets_cap,ptr,st0rm94,[H] (cache_base_block.md; 1.2 not carried: no access in the paired code)
+C_cache_base_block,0x20,0x20,retire_cursor,u32,st0rm94,[H] round-robin: one instance retired per frame (cache_base_block.md; 1.2 carried: 5 of 5 accesses)
+C_cache_base_block,0x24,0x24,loaded,u8,st0rm94,"[H] set by Open, cleared by Close/ctor (cache_base_block.md; 1.2 carried: 3 of 3 accesses)"
+C_cache_base_block,0x28,0x28,retest_accum_ms,u32,st0rm94,[H] ms since the last full re-evaluation (cache_base_block.md; 1.2 carried: 4 of 4 accesses)
+C_cache_base_block,0x2C,0x2C,last_ref_pos,f32[3],st0rm94,[H] reference position at the last re-test (cache_base_block.md; 1.2 carried: 4 of 4 accesses)
+C_car,0x70,0x70,vehicle,C_Vehicle,game_build.h,vehicle
+C_car,0x220C,0x214C,particles,u8,game_build.h,carParticles
+C_car,0x2219,0x2159,in_water,u8,game_build.h,carInWater
+C_car_ex,0x221C,0x21F4,_a0,vec_alloc,st0rm94,[H] allocator byte (MSVC empty-base padding) (car_extended.md; 1.2 carried: 3 of 3 accesses)
+C_car_ex,0x2220,0x21F8,shake_begin,ptr:S_clap,st0rm94,"[H] `~C` parts, stride 0x38 (car_extended.md; 1.2 carried: 15 of 15 accesses)"
+C_car_ex,0x2224,0x21FC,shake_end,ptr:S_clap,st0rm94,[H] (car_extended.md; 1.2 carried: 5 of 5 accesses)
+C_car_ex,0x2228,0x2200,shake_cap,ptr:S_clap,st0rm94,[H] (car_extended.md; 1.2 carried: 2 of 2 accesses)
+C_car_ex,0x222C,0x2204,_a1,vec_alloc,st0rm94,[H] (car_extended.md; 1.2 carried: 3 of 3 accesses)
+C_car_ex,0x2230,0x2208,exhaust_begin,ptr:S_exh_top,st0rm94,"[H] `~E` parts, stride 0x18 (car_extended.md; 1.2 carried: 17 of 17 accesses)"
+C_car_ex,0x2234,0x220C,exhaust_end,ptr:S_exh_top,st0rm94,[H] (car_extended.md; 1.2 carried: 7 of 7 accesses)
+C_car_ex,0x2238,0x2210,exhaust_cap,ptr:S_exh_top,st0rm94,[H] (car_extended.md; 1.2 carried: 2 of 2 accesses)
+C_car_ex,0x223C,0x2214,dcs_present,u8,st0rm94,[H] a `~DCS~` frame was found (car_extended.md; 1.2 carried: 2 of 2 accesses)
+C_car_ex,,0x2218,dcs_position,f32[3],st0rm94,"[H] the cargo-bed rider spot, car-local (car_extended.md; 1.2 not carried: accesses disagree {'0x2240': 1})"
+C_car_ex,0x224C,0x2224,dcs_direction,f32[3],st0rm94,[H] the rider's facing there (car_extended.md; 1.2 carried: 2 of 2 accesses)
+C_car_ex,0x2258,0x2230,dyn_coll_list,ptr,st0rm94,[H] the world dynamic-collision list (car_extended.md; 1.2 carried: 9 of 9 accesses)
+C_car_ex,0x225C,0x2234,_a2,vec_alloc,st0rm94,[H] (car_extended.md; 1.2 carried: 2 of 2 accesses)
+C_car_ex,0x2260,0x2238,dyn_begin,ptr,st0rm94,"[H] the class's own records, stride 0x10 (car_extended.md; 1.2 carried: 10 of 10 accesses)"
+C_car_ex,0x2264,0x223C,dyn_end,ptr,st0rm94,[H] (car_extended.md; 1.2 carried: 5 of 5 accesses)
+C_car_ex,0x2268,0x2240,dyn_cap,ptr,st0rm94,[H] (car_extended.md; 1.2 carried: 2 of 2 accesses)
+C_car_ex,0x226C,0x2244,_a3,vec_alloc,st0rm94,[H] (car_extended.md; 1.2 carried: 2 of 2 accesses)
+C_car_ex,0x2270,0x2248,riders_begin,ptr,st0rm94,[H] carried persons (outside any seat) (car_extended.md; 1.2 carried: 14 of 14 accesses)
+C_car_ex,0x2274,0x224C,riders_end,ptr,st0rm94,[H] (car_extended.md; 1.2 carried: 10 of 10 accesses)
+C_car_ex,0x2278,0x2250,riders_cap,ptr,st0rm94,[H] (car_extended.md; 1.2 carried: 2 of 2 accesses)
+C_chunk,0x0,0x0,vtable,ptr,st0rm94,[H] = g_chunk_vt — a 2-slot ALLOCATOR (chunk.md; 1.2 carried: 5 of 5 accesses)
+C_chunk,0x4,0x4,stack_begin,ptr,st0rm94,"[H] open-chunk stack: std::vector<int>, one (chunk.md; 1.2 carried: 4 of 4 accesses)"
+C_chunk,0x8,0x8,stack_end,ptr,st0rm94,[H] file offset per chunk currently descended (chunk.md; 1.2 carried: 12 of 12 accesses)
+C_chunk,,0xC,stack_cap,ptr,st0rm94,[H] into (see §4) (chunk.md; 1.2 not carried: no access in the paired code)
+C_chunk,0x10,0x10,is_open,u8,st0rm94,[H] 1 between chunk_open_file and chunk_close (chunk.md; 1.2 carried: 7 of 7 accesses)
+C_chunk,0x14,0x14,dta_handle,i32,st0rm94,"[H] the rw_data.dll handle, or -1 (chunk.md; 1.2 carried: 17 of 17 accesses)"
+C_chunk,0x18,0x18,write_mode,u8,st0rm94,"[H] 0 = reading (dtaOpen), 1 = writing (chunk.md; 1.2 carried: 5 of 5 accesses)"
+C_chunk,0x1C,0x1C,file_size,i32,st0rm94,"[H] dtaSeek(h,0,SEEK_END) when reading (chunk.md; 1.2 carried: 2 of 2 accesses)"
+C_console,0x0,0x0,alloc,u8,st0rm94,[H] std::vector allocator byte (console.md; 1.2 carried: 11 of 11 accesses)
+C_console,0x4,0x4,begin,ptr:S_console_line,st0rm94,[H] the line vector (console.md; 1.2 carried: 12 of 12 accesses)
+C_console,0x8,0x8,end,ptr:S_console_line,st0rm94,(console.md; 1.2 carried: 11 of 11 accesses)
+C_console,0xC,0xC,cap,ptr:S_console_line,st0rm94,(console.md; 1.2 carried: 2 of 2 accesses)
+C_console,,0x10,def_r,i32,st0rm94,"[H] default colour, ctor 0xff (console.md; 1.2 not carried: no access in the paired code)"
+C_console,,0x14,def_g,i32,st0rm94,[H] ctor 0xff (console.md; 1.2 not carried: no access in the paired code)
+C_console,,0x18,def_b,i32,st0rm94,[H] ctor 0xff (console.md; 1.2 not carried: no access in the paired code)
+C_console,,0x1C,x,f32,st0rm94,"[H] left edge, fraction of screen width (console.md; 1.2 not carried: no access in the paired code)"
+C_console,,0x20,y,f32,st0rm94,"[H] first baseline, fraction of height (console.md; 1.2 not carried: no access in the paired code)"
+C_console,,0x24,glyph_size,f32,st0rm94,[H] fraction of screen height (console.md; 1.2 not carried: no access in the paired code)
+C_console,,0x28,line_step,f32,st0rm94,[H] fraction of height (console.md; 1.2 not carried: no access in the paired code)
+C_console,,0x2C,max_lines,i32,st0rm94,[H] ctor 100 (console.md; 1.2 not carried: accesses disagree {'0x2C': 1})
+C_console,0x30,0x30,line_lifetime_ms,i32,st0rm94,[H] ctor 1000 (console.md; 1.2 carried: 2 of 2 accesses)
+C_console,0x34,0x34,expiry_accum,i32,st0rm94,[H] ms accumulated by console_tick (console.md; 1.2 carried: 6 of 6 accesses)
+C_console,,0x38,anchor_bottom,i8,st0rm94,[H] y -= line_step before the first line (console.md; 1.2 not carried: no access in the paired code)
+C_console,,0x39,reverse_chars,i8,st0rm94,[H] lay each line out right-to-left (console.md; 1.2 not carried: no access in the paired code)
+C_console,,0x3A,reverse_lines,i8,st0rm94,[H] walk the line vector newest-first (console.md; 1.2 not carried: no access in the paired code)
+C_crash_obj,0x0,0x0,base,C_PhThing,st0rm94,"[H] kind 0x1a at +0x10, frame at +0x68 (crash_obj.md; 1.2 carried: 86 of 86 accesses)"
+C_crash_obj,,0x308,impact_sound_column,i32,st0rm94,"[H] C_PhThing field, set by the `I<i>` tag (crash_obj.md; 1.2 not carried: no access in the paired code)"
+C_crash_obj,,0x338,impact_sound_restart,bool,st0rm94,"[H] C_PhThing field, set by the `T<i>` tag (crash_obj.md; 1.2 not carried: no access in the paired code)"
+C_crash_obj,0x38C,0x3B0,flags,u32,st0rm94,"[H] tag bits (above) + 0x8000 ""destroy me"" (crash_obj.md; 1.2 carried: 3 of 3 accesses)"
+C_crash_obj,0x390,0x3B4,health,f32,st0rm94,[H] every impact subtracts the impulse (crash_obj.md; 1.2 carried: 2 of 2 accesses)
+C_crash_obj,0x394,0x3B8,mass_scale,f32,st0rm94,[H] divides the spawn impulse (crash_obj.md; 1.2 carried: 3 of 3 accesses)
+C_crash_obj,0x398,0x3BC,generation,i8,st0rm94,[H] ++ per break (crash_obj.md; 1.2 carried: 2 of 2 accesses)
+C_crash_obj,0x39C,0x3C0,model_name,str,st0rm94,[H] owned copy (crash_obj.md; 1.2 carried: 6 of 6 accesses)
+C_crash_obj,0x3BE,0x3E2,solver_enabled,bool,st0rm94,[H] cleared by the `Z` tag (crash_obj.md; 1.2 carried: 3 of 3 accesses)
+C_crash_obj,,0x3C4,hit_point,f32[3],st0rm94,[H] last contact point (crash_obj.md; 1.2 not carried: accesses disagree {'0x3A0': 1})
+C_crash_obj,,0x3D0,hit_dir,f32[3],st0rm94,[H] last contact direction (negated normal) (crash_obj.md; 1.2 not carried: accesses disagree {'0x3AC': 1})
+C_crash_obj,,0x3DC,hit_magnitude,f32,st0rm94,[H] (crash_obj.md; 1.2 not carried: accesses disagree {'0x3B8': 1})
+C_crash_obj,,0x3E0,particle_id,u8,st0rm94,[H] `L<i>` (crash_obj.md; 1.2 not carried: accesses disagree {'0x3BC': 1})
+C_crash_obj,,0x3E1,material_id,u8,st0rm94,[H] `N<i>` (crash_obj.md; 1.2 not carried: accesses disagree {'0x3BD': 1})
+C_Debris,0x0,0x0,debris_alloc,i8,st0rm94,[M] MSVC allocator byte (debris.md; 1.2 carried: 54 of 54 accesses)
+C_Debris,0x4,0x4,debris_begin,ptr:S_DEBRIS,st0rm94,"[H] the live debris pieces, stride 0x1c (debris.md; 1.2 carried: 20 of 20 accesses)"
+C_Debris,0x8,0x8,debris_end,ptr:S_DEBRIS,st0rm94,[H] (debris.md; 1.2 carried: 21 of 21 accesses)
+C_Debris,0xC,0xC,debris_cap,ptr:S_DEBRIS,st0rm94,[H] (debris.md; 1.2 carried: 2 of 2 accesses)
+C_Debris,0x10,0x10,flash_alloc,i8,st0rm94,[M] MSVC allocator byte (debris.md; 1.2 carried: 2 of 2 accesses)
+C_Debris,,0x14,flash_begin,ptr:S_FLASH,st0rm94,"[H] the live spark streaks, stride 0x44 (debris.md; 1.2 not carried: accesses disagree {'0x14': 1})"
+C_Debris,,0x18,flash_end,ptr:S_FLASH,st0rm94,[H] (debris.md; 1.2 not carried: accesses disagree {'0x18': 1})
+C_Debris,0x1C,0x1C,flash_cap,ptr:S_FLASH,st0rm94,[H] (debris.md; 1.2 carried: 3 of 3 accesses)
+C_Debris,0x20,0x20,gravity_x,f32,st0rm94,[H] 0.0 (debris.md; 1.2 carried: 2 of 2 accesses)
+C_Debris,,0x24,gravity_y,f32,st0rm94,[H] -(the Init argument) (debris.md; 1.2 not carried: accesses disagree {'0x24': 1})
+C_Debris,,0x28,gravity_z,f32,st0rm94,[H] 0.0 (debris.md; 1.2 not carried: accesses disagree {'0x28': 1})
+C_detector,0x70,0x70,program,C_program,code,its constructor called on this+offset by C_detector's
+C_detector,,0xB4,self,ptr:C_detector,st0rm94,[H] back-link written by GameInit (detector.md; 1.2 not carried: no access in the paired code)
+C_detector,0xD8,0xD8,inrange_mask,u32,st0rm94,[H] human_type mask for detector_inrange (4b) (detector.md; 1.2 carried: 3 of 3 accesses)
+C_detector,0xDC,0xDC,signal,u8,st0rm94,[H] the script signal byte (detector.md; 1.2 carried: 2 of 2 accesses)
+C_detector,0xDD,0xDD,waiting_for_use,bool,st0rm94,"[H] set by CreateUO, cleared by detector_use (detector.md; 1.2 carried: 4 of 4 accesses)"
+C_detector,0xDE,0xDE,waiting_for_hit,bool,st0rm94,"[H] set by Process 0x20, cleared by Hit (detector.md; 1.2 carried: 5 of 5 accesses)"
+C_detector,,0xDF,volumes_live,bool,st0rm94,[H] gates detector_update and the Hit event (detector.md; 1.2 not carried: accesses disagree {'0xDF': 1})
+C_detector,0xE0,0xE0,uo,S_using_object,st0rm94,"[H] embedded record: pos, +0xec radius 1.5f (detector.md; 1.2 carried: 2 of 2 accesses)"
+C_detector,0x118,0x118,colls,ptr,st0rm94,[H] (detector.md; 1.2 carried: 4 of 4 accesses)
+C_detector,0x11C,0x11C,world,ptr:S_matrix,st0rm94,"[H] 0x40 stride, one per volume (detector.md; 1.2 carried: 2 of 2 accesses)"
+C_detector,0x120,0x120,world_inv,ptr:S_matrix,st0rm94,"[H] 0x40 stride, parallel array (detector.md; 1.2 carried: 10 of 10 accesses)"
+C_detector,0x124,0x124,coll_count,i32,st0rm94,[H] (detector.md; 1.2 carried: 2 of 2 accesses)
+C_dog,0x70,0x70,tunable,f32[4],st0rm94,[H] 1.0 / 5.5 / 4.0 / 100.0 (dog.md; 1.2 carried: 11 of 11 accesses)
+C_dog,0x80,0x80,bite_damage,f32,st0rm94,[H] 40.0 (dog.md; 1.2 carried: 9 of 9 accesses)
+C_dog,0x84,0x84,acquire_range,f32,st0rm94,[H] 20.0 (dog.md; 1.2 carried: 5 of 5 accesses)
+C_dog,0x88,0x88,starts_hostile,bool,st0rm94,[H] 1 (dog.md; 1.2 carried: 9 of 9 accesses)
+C_dog,0x89,0x89,print_flag,bool,st0rm94,"[H] set by dog_arm_bloody_paw_prints, cleared at 0 prints (dog.md; 1.2 carried: 3 of 3 accesses)"
+C_dog,0x8C,0x8C,sound_id,i32[5],st0rm94,[H] designer-set (dog.md; 1.2 carried: 7 of 7 accesses)
+C_dog,0xA0,0xA0,sound,ptr:I3D_sound[5],st0rm94,"[H] live objects, lazily created (dog.md; 1.2 carried: 3 of 3 accesses)"
+C_dog,0xB4,0xB4,state,i32,st0rm94,"[H] 0xe = hurt, 0xf = dead (dog.md; 1.2 carried: 15 of 15 accesses)"
+C_dog,0xB8,0xB8,yaw_cur,f32,st0rm94,[H] dog_turn_toward_target ramp (dog.md; 1.2 carried: 5 of 5 accesses)
+C_dog,0xC0,0xC0,yaw_rate,f32,st0rm94,[H] (dog.md; 1.2 carried: 3 of 3 accesses)
+C_dog,0xD0,0xD0,health,f32,st0rm94,[H] dog_hit subtracts damage (dog.md; 1.2 carried: 8 of 8 accesses)
+C_dog,0xDC,0xDC,anim_cur,i32,st0rm94,[H] last clip pushed to the machine (dog.md; 1.2 carried: 5 of 5 accesses)
+C_dog,0xE0,0xE0,anim_pending,i32,st0rm94,[H] dog_enter_state writes it (dog.md; 1.2 carried: 20 of 20 accesses)
+C_dog,0xE4,0xE4,anim_flag_a,bool,st0rm94,[H] passed to anim_machine_set_anim (dog.md; 1.2 carried: 19 of 19 accesses)
+C_dog,0xE5,0xE5,anim_flag_b,bool,st0rm94,[H] (dog.md; 1.2 carried: 16 of 16 accesses)
+C_dog,0xE8,0xE8,animations_machine_de_luxe,C_animations_machine_de_luxe,code,its constructor called on this+offset by C_dog's
+C_dog,0x234,0x234,coll_a,ptr:tDynamicCollObject,st0rm94,[H] owned (dog.md; 1.2 carried: 10 of 10 accesses)
+C_dog,0x238,0x238,coll_b,ptr:tDynamicCollObject,st0rm94,[H] owned (dog.md; 1.2 carried: 7 of 7 accesses)
+C_dog,0x23C,0x23C,destination,f32[3],st0rm94,[H] the route goal (dog.md; 1.2 carried: 10 of 10 accesses)
+C_dog,0x2D4,0x2D4,node_cur,ptr:C_web_node,st0rm94,[H] record stride 0x1e (dog.md; 1.2 carried: 17 of 17 accesses)
+C_dog,0x2D8,0x2D8,node_prev,ptr:C_web_node,st0rm94,[H] avoids doubling back (dog.md; 1.2 carried: 9 of 9 accesses)
+C_dog,0x2DC,0x2DC,ground_timer,u32,st0rm94,[H] period +0x2e0 = 200 ms (dog.md; 1.2 carried: 9 of 9 accesses)
+C_dog,0x2E4,0x2E4,target_timer,u32,st0rm94,[H] period +0x2e8 = 2000 ms (dog.md; 1.2 carried: 9 of 9 accesses)
+C_dog,0x2F4,0x2F4,enemy,ptr:C_actor,st0rm94,[H] the acquired player (dog.md; 1.2 carried: 17 of 17 accesses)
+C_dog,0x2F8,0x2F8,path,ptr:ai_path,st0rm94,[H] owned (dog.md; 1.2 carried: 31 of 31 accesses)
+C_dog,0x2FC,0x2FC,blocked,vector<blocked_con>,st0rm94,[H] alloc/begin/end at +0x2fc/+0x300/+0x304 (dog.md; 1.2 carried: 7 of 7 accesses)
+C_dog,0x30D,0x30D,print_total,i8,st0rm94,"[H] the alpha denominator, synced from +0x30e (dog.md; 1.2 carried: 2 of 2 accesses)"
+C_dog,0x30E,0x30E,prints_left,i8,st0rm94,"[H] armed to 10, one per placed print (dog.md; 1.2 carried: 4 of 4 accesses)"
+C_dog,0x30F,0x30F,hostile,bool,st0rm94,[H] gates dog_update's 2000 ms target test (dog.md; 1.2 carried: 4 of 4 accesses)
+C_door,,0x70,state,i32,st0rm94,"[H] 0 resting OPEN, 1 resting CLOSED (door.md; 1.2 not carried: accesses disagree {'0x70': 1})"
+C_door,,0x74,angle,f32,st0rm94,[H] current = fraction x max_angle (door.md; 1.2 not carried: accesses disagree {'0x74': 1})
+C_door,,0x78,coll,tDynamicCollObject,st0rm94,[H] embedded (door.md; 1.2 not carried: accesses disagree {'0x78': 1})
+C_door,0x110,0x110,flags,u32,st0rm94,[H] see the flag table below (door.md; 1.2 carried: 11 of 11 accesses)
+C_door,,0x114,leaf_next,ptr:C_door,st0rm94,"[H] the other leaf, pushed to (door.md; 1.2 not carried: accesses disagree {'0x114': 1})"
+C_door,0x118,0x118,leaf_prev,ptr:C_door,st0rm94,"[H] the other leaf, walked up from (door.md; 1.2 carried: 3 of 3 accesses)"
+C_door,0x11D,0x11D,hinge_enabled,bool,st0rm94,[H] gates the step-3 geometry (door.md; 1.2 carried: 4 of 4 accesses)
+C_door,0x11E,0x11E,mirror,bool,st0rm94,[H] negates the hinge axis (door.md; 1.2 carried: 6 of 6 accesses)
+C_door,0x120,0x120,max_angle,f32,st0rm94,[H] ctor seeds pi/2 (0x3fc90fdb) (door.md; 1.2 carried: 8 of 8 accesses)
+C_door,0x124,0x124,start_open,bool,st0rm94,[M] door_game_init: set => door_set_state(2) and (door.md; 1.2 carried: 4 of 4 accesses)
+C_door,0x125,0x125,locked,bool,st0rm94,[H] set by door_lock (case 0x26) (door.md; 1.2 carried: 6 of 6 accesses)
+C_door,0x128,0x128,open_speed,f32,st0rm94,[H] door_ai: angle += dt * this while state 2 (door.md; 1.2 carried: 4 of 4 accesses)
+C_door,0x12C,0x12C,close_speed,f32,st0rm94,[H] door_ai: angle -= dt * this while state 3 (door.md; 1.2 carried: 4 of 4 accesses)
+C_door,0x130,0x130,snd_open,chars[16],st0rm94,[H] default `d_woodop.wav` (door.md; 1.2 carried: 5 of 5 accesses)
+C_door,0x140,0x140,snd_close,chars[16],st0rm94,[H] default `d_woodcl.wav` (door.md; 1.2 carried: 5 of 5 accesses)
+C_door,0x150,0x150,snd_locked,chars[16],st0rm94,[H] default `d_woodlo.wav` (door.md; 1.2 carried: 3 of 3 accesses)
+C_door,,0x160,last_sound_ms,u32,st0rm94,[H] the 1000 ms re-trigger gate (door.md; 1.2 not carried: accesses disagree {'0x160': 1})
+C_door,0x164,0x164,hinge_locked,bool,st0rm94,[H] skips the hinge push in step 3 (door.md; 1.2 carried: 3 of 3 accesses)
+C_door,,0x168,hinge_offset,f32[3],st0rm94,"[H] local-space, drives the mirror test (door.md; 1.2 not carried: accesses disagree {'0x168': 1})"
+C_door,,0x174,hinge_matrix,f32[16],st0rm94,"[H] cached by GameInit, used by GetBoundPoints2D (door.md; 1.2 not carried: no access in the paired code)"
+C_door,0x180,0x180,uo,S_using_object,st0rm94,[H] the player action-menu record (door.md; 1.2 carried: 2 of 2 accesses)
+C_driver,0x4,0x4,motion_begin,ptr:vec_node,st0rm94,[H] std::vector<node> (stride 0x70) swept motion samples (driver.md; 1.2 carried: 191 of 191 accesses)
+C_driver,0x8,0x8,motion_end,ptr:vec_node,st0rm94,[H] built by driver_predict_collision (driver.md; 1.2 carried: 206 of 207 accesses)
+C_driver,0xC,0xC,motion_cap,ptr:vec_node,st0rm94,[H] (driver.md; 1.2 carried: 4 of 4 accesses)
+C_driver,0x10,0x10,car,ptr:C_car,st0rm94,[H] the driven car (driver_set_car) (driver.md; 1.2 carried: 46 of 46 accesses)
+C_driver,0x14,0x14,coef_040,f32,st0rm94,[M] 0.4f ctor (driver.md; 1.2 carried: 2 of 2 accesses)
+C_driver,0x18,0x18,coef_070,f32,st0rm94,[M] 0.7f ctor (driver.md; 1.2 carried: 2 of 2 accesses)
+C_driver,,0x1C,box_corner_a,f32[3],st0rm94,[H] +0x1C..+0x24 collision half-box corner A (driver.md; 1.2 not carried: accesses disagree {'0x1C': 1})
+C_driver,,0x28,box_corner_b,f32[3],st0rm94,[H] +0x28..+0x30 collision half-box corner B (driver.md; 1.2 not carried: accesses disagree {'0x28': 1})
+C_driver,0x34,0x34,collision_radius,f32,st0rm94,[H] min(vehicle size)*0.7 (driver_set_car) (driver.md; 1.2 carried: 9 of 9 accesses)
+C_driver,0x38,0x38,brake_onset_time,f32,st0rm94,[H] time-to-corner (driver_compute_brake_onset / driver_compute_corner_speed_limit) (driver.md; 1.2 carried: 3 of 3 accesses)
+C_driver,0x3C,0x3C,brake_onset_dist,f32,st0rm94,[H] distance-to-corner (driver.md; 1.2 carried: 17 of 17 accesses)
+C_driver,0x40,0x40,collision_hit,f32[3],st0rm94,[M] +0x40..+0x48 predicted collision point (actor_is_possible_coll_all out) (driver.md; 1.2 carried: 4 of 4 accesses)
+C_driver,0x4C,0x4C,avoid_dir,f32[3],st0rm94,[M] +0x4C..+0x54 obstacle-avoidance direction (driver.md; 1.2 carried: 2 of 2 accesses)
+C_driver,0x58,0x58,obstacle_seg,f32[3],st0rm94,[M] +0x58..+0x60 obstacle segment endpoint (driver.md; 1.2 carried: 5 of 5 accesses)
+C_driver,0x64,0x64,path_node_count,u32,st0rm94,"[H] (end-begin)/0x70, recomputed each tick (driver.md; 1.2 carried: 11 of 11 accesses)"
+C_driver,0x68,0x68,next_node_cursor,u32,st0rm94,[H] cursor+1 (wraps) (driver.md; 1.2 carried: 8 of 8 accesses)
+C_driver,0x6C,0x6C,target_pos,f32[3],st0rm94,[H] +0x6C..+0x74 current target-node world position (driver.md; 1.2 carried: 9 of 9 accesses)
+C_driver,,0x78,committed_cursor,u32,st0rm94,[M] cursor snapshot after path recompile/erase (driver.md; 1.2 not carried: no access in the paired code)
+C_driver,0x7C,0x7C,scale_a,f32,st0rm94,[H] 1.0f steer-blend scale (driver.md; 1.2 carried: 2 of 2 accesses)
+C_driver,0x80,0x80,scale_b,f32,st0rm94,[H] 1.0f steer-blend scale (reverse) (driver.md; 1.2 carried: 2 of 2 accesses)
+C_driver,0x84,0x84,speed_factor,f32,st0rm94,[H] THROTTLE SCALE = g_police_speed_factor (reset=1.0) (driver.md; 1.2 carried: 2 of 2 accesses)
+C_driver,0x88,0x88,dir_to_target,f32[3],st0rm94,[H] +0x88..+0x90 direction target - car pos (driver.md; 1.2 carried: 48 of 48 accesses)
+C_driver,0xA0,0xA0,car_basis_x,f32[3],st0rm94,[M] +0xA0..+0xA8 cached car right/basis vector (driver.md; 1.2 carried: 4 of 4 accesses)
+C_driver,0xAC,0xAC,car_forward_v,f32[3],st0rm94,[M] +0xAC..+0xB4 cached car forward vector (driver.md; 1.2 carried: 7 of 7 accesses)
+C_driver,,0xB8,car_up_v,f32[3],st0rm94,[M] +0xB8..+0xC0 cached car up vector (driver.md; 1.2 not carried: accesses disagree {'0xB8': 1})
+C_driver,0xC4,0xC4,car_pos,f32[3],st0rm94,[H] +0xC4..+0xCC cached car world position (driver.md; 1.2 carried: 8 of 8 accesses)
+C_driver,,0xD0,steer_lookat,f32[3],st0rm94,[M] +0xD0..+0xD8 steering look-at vector (driver_turn) (driver.md; 1.2 not carried: no access in the paired code)
+C_driver,0xDC,0xDC,brake_out,f32,st0rm94,"[H] BRAKE PEDAL [0,1] (driver_compute_brake_pedal) (driver.md; 1.2 carried: 6 of 6 accesses)"
+C_driver,,0xE0,avoid_point,f32[3],st0rm94,[M] +0xE0..+0xE8 predicted avoidance point (driver_reduce_speed_in_corner) (driver.md; 1.2 not carried: accesses disagree {'0xE0': 1})
+C_driver,0xEC,0xEC,accel_limit,f32,st0rm94,[M] derived accel/curvature limit (driver_fill_start_values) (driver.md; 1.2 carried: 15 of 15 accesses)
+C_driver,0xF0,0xF0,brake_gain,f32,st0rm94,[M] +0x18 * accel_limit (driver.md; 1.2 carried: 3 of 3 accesses)
+C_driver,0xF4,0xF4,accel_gain,f32,st0rm94,[M] +0x14 * accel_limit (driver.md; 1.2 carried: 2 of 2 accesses)
+C_driver,0xF8,0xF8,brake_divisor,f32,st0rm94,[M] car speed-accel (driver.md; 1.2 carried: 3 of 3 accesses)
+C_driver,0xFC,0xFC,accel_cap,f32,st0rm94,[M] GetForwardForceMax-derived (driver.md; 1.2 carried: 7 of 7 accesses)
+C_driver,0x100,0x100,side_cap,f32,st0rm94,[M] GetSideForceMax-derived (driver.md; 1.2 carried: 3 of 3 accesses)
+C_driver,0x104,0x104,throttle_scale,f32,st0rm94,[H] 0..1 (driver.md; 1.2 carried: 7 of 7 accesses)
+C_driver,0x108,0x108,lookahead_node,u32,st0rm94,[H] look-ahead node index (driver_last_route_in_brake_path) (driver.md; 1.2 carried: 4 of 4 accesses)
+C_driver,,0x110,prev_dir,f32[3],st0rm94,[M] +0x110..+0x11C previous-frame steer dir (driver_predictive_sphere_lane_cross reads) (driver.md; 1.2 not carried: accesses disagree {'0x110': 1})
+C_driver,0x124,0x124,seed_pos,f32[3],st0rm94,[H] +0x124..+0x12C seed target (driver_reset: 1st node) (driver.md; 1.2 carried: 7 of 7 accesses)
+C_driver,,0x130,blink_l_table,i16,st0rm94,[M] +0x130..+0x148 left/brake indicator random timing table (driver_do_lights) (driver.md; 1.2 not carried: no access in the paired code)
+C_driver,,0x14C,blink_r_table,i16,st0rm94,[M] +0x14C..+0x15C engine-sound timing table (driver_do_sounds) (driver.md; 1.2 not carried: no access in the paired code)
+C_driver,0x164,0x164,path_begin,ptr:node,st0rm94,"[H] std::vector<node> chase path (stride 0x70, §3) (driver.md; 1.2 carried: 34 of 34 accesses)"
+C_driver,0x168,0x168,path_end,ptr:node,st0rm94,[H] (driver.md; 1.2 carried: 6 of 6 accesses)
+C_driver,0x16C,0x16C,path_cap,ptr:node,st0rm94,[H] (driver.md; 1.2 carried: 2 of 2 accesses)
+C_driver,0x170,0x170,path_cursor,u32,st0rm94,[H] current path-node index (driver.md; 1.2 carried: 25 of 25 accesses)
+C_driver,0x174,0x174,prev_node,u32,st0rm94,[H] cursor-1 (wraps) (driver.md; 1.2 carried: 13 of 13 accesses)
+C_driver,0x178,0x178,near_end_flag,u8,st0rm94,[M] within 2 nodes of path end (driver.md; 1.2 carried: 2 of 2 accesses)
+C_driver,0x17C,0x17C,lookahead_dist,f32,st0rm94,[H] 17.0f ctor (driver.md; 1.2 carried: 3 of 3 accesses)
+C_driver,,0x19C,flags,u32,st0rm94,"[H] bit0 reverse-req, bit2(0x4) overshoot, bit3(0x8) stop (driver.md; 1.2 not carried: accesses disagree {'0x11C': 42, '0x19C': 23})"
+C_driver,0x1A0,0x1A0,cur_obstacle,ptr,st0rm94,[H] current predicted obstacle entity (driver.md; 1.2 carried: 11 of 11 accesses)
+C_driver,0x1B0,0x1B0,owned_buf,ptr,st0rm94,[H] +0x1B0..+0x1B8 owned buffer (dtor frees) (driver.md; 1.2 carried: 3 of 3 accesses)
+C_driver,0x1C0,0x1C0,target_speed,f32,st0rm94,[H] cornering speed cap (driver_compute_corner_speed_limit / driver_reduce_speed_in_corner) (driver.md; 1.2 carried: 18 of 18 accesses)
+C_driver,0x1C8,0x1C8,speed_jitter,f32,st0rm94,[M] 1.0f ctor (driver.md; 1.2 carried: 3 of 3 accesses)
+C_driver,0x1CC,0x1CC,jitter_period,f32,st0rm94,[M] 5000.0f ctor (driver.md; 1.2 carried: 2 of 2 accesses)
+C_driver,0x1D4,0x1D4,node_reach_dist,f32,st0rm94,[M] 30.0f default (driver.md; 1.2 carried: 5 of 5 accesses)
+C_driver,0x1D8,0x1D8,mode_flags,u8,st0rm94,[M] &1 / &2 driving sub-mode bits (driver.md; 1.2 carried: 6 of 6 accesses)
+C_driver,0x1DC,0x1DC,state_flags,u32,st0rm94,"[H] 0x2, 0x1000, 0x10000000 (path-recompiled) masks (driver.md; 1.2 carried: 9 of 9 accesses)"
+C_driver,,0x1E0,steer_out,f32,st0rm94,[H] steering output (driver.md; 1.2 not carried: accesses disagree {'0x1E0': 1})
+C_driver,0x1E4,0x1E4,signal_flags,u32,st0rm94,"[H] 0x100 horn, 0x1000000 L-indicator armed, 0x2000000 sound armed, &3 lane (driver.md; 1.2 carried: 20 of 20 accesses)"
+C_driver,0x1FC,0x1FC,target_actor,ptr:C_actor,st0rm94,[H] pursued actor (set at dispatch) (driver.md; 1.2 carried: 2 of 2 accesses)
+C_driver,0x200,0x200,target_vehicle,ptr:C_Vehicle,st0rm94,[H] target's vehicle (set at dispatch) (driver.md; 1.2 carried: 2 of 2 accesses)
+C_driver,0x204,0x204,excluded_obstacle,ptr,st0rm94,[M] obstacle to ignore (self/target) (driver.md; 1.2 carried: 3 of 3 accesses)
+C_driver,0x208,0x208,drive_mode,u32,st0rm94,"[H] 0 free chase, 1 follow actor, 2 follow vehicle (1 at dispatch) (driver.md; 1.2 carried: 7 of 7 accesses)"
+C_driver,,0x20C,stuck_timer,u32,st0rm94,"[H] += dt (driver.md; 1.2 not carried: its accesses say 0x18C, the fields around it move by +0x0)"
+C_driver,0x210,0x210,brake_lookahead_dist,f32,st0rm94,"[M] ramped look-ahead braking DISTANCE, not speed (driver_ramp_brake_distance) (driver.md; 1.2 carried: 15 of 15 accesses)"
+C_driver,,0x214,interp_enable,u8,st0rm94,[M] 1 ctor (driver.md; 1.2 not carried: accesses disagree {'0x214': 1})
+C_driver,0x21C,0x21C,run_timer,u32,st0rm94,[H] += dt each tick (gates gas: run_timer<1 => gas 0) (driver.md; 1.2 carried: 2 of 2 accesses)
+C_driver,0x224,0x224,committed_node,i32,st0rm94,[H] -1 sentinel (ctor + driver_set_car) (driver.md; 1.2 carried: 3 of 3 accesses)
+C_entity,0x78,0x78,act_state,u32,st0rm94,[H] act/anim state (entity.md; 1.2 carried: 2 of 2 accesses)
+C_entity,0xA9C,0xA9C,program,C_program,code,its constructor called on this+offset by C_entity's
+C_entity,,0xAFC,faded,f32,st0rm94,"[H] visibility/""faded"" fraction (entity.md; 1.2 not carried: accesses disagree {'0xAFC': 1})"
+C_entity,0xB04,0xB04,vis_logs,ai_vis_logs,st0rm94,[H] the ai_vis_logs SUB-OBJECT BASE (entity.md; 1.2 carried: 3 of 3 accesses)
+C_entity,0xBB4,0xBB4,sensors,ai_sensors,st0rm94,[H] the ai_sensors SUB-OBJECT BASE (entity.md; 1.2 carried: 5 of 5 accesses)
+C_entity,0xE88,0xE88,ai_logs,ai_logs,st0rm94,[H] the ai_logs SUB-OBJECT BASE (entity.md; 1.2 carried: 3 of 3 accesses)
+C_entity,0xEBC,0xEBC,character,ai_character,st0rm94,"[H] the ai_character SUB-OBJECT BASE, size 0x28 (entity.md; 1.2 carried: 2 of 2 accesses)"
+C_entity,0xF08,0xF08,entity_flags,u32,st0rm94,"[H] the entity's script/AI flag word, one word (entity.md; 1.2 carried: 3 of 3 accesses)"
+C_entity,,0xF1C,anger,ai_modifier,st0rm94,"[H] {value, rate_per_ms, remaining_ms}, stride 0xc (entity.md; 1.2 not carried: accesses disagree {'0xF1C': 1})"
+C_entity,,0xF28,fear,ai_modifier,st0rm94,[H] same triple (entity.md; 1.2 not carried: accesses disagree {'0xF28': 1})
+C_entity,,0xF34,threat,ai_modifier,st0rm94,[H] same triple (entity.md; 1.2 not carried: accesses disagree {'0xF34': 1})
+C_entity,0xF40,0xF40,ai_state,u32,st0rm94,[H] the entity's AI state enum (entity.md; 1.2 carried: 10 of 10 accesses)
+C_entity,0xF48,0xF48,flags,u32,st0rm94,[H] flag word (entity.md; 1.2 carried: 4 of 4 accesses)
+C_entity,0xF4C,0xF4C,human_type_group,u32,st0rm94,[H] fixed at entity_game_init from human_type (entity.md; 1.2 carried: 8 of 8 accesses)
+C_entity,0xF50,0xF50,ai_flags,u32,st0rm94,"[H] two bits, nothing else is set or read (entity.md; 1.2 carried: 3 of 3 accesses)"
+C_entity,0xF64,0xF64,fight_modes,ai_fight_modes,st0rm94,[H] the ai_fight_modes SUB-OBJECT BASE (entity.md; 1.2 carried: 4 of 4 accesses)
+C_entity,0x10B8,0x10B8,lock_vec_begin,ptr:ai_substate_lock,st0rm94,"[H] vector<ai_substate_lock>, stride (entity.md; 1.2 carried: 4 of 4 accesses)"
+C_entity,0x10BC,0x10BC,lock_vec_end,ptr:ai_substate_lock,st0rm94,[H] (entity.md; 1.2 carried: 4 of 4 accesses)
+C_entity,,0x10C4,locked_state,u32,st0rm94,[H] the LOCKED STATE (entity.md; 1.2 not carried: accesses disagree {'0x10C4': 1})
+C_entity,,0x10C8,lock_aux,u32,st0rm94,[H] write-only: entity_lock_substate's `aux` (entity.md; 1.2 not carried: accesses disagree {'0x10C8': 1})
+C_entity,,0x10CC,talk,ai_talkman,st0rm94,"[H] the NPC speech scheduler, 0x98 bytes, ends at (entity.md; 1.2 not carried: accesses disagree {'0x10CC': 1})"
+C_entity,0x1164,0x1164,actions,ai_action_manager,st0rm94,[H] the ACTION QUEUE sub-object - byte-proven (entity.md; 1.2 carried: 9 of 9 accesses)
+C_entity,0x1174,0x1174,vector0,f32[3],code,its constructor called on this+offset by C_entity's
+C_entity,0x1184,0x1184,vector1,f32[3],code,its constructor called on this+offset by C_entity's
+C_entity,0x119C,0x119C,bc_begin,ptr:blocked_con,st0rm94,[H] std::vector<blocked_con> (head +0x1198) - (entity.md; 1.2 carried: 4 of 4 accesses)
+C_entity,0x11A0,0x11A0,bc_end,ptr:blocked_con,st0rm94,[H] (entity.md; 1.2 carried: 4 of 4 accesses)
+C_entity,,0x11B4,head_dir,f32[3],st0rm94,[H] head/look DIRECTION (entity_get_head_dir) (entity.md; 1.2 not carried: no access in the paired code)
+C_entity,,0x11C0,head_pos,f32[3],st0rm94,[H] head POSITION - the eye/ear point perception is (entity.md; 1.2 not carried: no access in the paired code)
+C_entity,0x11CC,0x11CC,neck_bone,u32,st0rm94,[H] the cached neck-bone handle (entity.md; 1.2 carried: 4 of 4 accesses)
+C_entity,,0x11D0,weapon_def_param,f32,st0rm94,[H] write-only copy of weapon_def+0x6c (§5) (entity.md; 1.2 not carried: no access in the paired code)
+C_entity,,0x11D4,weapon_max_range,f32,st0rm94,[H] from weapon_def+0x74 (entity.md; 1.2 not carried: no access in the paired code)
+C_entity,,0x11D8,weapon_best_range,f32,st0rm94,[H] from weapon_def+0x70 (entity.md; 1.2 not carried: no access in the paired code)
+C_entity,,0x11DC,weapon_spread,f32,st0rm94,[H] from weapon_def+0x88 (entity.md; 1.2 not carried: no access in the paired code)
+C_entity,0x11E0,0x11E0,weapon_readiness,f32,st0rm94,[H] 0->1 fraction (entity.md; 1.2 carried: 2 of 2 accesses)
+C_entity,,0x11E8,weapon_state,u32,st0rm94,"[H] weapon-state FSM, values 1..6 (entity.md; 1.2 not carried: accesses disagree {'0x11E8': 1})"
+C_entity,0x11EC,0x11EC,weapon_is_armed,u8,st0rm94,[H] 1 = a weapon is drawn (entity.md; 1.2 carried: 2 of 2 accesses)
+C_entity,0x1268,0x1268,ghost,ai_ghost,st0rm94,[H] the object base (structs/ai_ghost.md) (entity.md; 1.2 carried: 3 of 3 accesses)
+C_entity,0x126C,0x126C,ghost_begin,ptr,st0rm94,[H] = ghost + 0x04 (entity.md; 1.2 carried: 3 of 3 accesses)
+C_entity,0x1270,0x1270,ghost_end,ptr,st0rm94,[H] (entity.md; 1.2 carried: 2 of 2 accesses)
+C_entity,0x127C,0x127C,ai_target_fear,ptr,st0rm94,[H] best-by-fear target slot (ai_logs_get_max_fear) (entity.md; 1.2 carried: 3 of 3 accesses)
+C_entity,0x1280,0x1280,ai_target_angry,ptr,st0rm94,[H] best-by-anger target slot (ai_logs_get_max_angry) (entity.md; 1.2 carried: 2 of 2 accesses)
+C_fire,0x0,0x0,pos,f32[3],st0rm94,"[H] world position, copied by fire_init (fire.md; 1.2 carried: 23 of 23 accesses)"
+C_fire,0xC,0xC,parent,ptr:I3D_frame,st0rm94,[H] the frame the particle and sound bind to (fire.md; 1.2 carried: 5 of 5 accesses)
+C_fire,0x10,0x10,lifetime_ms,i32,st0rm94,[H] counted down by fire_tick (fire.md; 1.2 carried: 5 of 5 accesses)
+C_fire,0x14,0x14,radius_sq,f32,st0rm94,[H] fire_init stores radius * radius (fire.md; 1.2 carried: 4 of 4 accesses)
+C_fire,0x18,0x18,damage_rate,f32,st0rm94,[H] damage per second of remaining lifetime (fire.md; 1.2 carried: 3 of 3 accesses)
+C_fire,0x1C,0x1C,pulse_accum_ms,u32,st0rm94,[H] accumulates dt (fire.md; 1.2 carried: 4 of 4 accesses)
+C_fire,0x20,0x20,pulse_period_ms,u32,st0rm94,[H] ctor 200 (fire.md; 1.2 carried: 2 of 2 accesses)
+C_fire,0x24,0x24,sound,ptr,st0rm94,"[H] driver object type 4, only above 2000 ms (fire.md; 1.2 carried: 20 of 20 accesses)"
+C_fire,0x28,0x28,deals_damage,i8,st0rm94,[H] the damage pulses run only while set (fire.md; 1.2 carried: 2 of 2 accesses)
+C_fire,0x2C,0x2C,particle_id,i32,st0rm94,[H] particle effect type 0x15 (fire.md; 1.2 carried: 4 of 4 accesses)
+C_game,0x4C,0x4C,camera,G_Camera,game_build.h,gameCamera
+C_game,0xE4,0xE4,player,ptr:C_player,game.h,kGamePlayer
+C_game,0x1D8,0x1D8,shots,ptr:S_shot,game.h,kGameShots
+C_game,0x218,0x218,vector0,f32[3],code,its constructor called on this+offset by C_game's
+C_game,0x250,0x250,vector1,f32[3],code,its constructor called on this+offset by C_game's
+C_game,0x29FC,0x29FC,vector2,f32[3],code,its constructor called on this+offset by C_game's
+C_game,0x2D90,,tshift,C_tshift,code,its constructor called on this+offset by C_game's
+C_game,0x363E,0x363E,score_shown,u8,game.h,kGameScoreShown
+C_game,0x3640,0x3640,score,i32,game.h,kGameScore
+C_grenade,0x138,0x138,fuse_timed_armed,i8,st0rm94,[H] GameInit clears (grenade.md; 1.2 carried: 2 of 2 accesses)
+C_grenade,0x13C,0x13C,fuse_ms_remaining,i32,st0rm94,[H] AI subtracts the frame delta (grenade.md; 1.2 carried: 2 of 2 accesses)
+C_grenade,0x140,0x140,fuse_on_impact,i8,st0rm94,[H] arms the +0x100 impact counter instead (grenade.md; 1.2 carried: 3 of 3 accesses)
+C_grenade,0x141,0x141,do_explosion,i8,st0rm94,[H] selects the game_new_explosion arm (grenade.md; 1.2 carried: 2 of 2 accesses)
+C_grenade,0x144,0x144,explosion_radius,f32,st0rm94,[H] arg 4 of game_new_explosion (grenade.md; 1.2 carried: 2 of 2 accesses)
+C_grenade,0x148,0x148,explosion_damage,f32,st0rm94,[H] arg 5 of game_new_explosion (grenade.md; 1.2 carried: 2 of 2 accesses)
+C_grenade,0x14C,0x14C,do_fire,i8,st0rm94,[H] selects the game_new_fire arm (grenade.md; 1.2 carried: 2 of 2 accesses)
+C_grenade,0x150,0x150,fire_lifetime_ms,i32,st0rm94,[H] arg 4 of game_new_fire = C_fire +0x10 (grenade.md; 1.2 carried: 2 of 2 accesses)
+C_grenade,0x154,0x154,fire_radius,f32,st0rm94,"[H] arg 5 of game_new_fire, squared into +0x14 (grenade.md; 1.2 carried: 2 of 2 accesses)"
+C_grenade,0x158,0x158,fire_damage_rate,f32,st0rm94,[H] arg 6 of game_new_fire = C_fire +0x18 (grenade.md; 1.2 carried: 2 of 2 accesses)
+C_grenade,,0x15C,net_direct_enabled,i8,st0rm94,[H] ctor sets 1 (grenade.md; 1.2 not carried: no access in the paired code)
+C_human,0x70,0x70,anim_slot,u32,st0rm94,"[H] the anim the human is CURRENTLY IN (read, not written, by the (human.md; 1.2 carried: 88 of 88 accesses)"
+C_human,0x74,0x74,cur_anim_id,u32,st0rm94,[H] the anim id being REQUESTED this frame (human.md; 1.2 carried: 132 of 132 accesses)
+C_human,0x98,0x98,vehicle,ptr,game.h,kHumanVehicle; st0rm94: vehicle_link
+C_human,0x9C,0x9C,vehicle_link_2,ptr,st0rm94,[M] SECOND vehicle slot (human.md; 1.2 carried: 52 of 52 accesses)
+C_human,0xAC,0xAC,seat_index,i32,st0rm94,[H] seat index in the occupied vehicle (human.md; 1.2 carried: 431 of 431 accesses)
+C_human,0xBC,0xBC,anim_machine,C_animations_machine_de_luxe,game_build.h,humanAnimMachine; st0rm94: anim_machine
+C_human,0x1E4,0x1E4,crouched,u8,st0rm94,[H] CROUCHED stance flag (human.md; 1.2 carried: 35 of 35 accesses)
+C_human,0x1E5,0x1E5,aimed,u8,st0rm94,[H] AIMED stance flag (human.md; 1.2 carried: 27 of 27 accesses)
+C_human,0x1E8,0x1E8,weapon_class,u32,st0rm94,"[H] the in-hand item's WEAPON CLASS, copied from its (human.md; 1.2 carried: 35 of 35 accesses)"
+C_human,0x1EC,0x1EC,shooting,u8,st0rm94,[H] the SHOOTING latch: while set and weapon_class is 1-3 (a (human.md; 1.2 carried: 26 of 26 accesses)
+C_human,0x1F0,0x1F0,aimed_fire_action,ptr,st0rm94,[H] ptr to the aimed-fire action table (=&g_fire_action_aimed) (human.md; 1.2 carried: 18 of 18 accesses)
+C_human,0x1F4,0x1F4,aimed_fire_param,u32,st0rm94,[M] zeroed when the aimed-fire block is armed (human.md; 1.2 carried: 24 of 24 accesses)
+C_human,0x1FE,0x1FE,shotgun_reload_pending,u8,st0rm94,[H] the pump shotgun's shell-by-shell reload is running (§2) (human.md; 1.2 carried: 14 of 14 accesses)
+C_human,0x218,0x218,throw_charge_start_ms,u32,st0rm94,[H] mission clock when the throw wind-up began (§2) (human.md; 1.2 carried: 3 of 3 accesses)
+C_human,0x21C,0x21C,throw_charging,u8,st0rm94,[H] a grenade / Molotov throw is being wound up (§2) (human.md; 1.2 carried: 15 of 15 accesses)
+C_human,0x22C,0x22C,extended_anim_active,u8,st0rm94,"[H] the 4.0f ""extended"" aim animation is up (human.md; 1.2 carried: 5 of 5 accesses)"
+C_human,0x22D,0x22D,sniper_mode_flag,u8,st0rm94,[H] set/cleared by player_set_sniper_mode (human.md; 1.2 carried: 2 of 2 accesses)
+C_human,0x22E,0x22E,ground_unsettled,u8,st0rm94,[H] the ground under the human may change: an idle (human.md; 1.2 carried: 7 of 7 accesses)
+C_human,0x230,0x230,weapon_model_dirty,u8,st0rm94,[H] the visible weapon geometry needs rebuilding (human.md; 1.2 carried: 8 of 8 accesses)
+C_human,0x23C,0x23C,actions,u8,game_build.h,humanActs; st0rm94: shock_clip_armed
+C_human,0x240,0x240,shock_clip_a,u32,st0rm94,[H] the knock-down clip: `severity*3 + 0x3d` (human.md; 1.2 carried: 56 of 56 accesses)
+C_human,0x254,0x254,shock_clip_b,u32,st0rm94,[H] the second clip staged with it: `severity*3 + 0x3e` (= clip_a + 1) (human.md; 1.2 carried: 3 of 3 accesses)
+C_human,0x2A0,0x2A0,action_index,i32,game_build.h,humanActIndex
+C_human,0x2DC,0x2DC,parts,u8,game_build.h,humanParts; st0rm94: shot_skeleton
+C_human,0x40C,0x40C,state,i32,game_build.h,humanState; st0rm94: movement_mode
+C_human,0x410,0x410,action_type,u32,st0rm94,[M] the in-progress action (human.md; 1.2 carried: 10 of 10 accesses)
+C_human,0x418,0x418,fall_speed,f32,game.h,kHumanFallSpeed; st0rm94: fall_speed
+C_human,0x41C,0x41C,fall_started_in_jump,u8,st0rm94,[H] the fall began in the jump mode (0xb): the hard- (human.md; 1.2 carried: 2 of 2 accesses)
+C_human,0x420,0x420,velocity_ch,f32[3],st0rm94,[H] per-axis gas/velocity channels = speed·orient·speed_scale (written by Go_*) (human.md; 1.2 carried: 32 of 32 accesses)
+C_human,0x43C,0x43C,motion_intent,u32,st0rm94,[H] cleared by human_do_play_anim and by player_lock_controls (human.md; 1.2 carried: 38 of 38 accesses)
+C_human,0x44C,0x44C,mode_timer_ms,i32,st0rm94,"[H] countdown of the timed movement modes 5, 7 and 10 (human.md; 1.2 carried: 17 of 17 accesses)"
+C_human,0x478,0x478,target_vehicle,ptr,st0rm94,[H] the vehicle the human is going FOR (approaching / breaking (human.md; 1.2 carried: 6 of 6 accesses)
+C_human,0x47C,0x47C,shadow_frame_handle,u32,st0rm94,[M] handle returned by game_add_frame_for_shadow (human.md; 1.2 carried: 12 of 12 accesses)
+C_human,0x480,0x480,inventory,G_Inventory,game.h,kHumanInventory
+C_human,0x564,0x564,weapon_model_frame,ptr:I3D_frame,st0rm94,[H] the VISIBLE WEAPON's model frame (human.md; 1.2 carried: 78 of 78 accesses)
+C_human,0x568,0x568,weapon_model_frame_2,ptr:I3D_frame,st0rm94,[M] second weapon/held-item model frame (human.md; 1.2 carried: 25 of 25 accesses)
+C_human,0x56C,0x56C,weapon_attach_long_gun,ptr:I3D_frame,st0rm94,[H] attach frame for weapon_class 2 or 3 (the long guns) (human.md; 1.2 carried: 15 of 15 accesses)
+C_human,0x570,0x570,weapon_attach_default,ptr:I3D_frame,st0rm94,[H] attach frame for every other weapon_class (human.md; 1.2 carried: 15 of 15 accesses)
+C_human,0x580,0x580,weapon_position_dirty,u8,st0rm94,"[H] ""the weapon model needs re-seating"" (human.md; 1.2 carried: 9 of 9 accesses)"
+C_human,0x590,0x590,idle_variation_timer_ms,i32,st0rm94,[H] armed to 5000 + rand while the idle clip plays (human.md; 1.2 carried: 12 of 14 accesses)
+C_human,0x594,0x594,clip_hold_ms,i32,st0rm94,[H] while >= 0 a slightly lower clip id cannot replace (human.md; 1.2 carried: 14 of 14 accesses)
+C_human,0x5FC,0x5FC,human_type,u32,st0rm94,"[H] the human's TYPE / faction, as a **SINGLE-BIT MASK** (human.md; 1.2 carried: 10 of 10 accesses)"
+C_human,0x600,0x600,prop_max,f32[15],st0rm94,[H] 0 Strenght(sic) 1 Energy 2 EnergyHandL 3 EnergyHandR (human.md; 1.2 carried: 4 of 4 accesses)
+C_human,0x604,0x604,health_max,f32,game.h,kHumanHealthMax
+C_human,0x63C,0x63C,f_63c,f32,st0rm94,[M] always 0.5f (human.md; 1.2 carried: 3 of 3 accesses)
+C_human,0x640,0x640,prop_cur,f32[15],st0rm94,"[H] the live values, same 15 indices (human.md; 1.2 carried: 8 of 8 accesses)"
+C_human,0x644,0x644,health,f32,game.h,kHumanHealth
+C_human,0x65C,0x65C,speed_scale,f32,st0rm94,[H] locomotion speed scale factor (multiplies the velocity channels) (human.md; 1.2 carried: 13 of 13 accesses)
+C_human,0x688,0x688,collisions,ptr,game_build.h,humanColl; st0rm94: dyn_coll_objects
+C_human,0x68C,0x68C,dyn_coll_frames,ptr,st0rm94,[H] parallel array of the I3D_frames they track (human.md; 1.2 carried: 7 of 7 accesses)
+C_human,0x690,0x690,collision_count,i32,game_build.h,humanCollCount; st0rm94: dyn_coll_count
+C_human,0x694,0x694,dyn_colls_active,u8,st0rm94,[H] 1 while the objects are registered with the collision world (human.md; 1.2 carried: 4 of 4 accesses)
+C_human,0x6D8,0x6D8,wingman_slot,i32,st0rm94,[H] the HUD wingman slot (0..3) that shows this human's (human.md; 1.2 carried: 3 of 3 accesses)
+C_human,,0x6DC,wingman_portrait,u32,st0rm94,[H] the portrait id (0..7) shown in that slot (human.md; 1.2 not carried: no access in the paired code)
+C_human,,0x6EC,print_total,i16,st0rm94,"[H] bloody-footprint alpha denominator (§2) (human.md; 1.2 not carried: accesses disagree {'0x6EC': 2, '0x6EE': 1})"
+C_human,0x6EE,0x6EE,prints_left,i16,st0rm94,[H] armed to 10 (human.md; 1.2 carried: 5 of 5 accesses)
+C_human,0x6F0,0x6F0,print_texture,u8,st0rm94,[H] decal texture index (human.md; 1.2 carried: 2 of 2 accesses)
+C_human,0x6F8,0x6F8,carried_object,ptr,st0rm94,[H] carried box/object slot (human_do_box_pick_up / human_do_box_drop) (human.md; 1.2 carried: 40 of 40 accesses)
+C_human,,0x6FC,carried_box_group,i32,st0rm94,"[H] the BOX GROUP id of +0x6f8 (human.md; 1.2 not carried: accesses disagree {'0x6FC': 2, '0x680': 1})"
+C_human,0x700,0x700,carried_object_2,ptr,st0rm94,[H] second carried-object slot — (human.md; 1.2 carried: 44 of 44 accesses)
+C_human,,0x720,no_hit_anim,u8,st0rm94,[H] suppress the flinch clip on a weapon hit (human.md; 1.2 not carried: accesses disagree {'0x720': 1})
+C_human,0xA58,0xA58,freeze_countdown_ms,i32,st0rm94,"[H] while > 0, human_update subtracts dt and returns (human.md; 1.2 carried: 3 of 3 accesses)"
+C_I3D_cache,,0x0,vptr,ptr,st0rm94,[H] the DERIVED class vtable (see §3) (i3d_cache.md; 1.2 not carried: no access in the paired code)
+C_I3D_cache,,0x4,item_alloc,i8,st0rm94,[H] MSVC std::allocator empty sub-object (i3d_cache.md; 1.2 not carried: no access in the paired code)
+C_I3D_cache,,0x8,items_begin,ptr:S_itm,st0rm94,[H] g_i3d_model_cache_items_begin (i3d_cache.md; 1.2 not carried: no access in the paired code)
+C_I3D_cache,,0xC,items_end,ptr:S_itm,st0rm94,[H] g_i3d_model_cache_items_end (i3d_cache.md; 1.2 not carried: no access in the paired code)
+C_I3D_cache,,0x10,items_cap,ptr:S_itm,st0rm94,[H] capacity end (i3d_cache.md; 1.2 not carried: no access in the paired code)
+C_I3D_cache,,0x14,dir_alloc,i8,st0rm94,[H] second std::allocator sub-object (i3d_cache.md; 1.2 not carried: no access in the paired code)
+C_I3D_cache,,0x18,dirs_begin,ptr,st0rm94,[H] the search-directory string vector (i3d_cache.md; 1.2 not carried: no access in the paired code)
+C_I3D_cache,,0x1C,dirs_end,ptr,st0rm94,[H] (i3d_cache.md; 1.2 not carried: no access in the paired code)
+C_I3D_cache,,0x20,dirs_cap,ptr,st0rm94,[H] (i3d_cache.md; 1.2 not carried: no access in the paired code)
+C_I3D_cache,,0x24,size_limit,i32,st0rm94,"[H] g_i3d_model_cache_size_limit, = 0x100 (i3d_cache.md; 1.2 not carried: no access in the paired code)"
+C_mission,0x10,0x10,scene,ptr:I3D_scene,game.h,kMissionScene
+C_mission,0x24,0x24,game,ptr:C_game,game.h,kMissionGame
+C_mission,0x68,0x68,name,chars[32],game_build.h,missionName
+C_player,,0x628,field_628,f32,st0rm94,[M] = 1.0f (player_ctor) (player.md; 1.2 not carried: accesses disagree {'0x628': 1})
+C_player,,0x680,field_680,i32,st0rm94,[M] = 3 (player_ctor) (player.md; 1.2 not carried: accesses disagree {'0x680': 1})
+C_player,0xA9C,0xA9C,drive_primary_bits,u16,st0rm94,"[H] one bit per driving axis (1 steer, 2 accel (player.md; 1.2 carried: 14 of 14 accesses)"
+C_player,,0xAB0,field_ab0,i32,st0rm94,[M] = 200 (player_ctor) (player.md; 1.2 not carried: accesses disagree {'0xAB0': 1})
+C_player,0xAB4,0xAB4,model_base_frame,ptr:I3D_frame,st0rm94,"[H] cached ""base"" sub-frame of the player model (player.md; 1.2 carried: 3 of 3 accesses)"
+C_player,0xAB8,0xAB8,alpha,f32,st0rm94,"[H] CURRENT ALPHA (fade level), 1.0 = opaque (player.md; 1.2 carried: 9 of 9 accesses)"
+C_player,,0xABC,alpha_target,f32,st0rm94,[H] the fade target: 0.0 while the camera looks (player.md; 1.2 not carried: accesses disagree {'0xABC': 1})
+C_player,0xAD0,0xAD0,shot_accuracy_spread,f32,st0rm94,[H] accumulated per-shot accuracy penalty (crosshair (player.md; 1.2 carried: 11 of 11 accesses)
+C_player,0xAD4,0xAD4,shot_spread_window_ms,i32,st0rm94,[H] = 3000 ms on each shot (player.md; 1.2 carried: 7 of 7 accesses)
+C_player,0xAD8,0xAD8,action_button_scratch,i32,st0rm94,[M] used x2 by player_do_action_button_in_car (player.md; 1.2 carried: 3 of 3 accesses)
+C_player,0xADA,0xADA,controls_locked,u8,st0rm94,[H] player_lock_controls (player.md; 1.2 carried: 6 of 6 accesses)
+C_player,0xADC,0xADC,car_damage_window_ms,i32,st0rm94,"[H] = 3000 ms on show, -1 on invalidate (player.md; 1.2 carried: 5 of 5 accesses)"
+C_player,0xAE0,0xAE0,car_damage_target,ptr:C_car,st0rm94,[H] the car whose damage bar is displayed (player.md; 1.2 carried: 3 of 3 accesses)
+C_player,0xAF0,0xAF0,last_shown_weapon,u32,st0rm94,[H] last weapon slot announced by player_show_weapon_name (player.md; 1.2 carried: 2 of 2 accesses)
+C_program,0x0,0x0,vtable,ptr,st0rm94,[H] g_program_vt standalone / 0x0063b45c as a base (program.md; 1.2 carried: 755 of 755 accesses)
+C_program,0x4,0x4,source_a,str,st0rm94,[H] first serialised source string (program.md; 1.2 carried: 507 of 507 accesses)
+C_program,0x8,0x8,source_b,str,st0rm94,[H] the source text SetSourceCode writes and (program.md; 1.2 carried: 160 of 160 accesses)
+C_program,0x10,0x10,instr_begin,ptr:S_instruction,st0rm94,"[H] instruction vector, stride 8 = {opcode, payload*} (program.md; 1.2 carried: 42 of 42 accesses)"
+C_program,0x14,0x14,instr_end,ptr:S_instruction,st0rm94,[H] (program.md; 1.2 carried: 47 of 47 accesses)
+C_program,0x18,0x18,instr_cap,ptr:S_instruction,st0rm94,[H] (program.md; 1.2 carried: 21 of 21 accesses)
+C_program,0x1C,0x1C,pc,i32,st0rm94,[H] program counter = an index into the vector (program.md; 1.2 carried: 21 of 21 accesses)
+C_program,0x20,0x20,prev_pc,i32,st0rm94,[H] NextCommand saves the pc here (program.md; 1.2 carried: 6 of 6 accesses)
+C_program,0x24,0x24,instr_elapsed_ms,i32,st0rm94,[H] ms accumulated on the CURRENT instruction — (program.md; 1.2 carried: 16 of 16 accesses)
+C_program,0x28,0x28,susp_elapsed_ms,i32,st0rm94,[H] SetEvent snapshots +0x24 here at suspend (program.md; 1.2 carried: 4 of 4 accesses)
+C_program,0x2C,0x2C,susp_game_time_ms,i32,st0rm94,[H] SetEvent snapshots the game clock (program.md; 1.2 carried: 15 of 15 accesses)
+C_program,0x34,0x34,retstack_begin,ptr,st0rm94,"[H] the RETURN STACK — 2-byte packed frames, one (program.md; 1.2 carried: 12 of 12 accesses)"
+C_program,0x38,0x38,retstack_end,ptr,st0rm94,[H] per gosub / raised event (layout in §1c) (program.md; 1.2 carried: 10 of 10 accesses)
+C_program,0x40,0x40,ctx_head,ptr,st0rm94,"[H] saved-context list, 0x18-byte frames linked (program.md; 1.2 carried: 18 of 18 accesses)"
+C_program,0x44,0x44,act_state_owner,ptr:C_actor,st0rm94,"[H] ClearAfterEnd calls SetActState(this,2) on it (program.md; 1.2 carried: 12 of 12 accesses)"
+C_program,0x48,0x48,float_regs,ptr,st0rm94,[H] the script `flt[]` file (program.md; 1.2 carried: 17 of 18 accesses)
+C_program,0x4C,0x4C,float_reg_count,i32,st0rm94,[H] (program.md; 1.2 carried: 15 of 20 accesses)
+C_program,0x50,0x50,frame_regs,ptr,st0rm94,[H] typed by PS2 SetFrameReg's P9I3D_frame (program.md; 1.2 carried: 15 of 16 accesses)
+C_program,0x54,0x54,frame_reg_count,i32,st0rm94,[H] (program.md; 1.2 carried: 8 of 9 accesses)
+C_program,0x58,0x58,actor_regs,ptr,st0rm94,[H] typed by PS2 SetActorReg's P7C_actor (program.md; 1.2 carried: 15 of 16 accesses)
+C_program,0x5C,0x5C,actor_reg_count,i32,st0rm94,[H] (program.md; 1.2 carried: 11 of 12 accesses)
+C_program,0x60,0x60,run_scale,f32,st0rm94,[H] ctor and Init seed 0.5f (program.md; 1.2 carried: 5 of 5 accesses)
+C_program,0x64,0x64,running,i8,st0rm94,[H] keep executing instructions in the SAME (program.md; 1.2 carried: 5 of 5 accesses)
+C_program,0x65,0x65,stop_on_return,i8,st0rm94,"[H] when set, RETURN clears BOTH it and (program.md; 1.2 carried: 2 of 2 accesses)"
+C_program,0x66,0x66,in_compact_block,i8,st0rm94,[H] LeaveCompactBlock's gate (program.md; 1.2 carried: 3 of 3 accesses)
+C_program,0x67,0x67,compact_dir,i8,st0rm94,"[H] 1 = force backwards, 2 = force forwards (program.md; 1.2 carried: 3 of 3 accesses)"
+C_pumper,0xE0,0xE0,animations_machine_de_luxe,C_animations_machine_de_luxe,code,its constructor called on this+offset by C_pumper's
+C_racecam,,0x70,frame,ptr:I3D_frame,st0rm94,[H] the camera frame (racecam.md; 1.2 not carried: no access in the paired code)
+C_racecam,,0x74,param_a,f32,st0rm94,[H] designer value 70.0f (racecam.md; 1.2 not carried: no access in the paired code)
+C_racecam,,0x78,param_b,f32,st0rm94,[H] designer value 70.0f (racecam.md; 1.2 not carried: no access in the paired code)
+C_racecam,,0x7C,param_c,f32,st0rm94,[H] designer value 1.0f (racecam.md; 1.2 not carried: no access in the paired code)
+C_racecam,,0x80,gate_a,i32,st0rm94,[H] index of the gate before the camera (racecam.md; 1.2 not carried: no access in the paired code)
+C_racecam,,0x84,gate_b,i32,st0rm94,[H] index of the gate after the camera (racecam.md; 1.2 not carried: no access in the paired code)
+C_racing_optimal_segment,,0x0,pts,f32[30],st0rm94,[H] gate-crossing points along the racing line (racing.md; 1.2 not carried: no access in the paired code)
+C_racing_optimal_segment,,0x78,speed,f32[10],st0rm94,[H] the car's speed at each point (racing.md; 1.2 not carried: no access in the paired code)
+C_racing_optimal_segment,,0xA0,count,i32,st0rm94,[H] points actually recorded (racing.md; 1.2 not carried: no access in the paired code)
+C_racing_optimal_segment,,0xA4,time_ms,i32,st0rm94,[H] elapsed ms for this stretch (racing.md; 1.2 not carried: no access in the paired code)
+C_railway,0x2B0,,rail_human,S_rail_human,code,its constructor called on this+offset by C_railway's
+C_rmorf,,0x0,vtbl,ptr,st0rm94,"[H] 3 slots, g_random_morph_vt (random_morph.md; 1.2 not carried: no access in the paired code)"
+C_rmorf,,0x4,sets,ptr:RMRF_S_SETREF,st0rm94,"[H] head of the loaded-set list, 0 when idle (random_morph.md; 1.2 not carried: no access in the paired code)"
+C_roads,0x0,0x0,vtable,ptr,st0rm94,g_roads_vt 0x0063ee48 (roads.md; 1.2 carried: 90 of 90 accesses)
+C_roads,0x4,0x4,cross_alloc,u8,st0rm94,allocator byte (roads.md; 1.2 carried: 42 of 42 accesses)
+C_roads,0x8,0x8,cross_begin,ptr:S_crossing,st0rm94,"[H] crossing table, STRIDE 0xec (roads.md; 1.2 carried: 81 of 81 accesses)"
+C_roads,0xC,0xC,cross_end,ptr:S_crossing,st0rm94,(roads.md; 1.2 carried: 7 of 7 accesses)
+C_roads,0x10,0x10,cross_cap,ptr:S_crossing,st0rm94,(roads.md; 1.2 carried: 15 of 15 accesses)
+C_roads,0x14,0x14,node_alloc,u8,st0rm94,allocator byte (roads.md; 1.2 carried: 18 of 18 accesses)
+C_roads,0x18,0x18,node_begin,ptr:S_road_node,st0rm94,"[H] road-node table, STRIDE 0x18 (roads.md; 1.2 carried: 51 of 51 accesses)"
+C_roads,0x1C,0x1C,node_end,ptr:S_road_node,st0rm94,(roads.md; 1.2 carried: 14 of 14 accesses)
+C_roads,0x20,0x20,node_cap,ptr:S_road_node,st0rm94,(roads.md; 1.2 carried: 4 of 4 accesses)
+C_ShotSkeleton,0x0,0x0,joint,ptr:I3D_frame[16],st0rm94,[H] resolved at Init from g_shot_skeleton_joint_names (shot_skeleton.md; 1.2 carried: 10 of 10 accesses)
+C_ShotSkeleton,0x0,0x0,joint_a,u32,st0rm94,[H] index into joint[] (shot_skeleton.md; 1.2 carried: 10 of 10 accesses)
+C_ShotSkeleton,0x4,0x4,joint_b,u32,st0rm94,[H] index into joint[] (shot_skeleton.md; 1.2 carried: 5 of 5 accesses)
+C_ShotSkeleton,0x8,0x8,t_start,f32,st0rm94,[H] parametric start along the a->b segment (shot_skeleton.md; 1.2 carried: 4 of 4 accesses)
+C_ShotSkeleton,,0xC,t_end,f32,st0rm94,[H] parametric end (shot_skeleton.md; 1.2 not carried: no access in the paired code)
+C_ShotSkeleton,,0x10,radius,f32,st0rm94,"[H] capsule radius, world units (shot_skeleton.md; 1.2 not carried: no access in the paired code)"
+C_ShotSkeleton,,0x14,body_part,u32,st0rm94,"[H] 1..6, the value TestCollision returns (shot_skeleton.md; 1.2 not carried: no access in the paired code)"
+C_ShotSkeleton,,0x40,bone,S_bone[10],st0rm94,[H] a verbatim copy of g_shot_skeleton_template_bones (shot_skeleton.md; 1.2 not carried: accesses disagree {'0x40': 1})
+C_sound_table,0x0,0x0,vt,ptr,st0rm94,"[H] g_sound_table_vt @ 0x0063eee0, 12 slots (sound_table.md; 1.2 carried: 11 of 11 accesses)"
+C_sound_table,,0x4,next_group_id,i32,st0rm94,[H] post-incremented by sound_table_add_group (sound_table.md; 1.2 not carried: accesses disagree {'0x4': 1})
+C_sound_table,,0x8,next_sound_id,i32,st0rm94,[H] post-incremented by sound_table_add_sound (sound_table.md; 1.2 not carried: accesses disagree {'0x8': 1})
+C_sound_table,0xC,0xC,rec_alloc,i8,st0rm94,[H] std::vector<S_sound_table> allocator byte (sound_table.md; 1.2 carried: 2 of 2 accesses)
+C_sound_table,0x10,0x10,rec_begin,ptr:S_sound_table,st0rm94,[H] (sound_table.md; 1.2 carried: 10 of 10 accesses)
+C_sound_table,0x14,0x14,rec_end,ptr:S_sound_table,st0rm94,[H] (sound_table.md; 1.2 carried: 18 of 18 accesses)
+C_sound_table,,0x18,rec_cap,ptr:S_sound_table,st0rm94,[H] (sound_table.md; 1.2 not carried: no access in the paired code)
+C_string,,0x0,block,ptr:C_str_base,st0rm94,[H] NULL == the empty string (string.md; 1.2 not carried: no access in the paired code)
+C_string,,0x0,refcount,u32,st0rm94,[H] starts at 1 (string.md; 1.2 not carried: no access in the paired code)
+C_string,,0x4,length,u32,st0rm94,[H] excludes the NUL (string.md; 1.2 not carried: no access in the paired code)
+C_string,,0x8,data,chars[1],st0rm94,[H] NUL-terminated (string.md; 1.2 not carried: no access in the paired code)
+C_tshift,,0x0,alloc,u8,st0rm94,[H] the MSVC allocator byte (uv_scroll.md; 1.2 not carried: no access in the paired code)
+C_tshift,0x4,0x4,begin,ptr:S_uv_scroll_channel,st0rm94,[H] the channel vector (uv_scroll.md; 1.2 carried: 2 of 2 accesses)
+C_tshift,,0x8,end,ptr:S_uv_scroll_channel,st0rm94,[H] (uv_scroll.md; 1.2 not carried: accesses disagree {'0x8': 1})
+C_tshift,,0xC,cap,ptr:S_uv_scroll_channel,st0rm94,[H] (uv_scroll.md; 1.2 not carried: accesses disagree {'0xC': 1})
+C_using_object,0x0,0x0,alloc0,i8,st0rm94,MSVC allocator byte (using_object.md; 1.2 carried: 32 of 32 accesses)
+C_using_object,0x4,0x4,obj_begin,ptr,st0rm94,[H] the registered objects (using_object.md; 1.2 carried: 32 of 32 accesses)
+C_using_object,0x8,0x8,obj_end,ptr,st0rm94,(using_object.md; 1.2 carried: 36 of 36 accesses)
+C_using_object,0xC,0xC,obj_cap,ptr,st0rm94,(using_object.md; 1.2 carried: 10 of 10 accesses)
+C_using_object,0x10,0x10,alloc1,i8,st0rm94,(using_object.md; 1.2 carried: 4 of 4 accesses)
+C_using_object,0x14,0x14,invalid_begin,ptr,st0rm94,[H] suppressed action codes (using_object.md; 1.2 carried: 8 of 8 accesses)
+C_using_object,0x18,0x18,invalid_end,ptr,st0rm94,(using_object.md; 1.2 carried: 9 of 9 accesses)
+C_using_object,0x1C,0x1C,invalid_cap,ptr,st0rm94,(using_object.md; 1.2 carried: 3 of 3 accesses)
+C_Vehicle,0xDE8,0x68,matrix_prev,f32[16],game_build.h,vehMatrixPrev
+C_Vehicle,0x11C,0x19C,light_state,u32,st0rm94,[H] one bit per lamp/mode - see 1b (vehicle.md; 1.2 carried: 7 of 9 accesses)
+C_Vehicle,,0x138,gear_drive_state,u32,st0rm94,"[H] 0 & 2 = forward, 1 = reverse (SetPower/SetBrake/SetGear gating) (vehicle.md; 1.2 not carried: accesses disagree {'0x138': 14, '0xB8': 12})"
+C_Vehicle,0x164,0x1E4,size_max,f32[3],st0rm94,[H] bound-box max (vehicle_get_size(1)) (vehicle.md; 1.2 carried: 2 of 2 accesses)
+C_Vehicle,0x17C,0x1FC,pivot_max,f32[3],st0rm94,[H] pivot pos (vehicle_get_pivot_pos(1)) (vehicle.md; 1.2 carried: 2 of 2 accesses)
+C_Vehicle,0x198,0x218,steer_linearity,f32,st0rm94,"[H] steering linearity [0,1] (vehicle.md; 1.2 carried: 4 of 4 accesses)"
+C_Vehicle,0x19C,0x21C,clutch_linearity,f32,st0rm94,[M] clutch linearity (SetClutch reads) (vehicle.md; 1.2 carried: 2 of 2 accesses)
+C_Vehicle,0x1A4,0x224,flags,u32,game_build.h,vehicleFlags; st0rm94: master_flags
+C_Vehicle,0x1B4,0x234,engine_health,f32,game_build.h,vehEngineHealth
+C_Vehicle,0x1B8,0x238,engine_health_max,f32,game_build.h,vehEngineHealthMax
+C_Vehicle,,0x1D8,size_min,f32[3],st0rm94,[H] bound-box min (vehicle_get_size(0)) (vehicle.md; 1.2 not carried: no access in the paired code)
+C_Vehicle,,0x1F0,pivot_min,f32[3],st0rm94,[H] pivot pos (vehicle_get_pivot_pos(0)) (vehicle.md; 1.2 not carried: no access in the paired code)
+C_Vehicle,0x320,0x39C,position,f32[3],game_build.h,vehPos
+C_Vehicle,,0x364,callbacks,ptr[14],st0rm94,"[H] the owner callback bank, +0x364..+0x398 - see 8 (vehicle.md; 1.2 not carried: accesses disagree {'0x2E4': 1})"
+C_Vehicle,0x398,0x414,centre,f32[3],game_build.h,vehCentre
+C_Vehicle,0x3A4,0x420,gas_forward,f32,st0rm94,[H] forward idle-gas channel (vehicle.md; 1.2 carried: 16 of 16 accesses)
+C_Vehicle,0x3A8,0x424,gas_reverse,f32,st0rm94,[H] reverse-gas channel (SetPower param_3 == 0) (vehicle.md; 1.2 carried: 11 of 11 accesses)
+C_Vehicle,0x3B4,0x430,handbrake_ramp_max,f32,st0rm94,[H] handbrake ramp denominator (vehicle.md; 1.2 carried: 3 of 3 accesses)
+C_Vehicle,0x3B8,0x434,handbrake_ramp_accum,f32,st0rm94,[H] handbrake ramp accumulator (vehicle.md; 1.2 carried: 5 of 5 accesses)
+C_Vehicle,0x3C8,0x444,throttle_ramp_max,f32,st0rm94,[H] throttle-ramp denominator (vehicle.md; 1.2 carried: 9 of 9 accesses)
+C_Vehicle,0x3CC,0x448,throttle_ramp_accum,f32,st0rm94,[H] throttle-ramp accumulator (vehicle.md; 1.2 carried: 14 of 14 accesses)
+C_Vehicle,,0x404,top_speed,f32,st0rm94,[H] top-gear speed at maximum revs - see 1e (vehicle.md; 1.2 not carried: accesses disagree {'0x388': 1})
+C_Vehicle,0x420,0x49C,angular_velocity,f32[3],game_build.h,vehTurn
+C_Vehicle,,0x42C,handbrake_force,f32,st0rm94,[H] handbrake output scale (PC only) (vehicle.md; 1.2 not carried: accesses disagree {'0x3B0': 1})
+C_Vehicle,0x430,0x4AC,horn_on,u8,st0rm94,[H] see 1a (vehicle.md; 1.2 carried: 2 of 2 accesses)
+C_Vehicle,0x431,0x4AD,siren_on,u8,st0rm94,[H] see 1a (vehicle.md; 1.2 carried: 2 of 2 accesses)
+C_Vehicle,0x432,0x4AE,sounds_enabled,u8,st0rm94,[H] vehicle_enable_sounds (vehicle.md; 1.2 carried: 17 of 17 accesses)
+C_Vehicle,0x434,0x4B0,handbrake_out,f32,st0rm94,[H] = (ramp_accum / ramp_max) * handbrake_force (vehicle.md; 1.2 carried: 4 of 4 accesses)
+C_Vehicle,0x438,0x4B4,balance,f32[3],game_build.h,vehBalance
+C_Vehicle,0x454,0x4D0,exhaust_pipes,ptr,game_build.h,vehExPipes
+C_Vehicle,0x460,0x4DC,exhaust_type,i32,game_build.h,vehExType
+C_Vehicle,0x468,0x4E4,exhaust_max_speed,f32,game_build.h,vehExMaxSpeed
+C_Vehicle,0x46C,0x4E8,exhaust_jet,f32[2],game_build.h,vehExJet
+C_Vehicle,0x491,0x50D,camera_inside,u8,st0rm94,[H] selects the interior or exterior sound handle (vehicle.md; 1.2 carried: 29 of 29 accesses)
+C_Vehicle,0x494,0x510,shift_scratch,u32,st0rm94,[M] cleared by SetGear on a successful shift (vehicle.md; 1.2 carried: 6 of 6 accesses)
+C_Vehicle,0x4A4,0x520,speed_limit,f32,st0rm94,[H] AI speed limiter (+0.5 when > 0) (vehicle.md; 1.2 carried: 2 of 2 accesses)
+C_Vehicle,0x4A8,0x524,steer_smooth_enable,u8,st0rm94,[H] set: SetSteer applies the linearity curve (vehicle.md; 1.2 carried: 3 of 3 accesses)
+C_Vehicle,0x4AA,0x526,ramp_bypass,u8,st0rm94,[H] set: SetPower/SetBrake apply the pedal (vehicle.md; 1.2 carried: 4 of 4 accesses)
+C_Vehicle,0x4AB,0x527,clutch_smooth_enable,u8,st0rm94,[H] set: SetClutch applies the linearity blend (vehicle.md; 1.2 carried: 3 of 3 accesses)
+C_Vehicle,0x4C4,0x540,wheel_count,i32,game_build.h,vehWheelCount; st0rm94: wheel_count
+C_Vehicle,0x4C8,0x544,step_time,f32,game_build.h,vehicleStepTime; st0rm94: ramp_rate
+C_Vehicle,0x4CC,0x548,clutch_gate,u8,st0rm94,"[M] 0 = idle/clutch-out path, != 0 = driven (vehicle.md; 1.2 carried: 9 of 9 accesses)"
+C_Vehicle,,0x525,accel_input_flag,u8,st0rm94,"[H] written like the others, never read - see 1c (vehicle.md; 1.2 not carried: accesses disagree {'0x4A9': 1})"
+C_Vehicle,,0x528,body_coll_heads,ptr,st0rm94,"[H] vector<S_COLBODY_HEAD>, stride 0x74 (vehicle.md; 1.2 not carried: no access in the paired code)"
+C_Vehicle,0x540,0x5BC,throttle_out_forward,f32,st0rm94,[H] from +0x420 (vehicle.md; 1.2 carried: 12 of 12 accesses)
+C_Vehicle,0x544,0x5C0,throttle_out_reverse,f32,st0rm94,[H] from +0x424 (vehicle.md; 1.2 carried: 7 of 7 accesses)
+C_Vehicle,0x548,0x5C4,engine_rps,f32,game_build.h,vehRps; st0rm94: engine_revs_per_sec
+C_Vehicle,0x55C,0x5D8,gear_effective,i32,st0rm94,"[H] -1 = reverse, 0 = neutral, 1 (vehicle.md; 1.2 carried: 30 of 33 accesses)"
+C_Vehicle,0x560,0x5DC,gear,i32,game_build.h,vehGear; st0rm94: gear_selected
+C_Vehicle,0x568,0x5E4,gear_max,i32,game_build.h,vehGearMax; st0rm94: gear_max
+C_Vehicle,0x59C,0x618,speed,f32,game_build.h,vehSpeed; st0rm94: speed
+C_Vehicle,0x5B8,0x634,drivetrain_force_out,f32,st0rm94,[H] net wheel longitudinal force (vehicle.md; 1.2 carried: 19 of 20 accesses)
+C_Vehicle,0x5E0,0x65C,clutch_out,f32,st0rm94,[M] clutch pedal output (vehicle.md; 1.2 carried: 10 of 11 accesses)
+C_Vehicle,,0x5E0,redline_revs_per_sec,f32,st0rm94,"[H] CARINIT RedLineRPM / 60 (vehicle.md; 1.2 not carried: its accesses say 0x5E0, the fields around it move by -0x7C)"
+C_Vehicle,0x5E8,0x664,flags_664,u32,st0rm94,[M] SetGear bit ops (vehicle.md; 1.2 carried: 40 of 41 accesses)
+C_Vehicle,,0x5EC,gear_ratios,f32,st0rm94,"[M] per-gear ratio table, indexed by gear (vehicle.md; 1.2 not carried: its accesses say 0x5EC, the fields around it move by -0x7C)"
+C_Vehicle,0x5EC,0x668,idle_revs_per_sec,f32,st0rm94,[H] CARINIT idling rpm / 60 - see 2 (vehicle.md; 1.2 carried: 14 of 15 accesses)
+C_Vehicle,0x5F4,0x670,mass,f32,game_build.h,vehMass
+C_Vehicle,0x610,0x68C,steer_max,f32,game_build.h,vehSteerMax; st0rm94: steer_scale
+C_Vehicle,0x624,0x6A0,steer_wanted,f32,game_build.h,vehSteerWanted; st0rm94: steer_out
+C_Vehicle,0x628,0x6A4,steer,f32,game_build.h,vehSteer; st0rm94: steer_current
+C_Vehicle,0x638,0x6B4,engine_on_mirror,u8,st0rm94,[H] mirror of engine_on (vehicle.md; 1.2 carried: 8 of 9 accesses)
+C_Vehicle,,0x684,steer_lock,f32[2],st0rm94,"[H] lock at standstill / at top speed - see 1e (vehicle.md; 1.2 not carried: accesses disagree {'0x608': 2, '0x684': 1})"
+C_Vehicle,,0x690,steer_rates,f32[4],st0rm94,"[H] turn-in / return rates, slow and fast - see 1e (vehicle.md; 1.2 not carried: accesses disagree {'0x690': 1, '0x614': 1})"
+C_Vehicle,,0x6A8,steer_split_max,f32,st0rm94,"[H] wheel-to-wheel split at full lock - see 1e (vehicle.md; 1.2 not carried: accesses disagree {'0x6A8': 1, '0x62C': 1})"
+C_Vehicle,0xC20,0xC9C,engine_timer,f32,st0rm94,"[M] 5000.0f, reset by the SetEngineOn force path (vehicle.md; 1.2 carried: 10 of 10 accesses)"
+C_Vehicle,0xC24,0xCA0,substep_max,f32,game_build.h,vehSubstepMax; st0rm94: physics_substep_s
+C_Vehicle,0xC2C,0xCA8,engine_on,u8,game_build.h,vehEngineOn; st0rm94: engine_on
+C_Vehicle,0xC30,0xCAC,fuel,f32,game_build.h,vehFuel; st0rm94: fuel_level
+C_Vehicle,0xC38,0xCB4,wheels,ptr,game_build.h,vehWheels; st0rm94: wheels
+C_Vehicle,0xC3C,0xCB8,axes,f32[9],game_build.h,vehAxes; st0rm94: basis_forward
+C_Vehicle,0xC54,0xCD0,basis_up,f32[3],st0rm94,"[H] world basis, seeded (0,1,0) (vehicle.md; 1.2 carried: 2 of 2 accesses)"
+C_Vehicle,0xC68,0xCE4,state,u32,game_build.h,vehState; st0rm94: flags_ce4
+C_Vehicle,0xCA4,0xD20,door_records,ptr,st0rm94,[H] stride 0x24 - see 2a (vehicle.md; 1.2 carried: 25 of 27 accesses)
+C_Vehicle,,0xCC4,basis_right,f32[3],st0rm94,"[H] world basis, seeded (1,0,0) (vehicle.md; 1.2 not carried: accesses disagree {'0xC48': 1})"
+C_Vehicle,0xCE8,0xD64,matrix,f32[16],game_build.h,vehMatrix
+C_Vehicle,,0xDE8,init,S_CARINIT,st0rm94,"[H] 4388 bytes, the whole per-car tuning block (vehicle.md; 1.2 not carried: accesses disagree {'0xE6C': 1})"
+C_Vehicle,0x1F90,0x1F0C,velocity,f32[3],game_build.h,vehVelocity; st0rm94: velocity
+C_Vehicle,0x1F9C,0x1F18,engine_rps_max,f32,game_build.h,vehRpsMax; st0rm94: max_revs_per_sec
+C_Vehicle,0x1FA0,0x1F1C,fuel_tank,f32,game_build.h,vehFuelTank; st0rm94: fuel_capacity
+C_web_node,0x0,0x0,x,f32,st0rm94,[H] the sort key - web_path_sort_nodes_by_x orders on it (web_node.md; 1.2 carried: 2 of 2 accesses)
+C_web_node,,0x4,y,f32,st0rm94,[H] (web_node.md; 1.2 not carried: accesses disagree {'0x4': 1})
+C_web_node,,0x8,z,f32,st0rm94,[H] (web_node.md; 1.2 not carried: no access in the paired code)
+C_web_node,,0xC,category,u16,st0rm94,[H] the node's CATEGORY / state flag word - see 1a (web_node.md; 1.2 not carried: no access in the paired code)
+C_web_node,,0xE,id,u16,st0rm94,[H] the node's stable ID (web_node.md; 1.2 not carried: no access in the paired code)
+C_web_node,,0x10,radius_cm,u16,st0rm94,[H] the node's ACCEPTANCE RADIUS in hundredths of (web_node.md; 1.2 not carried: no access in the paired code)
+C_web_node,,0x12,range_b,u8,st0rm94,[H] quarter units (web_node.md; 1.2 not carried: no access in the paired code)
+C_web_node,,0x13,search_range_q,u8,st0rm94,[H] quarter units (web_node.md; 1.2 not carried: no access in the paired code)
+C_web_node,,0x14,data_0,u8,st0rm94,[H] DATA descriptor byte 0 (web_node.md; 1.2 not carried: no access in the paired code)
+C_web_node,,0x15,data_1,u8,st0rm94,[H] DATA descriptor byte 1 (web_node.md; 1.2 not carried: no access in the paired code)
+C_web_node,,0x16,weight_codes,u8,st0rm94,[H] two 4-bit checkpoint weighting codes (1b) (web_node.md; 1.2 not carried: no access in the paired code)
+C_web_node,,0x17,data_3,u8,st0rm94,[H] DATA descriptor byte 3 (web_node.md; 1.2 not carried: no access in the paired code)
+C_web_node,0x18,0x18,connections,ptr:C_web_connection,st0rm94,"[H] this node's outgoing edge array, stride 8 (web_node.md; 1.2 carried: 6 of 6 accesses)"
+C_web_node,0x1C,0x1C,conn_cap,u8,st0rm94,[H] connection-array capacity (web_node.md; 1.2 carried: 2 of 2 accesses)
+C_web_node,0x1D,0x1D,conn_count,u8,st0rm94,[H] a BYTE - so a node has at most 255 connections (web_node.md; 1.2 carried: 9 of 9 accesses)
+C_web_path,0x0,0x0,_unk_00,u32,st0rm94,[U] (web_path.md; 1.2 carried: 95 of 95 accesses)
+C_web_path,0x4,0x4,nodes,ptr:C_web_node,st0rm94,[H] node array base (web_path.md; 1.2 carried: 153 of 153 accesses)
+C_web_path,0x8,0x8,_unk_08,u32,st0rm94,[U] (web_path.md; 1.2 carried: 83 of 83 accesses)
+C_web_path,0xC,0xC,node_count,u32,st0rm94,[H] every scan bounds on this (web_path.md; 1.2 carried: 42 of 42 accesses)
+C_web_path,0x10,0x10,grow_step,u32,st0rm94,[H] capacity increment of web_path_resize_node_array (web_path.md; 1.2 carried: 6 of 6 accesses)
+C_web_path,0x18,0x18,scratch_capacity,u32,st0rm94,[H] reallocated when != node_count (web_path.md; 1.2 carried: 24 of 24 accesses)
+C_web_path,0x1C,0x1C,search_in_progress,u8,st0rm94,[H] re-entry guard (web_path.md; 1.2 carried: 5 of 5 accesses)
+check_seg,0x0,0x0,_alloc,u8,st0rm94,[H] MSVC std::vector empty-allocator member (check_seg.md; 1.2 carried: 4 of 4 accesses)
+check_seg,,0x4,nodes_begin,ptr,st0rm94,[H] sorted C_web_node ARRAY INDICES - see §1b (check_seg.md; 1.2 not carried: no access in the paired code)
+check_seg,,0x8,nodes_end,ptr,st0rm94,[H] count = (end - begin) >> 2 (check_seg.md; 1.2 not carried: no access in the paired code)
+check_seg,,0xC,nodes_cap,ptr,st0rm94,[H] capacity pointer (check_seg.md; 1.2 not carried: no access in the paired code)
+check_seg,0x1C,0x10,packed,u32,st0rm94,[H] type nibbles + special count - see §1c (check_seg.md; 1.2 carried: 2 of 2 accesses)
+check_seg,,0x14,centre,f32[3],st0rm94,"[H] the segment's world-space centre, file data (check_seg.md; 1.2 not carried: no access in the paired code)"
+check_seg,,0x20,radius,f32,st0rm94,"[H] the segment's radius, 2.7..10.6 in the (check_seg.md; 1.2 not carried: no access in the paired code)"
+check_seg,,0x24,own_payload,ptr,st0rm94,[H] the segment's own typed record (check_seg.md; 1.2 not carried: accesses disagree {'0x24': 1})
+check_seg,,0x28,specials,ptr,st0rm94,"[H] array of special payload pointers, stride 4 (check_seg.md; 1.2 not carried: accesses disagree {'0x28': 1})"
+check_seg_cluster,,0x0,count,u32,st0rm94,[H] number of clusters (check_seg.md; 1.2 not carried: no access in the paired code)
+check_seg_cluster,,0x4,blocks,ptr:check_seg_cluster,st0rm94,[H] array (check_seg.md; 1.2 not carried: no access in the paired code)
+exception,,0x0,vptr,ptr,st0rm94,g_exception_vt (0x0063efc8) (crt_runtime_tail.md; 1.2 not carried: no access in the paired code)
+exception,,0x4,_m_what,str,st0rm94,"the message, or NULL (crt_runtime_tail.md; 1.2 not carried: no access in the paired code)"
+exception,,0x8,_m_doFree,i32,st0rm94,1 => _m_what is owned and must be released (crt_runtime_tail.md; 1.2 not carried: no access in the paired code)
+G_Camera,0x4,0x4,camera,ptr:I3D_camera,game.h,game_build.h gameCamera
+G_Camera,0xC,0xC,car,ptr:C_car,game.h,game_build.h gameCamera
+G_Camera,0x10,0x10,mode,i32,game.h,game_build.h gameCamera
+g_input,,0x0,engine,ptr,st0rm94,[H] g_engine — the LS3D object that owns (input.md; 1.2 not carried: no access in the paired code)
+g_input,,0x4,joy_alloc,u8,st0rm94,[H] std::vector allocator byte (input.md; 1.2 not carried: no access in the paired code)
+g_input,,0x8,joy_begin,ptr:S_input_joy_state,st0rm94,[H] one 0x8c record per enumerated joystick (input.md; 1.2 not carried: no access in the paired code)
+g_input,,0xC,joy_end,ptr:S_input_joy_state,st0rm94,(input.md; 1.2 not carried: no access in the paired code)
+g_input,,0x10,joy_cap,ptr:S_input_joy_state,st0rm94,(input.md; 1.2 not carried: no access in the paired code)
+g_input,,0x14,capture,S_input_binding,st0rm94,[H] scratch record filled by input_capture_binding (input.md; 1.2 not carried: no access in the paired code)
+g_input,,0x20,keys,chars[64],st0rm94,[H] the keyboard scancodes any binding uses (input.md; 1.2 not carried: no access in the paired code)
+g_input,,0x60,key_refs,chars[64],st0rm94,[H] per-slot refcount for the table above (input.md; 1.2 not carried: no access in the paired code)
+g_input,,0xA0,mouse_range_x,f32,st0rm94,[H] deflection denominator (input.md; 1.2 not carried: no access in the paired code)
+g_input,,0xA4,mouse_range_y,f32,st0rm94,(input.md; 1.2 not carried: no access in the paired code)
+g_input,,0xA8,mouse_range_z,f32,st0rm94,(wheel) (input.md; 1.2 not carried: no access in the paired code)
+g_input,,0xAC,bind_alloc,u8,st0rm94,(input.md; 1.2 not carried: no access in the paired code)
+g_input,,0xB0,bind_begin,ptr:S_input_binding,st0rm94,[H] g_input_bindings_begin — 60 entries (input.md; 1.2 not carried: no access in the paired code)
+g_input,,0xB4,bind_end,ptr:S_input_binding,st0rm94,[H] g_input_bindings_end (input.md; 1.2 not carried: no access in the paired code)
+g_input,,0xB8,bind_cap,ptr:S_input_binding,st0rm94,(input.md; 1.2 not carried: no access in the paired code)
+g_input,,0xBC,val_alloc,u8,st0rm94,(input.md; 1.2 not carried: no access in the paired code)
+g_input,,0xC0,value_begin,ptr,st0rm94,"[H] per-action SAMPLED value, parallel to bind_* (input.md; 1.2 not carried: no access in the paired code)"
+g_input,,0xC4,value_end,ptr,st0rm94,(input.md; 1.2 not carried: no access in the paired code)
+g_input,,0xC8,value_cap,ptr,st0rm94,(input.md; 1.2 not carried: no access in the paired code)
+g_input,,0xCC,once_alloc,u8,st0rm94,(input.md; 1.2 not carried: no access in the paired code)
+g_input,,0xD0,oneshot_begin,ptr,st0rm94,[H] per-action ONE-SHOT value (input.md; 1.2 not carried: no access in the paired code)
+g_input,,0xD4,oneshot_end,ptr,st0rm94,(input.md; 1.2 not carried: no access in the paired code)
+g_input,,0xD8,oneshot_cap,ptr,st0rm94,(input.md; 1.2 not carried: no access in the paired code)
+g_input,,0xE0,prev_keys_lo,u32,st0rm94,"[H] previous 64-bit key mask, for edge detection (input.md; 1.2 not carried: no access in the paired code)"
+g_input,,0xE4,prev_keys_hi,u32,st0rm94,(input.md; 1.2 not carried: no access in the paired code)
+G_Inventory,0x0,0x0,can_carry_big_weapon,u32,st0rm94,[H] permits the big-weapon slot +0x80 (inventory.md; 1.2 carried: 192 of 192 accesses)
+G_Inventory,0x4,0x4,in_car,u32,st0rm94,[H] 1 while the owner sits in a car (inventory.md; 1.2 carried: 154 of 154 accesses)
+G_Inventory,0x8,0x8,extra_count,u32,game.h,game.h kHumanInventory; st0rm94: extra_count
+G_Inventory,0x1C,0x1C,cycle_current_id,u32,st0rm94,[H] the id the cycle stands on (inventory.md; 1.2 carried: 8 of 8 accesses)
+G_Inventory,0x20,0x20,in_hand,S_GameItem,game.h,game.h kHumanInventory; st0rm94: in_hand
+G_Inventory,0x30,0x30,belt,S_GameItem[5],game.h,game.h kHumanInventory; st0rm94: belt
+G_Inventory,0x80,0x80,coat,S_GameItem,game.h,game.h kHumanInventory; st0rm94: big_weapon
+G_Inventory,0x90,0x90,extra,S_GameItem[4],game.h,game.h kHumanInventory; st0rm94: extra
+G_Inventory,0xD0,0xD0,put_away,S_GameItem,game.h,game.h kHumanInventory; st0rm94: car_slot
+G_Inventory,0xE0,0xE0,report_to_console,u8,st0rm94,[H] 1 on the player's inventory only (inventory.md; 1.2 carried: 3 of 3 accesses)
+I3D_frame,0x10,0x10,world,f32[16],game.h,kFrameWorld
+I3D_frame,,0x40,world_40,f32[16],st0rm94,[H] world matrix (i3d_frame.md; 1.2 not carried: no access in the paired code)
+I3D_frame,0x50,0x50,local,f32[16],game.h,kFrameLocal; st0rm94: local_rot3
+I3D_frame,,0x80,pos,f32[3],st0rm94,[H] local position (i3d_frame_set_position_xyz_ptrs) (i3d_frame.md; 1.2 not carried: accesses disagree {'0x80': 1})
+I3D_frame,0x90,0x90,scale,f32[3],game.h,kFrameScale; st0rm94: scale
+I3D_frame,0x9C,0x9C,rotation,f32[4],game.h,kFrameRot; st0rm94: rot
+I3D_frame,0xAC,0xAC,flags,u32,game.h,kFrameFlags; st0rm94: flags
+I3D_frame,0x100,0x100,name,str,game.h,kFrameName; st0rm94: name
+I3D_frame,0x110,0x110,type,u32,game.h,kFrameType; st0rm94: visual_type
+I3D_frame,,0x11C,child_count,i32,st0rm94,[H] i3d_frame_get_child_count_ptr (i3d_frame.md; 1.2 not carried: accesses disagree {'0x11C': 1})
+I3D_frame,0x120,0x120,parent,ptr:I3D_frame,game.h,kFrameParent; st0rm94: parent
+I3D_frame,,0x13C,sector,ptr,st0rm94,[H] the visibility cell (i3d_frame.md; 1.2 not carried: no access in the paired code)
+I3D_frame,,0x140,_140,i32,st0rm94,[H] on an I3D_camera this is the FOV (i3d_frame.md; 1.2 not carried: no access in the paired code)
+I3D_frame,0x154,0x154,model_file,str,game.h,kModelFile; st0rm94: model_name
+I3D_frame,,0x18C,sound_volume,i32,st0rm94,[H] reached only when visual_type == 4 (i3d_frame.md; 1.2 not carried: no access in the paired code)
+I3D_frame,,0x1D4,fourcc,u32,st0rm94,"[H] class tag, see §3 (i3d_frame.md; 1.2 not carried: no access in the paired code)"
+I3D_frame,,0x1E0,mesh,ptr:I3D_mesh_object,st0rm94,"[H] the MESH OBJECT, valid when type 1 / 'OBJ_' (i3d_frame.md; 1.2 not carried: no access in the paired code)"
+I3D_frame,,0x21C,active_lmap_level,i32,st0rm94,[H] the active lightmap level of an 'LMAP' frame (§3c) (i3d_frame.md; 1.2 not carried: no access in the paired code)
+I3D_scene,,0x17C,active_camera,ptr:I3D_frame,st0rm94,[M] i3d_scene_get_active_camera_ptr (i3d_frame.md; 1.2 not carried: no access in the paired code)
+I3D_scene,,0x210,root_frame,ptr:I3D_frame,st0rm94,[H] i3d_scene_get_root_frame_ptr (i3d_frame.md; 1.2 not carried: no access in the paired code)
+police_action,,0x0,officers_alloc,u32,st0rm94,[H] allocator word of the roster std::vector object that starts here (police-action.md; 1.2 not carried: no access in the paired code)
+police_action,,0x4,officers_begin,ptr,st0rm94,[H] std::vector<officer*> — the squad roster pursuing target_npc (police-action.md; 1.2 not carried: no access in the paired code)
+police_action,,0x8,officers_end,ptr,st0rm94,[H] (police-action.md; 1.2 not carried: no access in the paired code)
+police_action,,0xC,officers_cap,ptr,st0rm94,[M] (police-action.md; 1.2 not carried: no access in the paired code)
+police_action,,0x10,anchor_pos,f32[3],st0rm94,"[H] +0x10..+0x18 last-sighting world position (the ""go to point"" anchor) (police-action.md; 1.2 not carried: no access in the paired code)"
+police_action,,0x1C,anchor_dir,f32[3],st0rm94,[H] +0x1C..+0x24 last-sighting direction (normalised) (police-action.md; 1.2 not carried: no access in the paired code)
+police_action,,0x28,last_sighting_ts_ms,u32,st0rm94,[H] last-sighting timestamp (police-action.md; 1.2 not carried: no access in the paired code)
+police_action,,0x2C,tier,u32,st0rm94,"[H] the RESPONSE TIER, not a phase: 0/1 gun, 2/3 fine, 4/5 handcuffs, 6 roadblock, 7 disbanded (§3) (police-action.md; 1.2 not carried: no access in the paired code)"
+police_action,,0x30,session_id,u32,st0rm94,[M] pursuit-session ID stamped from police_board+0x20 (police-action.md; 1.2 not carried: no access in the paired code)
+police_action,,0x34,on_foot_phase_flag,u32,st0rm94,"[H] 0 = vehicle phase, 1 = on-foot (exit-vehicle / arrest) phase entered (police-action.md; 1.2 not carried: no access in the paired code)"
+police_action,,0x38,arrest_grace_deadline,u32,st0rm94,[H] armed ONCE at creation as game_time + 60000 + rand() (police-action.md; 1.2 not carried: no access in the paired code)
+police_action,,0x3C,created_ts_ms,u32,st0rm94,[H] game time at squad creation (police-action.md; 1.2 not carried: no access in the paired code)
+police_action,,0x40,los_timestamp_ms,u32,st0rm94,[H] last time an officer perceived the target (police-action.md; 1.2 not carried: no access in the paired code)
+police_action,,0x44,sighting_accum_ms,u32,st0rm94,[H] tracking/sighting accumulator (drives the 15s/40s wanted-substate escalations) (police-action.md; 1.2 not carried: no access in the paired code)
+police_action,,0x48,search_rearm_deadline,u32,st0rm94,[H] game-time deadline gating the next event-0x12 dispatch (police-action.md; 1.2 not carried: no access in the paired code)
+police_action,,0x4C,cancel_order_timer_ms,u32,st0rm94,[H] accumulates frame dt while the chase vehicle is stuck (police-action.md; 1.2 not carried: no access in the paired code)
+police_action,,0x50,flags,u32,st0rm94,[H] bit0 = active (recomputed each tick) (police-action.md; 1.2 not carried: no access in the paired code)
+police_action,,0x54,backup_rerequest_deadline,u32,st0rm94,[H] game-time deadline (police-action.md; 1.2 not carried: no access in the paired code)
+police_action,,0x58,_unk_58,u32,st0rm94,"[H] set to 0 at creation, copied by the element helpers, never read (police-action.md; 1.2 not carried: no access in the paired code)"
+police_action,,0x5C,group_vehicle,ptr:vehicle,st0rm94,[H] the squad's chase vehicle (0 when on foot / lost) (police-action.md; 1.2 not carried: no access in the paired code)
+police_action,,0x60,target_npc,ptr:npc,st0rm94,[H] the suspect this squad pursues (match key for all _by_target ops) (police-action.md; 1.2 not carried: no access in the paired code)
+police_action,,0x64,tracked_target_vehicle,ptr:vehicle,st0rm94,[H] the vehicle the target was last seen in (compared to target+0x98) (police-action.md; 1.2 not carried: no access in the paired code)
+police_action,,0x68,on_foot_sighting_flag,u8,st0rm94,[H] set when the target is being tracked on foot (police-action.md; 1.2 not carried: no access in the paired code)
+police_board,,0x0,anim_items,ai_animitem_manager,st0rm94,[H] embedded manager (police-board.md; 1.2 not carried: no access in the paired code)
+police_board,,0x4,items_begin,ptr:ai_anim_item,st0rm94,[H] stride 0x10 (§5) (police-board.md; 1.2 not carried: no access in the paired code)
+police_board,,0x8,items_end,ptr:ai_anim_item,st0rm94,[H] (police-board.md; 1.2 not carried: no access in the paired code)
+police_board,,0xC,items_cap,ptr:ai_anim_item,st0rm94,[H] capacity (police-board.md; 1.2 not carried: no access in the paired code)
+police_board,,0x10,squads_alloc,u32,st0rm94,[H] allocator word of the squad vector object (police-board.md; 1.2 not carried: no access in the paired code)
+police_board,,0x14,squads_begin,ptr:police_action,st0rm94,"[H] begin of the pursuit-squad array, stride (police-board.md; 1.2 not carried: no access in the paired code)"
+police_board,,0x18,squads_end,ptr:police_action,st0rm94,[H] one past last (police-board.md; 1.2 not carried: no access in the paired code)
+police_board,,0x1C,squads_cap,ptr:police_action,st0rm94,[H] capacity: read by (police-board.md; 1.2 not carried: no access in the paired code)
+police_board,,0x20,session_id_counter,u32,st0rm94,[H] monotonic pursuit-session id (police-board.md; 1.2 not carried: no access in the paired code)
+police_board,,0x24,arrest_settle_timer,u32,st0rm94,[H] post-arrest settling grace timer (ms) (police-board.md; 1.2 not carried: no access in the paired code)
+police_board,,0x28,police_speed_factor,f32,st0rm94,[H] also addressed absolutely as (police-board.md; 1.2 not carried: no access in the paired code)
+police_board,,0x2C,busted_cutscene_active,u8,st0rm94,[H] an arrest/fine capture cutscene is (police-board.md; 1.2 not carried: no access in the paired code)
+police_board,,0x2D,_pad,u8[3],st0rm94,[U] padding inferred (police-board.md; 1.2 not carried: no access in the paired code)
+police_board,,0x30,tracked_npc,ptr:actor,st0rm94,[H] also parked by the suspend/resume pair (police-board.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x0,enabled,u8,st0rm94,master on/off (police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x1,_unk_01,u8[3],st0rm94,padding (police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x4,tick_acc_inner,u32,st0rm94,accumulator (ms) for the inner ~3 Hz tick (police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x8,tick_period_inner,u32,st0rm94,inner-tick period (330 ms) (police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0xC,speed_threshold_fine,f32,st0rm94,speed (m/s) above which speeding = fine (~17) (police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x10,speed_threshold_arrest,f32,st0rm94,speed (m/s) above which speeding = handcuffs (~28) (police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x14,tick_acc_outer,u32,st0rm94,accumulator (ms) for the outer ~1.1 Hz tick (police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x18,tick_period_outer,u32,st0rm94,outer-tick period (913 ms) (police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x1C,tick_acc_visibility,u32,st0rm94,accumulator (ms) for the middle ~4.6 Hz visibility tick (police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x20,tick_period_visibility,u32,st0rm94,middle-tick period (217 ms) (police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x24,tick_acc_vestigial,u32,st0rm94,accumulator of an unused timer pair (police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x28,tick_period_vestigial,u32,st0rm94,period (4013 ms) of the unused pair — no reader (police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x2C,_unk_2c,u32,st0rm94,unused (zeroed at reset) (police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x30,_unk_30,u32,st0rm94,unused (police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x34,_unused_xx,u32,st0rm94,cache of the `policemanager_on xx` arg (police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x38,busted_cutscene_lock,u8,st0rm94,player busted-cutscene lock (arrest OR fine) (police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x39,vehicle_tier,u8,st0rm94,backup vehicle-pool selector (`policemanager_on yy`) (police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x3A,_unk_3a,u8[6],st0rm94,padding (police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x40,records_begin,ptr,st0rm94,std::vector<pursuit_record*> — one per tracked suspect (police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x44,records_end,ptr,st0rm94,(police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x48,records_cap,ptr,st0rm94,(police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x4C,_unk_4c,u8[4],st0rm94,(police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x50,police_vehicles_begin,ptr,st0rm94,reserve pool: patrol cars (vehicle_controller*) (police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x54,police_vehicles_end,ptr,st0rm94,(police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x58,police_vehicles_cap,ptr,st0rm94,(police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x5C,_unk_5c,u8[4],st0rm94,(police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x60,spike_strips_begin,ptr,st0rm94,reserve pool: spike strips (barrier.4ds) (police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x64,spike_strips_end,ptr,st0rm94,(police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x68,spike_strips_cap,ptr,st0rm94,(police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x6C,_unk_6c,u8[4],st0rm94,padding (helper anchor for the foot_cops triple) (police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x70,foot_cops_begin,ptr,st0rm94,reserve pool: pedestrian cops (npc*) (police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x74,foot_cops_end,ptr,st0rm94,(police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x78,foot_cops_cap,ptr,st0rm94,(police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x7C,_unk_7c,u8[4],st0rm94,(police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x80,npc_list_begin,ptr,st0rm94,std::vector<actor*> — temporary cars and NPCs to despawn out of range (§2.3) (police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x84,npc_list_end,ptr,st0rm94,(police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x88,npc_list_cap,ptr,st0rm94,(police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x8C,_unk_8c,u8[4],st0rm94,(police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x90,tracked_police_cars_begin,ptr,st0rm94,cars the manager must clean up (police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x94,tracked_police_cars_end,ptr,st0rm94,(police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x98,tracked_police_cars_cap,ptr,st0rm94,(police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0x9C,_unk_9c,u8[4],st0rm94,(police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0xA0,rndr_arr_b_begin,ptr,st0rm94,std::vector<uint16_t> — visibility-cell indices (police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0xA4,rndr_arr_b_end,ptr,st0rm94,(police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0xA8,rndr_arr_b_cap,ptr,st0rm94,(police_manager.md; 1.2 not carried: no access in the paired code)
+police_manager,,0xAC,_pad_ac,u8[4],st0rm94,struct-size padding (total 0xB0) (police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_event_manager,,0x0,bridge,ptr:C_actor,st0rm94,[H] the bridge actor (pursuit-event-manager.md; 1.2 not carried: no access in the paired code)
+pursuit_event_manager,,0x0,bridges_alloc,u8,st0rm94,[H] allocator byte of the S_BRIDGE vector (pursuit-event-manager.md; 1.2 not carried: no access in the paired code)
+pursuit_event_manager,,0x4,bridges_begin,ptr:S_BRIDGE,st0rm94,"[H] std::vector<S_BRIDGE>, stride 8 (pursuit-event-manager.md; 1.2 not carried: no access in the paired code)"
+pursuit_event_manager,,0x4,road_node,u16,st0rm94,[H] the nearer end node of the road segment (pursuit-event-manager.md; 1.2 not carried: no access in the paired code)
+pursuit_event_manager,,0x8,bridges_end,ptr:S_BRIDGE,st0rm94,[H] (pursuit-event-manager.md; 1.2 not carried: no access in the paired code)
+pursuit_event_manager,,0xC,bridges_cap,ptr:S_BRIDGE,st0rm94,[H] (pursuit-event-manager.md; 1.2 not carried: no access in the paired code)
+pursuit_event_manager,,0x10,records_alloc,u8,st0rm94,[H] allocator byte of the S_ELEMENT vector (pursuit-event-manager.md; 1.2 not carried: no access in the paired code)
+pursuit_event_manager,,0x14,records_begin,ptr:S_ELEMENT,st0rm94,"[H] std::vector<S_ELEMENT>, stride 0x44 (pursuit-event-manager.md; 1.2 not carried: no access in the paired code)"
+pursuit_event_manager,,0x18,records_end,ptr:S_ELEMENT,st0rm94,[H] (pursuit-event-manager.md; 1.2 not carried: no access in the paired code)
+pursuit_event_manager,,0x1C,records_cap,ptr:S_ELEMENT,st0rm94,[M] vector capacity end (std::vector idiom) (pursuit-event-manager.md; 1.2 not carried: no access in the paired code)
+pursuit_event_manager,,0x20,first_dispatch_ts,u32,st0rm94,[M] from g_act_mission+0x30 on the first (pursuit-event-manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x0,target,ptr:actor,st0rm94,the tracked actor (match key) (police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x4,linked_vehicle,ptr,st0rm94,the car the suspect is driving (mirrors actor+0x98) (police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x8,offense_bits_a,u16,st0rm94,"offence bitfield (bit = 1<<offence type id), short-decay lane (police_manager.md; 1.2 not carried: no access in the paired code)"
+pursuit_record,,0xA,offense_bits_b,u16,st0rm94,long-decay mirror of the collision bits (0x08/0x10/0x20) (police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0xC,car_theft_timer,u32,st0rm94,car-theft offence window (ms) (police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x10,last_fire_time_ms,u32,st0rm94,shooting-offence decay timer (police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x14,on_sidewalk_timer,u16,st0rm94,sidewalk-offence on-surface accumulator (ms) (police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x18,collision_short_timer,u32,st0rm94,short (~4 s) collision-bit decay (police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x1C,last_crash_time_ms,u32,st0rm94,long (~20 s) collision-bit decay (police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x20,violence_event_timer,u32,st0rm94,violence-offence decay (police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x24,running_red_or_sign_damage_timer,u32,st0rm94,shared decay for red-light + traffic-sign bits (police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x28,num_of_offences,u32,st0rm94,vestigial: only a rarely-hit gated bump writes it (police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x2C,roadblock_eligible_flag,u8,st0rm94,gun-tier roadblock-eligibility gate (police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x2D,_unk_2d,u8[3],st0rm94,(police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x30,_unk_30,u8[4],st0rm94,(police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x34,linked_vehicle_pos_x,f32,st0rm94,linked_vehicle world-X at link time (police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x38,linked_vehicle_pos_y,f32,st0rm94,linked_vehicle world-Y at link time (police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x3C,police_state,u16,st0rm94,committed level: 1 fine / 2 handcuffs / 3 gun (police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x3E,police_state_pending,u16,st0rm94,pending level (re-derived each tick from offence bits) (police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x40,collision_episode_timer,i32,st0rm94,~5 s window grouping rapid collisions (-1 = idle) (police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x44,wanted_bar_remaining,u32,st0rm94,wanted-bar countdown (ms (police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x48,wanted_bar_max,u32,st0rm94,"wanted-bar max, state-keyed (20000/40000/60000) (police_manager.md; 1.2 not carried: no access in the paired code)"
+pursuit_record,,0x4C,collision_episode_count,u32,st0rm94,"collisions in the current episode (written, never read) (police_manager.md; 1.2 not carried: no access in the paired code)"
+pursuit_record,,0x50,wanted_substate_flag,u8,st0rm94,"""all cops alerted"" substate (police_manager.md; 1.2 not carried: no access in the paired code)"
+pursuit_record,,0x51,identity_pending,u8,st0rm94,"1 = searching/UNKNOWN, 0 = KNOWN (police_manager.md; 1.2 not carried: no access in the paired code)"
+pursuit_record,,0x52,_unk_52,u8[2],st0rm94,(police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x54,identity_tracked_vehicle,ptr,st0rm94,the vehicle the suspect is identified with (police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x58,identity_on_foot_byte,u8,st0rm94,on-foot identity flag (police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x59,_unk_59,u8[3],st0rm94,(police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x5C,reinforcement_counter,u32,st0rm94,backup-wave latch (0 none / 1 handcuffs / 2 gun) (police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x60,_unk_60,u8[4],st0rm94,(police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x64,action_code,u32,st0rm94,current offence display/event code (string = 2100+code) (police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x68,run_over_count,u32,st0rm94,pedestrians run over this episode (>=6 -> gun) (police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x6C,_unk_6c,u8[4],st0rm94,(police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x70,officers_alloc,u8,st0rm94,the officers std::vector's allocator byte (police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x71,_unk_71,u8[3],st0rm94,(police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x74,officers_begin,ptr,st0rm94,std::vector<officer*> — cops chasing this target (police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x78,officers_end,ptr,st0rm94,(police_manager.md; 1.2 not carried: no access in the paired code)
+pursuit_record,,0x7C,officers_cap,ptr,st0rm94,(police_manager.md; 1.2 not carried: no access in the paired code)
+RMRF_S_SETREF,,0x0,frame_count,i32,st0rm94,[H] N models driven together (random_morph.md; 1.2 not carried: no access in the paired code)
+RMRF_S_SETREF,,0x4,frames,ptr,st0rm94,[H] array of N resolved scene frames (random_morph.md; 1.2 not carried: no access in the paired code)
+RMRF_S_SETREF,,0x8,next,ptr:RMRF_S_SETREF,st0rm94,[H] singly-linked list (random_morph.md; 1.2 not carried: no access in the paired code)
+RMRF_S_SETREF,,0xC,channel_count,u32,st0rm94,[H] morph channels per row (<= 8) (random_morph.md; 1.2 not carried: no access in the paired code)
+RMRF_S_SETREF,,0x10,row_count,u32,st0rm94,[H] rows / morph targets (<= 16) (random_morph.md; 1.2 not carried: no access in the paired code)
+RMRF_S_SETREF,,0x14,timer_ms,u32,st0rm94,[H] accumulates the frame delta (random_morph.md; 1.2 not carried: no access in the paired code)
+RMRF_S_SETREF,,0x18,period_ms,u32,st0rm94,[H] current period (random_morph.md; 1.2 not carried: no access in the paired code)
+RMRF_S_SETREF,,0x1C,weight,f32[128],st0rm94,[H] current channel weights (random_morph.md; 1.2 not carried: no access in the paired code)
+RMRF_S_SETREF,,0x21C,delta,f32[128],st0rm94,[H] per-cycle increment towards the target (random_morph.md; 1.2 not carried: no access in the paired code)
+RMRF_S_SETREF,,0x41C,mode,i32,st0rm94,"[H] 1 = cosine ease, low byte <0 = additive, else linear (random_morph.md; 1.2 not carried: no access in the paired code)"
+RMRF_S_SETREF,,0x420,period_base_ms,i32,st0rm94,[H] default 1000 (random_morph.md; 1.2 not carried: no access in the paired code)
+RMRF_S_SETREF,,0x424,period_spread_ms,i32,st0rm94,[H] default 1 (random_morph.md; 1.2 not carried: no access in the paired code)
+RMRF_S_SETREF,,0x428,pick_base,i32,st0rm94,[H] default 1 (random_morph.md; 1.2 not carried: no access in the paired code)
+RMRF_S_SETREF,,0x42C,pick_spread,i32,st0rm94,[H] default 1 (random_morph.md; 1.2 not carried: no access in the paired code)
+S_camera_mode_record,,0x0,mode,i32,st0rm94,(camera.md; 1.2 not carried: no access in the paired code)
+S_camera_mode_record,,0x4,restore_mode,i32,st0rm94,(camera.md; 1.2 not carried: no access in the paired code)
+S_camera_mode_record,,0x8,param,f32[10],st0rm94,camera+0x1c points here (camera.md; 1.2 not carried: no access in the paired code)
+S_camera_mode_record,,0x30,name,chars[16],st0rm94,the developers' label for the mode (camera.md; 1.2 not carried: no access in the paired code)
+S_camera_mode_record,,0x40,flags,i32,st0rm94,"bit 0 -> camera+0x22, bit 1 hides the player model (camera.md; 1.2 not carried: no access in the paired code)"
+S_con_register,,0x0,console,ptr:C_console,st0rm94,(console.md; 1.2 not carried: no access in the paired code)
+S_con_register,,0x4,flags,u32,st0rm94,bit 0 = clear after render (console.md; 1.2 not carried: no access in the paired code)
+S_con_register,,0x8,refcount,u32,st0rm94,(console.md; 1.2 not carried: no access in the paired code)
+S_console_line,,0x0,text,str,st0rm94,strdup'd (console.md; 1.2 not carried: no access in the paired code)
+S_console_line,,0x4,r,i32,st0rm94,-1 => use the console's default (console.md; 1.2 not carried: no access in the paired code)
+S_console_line,,0x8,g,i32,st0rm94,-1 => default (console.md; 1.2 not carried: no access in the paired code)
+S_console_line,,0xC,b,i32,st0rm94,-1 => default (console.md; 1.2 not carried: no access in the paired code)
+S_console_line,,0x10,group,i32,st0rm94,line group id (console.md; 1.2 not carried: no access in the paired code)
+S_console_line,,0x14,x_override,f32,st0rm94,> 0.0 => use instead of the console's x (console.md; 1.2 not carried: no access in the paired code)
+S_console_line,,0x18,y_override,f32,st0rm94,(console.md; 1.2 not carried: no access in the paired code)
+S_crashreport_module,,0x0,name,ptr:C_string,st0rm94,[H] MODULEENTRY32.szModule (crash_report.md; 1.2 not carried: no access in the paired code)
+S_crashreport_module,,0x4,path,ptr:C_string,st0rm94,[H] MODULEENTRY32.szExePath (crash_report.md; 1.2 not carried: no access in the paired code)
+S_crashreport_module,,0x8,base,u32,st0rm94,[H] modBaseAddr (crash_report.md; 1.2 not carried: no access in the paired code)
+S_crashreport_module,,0xC,size,u32,st0rm94,[H] modBaseSize (crash_report.md; 1.2 not carried: no access in the paired code)
+S_crashreport_module,,0x10,strings,vector<C_string>,st0rm94,[M] allocator byte + begin/end/cap (crash_report.md; 1.2 not carried: no access in the paired code)
+S_crashreport_module,,0x20,preferred_base,u32,st0rm94,"[H] ""Preferred load address is ..."" from the map file (crash_report.md; 1.2 not carried: no access in the paired code)"
+S_crashreport_module,,0x24,symbols,vector<S_crashreport_symbol>,st0rm94,[H] allocator byte + begin/end/cap (crash_report.md; 1.2 not carried: no access in the paired code)
+S_crashreport_module,,0x30,map_tried,i8,st0rm94,[H] one-shot guard on the map-file load (crash_report.md; 1.2 not carried: no access in the paired code)
+S_crashreport_symbol,,0x0,name,ptr:C_string,st0rm94,"[H] the decorated symbol name, e.g (crash_report.md; 1.2 not carried: no access in the paired code)"
+S_crashreport_symbol,,0x4,rva,u32,st0rm94,"[H] Rva+Base, rebased when the module moved (crash_report.md; 1.2 not carried: no access in the paired code)"
+S_crashreport_symbol,,0x8,lib_object,ptr:C_string,st0rm94,"[H] the ""lib:object"" column of the map line (crash_report.md; 1.2 not carried: no access in the paired code)"
+S_DEBRIS,,0x0,frame,ptr:I3D_frame,st0rm94,[H] the 'OBJ_' frame carrying the billboard (debris.md; 1.2 not carried: no access in the paired code)
+S_DEBRIS,,0x4,vel_x,f32,st0rm94,[H] randomised inside the caller's spread and (debris.md; 1.2 not carried: no access in the paired code)
+S_DEBRIS,,0x8,vel_y,f32,st0rm94,scaled by the caller's speed (debris.md; 1.2 not carried: no access in the paired code)
+S_DEBRIS,,0xC,vel_z,f32,st0rm94,[H] (debris.md; 1.2 not carried: no access in the paired code)
+S_DEBRIS,,0x10,spin_angle,f32,st0rm94,"[H] wrapped into [0, 2pi) every tick (debris.md; 1.2 not carried: no access in the paired code)"
+S_DEBRIS,,0x14,spin_rate,f32,st0rm94,[H] +/-11.309733 x (rand x 0.3 + 0.7) (debris.md; 1.2 not carried: no access in the paired code)
+S_DEBRIS,,0x18,live,i8,st0rm94,[H] cleared when vel_y drops below -20.0 (debris.md; 1.2 not carried: no access in the paired code)
+S_DICE,,0x0,alloc,i8,st0rm94,[M] MSVC allocator byte (glass_shatter.md; 1.2 not carried: no access in the paired code)
+S_DICE,,0x4,merged_begin,ptr,st0rm94,"[H] the fused frames, one per distinct material (glass_shatter.md; 1.2 not carried: no access in the paired code)"
+S_DICE,,0x8,merged_end,ptr,st0rm94,written by glass_shatter_merge_settled_shards (glass_shatter.md; 1.2 not carried: no access in the paired code)
+S_DICE,,0xC,merged_cap,ptr,st0rm94,[H] (glass_shatter.md; 1.2 not carried: no access in the paired code)
+S_DICE,,0x10,shards,ptr:S_DICE_OBJ,st0rm94,[H] the loose shard array (glass_shatter.md; 1.2 not carried: no access in the paired code)
+S_DICE,,0x14,shard_count,i32,st0rm94,[H] (glass_shatter.md; 1.2 not carried: no access in the paired code)
+S_DICE_OBJ,,0x0,frame,ptr:I3D_frame,st0rm94,[H] the 'OBJ_' frame carrying this triangle (glass_shatter.md; 1.2 not carried: no access in the paired code)
+S_DICE_OBJ,,0x4,vel_x,f32,st0rm94,[H] seeded from the impact direction x a (glass_shatter.md; 1.2 not carried: no access in the paired code)
+S_DICE_OBJ,,0x8,vel_y,f32,st0rm94,random -0.20..+0.79 factor (glass_shatter.md; 1.2 not carried: no access in the paired code)
+S_DICE_OBJ,,0xC,vel_z,f32,st0rm94,[H] (glass_shatter.md; 1.2 not carried: no access in the paired code)
+S_DICE_OBJ,,0x10,spin_angle,f32,st0rm94,[H] integrated by spin_rate each tick (glass_shatter.md; 1.2 not carried: no access in the paired code)
+S_DICE_OBJ,,0x14,spin_rate,f32,st0rm94,[H] (rand() % 0x78 + 0x14) * 0.1 = 2.0..15.2 (glass_shatter.md; 1.2 not carried: no access in the paired code)
+S_DICE_OBJ,,0x18,contact_point,f32[3],st0rm94,[H] out-param of the downward collision probe (glass_shatter.md; 1.2 not carried: no access in the paired code)
+S_DICE_OBJ,,0x24,contact_normal,f32[3],st0rm94,[H] the plane the shard rests on (glass_shatter.md; 1.2 not carried: no access in the paired code)
+S_DICE_OBJ,,0x30,animating,i8,st0rm94,[H] 1 while live (glass_shatter.md; 1.2 not carried: no access in the paired code)
+S_DICE_OBJ,,0x31,falling,i8,st0rm94,[H] 1 while in motion (glass_shatter.md; 1.2 not carried: no access in the paired code)
+S_DICE_OBJ,,0x32,probed,i8,st0rm94,[H] the ground-probe latch: set after a probe (glass_shatter.md; 1.2 not carried: no access in the paired code)
+S_DICE_OBJ,,0x33,pad33,i8,st0rm94,[H] tail padding: no instruction addresses it (glass_shatter.md; 1.2 not carried: no access in the paired code)
+S_ELEMENT,,0x0,vehicle,ptr:C_car,st0rm94,[H] the chase car (dedup key (pursuit-event-manager.md; 1.2 not carried: no access in the paired code)
+S_ELEMENT,,0x4,driver,ptr:C_driver,st0rm94,[H] 0x29C-byte C_driver (pursuit-event-manager.md; 1.2 not carried: no access in the paired code)
+S_ELEMENT,,0x8,target_vehicle,ptr:C_car,st0rm94,[H] target's current vehicle (= target+0x98) or 0 (pursuit-event-manager.md; 1.2 not carried: no access in the paired code)
+S_ELEMENT,,0xC,target,ptr:C_actor,st0rm94,[H] pursued actor (0 => chase a fixed position) (pursuit-event-manager.md; 1.2 not carried: no access in the paired code)
+S_ELEMENT,,0x10,dispatch_pos,f32[3],st0rm94,[M] +0x10..+0x18 fixed destination (target == 0) (pursuit-event-manager.md; 1.2 not carried: no access in the paired code)
+S_ELEMENT,,0x1C,event_flags,u32,st0rm94,[M] ((sub_event >> 8) & 0x201F) | 1 (pursuit-event-manager.md; 1.2 not carried: no access in the paired code)
+S_ELEMENT,,0x20,action_status,u32,st0rm94,[H] E_STATUS (init 0 (pursuit-event-manager.md; 1.2 not carried: no access in the paired code)
+S_ELEMENT,,0x24,mode,u32,st0rm94,"[H] chase TYPE, ""VoleMode"", set at build only (§8) (pursuit-event-manager.md; 1.2 not carried: no access in the paired code)"
+S_ELEMENT,,0x28,mode_timer_ms,u32,st0rm94,"[H] armed, stepped and reset by the tick (§3) (pursuit-event-manager.md; 1.2 not carried: no access in the paired code)"
+S_ELEMENT,,0x2C,cadence_timer_ms,u32,st0rm94,[H] re-evaluation cadence and stall timer (pursuit-event-manager.md; 1.2 not carried: no access in the paired code)
+S_ELEMENT,,0x30,unused_30,u32,st0rm94,[H] zero-filled at build (pursuit-event-manager.md; 1.2 not carried: no access in the paired code)
+S_ELEMENT,,0x34,avoid_car,ptr:C_car,st0rm94,[H] the car the driver is steering around (pursuit-event-manager.md; 1.2 not carried: no access in the paired code)
+S_ELEMENT,,0x38,limit_a,f32,st0rm94,"[H] build-time threshold, meaning per mode (pursuit-event-manager.md; 1.2 not carried: no access in the paired code)"
+S_ELEMENT,,0x3C,limit_b,f32,st0rm94,"[H] build-time threshold, meaning per mode (pursuit-event-manager.md; 1.2 not carried: no access in the paired code)"
+S_ELEMENT,,0x40,horn_timer_ms,i32,st0rm94,[H] horn on while > 0 (pursuit-event-manager.md; 1.2 not carried: no access in the paired code)
+S_GameItem,0x0,0x0,id,u16,game.h,game.h kHumanInventory; st0rm94: item_id
+S_GameItem,,0x2,magazine_out,u16,st0rm94,[H] the spent magazine or clip has been dropped (inventory.md; 1.2 not carried: no access in the paired code)
+S_GameItem,0x4,0x4,loaded,u32,game.h,game.h kHumanInventory; st0rm94: clip_ammo
+S_GameItem,0x8,0x8,reserve,u32,game.h,game.h kHumanInventory; st0rm94: reserve_ammo
+S_GameItem,,0xC,unk0c,u32,st0rm94,[U] copied with the record (inventory.md; 1.2 not carried: no access in the paired code)
+S_input_binding,,0x0,mode,i32,st0rm94,"0 = whole/digital, 1 = positive half-axis (input.md; 1.2 not carried: no access in the paired code)"
+S_input_binding,,0x4,device_kind,i16,st0rm94,"1 = keyboard, 2 = mouse, 3 = joystick (input.md; 1.2 not carried: no access in the paired code)"
+S_input_binding,,0x6,code,u16,st0rm94,see the encoding table below (input.md; 1.2 not carried: no access in the paired code)
+S_input_binding,,0x8,device_index,i32,st0rm94,index into joy_begin[] (input.md; 1.2 not carried: no access in the paired code)
+S_input_joy_state,,0x0,axis,f32[8],st0rm94,8 analog axes (input.md; 1.2 not carried: no access in the paired code)
+S_input_joy_state,,0x0,device,ptr,st0rm94,ijoy.dll device object (input.md; 1.2 not carried: no access in the paired code)
+S_input_joy_state,,0x4,cur,S_joy_block,st0rm94,filled by device vtable slot 0x50 (input.md; 1.2 not carried: no access in the paired code)
+S_input_joy_state,,0x20,pov,f32[4],st0rm94,"4 POV hat angles, in radians (input.md; 1.2 not carried: no access in the paired code)"
+S_input_joy_state,,0x30,pov_centered,chars[4],st0rm94,non-zero => that hat is centred (input.md; 1.2 not carried: no access in the paired code)
+S_input_joy_state,,0x34,buttons,u32[4],st0rm94,128-bit button mask (input.md; 1.2 not carried: no access in the paired code)
+S_input_joy_state,,0x48,prev,S_joy_block,st0rm94,filled by device vtable slot 0x54 (input.md; 1.2 not carried: no access in the paired code)
+S_line_vertex,,0x0,z,"float x, y,",st0rm94,(line_batch.md; 1.2 not carried: no access in the paired code)
+S_line_vertex,,0xC,colour,u32,st0rm94,ARGB (line_batch.md; 1.2 not carried: no access in the paired code)
+S_line_vertex,,0x10,v,"float u,",st0rm94,texture coordinate 0 (line_batch.md; 1.2 not carried: no access in the paired code)
+S_mission_settings,,0x0,details_scale,f32,st0rm94,[H] clamped 0.4 (mission.md; 1.2 not carried: no access in the paired code)
+S_mission_settings,,0x4,draw_distance_scale,f32,st0rm94,[H] clamped 0.3 (mission.md; 1.2 not carried: no access in the paired code)
+S_mission_settings,,0x8,view_distance,f32,st0rm94,"[H] world units, default 250.0 (mission.md; 1.2 not carried: no access in the paired code)"
+S_mission_settings,,0xC,effects_quality,i32,st0rm94,[H] 0..2 — the weather detail level (mission.md; 1.2 not carried: no access in the paired code)
+S_mission_settings,,0x10,sounds_quality,i32,st0rm94,[H] 0..2 (mission.md; 1.2 not carried: no access in the paired code)
+S_mission_settings,,0x14,shadow_quality,i32,st0rm94,"[H] index 0..5 -> {0,1,3,6,9,15} (mission.md; 1.2 not carried: no access in the paired code)"
+S_mission_settings,,0x18,particles_quality,i32,st0rm94,[H] 0..2 — the hydrant detail level (mission.md; 1.2 not carried: no access in the paired code)
+S_screen_fade,,0x0,active,i8,st0rm94,[H] g_fade_active — gates the per-frame tick (screen_fade.md; 1.2 not carried: no access in the paired code)
+S_screen_fade,,0x1,animating,i8,st0rm94,[H] set while t is moving (screen_fade.md; 1.2 not carried: no access in the paired code)
+S_screen_fade,,0x4,speed,f32,st0rm94,"[H] g_screen_fade_speed, ctor writes 1.0f (screen_fade.md; 1.2 not carried: no access in the paired code)"
+S_screen_fade,,0x8,t,f32,st0rm94,"[H] g_screen_fade_t, clamped to [0, 1] (screen_fade.md; 1.2 not carried: no access in the paired code)"
+S_screen_fade,,0xC,direction,i32,st0rm94,"[H] +1 / -1, multiplied into the step (screen_fade.md; 1.2 not carried: no access in the paired code)"
+S_screen_fade,,0x10,aspect,f32,st0rm94,"[H] g_screen_fade_aspect, 0x3f0a60dd = 1/1.85 (screen_fade.md; 1.2 not carried: no access in the paired code)"
+S_shot,0x0,0x0,from,f32[3],game.h,kShotFrom
+S_shot,0xC,0xC,way,f32[3],game.h,kShotWay
+S_shot,0x1C,0x1C,now,f32[3],game.h,kShotNow
+S_shot,0x28,0x28,damage,f32,game.h,kShotDamage
+S_shot,0x2C,0x2C,shooter,ptr,game.h,kShotShooter
+S_shot,0x34,0x34,prim,ptr,game.h,kShotPrim
+S_shot,0x38,0x38,hit_pos,f32[3],game.h,kShotHitPos
+S_shot,0x44,0x44,hit_normal,f32[3],game.h,kShotHitNormal
+S_shot,0x50,0x50,hits,u8,game.h,kShotHits
+S_shot,0x58,0x58,surface,u8,game.h,kShotSurface
+S_sound_params,,0x0,mode,u8,st0rm94,[H] 0/1/2 -> sound type 3/1/2 (vtable slot 0x58) (sound_table.md; 1.2 not carried: no access in the paired code)
+S_sound_params,,0x4,range,f32[4],st0rm94,"[H] the range quadruple, slot 0x5c (sound_table.md; 1.2 not carried: no access in the paired code)"
+S_sound_params,,0x14,cone,f32[2],st0rm94,"[H] inner and outer cone angle in radians, slot 0x60 (sound_table.md; 1.2 not carried: no access in the paired code)"
+S_sound_params,,0x1C,volume,f32,st0rm94,[H] slot 0x68 (sound_table.md; 1.2 not carried: no access in the paired code)
+S_sound_params,,0x20,out_volume,f32,st0rm94,"[H] the volume outside the cone, slot 0x64 (sound_table.md; 1.2 not carried: no access in the paired code)"
+S_sound_table,,0x0,name,str,st0rm94,[H] display name (sound_table.md; 1.2 not carried: no access in the paired code)
+S_sound_table,,0x4,id,i32,st0rm94,[H] the key every consumer looks up (sound_table.md; 1.2 not carried: no access in the paired code)
+S_sound_table,,0x8,group_id,i32,st0rm94,[H] matches S_sound_group.id (sound_table.md; 1.2 not carried: no access in the paired code)
+S_sound_table,,0xC,variant_file,str[6],st0rm94,[H] up to six alternative .wav names (sound_table.md; 1.2 not carried: no access in the paired code)
+S_sound_table,,0x24,variant_thresh,i32[6],st0rm94,"[H] CUMULATIVE percentages, ASCENDING, last = 100 (sound_table.md; 1.2 not carried: no access in the paired code)"
+S_sound_table,,0x3C,variant_count,u8,st0rm94,[H] 0..6 (sound_table.md; 1.2 not carried: no access in the paired code)
+S_sound_table,,0x3D,param_count,u8,st0rm94,[H] 0..4 playback blocks (sound_table.md; 1.2 not carried: no access in the paired code)
+S_sound_table,,0x3E,playable,u8,st0rm94,"[H] 1 = usable, 0 = its file would not open (sound_table.md; 1.2 not carried: no access in the paired code)"
+S_sound_table,,0x3F,pad,u8,st0rm94,[U] (sound_table.md; 1.2 not carried: no access in the paired code)
+S_sound_table,,0x40,params,S_sound_params[4],st0rm94,[H] stride 0x24 (sound_table.md; 1.2 not carried: no access in the paired code)
+S_SURR_ACT,,0x0,pos,f32[3],st0rm94,[H] where the actor was last seen standing (physical_object.md; 1.2 not carried: no access in the paired code)
+S_SURR_ACT,,0xC,actor,ptr:C_actor,st0rm94,[H] the riding actor — the removal key (physical_object.md; 1.2 not carried: no access in the paired code)
+S_SURR_ACT,,0x10,ttl_ms,i32,st0rm94,[H] counted down by the frame delta (physical_object.md; 1.2 not carried: no access in the paired code)
+S_uv_scroll_channel,,0x0,target,ptr:I3D_visual,st0rm94,[H] from i3d_frame_get_mesh_object_ptr (frame+0x1e0) (uv_scroll.md; 1.2 not carried: no access in the paired code)
+S_uv_scroll_channel,,0x4,frame,ptr:I3D_frame,st0rm94,[H] the owning scene frame (uv_scroll.md; 1.2 not carried: no access in the paired code)
+S_uv_scroll_channel,,0x8,du_per_sec,f32,st0rm94,[H] U scroll rate (uv_scroll.md; 1.2 not carried: no access in the paired code)
+S_uv_scroll_channel,,0xC,dv_per_sec,f32,st0rm94,[H] V scroll rate (uv_scroll.md; 1.2 not carried: no access in the paired code)
+S_uv_scroll_channel,,0x10,u,f32,st0rm94,"[H] accumulated U, wrapped into [-1, 1] (uv_scroll.md; 1.2 not carried: no access in the paired code)"
+S_uv_scroll_channel,,0x14,v,f32,st0rm94,"[H] accumulated V, wrapped into [-1, 1] (uv_scroll.md; 1.2 not carried: no access in the paired code)"
+S_uv_scroll_channel,,0x18,channel_mask,u8,st0rm94,[H] 0x1 -> visual+0x5c/+0x60 (uv_scroll.md; 1.2 not carried: no access in the paired code)
+S_wheel,0x4,0x4,frame,ptr:I3D_frame,game.h,kWheelFrame
+S_wheel,0x8,0x8,steer_frame,ptr:I3D_frame,game.h,kWheelSteerFrame
+S_wheel,0x38,0x38,load,f32,game.h,kWheelLoad
+S_wheel,0x88,0x88,stiffness,f32,game.h,kWheelStiffness
+S_wheel,0x8C,0x8C,free_length,f32,game.h,kWheelFreeLength
+S_wheel,0x90,0x90,force,f32,game.h,kWheelForce
+S_wheel,0x94,0x94,compression,f32,game.h,kWheelCompression
+S_wheel,0x98,0x98,damper,f32[2],game.h,kWheelDamper
+S_wheel,0x120,0x120,flags,u32,game.h,kWheelFlags
+soundArena,0x0,0x0,pos,f32[3],st0rm94,[H] where the sound was emitted (soundArena.md; 1.2 carried: 8 of 8 accesses)
+soundArena,0x0,0x0,slots,sound_slot[16],st0rm94,"[H] THE LIVE-SOUND RING - 16 slots, stride 0x20 (soundArena.md; 1.2 carried: 8 of 8 accesses)"
+soundArena,0xC,0xC,type,u32,st0rm94,"[H] 1 = a step, 2 = gunfire (§4) (soundArena.md; 1.2 carried: 2 of 2 accesses)"
+soundArena,0x10,0x10,time,u32,st0rm94,[H] emission time on the game clock (soundArena.md; 1.2 carried: 3 of 3 accesses)
+soundArena,0x14,0x14,intensity,f32,st0rm94,[H] the intensity at the source (soundArena.md; 1.2 carried: 2 of 2 accesses)
+soundArena,,0x18,range,f32,st0rm94,[H] the distance at which the intensity reaches 0 (soundArena.md; 1.2 not carried: accesses disagree {'0x18': 1})
+soundArena,,0x1C,source,ptr:C_actor,st0rm94,[H] the emitting actor (soundArena.md; 1.2 not carried: no access in the paired code)
+soundArena,0x200,0x200,cursor,u32,st0rm94,[H] the write cursor: a new sound takes slot (soundArena.md; 1.2 carried: 8 of 8 accesses)
+soundArena,0x204,0x204,next_gc_at,u32,st0rm94,[H] throttle stamp: the next game-clock time at which (soundArena.md; 1.2 carried: 3 of 3 accesses)
+talk_slot,,0x0,flags,u32,st0rm94,[H] bit map below (ai_talkman.md; 1.2 not carried: no access in the paired code)
+talk_slot,,0x4,group,u32,st0rm94,"[H] talk group, an index into g_ai_talk_line_groups (§3) (ai_talkman.md; 1.2 not carried: no access in the paired code)"
+talk_slot,,0x8,last_line,u32,st0rm94,[H] the line played last (ai_talkman.md; 1.2 not carried: no access in the paired code)
+talk_slot,,0xC,delay,u32,st0rm94,[H] repeat delay in ms (ai_talkman.md; 1.2 not carried: no access in the paired code)
+talk_slot,,0x10,jitter,u32,st0rm94,[H] jitter window in ms (ai_talkman.md; 1.2 not carried: no access in the paired code)
+talk_slot,,0x14,last_spoke,u32,st0rm94,[H] mission clock when the slot last fired (ai_talkman.md; 1.2 not carried: no access in the paired code)
+talk_slot,,0x18,next_due,u32,st0rm94,[H] mission clock at which the slot becomes eligible (ai_talkman.md; 1.2 not carried: no access in the paired code)
+talk_slot,,0x1C,percent,u32,st0rm94,[H] fire probability 0..100 (ai_talkman.md; 1.2 not carried: no access in the paired code)
+talk_slot,,0x20,priority,u32,st0rm94,"[H] eviction key (lowest is evicted), see §2a (ai_talkman.md; 1.2 not carried: no access in the paired code)"

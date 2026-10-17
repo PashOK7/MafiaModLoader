@@ -68,7 +68,8 @@ def main():
     tools = {t['name'] for t in c.request('tools/list')['tools']}
     want = {'game_status', 'call', 'commands_list', 'mem_read', 'mem_write', 'log_tail', 'mods_list', 'mod_reload',
             'where', 'game_launch', 'game_close', 'crash_list', 'crash_inspect', 'deploy', 'kb_search', 'kb_function', 'tap',
-            'screenshot', 'input', 'script', 'script_commands', 'spawn', 'teleport', 'give', 'profile', 'wait', 'watch'}
+            'screenshot', 'input', 'script', 'script_commands', 'spawn', 'teleport', 'give', 'profile', 'wait', 'watch',
+            'inspect'}
     check('tools/list has every tool', want <= tools, want - tools)
 
     if os.path.exists(os.path.join(ROOT, 'knowledge', 'game.exe', 'strings.local.csv')):   # (tools/kb_strings.py made it)
@@ -86,6 +87,16 @@ def main():
         check('kb_function: the decompiled code from the reverse folder', 'missions' in text, text[-400:])
     ok, text = c.tool('kb_function', {'key': 'C_human::Hit', 'code': False})
     check('kb_function: by name', ok and '005762A0' in text, text)
+    # the structures (knowledge/structs, tools/kb_structs.py): a layout needs no game
+    ok, text = c.tool('inspect', {'as': 'C_player', 'fields': ['health', 'kind']})
+    check('inspect: a layout with its bases, both builds\' offsets and sources', ok and '"C_actor"' in text and
+          '+0x644 C_human.health f32 [game.h]' in text and '+0x10 C_actor.kind i32 [game.h]' in text, text[:600])
+    ok, text = c.tool('inspect', {'as': 'C_Vehicle', 'fields': ['speed']})
+    check('inspect: a field of each build (C_Vehicle in 1.0 is 1.2\'s + 0x7C)', ok and '+0x59C (1.0 +0x618) speed' in text, text[:600])
+    ok, text = c.tool('inspect', {'as': 'C_nothing'})
+    check('inspect: an unknown structure refused', not ok and 'no struct' in text, text)
+    ok, text = c.tool('kb_search', {'query': 'fuel_tank'})
+    check('kb_search: the structures\' fields', ok and 'C_Vehicle.fuel_tank +0x1FA0 (1.0 +0x1F1C)' in text, text[-400:])
 
     harness = subprocess.Popen([os.path.join(HARNESS, 'mml_harness.exe'), '--seconds', '60'], cwd=HARNESS,
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -100,6 +111,8 @@ def main():
               and '"mods"' in text and 'hook_a.call' in text, text[:600])
         ok, text = c.tool('mem_read', {'addr': 'mml_harness.exe+0', 'size': 2})
         check('mem_read', ok and '4d5a' in text, text)
+        ok, text = c.tool('inspect', {'at': 'mml_harness.exe+0', 'as': 'S_GameItem'})
+        check('inspect: an object of no known build of the game refused', not ok and 'build is not known' in text, text)
         ok, text = c.tool('mod_reload', {'id': 'hello_c'})
         check('mod_reload', ok and '"generation"' in text, text)
         ok, text = c.tool('call', {'method': 'events.since', 'params': {'seq': 0, 'types': 'MOD_LOADED', 'filter': {'name': 'hello_c'}}})

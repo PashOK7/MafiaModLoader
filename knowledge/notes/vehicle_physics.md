@@ -163,3 +163,13 @@ analysis failed in both: parameters are misnamed and uses of the step are missin
   wheels' frames), Tick runs n x ms, the state goes back, n2 x ms2, back again; the floats whose changes differ are
   listed. Checked: 16 x 1 against 16 x 1 differ nowhere (the copy is whole). Sounds, skid marks and dents made
   inside are not undone.
+
+## GetRVelMassJ's matrices are not the same in both builds (read 2026-10-17)
+
+`C_Vehicle::GetRVelMassJ` (1.2 `0x4CC4B0`, 1.0 `0x518500`; check_builds.py's witness for game_build.h's
+`vehInertiaA`, `vehInertiaB`) reads two 4x4 matrices: 1.2 the pair at `+0xD68`, `+0xDA8` (after the body's matrix
+`+0xCE8` and its inverse `+0xD28`; it multiplies through `0x60FC54`), 1.0 the pair at `+0xD64`, `+0xDA4`, which are
+1.0's body matrix and its inverse (game_build.h `vehMatrix`; 1.0 keeps the step before's pair at the C_Vehicle's
+start, `vehMatrixPrev` `+0x68`; it copies 16 dwords with `rep movsd`). So the two offsets of each name are what each
+build's function reads, not one field: what 1.2's pair holds was not read. Found while carrying st0rm94's fields
+(tools/kb_structs.py leaves both out of knowledge/structs).

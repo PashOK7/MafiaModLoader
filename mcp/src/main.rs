@@ -12,6 +12,7 @@ mod game;
 mod kb;
 mod script;
 mod shot;
+mod structs;
 
 use base64::Engine;
 use rmcp::{
@@ -284,6 +285,29 @@ struct KbSearchArgs {
     /// At most this many (default 40).
     #[serde(default)]
     limit: Option<usize>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct InspectArgs {
+    /// The object: an address ("0x0A1B2C30", "Game.exe+0x2F9464"), or "player", "car" (driven now, else last),
+    /// "mission", "game" (C_game), each followed by fields if wanted: "player.inventory", "player.vehicle",
+    /// "game.camera", "car.vehicle", "player.inventory.belt[1]" (an embedded field is its place, a pointer what it
+    /// points at). Absent: the layout of `as` alone, both builds' offsets, no game needed.
+    #[serde(default)]
+    at: Option<String>,
+    /// The structure ("C_human", "C_car", "C_Vehicle", "I3D_frame", "G_Inventory"...): absent, it is told by the
+    /// object's vtable (or by the field it was reached through).
+    #[serde(default, rename = "as")]
+    as_: Option<String>,
+    /// Keep the fields whose name holds one of these ("health", "pos").
+    #[serde(default)]
+    fields: Option<Vec<String>>,
+    /// Follow the pointers to known structures this many levels (default 0, at most 2).
+    #[serde(default)]
+    depth: Option<u32>,
+    /// Also the non-zero dwords no field covers, as integers and floats: what is not named yet.
+    #[serde(default)]
+    gaps: Option<bool>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -915,7 +939,44 @@ impl Server {
     /// the matching lines of the notes in knowledge/notes). Start here for any question about the game.
     #[tool(annotations(read_only_hint = true))]
     async fn kb_search(&self, Parameters(a): Parameters<KbSearchArgs>) -> Out {
-        kb::search(&a.query, a.module.as_deref(), a.limit.unwrap_or(40)).map(|v| pretty(&v))
+        let limit = a.limit.unwrap_or(40);
+        let mut v = kb::search(&a.query, a.module.as_deref(), limit)?;
+        v["structs"] = structs::search(&a.query.to_lowercase(), limit);
+        Ok(pretty(&v))
+    }
+
+    /// An object of the running game read by its structure (knowledge/structs: the SDK's fields, the classes read
+    /// from both builds' constructors, st0rm94's fields carried to 1.2): its class told by its vtable, every field
+    /// named, typed and valued for the build running, pointers named (a class, a frame's name, a module's place)
+    /// and followed with `depth`. With no `at`: a structure's layout, both builds' offsets with their sources.
+    /// kb_search finds structures and fields by name.
+    #[tool(annotations(read_only_hint = true))]
+    async fn inspect(&self, Parameters(a): Parameters<InspectArgs>) -> Out {
+        let st = structs::get()?;
+        let filter = a.fields.unwrap_or_default();
+        let Some(at) = a.at else {
+            let name = a.as_.ok_or("`at` (an object of the game) or `as` (a structure's layout)")?;
+            return structs::layout(&name, &filter).map(|v| pretty(&v));
+        };
+        let ping = self.bridge.call("ping", json!({}), 3000).await?;
+        let build = ping["build"].as_str().unwrap_or_default().to_string();
+        let b = structs::build_index(&build).ok_or_else(|| format!("the game's build is not known (\"{build}\")"))?;
+        let ins = structs::Inspector { bridge: &self.bridge, b, st };
+        let (addr, reached, how) = ins.resolve(&at).await?;
+        let (s, how) = match a.as_ {
+            Some(n) => (st.find(&n).ok_or_else(|| format!("no struct \"{n}\" (kb_search finds them by name)"))?, "as asked".to_string()),
+            None => match ins.detect(addr).await {
+                Some((s, why)) => (s, why),
+                None => match reached {
+                    Some(s) => (s, format!("as {how} is typed")),
+                    None => return Err(format!("0x{addr:08X}: its vtable is none known; say `as`")),
+                },
+            },
+        };
+        let opts = structs::Opts { filter, depth: a.depth.unwrap_or(0).min(2), gaps: a.gaps.unwrap_or(false) };
+        let mut v = ins.inspect(addr, s, &opts).await?;
+        v["how"] = json!(how);
+        Ok(pretty(&v))
     }
 
     /// One function of the game: its facts, callers and callees (named where known), and its decompiled code.
@@ -968,7 +1029,7 @@ deploy -> call its commands -> log_tail. After a crash: crash_list, crash_inspec
 The world without a program: `spawn {car | human, at, in}` makes a car or a person of any model (the game's car list: \
 `call world.cars`), `teleport {actor, to}` moves one, `give {actor, item}` arms by name (`call world.items`), \
 `call world.seat {actor, car, seat}`, `world.remove {actor}`; mods: actor_spawn, actor_teleport, give_item, actor_seat. \
-The game's own script machine: `script {code, act, flt}` runs a program in the missions' language (teleport, spawn, weapons, kill, cars, weather, camera: every command the missions have), `script_commands {query}` tells the commands' arguments, docs/SCRIPTS.md has recipes; a mod does the same with script_run. What a game function does, where a thing lives: kb_search, then kb_function (facts, calls, decompiled code); \
+The game's own script machine: `script {code, act, flt}` runs a program in the missions' language (teleport, spawn, weapons, kill, cars, weather, camera: every command the missions have), `script_commands {query}` tells the commands' arguments, docs/SCRIPTS.md has recipes; a mod does the same with script_run. What a game function does, where a thing lives: kb_search, then kb_function (facts, calls, decompiled code); an object by its structure: `inspect {at: player}` (or car.vehicle, game.camera, an address: its class by its vtable, every field named and valued), `inspect {as: C_human}` a layout; \
 knowledge/notes/ holds the hand-written findings. \
 More through `call` (commands_list {query} gives each one's params and result; docs/PROTOCOL.md has them all): \
 people: `humans.list`, `human.skeleton {actor}`, `human.pose {actor, bones, ms}`, `human.anim {actor, play | stop | \

@@ -14,6 +14,8 @@ server (`kb_search`, `kb_function`) and the loader uses to name addresses (`cras
 | `game.exe/twins_10.csv` | the 1.0 twin of each 1.2 function that could be paired by its code (va12, va10, how) | `tools/kb_external.py` |
 | `game.exe/script_commands.csv` | the mission scripts' commands: opcode, name, handler in 1.2; opcode, handler in 1.0 (read from the binaries) | `tools/kb_external.py` |
 | `notes/*.md` | findings that do not fit a table: formats, layouts, how things work (`notes/external.md`: the other projects and where to read them by topic) | by hand |
+| `structs/structs.csv` | the game's classes and structures: base, size, vtable and actor kind, each build's (`struct,base,size,size_10,vtable,vtable_10,kind,source,note`) | `tools/kb_structs.py` |
+| `structs/fields.csv` | their fields: each build's offset (empty: not known in that build), name, type, source, note (`struct,offset,offset_10,name,type,source,note`); MCP `inspect` reads objects of the running game through them | `tools/kb_structs.py`, plus rows by hand |
 
 `<module>` is `game.exe` (addresses are virtual addresses, image base 0x400000) or `ls3df.dll` (image base
 0x10000000 as in the decompile; at run time the DLL loads elsewhere: use `ls3d+<rva>`).
@@ -53,3 +55,24 @@ python tools/kb_external.py --game12 <1.2 Game.exe> --ls3d12 <1.2 LS3DF.dll> --g
   it. Prefer the decompile's class names (`C_human::Hit`) where it has them.
 - A format, a layout, a behaviour: a note in `notes/`, with how it was checked (in the game, by a test, read only).
 - After MafiaReverse changes: `python tools/kb_import.py` (keeps the hand-made rows).
+- A field understood in the running game: a row in `structs/fields.csv` with source `mml` and how it was seen in the
+  note (both builds' offsets where both were seen). `python tools/kb_structs.py` (the labs' Game.exe, st0rm94's
+  clone in `re/ext`) makes the generated rows again and keeps the hand-made ones; after changing `game.h` or
+  `game_build.h` run it (their fields are named in its `SDK_FIELDS`; a name it lists that the headers lost stops it).
+
+## The structures (`structs/`)
+
+Each row says where it comes from:
+
+- `game.h`, `game_build.h`: the SDK's own fields (what the loader's code uses, seen in both builds' games), their
+  offsets read from the headers by `tools/kb_structs.py`, so the table and the code never part.
+- `code`: read from both builds' Game.exe: a class's vtable, its actor kind (`+0x10`), its base class and the
+  classes embedded in it (the constructors it calls on `this` and on `this+n`), its size (the `new` before its
+  constructor). The constructors are 1.2's named `C_x::C_x` and their 1.0 twins; a 1.0 vtable is taken when its
+  slots' functions are twins of the 1.2 vtable's.
+- `st0rm94`: the fields of his `structs/*.md` (1.0), carried to 1.2 through the code: every memory access of the
+  class's functions is aligned with its twin's in the other build, and a field's 1.2 offset is the one its 1.0
+  offset's accesses agree on (three of four at least, two at least), unless the sure fields on both sides of it move
+  by another step (a class moves in steps between the builds: 1.0's C_Vehicle is 1.2's + 0x7C past its start). The
+  note says how many accesses agreed; a field none placed keeps no 1.2 offset (`inspect` counts them as
+  `not_placed`).
