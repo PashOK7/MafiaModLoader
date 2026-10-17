@@ -15,6 +15,8 @@
 //     ]
 //   }
 // "kind" ("slider", "check", "choice") may be given; else it follows the default's type and "options".
+// A label of more than 20 characters takes a second line (40 at most: the label column is 160 px wide). A slider's
+// value is shown as a percentage of its range, or as the value itself with "show": "value" (a number the mod reads).
 //
 // The pages are the loader's own (menus.cpp's owners kLoaderOwner: the list, kLoaderPage: a mod's page over it), so
 // Esc on a mod's page returns to the list, and on the list to Options, as the game's own pages do. Both builds.
@@ -50,7 +52,9 @@ struct Settings {
 
 // the page's ids: the keyboard walks a page by rising id
 constexpr int kListRow = 100, kListBack = 400;
-constexpr int kLabel = 200, kInput = 300, kValue = 500, kDefaults = 900, kBack = 901;
+constexpr int kLabel = 200, kInput = 300, kValue = 500, kLabel2 = 600, kDefaults = 900, kBack = 901;
+// A label's column is 160 px: about 20 characters of the game's font. A longer label takes a second line.
+constexpr size_t kLabelChars = 20;
 // A window's controls start under its title: 44 units below its top (measured on the game's own optionsb); its paper
 // ends `h` below the top, the game's pages leave about 25 under their last row (optionsa: Back at 462..487 of 540)
 constexpr float kHeader = 44, kFooter = 25;
@@ -215,22 +219,44 @@ void OnModPage(int id, void *) {
 }
 
 // A mod's page, over the list (or over the open menu).
+// A label as one line, or two: a longer one is split at the last space that fits in a line (the rest is the second
+// line). A label whose second line is still too long is cut there: the manifests keep their labels to two lines.
+std::vector<std::string> LabelLines(const std::string &s) {
+    if (s.size() <= kLabelChars) return {s};
+    size_t cut = s.rfind(' ', kLabelChars);
+    if (cut == std::string::npos || cut == 0) cut = kLabelChars;
+    const size_t next = (cut < s.size() && s[cut] == ' ') ? cut + 1 : cut;
+    return {s.substr(0, cut), s.substr(next, kLabelChars)};
+}
+
 bool OpenModPage(const std::string &modId, std::string *err) {
     Settings s;
     MmlMod *mod = ModById(modId);
     if (!mod || !Find(modId, &s)) { *err = "no loaded mod \"" + modId + "\" with settings"; return false; }
     std::vector<MmlMenuControl> c;
-    const float row = 25, top = 20, w = 460;
-    float bottom = top + row * static_cast<float>(s.controls.size()) + 15;
+    // a row is 25 px high; a row whose label takes two lines is 36 px, its control centred between them
+    const float row1 = 25, row2 = 36, top = 20, w = 460;
+    std::vector<std::vector<std::string>> labels(s.controls.size());
+    std::vector<float> rowTop(s.controls.size());
+    float rows = 0;
+    for (size_t i = 0; i < s.controls.size(); i++) {
+        labels[i] = LabelLines(s.controls[i].label);
+        rowTop[i] = top + rows;
+        rows += labels[i].size() > 1 ? row2 : row1;
+    }
+    float bottom = top + rows + 15;
     float h = kHeader + bottom + 25 + kFooter;
     c.push_back({1, "wind", (800 - w) / 2, std::max(20.0f, (600 - h) / 2), w, h, s.title.c_str(), 0});
     std::vector<std::string> keep;   // (a selector's options, alive through the call: the menus intern what they keep)
     keep.reserve(s.controls.size());
     for (size_t i = 0; i < s.controls.size(); i++) {
         const Control &k = s.controls[i];
-        float y = top + row * static_cast<float>(i);
+        const bool two = labels[i].size() > 1;
+        const float ry = rowTop[i];
+        const float y = ry + (two ? 6 : 0);   // the control's line (centred in a two-line row)
         int n = static_cast<int>(i);
-        c.push_back({kLabel + n, "stxt", 30, y, 160, 18, k.label.c_str(), 0});
+        c.push_back({kLabel + n, "stxt", 30, two ? ry + 3 : ry, 160, 18, labels[i][0].c_str(), 0});
+        if (two) c.push_back({kLabel2 + n, "stxt", 30, ry + 18, 160, 18, labels[i][1].c_str(), 0});
         if (k.kind == kKey) {
             c.push_back({kInput + n, "butt", 200, y - 2, 200, 22, " ", 0});
         } else if (k.kind == kCheck) {
