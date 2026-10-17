@@ -188,6 +188,7 @@ void Frame() {
     RunPosted();
     StartFrame();
     MenusFrame();
+    PanelFrame();     // (panel.cpp: a key taken for a mod's setting)
     InputFrame();     // (before the settings' events: a handler that binds its hotkey again must not lose a press)
     ConfigFrame();
     FilesFrame();

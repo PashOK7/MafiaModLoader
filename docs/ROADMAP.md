@@ -510,6 +510,12 @@ What is done, what comes next and later, and what is known to be missing or wron
   800x600 units); `camera.set` (an agent's camera held for a time), `camera.release`, `camera.state`. The example
   `mods/examples/orbit_cam` (an orbit around the player while he is played, a label over his head) seen in the 1.2
   and 1.0 labs; `camera.set` from above the taxi in both; offline tests with no game.
+- **A mod's keys chosen in the game's menus** (2026-10-17; item 14's rest, block 8b of the order): a `"key"` row of the
+  tuning panel (Options > Mods): a click waits for the next key with its modifiers (input.cpp's key taken: the game
+  gets no key meanwhile, the key taken kept from it until it is let go; Esc keeps the setting) and makes it the mod's
+  hotkey setting, live. `sun_shafts`' on-and-off key the first. Found on the way and fixed: 1.2's pages lost a text
+  set before the game made them (a page opened with no menu open waits for the pause menu): menus.cpp applies it
+  when the page is made. Seen in the 1.2 and 1.0 labs (F9, F10 taken; the new key toggling the effect; Esc).
 - **The game's own camera** (2026-10-17; item 9's rest, block 8a of the order): `game_camera` (its mode with the
   game's own name for it, the car it follows, its field of view and range), `game_camera_mode` (the game's
   G_Camera::SetMode, as its camera-change key: on foot behind and from the eyes, in a vehicle its six modes; only what
@@ -559,7 +565,8 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
    as its fixed pipeline does (the same picture, checked by screenshots in both labs: the starting point a mod
    copies and changes), *7c* what per-object shading needs further (a shadow map from the sun through the scene
    views; the lights near an object).
-8. *(8a done 2026-10-17: the game's camera modes and a field of view it keeps; see "Done".)* The camera and control (item 9's rest: the game's own camera logic; item 14's rest: a mod's actions in the
+8. *(8a done 2026-10-17: the game's camera modes and a field of view it keeps; 8b: a mod's keys chosen in the game's
+   menus; see "Done".)* The camera and control (item 9's rest: the game's own camera logic; item 14's rest: a mod's actions in the
    controls menu, another kind of vehicle).
 9. The agent's tools (items 24, 25 and the snapshots in Later: structures by name, crash triage in one call,
    restore points).
@@ -891,8 +898,11 @@ merged, sorted by importance):
   even); the rays through trees are as solid as their shadows (above); single scattering only; translucent things
   (glass) get the haze of what is behind them. Looked at in the city by day in both labs; the countryside's sun was
   found once its lights were read (the first query, before the scene's lights were scanned, had none).
-- **The tuning panel** (host/panel.cpp): sliders, check boxes and selectors only (no colour, text or key fields: a
-  `tint` is set with `config.set`); the slider's arrows step as the game's own do (a click held repeats); the list of
+- **The tuning panel** (host/panel.cpp): sliders, check boxes, selectors and keys (no colour or text fields: a
+  `tint` is set with `config.set`); a mod's key is chosen on its page in Options > Mods, not in the game's own
+  Controls screen (optionsc1: its rows are `vidc` controls on the game's 60 binding slots, whose arrays and the
+  profile's fixed 0x2D0-byte copy would have to grow for a mod's: left, the profiles untouched); a key, not a mouse
+  button or a joystick's; the slider's arrows step as the game's own do (a click held repeats); the list of
   mods is made when it opens (a mod loaded while it is open is there at its next opening); the Options reached from
   the main menu were not looked at.
 - **The meshes the game draws** (host/meshes.cpp, block 6d): the finest LOD only; plain and lightmapped objects

@@ -1449,3 +1449,17 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **In both labs** alike: the bonnet's (14), the driver's head's (13) and the eyes' (3) cameras, 103 degrees held
   through the game's own changes and getting out of the car, a car's mode refused on foot with the modes it can take.
 - **Tests**: offline ALL PASSED (no game: refused).
+
+## 2026-10-17 (night): a mod's keys chosen in the game's menus (block 8b of the order)
+
+- **Read**: the game's Controls screen (`menu.def optionsc1`): its rows are `vidc` controls, the binding slot in
+  their flags' low bits (0..59), on the controls object's slot arrays (knowledge/notes/game.md) and the profile's
+  fixed copy of them. A mod's action there would grow the game's arrays and its profiles: not done (Known gaps).
+- **Made**: input.cpp's key taken for a setting (KeyGrab*: the game gets no key meanwhile; the key taken kept from it
+  until it is let go; Esc cancels), panel.cpp's `"key"` rows (PanelFrame takes the key, the setting made live),
+  sun_shafts' on-and-off key on its page, its hotkey bound anew when its settings change.
+- **Found and fixed**: 1.2's pages lost texts set before the game made them (menus.cpp's OnCreate set a text only on
+  a control with none in its description): seen on a page opened with no menu open (it waits for the pause menu).
+- **In both labs**: F9 (1.0) and F10 (1.2) taken from the page and saved, the new key toggling the effect, Esc keeping
+  the one there.
+- **Tests**: offline ALL PASSED (a "key" row read from a manifest).

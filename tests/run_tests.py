@@ -193,6 +193,8 @@ def kit_tests(b):
           c.get('overlay.x', {}).get('shown') == '10 px' and c.get('overlay.on', {}).get('kind') == 'check' and
           c.get('name', {}).get('kind') == 'choice' and c['name']['shown'] == 'kit', c)
     check('panel.state: a slider with no max is left out (the log says why)', 'broken' not in c, c)
+    check('panel.state: a "key" row shows the hotkey setting', c.get('hotkey', {}).get('kind') == 'key' and
+          c['hotkey']['shown'] == c['hotkey']['value'] and c['hotkey']['shown'], c)
     r = b.call('panel.open', {'mod': 'kit'})
     check('panel.open with no game: refused, saying why', not r['ok'] and 'page' in str(r), r)
 

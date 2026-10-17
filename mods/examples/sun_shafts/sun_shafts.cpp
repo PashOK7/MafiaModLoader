@@ -77,6 +77,8 @@ void AskShadows() {
     H->shader_shadows(M, &s);
 }
 
+void OnHotkey(void *);
+
 void ReadSettings() {
     S.on = H->config_number(M, "on", 1) != 0;
     S.intensity = static_cast<float>(H->config_number(M, "intensity", 3.0));
@@ -93,6 +95,7 @@ void ReadSettings() {
     S.dimming = static_cast<float>(H->config_number(M, "dimming", 0.4));
     S.mapSize = static_cast<int>(H->config_number(M, "shadow_map", 2048));
     S.debug = static_cast<int>(H->config_number(M, "debug", 0));
+    H->hotkey(M, H->config_string(M, "hotkey", "F7"), OnHotkey, nullptr);   // (bound anew when the setting changes)
     AskShadows();
 }
 
@@ -228,7 +231,6 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     if (!g_pass) return 3;
     ReadSettings();
     H->subscribe(M, MML_EVENT_CONFIG_CHANGED, OnEvent, nullptr);
-    H->hotkey(M, H->config_string(M, "hotkey", "F7"), OnHotkey, nullptr);
     H->command(M, "status", "on or off, frames drawn, the half size, the pass's CPU time, the settings", Status, nullptr);
     return 0;
 }

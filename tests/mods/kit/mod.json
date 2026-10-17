@@ -3,6 +3,7 @@
     { "key": "speed", "label": "Speed", "min": 0, "max": 100 },
     { "key": "overlay.x", "label": "Overlay x", "min": 0, "max": 100, "step": 5, "unit": "px" },
     { "key": "overlay.on", "label": "Overlay" },
+    { "key": "hotkey", "label": "Hotkey", "kind": "key" },
     { "key": "name", "label": "Name", "options": ["kit", { "value": "other", "label": "Another" }] },
     { "key": "broken", "label": "No max", "min": 0 }
   ] } }

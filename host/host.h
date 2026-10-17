@@ -123,6 +123,11 @@ bool InputMethod(const std::string &method, const std::string &paramsJson, std::
 // Keys and actions for mods (mml.h key_*, action_*, hotkey): as the game got them at its last read.
 void InputFrame();                        // every frame (game thread): the hotkeys that went down are called
 int KeyCodeOf(const char *name);          // a DirectInput code, -1: no such name
+// a key taken for a setting (panel.cpp): started, stopped, its result (0 waiting, 1 taken as a combo, -1 Esc)
+void KeyGrabStart();
+void KeyGrabStop();
+int KeyGrabResult(std::string *combo);
+bool KeyGrabbing();
 bool KeyDown(int key);
 bool KeyPressed(int key);
 int ActionSlotOf(const char *name);       // -1: no such action (or no game)
@@ -203,6 +208,7 @@ void GameCameraMissionClose();
 bool GameCameraMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 // the mods' settings in the game's Options > Mods (panel.cpp)
 void PanelInit();
+void PanelFrame();                        // (game_hooks.cpp) a key taken for a "key" row made the setting
 bool PanelMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 bool ConfigMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 

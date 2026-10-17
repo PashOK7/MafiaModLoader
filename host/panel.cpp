@@ -34,7 +34,7 @@ using json = nlohmann::json;
 namespace host {
 namespace {
 
-enum Kind { kSlider, kCheck, kChoice };
+enum Kind { kSlider, kCheck, kChoice, kKey };
 struct Control {
     std::string key, label, unit;
     Kind kind = kSlider;
@@ -56,6 +56,7 @@ constexpr int kLabel = 200, kInput = 300, kValue = 500, kDefaults = 900, kBack =
 constexpr float kHeader = 44, kFooter = 25;
 
 std::string g_pageMod;   // the mod whose page is open (kLoaderPage)
+int g_grabbing = -1;     // the "key" row waiting for a key (input.cpp KeyGrab*), -1: none
 int g_item;              // the Mods row's handle in Options
 
 bool ParseSettings(MmlMod *mod, Settings *out, std::string *why) {
@@ -80,7 +81,9 @@ bool ParseSettings(MmlMod *mod, Settings *out, std::string *why) {
         json d = def.empty() ? json() : json::parse(def, nullptr, false);
         std::string kind = c.value("kind", "");
         if (kind.empty()) kind = c.contains("options") ? "choice" : d.is_boolean() ? "check" : "slider";
-        if (kind == "check") {
+        if (kind == "key") {
+            k.kind = kKey;   // (a hotkey's combo: "F7", "Ctrl+Shift+R")
+        } else if (kind == "check") {
             k.kind = kCheck;
         } else if (kind == "choice") {
             k.kind = kChoice;
@@ -144,6 +147,10 @@ std::string Shown(const Control &k, MmlMod *mod) {
     std::string j = ConfigValueJson(mod, k.key.c_str());
     char b[64];
     if (k.kind == kCheck) return "";
+    if (k.kind == kKey) {
+        json v = j.empty() ? json() : json::parse(j, nullptr, false);
+        return v.is_string() && !v.get<std::string>().empty() ? v.get<std::string>() : std::string("(none)");
+    }
     if (k.kind == kChoice) {
         json v = j.empty() ? json() : json::parse(j, nullptr, false);
         for (size_t i = 0; i < k.values.size(); i++) if (k.values[i] == v) return k.labels[i];
@@ -161,7 +168,9 @@ void ShowValues(const Settings &s, MmlMod *mod) {
         const Control &k = s.controls[i];
         int id = kInput + static_cast<int>(i);
         std::string j = ConfigValueJson(mod, k.key.c_str());
-        if (k.kind == kCheck) {
+        if (k.kind == kKey) {
+            MenuPageText(kLoaderPage, id, Shown(k, mod).c_str());
+        } else if (k.kind == kCheck) {
             MenuPageValue(kLoaderPage, id, Number(j, 0) != 0 ? 1.0f : 0.0f);
         } else if (k.kind == kChoice) {
             json v = j.empty() ? json() : json::parse(j, nullptr, false);
@@ -179,7 +188,7 @@ void OnModPage(int id, void *) {
     Settings s;
     MmlMod *mod = ModById(g_pageMod);
     if (!mod || !Find(g_pageMod, &s)) { MenuPageClose(kLoaderPage); return; }   // (the mod is gone)
-    if (id == kBack) { ConfigFlush(mod); MenuPageClose(kLoaderPage); return; }
+    if (id == kBack) { KeyGrabStop(); g_grabbing = -1; ConfigFlush(mod); MenuPageClose(kLoaderPage); return; }
     if (id == kDefaults) {
         for (const Control &k : s.controls) ConfigSetLive(mod, k.key.c_str(), "null");
         ShowValues(s, mod);
@@ -188,6 +197,13 @@ void OnModPage(int id, void *) {
     int i = id - kInput;
     if (i < 0 || i >= static_cast<int>(s.controls.size())) return;
     const Control &k = s.controls[static_cast<size_t>(i)];
+    if (k.kind == kKey) {   // the next key pressed is the setting (Esc: as it was); PanelFrame takes it
+        if (g_grabbing >= 0) MenuPageText(kLoaderPage, kInput + g_grabbing, Shown(s.controls[static_cast<size_t>(g_grabbing)], mod).c_str());
+        g_grabbing = i;
+        KeyGrabStart();
+        MenuPageText(kLoaderPage, id, "Press a key (Esc: keep)");
+        return;
+    }
     float v = 0;
     if (!MenuPageGetValue(kLoaderPage, id, &v)) return;
     json value;
@@ -215,7 +231,9 @@ bool OpenModPage(const std::string &modId, std::string *err) {
         float y = top + row * static_cast<float>(i);
         int n = static_cast<int>(i);
         c.push_back({kLabel + n, "stxt", 30, y, 160, 18, k.label.c_str(), 0});
-        if (k.kind == kCheck) {
+        if (k.kind == kKey) {
+            c.push_back({kInput + n, "butt", 200, y - 2, 200, 22, " ", 0});
+        } else if (k.kind == kCheck) {
             c.push_back({kInput + n, "chck", 200, y, 20, 20, nullptr, 0});
         } else if (k.kind == kChoice) {
             std::string options;
@@ -276,6 +294,25 @@ void OnOptionsItem(int, void *) {
 
 } // namespace
 
+// Each frame (game_hooks.cpp): a key taken for a "key" row made the mod's setting.
+void PanelFrame() {
+    if (g_grabbing < 0) return;
+    std::string combo;
+    int r = KeyGrabResult(&combo);
+    if (!r) {
+        if (!KeyGrabbing()) g_grabbing = -1;   // (stopped elsewhere)
+        return;
+    }
+    Settings s;
+    MmlMod *mod = ModById(g_pageMod);
+    int i = g_grabbing;
+    g_grabbing = -1;
+    if (!mod || !Find(g_pageMod, &s) || i >= static_cast<int>(s.controls.size())) return;
+    const Control &k = s.controls[static_cast<size_t>(i)];
+    if (r > 0) ConfigSetLive(mod, k.key.c_str(), json(combo).dump());
+    MenuPageText(kLoaderPage, kInput + i, Shown(k, mod).c_str());
+}
+
 void PanelInit() {
     // Options (optionsb in both builds: 100 Controls, 101 Audio and Video, 400 Back): Mods under Audio and Video
     g_item = MenuItemAdd(kLoaderOwner, "optionsb", 101, "Mods", OnOptionsItem, nullptr);
@@ -301,7 +338,7 @@ bool PanelMethod(const std::string &method, const std::string &paramsJson, std::
         json controls = json::array();
         for (const Control &k : s.controls) {
             std::string v = ConfigValueJson(mod, k.key.c_str());
-            json c = {{"key", k.key}, {"label", k.label}, {"kind", k.kind == kCheck ? "check" : k.kind == kChoice ? "choice" : "slider"},
+            json c = {{"key", k.key}, {"label", k.label}, {"kind", k.kind == kCheck ? "check" : k.kind == kChoice ? "choice" : k.kind == kKey ? "key" : "slider"},
                       {"value", v.empty() ? json() : json::parse(v, nullptr, false)}, {"shown", Shown(k, mod)}};
             if (k.kind == kSlider) { c["min"] = k.min; c["max"] = k.max; if (k.step > 0) c["step"] = k.step; }
             controls.push_back(c);

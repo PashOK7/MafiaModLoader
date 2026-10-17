@@ -101,6 +101,7 @@ struct Page {
     std::vector<const char *> texts;    // by control, in the order they are made (interned; null: none)
     std::vector<int> ids;               // by control, the same order
     std::vector<uint32_t> tags;         // by control, the same order
+    std::vector<char> textLater;        // by control: a text set before the game made the page (OnCreate sets it)
     std::map<int, float> values;        // the controls' values (sliders, bars, checks, numbers...), set when the page is made
     std::map<int, std::pair<int, int>> ranges;   // numbers' ranges
     MmlMenuFn fn;
@@ -573,7 +574,8 @@ int __fastcall PageOnCreate(uintptr_t menu, void *) {
         if (!page->texts[i]) continue;
         if (HasOptions(page->tags[i])) SetOptions(controls[i], SplitOptions(page->texts[i]));   // "Off|On", "Low|Medium|High"
         else if (page->tags[i] == kTagPicture) SetPicture(controls[i], page->texts[i]);
-        else if (R32(controls[i] + kCtlTextId) <= kTextBase) SetText(controls[i], page->texts[i]);   // (no text id: set here)
+        else if (R32(controls[i] + kCtlTextId) <= kTextBase || (i < page->textLater.size() && page->textLater[i]))   // (no text id, or a text
+            SetText(controls[i], page->texts[i]);                                                                // set after the description)
     }
     SetScrollRanges(controls);
     for (uintptr_t c : controls) {
@@ -985,7 +987,11 @@ int PageText(Page *p, int id, const char *text) {
     const char *t = Intern(text);
     bool known = false;
     for (size_t i = 0; i < p->ids.size(); i++)
-        if (p->ids[i] == id) { p->texts[i] = t; known = true; }
+        if (p->ids[i] == id) {
+            p->texts[i] = t;
+            known = true;
+            if (!p->menu) { if (p->textLater.size() < p->ids.size()) p->textLater.resize(p->ids.size()); p->textLater[i] = 1; }
+        }
     if (!known) return 0;
     if (!p->menu) return 1;
     for (uintptr_t c : Controls(p->menu))

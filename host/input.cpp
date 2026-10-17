@@ -169,6 +169,17 @@ void ApplyKeyHolds(uint8_t *state) {
     }
 }
 
+// A key taken for a setting (panel.cpp's "key" rows): the next key that goes down, with the modifiers held, as a
+// combo ("Ctrl+F7"); Esc ends it with nothing. Meanwhile the game gets no key at all (a menu would take Enter or the
+// arrows), and the key taken is kept from it until it is let go (the game would see it go down at the next read).
+std::string DikName(int dik);
+bool VirtualKeys();
+enum GrabState { kGrabNone, kGrabWaiting, kGrabDone, kGrabCancelled };
+GrabState g_grab = kGrabNone;
+std::string g_grabbed;
+int g_grabSwallow;   // the key taken, kept from the game while it is held
+bool IsModifier(int dik) { return dik == kDikLCtrl || dik == kDikRCtrl || dik == kDikLShift || dik == kDikRShift || dik == kDikLAlt || dik == kDikRAlt; }
+
 // One read of the keyboard (the game's, with the injected keys in it): the state and its edges for mods.
 void KeysRead(const uint8_t *state) {
     for (int i = 0; i < 256; i++) {
@@ -178,6 +189,17 @@ void KeysRead(const uint8_t *state) {
     }
     bool ctrl = g_keyNow[kDikLCtrl] || g_keyNow[kDikRCtrl], shift = g_keyNow[kDikLShift] || g_keyNow[kDikRShift],
          alt = g_keyNow[kDikLAlt] || g_keyNow[kDikRAlt];
+    if (g_grab == kGrabWaiting) {
+        for (int i = 1; i < 256; i++) {
+            if (!g_keyEdge[i] || IsModifier(i)) continue;
+            if (i == 0x01) { g_grab = kGrabCancelled; g_grabSwallow = i; break; }   // (Esc)
+            g_grabbed = std::string(ctrl ? "Ctrl+" : "") + (shift ? "Shift+" : "") + (alt ? "Alt+" : "") + DikName(i);
+            g_grab = kGrabDone;
+            g_grabSwallow = i;
+            break;
+        }
+        return;   // (no hotkey fires while a key is being taken)
+    }
     for (Hotkey &h : g_hotkeys)
         if (g_keyEdge[h.key] && h.ctrl == ctrl && h.shift == shift && h.alt == alt) h.pending = true;
 }
@@ -186,7 +208,13 @@ int __stdcall KeyboardHook(void *igraph) {
     int r = g_keyboard(igraph);
     uint8_t *state = reinterpret_cast<uint8_t *>(ModuleBase("LS3DF.dll") + game::Ls3d().keyboardState);
     ApplyKeyHolds(state);
+    bool grabbing = g_grab == kGrabWaiting;
     KeysRead(state);
+    if (grabbing) memset(state, 0, 256);   // (the frame that took it too)
+    if (g_grabSwallow) {
+        if (state[g_grabSwallow] & 0x80 || g_keyNow[g_grabSwallow]) state[g_grabSwallow] &= 0x7F;
+        if (!g_keyNow[g_grabSwallow]) g_grabSwallow = 0;
+    }
     for (const Capture &c : g_captures)
         if (c.key) state[c.code & 0xFF] &= 0x7F;   // (the game reads it up; mods saw it in KeysRead)
     return r;
@@ -606,6 +634,14 @@ int KeyCodeOf(const char *name) {
     long v = strtol(name, &end, 0);
     return *end || v <= 0 || v > 255 ? -1 : static_cast<int>(v);
 }
+void KeyGrabStart() { g_grab = VirtualKeys() ? kGrabNone : kGrabWaiting; g_grabbed.clear(); }
+void KeyGrabStop() { if (g_grab == kGrabWaiting) g_grab = kGrabNone; }
+int KeyGrabResult(std::string *combo) {   // 0 waiting (or none), 1 a key taken, -1 Esc
+    if (g_grab == kGrabDone) { *combo = g_grabbed; g_grab = kGrabNone; return 1; }
+    if (g_grab == kGrabCancelled) { g_grab = kGrabNone; return -1; }
+    return 0;
+}
+bool KeyGrabbing() { return g_grab == kGrabWaiting; }
 bool KeyDown(int key) { return key > 0 && key < 256 && g_keyNow[key]; }
 bool KeyPressed(int key) { return key > 0 && key < 256 && g_keyEdge[key]; }
 

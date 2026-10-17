@@ -13,6 +13,7 @@
     "title": "God rays",
     "controls": [
       {"key": "on", "label": "On"},
+      {"key": "hotkey", "label": "On and off", "kind": "key"},
       {"key": "density", "label": "Haze", "min": 0, "max": 0.05},
       {"key": "intensity", "label": "Light", "min": 0, "max": 10},
       {"key": "anisotropy", "label": "Glow to the sun", "min": 0, "max": 0.95},

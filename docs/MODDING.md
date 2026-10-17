@@ -1170,9 +1170,14 @@ seen while it is dragged; the file in the data folder is written once the change
 }
 ```
 
-- **The kinds** follow the default in `config.json` (or `"kind"`: `slider`, `check`, `choice`): a boolean is a check
-  box; a number a slider, `min` to `max` (both needed), snapped to `step`, a whole number when the step and the ends
-  are whole; `options` a selector of those values (`{"value", "label"}`, or plain values shown as they are).
+- **The kinds** follow the default in `config.json` (or `"kind"`: `slider`, `check`, `choice`, `key`): a boolean is a
+  check box; a number a slider, `min` to `max` (both needed), snapped to `step`, a whole number when the step and the
+  ends are whole; `options` a selector of those values (`{"value", "label"}`, or plain values shown as they are).
+- **A key** (`"kind": "key"`, the setting a hotkey's combo: `"F7"`, `"Ctrl+Shift+R"`): its row shows the combo; a
+  click waits for the next key pressed, with the modifiers held, and makes it the setting (Esc keeps the one there);
+  meanwhile the game gets no key, and the key taken is kept from it until it is let go. Bind the hotkey in the
+  function that reads your settings (`H->hotkey(M, H->config_string(M, "hotkey", "F7"), fn, NULL)`: the same
+  function again is bound anew), so a key chosen there works at once.
 - **The value beside a slider**: its place in the range in % by default; with `unit` (or `"show": "value"`) the
   value itself.
 - **The page**: the title (`title`, else the mod's `name` up to a colon), a row a control, **Defaults** (every key on
