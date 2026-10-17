@@ -396,6 +396,8 @@ NOT_CALLED = {'mods.rescan', 'mod.reload', 'mod.load', 'mod.unload', 'gfx.reset'
 def methods_tests(b):
     gen = subprocess.run([sys.executable, os.path.join(ROOT, 'tools', 'gen_methods.py'), '--check'], capture_output=True, text=True)
     check('host/methods.inc is what docs/PROTOCOL.md gives (tools/gen_methods.py --check)', gen.returncode == 0, gen.stdout)
+    gen = subprocess.run([sys.executable, os.path.join(ROOT, 'tools', 'gen_script_commands.py'), '--check'], capture_output=True, text=True)
+    check('sdk script_commands.h is what script_commands.csv gives (tools/gen_script_commands.py --check)', gen.returncode == 0, gen.stdout)
     gen = subprocess.run([sys.executable, os.path.join(ROOT, 'tools', 'check_paths.py')], capture_output=True, text=True)
     check('no ANSI path and no strict json dump in the sources (tools/check_paths.py)', gen.returncode == 0, gen.stdout)
     sys.path.insert(0, os.path.join(ROOT, 'tools'))

@@ -577,6 +577,15 @@ What is done, what comes next and later, and what is known to be missing or wron
   function, file stream by a narrow path, `std::filesystem` or strict json dump in the host, the SDK, the mods and the
   tests. Seen in both labs through junctions named `Игра` and `Mafia ☃ 試` (the game, the mods, a mod's file read by
   the game's own rw_data); offline in the same two names.
+- **Trigger view** (2026-10-17; `mods/examples/trigger_view`): the mission scripts' triggers drawn in the world, a
+  debug view for mission and mod authors: detectors (their command now, signal, DETECTOR_INRANGE's radii, a use
+  point's reach as the Action key finds it and its menu line, DETECTOR_WAITFORHIT's boxes) and the scene's areas
+  (ISPOINTINAREA's meshes, the player inside); `trigger_view.list` as data. With it the SDK's `script_commands.h`
+  (each command's number in both builds: `game::ScriptCommandName`, `game::ScriptOpcode`; `{` and `}` were missing
+  from the table), the detectors', programs' and areas' layouts in game.h, and the host's frame of 4096 drawn items
+  told when full (`draw.state` `dropped_last_frame`; the view's areas once took it whole and hid its detectors with
+  no word). Seen in both labs: 1.2's Old Prison (46 detectors, 4 areas, the crowbar's "Pick up crowbar"), the
+  freerides' music and district areas, 1.0's Salieri's bar.
 - **People, skeletons, poses** (2026-10-16; item 6, block 6a): the host keeps every `C_human` (`humans_list`,
   `human_player`), a person's skeleton by the bones' names (`human_skeleton`: 18 joints, the pelvis, the root), a
   pose written for the frame's drawing (`bone_set` in `RENDER_BEGIN`, each posed model updated once after);
@@ -827,6 +836,13 @@ merged, sorted by importance):
   the shaders on the game's drawing, the scene views) are not offered. Not the loader's code; a player whose folder
   is named in the system's own code page (Cyrillic on a Russian Windows) is not affected. Paths longer than
   MAX_PATH are not handled anywhere (nor by the game).
+- **The frame's drawn items** (host/draw.cpp): 4096 for every mod together, first come first served: a mod that
+  draws much can leave none to the mods after it (now told: the log, `draw.state` `dropped_last_frame`); no share
+  per mod.
+- **Trigger view** (mods/examples/trigger_view): the scene is walked for areas every 3 s (3.6 ms that frame in Old
+  Prison); people with a script (C_entity) are read only for the areas they test, not drawn; a detector's radii are
+  every DETECTOR_INRANGE of its program, not the one it waits in; a use point in a frame's space was not met (its
+  matrix is applied as the game applies it, not seen).
 - **Restore points** (host/saves.cpp, `restore`): a point is the game's own save, so it holds what the game saves:
   what it does not (a sound playing, a particle in the air, the camera's smoothing, a mod's state it did not put at
   GAME_SAVING) is not put back; mods are told GAME_LOADED with slot 599. Made in a mission in play only (not in the

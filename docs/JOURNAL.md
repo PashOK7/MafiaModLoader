@@ -1575,7 +1575,7 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   rw_data's CreateFileA where the folder can be spelled); the stand-in game loads its DLLs by wide paths, as Windows
   loads the game's. Offline and mcp_smoke ALL PASSED.
 - **In both labs**, each started through a junction named `build\Игра 1.0` / `build\Игра 1.2` (game_dir pointed
-  there, put back after): the freeride, core and telemetry loaded, freeride_picture's file read through
+  there, put back after): the freeride, core, trigger_view and telemetry loaded, freeride_picture's file read through
   the game's own rw_data (`files.read`: source mod), a setting written into the data folder, the log in UTF-8.
 - **Later the same day, so that it does not come back** (the owner: "never again a problem with Cyrillic in the
   path"):
@@ -1596,3 +1596,20 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
     dialog, then plain Direct3D 8): Known gaps. `lab.py status` counts any Game.exe as the lab's (the owner's own game
     from another folder was running): conservative on purpose, left.
 
+## 2026-10-17: trigger view
+
+- **Checked** the example a session before had left unfinished (`mods/examples/trigger_view`, `script_commands.h`,
+  game.h's detectors and areas): it loaded, but in the freeride its detectors were never drawn.
+- **Found**: the host holds 4096 drawn items a frame for every mod together and dropped the rest without a word;
+  the view cut every edge of the city's areas (districts hundreds of metres long) into 2 m pieces and took them all
+  before its detectors. Now the host logs it once per mod and counts `dropped_last_frame` (draw.state); the view
+  cuts a line at the camera's near plane and draws it as one, keeps to `range`, draws its detectors first and makes
+  its circles of 8 to 32 pieces by their size on the screen (the freeride 40 items, Old Prison 1054).
+- **Found**: a use point's +0x0C is its reach squared and horizontal, with 1.5 m up and down (FindNearObjects 1.2
+  0x55E180, 1.0 0x61BF50: 2.25 the height squared in both), its place in the space of the matrix at +0x10, +0x2C the
+  action's id whose text is the menu's line: the view drew a 1.5 m sphere; now a cylinder of 1.22 m and the line
+  (game.h kUseReach2, kUseMatrix, kUseText, kUseHeight). C_human's type (+0x5FC, both builds) is game.h kHumanType.
+- **In both labs**: 1.2's freeride (20 areas: the music zones and districts, the player inside two), Old Prison (46
+  detectors: the commands they wait in, their radii, the crowbar's "used within 1.22 m: Pick up crowbar", a
+  door's box to hit; 4 areas tested by the scripts), 1.0's freeride and Salieri's bar (1.0's command numbers named).
+  Cost: 0.6 ms a frame, 3.6 ms the frame that walks the scene for areas (every 3 s; 12 000 frames in Old Prison).

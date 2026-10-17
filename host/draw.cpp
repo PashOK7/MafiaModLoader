@@ -219,6 +219,20 @@ bool Queue(std::vector<Item> *to, const Item &it) {
     return true;
 }
 
+// A mod's item for this frame; one past the frame's kMaxItems (every mod's together) is dropped, counted, and the
+// mod told once in the log (else a mod drawing much hides what it, or another mod, draws after: trigger_view's
+// areas once took the whole frame and its detectors were not drawn, with no word).
+unsigned g_droppedNow, g_droppedLast;
+std::vector<MmlMod *> g_told;   // mods told that the frame was full
+void QueueMod(MmlMod *mod, const Item &it) {
+    if (g_frame.size() < kMaxItems) { Queue(&g_frame, it); return; }
+    g_droppedNow++;
+    if (std::find(g_told.begin(), g_told.end(), mod) != g_told.end()) return;
+    g_told.push_back(mod);
+    Log(MML_LOG_WARN, "host", "draw: mod %s: the frame's %zu items (every mod's) are used: what it draws past them is "
+        "dropped (draw.state `dropped_last_frame`)", ModIdOf(mod), kMaxItems);
+}
+
 // The game's fonts draw its texts' code page (GameCodePage); the mods and the bridge give UTF-8. A text that is UTF-8
 // with more than ASCII in it is turned into the game's; anything else (ASCII, or a text already in the game's code
 // page, as mml.h asked before 2026-10-17: its bytes past 0x7F are seldom valid UTF-8) is drawn as it is.
@@ -309,6 +323,9 @@ void DrawInit() {
 void DrawFrame() {
     g_queuedLast = static_cast<unsigned>(g_frame.size());
     g_frame.clear();
+    g_droppedLast = g_droppedNow;
+    g_droppedNow = 0;
+    g_told.erase(std::remove_if(g_told.begin(), g_told.end(), [](MmlMod *m) { return !ModAlive(m); }), g_told.end());
     DWORD now = GetTickCount();
     g_held.erase(std::remove_if(g_held.begin(), g_held.end(), [&](const Item &it) { return static_cast<int>(it.until - now) <= 0; }), g_held.end());
     // a mod reloaded is a new MmlMod: the old ones' marks go once they are dead
@@ -317,7 +334,7 @@ void DrawFrame() {
 
 void DrawText(MmlMod *mod, float x, float y, float size, uint32_t argb, int font, int align, const char *text) {
     if (!mod || Off(mod) || !text || !*text || !(size > 0.0f)) return;
-    Queue(&g_frame, TextItem(mod, x, y, size, argb, font, align, ForFont(text).c_str()));
+    QueueMod(mod, TextItem(mod, x, y, size, argb, font, align, ForFont(text).c_str()));
 }
 
 float DrawTextWidth(int font, float size, const char *text) {
@@ -327,17 +344,17 @@ float DrawTextWidth(int font, float size, const char *text) {
 
 void DrawLine(MmlMod *mod, float x0, float y0, float x1, float y1, uint32_t argb) {
     if (!mod || Off(mod)) return;
-    Queue(&g_frame, ShapeItem(mod, kLine, x0, y0, x1, y1, argb));
+    QueueMod(mod, ShapeItem(mod, kLine, x0, y0, x1, y1, argb));
 }
 
 void DrawRect(MmlMod *mod, float x, float y, float w, float h, uint32_t argb, int filled) {
     if (!mod || Off(mod)) return;
-    Queue(&g_frame, ShapeItem(mod, filled ? kRect : kFrame, x, y, w, h, argb));
+    QueueMod(mod, ShapeItem(mod, filled ? kRect : kFrame, x, y, w, h, argb));
 }
 
 void DrawPicture(MmlMod *mod, int picture, float x, float y, float w, float h, float angle, uint32_t argb, const float uv[4]) {
     if (!mod || Off(mod) || picture <= 0) return;
-    Queue(&g_frame, PictureItem(mod, picture, x, y, w, h, angle, argb, uv));
+    QueueMod(mod, PictureItem(mod, picture, x, y, w, h, angle, argb, uv));
 }
 
 // The host's items for this 2D pass (hud.cpp, from HudPass): drawn under their owner's fault guard, dropped after it.
@@ -386,7 +403,7 @@ bool DrawMethod(const std::string &method, const std::string &paramsJson, std::s
             json off = json::array();
             for (MmlMod *m : g_off) off.push_back(ModIdOf(m));
             *reply = dump({{"hooked", g_hooked}, {"passes", g_passes}, {"queued_last_frame", g_queuedLast},
-                           {"drawn_last_pass", g_drawnLast}, {"held", g_held.size()}, {"off", off}, {"last_fault", g_lastFault}});
+                           {"dropped_last_frame", g_droppedLast}, {"max_items", kMaxItems}, {"drawn_last_pass", g_drawnLast}, {"held", g_held.size()}, {"off", off}, {"last_fault", g_lastFault}});
             *ok = true;
             return true;
         }

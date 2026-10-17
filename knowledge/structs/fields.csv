@@ -761,8 +761,8 @@ C_grenade,0x150,0x150,fire_lifetime_ms,i32,st0rm94,[H] arg 4 of game_new_fire = 
 C_grenade,0x154,0x154,fire_radius,f32,st0rm94,"[H] arg 5 of game_new_fire, squared into +0x14 (grenade.md; 1.2 carried: 2 of 2 accesses)"
 C_grenade,0x158,0x158,fire_damage_rate,f32,st0rm94,[H] arg 6 of game_new_fire = C_fire +0x18 (grenade.md; 1.2 carried: 2 of 2 accesses)
 C_grenade,,0x15C,net_direct_enabled,i8,st0rm94,[H] ctor sets 1 (grenade.md; 1.2 not carried: no access in the paired code)
-C_human,0x70,0x70,anim_slot,u32,st0rm94,"[H] the anim the human is CURRENTLY IN (read, not written, by the (human.md; 1.2 carried: 88 of 88 accesses)"
-C_human,0x74,0x74,cur_anim_id,u32,st0rm94,[H] the anim id being REQUESTED this frame (human.md; 1.2 carried: 132 of 132 accesses)
+C_human,0x70,0x70,anim_slot,u32,st0rm94,"[H] the anim the human is CURRENTLY IN (read, not written, by the (human.md; 1.2 carried: 89 of 89 accesses)"
+C_human,0x74,0x74,cur_anim_id,u32,st0rm94,[H] the anim id being REQUESTED this frame (human.md; 1.2 carried: 133 of 133 accesses)
 C_human,0x98,0x98,vehicle,ptr,game.h,kHumanVehicle; st0rm94: vehicle_link
 C_human,0x9C,0x9C,vehicle_link_2,ptr,st0rm94,[M] SECOND vehicle slot (human.md; 1.2 carried: 52 of 52 accesses)
 C_human,0xAC,0xAC,seat_index,i32,st0rm94,[H] seat index in the occupied vehicle (human.md; 1.2 carried: 431 of 431 accesses)

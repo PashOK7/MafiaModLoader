@@ -892,8 +892,10 @@ typedef struct MmlHost {
      * MML_EVENT_FRAME: every frame, the menus and the pause too; or MML_EVENT_MISSION_TICK): what is queued is
      * drawn once, in the frame being made, and dropped. A text is UTF-8 (turned into the code page of the game's
      * fonts: a character that has none there is a '?'; game::TextUtf8 turns a game text into UTF-8) and at most
-     * about 100 characters a call. A fault while a mod's items are drawn turns that mod's drawing off until it is
-     * reloaded (the log tells); the game goes on. */
+     * about 100 characters a call. A frame holds 4096 items, every mod's together: past them a mod's are dropped
+     * (the log tells once; draw.state `dropped_last_frame`), so a mod that draws much keeps to what is near. A
+     * fault while a mod's items are drawn turns that mod's drawing off until it is reloaded (the log tells); the
+     * game goes on. */
     void (*draw_text)(MmlMod *mod, float x, float y, float size, uint32_t argb, int font, int align, const char *text);
     float (*draw_text_width)(int font, float size, const char *text);   /* in the same units; 0 with no game */
     void (*draw_line)(MmlMod *mod, float x0, float y0, float x1, float y1, uint32_t argb);

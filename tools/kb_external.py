@@ -349,7 +349,9 @@ def script_table(path, build):
     mu.emu_start(decode, ret, count=5_000_000)
     mem = bytes(mu.mem_read(stack, size))
     names = {}
-    for m in re.finditer(rb'[A-Z_\[\]][A-Z0-9_\[\]]{1,30} ?\x00', mem):   # {char name[0x20]; int opcode}
+    # {char name[0x20]; int opcode}: the names are upper case, digits, '_', '[' ']', and the block's '{' and '}' alone
+    # (left out once by a pattern without them: their numbers had no name)
+    for m in re.finditer(rb'(?:[A-Z_\[\]][A-Z0-9_\[\]]{1,30}|(?<![^\x00])[{}]) ?\x00', mem):
         o = m.start()
         if o + 0x24 <= len(mem):
             op = struct.unpack_from('<i', mem, o + 0x20)[0]

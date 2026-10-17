@@ -95,6 +95,10 @@ float w = H->draw_text_width(MML_FONT_SMALL, 14, "how wide is this");
   there is a `?`). A text read from the game (its texts, its frames' names) is in that code page:
   `game::TextUtf8(text)` (mml/game/game.h) before drawing it, logging it or putting it in a reply. `MML_DRAW_LEFT`,
   `_CENTER`, `_RIGHT`: what `x` is.
+- **4096 items a frame**, every mod's together: what a mod queues past them is dropped (the log says so once, and
+  `call draw.state` counts `dropped_last_frame`). A mod that draws in the world (lines over the scene) draws what is
+  near, and one line a straight edge: cut it at the camera's near plane rather than into many pieces
+  (mods/examples/trigger_view, `Line3`).
 - It is the game's own 2D drawing, at the end of its 2D pass (over the HUD and the menus), so `screenshot` shows
   it. Nothing is drawn while the game loads.
 - A fault while your items are drawn turns your drawing off until the mod is reloaded (the log says so); the game
@@ -136,6 +140,10 @@ H->render_camera(&cam);          /* view, proj (the device's), eye, axes, fields
   the camera now).
 - `mods/examples/world_marker` (not enabled by default): a diamond and a beam over the player, fixed-function
   Direct3D 9, hidden by what stands in front (`world_marker.at {x, y, z}` puts it anywhere).
+- `mods/examples/trigger_view` (not enabled by default): lines over the frame instead (through walls), with
+  `camera_project`: the mission scripts' detectors and areas, a debug view (F7; Options > Mods > Trigger view;
+  `trigger_view.list`). It reads the scripts' programs and names their commands with `mml/game/script_commands.h`
+  (`game::ScriptCommandName(opcode)`, `game::ScriptOpcode("detector_inrange")`: the numbers differ between the builds).
 - Mods that use `game.h` (the player, cars) call `game::Detect(H->module_base("LS3DF.dll"))` in `mml_mod_load`
   first: its helpers read the build's addresses.
 

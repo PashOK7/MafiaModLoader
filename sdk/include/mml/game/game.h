@@ -226,6 +226,35 @@ inline std::string TextUtf8(const char *text) {
 // The fields' offsets differ between the builds: they come from game_build.h (each read in the game's code and
 // seen in the running 1.2 game). Positions are metres, the world's; +y is up.
 constexpr int kActorTypeCar = 4;
+
+// The scripts' triggers (mods/examples/trigger_view; knowledge/structs, read in both builds: the same offsets).
+// C_detector, actor kind 5: an invisible actor running a script (st0rm94's structs/detector.md). Its program is
+// embedded at kDetProgram; DETECTOR_INRANGE counts the people within a radius whose human type (C_human +0x5FC)
+// meets kDetInrangeMask (0x1 the player); kDetSignal the byte DETECTOR_SETSIGNAL / ISSIGNAL use; while
+// DETECTOR_WAITFORUSE waits (kDetWaitUse), kDetUse is its use point in the game's Action list (S_using_object, 0x38
+// bytes: the place f32[3], in the space of the matrix at kUseMatrix when it is not null; kUseReach2 the horizontal
+// reach squared, 1.5 for a detector's; kUseText the action's id, the game's text of it the menu's line, 0 none).
+// The Action key finds a record when the point 0.8 m before the player and 0.9 m up is within that reach and within
+// 1.5 m of its height (C_using_object::FindNearObjects 1.2 0x55E180, 1.0 0x61BF50: 2.25 the height squared, both
+// builds; knowledge/notes/game.md "The using objects"). While DETECTOR_WAITFORHIT waits (kDetWaitHit) or
+// after DETECTOR_CREATEDYNCOLL, kDetVolumeCount boxes: kDetVolumes, 0x48-byte records (+0x24 the box's min and max
+// in the volume's axes, f32[6]), and kDetVolumeWorld, a matrix each (0x40 bytes: its axes and place).
+constexpr int kActorTypeDetector = 5, kActorTypeEntity = 0x1B;
+constexpr int kHumanType = 0x5FC;   // u32, C_human's type as one bit (0x1 the player): what an inrange mask tests
+constexpr int kDetProgram = 0x70, kDetInrangeMask = 0xD8, kDetSignal = 0xDC, kDetWaitUse = 0xDD, kDetWaitHit = 0xDE;
+constexpr int kDetUse = 0xE0, kUseReach2 = 0x0C, kUseMatrix = 0x10, kUseText = 0x2C;
+constexpr float kUseHeight = 1.5f;
+constexpr int kDetVolumes = 0x118, kDetVolumeWorld = 0x11C, kDetVolumeCount = 0x124, kDetVolumeBox = 0x24;
+constexpr int kEntityProgram = 0xA9C;   // C_entity's program (a person with a script)
+// C_program (st0rm94's structs/program.md): its source text (char*), its instructions ({int opcode; void *params},
+// 8 bytes each: game::ScriptCommandName in script_commands.h names them), the one running now, the frame registers.
+constexpr int kProgSource = 0x08, kProgBegin = 0x10, kProgEnd = 0x14, kProgPc = 0x1C, kProgFrames = 0x50, kProgFrameCount = 0x54;
+// I3D_area, LS3D's frame type 14 (FRAME_AREA): a closed mesh the scripts test with ISPOINTINAREA (the frame's
+// CheckPoint, vtable +0x5C, stdcall(area, const float pt[3]) -> bool). Its vertices (count, its own space, the world)
+// and its triangles (u16[3] each), as I3D_area::Build fills them (LS3DF 1.2 0x10005880, 1.0 0x10005810: the same).
+constexpr uint32_t kFrameTypeArea = 14;
+constexpr int kAreaVertCount = 0x140, kAreaVerts = 0x144, kAreaVertsWorld = 0x148, kAreaFaceCount = 0x14C, kAreaFaces = 0x150;
+constexpr int kVtAreaCheckPoint = 0x5C;
 // C_airplane (game_build.h planeAI): the same layout in both builds
 constexpr int kActorTypeAirplane = 0x16;
 constexpr int kPlaneState = 0xB4;   // int: 0 idle, 1 flying its route, 2 the take-off run
