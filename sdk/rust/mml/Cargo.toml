@@ -10,7 +10,16 @@ license = "MIT"
 [features]
 # commands with typed parameters and replies, settings and saved state as serde types
 json = ["dep:serde", "dep:serde_json"]
+# the graphics' COM objects typed (GfxFrame::d3d_device... ID3D11Device, Host::d3d9_device): the `windows` crate
+windows = ["dep:windows"]
 
 [dependencies]
 serde = { version = "1", optional = true }
 serde_json = { version = "1", optional = true }
+windows = { version = "0.62", optional = true, features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Direct3D9",
+    "Win32_Graphics_Dxgi_Common",
+] }

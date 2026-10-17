@@ -206,7 +206,9 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
         endif()
         set(tdir ${CMAKE_BINARY_DIR}/rust)
         set(built ${tdir}/i686-pc-windows-msvc/$<IF:$<CONFIG:Debug>,debug,release>)
-        set(cmds COMMAND ${MML_CARGO} build --manifest-path ${dir}/Cargo.toml --target i686-pc-windows-msvc
+        # (the shaders' compilers this build found, for mml-build in the mod's build.rs)
+        set(cmds COMMAND ${CMAKE_COMMAND} -E env MML_FXC=${MML_FXC} MML_DXC=${MML_DXC}
+                     ${MML_CARGO} build --manifest-path ${dir}/Cargo.toml --target i686-pc-windows-msvc
                      --target-dir ${tdir} $<$<NOT:$<CONFIG:Debug>>:--release>
                  COMMAND ${CMAKE_COMMAND} -E make_directory ${dest}
                  COMMAND ${CMAKE_COMMAND} -E copy_if_different ${built}/${id}.dll ${built}/${id}.pdb ${dest}
@@ -260,6 +262,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
         mods/examples/debug_views/walls.cpp
         SHADERS race.hlsl:PsRace:ps_5_0 walls.hlsl:PsWalls:ps_5_0)
     mml_add_rust_mod(hello_rust ${CMAKE_SOURCE_DIR}/mods/examples/hello_rust)
+    mml_add_rust_mod(depth_pulse_rs ${CMAKE_SOURCE_DIR}/mods/examples/depth_pulse_rs)
     # (tools/new_mod.py adds a mod's line above this one)
 
     # The mods this build defines: <out>/mml/build_mods.txt, one id a line (written only when it changes), which deploy

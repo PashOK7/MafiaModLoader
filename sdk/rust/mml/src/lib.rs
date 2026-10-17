@@ -74,7 +74,8 @@ struct Loaded {
     host: *const sys::MmlHost,
     module: *mut sys::MmlMod,
     owned: HashMap<usize, Box<dyn Any>>, // the closures handed to the host, by their user pointer
-    ids: HashMap<c_int, usize>,          // interaction ids to their closure (interact_remove frees it)
+    ids: HashMap<(u8, c_int), usize>,    // a removable registration's (kind, id) to its closure (K_*)
+    slots: HashMap<&'static str, usize>, // what one call replaces (a hook of which a mod has one): its closure
     grave: Vec<Box<dyn Any>>,            // freed when no closure of the mod runs any more
     unload: Vec<Box<dyn FnOnce()>>,      // on_unload's, in order
     depth: u32,                          // closures of the mod running now (nested)
@@ -104,6 +105,32 @@ fn release(user: *mut c_void) {
             l.grave.push(b);
         }
     });
+}
+
+// the kinds of removable registrations (their ids are counted apart)
+const K_INTERACT: u8 = 0;
+const K_PASS: u8 = 1;
+const K_VIEW: u8 = 2;
+
+/// A registration's closure, freed when it is removed (untrack) or refused (id 0: None).
+fn track(kind: u8, user: *mut c_void, id: c_int) -> Option<i32> {
+    if id == 0 {
+        release(user);
+        return None;
+    }
+    with(|l| l.ids.insert((kind, id), user as usize));
+    Some(id)
+}
+fn untrack(kind: u8, id: c_int) {
+    if let Some(Some(user)) = with(|l| l.ids.remove(&(kind, id))) {
+        release(user as *mut c_void);
+    }
+}
+/// The closure in a slot of which the mod has one (exhaust_hook, camera_override...): the one before it freed.
+fn slot(name: &'static str, user: *mut c_void) {
+    if let Some(Some(old)) = with(|l| if user.is_null() { l.slots.remove(name) } else { l.slots.insert(name, user as usize) }) {
+        release(old as *mut c_void);
+    }
 }
 
 /// A closure kept for a call it gets once: taken out (the caller frees it after the call).
@@ -168,6 +195,7 @@ pub unsafe fn __load<E: core::fmt::Display>(
         module,
         owned: HashMap::new(),
         ids: HashMap::new(),
+        slots: HashMap::new(),
         grave: Vec::new(),
         unload: Vec::new(),
         depth: 0,
@@ -248,6 +276,15 @@ macro_rules! f {
     ($host:expr, $member:ident) => {
         host_fn!($host, $member)
             .unwrap_or_else(|| panic!(concat!("this loader has no MmlHost::", stringify!($member), ": update MafiaModLoader")))
+    };
+}
+
+/// A shader the mod's build.rs compiled with mml-build (`mml_build::hlsl("pulse.hlsl", "PsPulse", "ps_5_0")`): its
+/// bytecode, `&'static [u8; N]`, from OUT_DIR. `mml::include_shader!("PsPulse")`.
+#[macro_export]
+macro_rules! include_shader {
+    ($name:literal) => {
+        include_bytes!(concat!(env!("OUT_DIR"), "/shaders/", $name, ".cso"))
     };
 }
 
@@ -347,6 +384,12 @@ impl Default for Original {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// A fixed C array of the host's (a light's name, a model node's) as UTF-8, up to its NUL.
+pub fn c_text(chars: &[c_char]) -> String {
+    let bytes: Vec<u8> = chars.iter().take_while(|&&c| c != 0).map(|&c| c as u8).collect();
+    String::from_utf8_lossy(&bytes).into_owned()
 }
 
 fn cstring(s: &str) -> CString {
@@ -582,6 +625,28 @@ impl Hotkey {
     }
 }
 
+/// An item of the mod's in one of the game's menus: its text and place changed in place (the host's same function
+/// and user again).
+#[derive(Clone)]
+pub struct MenuItem {
+    host: Host,
+    handle: c_int,
+    menu: String,
+    tramp: sys::MmlMenuFn,
+    user: *mut c_void,
+}
+impl MenuItem {
+    /// the host's handle
+    pub fn handle(&self) -> i32 {
+        self.handle
+    }
+    /// its text and the control it goes under, from the menu's next opening
+    pub fn set(&self, after_id: i32, label: &str) -> bool {
+        let (m, t) = (cstring(&self.menu), cstring(label));
+        unsafe { f!(self.host, menu_item)(self.host.module, m.as_ptr(), after_id, t.as_ptr(), self.tramp, self.user) != 0 }
+    }
+}
+
 impl Host {
     /// The loader's table as mml.h has it, for [`host_fn!`].
     pub fn sys(&self) -> *const sys::MmlHost {
@@ -782,16 +847,17 @@ impl Host {
     }
 
     // ---- the game's menus
-    /// an item put under `after_id` in one of the game's menus ("gamemenu": the pause menu); its handle
-    pub fn menu_item<F: Fn(i32) + 'static>(&self, menu: &str, after_id: i32, label: &str, f: F) -> Option<i32> {
+    /// an item put under `after_id` in one of the game's menus ("gamemenu": the pause menu), from its next opening
+    pub fn menu_item<F: Fn(i32) + 'static>(&self, menu: &str, after_id: i32, label: &str, f: F) -> Option<MenuItem> {
         let (m, t) = (cstring(menu), cstring(label));
         let user = keep(f);
-        let h = unsafe { f!(self, menu_item)(self.module, m.as_ptr(), after_id, t.as_ptr(), as_c!(on_id::<F>, c_int, *mut c_void), user) };
+        let tramp = as_c!(on_id::<F>, c_int, *mut c_void);
+        let h = unsafe { f!(self, menu_item)(self.module, m.as_ptr(), after_id, t.as_ptr(), tramp, user) };
         if h == 0 {
             release(user);
             None
         } else {
-            Some(h)
+            Some(MenuItem { host: *self, handle: h, menu: menu.to_owned(), tramp, user })
         }
     }
 
@@ -1007,18 +1073,11 @@ impl Host {
     }
     pub fn interact_remove(&self, id: i32) -> bool {
         let r = unsafe { f!(self, interact_remove)(self.module, id) != 0 };
-        if let Some(Some(user)) = with(|l| l.ids.remove(&id)) {
-            release(user as *mut c_void);
-        }
+        untrack(K_INTERACT, id);
         r
     }
     fn track(&self, user: *mut c_void, id: c_int) -> Option<i32> {
-        if id == 0 {
-            release(user);
-            return None;
-        }
-        with(|l| l.ids.insert(id, user as usize));
-        Some(id)
+        track(K_INTERACT, user, id)
     }
 }
 
@@ -1065,3 +1124,25 @@ impl Host {
         serde_json::from_slice(&self.state_get(key)?).ok()
     }
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// the rest of the host, by area (each an `impl Host`), and the game itself
+
+pub mod control;
+pub mod data;
+pub mod game;
+pub mod gfx;
+pub mod media;
+pub mod people;
+pub mod world;
+
+pub use control::{VehicleBody, VehicleStep};
+pub use data::{Model, ModelMesh, Progress, Stats};
+pub use gfx::{GeomCapture, GfxFrame, MeshPiece, ShaderRule, ViewCamera};
+pub use media::{Marker, MenuControl, SoundState};
+pub use people::{Bone, HumanAnim, ItemDef};
+pub use world::{Exhaust, Light, Particle, ParticleDef, Shape, Water};
+
+/// The `windows` crate this one is built with (feature "windows"): the typed Direct3D 11 and 9 interfaces.
+#[cfg(feature = "windows")]
+pub use windows;

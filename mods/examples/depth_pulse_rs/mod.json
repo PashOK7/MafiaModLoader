@@ -1,0 +1,12 @@
+{
+  "id": "depth_pulse_rs",
+  "name": "Depth pulse (Rust): the graphics bridge from a mod in Rust",
+  "version": "0.1.0",
+  "type": "native",
+  "entry": "depth_pulse_rs.dll",
+  "enabled": false,
+  "builds": ["1.2", "1.0"],
+  "gfx": true,
+  "load_order": 100,
+  "depends": []
+}

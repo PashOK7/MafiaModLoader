@@ -13,6 +13,7 @@ name = "kit_rs"
 version = "0.1.0"
 dependencies = [
  "mml",
+ "mml-build",
  "serde",
 ]
 
@@ -29,6 +30,10 @@ dependencies = [
  "serde",
  "serde_json",
 ]
+
+[[package]]
+name = "mml-build"
+version = "0.1.0"
 
 [[package]]
 name = "proc-macro2"

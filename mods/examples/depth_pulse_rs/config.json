@@ -1,0 +1,11 @@
+{
+  // The defaults of depth_pulse_rs's settings (config.set {"mod": "depth_pulse_rs", "key": "color", "value": "#FF8040"}).
+  "color": "#FFA040",   // the wave's light (orange: the C++ depth_pulse's is blue)
+  "strength": 1.2,
+  "period": 4,          // a new wave every this many seconds
+  "speed": 25,          // metres a second
+  "radius": 80,         // where it has faded out
+  "width": 1.2,         // the ring's width, metres
+  "cell": 2,            // the grid behind the front, metres
+  "hotkey": "Shift+F11"  // a wave now
+}

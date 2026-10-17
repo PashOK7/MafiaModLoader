@@ -1,0 +1,18 @@
+[package]
+name = "depth_pulse_rs"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+mml = { path = "../../../sdk/rust/mml", features = ["json", "windows"] }
+serde = { version = "1", features = ["derive"] }
+
+[build-dependencies]
+mml-build = { path = "../../../sdk/rust/mml-build" }
+
+[profile.release]
+debug = true

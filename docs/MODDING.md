@@ -59,15 +59,40 @@ mml::entry!(load);   // mml_mod_api, mml_mod_load, mml_mod_unload
 - **The crate** has two layers. `mml::sys` is all of `mml.h` as it is (made by `tools/rust_sys` with bindgen and
   committed: no libclang needed to build a mod; `tests/run_tests.py` checks it is what `mml.h` gives): every struct,
   constant and host function, the named enums as newtypes (`EventType::FRAME`, `Font::SMALL`). Over it a safe layer
-  ([`sdk/rust/mml/src/lib.rs`](../sdk/rust/mml/src/lib.rs)): the log (`info!`, `warn!`...), memory (`read::<T>`,
-  `write`), hooks (`hook` with a `static Original`), events (`subscribe`, `Event`'s accessors), commands
-  (`command`, `command_json`), state across reloads (`state_put`, `state_get`, `_json`), settings, drawing, keys,
-  actions and hotkeys (`Hotkey::rebind`), the mission, menus' items, the script machine (`script_run`, its end a
-  closure), the world's actors (`player`, `humans`, `spawn_car`, `spawn_human`, `teleport`, `give_item`, `seat`,
-  `position`, `world_ray`, `camera_project`), the game's state (money, health, items), the HUD's lines, sound,
-  timers, zones and use-points. What it does not wrap is one call away: `mml::host_fn!(host, vehicle_kinds)` gives
-  the host's function, checked against the loader's table (`None` from a loader without it), to call with
-  `host.module()`.
+  for the whole host table, `impl Host` by area, each method named after the host's member:
+  [`lib.rs`](../sdk/rust/mml/src/lib.rs) the log (`info!`, `warn!`...), memory (`read::<T>`, `write`), hooks
+  (`hook` with a `static Original`), events (`subscribe`, `Event`'s accessors), commands (`command`,
+  `command_json`), state across reloads, settings, drawing, keys, actions, hotkeys (`Hotkey::rebind`), the mission,
+  menus' items, the script machine, the world's actors, the game's state, the HUD's lines, sound, timers, zones,
+  use-points; [`gfx.rs`](../sdk/rust/mml/src/gfx.rs) the render events' device and camera, the graphics bridge's
+  passes (`gfx_pass`, `GfxFrame`), scene views, the frame's camera overridden, the game's camera, the geometry hidden
+  and captured, shaders on the game's drawing (`shader_add` with a `ShaderRule`), the shadow map, the meshes the game
+  draws (`scene_pieces`, `actor_meshes`), the frame's measures; [`people.rs`](../sdk/rust/mml/src/people.rs)
+  skeletons, poses, animations, getting up, rounds, a mod's own items; [`world.rs`](../sdk/rust/mml/src/world.rs)
+  sweeps, shapes, the water, zones for everyone, props (animations, physics), lights, the sun, the exhaust,
+  particles.def, the particles' and the exhaust's hooks, the weather; [`media.rs`](../sdk/rust/mml/src/media.rs)
+  sound, music, pictures, markers, a menu page of the game's controls (`menu_open` with `MenuControl`s);
+  [`control.rs`](../sdk/rust/mml/src/control.rs) keys and actions kept from the game, the player locked, a vehicle's
+  physics replaced (`vehicle_hook`, `VehicleStep`), bodies; [`data.rs`](../sdk/rust/mml/src/data.rs) a mod's files,
+  the game's files, `.4ds` models (`Model`, closed when dropped), the saves' state, the statistics, the profile,
+  services between mods. What the host keeps for a time is borrowed for that time (a mesh's arrays inside the
+  closure `scene_pieces` calls, a model's while the `Model` lives); a member an older loader lacks is a panic that
+  names it (`mml::host_fn!(host, member)` asks first: `None`).
+- **The game itself**, [`mml::game`](../sdk/rust/mml/src/game/mod.rs): `Game::detect(host)` tells the builds by
+  their code as `game::Detect` does, then `g.exe`, `g.ls3d`, `g.racing` are `game_build.h`'s and `racing.h`'s
+  tables for the build running (`g.exe.missionPtr`, `g.exe.vehSpeed`: the C++ names), `kActorFrame` and the other
+  layouts, the scripts' commands' numbers (`g.script_opcode("detector_inrange")`), and game.h's helpers member for
+  member: `player`, `player_car`, `last_car`, `list_actors`, `actor_world_pos`, `children` and `descendants`
+  (EnumFrames), `find_child`, `world_matrix`, `to_parent_point`, `test_line`, `car(actor)` (a `Car`: speed, gear,
+  rpm, fuel, steering, axes, wheels...), `car_state_save` and `car_state_load`, `set_local_rotation`, `text_utf8`,
+  and mathx.h's (`quat_matrix`, `quat_of`, `inverse`). Reads go through the host (never fault); what calls the
+  game's own code is `unsafe`. The tables are made from the C++ headers by `tools/gen_rust_game.py` (`--check` in
+  the offline tests): one source for both languages.
+- **Graphics**: the feature `windows` gives the COM objects typed and borrowed (`frame.d3d_device()`,
+  `d3d_context()`, `d3d_depth()`...: the `windows` crate's `ID3D11Device`; `host.d3d9_device()`), and
+  `sdk/rust/mml-build` compiles HLSL in the mod's `build.rs` as `mml_shaders` does for C++ (fxc or dxc, optimised,
+  warnings as errors, `sdk/include` on the include path): `mml_build::hlsl("pulse.hlsl", "PsPulse", "ps_5_0")`,
+  then `mml::include_shader!("PsPulse")` in the mod. `mods/examples/depth_pulse_rs` is depth_pulse in Rust.
 - **Callbacks are closures** (`Fn + 'static`), freed at the unload (or when their timer, zone or use-point is
   removed). They run on the game thread, one at a time, and may be entered again from inside themselves (a call into
   the host that sends an event): keep their state in `Cell` / `RefCell` behind an `Rc`. `Host` is `Copy` and not
@@ -77,11 +102,14 @@ mml::entry!(load);   // mml_mod_api, mml_mod_load, mml_mod_unload
   raised as the exception `0xE0525553` (`mml::PANIC_EXCEPTION`): the loader takes it as any fault of a mod's (the
   mod unloaded at the next frame, `MOD_FAULTED`, the game goes on). Keep `panic = "unwind"` (Cargo's default): with
   `"abort"` a panic ends the game. A faulted mod's `on_unload` does not run (as a C mod's `mml_mod_unload`).
-- The game's layouts (`mml/game/game.h`, `game_build.h`) are C++ only: in Rust the host's functions, `inspect` and
-  `mem_read` over MCP for a layout, `host.read` for a field.
 - `mods/examples/hello_rust`: hello_c's counts kept across reloads, a line at the top left (the mission, the
   player's place, health, money), a hotkey from the settings bound again when they change, and `hello_rust.status`,
   `.say {"text"}`, `.spawn {"car"}` (a car of the game's list 6 m in front of the player).
+- `tests/mods/kit_rs`: every part of the safe layer checked: `kit_rs.offline` with no game (the offline tests),
+  `kit_rs.live` in a running freeride (47 checks, each area against the host's own answers and the game's layouts;
+  twice: the second sees the first's scans), `kit_rs.view` (a scene view seen by a pass), `kit_rs.page` (a menu
+  page). In a lab: copy `build/x86/harness/mml/mods/kit_rs` into the lab's `mml/mods`, `mod.load` it, and take it
+  out after.
 
 ## 2. Build it, put it into the game, look
 

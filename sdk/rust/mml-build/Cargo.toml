@@ -1,0 +1,10 @@
+[package]
+name = "mml-build"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+publish = false
+description = "MafiaModLoader's build helper for Rust mods: HLSL compiled by the Windows SDK's fxc (or dxc) in build.rs"
+license = "MIT"
+
+[dependencies]

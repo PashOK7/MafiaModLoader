@@ -624,6 +624,22 @@ What is done, what comes next and later, and what is known to be missing or wron
   a hotkey rebound by `config.set`, 10 reloads: 0 MB, 0 handles, 0 threads a reload, its counts kept); offline:
   the test mod `kit_rs` (typed params, errors, a timer, `post` from a thread, state across a reload, the closures
   dropped at the unload, a panic faulting the mod as a C mod's fault).
+- **Everything in Rust** (2026-10-17, the same day; the owner: "everything must be possible in Rust"): the safe
+  layer covers the whole host table (`gfx.rs`, `people.rs`, `world.rs`, `media.rs`, `control.rs`, `data.rs`
+  beside lib.rs: passes, scene views, the camera override, the geometry, shaders, meshes, skeletons, animations,
+  props, lights, effects and their hooks, sound and music, pictures, markers, menu pages, control, vehicles,
+  files, models, saves, statistics, services); `mml::game` is the C++ game headers' Rust form (the builds' tables,
+  the layouts' constants, Detect's signatures and the scripts' commands made by `tools/gen_rust_game.py` from
+  game_build.h, racing.h, game.h and the csv, checked by the offline tests; game.h's helpers and mathx.h ported);
+  the feature `windows` types the Direct3D 11 and 9 objects; `sdk/rust/mml-build` compiles a mod's HLSL in its
+  build.rs (the CMake build hands it its fxc and dxc). The example `depth_pulse_rs` (depth_pulse in Rust: a D3D11
+  pass, its shader from mml-build, the player's place by mml::game) seen in the 1.2 and 1.0 labs, the orange ring
+  and its grid on the ground from above, 10 reloads: 0 MB, 0 handles, 0 threads a reload. `kit_rs.live` in both
+  labs: 47 of 47 (the game's layouts against the host's answers: the player, his place, his model's frames, the
+  game's world matrix, back1 by FindChild, the car's body and its whole state; the async parts at the second call:
+  10148 and 9833 triangles captured, the particles', vehicles' and exhaust hooks called thousands of times, the
+  scenery scanned); a scene view seen by a pass (427 and 430 frames), a menu page of Rust's controls built by the
+  game and closed by its Back button, in both builds.
 
 ## Next, by importance
 
@@ -868,11 +884,13 @@ merged, sorted by importance):
 
 ## Known gaps
 
-- **The Rust crate's safe layer** (sdk/rust/mml): it wraps what most mods use; the graphics bridge and its passes,
-  scene views, the camera override, geometry, shaders, props, the meshes, the models, people's skeletons and
-  animations, particles, the weather, the vehicles' hook, the menus' pages and services are reached through
-  `mml::sys` and `host_fn!` (unsafe, as in C), to be wrapped as Rust mods need them. The game's layouts
-  (`game.h`, `game_build.h`) have no Rust form. A call posted (`Poster`) that the unload drops leaks its closure.
+- **The Rust crate** (sdk/rust/mml): a call posted (`Poster`) that the unload drops leaks its closure (the host
+  drops a post of a mod that is gone; the box is the posting thread's). `mml::game` ports game.h's helpers and
+  mathx.h's math; racing.h's and the scripts' tables come as data, with no helpers over them (debug_views' race and
+  triggers views are C++). A new member of `MmlHost` needs its wrapper written by hand (`sys.rs` follows mml.h by
+  itself; nothing yet fails when a member has no safe method). The Rust side of the graphics is checked in the labs
+  by depth_pulse_rs (a pass) and kit_rs (a scene view seen by a pass); no Rust mod draws in RENDER_WORLD with the
+  Direct3D 9 device yet.
 
 - **A game folder no ANSI code page spells** (a Cyrillic name on a 1252 system, a CJK one on a 1251 system): the
   game, the loader and the mods' own files work there (both labs, 2026-10-17), but **dxwrapper does not**: its

@@ -856,6 +856,13 @@ def rust_tests(b):
                           os.path.join(ROOT, 'tools', 'rust_sys', 'Cargo.toml'), '--', '--check'],
                          capture_output=True, text=True)
     check('sdk/rust/mml/src/sys.rs is what mml.h gives (tools/rust_sys --check)', gen.returncode == 0, gen.stdout + gen.stderr)
+    gen = subprocess.run([sys.executable, os.path.join(ROOT, 'tools', 'gen_rust_game.py'), '--check'], capture_output=True, text=True)
+    check('sdk/rust/mml/src/game/tables.rs is what the game headers give (tools/gen_rust_game.py --check)', gen.returncode == 0, gen.stdout)
+    r = b.call('kit_rs.offline')
+    res = r.get('result') or {}
+    for name, c in sorted((res.get('checks') or {}).items()):
+        check('kit_rs.offline: ' + name, c['ok'], c['info'])
+    check('kit_rs.offline: answered, nothing failed', r['ok'] and res.get('failed') == [] and len(res.get('checks', {})) >= 20, r)
     s = b.call('kit_rs.status')
     r = s.get('result') or {}
     check('kit_rs: loaded, its id, folder, settings (a string, a number, a missing key\'s default), no game',

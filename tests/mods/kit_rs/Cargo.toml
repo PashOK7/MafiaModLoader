@@ -11,5 +11,8 @@ crate-type = ["cdylib"]
 mml = { path = "../../../sdk/rust/mml", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
 
+[build-dependencies]
+mml-build = { path = "../../../sdk/rust/mml-build" }
+
 [profile.release]
 debug = true

@@ -206,6 +206,8 @@ fn load(host: Host) -> Result<(), String> {
     });
 
     // The mission's world moved by ev.dt() seconds (not while the game is paused or loads): the game's objects here.
+    // The game's own layouts (the C++ game.h's, both builds): mml::game::Game::detect(host), then g.player_car(),
+    // g.car(car).speed_kmh(), g.exe.<an address of game_build.h>...
     host.subscribe(EventType::MISSION_TICK, move |_ev| {
         // if let Some(me) = host.player() { host.position(me); host.health(me); ... }
     });

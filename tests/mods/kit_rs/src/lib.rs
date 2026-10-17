@@ -4,6 +4,8 @@
 //! mod faulted and unloaded as a C mod's fault is), `kit_rs.post` posts from a thread of its own, `kit_rs.timer`
 //! adds a timer and removes it (its closure freed), and asks for one of 0 ms (refused). At its unload a value it
 //! held logs its drop.
+mod checks;
+
 use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -80,6 +82,57 @@ fn load(host: Host) -> Result<(), String> {
         let removed = id != 0 && host.interact_remove(id);
         let zero = host.timer_once(0, |_| ()).is_none();
         Ok(format!("{{\"id\":{id},\"removed\":{removed},\"zero_refused\":{zero}}}"))
+    });
+
+    host.command("offline", "the safe layer's checks with no game (run_tests.py)", move |_| Ok(checks::offline(host).to_string()));
+    let live = checks::Live {
+        particles: Rc::new(Cell::new(0)),
+        vehicles: Rc::new(Cell::new(0)),
+        exhausts: Rc::new(Cell::new(0)),
+        captured: Rc::new(Cell::new(-1)),
+    };
+    host.command("live", "the safe layer's checks in a running freeride (twice: the second sees the first's scans)", move |_| {
+        Ok(checks::live(host, &live).to_string())
+    });
+
+    // a scene view and a pass that sees it (the bridge on: a mod with "gfx": true started with the game)
+    let seen = Rc::new(Cell::new((0u32, 0u32, 0u32)));   // (passes run, views seen in the last, its frames drawn)
+    let view = Rc::new(Cell::new(0));
+    let (sn, vw) = (seen.clone(), view.clone());
+    host.command("view", "a scene view (the game camera's, 256x128) and a pass reading it; again: what the pass saw", move |_| {
+        if vw.get() == 0 {
+            let v = host.scene_view(256, 128, |cam| {
+                cam.world[13] += 10.0; // ten metres above the game camera
+                true
+            });
+            let s = sn.clone();
+            let p = host.gfx_pass(500, move |f| {
+                let me = f.views().iter().find(|v| v.width == 256 && v.height == 128);
+                let (n, _, _) = s.get();
+                s.set((n + 1, f.views().len() as u32, me.map_or(0, |v| v.frames)));
+            });
+            vw.set(v.unwrap_or(-1));
+            return Ok(format!("{{\"view\":{},\"pass\":{}}}", v.unwrap_or(0), p.unwrap_or(0)));
+        }
+        let (n, views, drawn) = sn.get();
+        Ok(format!("{{\"view\":{},\"passes\":{n},\"views\":{views},\"drawn\":{drawn}}}", vw.get()))
+    });
+    host.command("page", "a page of the game's controls over the pause menu (its title, a text, a check box, Back)", move |_| {
+        use mml::MenuControl as C;
+        let mut check = C::new(3, "chck", 30.0, 90.0, 240.0, 25.0, Some("A check box from Rust"));
+        check.flags = 0;
+        let controls = [
+            C::new(1, "wind", 250.0, 150.0, 300.0, 220.0, Some("kit_rs: a page")),
+            C::new(2, "stxt", 30.0, 50.0, 240.0, 25.0, Some("Made by a mod in Rust")),
+            check,
+            C::new(4, "butt", 75.0, 160.0, 150.0, 30.0, Some("Back")),
+        ];
+        let ok = host.menu_open("page", &controls, move |id| {
+            if id == 4 {
+                host.menu_close();
+            }
+        });
+        Ok(ok.to_string())
     });
 
     let f = frames.clone();

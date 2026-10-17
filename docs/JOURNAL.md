@@ -1974,3 +1974,34 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   `say` and Ctrl+F9 in the game's console, the hotkey moved to Ctrl+F11 by `config.set` (the old one silent, the new
   one counted), 10 reloads each: 0 MB, 0 handles, 0 threads a reload, the counts kept (load 11). Offline: ALL
   PASSED (the new `rust_tests`), mcp_smoke ALL PASSED.
+
+## 2026-10-17: everything in Rust
+
+- **The owner**: the gap closes at once, everything must be possible in Rust. The safe layer now covers every
+  member of `MmlHost`, split by area into `gfx.rs`, `people.rs`, `world.rs`, `media.rs`, `control.rs`, `data.rs`
+  (each an `impl Host`). What the host keeps for a while is borrowed for that while: a capture's and a mesh's arrays
+  inside the closure that gets them, a `.4ds` model's while its `Model` lives (closed when dropped). The hooks the
+  host keeps one of (exhaust, particles, vehicles, the camera override, the menu page) are slots: a new one frees the
+  closure before it. Removable registrations (interaction ids, passes, views) are counted by kind, freed when
+  removed. `game_files` calls back from inside the host's own loop, so a panic there is caught, stops the walk,
+  and unwinds again after the host has returned. `menu_item` returns a `MenuItem` whose `set` is the host's "same
+  function and user again" (each call in Rust is a new closure, so a second call would have been a second item).
+- **mml::game**: the builds' tables, the layouts' constants, Detect's signatures and the scripts' commands are made
+  from the C++ headers by `tools/gen_rust_game.py` (struct members and positional initializers parsed; every value
+  a literal, the tool refuses anything else), so game_build.h stays the one source (mafia-ragdoll shares it).
+  game.h's helpers ported with the host's never-faulting reads; what calls the game's code is unsafe.
+- **Graphics**: the feature `windows` (the `windows` crate 0.62) gives the bridge's objects typed and borrowed
+  (`from_raw_borrowed`: no reference taken); `sdk/rust/mml-build` runs fxc or dxc from a mod's build.rs (the CMake
+  build passes its MML_FXC and MML_DXC; cargo alone finds the newest Windows SDK's). `include_shader!` lives in
+  `mml`, not in mml-build: a build-dependency's macros are not the mod's.
+- **My expectations corrected by the host** (each read in the code before changing the test): `gfx_pass` and
+  `scene_view` are kept with the bridge off (mml.h: refused only for no function, a size over 8192, eight views);
+  `frame_stats` counts Present to Present, none in the harness; `file_read` with flags 0 answers files_b's file the
+  files tests left over the archive's (MML_FILE_GAME gives the archive's); a model's frames are named after it
+  ("Tommy.back1"); particles.def's record 0 has no model in both builds; `scene_lights` gives every light while
+  `lights.list` shows those on (its first is not the scene's first). `camera.set` for 6 s "did not show" from above:
+  369 frames were overridden, the hold had ended before the screenshot (the calls' round trips took longer).
+- **Seen**: both labs at once, `kit_rs.live` 47 of 47 twice (the second with the scans and hooks counted),
+  depth_pulse_rs's ring from above, a scene view seen by a pass, a page of the game's controls from Rust closed by
+  its Back; 10 reloads of depth_pulse_rs: 0 MB, 0 handles, 0 threads. kit_rs taken out of the labs again,
+  depth_pulse_rs left off in their manifests. Offline: ALL PASSED, mcp_smoke ALL PASSED.
