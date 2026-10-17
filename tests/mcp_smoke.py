@@ -209,6 +209,25 @@ def main():
           and os.path.exists(os.path.join(pic, 'files', 'Maps', 'freeride0.bmp')), text)
     ok, text = c.tool('deploy', {'mods': ['freeride_picture']})
     check('deploy again: unchanged files are left alone', ok and 'freeride0.bmp' not in text and 'mod.json' not in text, text)
+    # a mod switched on in the game's folder (its mod.json there says "enabled": true; the build's says false) stays on
+    man = os.path.join(pic, 'mod.json')
+    def manifest(path):   # (a manifest may have comments, as the loader allows: this one's are whole lines)
+        return json.loads(''.join(l for l in open(path, encoding='utf-8') if not l.lstrip().startswith('//')))
+    built = manifest(os.path.join(ROOT, 'build', 'x86', 'out', 'mml', 'mods', 'freeride_picture', 'mod.json'))
+    on = open(man, encoding='utf-8').read().replace('"enabled": false', '"enabled": true', 1)
+    open(man, 'w', encoding='utf-8', newline='\n').write(on)
+    ok, text = c.tool('deploy', {'mods': ['freeride_picture']})
+    mine = manifest(man)
+    check('deploy: a mod switched on in the game\'s folder stays on (named in kept), its file left alone',
+          ok and built.get('enabled') is False and mine.get('enabled') is True and '"kept"' in text
+          and 'freeride_picture: enabled true' in text and 'mod.json' not in text.split('"kept"')[0], text)
+    changed = on.replace('"version": "0.1.0"', '"version": "0.0.9"', 1)
+    open(man, 'w', encoding='utf-8', newline='\n').write(changed)
+    ok, text = c.tool('deploy', {'mods': ['freeride_picture']})
+    mine = manifest(man)
+    check('deploy: the build\'s manifest put over another one, the game folder\'s "enabled" kept in it',
+          ok and changed != on and mine.get('version') == built.get('version') and mine.get('enabled') is True
+          and {k: v for k, v in mine.items() if k != 'enabled'} == {k: v for k, v in built.items() if k != 'enabled'}, (text, mine))
     shutil.rmtree(pic, ignore_errors=True)
     # crash_triage: a mod's fault in a running game, then a crash nobody handles (the harness's `crash` file)
     shutil.rmtree(os.path.join(HARNESS, 'mml', 'crash'), ignore_errors=True)

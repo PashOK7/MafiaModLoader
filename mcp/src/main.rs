@@ -1077,12 +1077,14 @@ impl Server {
     /// Copy the build (build/x86/out: the loader and the mods) into the game's folder, and reload the mods in the
     /// running game. The loader itself is copied only while the game is not running. A mod's folder goes with its
     /// subfolders (its `files\`: game files), files unchanged left alone (`copied` lists what changed); a game file
-    /// the game holds open is replaced all the same (it reads the old one until it closes it).
+    /// the game holds open is replaced all the same (it reads the old one until it closes it). A mod switched on or
+    /// off in the game's folder (its mod.json there says `enabled`) stays so: `kept` names them.
     #[tool]
     async fn deploy(&self, Parameters(a): Parameters<DeployArgs>) -> Out {
         let running = self.bridge.call("ping", json!({}), 1500).await.is_ok();
         let report = game::deploy(a.mods.as_deref(), running)?;
         let mut out = json!({"copied": report.copied, "skipped": report.skipped});
+        if !report.kept.is_empty() { out["kept"] = json!(report.kept); }
         if running && a.reload.unwrap_or(true) {
             let mut reloads = vec![];
             for id in &report.mods {

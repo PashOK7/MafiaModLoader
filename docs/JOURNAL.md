@@ -1905,3 +1905,17 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Seen**: 1.2 and 1.0, the four views loaded, the page's tabs clicked as a player would (Routes, Race, back), Walls
   opened by `panel.open` with its underline. Offline: ALL PASSED (one run before had boxes' 20 reloads lose 2 handles
   a reload, not again in the next: not chased).
+
+## 2026-10-17: the race's paint and the walls missing; deploy keeps a lab's `enabled`
+
+- **Seen** (the owner, 1.0, the race of mission 6): no gates painted, no zone, no walls. The log: `gfx: off: the
+  game's device is multisampled (... no mod with "gfx": true)`. debug_views was loaded with `mod.load` after the game
+  had started; race_view had been switched on by hand in the lab's mod.json, debug_views (like every example) ships
+  off. Switched on in both labs' copies and the game started again into the race (save 105): the bridge on, both
+  passes running (the paint 0.15 ms, the walls 0.09 ms of GPU), the owner then set the zone's paint on its tab.
+- **deploy** (mcp/src/game.rs): a lab's mod.json that says `enabled` keeps it: the build's manifest goes in with the
+  lab's value (the key changed in its text, or put first; read back, comments allowed as the loader allows them; the
+  whole object rewritten only if that fails), left alone when that is what is there; the reply's `kept` names them.
+  mcp_smoke: a mod switched on in the game's folder stays on and its file is not touched; a changed manifest is put
+  over it with the lab's `enabled` kept. The session that built it still runs the old server (its deploy would
+  switch the labs' debug_views off again): the new one from the next session on.

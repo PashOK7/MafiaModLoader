@@ -195,6 +195,7 @@ pub struct Deployed {
     pub copied: Vec<String>,
     pub skipped: Vec<String>,
     pub mods: Vec<String>,
+    pub kept: Vec<String>,   // the game folder's own `enabled` kept over the build's (a mod switched on in a lab)
 }
 
 /// One file put in place. A file the game may hold open (a mod's game file: a sound it streams) cannot be renamed
@@ -221,20 +222,97 @@ fn put_file(src: &Path, dst: &Path) -> Result<bool, String> {
     Ok(true)
 }
 
+/// JSON as the loader reads a manifest (nlohmann's, comments allowed): `//` and `/* */` outside strings taken out.
+fn json_with_comments(text: &str) -> Option<serde_json::Value> {
+    let (mut out, mut chars) = (String::with_capacity(text.len()), text.chars().peekable());
+    let (mut in_str, mut escaped) = (false, false);
+    while let Some(c) = chars.next() {
+        if in_str {
+            out.push(c);
+            if escaped { escaped = false; } else if c == '\\' { escaped = true; } else if c == '"' { in_str = false; }
+            continue;
+        }
+        match (c, chars.peek()) {
+            ('"', _) => { in_str = true; out.push(c); }
+            ('/', Some('/')) => { while let Some(&n) = chars.peek() { if n == '\n' { break; } chars.next(); } }
+            ('/', Some('*')) => {
+                chars.next();
+                let mut prev = ' ';
+                for n in chars.by_ref() { if prev == '*' && n == '/' { break; } prev = n; }
+                out.push(' ');
+            }
+            _ => out.push(c),
+        }
+    }
+    serde_json::from_str(&out).ok()
+}
+
+/// The manifest's own `enabled` (absent: the loader's default, true); None when it is not JSON.
+fn manifest_enabled(text: &str) -> Option<bool> {
+    let v = json_with_comments(text)?;
+    Some(v.get("enabled").and_then(|e| e.as_bool()).unwrap_or(true))
+}
+
+/// The build's manifest with `enabled` set to `want`, the rest as it is (its text kept, the key changed in place or
+/// put first); checked by reading it back: the same object but for `enabled`. None when it cannot be made so.
+fn manifest_with_enabled(text: &str, want: bool) -> Option<String> {
+    let mut built = json_with_comments(text)?;
+    let obj = built.as_object_mut()?;
+    let key = regex::Regex::new(r#""enabled"\s*:\s*(true|false)"#).ok()?;
+    let candidate = if obj.contains_key("enabled") {
+        key.replacen(text, 1, format!("\"enabled\": {want}").as_str()).into_owned()
+    } else {
+        let at = text.find('{')? + 1;
+        format!("{} \"enabled\": {want},{}", &text[..at], &text[at..])
+    };
+    obj.insert("enabled".into(), serde_json::Value::Bool(want));
+    if json_with_comments(&candidate).as_ref() == Some(&built) { return Some(candidate); }
+    serde_json::to_string_pretty(&built).ok().map(|s| s + "\n")   // (the key found was not the top level's: its comments go)
+}
+
+/// A mod's manifest put in place. A game folder whose copy says `enabled` itself (a mod switched on or off there, by
+/// hand or a lab's own choice) keeps that: the build's manifest goes in with the folder's `enabled`. Left alone when
+/// that is what is there already.
+fn put_manifest(src: &Path, dst: &Path, id: &str, kept: &mut Vec<String>) -> Result<bool, String> {
+    let theirs = std::fs::read_to_string(dst).ok();
+    let lab = theirs.as_deref().and_then(|t| json_with_comments(t)?.get("enabled").and_then(|e| e.as_bool()));
+    let Some(want) = lab else { return put_file(src, dst) };
+    let text = std::fs::read_to_string(src).map_err(|e| format!("{}: {e}", src.display()))?;
+    let built = manifest_enabled(&text).unwrap_or(true);
+    if built == want { return put_file(src, dst); }
+    let new = manifest_with_enabled(&text, want).ok_or_else(|| format!("{}: not a JSON object", src.display()))?;
+    kept.push(format!("{id}: enabled {want} (the game folder's; the build's is {built})"));
+    if theirs.as_deref() == Some(new.as_str()) { return Ok(false); }
+    let mut tmp = dst.as_os_str().to_owned();
+    tmp.push(".mmltmp");
+    let tmp = std::path::PathBuf::from(tmp);
+    let err = |e: std::io::Error| format!("{}: {e}", dst.display());
+    std::fs::write(&tmp, new.as_bytes()).map_err(err)?;
+    if dst.exists() { std::fs::remove_file(dst).map_err(err)?; }
+    std::fs::rename(&tmp, dst).map_err(err)?;
+    Ok(true)
+}
+
 /// A mod's folder copied with its subfolders (its `files\`: the game files it ships); the build's leftovers skipped.
-fn copy_dir(from: &Path, to: &Path, copied: &mut Vec<String>) -> Result<(), String> {
+/// `mod_id`: the mod whose folder this is (its manifest, at the top, keeps the game folder's `enabled`).
+fn copy_dir(from: &Path, to: &Path, mod_id: Option<&str>, copied: &mut Vec<String>, kept: &mut Vec<String>) -> Result<(), String> {
     std::fs::create_dir_all(to).map_err(|e| format!("{}: {e}", to.display()))?;
     for e in std::fs::read_dir(from).map_err(|e| format!("{}: {e}", from.display()))? {
         let e = e.map_err(|e| e.to_string())?;
         let src = e.path();
         let dst = to.join(e.file_name());
         if src.is_dir() {
-            copy_dir(&src, &dst, copied)?;
+            copy_dir(&src, &dst, None, copied, kept)?;
             continue;
         }
         let ext = src.extension().and_then(|x| x.to_str()).unwrap_or("").to_ascii_lowercase();
         if ["ilk", "exp", "lib", "mmltmp"].contains(&ext.as_str()) { continue; }
-        if put_file(&src, &dst)? { copied.push(dst.display().to_string()); }
+        let manifest = mod_id.filter(|_| e.file_name().eq_ignore_ascii_case("mod.json"));
+        let put = match manifest {
+            Some(id) => put_manifest(&src, &dst, id, kept)?,
+            None => put_file(&src, &dst)?,
+        };
+        if put { copied.push(dst.display().to_string()); }
     }
     Ok(())
 }
@@ -245,7 +323,7 @@ pub fn deploy(only: Option<&[String]>, running: bool) -> Result<Deployed, String
     let root = repo_root().ok_or("cannot find the repository")?;
     let out = root.join("build").join("x86").join("out");
     let game = game_dir()?;
-    let mut d = Deployed { copied: vec![], skipped: vec![], mods: vec![] };
+    let mut d = Deployed { copied: vec![], skipped: vec![], mods: vec![], kept: vec![] };
     let asi = out.join("MafiaModLoader.asi");
     if asi.exists() {
         if running {
@@ -265,7 +343,7 @@ pub fn deploy(only: Option<&[String]>, running: bool) -> Result<Deployed, String
         let e = e.map_err(|e| e.to_string())?;
         let id = e.file_name().to_string_lossy().to_string();
         if !e.path().is_dir() || only.is_some_and(|o| !o.contains(&id)) { continue; }
-        copy_dir(&e.path(), &game.join("mml").join("mods").join(&id), &mut d.copied)?;
+        copy_dir(&e.path(), &game.join("mml").join("mods").join(&id), Some(&id), &mut d.copied, &mut d.kept)?;
         d.mods.push(id);
     }
     Ok(d)

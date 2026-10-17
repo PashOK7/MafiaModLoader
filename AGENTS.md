@@ -239,6 +239,10 @@ reversing a system anew.
   `error_handler_t::replace`. An ANSI path once threw in json's dump and crashed every start in a Cyrillic folder:
   `tools/check_paths.py` (in the offline tests) refuses an ANSI path function or a strict dump anywhere; a line that
   must keep one says why with `ansi-ok:`.
+- **A mod with graphics passes (`"gfx": true`) works only if it is on when the game starts**: the loader then has
+  the game make its device without multisampling; one loaded later (`mod.load`) finds the bridge off (`gfx: off`
+  in the log, `gfx.state`). Switch it on in the lab's copy of its mod.json (`"enabled": true`) and start the game
+  again: `deploy` keeps a lab's own `enabled` (its reply's `kept`), whatever the build's manifest says.
 - **The MCP server's own binary is locked while your session runs it**: to build a new one, rename
   `mcp/target/release/mml-mcp.exe` first (Windows allows that), build, and test the new one with a client of your
   own (`tests/mcp_smoke.py` shows how); the session gets it at its next start.
