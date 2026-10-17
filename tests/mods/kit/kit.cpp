@@ -454,6 +454,18 @@ int Fpu(const char *, MmlReply *r, void *) {
     return 0;
 }
 
+// The game's camera with no game: no state; a mode and a field of view refused.
+int GameCam(const char *, MmlReply *r, void *) {
+    if (!MML_HAS(H, game_camera_fov)) { H->reply_error(r, "the loader has no game_camera_fov"); return 1; }
+    MmlGameCamera c{};
+    c.size = sizeof c;
+    char out[96];
+    snprintf(out, sizeof out, "{\"state\":%d,\"mode\":%d,\"fov\":%d}", H->game_camera(M, &c), H->game_camera_mode(M, MML_GAMECAM_EYES),
+             H->game_camera_fov(M, 1.5f));
+    H->reply_append(r, out, static_cast<size_t>(-1));
+    return 0;
+}
+
 // The game's files and models with no game: no archives (the mods' files only), no model.
 int Models(const char *, MmlReply *r, void *) {
     if (!MML_HAS(H, model_close)) { H->reply_error(r, "the loader has no model_close"); return 1; }
@@ -555,6 +567,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->command(mod, "prop_more", "a prop's animation and physics with no game", PropMore, nullptr);
     host->command(mod, "models", "the game's files and models with no game", Models, nullptr);
     host->command(mod, "fpu", "the x87's precision in a mod's callback: 1/3 divided on the x87", Fpu, nullptr);
+    host->command(mod, "gamecam", "the game's camera with no game: none, refused", GameCam, nullptr);
     host->command(mod, "control", "key_capture, action_capture, player_lock, vehicle_hook, vehicle_body with no game", Control, nullptr);
     host->command(mod, "sound", "sound_play and the rest, music_play and the rest with no game", Sound, nullptr);
     host->command(mod, "effects","car_exhaust, exhaust_hook, particle_def(_set) with no game", Effects, nullptr);

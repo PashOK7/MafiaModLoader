@@ -140,6 +140,7 @@ int __stdcall hkRender(void *driver, void *scene) {
     if (g_world) HumansFlushPoses();
     if (g_world) {
         GeomFrameBegin();   // (geom.cpp: the game's geometry hidden, surveyed, captured)
+        GameCameraFrame();   // (gamecam.cpp: a mod's field of view held on the game's camera)
         FrameCameraBegin(scene);   // (view.cpp: the frame drawn from a mod's camera; the views start from it)
         ShadowsBeforeWorld(driver, scene, oRender);   // (shadows.cpp: the map from the sun, LS3D drawing it, before the views)
         GfxViewsNewFrame();

@@ -193,6 +193,14 @@ uint16_t FpuGameWord();
 void FpuFrameEnter();
 void FpuFrameExit();
 bool FpuMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+// the game's own camera logic (gamecam.cpp): mml.h game_camera, game_camera_mode, game_camera_fov
+int GameCamera(MmlGameCamera *out);
+int GameCameraMode(MmlMod *mod, int mode);
+int GameCameraFov(MmlMod *mod, float fov);
+void GameCameraFrame();                    // (render.cpp) a held field of view put back on the game's camera
+void GameCameraModGone(MmlMod *mod);
+void GameCameraMissionClose();
+bool GameCameraMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 // the mods' settings in the game's Options > Mods (panel.cpp)
 void PanelInit();
 bool PanelMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);

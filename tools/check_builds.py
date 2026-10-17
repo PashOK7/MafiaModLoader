@@ -964,6 +964,24 @@ def main(a):
     for f in ('animOpen', 'missionAddAnim', 'missionDelAnim', 'physCtor', 'physImpulse'):   # (InitBox's prologue is scheduled otherwise in 1.0)
         a, b = norm(g12.insn(e12[f] - 0x400000)), norm(g10.insn(e10[f] - 0x400000))
         check(a == b, f'{f}: 1.2 "{a}" vs 1.0 "{b}"')
+    # The game's camera (host/gamecam.cpp): the mode table's 17 records ("P Behind" first, "C Racing" last), scanned by
+    # G_Camera::Begin from its start; SetMode returns with ret 8 and calls Begin.
+    begins = {'1.2': 0x5F2EA0, '1.0': 0x5DA4B0}
+    for name, (exe, ls, gexe, gls) in builds.items():
+        if not exe['cameraSetMode']:
+            continue
+        recs = gexe.at(exe['cameraModeTable'] - 0x400000, 17 * 0x44)
+        names = [recs[i * 0x44 + 0x30:i * 0x44 + 0x40].split(b'\0')[0] for i in range(17)]
+        check(names[0] == b'P Behind' and names[7] == b'C Chase' and names[16] == b'C Racing',
+              f'{name} cameraModeTable: 17 records of 0x44, "P Behind" .. "C Racing"')
+        check(exe['cameraModeTable'].to_bytes(4, 'little') in gexe.at(begins[name] - 0x400000, 0x60),
+              f'{name} G_Camera::Begin scans cameraModeTable')
+        body = list(gexe.md.disasm(gexe.at(exe['cameraSetMode'] - 0x400000, 0x80), exe['cameraSetMode']))
+        ret = next((i for i in body if i.mnemonic == 'ret'), None)
+        check(ret is not None and ret.op_str == '8' and any(i.mnemonic in ('call', 'jmp') and i.op_str == hex(begins[name]) for i in body),
+              f'{name} cameraSetMode: ret 8, Begin called')
+    a, b = norm(g12.insn(e12['cameraSetMode'] - 0x400000)), norm(g10.insn(e10['cameraSetMode'] - 0x400000))
+    check(a == b, f'cameraSetMode: 1.2 "{a}" vs 1.0 "{b}"')
     print('ALL PASSED' if not fails else f'{fails} FAILED')
     return 1 if fails else 0
 

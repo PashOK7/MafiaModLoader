@@ -420,6 +420,13 @@ struct ExeBuild {
     // when its byte +0x6C is set (C_actor::Init clears it).
     uintptr_t physCtor, physInitBox, physImpulse;
     int physSize;
+    // The game's camera (host/gamecam.cpp; st0rm94's structs/camera.md, read in both builds): G_Camera lives in C_game
+    // at gameCamera (+0x04 the I3D_camera it drives, +0x0C the car it follows, +0x10 its mode). cameraSetMode:
+    // G_Camera::SetMode, thiscall(camera, unsigned mode, bool begin) ret 8 (End, the mode, Begin: what the camera-change
+    // key does). cameraModeTable: the 17 records of 0x44 bytes G_Camera::Begin scans ({mode, restore mode, 10 floats,
+    // its name[16] at +0x30, flags at +0x40}: "P Behind", "C Chase"...).
+    uintptr_t cameraSetMode, cameraModeTable;
+    int gameCamera;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -598,6 +605,8 @@ inline const ExeBuild kExe12 = {
     // CREATE_PHYSICALOBJECT 0x4741D5, their calls read)
     0x647D80, 0x4104F0, 0x53F520, 0x53F710,
     0x47C3A0, 0x45EE90, 0x460000, 0x38C,
+    // the game's camera (2026-10-17: st0rm94's G_Camera::SetMode twin; the table G_Camera::Begin scans)
+    0x5ED400, 0x638700, 0x4C,
 };
 
 inline const ExeBuild kExe10 = {
@@ -710,6 +719,8 @@ inline const ExeBuild kExe10 = {
     // physical object is 0x24 bytes larger)
     0x6F93C8, 0x47FA10, 0x5FEAC0, 0x5FECB0,
     0x4CDE20, 0x4C41A0, 0x4C53F0, 0x3B0,
+    // the game's camera (2026-10-17: st0rm94's camera_set_mode and g_camera_mode_table)
+    0x5D4D10, 0x650450, 0x4C,
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,

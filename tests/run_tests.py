@@ -937,6 +937,11 @@ def main():
         check('shader.shadows off: no longer wanted', r['ok'] and not r['result']['wanted'], r)
         r = b.call('shader.survey')
         check('shader.survey with no game: an error, saying why', not r['ok'] and 'no game' in str(r), r)
+        r = b.call('kit.gamecam')
+        check('game_camera, game_camera_mode, game_camera_fov with no game: none, refused',
+              r['ok'] and r['result'] == {'state': 0, 'mode': 0, 'fov': 0}, r)
+        r = b.call('camera.game')
+        check('camera.game with no game: an error, saying why', not r['ok'] and 'no mission' in str(r), r)
         # the x87: the stand-in game keeps it at 24 bits, as the game's Direct3D does
         r = b.call('kit.fpu')
         check('a mod\'s callback runs with the x87 at 53 bits: 1/3 on the x87 is the double nearest a third',

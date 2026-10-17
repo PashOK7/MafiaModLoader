@@ -510,6 +510,14 @@ What is done, what comes next and later, and what is known to be missing or wron
   800x600 units); `camera.set` (an agent's camera held for a time), `camera.release`, `camera.state`. The example
   `mods/examples/orbit_cam` (an orbit around the player while he is played, a label over his head) seen in the 1.2
   and 1.0 labs; `camera.set` from above the taxi in both; offline tests with no game.
+- **The game's own camera** (2026-10-17; item 9's rest, block 8a of the order): `game_camera` (its mode with the
+  game's own name for it, the car it follows, its field of view and range), `game_camera_mode` (the game's
+  G_Camera::SetMode, as its camera-change key: on foot behind and from the eyes, in a vehicle its six modes; only what
+  the player's state allows), `game_camera_fov` (through the camera's own setters, held and put back whenever the game
+  changes it, the game's own value back at 0 or the holder's unload); `camera.game`. game_build.h `cameraSetMode`,
+  `cameraModeTable`, `gameCamera`, checked by check_builds.py. Seen in the 1.2 and 1.0 labs: the bonnet's, the driver's
+  head's and the eyes' cameras by the game's own code, 103 degrees held through the camera's changes and getting out of
+  the car, the game's 70 back.
 - **People, skeletons, poses** (2026-10-16; item 6, block 6a): the host keeps every `C_human` (`humans_list`,
   `human_player`), a person's skeleton by the bones' names (`human_skeleton`: 18 joints, the pelvis, the root), a
   pose written for the frame's drawing (`bone_set` in `RENDER_BEGIN`, each posed model updated once after);
@@ -551,7 +559,7 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
    as its fixed pipeline does (the same picture, checked by screenshots in both labs: the starting point a mod
    copies and changes), *7c* what per-object shading needs further (a shadow map from the sun through the scene
    views; the lights near an object).
-8. The camera and control (item 9's rest: the game's own camera logic; item 14's rest: a mod's actions in the
+8. *(8a done 2026-10-17: the game's camera modes and a field of view it keeps; see "Done".)* The camera and control (item 9's rest: the game's own camera logic; item 14's rest: a mod's actions in the
    controls menu, another kind of vehicle).
 9. The agent's tools (items 24, 25 and the snapshots in Later: structures by name, crash triage in one call,
    restore points).
@@ -624,9 +632,9 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
    every mod. Questions in `mml.h` (not only C++'s `game.h`): a ray, a sweep, what overlaps a box or sphere, the
    ground's and the water's height under a point, the actors near a point. Reference: `scenery.cpp`,
    `visual_meshes.cpp`, `collision.cpp`, `game_collision.cpp`, `model_index.cpp`, `model4ds.cpp`, `car_meshes.cpp`.
-9. *(9a done 2026-10-16: the frame drawn from a mod's camera, a world point on the screen and back; see "Done".
-   Left: the game's own camera logic changed (its distance, its field of view kept by the game, its aim), see Known
-   gaps.)* **The camera** (V R K P). The game's camera read and set (position, orientation, field of view, near/far), its
+9. *(9a done 2026-10-16: the frame drawn from a mod's camera, a world point on the screen and back; 8a of the order
+   2026-10-17: the game's camera modes and a field of view it keeps; see "Done". Left: its distance, an aim from
+   another camera: Known gaps.)* **The camera** (V R K P). The game's camera read and set (position, orientation, field of view, near/far), its
    projection replaced after the camera's own update (VR's per-eye frusta), the view decoupled from the aim, a camera
    of a mod's own following its own rules (a skateboard's, a plane's chase camera), a free camera; a world point to
    the screen and a screen point to a ray (markers, aiming). Reference: `freecam.cpp`, `ragcam.cpp`,
@@ -904,8 +912,11 @@ merged, sorted by importance):
 - **The camera** (host/view.cpp, item 9a): only the drawing is the mod's: the game's camera logic (its spring
   behind the player, its distance, its collision with walls, the car's cameras), the player's aim and crosshair (it
   stays in the screen's middle, now pointing where the game's camera looks) and the sound's listener are the game's.
-  A camera the game itself follows (a field of view it keeps, an aim from the drawn camera) needs the camera's
-  update hooked (mafia-ragdoll `freecam.cpp`, `ragcam.cpp`). Drawn only in the mission's world, not a menu's scene.
+  The game's own camera (block 8a, host/gamecam.cpp): its modes and its field of view are a mod's now; its distance
+  behind the player on foot is not: G_Camera +0x24 (5.0, st0rm94's "camera distance") is not read for it (12 written,
+  the camera stayed where it was: measured in 1.0), and where the on-foot and the cars' distances come from was not
+  found (G_Camera::Tick's and WantPos' constants are the leads). An aim from a camera other than the game's (the
+  view decoupled from the aim, a VR head) is not done. Drawn only in the mission's world, not a menu's scene.
 - **Statistics** (host/stats.cpp): "cars stolen" is not counted: the game keeps no such count, and its theft's own
   path (the police's C_shvestky::CarSteal, a driver thrown out: Do_ThrowCocotFromCar) was not reached in a test (the
   player only opened a spawned car's door); `cars_driven` counts every car he gets into. Only the player's deeds are

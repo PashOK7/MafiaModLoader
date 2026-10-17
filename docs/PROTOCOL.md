@@ -110,6 +110,7 @@ Taps can also start with the game, before its first frame: `"taps": ["5409D0 n=4
 | `human.ammo` | `actor`, `slot` (0), `loaded`, `reserve` (-1 or absent: as it is) | the rounds of the item in that slot written; `items` after |
 | `human.take` | `actor`, `item` (an id or a name) | the item taken (the scripts' `human_delweapon`); `items` after |
 | `camera.state` | | the frame's camera: `override` (a mod's id, `the bridge (camera.set)`, `none`), `frames_overridden`, `declined` (the mod's function returned 0), `skipped`, `last` (drawn, or why not), `frame_camera` (`eye`, `fwd` of the last frame drawn) |
+| `camera.game` | `mode` (switched by the game's own SetMode: on foot 1 behind, 3 the eyes; in a vehicle 7, 8, 9 behind, 12 a wheel, 13 the head, 14 the bonnet), `fov` (radians across, held on the game's camera; `null` or 0: the game's back) | the game's camera: `mode`, `mode_name` (the game's own), `car`, `fov`, `fov_degrees`, `near`, `far`, `fov_held_by`, `modes_now` (what `mode` may be now) |
 | `camera.set` | `eye`, `at` or `dir`, `up` (default `[0, 1, 0]`), `fov` (vertical degrees; default the game's), `ms` (default 10000) | the frame drawn from that camera from the next frame for `ms` (over a mod's `camera_override` while held); only the drawing |
 | `camera.release` | | the bridge's camera given back |
 | `watch.set` | `addr`, `mode` (`write`: changes only; `access`: reads too), `len` (1, 2, 4; aligned) | a hardware watchpoint on the game thread (four at most): `id` |

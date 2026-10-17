@@ -287,6 +287,29 @@ H->camera_ray(M, 400, 300, o, d);              /* the ray through the screen's m
 - `mods/examples/orbit_cam` (not enabled by default; F8, `orbit_cam.on {"on": true}`): the camera circles the
   player while he is played as usual; a label over his head through `camera_project`.
 
+### The game's camera: its modes, its field of view
+
+`camera_override` draws the frame from a camera of the mod's while the game's camera goes on as it was. The game's
+own camera manager (G_Camera, driven every frame by the game) is reached too:
+
+```c
+MmlGameCamera c = {sizeof c};
+H->game_camera(M, &c);                      /* c.mode, c.mode_name ("C Chase"), c.car, c.fov (radians, across) */
+H->game_camera_mode(M, MML_GAMECAM_EYES);   /* on foot: from the player's eyes, by the game's own SetMode */
+H->game_camera_fov(M, 1.6f);                /* held: put back whenever the game changes it; 0 gives the game's back */
+```
+
+- **Modes** are switched by the game's own `G_Camera::SetMode`, as its camera-change key does, so the game drives the
+  new mode as its own (collisions, the car's sway, the head's place). Only what the player's state allows: on foot
+  `MML_GAMECAM_BEHIND` (1) and `_EYES` (3); in a vehicle 7, 8, 9 (behind), 12 (by a wheel), 13 (the driver's head), 14
+  (over the bonnet). The game's other modes (the scope, a dialogue, a death, a lock, a race) belong to what sets
+  them; the call is refused then, and the log says which modes the camera can go to.
+- **The field of view** is set through the camera's own setters (the near pass' too) and held: the game changes it
+  only at a few moments (a mode pushed and popped, a dialogue, the scope), and the held value is put back at the
+  next frame. The game's own value (70 degrees in the city) comes back with 0, or when the holder unloads.
+- `call camera.game {"mode": 13, "fov": 1.6}` tries both from the bridge (`"fov": null`: the game's back);
+  `call camera.game` alone shows the state and `modes_now`.
+
 ### The game's files and models (the archives' names, a model's file, .4ds read)
 
 ```c

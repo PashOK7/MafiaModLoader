@@ -1435,3 +1435,17 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **In both labs**: the default map as before (the trees' and the building's shadows), `casters: "game"` drawn without
   harm to the frame.
 - **Tests**: offline ALL PASSED.
+
+## 2026-10-17 (night): the game's own camera (block 8a of the order)
+
+- **Read**: st0rm94's structs/camera.md (G_Camera inside C_game at +0x4C: the I3D_camera at +0x04, the car +0x0C, the
+  mode +0x10; the 17-record mode table) against 1.2's code (G_Camera::Reset, SetMode, Begin: the same layout); both
+  builds' tables dumped from their Game.exe (the records' floats are smoothing factors, not distances).
+- **Measured, not used**: G_Camera +0x24 (5.0, "camera distance") is not what the camera on foot keeps behind the
+  player: 12 written, the camera stayed (1.0); in a car it changes nothing either. Known gaps.
+- **Made** `host/gamecam.cpp`: `game_camera`, `game_camera_mode` (the game's SetMode, only the modes the player's
+  state allows), `game_camera_fov` (the camera's own setters, held each frame, the game's value back); `camera.game`;
+  game_build.h `cameraSetMode`, `cameraModeTable`, `gameCamera` with check_builds.py's checks (ALL PASSED).
+- **In both labs** alike: the bonnet's (14), the driver's head's (13) and the eyes' (3) cameras, 103 degrees held
+  through the game's own changes and getting out of the car, a car's mode refused on foot with the modes it can take.
+- **Tests**: offline ALL PASSED (no game: refused).

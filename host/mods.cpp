@@ -472,6 +472,9 @@ int H_ShaderAdd(MmlMod *m, const MmlShaderRule *rule, char *error, int cap) {
 }
 int H_ShaderRemove(MmlMod *m, int handle) { return Alive(m) && ShaderRemove(m, handle) ? 1 : 0; }
 int H_ShaderShadows(MmlMod *m, const MmlShadowSettings *s) { return Alive(m) && ShaderShadows(m, s) ? 1 : 0; }
+int H_GameCamera(MmlMod *m, MmlGameCamera *out) { return Alive(m) ? GameCamera(out) : 0; }
+int H_GameCameraMode(MmlMod *m, int mode) { return Alive(m) ? GameCameraMode(m, mode) : 0; }
+int H_GameCameraFov(MmlMod *m, float fov) { return Alive(m) ? GameCameraFov(m, fov) : 0; }
 void *H_ActorFrame(MmlMod *m, void *actor) { return Alive(m) ? ActorFrame(actor) : nullptr; }
 int H_FrameWorld(MmlMod *m, void *frame, float out[16]) { return Alive(m) && out ? FrameWorld(frame, out) : 0; }
 int H_SoundPlay(MmlMod *m, const char *file, void *frame, const float pos[3], float volume, float pitch, float rangeNear, float rangeFar, uint32_t flags) {
@@ -788,6 +791,7 @@ bool UnloadMod(ModEntry *e, const char *why) {
     MeshesModGone(m);
     ShadersModGone(m);
     ShadowsModGone(m);
+    GameCameraModGone(m);
     SoundModGone(m);
     ControlModGone(m);
     InteractModGone(m);
@@ -1148,6 +1152,9 @@ void ModsInit() {
     g_host.shader_add = H_ShaderAdd;
     g_host.shader_remove = H_ShaderRemove;
     g_host.shader_shadows = H_ShaderShadows;
+    g_host.game_camera = H_GameCamera;
+    g_host.game_camera_mode = H_GameCameraMode;
+    g_host.game_camera_fov = H_GameCameraFov;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();
@@ -1241,6 +1248,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (MenusMethod(method, paramsJson, reply, &ok)) return ok;
     if (PanelMethod(method, paramsJson, reply, &ok)) return ok;
     if (FpuMethod(method, paramsJson, reply, &ok)) return ok;
+    if (GameCameraMethod(method, paramsJson, reply, &ok)) return ok;
     if (ScriptMethod(method, paramsJson, reply, &ok)) return ok;
     if (CollideMethod(method, paramsJson, reply, &ok)) return ok;
     if (StateMethod(method, paramsJson, reply, &ok)) return ok;

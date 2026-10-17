@@ -389,6 +389,27 @@ typedef struct MmlViewCamera {
  * change what differs. Return 0 to leave the view out of this frame (its last picture stays in MmlGfxFrame). */
 typedef int (*MmlViewFn)(MmlViewCamera *camera, void *user);
 
+/* The game's own camera (game_camera; G_Camera, the camera manager the game drives every frame). */
+typedef struct MmlGameCamera {
+    uint32_t size;
+    int mode;               /* MML_GAMECAM_*: 1..3 on foot, 5 the sniper's scope, 6 a death, 7..15 in a vehicle, 0x11
+                               linked to a frame, 0x13 a dialogue, 0x14 a race, 0x15 looking at, 0x16 locked, 0x17 a
+                               truck's bed, 0x18 a menu's */
+    char mode_name[16];     /* the game's own name for it ("P Behind", "C Chase"; "" for a mode with no record) */
+    void *car;              /* the vehicle it follows (C_car), or NULL */
+    float fov;              /* the field of view the game draws with, radians, across (I3D_camera's) */
+    float near_z, far_z;    /* its range, metres */
+    int fov_held;           /* 1: a mod's field of view is held (game_camera_fov) */
+} MmlGameCamera;
+#define MML_GAMECAM_BEHIND 1        /* on foot, behind the player */
+#define MML_GAMECAM_EYES 3          /* on foot, from his eyes */
+#define MML_GAMECAM_CAR_BEHIND 7    /* in a vehicle: behind ("C Beh. Hellboy") */
+#define MML_GAMECAM_CAR_BEHIND_2 8  /* ("C Behind Emeth") */
+#define MML_GAMECAM_CAR_BEHIND_3 9  /* ("C Behind3") */
+#define MML_GAMECAM_CAR_WHEEL 12    /* by a front wheel ("C Chase") */
+#define MML_GAMECAM_CAR_IN 13       /* from the driver's head ("C In") */
+#define MML_GAMECAM_CAR_OVER 14     /* over the bonnet ("C Over") */
+
 /* A scene view as the passes get it (MmlGfxFrame::views). */
 struct MmlGfxView {
     uint32_t size;
@@ -1356,6 +1377,19 @@ typedef struct MmlHost {
      * unload). Several mods: the largest of each setting. The game's lights near each draw (up to eight point and
      * spot lights, nearest first) and the sun are in game.hlsli's registers always. Game thread. */
     int (*shader_shadows)(MmlMod *mod, const MmlShadowSettings *settings);
+
+    /* ---- the game's own camera logic (both builds; docs/MODDING.md "The game's camera").
+     * game_camera: its state now (MmlGameCamera; size set by the caller); 0 with no mission.
+     * game_camera_mode: the game's camera switched to `mode` by its own G_Camera::SetMode, as the camera-change key
+     * does (the game then drives it as its own: the eyes, a wheel, the bonnet): only a mode the player's state allows
+     * (on foot MML_GAMECAM_BEHIND, _EYES; in a vehicle 7, 8, 9, 12, 13, 14); 0 refused.
+     * game_camera_fov: the field of view (radians, across, 0.1..3.0) the game draws with, through the camera's own
+     * setters, held: set again whenever the game changes it (a mode's push and pop, a dialogue, the scope); 0 gives
+     * the game's back (the value it had before the first change). One holder, the last mod that asked; its unload
+     * gives it back. Game thread. */
+    int (*game_camera)(MmlMod *mod, MmlGameCamera *out);
+    int (*game_camera_mode)(MmlMod *mod, int mode);
+    int (*game_camera_fov)(MmlMod *mod, float fov);
 } MmlHost;
 
 #define MML_ZONE_PLAYER 0x1u
