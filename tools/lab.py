@@ -163,7 +163,15 @@ def install(game):
         if os.path.exists(os.path.join(OUT, f)):
             shutil.copy2(os.path.join(OUT, f), os.path.join(game, f))
     mods = os.path.join(OUT, 'mml', 'mods')
-    for mod in os.listdir(mods):
+    listed = os.path.join(OUT, 'mml', 'build_mods.txt')   # the mods the build defines (CMake writes it at configure)
+    if not os.path.exists(listed):
+        sys.exit('no build/x86/out/mml/build_mods.txt: cmake --preset x86, then cmake --build --preset x86-release')
+    defined = open(listed, encoding='utf-8').read().split()
+    stale = sorted(m for m in os.listdir(mods) if m not in defined)
+    if stale:   # a removed mod's old output (CMake keeps a target's outputs when the target goes)
+        print('not installed, not mods of this build:', ', '.join(stale))
+    defined = [m for m in defined if os.path.isdir(os.path.join(mods, m))]
+    for mod in defined:
         src = os.path.join(mods, mod)
         for folder, _, files in os.walk(src):   # with its subfolders (files\: the game files it ships)
             dst = os.path.join(game, 'mml', 'mods', mod, os.path.relpath(folder, src))
@@ -172,7 +180,7 @@ def install(game):
                 if f.lower().endswith(('.ilk', '.exp', '.lib', '.mmltmp')):
                     continue
                 shutil.copy2(os.path.join(folder, f), os.path.join(dst, f))
-    print('installed: MafiaModLoader.asi and mods', ', '.join(os.listdir(mods)))
+    print('installed: MafiaModLoader.asi and mods', ', '.join(defined))
 
 
 def mode(game, which):

@@ -138,6 +138,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     # <file> is relative to <dir>, and changes to it or to any .hlsli beside it compile it again.
     function(mml_add_mod id dir)
         cmake_parse_arguments(PARSE_ARGV 2 arg "" "" "SHADERS")
+        set_property(GLOBAL APPEND PROPERTY MML_MODS ${id})
         add_library(mod_${id} SHARED ${arg_UNPARSED_ARGUMENTS})
         set(dest ${MML_OUT}/mml/mods/${id})
         set_target_properties(mod_${id} PROPERTIES OUTPUT_NAME ${id} RUNTIME_OUTPUT_DIRECTORY ${dest}/$<0:>)
@@ -160,6 +161,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     # mml_add_files_mod(<id> <dir>): a mod of files alone ("type": "files" in its mod.json, no DLL): its mod.json,
     # config.json and files\ folder copied to <out>/mml/mods/<id>/ by the target files_<id>, built with everything
     function(mml_add_files_mod id dir)
+        set_property(GLOBAL APPEND PROPERTY MML_MODS ${id})
         set(dest ${MML_OUT}/mml/mods/${id})
         set(cmds COMMAND ${CMAKE_COMMAND} -E make_directory ${dest}
                  COMMAND ${CMAKE_COMMAND} -E copy_if_different ${dir}/mod.json ${dest}/mod.json)
@@ -212,6 +214,22 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
         mods/examples/debug_views/walls.cpp
         SHADERS race.hlsl:PsRace:ps_5_0 walls.hlsl:PsWalls:ps_5_0)
     # (tools/new_mod.py adds a mod's line above this one)
+
+    # The mods this build defines: <out>/mml/build_mods.txt, one id a line (written only when it changes), which deploy
+    # (mcp/src/game.rs) and tools/lab.py install copy and nothing else. CMake never deletes a removed target's
+    # outputs, so a mod taken out of this file (or one whose option is off: boxes without MML_JOLT) has its old
+    # folder in <out>/mml/mods removed here, at the configure that taking it out causes.
+    get_property(mml_mods GLOBAL PROPERTY MML_MODS)
+    list(JOIN mml_mods "\n" mml_mods_text)
+    file(CONFIGURE OUTPUT ${MML_OUT}/mml/build_mods.txt CONTENT "${mml_mods_text}\n")
+    file(GLOB mml_mod_outs LIST_DIRECTORIES true ${MML_OUT}/mml/mods/*)
+    foreach(path IN LISTS mml_mod_outs)
+        cmake_path(GET path FILENAME id)
+        if(IS_DIRECTORY ${path} AND NOT id IN_LIST mml_mods)
+            message(STATUS "${id}: not a mod of this build any more, its old output removed (${path})")
+            file(REMOVE_RECURSE ${path})
+        endif()
+    endforeach()
 
     # ---- offline tests: a stand-in game that loads the loader and pumps its frames (tests/run_tests.py)
     add_executable(mml_harness tests/harness/harness.cpp)

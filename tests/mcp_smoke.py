@@ -229,6 +229,35 @@ def main():
           ok and changed != on and mine.get('version') == built.get('version') and mine.get('enabled') is True
           and {k: v for k, v in mine.items() if k != 'enabled'} == {k: v for k, v in built.items() if k != 'enabled'}, (text, mine))
     shutil.rmtree(pic, ignore_errors=True)
+    # only the mods the build defines (build/x86/out/mml/build_mods.txt) are deployed: a removed mod's old output folder
+    # (CMake keeps a target's outputs when the target goes) is skipped and named; the game folder's other mods are
+    # named in `others`, never touched. A whole deploy, into a game folder of its own (`game`: a folder with Game.exe)
+    listed = open(os.path.join(ROOT, 'build', 'x86', 'out', 'mml', 'build_mods.txt'), encoding='utf-8').read().split()
+    stale_out = os.path.join(ROOT, 'build', 'x86', 'out', 'mml', 'mods', 'smoke_removed')
+    there = os.path.join(ROOT, 'build', 'x86', 'deploy_smoke')
+    shutil.rmtree(there, ignore_errors=True)
+    os.makedirs(os.path.join(there, 'mml', 'mods', 'players_own'))
+    open(os.path.join(there, 'Game.exe'), 'w').close()
+    open(os.path.join(there, 'mml', 'mods', 'players_own', 'mod.json'), 'w').write('{"id": "players_own"}\n')
+    os.makedirs(stale_out, exist_ok=True)
+    open(os.path.join(stale_out, 'mod.json'), 'w').write('{"id": "smoke_removed"}\n')
+    try:
+        ok, text = c.tool('deploy', {'game': there})
+        got = sorted(os.listdir(os.path.join(there, 'mml', 'mods')))
+        check('deploy: every mod the build defines, a removed mod\'s old output skipped and named',
+              ok and 'smoke_removed (build/x86/out/mml/mods/smoke_removed: not a mod of this build' in text
+              and got == sorted(listed + ['players_own']), (got, text))
+        check('deploy: the game folder\'s mods the build does not define named in others, left as they are',
+              ok and '"others"' in text and 'players_own' in text.split('"others"')[1]
+              and open(os.path.join(there, 'mml', 'mods', 'players_own', 'mod.json')).read() == '{"id": "players_own"}\n', text)
+        ok, text = c.tool('deploy', {'game': there, 'mods': ['smoke_removed', 'no_such_mod']})
+        check('deploy of named mods the build does not define: skipped, said so, nothing copied',
+              ok and 'smoke_removed (build/x86/out/mml/mods/smoke_removed: not a mod of this build' in text
+              and 'no_such_mod (not a mod of this build)' in text and '"copied": []' in text
+              and not os.path.exists(os.path.join(there, 'mml', 'mods', 'smoke_removed')), text)
+    finally:
+        shutil.rmtree(stale_out, ignore_errors=True)
+        shutil.rmtree(there, ignore_errors=True)
     # crash_triage: a mod's fault in a running game, then a crash nobody handles (the harness's `crash` file)
     shutil.rmtree(os.path.join(HARNESS, 'mml', 'crash'), ignore_errors=True)
     harness = subprocess.Popen([os.path.join(HARNESS, 'mml_harness.exe'), '--seconds', '30'], cwd=HARNESS,

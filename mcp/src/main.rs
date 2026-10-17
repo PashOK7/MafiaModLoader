@@ -151,7 +151,7 @@ struct CrashArgs {
 
 #[derive(Deserialize, JsonSchema)]
 struct DeployArgs {
-    /// Only these mods (ids); default every mod in the build. The loader itself (MafiaModLoader.asi) is copied
+    /// Only these mods (ids); default every mod the build defines. The loader itself (MafiaModLoader.asi) is copied
     /// only while the game is not running (Windows keeps it locked).
     #[serde(default)]
     mods: Option<Vec<String>>,
@@ -1078,13 +1078,16 @@ impl Server {
     /// running game. The loader itself is copied only while the game is not running. A mod's folder goes with its
     /// subfolders (its `files\`: game files), files unchanged left alone (`copied` lists what changed); a game file
     /// the game holds open is replaced all the same (it reads the old one until it closes it). A mod switched on or
-    /// off in the game's folder (its mod.json there says `enabled`) stays so: `kept` names them.
+    /// off in the game's folder (its mod.json there says `enabled`) stays so: `kept` names them. Only the mods the
+    /// build defines go (build/x86/out/mml/build_mods.txt): a removed mod's old output folder is named in `skipped`, and
+    /// the game folder's mods the build does not define are left as they are, named in `others`.
     #[tool]
     async fn deploy(&self, Parameters(a): Parameters<DeployArgs>) -> Out {
         let running = self.bridge.call("ping", json!({}), 1500).await.is_ok();
         let report = game::deploy(a.mods.as_deref(), running)?;
         let mut out = json!({"copied": report.copied, "skipped": report.skipped});
         if !report.kept.is_empty() { out["kept"] = json!(report.kept); }
+        if !report.others.is_empty() { out["others"] = json!(report.others); }
         if running && a.reload.unwrap_or(true) {
             let mut reloads = vec![];
             for id in &report.mods {

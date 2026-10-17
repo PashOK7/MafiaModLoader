@@ -196,6 +196,7 @@ pub struct Deployed {
     pub skipped: Vec<String>,
     pub mods: Vec<String>,
     pub kept: Vec<String>,   // the game folder's own `enabled` kept over the build's (a mod switched on in a lab)
+    pub others: Vec<String>, // the game folder's mods the build does not define (its own, or a removed one's): left
 }
 
 /// One file put in place. A file the game may hold open (a mod's game file: a sound it streams) cannot be renamed
@@ -317,13 +318,14 @@ fn copy_dir(from: &Path, to: &Path, mod_id: Option<&str>, copied: &mut Vec<Strin
     Ok(())
 }
 
-/// build/x86/out -> the game's folder: every mod's folder (or the ones named), and the loader when the game is not
-/// running.
+/// build/x86/out -> the game's folder: every mod the build defines (or the ones named), and the loader when the game
+/// is not running. Leftover folders in the build's output are skipped and named; nothing in the game's folder is
+/// deleted (its mods the build does not define are named in `others`).
 pub fn deploy(only: Option<&[String]>, running: bool) -> Result<Deployed, String> {
     let root = repo_root().ok_or("cannot find the repository")?;
     let out = root.join("build").join("x86").join("out");
     let game = game_dir()?;
-    let mut d = Deployed { copied: vec![], skipped: vec![], mods: vec![], kept: vec![] };
+    let mut d = Deployed { copied: vec![], skipped: vec![], mods: vec![], kept: vec![], others: vec![] };
     let asi = out.join("MafiaModLoader.asi");
     if asi.exists() {
         if running {
@@ -331,20 +333,50 @@ pub fn deploy(only: Option<&[String]>, running: bool) -> Result<Deployed, String
         } else {
             for f in ["MafiaModLoader.asi", "MafiaModLoader.pdb"] {
                 let src = out.join(f);
-                if src.exists() {
-                    std::fs::copy(&src, game.join(f)).map_err(|e| format!("{f}: {e}"))?;
+                if src.exists() && put_file(&src, &game.join(f))? {
                     d.copied.push(game.join(f).display().to_string());
                 }
             }
         }
     }
+    let defined = build_mods(&out)?;
     let mods = out.join("mml").join("mods");
     for e in std::fs::read_dir(&mods).map_err(|e| format!("{}: {e} (build first)", mods.display()))? {
         let e = e.map_err(|e| e.to_string())?;
         let id = e.file_name().to_string_lossy().to_string();
-        if !e.path().is_dir() || only.is_some_and(|o| !o.contains(&id)) { continue; }
-        copy_dir(&e.path(), &game.join("mml").join("mods").join(&id), Some(&id), &mut d.copied, &mut d.kept)?;
-        d.mods.push(id);
+        if e.path().is_dir() && !defined.contains(&id) && only.is_none_or(|o| o.contains(&id)) {
+            d.skipped.push(format!("{id} (build/x86/out/mml/mods/{id}: not a mod of this build, a removed one's \
+                old output; not deployed: configure again to remove it)"));
+        }
+    }
+    for id in only.unwrap_or(defined.as_slice()) {
+        let src = mods.join(id);
+        if !defined.contains(id) {
+            if !src.is_dir() { d.skipped.push(format!("{id} (not a mod of this build)")); }
+            continue;
+        }
+        if !src.is_dir() {
+            d.skipped.push(format!("{id} (not built yet: build/x86/out/mml/mods/{id} is missing)"));
+            continue;
+        }
+        copy_dir(&src, &game.join("mml").join("mods").join(id), Some(id), &mut d.copied, &mut d.kept)?;
+        d.mods.push(id.clone());
+    }
+    if let Ok(rd) = std::fs::read_dir(game.join("mml").join("mods")) {
+        d.others = rd.flatten().filter(|e| e.path().is_dir())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|id| !defined.contains(id)).collect();
+        d.others.sort();
     }
     Ok(d)
+}
+
+/// The mods the build defines (build/x86/out/mml/build_mods.txt, one id a line, written by CMake's configure from the
+/// mml_add_mod / mml_add_files_mod calls). A folder in build/x86/out/mml/mods that is not listed is a removed mod's
+/// old output: CMake never deletes a target's outputs when the target goes.
+fn build_mods(out: &Path) -> Result<Vec<String>, String> {
+    let list = out.join("mml").join("build_mods.txt");
+    let text = std::fs::read_to_string(&list).map_err(|e| format!("{}: {e} (configure and build again: \
+        cmake --preset x86, cmake --build --preset x86-release)", list.display()))?;
+    Ok(text.lines().map(str::trim).filter(|l| !l.is_empty()).map(String::from).collect())
 }

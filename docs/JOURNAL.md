@@ -1925,3 +1925,23 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **The owner**: no script mods; Lua (LuaJIT) is out for good. Mods stay native, through the C ABI. LuaJIT is no
   longer pinned in `tools/deps.py` (its local download removed); README, ARCHITECTURE, MODDING, AGENTS and the
   roadmap say so ("Taken out or changed").
+
+## 2026-10-17: deploy copies only the mods the build defines
+
+- **The gap**: CMake never deletes a removed target's outputs, so the folders of the mods merged into debug_views
+  (actor_route, trigger_view, race_view, invisible_walls) and of aim_debug stayed in `build/x86/out/mml/mods`, and
+  `deploy` (and `tools/lab.py install`) copied every folder there: the removed mods came back into the labs (cleaned
+  by hand once).
+- **The build**: `mml_add_mod` and `mml_add_files_mod` add their id to a global property; the configure writes
+  `build/x86/out/mml/build_mods.txt` (one id a line, only when it changes; not named `mods.list`, the bridge's
+  method) and removes the folders in `out/mml/mods` that are not in it, saying so (taking a mod out of
+  CMakeLists.txt causes that configure; boxes without `MML_JOLT` goes too).
+- **deploy** (mcp/src/game.rs): copies the listed mods only; a leftover folder in the build's output goes to
+  `skipped`, named; a named mod the build does not define, or one not built yet, likewise. Nothing in the game's
+  folder is deleted: its mods the build does not define (a removed one's, a player's own) are named in `others`.
+  The loader's `.asi` and `.pdb` go through `put_file` like the mods' files (unchanged: left alone, not in
+  `copied`). No `build_mods.txt`: an error saying to configure and build. `lab.py install` reads the same list.
+- **Tests**: mcp_smoke deploys the whole build into a game folder of its own (`game`: a folder with Game.exe) with a
+  leftover `smoke_removed` in the build's output and a player's mod in the game's: every listed mod there, the
+  leftover skipped and named, the player's mod in `others` and untouched; named mods the build does not define
+  skipped, nothing copied. The running session keeps the old server until its next start.
