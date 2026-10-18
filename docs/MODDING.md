@@ -153,7 +153,11 @@ freeride without police, pedestrians or traffic (what a case does is then all th
 the games anew (`--reuse` takes a running freeride as it is), keeps that moment as a restore point and loads it
 before each case; what a case spawns through `g.spawn_human` is removed after it (out of a car first). The profile must be one that has opened the freeride's
 settings once (the game ignores the police slider otherwise): `--profile`, or mml.config.json's
-`"test_profiles": {"1.2": 4, "1.0": "Run"}`. `BUILDS = ("1.2",)` keeps a module's cases to one build.
+`"test_profiles": {"1.2": 4, "1.0": "Run"}`. `BUILDS = ("1.2",)` keeps a module's cases to one build; `START =
+"city"` starts them in the whole city instead (the river: `tests/game/test_river.py`). The game puts to sleep what
+it has not drawn lately (act state 1, knowledge/notes/game.md): a case takes the player where its things are
+(`g.tool('teleport', actor='car', to=...)`). Cases now: the orders, a car hitting a person, a camera turned, a prop
+in a hand, a car made over the river, an exhaust under the elevated railway.
 
 ## 3. What the host gives a mod
 

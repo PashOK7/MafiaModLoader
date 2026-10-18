@@ -86,6 +86,7 @@ class Game:
         self.passes = 0
         self.case = ''
         self.made = []   # the actors a case made: removed at its end
+        self.undo = []   # (method, params) called at its end, the last first (a prop removed, a camera given back)
 
     # ---- the tools
     def tool(self, name, **args):
@@ -135,6 +136,19 @@ class Game:
         self.made.append(a['actor'])
         return a['actor']
 
+    def later(self, method, **params):
+        """A bridge call made when the case ends, whatever happened (the last asked, the first made)."""
+        self.undo.append((method, params))
+
+    def shot(self):
+        """A screenshot of the game's frame: its file's bytes."""
+        r = self.tool('screenshot', max_width=320)
+        files = [x.get('file') for x in r if isinstance(x, dict) and x.get('file')] if isinstance(r, list) else []
+        if not files:
+            raise ToolError('screenshot: no file in %r' % (r,))
+        with open(files[0], 'rb') as f:
+            return f.read()
+
     def on_foot(self):
         """The player out of his car (the freeride starts him in it): the engine stopped, then out."""
         for _ in range(3):
@@ -159,6 +173,12 @@ class Game:
 
     def cleanup(self):
         """What the case made, taken out; a person sitting in a car gets out first (world.remove refuses him)."""
+        for method, params in reversed(self.undo):
+            try:
+                self.call(method, **params)
+            except (ToolError, RuntimeError) as e:
+                self.log('  (cleanup: %s: %s)' % (method, e))
+        self.undo = []
         for a in reversed(self.made):
             try:
                 self.call('world.remove', actor=a)
@@ -177,28 +197,31 @@ class Game:
         self.made = []
 
     # ---- the game itself
-    def in_freeride(self):
+    MISSIONS = {'city-small': 'freeitaly', 'city': 'freeride'}   # a freeride's kind, its mission
+
+    def in_freeride(self, kind='city-small'):
         try:
             g = self.call('game')
         except (ToolError, RuntimeError):
             return False
-        return (isinstance(g, dict) and str(g.get('mission_name', '')).lower() == 'freeitaly'
+        return (isinstance(g, dict) and str(g.get('mission_name', '')).lower() == self.MISSIONS.get(kind, kind)
                 and g.get('mission_state') == 'running')
 
-    def start_freeride(self, fresh=False):
+    def start_freeride(self, kind='city-small', fresh=False):
         """The city's small freeride without police (the player holds a Thompson: patrols would shoot), pedestrians
         or traffic (a shot among pedestrians brings the game's own reactions: a gang that shot back killed a test's
         Paulie), the same start in both builds: launched, or the running game used when it is there already."""
         st = self.tool('game_status')
         running = st.get('running') if isinstance(st, dict) else False
-        if running and not fresh and self.in_freeride():
+        if running and not fresh and self.in_freeride(kind):
             return
         if running:
             self.tool('game_close')
         if self.profile is None:
             raise RuntimeError('no profile for %s: --profile %s=<number or name> (or mml.config.json "test_profiles")'
                                % (self.build, self.build))
-        self.tool('game_launch', profile=self.profile, go='freeride', police=0, pedestrians=0, traffic=0, wait_s=120)
+        self.tool('game_launch', profile=self.profile, go='freeride', kind=kind, police=0, pedestrians=0, traffic=0,
+                  wait_s=120)
         log = '\n'.join(self.call('log.tail', lines=60))
         if 'will not use the police density' in log:
             raise RuntimeError('profile %s of %s never opened the freeride\'s settings: the game ignores police 0 '

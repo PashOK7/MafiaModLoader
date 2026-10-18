@@ -677,9 +677,12 @@ What is done, what comes next and later, and what is known to be missing or wron
   instructions), and an order that never reaches END (END takes its person out of the game's ticks for good: the
   loader's own wait ends it, the code's `end` jumps there). Seen in both labs by `tests/game/test_orders.py` (19
   checks a build, two runs in a row).
-- **Tests in the real game: the frame** (2026-10-18; item 23 begun): `tests/game/` (`mml_game.py` a lab's game over
-  its own MCP server, `run.py` the labs at once, a fresh launch into a quiet freeride, a restore point before each
-  case); its first case is the orders'. The measuring mods' cases are item 23's rest.
+- **Tests in the real game** (2026-10-18; item 23): `tests/game/` (`mml_game.py` a lab's game over its own MCP
+  server, `run.py` the labs at once, a fresh launch into a quiet freeride of each kind a module asks, a restore
+  point before each case). The cases: the orders; a car driven into a person (HUMAN_HIT, the car's hit type); a
+  camera turned and given back; a prop in the hand while he turns and walks; a car made over the open river (the
+  whole city); an exhaust under the elevated railway (the pipe behind, pointing back, emitting, the deck over it).
+  42 checks a build, two full runs in a row in both labs. They found `spawn`'s car over water flung 315 km (fixed).
 
 ## Next, by importance
 
@@ -723,7 +726,7 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
    snapshots in Later: structures by name, crash triage in one call, restore points).
 10. *(Done 2026-10-17: the Rust crate; see "Done". No script mods: Lua dropped.)* Mod languages.
 11. *(Done 2026-10-18: see "Done".)* Orders for the people made (item 26).
-12. Tests in the real game, as scripts of steps (item 23).
+12. *(Done 2026-10-18: see "Done".)* Tests in the real game, as scripts of steps (item 23).
 13. *(Done 2026-10-17, before 8 at the owner's wish; see "Done".)* The tuning panel (item 18).
 
 ### Tier 1: foundations every large mod stands on
@@ -854,7 +857,8 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
     stdcall, cdecl, fastcall; integer, float, pointer and string arguments; a fault guarded): a hypothesis in one call.
 22. *(Done 2026-10-16: see "Done".)* **Hardware watchpoints** (A; from Later). Who writes or reads a field, on the bridge and MCP; the handler never
     reads the watched address (a recursion crashed the game once). Reference: `hwwatch.cpp`.
-23. **Tests in the real game, as scripts of steps** (A). Python over the bridge (`tests/game/`): start, spawn,
+23. *(Done 2026-10-18: see "Done"; a body falling into the river and a road tunnel are in Known gaps.)* **Tests in
+    the real game, as scripts of steps** (A). Python over the bridge (`tests/game/`): start, spawn,
     teleport, input, wait for an event, check a value, screenshot; pass or fail. First cases from the measuring mods:
     a car hits a person, a body falls into the river, an exhaust in a tunnel, a camera turned, a prop held in a hand.
 24. *(Done 2026-10-17: see "Done".)* **Structures by name** (A). `inspect <addr> as C_human` (and other classes):
@@ -922,6 +926,10 @@ merged, sorted by importance):
 
 ## Known gaps
 
+- **An actor made over the open river sleeps** (seen 2026-10-18, 1.2): a car spawned there is drawn but its model
+  frame's stamp (`+0x13C`, what C_game::Tick wakes a sleeping actor by) stays -1, so it floats where it was made
+  instead of falling in; a person put in the air there stands (a standing NPC does not fall). A ragdoll or a water
+  mod moves such a body itself. Why the stamp is not set was not looked for.
 - **Orders for people** (host/orders.cpp): a person with a script of his own only (a C_entity: spawn's, the
   missions' NPCs); the traffic's pedestrians are another class, not ordered. A mission's NPC whose own script has
   ended is refused (the game ticks him no more: act state 2, out of C_game's lists; putting him back would make him

@@ -135,7 +135,15 @@ inline const float *WorldMatrix(void *frame) {
 }
 
 // Ray against the static world. Returns true on hit and fills hit point and normal.
-inline bool TestLine(const V3 &from, const V3 &to, V3 *hit, V3 *normal) {
+// A static primitive's surface (its first dword's top byte; materials.def): the water's faces are static faces too,
+// at the water's height, which neither cars nor people stand on (the river's plane lies under the whole city).
+constexpr int kSurfaceDeepWater = 31, kSurfaceShallowWater = 44;
+inline bool IsWaterSurface(uint32_t primFlags) {
+    int s = static_cast<int>(primFlags >> 24);
+    return s == kSurfaceDeepWater || s == kSurfaceShallowWater;
+}
+
+inline bool TestLine(const V3 &from, const V3 &to, V3 *hit, V3 *normal, uint32_t *primFlags) {
     using Fn = void *(__thiscall *)(void *, const V3 *, const V3 *, V3 *, V3 *, uint32_t);
     V3 delta = to - from, h{}, n{};
     void *r = reinterpret_cast<Fn>(Exe().testLine)(Collision(), &from, &delta, &h, &n, g_rayFlags);
@@ -143,12 +151,14 @@ inline bool TestLine(const V3 &from, const V3 &to, V3 *hit, V3 *normal) {
     if (r) {
         if (hit) *hit = h;
         if (normal) *normal = n;
+        if (primFlags) *primFlags = *reinterpret_cast<uint32_t *>(r);
         g_rayStats.hits++;
         g_rayStats.lastFrom = from; g_rayStats.lastTo = to; g_rayStats.lastHit = h; g_rayStats.lastNormal = n;
         g_rayStats.lastPrimFlags = *reinterpret_cast<uint32_t *>(r);
     }
     return r != nullptr;
 }
+inline bool TestLine(const V3 &from, const V3 &to, V3 *hit, V3 *normal) { return TestLine(from, to, hit, normal, nullptr); }
 
 // An actor's position in the world: its model frame's. (The actor position +0x24 of someone sitting in a car, Tommy
 // at the wheel included, is in the car's frame, not the world's.)

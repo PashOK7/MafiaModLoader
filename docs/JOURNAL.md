@@ -2088,3 +2088,29 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   an order with its own `end` and one after it, follow while the player walks off, stop, attack, flee, enter.
   Its first runs found the frozen person above (9 checks failed in each build at the same step), then a test's own
   leftover (a person left seated from the run before took the seat).
+
+## 2026-10-18: the measuring mods' cases in the real game (item 23)
+
+- **The cases** (`tests/game/test_world.py`, `test_river.py`): a car driven into a person (HUMAN_HIT), a camera
+  turned and given back (camera.state's eye and direction, the picture changed), a prop in the right hand (it stays
+  on the bone when he turns and walks), a car made over the open river stays where it was asked, an exhaust under the elevated
+  railway (the pipe behind the car, pointing back, emitting; a ray up meets nothing in the open street and the el's
+  deck under it). The river and the el are in the whole city (`START = "city"`: the runner launches each freeride's
+  kind once and keeps a restore point a kind).
+- **A tool's bug found by them**: `spawn` of a car over the open river put it at y -315418. `CalmVehicle(100)` (as
+  the cheat car) steps the car's physics in 83 ms steps until it is still or 100 ms of real time are gone: with no
+  ground under it, it fell all that while in one call. Two wrong tries first: the ground asked after the car was
+  made met the car's own collision; asked before, it met the river: the water's faces are static faces the game's
+  TestLine returns (surface 31, flags 0x1F000005), and spawn's own Ground() had put the car on the water at -9.5.
+  Now water is no ground for either, and a car is calmed only with ground within 5 m under it.
+- **What the vanilla world does not do, left as it is** (no long hunt): a person put in the air over the river
+  stands there (a standing NPC is not moved by the game: no fall without walking), and an order to walk over the
+  water was not taken (no route there; the debug view shows collision walls over the river). "A body falls into
+  the river" is the ragdoll mod's to do. A car made there does not fall either: drawn on the screen, it sleeps
+  (act state 1: its frame's stamp +0x13C, what wakes a sleeping actor, stays -1); Known gaps. No road tunnel was
+  looked for: the el's road (a deck 5.5 m up, found by rays up along the embankment) is the roof. In the small
+  city every water point reported "covered" at -3.99: the embankment's ground over the river's plane, which lies
+  under the whole city; the open river is east of the embankment.
+- **What the game has not drawn lately sleeps** (C_game::Tick's code: `+0x5F` and the frame's stamp `+0x13C`
+  against the scene's, looked at every 5 s; first misread here as the player's sector): the river's cases take the
+  player there first. (The floating Paulie above read state 0: he did not fall because he stood.)

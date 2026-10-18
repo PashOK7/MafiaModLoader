@@ -36,7 +36,10 @@ docs/MODDING.md). Seen in both labs (2026-10-14).
   and linked into the sector at its place, then `C_mission::CreateActor` (4 a car, 27 a person: the game's NPC
   kind), the actor's `Init` on the frame, and `C_game::AddTemporaryActor`. The actor owns its frame (the
   duplicate's flag) and stays out of saved games (the cheat car's); a car's particles are on and it is settled on its
-  wheels (`CalmVehicle`, as the cheat car). A model a person is made from must have a person's bones (the frames the
+  wheels (`CalmVehicle`, as the cheat car) when there is ground within 5 m under it: CalmVehicle steps the physics
+  for 100 ms of real time, and a car over the river fell 315 km in that one call; elsewhere it falls in the game's
+  time. The water's faces (surfaces 31, 44) are static faces the game's ray meets, but nothing stands on them: they
+  are not ground for `spawn` (a place over the river keeps its height, a car put there falls in). A model a person is made from must have a person's bones (the frames the
   shot code reads without checking; MafiaOnline's list): another model is refused. The spawned car was entered
   ("Get in the car as the driver"), driven and its HUD shown; a spawned person held a Thompson given to him; one put
   into the player's car rode in it.

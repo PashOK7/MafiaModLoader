@@ -50,9 +50,11 @@ def test_orders(g):
     o = g.call('human.stop', actor=paulie)
     g.check('stop: ORDER_ENDED', done(g, o, seq, 10.0), o)
 
-    # attack another person
-    here = g.pos(paulie)
-    sam = g.spawn_human('Sam', [here[0] + 8.0, here[1], here[2]])
+    # attack another person: Sam on the far side of Paulie from the player (a miss once struck the player)
+    here, me = g.pos(paulie), g.pos('player')
+    away = [here[0] - me[0], 0.0, here[2] - me[2]]
+    n = max(1e-3, (away[0] ** 2 + away[2] ** 2) ** 0.5)
+    sam = g.spawn_human('Sam', [here[0] + 8.0 * away[0] / n, here[1], here[2] + 8.0 * away[2] / n])
     g.tool('give', actor=paulie, item='colt 1911')
     seq = g.latest()
     g.call('human.attack', actor=paulie, target=sam)

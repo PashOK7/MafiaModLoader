@@ -11,7 +11,8 @@ A case is a function `test_<name>(g)` of a module tests/game/test_<topic>.py, `g
 by its tools and says what it found with g.check(name, cond, detail). A case starts in the city's small freeride
 without police, pedestrians or traffic, the player in his car at its start (the same place in both builds): the games are launched anew
 (unless --reuse), that moment kept as a restore point and loaded before each case; what a case spawns it lists in
-g.made (spawn_human does), removed after it. `BUILDS = ("1.2",)` in a module keeps its cases to those builds.
+g.made (spawn_human does), removed after it. `BUILDS = ("1.2",)` in a module keeps its cases to those builds;
+`START = "city"` starts them in another freeride (the whole city by day: the river; a launch of its own).
 The profile a lab starts from: --profile, else mml.config.json's "test_profiles" ({"1.2": 4, "1.0": "Run"}): one
 that has opened the freeride's settings once (another ignores the police slider).
 """
@@ -38,24 +39,29 @@ def load_cases():
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         builds = getattr(mod, 'BUILDS', ('1.2', '1.0'))
+        kind = getattr(mod, 'START', 'city-small')
         for attr in dir(mod):
             if attr.startswith('test_') and callable(getattr(mod, attr)):
-                cases.append((name[len('test_'):] + '.' + attr[len('test_'):], getattr(mod, attr), builds))
-    return cases
+                cases.append((name[len('test_'):] + '.' + attr[len('test_'):], getattr(mod, attr), builds, kind))
+    return sorted(cases, key=lambda c: (c[3] != 'city-small', c[3]))   # one launch a freeride's kind
 
 
 def run_lab(build, profile, cases, reuse, results):
     g = None
     try:
         g = mml_game.Game(build, profile)
-        g.case = 'start'
-        g.start_freeride(fresh=not reuse)
-        g.tool('restore', save=START)   # the freeride's start, whole: each case begins there
-        for i, (name, fn, _) in enumerate(cases):
+        kind = None
+        for name, fn, _, want in cases:
+            if want != kind:   # another freeride: launched, its start kept
+                g.case = 'start ' + want
+                g.start_freeride(kind=want, fresh=kind is not None or not reuse)
+                g.tool('restore', save=START + '_' + want.replace('-', '_'))
+                kind, first = want, True
             g.case = name
             g.log('case %s' % name)
-            if i:
-                g.tool('restore', load=START)
+            if not first:
+                g.tool('restore', load=START + '_' + kind.replace('-', '_'))
+            first = False
             try:
                 fn(g)
             except mml_game.Skip as e:
@@ -85,8 +91,8 @@ def main():
 
     cases = [c for c in load_cases() if not a.query or any(q in c[0] for q in a.query)]
     if a.list:
-        for name, _, builds in cases:
-            print('%-40s %s' % (name, ', '.join(builds)))
+        for name, _, builds, kind in cases:
+            print('%-40s %-12s %s' % (name, kind, ', '.join(builds)))
         return 0
     with open(os.path.join(mml_game.ROOT, 'mml.config.json'), encoding='utf-8') as f:
         cfg = json.load(f)

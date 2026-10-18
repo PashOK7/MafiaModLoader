@@ -7,7 +7,8 @@
 // it by the game's model cache, the frame named, placed, turned and linked into the sector at its place; the actor
 // made by C_mission::CreateActor, initialised on the frame (it then owns the frame: +0x6C, as the duplicate sets
 // it), kept out of saved games (+0x65, as the cheat car sets it) and added to the game's temporary actors. A car's
-// particles are switched on and the car settled on its wheels (CalmVehicle 100), as the cheat car's. A person is the
+// particles are switched on and the car settled on its wheels (CalmVehicle 100), as the cheat car's, when there is
+// ground under it (over water or in the air it falls in the game's time). A person is the
 // game's NPC kind (27, C_entity) with no script: he stands until a program tells him what to do.
 //
 // Moving and arming are the scripts' own commands, run at once by the game's interpreter (ScriptExec): actor_setpos
@@ -230,6 +231,16 @@ void *WorldSpawn(MmlMod *mod, int kind, const char *model, const MmlVec3 *pos, c
     std::string name = base + "_mml" + std::to_string(++g_spawnCount);
     void *actor = nullptr;
     bool inited = false;
+    // CalmVehicle steps the car's physics (83 ms a step) until it is still or 100 ms of real time have passed:
+    // with no ground under it (open water, the air) it falls all that while, hundreds of km in one call (seen:
+    // y -315418 over the river: the river's face is a static face the ray meets, but no car stands on it). Calmed
+    // only with ground close under it, water not counted (asked before the car is made: once made, the ray would
+    // meet the car's own collision); else it falls in the game's own time.
+    // (The water's faces are static faces too: the river's plane under the whole city is no ground.)
+    V3 hit{}, n{};
+    uint32_t prim = 0;
+    bool calm = kind == MML_ACTOR_CAR && game::TestLine(V3{p.x, p.y + 1.0f, p.z}, V3{p.x, p.y - 5.0f, p.z}, &hit, &n, &prim) &&
+                !game::IsWaterSurface(prim);
     auto make = [&] {
         reinterpret_cast<SetNameFn>(Vt(frame, kVtSetName))(frame, name.c_str());
         reinterpret_cast<SetPosFn>(x.frameSetPos)(frame, nullptr, &p);
@@ -244,7 +255,7 @@ void *WorldSpawn(MmlMod *mod, int kind, const char *model, const MmlVec3 *pos, c
         game::at<uint8_t>(actor, kActorNotSaved) = 1;    // (DAN_INTERNAL_1)
         if (kind == MML_ACTOR_CAR) game::at<uint8_t>(actor, x.carParticles) = 1;
         reinterpret_cast<ActorFn>(x.gameAddTemp)(game::Game(), nullptr, actor);
-        if (kind == MML_ACTOR_CAR) reinterpret_cast<CalmFn>(x.vehicleCalm)(&game::at<uint8_t>(actor, x.vehicle), nullptr, 100);
+        if (calm) reinterpret_cast<CalmFn>(x.vehicleCalm)(&game::at<uint8_t>(actor, x.vehicle), nullptr, 100);
     };
     if (DWORD ex = Guarded(make)) { *err = Faulted("making the actor", ex); return nullptr; }   // (left as it is)
     if (!actor) { Guarded(release); *err = "the mission made no actor of type " + std::to_string(kind); return nullptr; }
@@ -392,10 +403,12 @@ bool Place(const json &p, const char *key, float aheadDefault, V3 *pos, V3 *fwd,
     *pos = game::ActorWorldPos(a) + *fwd * ahead;
     return true;
 }
-// The ground under a place (the static world's), when there is some within 3 m above and 30 m below.
+// The ground under a place (the static world's), when there is some within 3 m above and 30 m below; water is not
+// ground (a place over the river keeps its height: what is put there falls in).
 void Ground(V3 *pos, float lift) {
     V3 hit{}, n{};
-    if (game::TestLine(*pos + V3{0, 3, 0}, *pos - V3{0, 30, 0}, &hit, &n)) pos->y = hit.y + lift;
+    uint32_t prim = 0;
+    if (game::TestLine(*pos + V3{0, 3, 0}, *pos - V3{0, 30, 0}, &hit, &n, &prim) && !game::IsWaterSurface(prim)) pos->y = hit.y + lift;
 }
 json Describe(void *actor) {
     json j = {{"actor", Hex(reinterpret_cast<uintptr_t>(actor))}, {"type", game::at<int>(actor, game::kActorType)}};

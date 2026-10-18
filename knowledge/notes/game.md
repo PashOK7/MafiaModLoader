@@ -217,8 +217,11 @@ autosplitter; kept outside it, not ported). Checked against the above:
 ## A person's script and his AI (read 2026-10-18 in both builds' code, seen in both labs; host/orders.cpp)
 
 - **game** Which actors the game ticks: `C_game::Tick` (1.2 0x5A51C0) ticks the list of act state 0 (`C_actor
-  +0x1C`); 1 is asleep (out of the player's sector: the same tick moves actors between 0 and 1 every 5 s by
-  `+0x5F`); 2 is set by `C_program::ClearAfterEnd` (1.2 0x46CCF0, 1.0 0x5BAC10) when the owner's program reaches
+  +0x1C`); 1 is asleep: every 5 s the same tick puts a ticked actor whose `+0x5F` is 0 to sleep and wakes a
+  sleeping one whose model frame's `+0x13C` equals the scene's `+0x13C` (a counter: 0x1230 when read), and
+  `C_actor::Tick` sets `+0x5F` from that same comparison, so it reads "drawn lately" (it is not the sector: a car
+  made over the open river, 45 m from the player and drawn on the screen, kept `+0x13C` at -1 and slept, floating
+  where it was made; why its stamp is never set was not looked for); 2 is set by `C_program::ClearAfterEnd` (1.2 0x46CCF0, 1.0 0x5BAC10) when the owner's program reaches
   END, and `SetActState` (0x406DA0, 1.0 0x44C750) never leaves 2. Any change sets `C_game +0x10C`;
   `ChangeActState` (0x5A5070) then moves actors between the ticked list (`+0xF0`) and the asleep one (`+0x100`),
   and one of state 2 out of both into neither: it is not ticked at all, no AI, no animation (a person stands
