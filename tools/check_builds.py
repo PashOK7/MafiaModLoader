@@ -992,6 +992,12 @@ def main(a):
         ret = next((i for i in body if i.mnemonic == 'ret'), None)
         check(ret is not None and ret.op_str == '8' and any(i.mnemonic in ('call', 'jmp') and i.op_str == hex(begins[name]) for i in body),
               f'{name} cameraSetMode: ret 8, Begin called')
+        # SetCar: its argument stored at +0x0C, Begin called, ret 4 (both of its returns)
+        body = list(gexe.md.disasm(gexe.at(exe['cameraSetCar'] - 0x400000, 0x49), exe['cameraSetCar']))
+        t = [f'{i.mnemonic} {i.op_str}' for i in body]
+        check('mov dword ptr [esi + 0xc], eax' in t and t.count('ret 4') == 2 and
+              sum(1 for i in body if i.mnemonic == 'call' and i.op_str == hex(begins[name])) == 2,
+              f'{name} cameraSetCar: the car at +0x0C, Begin called, ret 4')
     a, b = norm(g12.insn(e12['cameraSetMode'] - 0x400000)), norm(g10.insn(e10['cameraSetMode'] - 0x400000))
     check(a == b, f'cameraSetMode: 1.2 "{a}" vs 1.0 "{b}"')
     # The airplane (host/control.cpp): planeAI and planeUpdate are slots 13 and 14 of the vtable C_airplane's

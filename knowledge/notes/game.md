@@ -259,6 +259,44 @@ autosplitter; kept outside it, not ported). Checked against the above:
   `C_sledovacka::ActionStatus` (1.2 0x4A8670, 1.0 0x4F4470): 1 arrived, 3 given up (both end the command and drop
   the record), 2 goes on. Seen: traffic pushed a driven car onto a bridge's low railing and it gave up, ending the
   command as an arrival does.
+- **game** The drive's speed is the road's (1.0 read, seen in the lab): RecompilePath copies each way node's speed
+  from the road network into the path node (`+0x48`: a crossing's `+0x10`, a point's `+0x0C`), and the driver's
+  FillStartValues (1.0 0x485EC0) makes its limit `+0x17C` that times a factor redrawn every 5 s from 0.65..1.0
+  (`+0x1C8`), handed to `C_Vehicle::SetSpeedLimit`; the city's streets gave 9 to 12 m/s. AddCarMoveTo sets `+0x218`
+  (the speed at the way's end) 1000, or 0 with `stop`. What made a drive "aggressive" was not the speed: the car
+  started facing away from the way's first leg (a parking lot; a car that had arrived the other way) and the driver
+  turned on full lock (`+0x1E0` -0.7) across the pavement, then cut back to its target node, which it changes only
+  within 20..40 m of it (`+0x1D4`, redrawn per node). Put on the way's first node facing its second (the way read
+  from the driver's path at `+0x164`, stride 0x70, the position first), the same 800 m went in its lane.
+- **code** The way (AddCarMoveTo, both builds the same code): node 0 the car's own place (`+0x408` 1.2, `+0x484`
+  1.0), then the road nodes FindPath gives (the first dropped when the car lies between it and the next), then the
+  place asked; the cursor `+0x170` starts at 1. The driver's speed limit `+0x17C` is the cursor node's `+0x48` (m/s)
+  times `+0x1C8`, or 1000 when `+0x208` is not 0; MinV (1.2 0x43FD40) takes the corners' speeds from the nodes'
+  `+0x48` too, while `+0x208` is 0 or the byte `+0x298` is set. Capping the way's `+0x48` (human.drive `speed` 8)
+  gave 5 to 8 m/s (both labs).
+- **code** The driver's reverse (C_driver::Tick, 1.2 0x43C4F0 lines ~1083..1126, 1.0 0x483360 the same): while bit 0
+  of `+0x19C` is set the limit is 3 m/s (`+0x17C`), the gear -1, the wheels at the angle between the car's facing
+  (C_actor `+0x30`, copied to `+0xA0`) and the way to its target point projected flat (`+0xD0`), signed by the side
+  (`+0xAC`, the car's right); the bit is cleared once that angle is under 0.34 rad (1.2 0x623BF0, 1.0 0x63BCDC) in
+  reverse gear, or when the car is blocked behind (car `+0x2215` 1.2, `+0x2155` 1.0). Tick sets it itself only when
+  the car is blocked ahead (`+0x2216`), slow and a sphere test hits.
+- **code** The chase manager's unsticking (C_sledovacka::Tick, 1.2 0x4A3E70, 1.0 0x4EFCF0): a record's `+0x28`
+  counts the ms its car stands with the engine on; past 2000 (15000 when its cursor node has a traffic light) it
+  sets the record's flag 0x100000 and the driver's `+0x298`, and from then on drives it with `+0x208` 1 (TickDriver:
+  the chase's way round what is in front, the limit 1000) for 15 s of `+0x28`, then clears both. A cursor of 0 after
+  the driver's Tick is an arrival (status 1): the unsticking's Tick sets the cursor back to `+0x78`, which only
+  Tick's own stuck branch fills (with the cursor), so a fresh driver given the flag "arrived" at once (seen in both
+  labs before `+0x78` was set by hand).
+- **game** What a drive looked like (1.2 and 1.0, the city, a car facing east on the street at z 126.5, its way west
+  then north, 190 m): left to the game, full lock forward over the pavement, 4 to 7 knocks of 1 to 6.7 m/s, stood,
+  then the unsticking at 22 to 27 m/s, a car of the traffic struck; with the reverse set at the start the car backed
+  round in 10 s (3.3 m/s, no knock) and went on at 9 to 13 m/s; with the unsticking ended once the car had got 6 m
+  away, no stretch went above the road's speed. A car that has stopped 4 m short of a `stop` stands with
+  `+0x19C` 0xC0000000 (a collision foreseen: PredvidaciKolize) until the unsticking moves it the rest of the way.
+- **code** `G_Camera::SetCar` (1.2 0x5ED190, 1.0 0x5D4AA0; thiscall(camera, car) ret 4): End, `+0x0C` the car, the
+  mode the game last used in a vehicle (none: the last on foot), Begin, the next pose cut (`+0x64`). End shows the
+  followed car's model again through its frame (`car +0x68`, vtable `+0x24`): with a car whose model is gone
+  (world.remove unlinks it first) it faults, so `+0x0C` is cleared before (camera.game `follow`, host/gamecam.cpp).
 - **game** `C_roads` is `C_mission +0x30` (what `C_sledovacka +0x20` takes, both builds). `GetNearNode` (1.2
   0x55B370, 1.0 0x619480), thiscall `(roads, x, y, z)`, ret 0xC: a binary search on x over the nodes at `+0x18`
   (0x18 bytes, the position first), the nearest's index (0xFFFF none). Nodes are crossings and bends: the start of

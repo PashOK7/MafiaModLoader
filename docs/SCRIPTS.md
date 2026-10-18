@@ -173,7 +173,9 @@ decoder reads them (`C_entity::DecodeParams`); the ones the named orders use, se
 
 `at` gives the frames: `at: [[x, y, z], ...]` makes `frm[0]`, `frm[1]`... dummy frames of the loader's there (freed
 with the order). `human.drive` is the two commands of `human.enter` (the driver's seat) and `enemy_car_moveto ..., stop`,
-its outcome measured by the loader (the game ends a drive it gave up as one that arrived); `world.road {at}` is the
+its outcome measured by the loader (the game ends a drive it gave up as one that arrived), a car facing away from its
+way backed round first by the game's own reverse, the game's own unsticking kept short (`start`, `calm`, `speed`:
+docs/PROTOCOL.md); `world.road {at}` is the
 road node a drive's way would end at (`C_roads::GetNearNode`): the network's nodes are its crossings and bends, tens
 of metres apart. Each command that queues an action of the AI (a move, a follow, a fire: 16 of them) waits until
 the AI has done it; the others take one step.

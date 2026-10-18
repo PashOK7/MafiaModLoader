@@ -681,6 +681,12 @@ What is done, what comes next and later, and what is known to be missing or wron
   `distance`, `seated`: the game ends a drive it gave up as one that arrived) and their `retries`; the road
   network's nearest node, `world.road` and mods' `road_near` (C, Rust). Seen in both labs: a drive of 290 m
   arrived 3.9 m from its road end, a drive asked to within 1 m ended short, was given again once and told so.
+  Then (2026-10-18) a calmer drive: a car facing away from its way is backed round first by the game's own reverse
+  (`start` "turn", the default; "place", "as_is"), the game's own unsticking (15 s at the chase's speed, no limit) is
+  ended once the car has got 6 m away (`calm`), `speed` caps the way's speeds; ORDER_ENDED tells `start`,
+  `start_angle`, `unstuck`. And `camera.game {follow: car}`: the game's own camera behind any car (G_Camera::SetCar),
+  given back when the car is destroyed. Seen in both labs (`test_orders.py` drive_facing_away, `test_world.py`
+  camera_follows_car: 40 checks a build).
 - **Tests in the real game** (2026-10-18; item 23): `tests/game/` (`mml_game.py` a lab's game over its own MCP
   server, `run.py` the labs at once, a fresh launch into a quiet freeride of each kind a module asks, a restore
   point before each case). The cases: the orders; a car driven into a person (HUMAN_HIT, the car's hit type); a
@@ -943,7 +949,19 @@ merged, sorted by importance):
   gone when the command ends); `enemy_car_moveto`'s `natvrdo` and a drive by someone not at the wheel were not
   tried, nor `enemy_car_hunt`; neither are the scripts' events to a program of the loader's (`setplayerfireevent`...)
   nor a list of the people's models (`spawn` takes a model file's name). `attack` is the game's own aim: in the labs
-  the first hit came 5 to 30 s after the first shot.
+  the first hit came 5 to 30 s after the first shot. `human.drive` is the game's chase drive (C_sledovacka, the
+  police's and Sergio's), not the traffic's: started with the car facing away from its way's first leg (a parking
+  lot, a car turned round), it turns on full lock across the pavement and cuts back to the way through what is
+  there (2026-10-18, 1.0: about 20 crashes, Tommy beside him from 200 to 56, pedestrians run down); started on the
+  road facing its first leg, the same 800 m drive gave three light knocks on posts and no one hurt
+  (`knowledge/notes/game.md`, "Drives"). Since then the car is backed round first and the game's own unsticking kept
+  short (`start`, `calm`); what is left is the game's: the driver cuts corners (it changes its target within 20..40 m
+  of a node), stops about 4 m short of a `stop` and stands there with a collision foreseen until the unsticking moves
+  it on (ORDER_ENDED about 5 s later), and a car truly stuck (one spawned into a wall) is unstuck again and again
+  without end (9 times in 2 minutes: `unstuck`; `retries` do not help it). The knocks on the posts of one street
+  (1.0's whole city, x -1774, z 130..220, surface 19) were looked into briefly only: in the small city there is
+  nothing on that curb line (rays along x -1773..-1777, no actors within 50 m); the whole city was not looked at.
+  `camera.game` follows a car only: a person on foot (an NPC walking) has no camera of the game's to put on him.
 
 - **A game folder no ANSI code page spells** (a Cyrillic name on a 1252 system, a CJK one on a 1251 system): the
   game, the loader and the mods' own files work there (both labs, 2026-10-17), but **dxwrapper does not**: its

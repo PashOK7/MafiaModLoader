@@ -20,9 +20,23 @@
 // script did end (act state 2) is refused: the game ticks him no more. Each mission tick the loader looks at where
 // each order stands and tells ORDER_ENDED once it is done.
 //
+// A drive (human.drive) is ENEMY_CAR_MOVETO: the chase manager (C_sledovacka at C_game +0x2B18) makes a record for
+// the car with a C_driver and its way by the road network, the car's own place its first node. Its Tick drives
+// forward only: started facing away from its way, the car turned on full lock across the pavement into what was
+// there, stood, and after 2 s the manager's unsticking (record flag 0x100000, 15 s, the driver's +0x208 at 1) backed
+// it up and then drove it with no limit of its own (22 m/s in town). So once the record is there the loader looks at
+// the way's first leg: facing more than 90 degrees from it, the car is given that same unsticking at once, with the
+// driver's reverse (+0x19C bit 0: the game's gear -1, at most 3 m/s, the wheels turned until the car faces within
+// 0.34 rad of where it steers, or something is behind it) and the road's speeds kept (+0x298), as Tick sets them;
+// once the game has ended the reverse, the unsticking is ended as the game ends it, and the drive goes on as the
+// game drives it (`start` "turn"). "place" puts the car on its way's first road node facing the next instead (a
+// jump: for a car nobody sees), "as_is" leaves it to the game. `speed` caps the way's nodes' speeds (+0x48, m/s),
+// what the driver's limit and its corners' speeds come from (FillStartValues, MinV).
+//
 // Bridge methods (game thread): human.order {actor, code, act, flt, at}, human.order_state {actor}, human.go {actor,
 // to, run, radius}, human.follow {actor, target, distance}, human.attack {actor, target}, human.flee {actor, from,
-// distance}, human.enter {actor, car, seat}, human.stop {actor}.
+// distance}, human.enter {actor, car, seat}, human.drive {actor, car, to, stop, radius, start, speed}, human.stop
+// {actor}.
 #include "host.h"
 #include <algorithm>
 #include <cmath>
@@ -48,9 +62,29 @@ constexpr const char *kToIdle = "goto 60003";   // what the code's own `end` bec
 
 using ForceFn = char(__fastcall *)(void *self, void *edx, char keep);
 
+// The chase manager (C_sledovacka, the same in both builds: knowledge/notes/game.md "Drives and the road network"):
+// at C_game +0x2B18, its records a vector at +0x14 (end +0x18) of 0x44 bytes: +0x00 the car, +0x04 its C_driver,
+// +0x1C flags (0x100000 unsticking), +0x28 the unsticking's time (ms; also how long the car has stood before it).
+constexpr int kGameChase = 0x2B18, kChaseRecords = 0x14, kChaseRecordsEnd = 0x18, kChaseRecordSize = 0x44;
+constexpr int kChaseCar = 0x00, kChaseDriver = 0x04, kChaseFlags = 0x1C, kChaseUnstickMs = 0x28;
+constexpr uint32_t kChaseUnstick = 0x100000;
+// C_driver (both builds): its way a vector at +0x164 (end +0x168) of 0x70-byte nodes, the position first and the
+// speed at +0x48 (m/s); the node it drives to +0x170, the one an unsticking goes back to +0x78 (Tick puts the cursor
+// there when it finds the car stuck; the unsticking's Tick sets the cursor back to it, and the manager takes a
+// cursor of 0 for an arrival); flags +0x19C (bit 0: backing up); +0x298 (a byte): the road's speeds kept while
+// unsticking.
+constexpr int kDriverPath = 0x164, kDriverPathEnd = 0x168, kDriverNodeSize = 0x70, kDriverNodeSpeed = 0x48;
+constexpr int kDriverCursor = 0x170, kDriverResume = 0x78;
+constexpr int kDriverFlags = 0x19C, kDriverRoadSpeeds = 0x298;
+constexpr uint32_t kDriverReverse = 1;
+constexpr float kTurnAbove = 1.5707964f;   // the way's first leg further than this from the car's forward: turned first
+constexpr float kCalmMetres = 6.0f;         // the game's own unsticking ended once the car is this far from where it stood
+constexpr int kCalmMs = 6000;               // ... or after this long
+
 // What a named order is for, looked at when the game says it is done (the program on the loader's wait): the game
 // ends a drive it gives up (a car stuck, its way lost) as it ends one that arrived, so the outcome is measured.
 enum GoalKind { kGoalNone, kGoalPlace, kGoalSeat, kGoalDrive };
+enum DriveStart { kStartTurn, kStartPlace, kStartAsIs };   // a drive started facing away from its way
 struct Goal {
     int kind = kGoalNone;
     float to[3] = {};      // the place (go, drive)
@@ -59,6 +93,9 @@ struct Goal {
     float radius = 0;      // within it: arrived
     void *car = nullptr;   // enter, drive
     bool stop = true;      // drive: stop there
+    int start = kStartTurn;   // drive
+    float speed = 0;       // drive: the way's speeds at most this (m/s); 0 the road's
+    bool calm = true;      // drive: the game's own unsticking kept short
 };
 
 struct Order {
@@ -76,6 +113,15 @@ struct Order {
     int retries = 0, retried = 0, retryMs = 5000;   // given again when it ends short of its goal
     int retryIn = -1;           // ms of the mission's time until it is given again; -1 none pending
     bool ended = false;
+    // a drive's start, each time it is given: its record looked for until the game has planned the way
+    bool planned = false, turning = false;
+    uintptr_t driver = 0;       // the C_driver it was planned with
+    int turnMs = 0;
+    std::string started;        // what was done at the start ("turned", "placed", "on its way"...)
+    float startAngle = -1;      // degrees between the car's forward and its way's first leg
+    bool calming = false;       // in the game's own unsticking (calm)
+    V3 calmFrom{};
+    int calmMs = 0, unstuck = 0;   // its time; how many times the game unstuck the car in this order
 };
 std::vector<Order> g_orders;   // one a person: his last
 int g_nextId = 1;
@@ -150,6 +196,11 @@ json Outcome(const Order &o) {
     } else if (g.kind == kGoalSeat) {
         j["seated"] = R32(reinterpret_cast<uintptr_t>(o.human) + game::kHumanVehicle) == reinterpret_cast<uintptr_t>(g.car);
     }
+    if (g.kind == kGoalDrive && !o.started.empty()) {
+        j["start"] = o.started;
+        if (o.startAngle >= 0) j["start_angle"] = std::round(o.startAngle);
+        if (o.unstuck) j["unstuck"] = o.unstuck;
+    }
     if (o.retries) j["retried"] = o.retried;
     return j;
 }
@@ -177,6 +228,138 @@ std::string DriveCode(const Order &o) {
     bool in = R32(reinterpret_cast<uintptr_t>(o.human) + game::kHumanVehicle) == reinterpret_cast<uintptr_t>(o.goal.car);
     std::string code = in ? "" : "enemy_move_to_car 0, 0\nenemy_usecar 0, 0\n";
     return code + "enemy_car_moveto 0, 0" + (o.goal.stop ? ", stop" : "");
+}
+
+void W32(uintptr_t a, uint32_t v) { MemWrite(a, &v, 4); }
+float F32(uintptr_t a) { float v = 0; MemRead(a, &v, 4); return v; }
+
+// The chase manager's record of a car (ENEMY_CAR_MOVETO's), or 0: looked up anew each time (its vector moves).
+uintptr_t ChaseRecord(void *car) {
+    void *g = game::Game();
+    if (!g || !car) return 0;
+    uintptr_t m = reinterpret_cast<uintptr_t>(g) + kGameChase;
+    uint32_t b = R32(m + kChaseRecords), e = R32(m + kChaseRecordsEnd);
+    if (!b || e <= b || (e - b) % kChaseRecordSize || (e - b) / kChaseRecordSize > 256) return 0;
+    for (uint32_t r = b; r < e; r += kChaseRecordSize)
+        if (R32(r + kChaseCar) == reinterpret_cast<uintptr_t>(car)) return r;
+    return 0;
+}
+
+// An unsticking ended as the game ends its own (Tick: the flag, +0x298, the time), and the reverse with it; not
+// when the record is another drive's now.
+void EndUnstick(Order &o) {
+    uintptr_t rec = ChaseRecord(o.goal.car);
+    if (!rec || R32(rec + kChaseDriver) != o.driver) return;
+    W32(rec + kChaseFlags, R32(rec + kChaseFlags) & ~kChaseUnstick);
+    uint8_t zero = 0;
+    MemWrite(o.driver + kDriverRoadSpeeds, &zero, 1);
+    W32(rec + kChaseUnstickMs, 0);
+    W32(o.driver + kDriverFlags, R32(o.driver + kDriverFlags) & ~kDriverReverse);
+}
+void EndTurn(Order &o, const char *how) {
+    if (!o.turning) return;
+    o.turning = false;
+    EndUnstick(o);
+    o.started = std::string("turned (") + how + ")";
+    HLOG("order %d: the car turned to its way in %d ms (%s)", o.id, o.turnMs, how);
+}
+
+// Each mission tick of a drive: its start looked at once the game has planned it (its record there), a turn
+// followed, and the game's own unsticking kept short (`calm`).
+void DriveTick(Order &o, int ms) {
+    Goal &g = o.goal;
+    if (g.kind != kGoalDrive || o.ended || o.retryIn >= 0 || !g.car) return;
+    if (o.turning) {
+        o.turnMs += std::max(ms, 0);
+        uintptr_t rec = ChaseRecord(g.car);
+        if (!rec || R32(rec + kChaseDriver) != o.driver) { o.turning = false; o.started = "turning (the drive ended)"; return; }
+        bool backing = (R32(o.driver + kDriverFlags) & kDriverReverse) != 0;
+        bool unsticking = (R32(rec + kChaseFlags) & kChaseUnstick) != 0;
+        if (!backing) EndTurn(o, "it faces its way");
+        else if (!unsticking) EndTurn(o, "the game's 15 s of unsticking over");
+        return;
+    }
+    if (o.planned) {
+        // the game's own unsticking (the car stood 2 s): 15 s with no limit of its own unless ended; ended here once
+        // the car has got away (kCalmMetres from where it stood) or after kCalmMs, the reverse it may be in let end
+        uintptr_t rec = g.calm ? ChaseRecord(g.car) : 0;
+        if (!rec || R32(rec + kChaseDriver) != o.driver) return;
+        bool unsticking = (R32(rec + kChaseFlags) & kChaseUnstick) != 0;
+        if (!unsticking) { o.calming = false; return; }
+        V3 at = game::ActorWorldPos(g.car);
+        if (!o.calming) {
+            o.calming = true;
+            o.calmFrom = at;
+            o.calmMs = 0;
+            o.unstuck++;
+            HLOG("order %d: the game's unsticking began (%d: the car stood)", o.id, o.unstuck);
+            return;
+        }
+        o.calmMs += std::max(ms, 0);
+        bool backing = (R32(o.driver + kDriverFlags) & kDriverReverse) != 0;
+        if (!backing && (Len(at - o.calmFrom) >= kCalmMetres || o.calmMs >= kCalmMs)) {
+            EndUnstick(o);
+            o.calming = false;
+            HLOG("order %d: the game's unsticking ended after %d ms, %.1f m: the road's speeds again", o.id, o.calmMs, Len(at - o.calmFrom));
+        }
+        return;
+    }
+    if (o.planned) return;
+    uintptr_t rec = ChaseRecord(g.car);
+    if (!rec) return;   // not driving yet (walking to the car, getting in)
+    uintptr_t drv = R32(rec + kChaseDriver);
+    uint32_t pb = drv ? R32(drv + kDriverPath) : 0, pe = drv ? R32(drv + kDriverPathEnd) : 0;
+    if (!pb || pe <= pb || (pe - pb) % kDriverNodeSize) return;
+    unsigned n = (pe - pb) / kDriverNodeSize;
+    o.planned = true;
+    o.driver = drv;
+    o.started = "on its way";
+    o.startAngle = -1;
+    if (g.speed > 0)
+        for (unsigned i = 0; i < n; i++) {
+            uintptr_t s = pb + i * kDriverNodeSize + kDriverNodeSpeed;
+            if (F32(s) > g.speed) MemWrite(s, &g.speed, 4);
+        }
+    if (n < 2) return;
+    // the way's first leg: from the car (the way's node 0) to its first road node, against the car's forward
+    V3 at = game::ActorWorldPos(g.car), first{}, second{};
+    MemRead(pb + kDriverNodeSize, &first, 12);
+    if (n > 2) MemRead(pb + 2 * kDriverNodeSize, &second, 12);
+    void *frame = game::at<void *>(g.car, game::kActorFrame);
+    const float *w = frame ? game::WorldMatrix(frame) : nullptr;
+    if (!w) return;
+    V3 fwd{w[8], 0, w[10]}, leg{first.x - at.x, 0, first.z - at.z};
+    float lf = Len(fwd), ll = Len(leg);
+    if (lf < 1e-3f || ll < 1e-3f) return;
+    float c = (fwd.x * leg.x + fwd.z * leg.z) / (lf * ll);
+    float angle = std::acos(std::max(-1.0f, std::min(1.0f, c)));
+    o.startAngle = angle * 57.29578f;
+    if (angle <= kTurnAbove || g.start == kStartAsIs) return;
+    if (g.start == kStartPlace) {
+        // on its first road node (the ground under it), facing the next (or along the leg)
+        V3 face = n > 2 ? V3{second.x - first.x, 0, second.z - first.z} : leg;
+        V3 hit{}, nrm{};
+        uint32_t prim = 0;
+        if (game::TestLine(first + V3{0, 3, 0}, first - V3{0, 30, 0}, &hit, &nrm, &prim) && !game::IsWaterSurface(prim)) first.y = hit.y + 0.5f;
+        MmlVec3 p{first.x, first.y, first.z}, d{face.x, 0, face.z};
+        std::string err;
+        if (WorldTeleport(g.car, p, &d, false, &err)) o.started = "placed on its way";
+        else HWARN("order %d: the car not put on its way: %s", o.id, err.c_str());
+        HLOG("order %d: the car faced %.0f degrees from its way: put on its first node", o.id, o.startAngle);
+        return;
+    }
+    // the game's unsticking with its reverse, now (what Tick does after the car has stood 2 s)
+    W32(drv + kDriverResume, R32(drv + kDriverCursor));
+    W32(drv + kDriverFlags, R32(drv + kDriverFlags) | kDriverReverse);
+    W32(rec + kChaseFlags, R32(rec + kChaseFlags) | kChaseUnstick);
+    W32(rec + kChaseUnstickMs, 0);
+    uint8_t one = 1;
+    MemWrite(drv + kDriverRoadSpeeds, &one, 1);
+    o.turning = true;
+    o.turnMs = 0;
+    o.started = "turning";
+    o.calming = false;
+    HLOG("order %d: the car faces %.0f degrees from its way: turned first (the game's reverse)", o.id, o.startAngle);
 }
 
 } // namespace
@@ -215,6 +398,8 @@ bool Issue(Order &o, std::string *err) {
         }
         o.code = DriveCode(o);
     }
+    o.planned = o.turning = o.calming = false;   // (a drive's start looked at again: the game plans its way anew)
+    o.driver = 0;
     std::string text = EndsToIdle(o.code.c_str()) + "\n" + kIdleTail;
     o.lines.clear();   // (ScriptCompileInto adds to it: a retry's would follow the first's)
     if (!ScriptCompileInto(e + kProgram, kStartEvent, text.c_str(), o.acts.data(), static_cast<int>(o.acts.size()), o.flts.data(),
@@ -291,7 +476,12 @@ static int HumanOrderGoal(MmlMod *mod, void *human, const char *code, void *cons
     if (o.what.size() > 300) o.what = o.what.substr(0, 300) + "...";
     // his program is ours now: the frames of an order before it are free
     for (size_t i = 0; i < g_orders.size(); i++)
-        if (g_orders[i].human == human) { ReleaseFrames(g_orders[i]); g_orders.erase(g_orders.begin() + static_cast<long>(i)); break; }
+        if (g_orders[i].human == human) {
+            EndTurn(g_orders[i], "another order given");
+            ReleaseFrames(g_orders[i]);
+            g_orders.erase(g_orders.begin() + static_cast<long>(i));
+            break;
+        }
     g_orders.push_back(std::move(o));
     return g_orders.back().id;
 }
@@ -302,6 +492,7 @@ static int HumanOrderGoal(MmlMod *mod, void *human, const char *code, void *cons
 // else ORDER_ENDED, with the outcome.
 void OrdersTick(int ms) {
     for (Order &o : g_orders) {
+        DriveTick(o, ms);
         if (o.retryIn >= 0) {
             o.retryIn -= std::max(ms, 0);
             if (o.retryIn > 0) continue;
@@ -332,8 +523,21 @@ void OrdersTick(int ms) {
 }
 
 void OrdersActorGone(void *actor) {
+    // a car an order is for: forgotten (the outcome measured at him, no more retries: nothing to drive)
+    for (Order &o : g_orders) {
+        if (o.goal.car != actor) continue;
+        o.goal.car = nullptr;
+        o.turning = false;
+        o.retries = o.retried;
+        for (void *&a : o.acts) if (a == actor) a = nullptr;
+    }
     for (size_t i = 0; i < g_orders.size(); i++)
-        if (g_orders[i].human == actor) { ReleaseFrames(g_orders[i]); g_orders.erase(g_orders.begin() + static_cast<long>(i)); return; }
+        if (g_orders[i].human == actor) {
+            EndTurn(g_orders[i], "its driver gone");
+            ReleaseFrames(g_orders[i]);
+            g_orders.erase(g_orders.begin() + static_cast<long>(i));
+            return;
+        }
 }
 
 void OrdersMissionClose() {
@@ -480,6 +684,15 @@ bool OrdersMethod(const std::string &method, const std::string &paramsJson, std:
         std::copy(to, to + 3, goal.to);
         goal.radius = p.value("radius", 25.0f);
         goal.stop = p.value("stop", true);
+        // facing away from its way: "turn" (the game's reverse first), "place" (put on its way), "as_is"
+        std::string start = p.value("start", "turn");
+        if (start == "turn") goal.start = kStartTurn;
+        else if (start == "place") goal.start = kStartPlace;
+        else if (start == "as_is") goal.start = kStartAsIs;
+        else { *reply = "human.drive: start: \"turn\", \"place\" or \"as_is\""; return true; }
+        goal.speed = p.value("speed", 0.0f);
+        goal.calm = p.value("calm", true);
+        if (!(goal.speed >= 0 && goal.speed < 100)) { *reply = "human.drive: speed: metres a second (0: the road's)"; return true; }
         goal.hasRoadEnd = RoadNear(to, goal.roadEnd) >= 0;
         retries = p.value("retries", 2);
     } else {   // human.stop

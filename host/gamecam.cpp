@@ -12,7 +12,14 @@
 // scope), so a held value is set again at the next frame whenever the camera has another, and the game's own value
 // (kept at the first change) is given back when the holder lets go.
 //
-// Bridge method (game thread): camera.game {mode, fov (null: the game's back)}.
+// The car it follows is the game's SetCar (End, +0x0C, the mode it last used in a vehicle, Begin): what getting into
+// a car does for the player, and what the race's cameras do for the other racers. Given any car, the game's own
+// camera goes behind it (a driven car watched as the player would see his own; a car the game draws does not
+// sleep); the player's own car again (or none) gives it back. The game takes it back itself when the player gets
+// into or out of a car; a followed car destroyed gives it back first (GameCameraActorGone).
+//
+// Bridge method (game thread): camera.game {mode, fov (null: the game's back), follow (a car, a person in one;
+// "player" or null: back)}.
 #include "host.h"
 #include <cmath>
 #include <cstring>
@@ -29,14 +36,17 @@ constexpr int kCamI3D = 0x04, kCamCar = 0x0C, kCamMode = 0x10;
 constexpr int kI3DFov = 0x140, kI3DNear = 0x144, kI3DFar = 0x148, kI3DNearFov = 0x14C;
 constexpr int kVtSetFov = 0x50, kVtSetNearFov = 0x54;
 constexpr int kRecord = 0x44, kRecordName = 0x30, kRecords = 17;
+constexpr int kActorPlayer = 2;   // the player's actor type (C_player)
 
 using SetModeFn = void *(__fastcall *)(void *camera, void *edx, unsigned mode, char begin);
+using SetCarFn = void(__fastcall *)(void *camera, void *edx, void *car);
 using SetFloatFn = int(__stdcall *)(void *cam, float v);
 
 MmlMod *g_fovOwner;        // the holder of the field of view (kLoaderOwner: the bridge's)
 float g_fov;               // held
 float g_gameFov, g_gameNearFov;   // the game's own, kept at the first change
 bool g_haveGame;
+void *g_followed;          // a car the bridge set the camera on (not the player's own)
 
 template <class T> T &At(void *p, int off) { return *reinterpret_cast<T *>(static_cast<uint8_t *>(p) + off); }
 
@@ -135,6 +145,26 @@ void Hold() {
 }
 DWORD SafeHold() { __try { Hold(); return 0; } __except (EXCEPTION_EXECUTE_HANDLER) { return GetExceptionCode(); } }
 
+// The camera on a car (null: the player's own, or him on foot), by the game's SetCar.
+bool Follow(void *car, std::string *why) {
+    void *m = Manager();
+    if (!m || !I3D(m) || !game::Exe().cameraSetCar) { *why = "no mission (no game camera)"; return false; }
+    void *mine = game::PlayerCar();
+    if (!car) car = mine;
+    reinterpret_cast<SetCarFn>(game::Exe().cameraSetCar)(m, nullptr, car);
+    g_followed = car && car != mine ? car : nullptr;
+    return true;
+}
+DWORD SafeFollow(void *car, std::string *why, bool *ok) {
+    __try { *ok = Follow(car, why); return 0; } __except (EXCEPTION_EXECUTE_HANDLER) { *ok = false; return GetExceptionCode(); }
+}
+// Still on the car the bridge set (the game sets its own when the player gets into or out of a car)?
+bool Following() {
+    void *m = Manager();
+    if (g_followed && (!m || At<void *>(m, kCamCar) != g_followed)) g_followed = nullptr;
+    return g_followed != nullptr;
+}
+
 } // namespace
 
 int GameCamera(MmlGameCamera *out) {
@@ -174,7 +204,19 @@ void GameCameraModGone(MmlMod *mod) {
     SafeSetFov(mod, 0, &why, &ok);
 }
 
-void GameCameraMissionClose() { g_fovOwner = nullptr; g_haveGame = false; }   // (the next mission's camera is the game's)
+void GameCameraMissionClose() { g_fovOwner = nullptr; g_haveGame = false; g_followed = nullptr; }   // (the next mission's camera is the game's)
+
+// A followed car destroyed (its destructor, before it runs): the camera back on the player. Its model may be gone
+// already (world.remove unlinks it first), and End shows the followed car's model again through it (+0x68): the car
+// is taken off the camera first, so End leaves it alone.
+void GameCameraActorGone(void *actor) {
+    if (!actor || actor != g_followed || !Following()) return;
+    if (void *m = Manager()) At<void *>(m, kCamCar) = nullptr;
+    std::string why;
+    bool ok = false;
+    if (DWORD ex = SafeFollow(nullptr, &why, &ok)) HWARN("camera.game: giving the camera back faulted (%08X)", static_cast<unsigned>(ex));
+    g_followed = nullptr;
+}
 
 bool GameCameraMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok) {
     if (method != "camera.game") return false;
@@ -192,6 +234,30 @@ bool GameCameraMethod(const std::string &method, const std::string &paramsJson, 
         if (SafeSetFov(kLoaderOwner, fov, &why, &done)) why = "a fault in the camera's setters";
         if (!done) { *reply = "camera.game fov: " + why; return true; }
     }
+    if (p.contains("follow")) {
+        // a car, a person in a car (his car); "player" or null: the camera back on the player
+        void *car = nullptr;
+        const json &f = p["follow"];
+        if (f.is_string() && f.get<std::string>() != "player") {
+            if (!ParseActor(f.get<std::string>(), &car, &why)) { *reply = "camera.game follow: " + why; return true; }
+            int type = At<int>(car, game::kActorType);
+            if (type == kActorPlayer || type == game::kActorTypeEntity) {
+                car = At<void *>(car, game::kHumanVehicle);
+                if (!car || At<int>(car, game::kActorType) != game::kActorTypeCar) {
+                    *reply = "camera.game follow: he sits in no car (the camera follows a car; a person on foot: not yet)";
+                    return true;
+                }
+            } else if (type != game::kActorTypeCar) {
+                *reply = "camera.game follow: not a car (actor type " + std::to_string(type) + ")";
+                return true;
+            }
+        } else if (!f.is_null() && !f.is_string()) {
+            *reply = "camera.game follow: a car (\"car\", an address), a person in one, or \"player\" / null";
+            return true;
+        }
+        if (SafeFollow(car, &why, &done)) why = "a fault in the game's SetCar";
+        if (!done) { *reply = "camera.game follow: " + why; return true; }
+    }
     MmlGameCamera c{};
     c.size = sizeof c;
     if (!GameCamera(&c)) { *reply = "camera.game: no mission (no game camera)"; return true; }
@@ -200,6 +266,7 @@ bool GameCameraMethod(const std::string &method, const std::string &paramsJson, 
     *reply = json{{"mode", c.mode}, {"mode_name", c.mode_name}, {"car", c.car ? json(car) : json(nullptr)}, {"fov", c.fov},
                   {"fov_degrees", std::round(c.fov * 57.29578f * 10) / 10}, {"near", c.near_z}, {"far", c.far_z},
                   {"fov_held_by", g_fovOwner ? (g_fovOwner == kLoaderOwner ? "the bridge" : ModIdOf(g_fovOwner)) : "none"},
+                  {"following", Following() ? json(car) : json(nullptr)},
                   {"modes_now", InCar(c.mode) ? json::array({7, 8, 9, 12, 13, 14}) : OnFoot(c.mode) && !c.car ? json::array({1, 3}) : json::array()}}
                  .dump(-1, ' ', false, json::error_handler_t::replace);
     *ok = true;

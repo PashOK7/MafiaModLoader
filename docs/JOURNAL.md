@@ -2131,3 +2131,32 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Found on the way** (the checks in both labs): iterating `Outcome(o).items()` of a temporary dangled (a json
   exception); a retry compiled its lines after the first's (ScriptCompileInto appends), so its end was looked for
   past the program and it never ended: cleared first.
+
+## 2026-10-18: a calmer drive, the game's camera behind any car
+
+- **What was wrong** (the owner watched Paulie drive a Bolt-Thrower in the 1.0 lab: "aggressive", into everything):
+  measured in both labs on one street (the car facing east at z 126.5, its way west then north). Two things of the
+  game's own: (1) its chase drive only goes forward, so a car facing away from its way's first leg turned on full
+  lock across the pavement (4 to 7 knocks of 1 to 6.7 m/s); (2) a car that stood 2 s was "unstuck" by the chase
+  manager: 15 s with the hunt's way round obstacles and a limit of 1000 (22 to 27 m/s in town, a car of the traffic
+  struck). Not the road's speed (9 to 13 m/s).
+- **Read in both builds** (Ghidra, the same code): C_driver::Tick's reverse (`+0x19C` bit 0: gear -1, 3 m/s, the
+  wheels turned until the car faces within 0.34 rad of its target point), C_sledovacka::Tick's unsticking (the
+  record's flag 0x100000, its ms at `+0x28`, the driver's `+0x298`), AddCarMoveTo's way (node 0 the car), and
+  G_Camera::SetCar (1.2 0x5ED190, 1.0 0x5D4AA0; game_build.h `cameraSetCar`, check_builds.py checks it).
+- **Made**: `human.drive` `start` ("turn", the default: the game's own unsticking with its reverse given at once,
+  ended when the reverse ends; "place": put on its way; "as_is"), `calm` (the game's own unsticking ended once the
+  car has got 6 m away or after 6 s), `speed` (the way's nodes' speeds capped); ORDER_ENDED `start`, `start_angle`,
+  `unstuck`. `camera.game {follow}`: the game's own camera behind any car, or a person's car, as for the player's
+  own (the owner's suggestion, over a camera put in the air with `camera.set`). Cases: `test_orders.py`
+  drive_facing_away (no knock above 3 m/s in 15 s, arrives), `test_world.py` camera_follows_car.
+- **Found on the way**: the first try set the unsticking on a fresh driver and the drive "arrived" at once in the
+  same tick: the unsticking's Tick puts the cursor back to `+0x78`, which only Tick's own stuck branch fills (0 on a
+  fresh driver), and a cursor of 0 is an arrival; the loader now fills it as that branch does. The first version of
+  the case spawned the car 20 m north of the freeride's start, which is inside a house (the owner saw the
+  Bolt-Thrower stuck in a wall): it was unstuck 9 times in 2 minutes and never arrived. The camera given back when
+  the followed car was removed faulted inside the game's G_Camera::End (it shows the car's model again through its
+  frame, already gone after world.remove); the car is now taken off the camera first. `attack: he hits the target`
+  failed once in 1.2 (the game's aim, 45 s) and passed on the next run.
+- **Seen**: both labs, `tests/game/run.py orders world`: 1.0 40 of 40, 1.2 39 of 40 then the failed case again
+  19 of 19; offline tests and mcp_smoke ALL PASSED.

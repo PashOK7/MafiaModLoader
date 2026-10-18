@@ -244,6 +244,7 @@ int GameCameraFov(MmlMod *mod, float fov);
 void GameCameraFrame();                    // (render.cpp) a held field of view put back on the game's camera
 void GameCameraModGone(MmlMod *mod);
 void GameCameraMissionClose();
+void GameCameraActorGone(void *actor);    // (an actor's destructor) a followed car: the camera back on the player
 bool GameCameraMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 // the mods' settings in the game's Options > Mods (panel.cpp)
 void PanelInit();

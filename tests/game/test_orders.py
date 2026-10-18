@@ -1,7 +1,7 @@
 """Orders for people (host/orders.cpp; docs/MODDING.md "Orders for people"): a person made by spawn sent somewhere,
 again (an order after an order), after an order with its own `end`, to follow the player, to stop, to shoot
-another, to flee, into the player's car."""
-from mml_game import dist
+another, to flee, into the player's car; a drive started with the car facing away from its way."""
+from mml_game import Skip, dist
 
 
 def done(g, order, since, timeout=25.0):
@@ -77,3 +77,42 @@ def test_orders(g):
     sat = g.wait('VEHICLE_ENTERED', {'actor': paulie}, since=seq, timeout=40)
     g.check('enter: he gets into the car', sat is not None, o)
     g.check('enter: ORDER_ENDED', done(g, o, seq, 10.0), o)
+
+
+def drive_state(g, man, timeout_ms=10000):
+    """human.order_state once the game has planned the drive (its `start` is there), or the last state."""
+    s = {}
+    for _ in range(timeout_ms // 250):
+        s = g.call('human.order_state', actor=man) or {}
+        if s.get('start'):
+            return s
+        g.sleep(250)
+    return s
+
+
+def test_drive_facing_away(g):
+    """A drive whose car faces away from its way's first leg: the game's reverse turns it first (`start` "turn"),
+    then it goes at the road's speeds; no hard knock in its first 15 s, and it arrives. The place: a street of
+    Little Italy north of the freeride's start (z 126.5, running east-west, the same in both builds), the car
+    facing east, its way west to the next crossing, then north."""
+    to = g.road([-2000.9, -2.7, 300.0])
+    if not to:
+        raise Skip('no road node north of the start')
+    at = [-1962.0, -4.1, 126.5]
+    car = g.tool('spawn', car='Bolt-Thrower', at=at, dir=[1, 0, 0])['actor']
+    g.made.append(car)
+    man = g.spawn_human('Paulie', at, **{'in': car, 'seat': 0})
+    g.sleep(1500)
+    seq = g.latest()
+    o = g.call('human.drive', actor=man, car=car, to=to, retries=1)
+    s = drive_state(g, man)
+    g.check('drive: facing away from its way (%s degrees)' % s.get('start_angle'), (s.get('start_angle') or 0) > 90, s)
+    g.check('drive: turned first (%s)' % s.get('start'), str(s.get('start', '')).startswith('turn'), s)
+    g.sleep(15000)
+    ev = g.call('events.since', seq=seq, limit=200)
+    knocks = [e['data'].get('speed', 0) for e in ev.get('events', [])
+              if e['type'] == 'CAR_CRASH' and str(e['data'].get('actor', '')).lower() == car.lower()]
+    g.check('drive: no knock above 3 m/s in its first 15 s (%s)' % ['%.1f' % k for k in knocks],
+            all(k <= 3.0 for k in knocks), knocks)
+    end = g.order_end(o, seq, timeout=120)
+    g.check('drive: ORDER_ENDED, arrived (%s)' % (end and end.get('start')), end is not None and end.get('arrived'), end)

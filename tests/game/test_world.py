@@ -1,5 +1,6 @@
 """The measuring mods' first cases in the small city (ROADMAP item 23): a car hits a person (the ragdoll's start), a
-camera turned (VR's, the airplane's), a prop held in a hand (fishing's rod, the skateboard)."""
+camera turned (VR's, the airplane's), a prop held in a hand (fishing's rod, the skateboard), the game's camera behind
+another car."""
 import math
 
 from mml_game import dist
@@ -78,3 +79,23 @@ def test_prop_in_hand(g):
     g.tool('input', steps=[{'turn': 120, 'ms': 600}, {'action': 'Forwards', 'ms': 1500}])
     d = gap()
     g.check('it stays at the hand when he turns and walks (%.3f m)' % d, d < 0.05, d)
+
+
+def test_camera_follows_car(g):
+    """The game's own camera put behind another car (camera.game follow: G_Camera::SetCar), given back to the player's
+    car, and given back by itself when the followed car is destroyed (its model gone first: world.remove)."""
+    mine = g.player().get('vehicle', {}).get('actor')
+    other = g.tool('spawn', car='Bolt-Thrower', at='car', ahead=12)['actor']
+    g.made.append(other)
+    c = g.call('camera.game', follow=other)
+    g.check('follow: the camera on the other car', str(c.get('car', '')).lower() == other.lower() and
+            str(c.get('following', '')).lower() == other.lower(), c)
+    c = g.call('camera.game', follow='player')
+    g.check('follow "player": back on his car', str(c.get('car', '')).lower() == str(mine).lower() and c.get('following') is None, c)
+    g.call('camera.game', follow=other)
+    g.call('world.remove', actor=other)
+    g.made.remove(other)
+    g.sleep(500)
+    c = g.call('camera.game')
+    g.check('the followed car destroyed: the camera back on his car', str(c.get('car', '')).lower() == str(mine).lower(), c)
+    g.check('the followed car destroyed: no fault', 'giving the camera back faulted' not in '\n'.join(g.call('log.tail', lines=40)), '')

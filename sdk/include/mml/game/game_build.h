@@ -424,8 +424,11 @@ struct ExeBuild {
     // at gameCamera (+0x04 the I3D_camera it drives, +0x0C the car it follows, +0x10 its mode). cameraSetMode:
     // G_Camera::SetMode, thiscall(camera, unsigned mode, bool begin) ret 8 (End, the mode, Begin: what the camera-change
     // key does). cameraModeTable: the 17 records of 0x44 bytes G_Camera::Begin scans ({mode, restore mode, 10 floats,
-    // its name[16] at +0x30, flags at +0x40}: "P Behind", "C Chase"...).
-    uintptr_t cameraSetMode, cameraModeTable;
+    // its name[16] at +0x30, flags at +0x40}: "P Behind", "C Chase"...). cameraSetCar: G_Camera::SetCar,
+    // thiscall(camera, C_car *car) ret 4: End, +0x0C the car, the mode the game last used in a vehicle (none: the last
+    // on foot), Begin, the next pose cut (+0x64): what getting into a car does for the player, and the race's
+    // cameras for the other racers (C_racing::SetRCamIndex).
+    uintptr_t cameraSetMode, cameraModeTable, cameraSetCar;
     int gameCamera;
     // The airplane (host/control.cpp; st0rm94's structs/airplane.md, its layout the same in both builds: every field
     // AI and Update touch read in both): C_airplane, actor type 0x16, made only from a scene's placement (the
@@ -628,8 +631,9 @@ inline const ExeBuild kExe12 = {
     // CREATE_PHYSICALOBJECT 0x4741D5, their calls read)
     0x647D80, 0x4104F0, 0x53F520, 0x53F710,
     0x47C3A0, 0x45EE90, 0x460000, 0x38C,
-    // the game's camera (2026-10-17: st0rm94's G_Camera::SetMode twin; the table G_Camera::Begin scans)
-    0x5ED400, 0x638700, 0x4C,
+    // the game's camera (2026-10-17: st0rm94's G_Camera::SetMode twin; the table G_Camera::Begin scans; 2026-10-18:
+    // SetCar, 1.0's twin paired by its calls, the same code)
+    0x5ED400, 0x638700, 0x5ED190, 0x4C,
     // the airplane (2026-10-17: slots 13 and 14 of the vtable C_airplane's constructor 0x409390 puts, 0x623318)
     0x40BC10, 0x40BEC0,
     // orders (2026-10-18: C_entity::ForceScript, MafiaReverse's name; ENEMY_FORCESCRIPT's handler 0x470590 calls it)
@@ -748,8 +752,9 @@ inline const ExeBuild kExe10 = {
     // physical object is 0x24 bytes larger)
     0x6F93C8, 0x47FA10, 0x5FEAC0, 0x5FECB0,
     0x4CDE20, 0x4C41A0, 0x4C53F0, 0x3B0,
-    // the game's camera (2026-10-17: st0rm94's camera_set_mode and g_camera_mode_table)
-    0x5D4D10, 0x650450, 0x4C,
+    // the game's camera (2026-10-17: st0rm94's camera_set_mode and g_camera_mode_table; 2026-10-18: his
+    // camera_set_car)
+    0x5D4D10, 0x650450, 0x5D4AA0, 0x4C,
     // the airplane (2026-10-17: slots 13 and 14 of the vtable airplane_ctor 0x44EF50 puts, 0x63B7C0)
     0x4516E0, 0x451990,
     // orders (2026-10-18: st0rm94's entity_force_script, 1.2's twin by its callers, the same 229 bytes' code)

@@ -70,9 +70,9 @@ The other freerides (`"kind": "city-night"`, `"countryside"`... with `"place": "
 night is a kind), a chapter of the story (`"go": "load", "save": "Old Prison"` or its number), `"new"`, `"extreme"`.
 The same from a terminal: `python tools/start.py freeride --profile 4 --police 0`. Other menus: `call menu.state`,
 `call menu.command {command}`, `call menu.value {id, value}`.
-**Eyes and hands**: `screenshot` returns the game's own frame as a picture (`call camera.set {"eye", "at", "ms"}` first:
-from any place; the window may be hidden or behind
-others); `input` plays a timed sequence inside the game: the game's actions by name, whatever they are bound to
+**Eyes and hands**: `screenshot` returns the game's own frame as a picture (`call camera.game {"follow": car}` first:
+the game's own camera behind any car, a driven one watched as the player sees his own; `call camera.set {"eye", "at",
+"ms"}`: from any place; the window may be hidden or behind others); `input` plays a timed sequence inside the game: the game's actions by name, whatever they are bound to
 (`{"action": "Forwards", "ms": 2000}`, `"Accelerate"`, `"Fire"`, `"Action"`), an exact turn on foot
 (`{"turn": 90}`), keys for the menus (`{"key": "Esc"}`), the menus' mouse (`{"click": [x, y]}`, `{"wheel": -3}`);
 `"screenshot": true` shows the result. `call menu.click {"id": 102}` clicks a menu's control by its id (safer than
@@ -81,7 +81,8 @@ coordinates), `call input.text {"text": "Tommy"}` types. **In the world**: `spaw
 to}` moves one, `give {actor, item: "Thompson 1928"}` arms by name (`call world.cars`, `world.items` list the names;
 `world.seat`, `world.remove`). **Orders for people** (spawn's, the missions' NPCs: the game's AI does it): `call
 human.go {actor, to, run}`, `human.follow {actor, target}`, `human.attack`, `human.flee {actor, from}`, `human.enter
-{actor, car, seat}`, `human.drive {actor, car, to}` (the game's own drive by the road network), `human.stop`, any
+{actor, car, seat}`, `human.drive {actor, car, to}` (the game's own drive by the road network; a car facing away is
+backed round first, `speed` caps it), `human.stop`, any
 `human.order {actor, code}` of the people's `enemy_*` commands (docs/SCRIPTS.md "Orders"); `wait {"types":
 "ORDER_ENDED"}` tells the outcome (`arrived`, `seated`; `retries` gives an order again when it ended short);
 `world.road {at}` is the road network's nearest node. **Ask the world**: `call world.ray {"from": "camera"}` (what the crosshair looks at),

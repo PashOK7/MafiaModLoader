@@ -128,6 +128,7 @@ void __fastcall hkActorDtor(void *self, void *edx) {
     HumansGone(self);
     ScriptActorGone(self);
     OrdersActorGone(self);
+    GameCameraActorGone(self);
     WorldActorGone(self);
     PropsActorGone(self);
     InteractActorGone(self);

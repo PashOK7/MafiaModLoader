@@ -425,6 +425,11 @@ H->game_camera_fov(M, 1.6f);                /* held: put back whenever the game 
 - **The field of view** is set through the camera's own setters (the near pass' too) and held: the game changes it
   only at a few moments (a mode pushed and popped, a dialogue, the scope), and the held value is put back at the
   next frame. The game's own value (70 degrees in the city) comes back with 0, or when the holder unloads.
+- **Another car** (the bridge's `camera.game {"follow": car}`, a car or a person sitting in one): the game's own
+  `G_Camera::SetCar`, what getting into a car does for the player, so the game's camera goes behind that car in its
+  last vehicle mode, with its sway and collisions: a driven car watched as the player would see his own (a car the
+  game draws does not sleep). `"follow": "player"` (or null) gives it back; the game takes it back itself when the
+  player gets into or out of a car, and the loader does when the followed car is destroyed.
 - `call camera.game {"mode": 13, "fov": 1.6}` tries both from the bridge (`"fov": null`: the game's back);
   `call camera.game` alone shows the state and `modes_now`.
 
@@ -1245,6 +1250,13 @@ if (H->human_order_state(M, paulie, &s) && !s.running) { /* done; the bridge als
   (enter), and with `retries` an order that ended short of its goal is given again after `retry_ms` (a drive goes on
   from where the car is; `retried` counts them). A mod measures its own: `human_order_state` tells the end,
   `actor_*` the place.
+- How a drive starts and goes (`human.drive`'s `start`, `speed`, `calm`): the game's drive only goes forward, so a car
+  facing away from its way's first leg (a parking lot, a car that arrived the other way) turned on full lock across
+  the pavement into what was there. By default the loader backs such a car round first with the game's own reverse
+  (what the chase does when a car is stuck: gear -1, at most 3 m/s, until it faces its way), and ends the game's own
+  unsticking of a car that stood 2 s once it has got 6 m away (left alone, it lasts 15 s at the chase's speed, with
+  no limit of its own: 22 to 27 m/s in town). `speed` caps the way's speeds (the road's are 9 to 13 m/s in town);
+  ORDER_ENDED tells `start`, `start_angle` and `unstuck`. `enemy_car_moveto` in a mod's own order has none of this.
 - The road network: `road_near(M, at, out)` (`world.road {at}`) is the node nearest to a place, where a drive's way
   ends (`C_roads::GetNearNode`); the nodes are the crossings and bends, tens of metres apart. A drive's place need
   not be on a road.
