@@ -2258,3 +2258,19 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   owner's car; Flow 0.3 to 0.4 ms of GPU, the round trip about 3 ms; reload keeps the sources; a fault of the 64-bit
   half: no gas and no wait, `mod.reload` brings it back. Offline tests and both presets' builds.
 - **Next** (the owner): only the 1.2 lab for now: a finer fire, and the gas meeting the visible models, not boxes.
+
+## 2026-10-18: flow_smoke: a finer fire, the gas meeting the drawn meshes (1.2 only)
+
+- **Asked** (the owner): only the 1.2 lab for now; a fire of a higher "resolution"; collision with the real visible
+  models, not boxes. No long in-game test suites (the owner: they take too long for what they give).
+- **Made**: the fire's layer on its own 4 cm grid (the smoke's stays 10 cm; `tune` `fire_cell`, `cell_size`); both
+  layers collide; the scenery around the sources as one soup of the drawn meshes' triangles (`scene_pieces`, channel
+  `scenery`, written when the scan changes), every car near them as its own posed meshes with each vertex's velocity
+  (`actor_meshes`, `vehicle_body`: v + turn x r), every person as capsules along his bones (`human_skeleton`), all
+  Flow mesh emitters in physics-collision mode, a shell of 0.15 m each side (`wall`, `wall_couple`). Flow's
+  profiler's dearest passes in `flow_smoke.side` (`gpu_top`).
+- **Seen** (1.2, the owner playing meanwhile: he parked the taxi in the fire): the flames in thin tongues that bend
+  round the car's bonnet, the smoke kept off it; 1500 triangles of scenery, a car's 1300, a person's 350; Flow's GPU
+  time 3.3 to 4.9 ms (the ray march 1.7, the frame's copies 0.6, the meshes' obstacles 0.09), the game thread's
+  gathering 0.23 ms. Offline tests not run for this step (a mod's change only).
+- **Next**: the ray march at half size (a Flow patch for its alpha, a depth-aware upsample): ROADMAP Known gaps.

@@ -40,7 +40,7 @@
 namespace {
 const MmlSideHost *H;
 MmlSideMod *M;
-MmlSideChannel *g_frameCh, *g_viewCh, *g_doneCh;
+MmlSideChannel *g_frameCh, *g_viewCh, *g_doneCh, *g_sceneCh, *g_moverCh;
 double g_freqMs;
 
 double Now() {
@@ -224,18 +224,96 @@ bool CopyArray(CUarray arr, CUdeviceptr buf, uint32_t w, uint32_t h, uint32_t bp
     return Cu(cuMemcpy2DAsync(&c, g_stream), "cuMemcpy2DAsync");
 }
 
+// ---- the meshes the gas meets: the scenery ("scenery") and what moves ("movers"), in the arrays Flow's mesh emitter
+// reads; a version a change (Flow uploads an array again only when its version is new)
+uint64_t g_meshVersion;
+struct MeshData {
+    uint64_t id = 0;
+    uint32_t kind = 0, topology = 0;
+    std::vector<NvFlowFloat3> pos, vel;
+    std::vector<int> index, counts;   // (Flow's faces: 3 indices a face, a count of 3 each)
+    uint64_t posVersion = 0, indexVersion = 0;
+    uint64_t Triangles() const { return counts.size(); }
+};
+MeshData g_scene;
+std::vector<MeshData> g_movers;
+std::vector<uint8_t> g_sceneIn(fsm::kSceneryBytes), g_moverIn(fsm::kMoversBytes);
+uint64_t g_sceneSeen, g_moversSeen;
+std::atomic<uint32_t> g_sceneTris, g_moverCount, g_moverTris;
+
+void ReadScenery() {
+    uint64_t v = 0;
+    uint32_t n = H->channel_read(g_sceneCh, g_sceneIn.data(), uint32_t(g_sceneIn.size()), &v);
+    if (n < sizeof(fsm::Scenery) || v == g_sceneSeen) return;
+    g_sceneSeen = v;
+    const auto *h = reinterpret_cast<const fsm::Scenery *>(g_sceneIn.data());
+    if (h->vertices > fsm::kMaxSceneVertices || h->triangles > fsm::kMaxSceneTriangles ||
+        n < sizeof *h + 12ull * h->vertices + 12ull * h->triangles)
+        return;
+    const float *pos = reinterpret_cast<const float *>(h + 1);
+    const uint32_t *idx = reinterpret_cast<const uint32_t *>(pos + 3 * h->vertices);
+    g_scene.pos.resize(h->vertices);
+    memcpy(g_scene.pos.data(), pos, 12ull * h->vertices);
+    g_scene.index.resize(3ull * h->triangles);
+    for (size_t i = 0; i < g_scene.index.size(); i++) g_scene.index[i] = int(std::min(idx[i], h->vertices ? h->vertices - 1 : 0));
+    g_scene.counts.assign(h->triangles, 3);
+    g_scene.posVersion = g_scene.indexVersion = ++g_meshVersion;
+    g_sceneTris = h->triangles;
+}
+
+void ReadMovers() {
+    uint64_t v = 0;
+    uint32_t n = H->channel_read(g_moverCh, g_moverIn.data(), uint32_t(g_moverIn.size()), &v);
+    if (n < sizeof(fsm::Movers) || v == g_moversSeen) return;
+    g_moversSeen = v;
+    const auto *h = reinterpret_cast<const fsm::Movers *>(g_moverIn.data());
+    if (h->count > fsm::kMaxMovers || h->vertices > fsm::kMaxMoverVertices || h->triangles > fsm::kMaxMoverTriangles ||
+        n < sizeof *h + 24ull * h->vertices + 12ull * h->triangles)
+        return;
+    const float *pos = reinterpret_cast<const float *>(h + 1), *vel = pos + 3 * h->vertices;
+    const uint32_t *idx = reinterpret_cast<const uint32_t *>(vel + 3 * h->vertices);
+    std::vector<MeshData> next(h->count);
+    uint32_t tris = 0;
+    for (uint32_t i = 0; i < h->count; i++) {
+        const fsm::Mover &m = h->mover[i];
+        if (m.firstVertex + m.vertices > h->vertices || m.firstTriangle + m.triangles > h->triangles) continue;
+        MeshData &d = next[i];
+        // (the same actor as before: its arrays kept, only what changed made new)
+        auto old = std::find_if(g_movers.begin(), g_movers.end(), [&](const MeshData &o) { return o.id == m.id; });
+        if (old != g_movers.end()) d = std::move(*old);
+        d.id = m.id, d.kind = m.kind;
+        d.pos.resize(m.vertices);
+        d.vel.resize(m.vertices);
+        memcpy(d.pos.data(), pos + 3 * m.firstVertex, 12ull * m.vertices);
+        memcpy(d.vel.data(), vel + 3 * m.firstVertex, 12ull * m.vertices);
+        d.posVersion = ++g_meshVersion;
+        if (d.topology != m.topology || d.counts.size() != m.triangles) {
+            d.topology = m.topology;
+            d.index.resize(3ull * m.triangles);
+            for (size_t k = 0; k < d.index.size(); k++) d.index[k] = int(std::min(idx[3ull * m.firstTriangle + k], m.vertices ? m.vertices - 1 : 0));
+            d.counts.assign(m.triangles, 3);
+            d.indexVersion = ++g_meshVersion;
+        }
+        tris += m.triangles;
+    }
+    g_movers = std::move(next);
+    g_moverCount = h->count, g_moverTris = tris;
+}
+
+
 // ---- the parameters of a frame: Flow's typed snapshots of every layer and emitter
 // Layer 0: smoke and steam (a grey colour map lit by the scene); layer 1: fire (Flow's fire colour map: fuel burnt
-// into heat, light and smoke). The ground, the people and the cars are in both layers (allLayers for the boxes, one
-// sphere a layer for the people).
+// into heat, light and smoke), on a finer grid. The ground (a box) and the meshes are in both layers (allLayers, and
+// physics collision: both layers collide).
 struct Params {
     NvFlowGridSimulateLayerParams simulate[2];
     NvFlowGridOffscreenLayerParams offscreen[2];
     NvFlowGridRenderLayerParams render[2];
     std::vector<NvFlowGridEmitterSphereParams> spheres;
     std::vector<NvFlowGridEmitterBoxParams> boxes;
-    std::vector<NvFlowUint8 *> simulatePtr, offscreenPtr, renderPtr, spherePtr, boxPtr;
-    NvFlowDatabaseTypeSnapshot types[5];
+    std::vector<NvFlowGridEmitterMeshParams> meshes;
+    std::vector<NvFlowUint8 *> simulatePtr, offscreenPtr, renderPtr, spherePtr, boxPtr, meshPtr;
+    NvFlowDatabaseTypeSnapshot types[6];
     NvFlowGridParamsDescSnapshot snapshot;
     NvFlowGridParamsDesc desc;
     NvFlowFloat4 smokeColors[6];
@@ -244,7 +322,10 @@ struct Params {
 
 // What `tune` changes (the mod thread writes, the worker reads at the next frame's parameters)
 struct Tune {
-    float cellSize = 0.1f;          // metres: a block of Flow's (32 x 16 x 16 cells) is 3.2 x 1.6 x 1.6 m
+    float cellSize = 0.1f;          // metres, the smoke's: a block of Flow's (32 x 16 x 16 cells) is 3.2 x 1.6 x 1.6 m
+    float fireCell = 0.04f;         // metres, the fire's: its tongues are finer than the smoke's billows
+    float wall = 0.15f;             // metres each side of a mesh's surface the gas cannot enter
+    float wallCouple = 100.f;       // how hard a mesh holds the gas there to its own velocity (Flow's couple rate)
     float gravity = -2.f;           // m/s2 along y: with buoyancyPerTemp, how fast warm gas rises
     float buoyancy = 10.f;          // the smoke layer's buoyancyPerTemp (fire's: half; its burning heats it)
     float cooling = 1.5f;           // the smoke layer's coolingRate (a second's share of its heat lost)
@@ -266,7 +347,8 @@ Tune g_tune;
 const struct {
     const char *name;
     float Tune::*field;
-} kTuneFields[] = {{"cell_size", &Tune::cellSize}, {"gravity", &Tune::gravity}, {"buoyancy", &Tune::buoyancy},
+} kTuneFields[] = {{"cell_size", &Tune::cellSize}, {"fire_cell", &Tune::fireCell}, {"wall", &Tune::wall},
+                   {"wall_couple", &Tune::wallCouple}, {"gravity", &Tune::gravity}, {"buoyancy", &Tune::buoyancy},
                    {"cooling", &Tune::cooling}, {"vorticity", &Tune::vorticity}, {"smoke_fade", &Tune::smokeFade},
                    {"attenuation", &Tune::attenuation}, {"color_scale", &Tune::colorScale},
                    {"shadow_attenuation", &Tune::shadowAttenuation}, {"shadow_min", &Tune::shadowMin},
@@ -276,6 +358,28 @@ NvFlowFloat4x4 Identity() {
     NvFlowFloat4x4 m{};
     m.x.x = m.y.y = m.z.z = m.w.w = 1;
     return m;
+}
+
+// What the gas cannot enter: a shell of `wall` metres each side of the mesh's surface (the game's meshes are often
+// open: a wall is one side of triangles, so the shell does not depend on which side they face), where Flow holds the
+// gas at the mesh's own velocity (a vertex's, moving) with nothing in it. In every layer that collides (both).
+NvFlowGridEmitterMeshParams Obstacle(uint64_t luid, MeshData &d, const Tune &t) {
+    NvFlowGridEmitterMeshParams e = NvFlowEmitterMeshParams_default;
+    e.luid = luid;
+    e.isPhysicsCollision = NV_FLOW_TRUE;
+    e.localToWorld = e.localToWorldVelocity = Identity();
+    e.velocityIsWorldSpace = NV_FLOW_TRUE;
+    e.minDistance = -t.wall, e.maxDistance = t.wall;
+    e.allocateMask = NV_FLOW_FALSE;   // (it acts where the gas is; it makes no blocks of its own)
+    e.velocity = NvFlowFloat3{0, 0, 0};
+    e.divergence = e.temperature = e.fuel = e.burn = e.smoke = 0;
+    e.coupleRateVelocity = e.coupleRateTemperature = e.coupleRateFuel = e.coupleRateBurn = e.coupleRateSmoke = t.wallCouple;
+    e.coupleRateDivergence = 0;
+    e.meshPositions = d.pos.data(), e.meshPositionCount = d.pos.size(), e.meshPositionVersion = d.posVersion;
+    e.meshFaceVertexIndices = d.index.data(), e.meshFaceVertexIndexCount = d.index.size(), e.meshFaceVertexIndexVersion = d.indexVersion;
+    e.meshFaceVertexCounts = d.counts.data(), e.meshFaceVertexCountCount = d.counts.size(), e.meshFaceVertexCountVersion = d.indexVersion;
+    if (!d.vel.empty()) e.meshVelocities = d.vel.data(), e.meshVelocityCount = d.vel.size(), e.meshVelocityVersion = d.posVersion;
+    return e;
 }
 
 void BuildParams(const fsm::Frame &f, bool clear) {
@@ -290,7 +394,8 @@ void BuildParams(const fsm::Frame &f, bool clear) {
         s = NvFlowGridSimulateLayerParams_default;
         s.luid = 1 + layer;
         s.layer = layer;
-        s.densityCellSize = t.cellSize;
+        s.densityCellSize = layer ? t.fireCell : t.cellSize;
+        s.physicsCollisionEnabled = NV_FLOW_TRUE;   // (the meshes' obstacles: every layer)
         s.stepsPerSecond = 60;
         s.maxStepsPerSimulate = 4;
         s.enableVariableTimeStep = NV_FLOW_FALSE;
@@ -364,45 +469,11 @@ void BuildParams(const fsm::Frame &f, bool clear) {
         }
         P.spheres.push_back(e);
     }
-    // the people (a sphere in each layer) and the cars (a box in every layer) carry the gas at their velocity
-    for (uint32_t i = 0; i < f.movers; i++) {
-        const fsm::Mover &m = f.mover[i];
-        if (m.kind == fsm::kSphere) {
-            for (int layer = 0; layer < 2; layer++) {
-                NvFlowGridEmitterSphereParams e = NvFlowEmitterSphereParams_default;
-                e.luid = 2000 + i * 2 + layer;
-                e.layer = layer;
-                e.position = NvFlowFloat3{m.center[0], m.center[1], m.center[2]};
-                e.radius = m.half[0];
-                e.velocityIsWorldSpace = NV_FLOW_TRUE;
-                e.velocity = NvFlowFloat3{m.velocity[0], m.velocity[1], m.velocity[2]};
-                e.temperature = e.fuel = e.smoke = 0;
-                e.coupleRateVelocity = 20;
-                e.coupleRateTemperature = e.coupleRateFuel = e.coupleRateBurn = e.coupleRateSmoke = 0;
-                e.allocationScale = 0;   // (it pushes gas that is there; it makes no blocks of its own)
-                P.spheres.push_back(e);
-            }
-        } else {
-            NvFlowGridEmitterBoxParams e = NvFlowEmitterBoxParams_default;
-            e.luid = 3000 + i;
-            e.allLayers = NV_FLOW_TRUE;
-            NvFlowFloat4x4 w = Identity();
-            w.x = NvFlowFloat4{m.axes[0], m.axes[1], m.axes[2], 0};
-            w.y = NvFlowFloat4{m.axes[3], m.axes[4], m.axes[5], 0};
-            w.z = NvFlowFloat4{m.axes[6], m.axes[7], m.axes[8], 0};
-            w.w = NvFlowFloat4{m.center[0], m.center[1], m.center[2], 1};
-            e.localToWorld = w;
-            e.velocityIsWorldSpace = NV_FLOW_TRUE;
-            e.position = NvFlowFloat3{0, 0, 0};
-            e.halfSize = NvFlowFloat3{m.half[0], m.half[1], m.half[2]};
-            e.velocity = NvFlowFloat3{m.velocity[0], m.velocity[1], m.velocity[2]};
-            e.temperature = e.fuel = e.smoke = 0;
-            e.coupleRateVelocity = 20;
-            e.coupleRateTemperature = e.coupleRateFuel = e.coupleRateBurn = e.coupleRateSmoke = 0;
-            e.allocationScale = 0;
-            P.boxes.push_back(e);
-        }
-    }
+    // the meshes the game draws: the scenery holds the gas off, each car and person carries it at its vertices' speed
+    P.meshes.clear();
+    if (g_scene.Triangles()) P.meshes.push_back(Obstacle(4001, g_scene, t));
+    for (MeshData &m : g_movers)
+        if (m.Triangles()) P.meshes.push_back(Obstacle(5000 + (m.id & 0xFFFFFF), m, t));
     // the ground: below it the gas is held still and taken away (it spreads along it)
     if (f.sources) {
         float cx = 0, cz = 0;
@@ -430,13 +501,15 @@ void BuildParams(const fsm::Frame &f, bool clear) {
     ptrs(P.render, P.renderPtr);
     ptrs(P.spheres, P.spherePtr);
     ptrs(P.boxes, P.boxPtr);
+    ptrs(P.meshes, P.meshPtr);
+    P.types[5] = {P.version, &NvFlowGridEmitterMeshParams_NvFlowReflectDataType, P.meshPtr.data(), P.meshPtr.size()};
     P.types[0] = {P.version, &NvFlowGridSimulateLayerParams_NvFlowReflectDataType, P.simulatePtr.data(), P.simulatePtr.size()};
     P.types[1] = {P.version, &NvFlowGridOffscreenLayerParams_NvFlowReflectDataType, P.offscreenPtr.data(), P.offscreenPtr.size()};
     P.types[2] = {P.version, &NvFlowGridRenderLayerParams_NvFlowReflectDataType, P.renderPtr.data(), P.renderPtr.size()};
     P.types[3] = {P.version, &NvFlowGridEmitterSphereParams_NvFlowReflectDataType, P.spherePtr.data(), P.spherePtr.size()};
     P.types[4] = {P.version, &NvFlowGridEmitterBoxParams_NvFlowReflectDataType, P.boxPtr.data(), P.boxPtr.size()};
     P.snapshot = NvFlowGridParamsDescSnapshot{};
-    P.snapshot.snapshot = NvFlowDatabaseSnapshot{P.version, P.types, 5};
+    P.snapshot.snapshot = NvFlowDatabaseSnapshot{P.version, P.types, 6};
     P.snapshot.absoluteSimTime = f.time;
     P.snapshot.deltaTime = f.run ? f.dt : 0;
     P.snapshot.globalForceClear = clear;
@@ -452,10 +525,22 @@ std::wstring Beside(const wchar_t *name) {
     return dll.substr(0, dll.find_last_of(L"\\/") + 1) + name;
 }
 
+// Flow's profiler: each flush's passes (the step's and the ray march's), their GPU times kept by name as a running
+// mean (side's "gpu_top")
+std::mutex g_profMx;
+std::vector<std::pair<std::string, float>> g_prof;
 void NV_FLOW_ABI Profile(void *, NvFlowUint64, NvFlowUint n, NvFlowProfilerEntry *e) {
     float sum = 0;
-    for (NvFlowUint i = 0; i < n; i++) sum += e[i].gpuDeltaTime;
-    g_gpuMs = sum * 1000.f;
+    std::lock_guard<std::mutex> lk(g_profMx);
+    for (NvFlowUint i = 0; i < n; i++) {
+        float ms = e[i].gpuDeltaTime * 1000.f;
+        sum += ms;
+        const char *label = e[i].label ? e[i].label : "?";
+        auto it = std::find_if(g_prof.begin(), g_prof.end(), [&](const auto &p) { return p.first == label; });
+        if (it == g_prof.end()) g_prof.push_back({label, ms});
+        else it->second += 0.05f * (ms - it->second);
+    }
+    g_gpuMs = sum;
 }
 
 bool LoadFlow() {
@@ -559,6 +644,7 @@ void Answer(const fsm::View &v, bool ok, uint32_t outGen) {
     d.simulateMs = g_simMs;
     d.renderMs = g_renderMs;
     d.gpuMs = g_gpuMs;
+    d.sceneTriangles = g_sceneTris;
     snprintf(d.error, sizeof d.error, "%s", LastError().c_str());
     H->channel_write(g_doneCh, &d, sizeof d);
 }
@@ -651,6 +737,8 @@ void Work() {
     uint64_t fv = 0;
     if (H->channel_read(g_frameCh, &g_rec, sizeof g_rec, &fv) >= offsetof(fsm::Frame, source) && fv != g_frameSeen) {
         g_frameSeen = fv;
+        ReadScenery();
+        ReadMovers();
         if (g_rec.run || g_rec.clear != g_clearSeen) Simulate();
     }
     fsm::View v;
@@ -727,11 +815,24 @@ int Side(MmlSideMod *, const char *, MmlSideReply *r, void *) {
     char b[1024];
     snprintf(b, sizeof b,
              "{\"ready\": %s, \"stage\": \"%s\", \"broken\": %s, \"gpu\": \"%s\", \"steps\": %llu, \"renders\": %llu, \"simulate_ms\": %.3f, \"render_ms\": %.3f, "
-             "\"gpu_ms\": %.3f, \"blocks\": %u, \"textures\": [%u, %u], \"buffers\": [%u, %u], \"error\": \"%s\"}",
+             "\"gpu_ms\": %.3f, \"blocks\": %u, \"textures\": [%u, %u], \"buffers\": [%u, %u], \"scene_triangles\": %u, "
+             "\"movers\": %u, \"mover_triangles\": %u, \"error\": \"%s\"}",
              g_ready ? "true" : "false", g_stage.load(), g_broken ? "true" : "false", g_gpuName.c_str(), static_cast<unsigned long long>(g_steps.load()),
              static_cast<unsigned long long>(g_renders.load()), g_simMs.load(), g_renderMs.load(), g_gpuMs.load(), g_blocks.load(), g_texW, g_texH,
-             g_bufW, g_bufH, e.c_str());
-    H->reply_append(r, b, strlen(b));
+             g_bufW, g_bufH, g_sceneTris.load(), g_moverCount.load(), g_moverTris.load(), e.c_str());
+    // (Flow's dearest passes, ms of GPU a frame)
+    std::vector<std::pair<std::string, float>> prof;
+    {
+        std::lock_guard<std::mutex> lk(g_profMx);
+        prof = g_prof;
+    }
+    std::sort(prof.begin(), prof.end(), [](const auto &x, const auto &y) { return x.second > y.second; });
+    nlohmann::json top = nlohmann::json::object();
+    for (size_t i = 0; i < prof.size() && i < 10; i++) top[prof[i].first] = std::round(prof[i].second * 1000) / 1000;
+    std::string out(b);
+    out.pop_back();
+    out += ", \"gpu_top\": " + top.dump() + "}";
+    H->reply_append(r, out.c_str(), out.size());
     return 0;
 }
 
@@ -801,7 +902,9 @@ MML_EXPORT int mml_side_load(const MmlSideHost *host, MmlSideMod *mod) {
     g_frameCh = H->channel_open(mod, "frame", sizeof(fsm::Frame));
     g_viewCh = H->channel_open(mod, "view", sizeof(fsm::View));
     g_doneCh = H->channel_open(mod, "done", sizeof(fsm::Done));
-    if (!g_frameCh || !g_viewCh || !g_doneCh) return 1;
+    g_sceneCh = H->channel_open(mod, "scenery", fsm::kSceneryBytes);
+    g_moverCh = H->channel_open(mod, "movers", fsm::kMoversBytes);
+    if (!g_frameCh || !g_viewCh || !g_doneCh || !g_sceneCh || !g_moverCh) return 1;
     if (!LoadFlow()) H->log(mod, 2, "%s", LastError().c_str());   // (the half stays loaded and says why: `side`)
     else H->log(mod, 1, "NVIDIA Flow loaded; its Vulkan device is made on the game's adapter once the game draws");
     g_stop = false;

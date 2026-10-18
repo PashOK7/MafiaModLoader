@@ -1,7 +1,8 @@
 // flow_smoke: a mod in two halves (docs/MODDING.md "64-bit halves") doing what a 32-bit game cannot: NVIDIA Flow 2,
 // smoke and fire as gas on a sparse grid, simulated and ray-marched on the GPU (Vulkan) in the 64-bit half
 // (flow_smoke64.cpp), in the game's world, in the same frame. This 32-bit half keeps the sources, gives the 64-bit half
-// the people and cars that move through the gas (they push it), and in its graphics pass hands Flow this frame (its
+// the world the gas meets as the game draws it (the scenery's meshes around the sources, each car's own meshes posed
+// now, each person's body as capsules along his bones), and in its graphics pass hands Flow this frame (its
 // colour and depth) and puts Flow's picture of it, the gas lit and self-shadowed over the world and hidden by it, on
 // the screen.
 //
@@ -41,7 +42,7 @@ using nlohmann::json;
 namespace {
 const MmlHost *H;
 MmlMod *M;
-MmlChannel *g_frameCh, *g_viewCh, *g_doneCh;
+MmlChannel *g_frameCh, *g_viewCh, *g_doneCh, *g_sceneCh, *g_moverCh;
 bool g_game;   // game::Detect: the player's car (game.h)
 double g_freqMs;
 uint64_t g_frame;
@@ -79,8 +80,8 @@ float g_wind[3];
 float g_ground;   // about the origin
 
 struct Stats {
-    uint64_t frames, asked, drawn, late, none, noTextures, silent;
-    double rtSum, rtMax, prepSum, prepMax;
+    uint64_t frames, asked, drawn, late, none, noTextures, silent, meshFrames;
+    double rtSum, rtMax, prepSum, prepMax, meshSum, meshMax;
 } S;
 fsm::Done g_done;
 uint64_t g_doneVersion;   // the last "done" seen, and when (QueryPerformanceCounter)
@@ -163,11 +164,220 @@ std::string Emit(const json &a, uint32_t *id) {
     return "";
 }
 
-// ---- the frame's state out: the sources where they are now, the people and cars near them
-struct Last { float c[3]; uint64_t frame; };
-std::map<const void *, Last> g_last;   // a mover's last centre (its velocity), by its primitive
-std::vector<MmlShape> g_shapes(256);
+// ---- the frame's state out: the sources where they are now, the scenery and the movers near them, as meshes
 fsm::Frame g_rec;
+std::vector<MmlShape> g_shapes(512);
+std::vector<MmlMeshPiece> g_pieces(4096);
+std::vector<uint8_t> g_sceneBuf(fsm::kSceneryBytes), g_moverBuf(fsm::kMoversBytes);
+uint64_t g_sceneSig;
+uint32_t g_sceneSerial, g_sceneTriangles, g_sceneVertices;
+float g_focusLo[3], g_focusHi[3];
+bool g_haveFocus;
+struct BonesLast {
+    float p[MML_BONE_COUNT][3];
+    uint64_t frame;
+};
+std::map<const void *, BonesLast> g_bonesLast;   // a person's bones' last places (their velocities), by the actor
+fsm::Movers g_moverRec;
+
+uint64_t Fnv(uint64_t h, uint64_t v) {
+    for (int i = 0; i < 8; i++) h = (h ^ ((v >> (8 * i)) & 0xFF)) * 1099511628211ull;
+    return h;
+}
+// p * m (row vectors), about the origin
+void ToOrigin(const float *p, const float *m, float *out) {
+    for (int k = 0; k < 3; k++)
+        out[k] = float(double(p[0]) * m[k] + double(p[1]) * m[4 + k] + double(p[2]) * m[8 + k] + m[12 + k] - g_origin[k]);
+}
+
+// The static world the game draws around the sources, in one soup of triangles: written when the scan's pieces or
+// their versions change (a new box, a door moved), else left as it is. Additive light (lamps' glows) is not solid.
+void Scenery(const float lo[3], const float hi[3]) {
+    float want[2][3] = {{lo[0] - 12, float(g_ground + g_origin[1]) - 3, lo[2] - 12}, {hi[0] + 12, hi[1] + 20, hi[2] + 12}};
+    bool move = !g_haveFocus;
+    for (int k = 0; k < 3 && !move; k++) move = std::fabs(want[0][k] - g_focusLo[k]) > 4 || std::fabs(want[1][k] - g_focusHi[k]) > 4;
+    if (move) {
+        memcpy(g_focusLo, want[0], sizeof g_focusLo);
+        memcpy(g_focusHi, want[1], sizeof g_focusHi);
+        H->scene_focus(M, g_focusLo, g_focusHi);
+        g_haveFocus = true;
+    }
+    int n = std::min(H->scene_pieces(M, g_pieces.data(), int(g_pieces.size())), int(g_pieces.size()));
+    uint64_t sig = 1469598103934665603ull;
+    for (int i = 0; i < n; i++) sig = Fnv(Fnv(sig, uint64_t(uintptr_t(g_pieces[i].visual))), g_pieces[i].version);
+    sig = Fnv(sig, uint64_t(g_clear));
+    if (sig == g_sceneSig) return;
+    g_sceneSig = sig;
+    auto *hdr = reinterpret_cast<fsm::Scenery *>(g_sceneBuf.data());
+    float *pos = reinterpret_cast<float *>(hdr + 1);
+    std::vector<uint32_t> idx;
+    idx.reserve(3 * 65536);
+    uint32_t verts = 0;
+    for (int i = 0; i < n; i++) {
+        const MmlMeshPiece &pc = g_pieces[i];
+        if (!pc.pos || !pc.index || pc.vertices <= 0 || verts + uint32_t(pc.vertices) > fsm::kMaxSceneVertices) continue;
+        for (int v = 0; v < pc.vertices; v++) ToOrigin(pc.pos + 3 * v, pc.world, pos + 3 * (verts + v));
+        for (int t = 0; t < pc.triangles && idx.size() / 3 < fsm::kMaxSceneTriangles; t++) {
+            if (pc.material && (pc.material[t] & 0x80000000u)) continue;
+            const uint32_t *tri = pc.index + 3 * t;
+            if (tri[0] >= uint32_t(pc.vertices) || tri[1] >= uint32_t(pc.vertices) || tri[2] >= uint32_t(pc.vertices)) continue;
+            for (int k = 0; k < 3; k++) idx.push_back(verts + tri[k]);
+        }
+        verts += pc.vertices;
+    }
+    hdr->serial = ++g_sceneSerial;
+    hdr->vertices = verts;
+    hdr->triangles = uint32_t(idx.size() / 3);
+    hdr->pieces = uint32_t(n);
+    // (the indices right after the positions written)
+    memmove(pos + 3 * verts, idx.data(), idx.size() * 4);
+    H->channel_write(g_sceneCh, g_sceneBuf.data(), uint32_t(sizeof *hdr + 12 * verts + 4 * idx.size()));
+    g_sceneTriangles = hdr->triangles, g_sceneVertices = verts;
+}
+
+// A capsule's surface from a to b of radius r (8 sides, a ring at each end and a tip beyond each), its vertices'
+// velocities from va to vb: 18 vertices, 32 triangles.
+const int kCapsuleVerts = 18, kCapsuleTris = 32;
+void Capsule(const float a[3], const float b[3], float r, const float va[3], const float vb[3], float *pos, float *vel, uint32_t *idx,
+             uint32_t base) {
+    float d[3] = {b[0] - a[0], b[1] - a[1], b[2] - a[2]};
+    float len = std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+    float u[3] = {0, 1, 0};
+    if (len > 1e-4f) u[0] = d[0] / len, u[1] = d[1] / len, u[2] = d[2] / len;
+    float s[3] = {std::fabs(u[1]) < 0.9f ? 0.f : 1.f, std::fabs(u[1]) < 0.9f ? 1.f : 0.f, 0};   // (any axis not along u)
+    float x[3] = {u[1] * s[2] - u[2] * s[1], u[2] * s[0] - u[0] * s[2], u[0] * s[1] - u[1] * s[0]};
+    float xl = std::sqrt(x[0] * x[0] + x[1] * x[1] + x[2] * x[2]);
+    for (float &c : x) c /= xl;
+    float y[3] = {u[1] * x[2] - u[2] * x[1], u[2] * x[0] - u[0] * x[2], u[0] * x[1] - u[1] * x[0]};
+    for (int ring = 0; ring < 2; ring++)
+        for (int k = 0; k < 8; k++) {
+            float ang = k * 0.785398163f, c = std::cos(ang) * r, sn = std::sin(ang) * r;
+            const float *e = ring ? b : a;
+            const float *ve = ring ? vb : va;
+            float *p = pos + 3 * (ring * 8 + k), *v = vel + 3 * (ring * 8 + k);
+            for (int j = 0; j < 3; j++) p[j] = e[j] + x[j] * c + y[j] * sn, v[j] = ve[j];
+        }
+    for (int j = 0; j < 3; j++) {
+        pos[48 + j] = a[j] - u[j] * r, vel[48 + j] = va[j];
+        pos[51 + j] = b[j] + u[j] * r, vel[51 + j] = vb[j];
+    }
+    uint32_t *t = idx;
+    for (int k = 0; k < 8; k++) {
+        uint32_t k1 = (k + 1) % 8;
+        uint32_t a0 = base + k, a1 = base + k1, b0 = base + 8 + k, b1 = base + 8 + k1;
+        *t++ = a0, *t++ = b0, *t++ = a1;   // (the side, facing out)
+        *t++ = a1, *t++ = b0, *t++ = b1;
+        *t++ = base + 16, *t++ = a0, *t++ = a1;   // (the end at a)
+        *t++ = base + 17, *t++ = b1, *t++ = b0;   // (the end at b)
+    }
+}
+
+// What moves around the sources, as meshes: each car's own (its pieces posed now; each vertex's velocity the body's,
+// v + turn x r), each person's body made of capsules along his bones (each bone's velocity from its last place).
+void Movers(const float lo[3], const float hi[3], float dt) {
+    fsm::Movers &rec = g_moverRec;
+    rec = fsm::Movers{};
+    rec.frame = g_frame;
+    float rlo[3] = {lo[0] - 30, float(g_ground + g_origin[1]) - 3, lo[2] - 30}, rhi[3] = {hi[0] + 30, hi[1] + 25, hi[2] + 30};
+    int n = std::min(H->world_shapes(M, rlo, rhi, MML_WORLD_MOVING, g_shapes.data(), int(g_shapes.size())), int(g_shapes.size()));
+    std::vector<std::pair<void *, uint32_t>> actors;   // (the actor, kCar or kPerson), each once
+    for (int i = 0; i < n; i++) {
+        const MmlShape &sh = g_shapes[i];
+        uint32_t kind = (sh.classes & 0x200) ? fsm::kCar : (sh.classes & 0x100) ? fsm::kPerson : 0;
+        if (!kind || !sh.actor) continue;
+        if (std::find_if(actors.begin(), actors.end(), [&](const auto &a) { return a.first == sh.actor; }) == actors.end())
+            actors.push_back({sh.actor, kind});
+    }
+    float *pos = reinterpret_cast<float *>(g_moverBuf.data() + sizeof(fsm::Movers));
+    float *vel = pos + 3 * fsm::kMaxMoverVertices;
+    uint32_t *idx = reinterpret_cast<uint32_t *>(vel + 3 * fsm::kMaxMoverVertices);
+    MmlBone bones[MML_BONE_COUNT];
+    for (const auto &a : actors) {
+        if (rec.count >= fsm::kMaxMovers) break;
+        fsm::Mover m{};
+        m.kind = a.second;
+        m.id = uint64_t(uintptr_t(a.first));
+        m.firstVertex = rec.vertices, m.firstTriangle = rec.triangles;
+        if (a.second == fsm::kCar) {
+            MmlVehicleBody body;
+            if (!CarBody(a.first, &body)) continue;
+            int pn = std::min(H->actor_meshes(M, a.first, g_pieces.data(), int(g_pieces.size())), int(g_pieces.size()));
+            uint64_t topo = 1469598103934665603ull;
+            for (int i = 0; i < pn; i++) {
+                const MmlMeshPiece &pc = g_pieces[i];
+                if (!pc.pos || !pc.index || pc.vertices <= 0) continue;
+                if (rec.vertices + m.vertices + pc.vertices > fsm::kMaxMoverVertices ||
+                    rec.triangles + m.triangles + pc.triangles > fsm::kMaxMoverTriangles)
+                    break;
+                topo = Fnv(Fnv(topo, uint64_t(uintptr_t(pc.visual))), uint64_t(pc.triangles));
+                uint32_t base = rec.vertices + m.vertices;
+                for (int v = 0; v < pc.vertices; v++) {
+                    float *p = pos + 3 * (base + v), *w = vel + 3 * (base + v);
+                    ToOrigin(pc.pos + 3 * v, pc.world, p);
+                    float r[3] = {float(p[0] + g_origin[0] - body.pos[0]), float(p[1] + g_origin[1] - body.pos[1]), float(p[2] + g_origin[2] - body.pos[2])};
+                    w[0] = body.velocity[0] + body.turn[1] * r[2] - body.turn[2] * r[1];
+                    w[1] = body.velocity[1] + body.turn[2] * r[0] - body.turn[0] * r[2];
+                    w[2] = body.velocity[2] + body.turn[0] * r[1] - body.turn[1] * r[0];
+                }
+                uint32_t *t = idx + 3 * (rec.triangles + m.triangles);
+                for (int k = 0; k < 3 * pc.triangles; k++) t[k] = m.vertices + std::min(pc.index[k], uint32_t(pc.vertices - 1));
+                m.vertices += pc.vertices;
+                m.triangles += pc.triangles;
+            }
+            m.topology = uint32_t(topo ^ (topo >> 32));
+        } else {
+            if (H->human_skeleton(M, a.first, bones, MML_BONE_COUNT) < MML_BONE_COUNT) continue;
+            BonesLast &last = g_bonesLast[a.first];
+            bool fresh = last.frame + 1 == g_frame && dt > 0;
+            float p[MML_BONE_COUNT][3], v[MML_BONE_COUNT][3] = {};
+            for (int bi = 0; bi < MML_BONE_COUNT; bi++)
+                for (int k = 0; k < 3; k++) {
+                    p[bi][k] = float(bones[bi].world[12 + k] - g_origin[k]);
+                    if (fresh) v[bi][k] = (p[bi][k] - last.p[bi][k]) / dt;
+                }
+            memcpy(last.p, p, sizeof p);
+            last.frame = g_frame;
+            if (!bones[MML_BONE_PELVIS].frame || !bones[MML_BONE_NECK].frame) continue;
+            // (the head: a capsule from the neck on, along the spine's last direction)
+            float up[3] = {p[MML_BONE_NECK][0] - p[MML_BONE_BACK3][0], p[MML_BONE_NECK][1] - p[MML_BONE_BACK3][1], p[MML_BONE_NECK][2] - p[MML_BONE_BACK3][2]};
+            float ul = std::sqrt(up[0] * up[0] + up[1] * up[1] + up[2] * up[2]);
+            float head[3];
+            for (int k = 0; k < 3; k++) head[k] = p[MML_BONE_NECK][k] + (ul > 1e-4f ? up[k] / ul : k == 1) * 0.22f;
+            struct Seg { int a, b; float r; } segs[] = {
+                {MML_BONE_PELVIS, MML_BONE_BACK3, 0.16f}, {MML_BONE_BACK3, MML_BONE_NECK, 0.17f},
+                {MML_BONE_R_ARM, MML_BONE_R_ELBOW, 0.055f}, {MML_BONE_R_ELBOW, MML_BONE_R_HAND, 0.045f},
+                {MML_BONE_L_ARM, MML_BONE_L_ELBOW, 0.055f}, {MML_BONE_L_ELBOW, MML_BONE_L_HAND, 0.045f},
+                {MML_BONE_R_THIGH, MML_BONE_R_SHIN, 0.08f}, {MML_BONE_R_SHIN, MML_BONE_R_FOOT, 0.06f},
+                {MML_BONE_L_THIGH, MML_BONE_L_SHIN, 0.08f}, {MML_BONE_L_SHIN, MML_BONE_L_FOOT, 0.06f}, {-1, -1, 0.11f}};
+            for (const Seg &sg : segs) {
+                if (rec.vertices + m.vertices + kCapsuleVerts > fsm::kMaxMoverVertices || rec.triangles + m.triangles + kCapsuleTris > fsm::kMaxMoverTriangles)
+                    break;
+                if (sg.a >= 0 && (!bones[sg.a].frame || !bones[sg.b].frame)) continue;
+                const float *pa = sg.a >= 0 ? p[sg.a] : p[MML_BONE_NECK], *pb = sg.a >= 0 ? p[sg.b] : head;
+                const float *va = sg.a >= 0 ? v[sg.a] : v[MML_BONE_NECK], *vb = sg.a >= 0 ? v[sg.b] : v[MML_BONE_NECK];
+                uint32_t base = rec.vertices + m.vertices;
+                uint32_t *t = idx + 3 * (rec.triangles + m.triangles);
+                Capsule(pa, pb, sg.r, va, vb, pos + 3 * base, vel + 3 * base, t, m.vertices);
+                m.vertices += kCapsuleVerts;
+                m.triangles += kCapsuleTris;
+            }
+            m.topology = 1;   // (the same capsules every frame)
+        }
+        if (!m.vertices) continue;
+        rec.mover[rec.count++] = m;
+        rec.vertices += m.vertices;
+        rec.triangles += m.triangles;
+    }
+    if (g_bonesLast.size() > 256)
+        for (auto it = g_bonesLast.begin(); it != g_bonesLast.end();) it = it->second.frame + 2 < g_frame ? g_bonesLast.erase(it) : std::next(it);
+    // (the header, the positions and velocities of the vertices there are, the indices after them)
+    memcpy(g_moverBuf.data(), &rec, sizeof rec);
+    float *velOut = pos + 3 * rec.vertices;
+    memmove(velOut, vel, 12 * size_t(rec.vertices));
+    uint32_t *idxOut = reinterpret_cast<uint32_t *>(velOut + 3 * rec.vertices);
+    memmove(idxOut, idx, 12 * size_t(rec.triangles));
+    H->channel_write(g_moverCh, g_moverBuf.data(), uint32_t(sizeof rec + 24 * size_t(rec.vertices) + 12 * size_t(rec.triangles)));
+}
 
 void OnFrame(float dt) {
     g_frame++;
@@ -212,36 +422,14 @@ void OnFrame(float dt) {
             lo[i] = std::min(lo[i], float(s.at[i])), hi[i] = std::max(hi[i], float(s.at[i]));
         }
     }
-    // the movers in the sources' neighbourhood (the gas rises and drifts: 30 m around, 25 m up)
-    f.movers = 0;
-    if (f.sources) {
-        for (int i = 0; i < 3; i += 2) lo[i] -= 30, hi[i] += 30;
-        lo[1] = float(g_ground + g_origin[1]) - 3, hi[1] += 25;
-        int n = H->world_shapes(M, lo, hi, MML_WORLD_MOVING, g_shapes.data(), int(g_shapes.size()));
-        n = std::min(n, int(g_shapes.size()));
-        for (int i = 0; i < n && f.movers < fsm::kMaxMovers; i++) {
-            const MmlShape &sh = g_shapes[i];
-            bool person = sh.classes & 0x100, car = sh.classes & 0x200;
-            // (a person's narrow sphere about his waist, a car's whole hull: physx_crates found these the ones)
-            if (!(person && sh.kind == MML_SHAPE_SPHERE && (sh.classes & 0x1)) && !(car && sh.kind == MML_SHAPE_BOX && (sh.classes & 0x2)))
-                continue;
-            fsm::Mover &m = f.mover[f.movers++];
-            m = fsm::Mover{};
-            m.kind = car ? fsm::kBox : fsm::kSphere;
-            for (int k = 0; k < 3; k++) m.center[k] = float(sh.center[k] - g_origin[k]);
-            memcpy(m.half, sh.half, sizeof m.half);
-            memcpy(m.axes, sh.axes, sizeof m.axes);
-            if (person) m.half[0] = 0.45f;   // (his body, not the narrow sphere: what pushes the air)
-            Last &last = g_last[sh.prim];
-            if (last.frame + 1 == g_frame && dt > 0)
-                for (int k = 0; k < 3; k++) m.velocity[k] = (sh.center[k] - last.c[k]) / dt;
-            memcpy(last.c, sh.center, sizeof last.c);
-            last.frame = g_frame;
-        }
-        if (g_last.size() > 512)
-            for (auto it = g_last.begin(); it != g_last.end();) it = it->second.frame + 2 < g_frame ? g_last.erase(it) : std::next(it);
+    H->channel_write(g_frameCh, &f, uint32_t(offsetof(fsm::Frame, source) + f.sources * sizeof(fsm::Source)));
+    if (f.sources && run) {
+        int64_t t0 = Qpc();
+        Scenery(lo, hi);
+        Movers(lo, hi, dt);
+        double ms = Ms(t0, Qpc());
+        S.meshSum += ms, S.meshMax = std::max(S.meshMax, ms), S.meshFrames++;
     }
-    H->channel_write(g_frameCh, &f, uint32_t(offsetof(fsm::Frame, mover) + f.movers * sizeof(fsm::Mover)));
 }
 
 // ---- drawing (the bridge's Direct3D 11 device)
@@ -382,7 +570,9 @@ void OnEvent(const MmlEvent *ev, void *) {
         g_sources.clear();
         g_clear++;
         g_haveOrigin = false;
-        g_last.clear();
+        g_bonesLast.clear();
+        g_haveFocus = false;
+        g_sceneSig = 0;
         break;
     case MML_EVENT_ACTOR_DESTROYED:   // (a followed car gone: its sources with it)
         g_sources.erase(std::remove_if(g_sources.begin(), g_sources.end(), [ev](const Source &s) { return s.car && s.car == ev->actor; }),
@@ -453,7 +643,10 @@ int CmdState(const char *, MmlReply *r, void *) {
               {"round_trip_ms", {{"mean", S.rtSum * k}, {"max", S.rtMax}}},
               {"prepare_ms", {{"mean", S.prepSum * kp}, {"max", S.prepMax}}},
               {"blocks", g_done.blocks}, {"steps", g_done.steps}, {"simulate_ms", g_done.simulateMs}, {"render_ms", g_done.renderMs},
-              {"gpu_ms", g_done.gpuMs}, {"sources", sources}, {"movers", g_rec.movers},
+              {"gpu_ms", g_done.gpuMs}, {"sources", sources},
+              {"movers", {{"count", g_moverRec.count}, {"vertices", g_moverRec.vertices}, {"triangles", g_moverRec.triangles}}},
+              {"scenery", {{"serial", g_sceneSerial}, {"vertices", g_sceneVertices}, {"triangles", g_sceneTriangles}, {"in_flow", g_done.sceneTriangles}}},
+              {"meshes_ms", {{"mean", S.meshFrames ? S.meshSum / S.meshFrames : 0.0}, {"max", S.meshMax}}},
               {"origin", g_haveOrigin ? json{g_origin[0], g_origin[1], g_origin[2]} : json()}, {"ground", g_ground},
               {"wind", {g_wind[0], g_wind[1], g_wind[2]}}, {"error", err}});
     return 0;
@@ -488,7 +681,9 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     g_frameCh = H->channel_open(mod, "frame", sizeof(fsm::Frame));
     g_viewCh = H->channel_open(mod, "view", sizeof(fsm::View));
     g_doneCh = H->channel_open(mod, "done", sizeof(fsm::Done));
-    if (!g_frameCh || !g_viewCh || !g_doneCh) return 1;
+    g_sceneCh = H->channel_open(mod, "scenery", fsm::kSceneryBytes);
+    g_moverCh = H->channel_open(mod, "movers", fsm::kMoversBytes);
+    if (!g_frameCh || !g_viewCh || !g_doneCh || !g_sceneCh || !g_moverCh) return 1;
     Kept k{};
     if (H->state_get(mod, "sources", &k, sizeof k) == sizeof k && k.count <= fsm::kMaxSources) {   // (a reload)
         g_sources.assign(k.source, k.source + k.count);

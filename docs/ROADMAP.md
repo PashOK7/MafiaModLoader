@@ -1002,8 +1002,11 @@ merged, sorted by importance):
     on, CUDA's for Direct3D 11) would leave only the half's recording, about 0.5 ms.
   - The pass draws the whole frame back (Flow composites the gas over the colour it is given and gives no alpha):
     the passes ordered before it (50) are under the gas, not over it.
-  - The gas meets the ground (a box under the sources), the people and the cars (they push it), not the buildings: the
-    static world as Flow obstacles (`EmitterMesh` from `world_shapes`' triangles, or the drawn meshes: item 19b).
+  - The ray march runs at the frame's full size over the frame's colour (Flow composites and gives no alpha): with a
+    fire on a 4 cm grid it is 1.7 ms of GPU, and the frame's copies in and out 0.6 ms. A Flow patch writing the
+    transmittance into alpha (its `RayMarchBlockCS`), a ray march at half size over black and a depth-aware upsample
+    in the composite would take it to about a quarter and drop the colour's copy in.
+  - People are capsules along their bones (the host gives no skinned meshes): their clothes' shapes are not there.
 - **An actor made over the open river sleeps** (seen 2026-10-18, 1.2): a car spawned there is drawn but its model
   frame's stamp (`+0x13C`, what C_game::Tick wakes a sleeping actor by) stays -1, so it floats where it was made
   instead of falling in; a person put in the air there stands (a standing NPC does not fall). A ragdoll or a water

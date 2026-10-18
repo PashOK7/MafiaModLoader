@@ -2,8 +2,13 @@
 // Fixed-size fields only, no pointers: the same layout in both processes (the static_asserts are checked by both).
 //
 // "frame" (32 -> 64, at each FRAME): the frame, its time, whether the world runs, the sources of smoke and fire, the
-// people and cars near them (they push the gas), the ground under them. Positions are about `origin` (the city's
-// coordinates are thousands of metres; Flow works about the origin).
+// ground under them, the scene's light. Positions are about `origin` (the city's coordinates are thousands of metres;
+// Flow works about the origin).
+// "scenery" (32 -> 64, when it changes): the static world around the sources as the game draws it: the triangles of
+// its meshes (scene_pieces), in one soup about the origin. Flow keeps the gas out of them.
+// "movers" (32 -> 64, at each FRAME): what moves there, as meshes too: each car's own (actor_meshes: its body, doors,
+// wheels where they are now) and each person's body made of capsules along his bones (the host has no skinned
+// meshes), each vertex with its velocity: they push the gas aside and drag it along.
 // "view" (32 -> 64, in the graphics pass, after the pass has put the frame into "color_in" and "depth_in"): the
 // camera this frame was drawn with; the 64-bit half ray-marches the gas into "color_out" over it.
 // "done" (64 -> 32): that frame's picture is whole in "color_out" (or why not).
@@ -17,10 +22,12 @@
 
 namespace fsm {
 
-const uint32_t kMaxSources = 16, kMaxMovers = 48;
+const uint32_t kMaxSources = 16;
+const uint32_t kMaxSceneVertices = 1u << 18, kMaxSceneTriangles = 1u << 18;
+const uint32_t kMaxMovers = 32, kMaxMoverVertices = 1u << 16, kMaxMoverTriangles = 1u << 16;
 
 enum : uint32_t { kSmoke = 1, kFire = 2, kSteam = 3 };   // Source::kind
-enum : uint32_t { kSphere = 1, kBox = 2 };                // Mover::kind
+enum : uint32_t { kCar = 1, kPerson = 2 };                // Mover::kind
 
 // A source: a sphere giving off gas.
 struct Source {
@@ -32,16 +39,6 @@ struct Source {
     float strength;         // 0..: how much it gives (1: the default)
 };
 
-// A person (a sphere) or a car (a box) moving through the gas: it carries the gas with it at its velocity.
-struct Mover {
-    uint32_t kind;          // kSphere, kBox
-    uint32_t pad;
-    float center[3];        // about the origin
-    float half[3];          // a sphere: half[0] its radius
-    float axes[9];          // a box's axes (rows)
-    float velocity[3];      // m/s
-};
-
 struct Frame {
     uint64_t frame;
     double time;            // seconds since the 32-bit half's load (the simulation's clock)
@@ -49,13 +46,35 @@ struct Frame {
     uint32_t run;           // 0: the world stands (a menu, no mission): no step
     double origin[3];       // world = origin + a position here
     uint32_t clear;         // a new number: everything blown away (flow_smoke.clear, a mission closed)
-    uint32_t sources, movers;
+    uint32_t sources;
     float ground;           // the ground's height under the sources, about the origin (the gas does not go below)
     float wind[3];          // m/s, the air's own motion
     float toSun[3];         // towards the sun (unit): Flow's self-shadowing lights the gas from there
     float light[3];         // the scene's light on the gas (its sun and ambient, linear): smoke is as bright as it
-    float pad;
+    float pad[2];
     Source source[kMaxSources];
+};
+
+// "scenery": this header, then float positions[3 * vertices], then uint32_t indices[3 * triangles].
+struct Scenery {
+    uint32_t serial;        // a new one each time it is written
+    uint32_t vertices, triangles;
+    uint32_t pieces;        // the scene's pieces it was made of
+};
+
+// "movers": this header, then float positions[3 * vertices], float velocities[3 * vertices], uint32_t indices[3 *
+// triangles]; a mover's indices count from its own first vertex.
+struct Mover {
+    uint32_t kind;          // kCar, kPerson
+    uint32_t firstVertex, vertices;
+    uint32_t firstTriangle, triangles;
+    uint32_t topology;      // changes when its triangles change (another car, a door's piece gone): else only the
+                            // positions and velocities are new
+    uint64_t id;            // the actor (the 32-bit half's address)
+};
+struct Movers {
+    uint64_t frame;
+    uint32_t count, vertices, triangles, pad;
     Mover mover[kMaxMovers];
 };
 
@@ -78,13 +97,18 @@ struct Done {
     float simulateMs;       // the last step's CPU time (recording and submitting)
     float renderMs;         // the frame's: copies in, ray march, copies out, waited for on the CPU
     float gpuMs;            // the last frame's GPU time in Flow (its profiler; 0 unknown)
-    float pad;
+    uint32_t sceneTriangles;   // the scenery's triangles in Flow now
     char error[160];        // the last error ("" none)
 };
 
+const uint32_t kSceneryBytes = sizeof(Scenery) + 12 * kMaxSceneVertices + 12 * kMaxSceneTriangles;
+const uint32_t kMoversBytes = sizeof(Movers) + 24 * kMaxMoverVertices + 12 * kMaxMoverTriangles;
+
 static_assert(sizeof(Source) == 40, "Source");
-static_assert(sizeof(Mover) == 80, "Mover");
-static_assert(sizeof(Frame) == 104 + 40 * kMaxSources + 80 * kMaxMovers, "Frame");
+static_assert(sizeof(Frame) == 104 + 40 * kMaxSources, "Frame");
+static_assert(sizeof(Scenery) == 16, "Scenery");
+static_assert(sizeof(Mover) == 32, "Mover");
+static_assert(sizeof(Movers) == 24 + 32 * kMaxMovers, "Movers");
 static_assert(sizeof(View) == 160, "View");
 static_assert(sizeof(Done) == 216, "Done");
 
