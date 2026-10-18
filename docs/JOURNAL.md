@@ -2416,3 +2416,13 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   pass with its defaults; invulnerability by a fall: 16.6 m took 163.8 health (a hit of type 6), the same fall held
   invulnerable none and no HUMAN_HIT. In 1.2: four frames in a row of the collision pass, no flicker. The offline
   suite ALL PASSED.
+
+## 2026-10-19: a world grid on the collision
+
+- **Asked** (the owner): the relief is hard to read on the flat colours; perhaps a light texture. Made: a world grid in
+  the collision pass instead of a texture (the collision has no UVs; a grid in world space gives the scale, the slopes
+  and the distance at once, as prototype materials do): triplanar (each face the grid of the plane it faces most: an
+  upright one on walls, a level one on the ground, a blend on slopes), a line every `grid` metres (1 by default; 0
+  none) and a bolder one every 5, about a pixel and a half wide, antialiased by the surface point's change to the next
+  pixels (worked out on the surface's own plane, so also right at a shape's edge, and no derivatives in the shader's
+  branches), faded where the cells shrink under a few pixels. Seen in both labs; the offline suite ALL PASSED.

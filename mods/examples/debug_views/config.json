@@ -62,6 +62,7 @@
     "fill": 0.6,
     "edges": true,
     "ao": 0.7,
+    "grid": 1,
     "tolerance": 0.15,
     "moving": true,
     "people": true,

@@ -9,7 +9,9 @@
 // How (a graphics pass, collision.hlsl): the shapes' triangles are drawn into the mod's own targets with a depth buffer
 // of its own, so each pixel keeps the nearest collision surface alone (no order, no blending: a far face never shows
 // through a near one); then that surface is laid over the frame, translucent (`fill`), lit by its facing, darkened by
-// an ambient occlusion read from its own depth and normals (`ao`), outlined where its normal turns, it steps off its
+// an ambient occlusion read from its own depth and normals (`ao`), a world grid on it (`grid` metres a cell, a bolder
+// line every 5: the relief, the slopes and the scale read from it; triplanar, each face the grid of the plane it
+// faces most), outlined where its normal turns, it steps off its
 // plane or its surface changes (`edges`; the seams between the faces of one plane are no edges, and no face is moved:
 // the ground has no gaps). Against the game's drawing: within `tolerance` metres (and a little more far away) of what
 // the frame shows the collision wins, so it lies on the world's own surfaces without fighting them; what the game
@@ -276,7 +278,7 @@ ID3D11DepthStencilView *g_dsv;
 unsigned g_madeFor, g_w, g_h;
 
 // cbuffer Collision (b1), its layout in collision.hlsl
-struct CollisionCb { float viewProj[16]; float style[4]; float tol[4]; };
+struct CollisionCb { float viewProj[16]; float style[4]; float tol[4]; float grid[4]; };
 
 void ReleaseTargets() {
     SafeRelease(g_colorSrv); SafeRelease(g_normalSrv); SafeRelease(g_colorRtv); SafeRelease(g_normalRtv); SafeRelease(g_dsv);
@@ -401,6 +403,8 @@ void Pass(const MmlGfxFrame *f, void *) {
     cb.style[3] = H->config_number(M, SECTION "through", 0) != 0 ? 1.0f : 0.0f;
     cb.tol[0] = static_cast<float>(H->config_number(M, SECTION "tolerance", 0.15));
     cb.tol[1] = 0.004f;   // (and 0.4 % of the depth: the depth buffer's steps grow far away)
+    cb.grid[0] = static_cast<float>((std::max)(0.0, H->config_number(M, SECTION "grid", 1)));
+    cb.grid[1] = 5;       // (a major line every 5 cells)
     ctx->UpdateSubresource(g_cb, 0, nullptr, &cb, 0, 0);
 
     // what the bridge bound for the pass, put back for the second step

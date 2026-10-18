@@ -292,6 +292,14 @@
             "step": 0.05
           },
           {
+            "key": "collision.grid",
+            "label": "Grid cell (0: none)",
+            "min": 0,
+            "max": 5,
+            "step": 0.25,
+            "unit": "m"
+          },
+          {
             "key": "collision.tolerance",
             "label": "Wins over the world by",
             "min": 0,

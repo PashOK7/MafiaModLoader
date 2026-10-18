@@ -6,7 +6,8 @@
 // 2. PsCollision (a full-screen pass into the effects target): that nearest surface laid over the frame where it is
 //    not behind what the game drew. Within `g_tol` of the scene's depth the collision wins (it lies on the world's own
 //    surfaces: no fighting), farther behind it is hidden (a wall really nearer is drawn); `through` shows it whatever
-//    the scene. Shaded by its facing to a light, darkened by an ambient occlusion read from its own depth and normals
+//    the scene. Shaded by its facing to a light, lined by a world grid (triplanar: a metre a cell, a bolder line every
+//    five), darkened by an ambient occlusion read from its own depth and normals
 //    (so the shapes' volume reads), outlined where the surface's normal or depth jumps (the shapes' edges; the seams
 //    between two faces of one plane are not edges).
 #include "mml/gfx/frame.hlsli"
@@ -15,6 +16,7 @@ cbuffer Collision : register(b1) {
     row_major float4x4 g_viewProj;   // the world to the frame's clip space
     float4 g_style;                  // x: the fill's opacity, y: 1 outlines, z: the occlusion's strength, w: 1 through
     float4 g_tol;                    // x: metres the collision wins by, y: and this share of the depth
+    float4 g_grid;                   // x: the world grid's cell (metres, 0 none), y: a major line every this many cells
 };
 
 Texture2D<float4> g_collColor : register(t3);   // rgb the surface's colour, a 1 where there is collision
@@ -42,6 +44,39 @@ GOut PsCollisionG(VsOut i) {
 
 // The world point the collision shows at a pixel (its own depth).
 float3 CollPoint(int2 p, float z) { return g_eye.xyz + ViewRay(float2(p) + 0.5) * z; }
+
+// The point where the ray through a pixel meets the plane through P with the normal n (the surface's own plane: its
+// change from one pixel to the next is the surface's, also at a shape's edge, where the next pixel shows another).
+float3 OnPlane(float2 pixel, float3 P, float3 n) {
+    const float3 r = ViewRay(pixel);
+    const float t = dot(P - g_eye.xyz, n) / (abs(dot(r, n)) > 1e-6 ? dot(r, n) : 1e-6);
+    return g_eye.xyz + r * t;
+}
+// A grid's lines along one coordinate pair: 1 on a line (about a pixel and a half wide whatever the distance,
+// antialiased by the coordinates' change between neighbouring pixels, dx and dy), 0 between them; gone where the
+// cells shrink under a few pixels (no moire far away).
+float GridLines(float2 c, float2 dx, float2 dy, float cell) {
+    const float2 u = c / cell;
+    const float2 w = max((abs(dx) + abs(dy)) / cell, 1e-5);
+    const float2 d = abs(frac(u - 0.5) - 0.5) / (w * 1.5);   // the distance to the nearest line, in line widths
+    const float on = 1 - saturate(min(d.x, d.y));
+    return on * saturate(1.5 - max(w.x, w.y) * 6);       // (cells under about 4 pixels: no lines)
+}
+// The world grid on a surface (triplanar: each of the three planes weighted by how much the surface faces its axis, so
+// a wall has the upright grid, the ground the level one, a slope a blend): x the minor lines, y the major ones.
+// dx, dy: the surface point's change to the next pixel across and down.
+float2 WorldGrid(float3 P, float3 dx, float3 dy, float3 n) {
+    if (g_grid.x <= 0) return 0;
+    float3 w = pow(abs(n), 4);
+    w /= w.x + w.y + w.z;
+    float2 lines = 0;
+    [unroll] for (int k = 0; k < 2; k++) {
+        const float cell = k == 0 ? g_grid.x : g_grid.x * max(g_grid.y, 1);
+        lines[k] = GridLines(P.yz, dx.yz, dy.yz, cell) * w.x + GridLines(P.xz, dx.xz, dy.xz, cell) * w.y +
+                   GridLines(P.xy, dx.xy, dy.xy, cell) * w.z;
+    }
+    return lines;
+}
 
 float4 PsCollision(float4 pos : SV_Position) : SV_Target {
     const int2 p = int2(pos.xy);
@@ -98,6 +133,10 @@ float4 PsCollision(float4 pos : SV_Position) : SV_Target {
             if (gone || turns || steps || other) edge = 1;
         }
     }
+    // the world grid: the surface's relief, its slope and its scale read from the cells (a metre by default)
+    const float2 at = float2(p) + 0.5;
+    const float2 grid = WorldGrid(P, OnPlane(at + float2(1, 0), P, n) - P, OnPlane(at + float2(0, 1), P, n) - P, n);
+    shade *= 1 - 0.18 * grid.x - 0.22 * grid.y;
     float3 rgb = c.rgb * shade * ao;
     float alpha = g_style.x;
     if (edge > 0) { rgb *= 0.35; alpha = max(alpha, 0.85); }
