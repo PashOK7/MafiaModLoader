@@ -92,11 +92,13 @@ int __fastcall hkMissionTick(void *self, void *edx, int ms) {
     ev.dt = ms > 0 && ms < 200 ? ms / 1000.0f : 1.0f / 60.0f;
     Dispatch(ev);
     ScriptTick(ms);   // the programs of agents and mods, after the mission's own
+    OrdersTick();     // the people's orders done: ORDER_ENDED
     InteractTick(ms);   // the timers on the mission's clock
     return r;
 }
 int __fastcall hkMissionClose(void *self, void *edx) {
     ScriptMissionClose();   // (their actors go with the mission)
+    OrdersMissionClose();   // (the orders' frames)
     WorldMissionClose();
     PropsMissionClose();    // (the props unlinked and released while their scene is there)
     MeshesMissionClose();   // (the scene's frames and meshes forgotten)
@@ -125,6 +127,7 @@ void __fastcall hkActorDtor(void *self, void *edx) {
     Dispatch(ev);
     HumansGone(self);
     ScriptActorGone(self);
+    OrdersActorGone(self);
     WorldActorGone(self);
     PropsActorGone(self);
     InteractActorGone(self);

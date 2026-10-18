@@ -283,6 +283,26 @@ void ScriptTick(int ms);                  // after the mission's tick (game thre
 void ScriptMissionClose();                // every program stopped
 void ScriptActorGone(void *actor);        // out of every program's act[]
 bool ScriptMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+// An order's code compiled into a program already made (a C_entity's own, +0xA9C): its old instructions and
+// registers freed by its Done, `prefix` a line before the code (line 0), the registers given (frames in frm[]), pc 0.
+bool ScriptCompileInto(uintptr_t prog, const char *prefix, const char *code, void *const *acts, int nacts, const float *flts,
+                       int nflts, void *const *frms, int nfrms, std::vector<int> *lines, std::string *err);
+void ScriptWhere(uintptr_t prog, unsigned *pc, unsigned *count, bool *atEnd);
+
+// ---- orders for people (orders.cpp): a scripted person's (C_entity's) own program given an order in its own
+// commands (ENEMY_*), run by the game's AI; human.order, human.order_state, human.go, human.follow, human.attack,
+// human.flee, human.enter, human.stop
+int HumanOrder(MmlMod *mod, void *human, const char *code, void *const *acts, int nacts, const float *flts, int nflts,
+               const float *points, int npoints, std::string *err);   // its id, 0: refused (err)
+int HumanOrderState(void *human, MmlOrderState *out);                 // 1: an order of the loader's is known for him
+void OrdersTick();                        // (game_hooks.cpp) after the mission's tick: ORDER_ENDED for those done
+void OrdersActorGone(void *actor);        // ... an actor's destructor
+void OrdersMissionClose();
+bool OrdersMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+// An LS3D dummy frame of the loader's at a place (hud.cpp), moved, released.
+void *DummyFrameAt(const float pos[3]);
+void DummyFrameMove(void *frame, const float pos[3]);
+void FrameRelease(void *frame);
 // An actor named as the bridge names them: "player", "car" (the car the player sits in, else the one he drove
 // last), an address ("0x0F892E70": an object with a vtable of the game's).
 bool ParseActor(const std::string &text, void **out, std::string *err);

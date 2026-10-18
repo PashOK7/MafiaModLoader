@@ -437,6 +437,13 @@ struct ExeBuild {
     // ret 4: the model frame put at +0x24 with the rotation +0xD0; when the flight state is not 0 the six collision
     // proxies follow it (g_collision::DynUpdate); people near its engines are struck.
     uintptr_t planeAI, planeUpdate;
+    // Orders for people (host/orders.cpp; st0rm94's structs/entity.md, its layout the same in both builds):
+    // entityForceScript, C_entity::ForceScript, thiscall(entity, bool keep) -> bool: with keep false, the entity's
+    // AI hands it to its own script: SetEvent(its program at +0xA9C, 0xEA63) jumps the program to its `event 60003`
+    // and the program's callback 0 sets the flag 0x200 (+0xF08) under which C_entity::AI runs the program and its
+    // scriptTick; the AI state +0xF40 is 0 again and its actions cleared. The script's own commands (ENEMY_*, its
+    // vtable's DecodeInstruction) are compiled into that program.
+    uintptr_t entityForceScript;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -619,6 +626,8 @@ inline const ExeBuild kExe12 = {
     0x5ED400, 0x638700, 0x4C,
     // the airplane (2026-10-17: slots 13 and 14 of the vtable C_airplane's constructor 0x409390 puts, 0x623318)
     0x40BC10, 0x40BEC0,
+    // orders (2026-10-18: C_entity::ForceScript, MafiaReverse's name; ENEMY_FORCESCRIPT's handler 0x470590 calls it)
+    0x523F80,
 };
 
 inline const ExeBuild kExe10 = {
@@ -735,6 +744,8 @@ inline const ExeBuild kExe10 = {
     0x5D4D10, 0x650450, 0x4C,
     // the airplane (2026-10-17: slots 13 and 14 of the vtable airplane_ctor 0x44EF50 puts, 0x63B7C0)
     0x4516E0, 0x451990,
+    // orders (2026-10-18: st0rm94's entity_force_script, 1.2's twin by its callers, the same 229 bytes' code)
+    0x42E8A0,
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,

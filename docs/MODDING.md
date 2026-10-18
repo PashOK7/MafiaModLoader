@@ -136,6 +136,25 @@ Edit, build, `deploy` again: the mod is unloaded and the new DLL loaded while th
 the whole turn). Only a change of the loader itself (`host/`, `mml.h`'s host side) needs the game closed
 (`game_close`, `deploy`, `game_launch`).
 
+### Tests in the real game
+
+What a mod does in the game can be a test that runs again: `tests/game/test_<topic>.py`, a function `test_<name>(g)`
+that drives the game by the same tools (`g.tool('spawn', ...)`, `g.call('human.go', ...)`, `g.wait('ORDER_ENDED',
+...)`, `g.sleep(ms)`, `g.pos(actor)`) and says what it saw with `g.check(name, cond, detail)`
+(`tests/game/mml_game.py`; `tests/game/test_orders.py` is a whole one).
+
+```bat
+python tests/game/run.py --profile 1.2=4 --profile 1.0=Run     :: every case, in both labs at once
+python tests/game/run.py orders --game 1.0                      :: one topic, one lab
+```
+
+Each lab's game is driven by its own MCP server, the labs at the same time. A case starts in the city's small
+freeride without police, pedestrians or traffic (what a case does is then all that happens), the player in his car at its start (the same place in both builds): the runner launches
+the games anew (`--reuse` takes a running freeride as it is), keeps that moment as a restore point and loads it
+before each case; what a case spawns through `g.spawn_human` is removed after it (out of a car first). The profile must be one that has opened the freeride's
+settings once (the game ignores the police slider otherwise): `--profile`, or mml.config.json's
+`"test_profiles": {"1.2": 4, "1.0": "Run"}`. `BUILDS = ("1.2",)` keeps a module's cases to one build.
+
 ## 3. What the host gives a mod
 
 Everything below is a member of `MmlHost` (`H->...`); `M` is the mod. Calls into a mod happen on the game thread.
@@ -1188,6 +1207,36 @@ H->actor_teleport(M, game::Player(), &at, NULL);                /* the scripts' 
   `human_force_settocar`, run by the game's interpreter at once (not in a later tick, as `script_run` does).
 - The names: `call world.cars` and `call world.items` on the bridge list the game's cars and items.
 - The telemetry example's F6 (`OnRivalKey`) is a complete use.
+
+### Orders for people
+
+```c
+float to[3] = {-1985.0f, -5.0f, 6.0f};
+int id = H->human_order(M, paulie, "enemy_move_to_frame 0, 1, run", NULL, 0, NULL, 0, to, 1);   /* frm[0] at `to` */
+void *player[1] = {game::Player()};
+H->human_order(M, paulie, "enemy_action_follow 0, 2", player, 1, NULL, 0, NULL, 0);           /* act[0]: him */
+MmlOrderState s = {sizeof s};
+if (H->human_order_state(M, paulie, &s) && !s.running) { /* done; the bridge also told ORDER_ENDED {id, actor} */ }
+```
+
+- A person with a script of his own (a `C_entity`: `actor_spawn`'s people, the missions' NPCs; not the player, not
+  the traffic's pedestrians) is told what to do the way a mission tells him: `code` in the missions' language and
+  the people's own commands (`enemy_move_to_frame`, `enemy_action_follow`, `enemy_action_fire`,
+  `enemy_action_runaway`, `enemy_move_to_car` with `enemy_usecar`, `enemy_stop`...: docs/SCRIPTS.md "Orders") goes
+  into his own program, and the game's AI runs it: he walks around what is in the way, runs, shoots with what he
+  holds (arm him first: `give_item`), gets into a car. Register numbers: `act[i]` from `acts`, `flt[i]` from
+  `flts`, `frm[i]` a frame of the loader's at `points[3*i..]`.
+- One order a person: a new one replaces his last (whatever it was doing). The code needs no `end`: the loader ends
+  it with a wait of its own (label 60003, keep that number free), where he stands, still ticked, his AI awake
+  (shot at, he reacts as the game's people do); an `end` of the code's own is a jump there. (A program that reaches
+  its END takes its person out of the game's ticks for good: a mission's NPC whose own script has ended stands
+  frozen, and an order to him is refused.)
+- What lasts and what ends: `go` (`enemy_move_to_frame`) ends at the place (its number is the radius); `enter` ends
+  when he sits; `follow`, `flee` and `attack` last until another order (or until the game's own action ends:
+  the target dead, out of sight). `stop` ends at once.
+- The bridge has the same: `human.order {actor, code, act, flt, at}` and the named ones, `human.go`, `human.follow`,
+  `human.attack`, `human.flee`, `human.enter`, `human.stop`, `human.order_state` (docs/PROTOCOL.md); MCP `wait
+  {"types": "ORDER_ENDED"}`. Seen in both labs: tests/game/test_orders.py does each of them.
 
 ### Keys, actions, hotkeys
 

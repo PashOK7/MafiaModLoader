@@ -2011,6 +2011,34 @@ const _: () = {
     ["Offset of field: MmlFrameStats::frames"]
         [::core::mem::offset_of!(MmlFrameStats, frames) - 32usize];
 };
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct MmlOrderState {
+    pub size: u32,
+    pub id: ::core::ffi::c_int,
+    pub running: ::core::ffi::c_int,
+    pub line: ::core::ffi::c_int,
+    pub script_drives: ::core::ffi::c_int,
+    pub ai_state: ::core::ffi::c_int,
+    pub action: ::core::ffi::c_int,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of MmlOrderState"][::core::mem::size_of::<MmlOrderState>() - 28usize];
+    ["Alignment of MmlOrderState"][::core::mem::align_of::<MmlOrderState>() - 4usize];
+    ["Offset of field: MmlOrderState::size"][::core::mem::offset_of!(MmlOrderState, size) - 0usize];
+    ["Offset of field: MmlOrderState::id"][::core::mem::offset_of!(MmlOrderState, id) - 4usize];
+    ["Offset of field: MmlOrderState::running"]
+        [::core::mem::offset_of!(MmlOrderState, running) - 8usize];
+    ["Offset of field: MmlOrderState::line"]
+        [::core::mem::offset_of!(MmlOrderState, line) - 12usize];
+    ["Offset of field: MmlOrderState::script_drives"]
+        [::core::mem::offset_of!(MmlOrderState, script_drives) - 16usize];
+    ["Offset of field: MmlOrderState::ai_state"]
+        [::core::mem::offset_of!(MmlOrderState, ai_state) - 20usize];
+    ["Offset of field: MmlOrderState::action"]
+        [::core::mem::offset_of!(MmlOrderState, action) - 24usize];
+};
 pub type MmlEventFn = ::core::option::Option<
     unsafe extern "C" fn(ev: *const MmlEvent, user: *mut ::core::ffi::c_void),
 >;
@@ -3092,10 +3120,30 @@ pub struct MmlHost {
     pub vehicle_kinds: ::core::option::Option<
         unsafe extern "C" fn(mod_: *mut MmlMod, kinds: ::core::ffi::c_uint) -> ::core::ffi::c_int,
     >,
+    pub human_order: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            human: *mut ::core::ffi::c_void,
+            code: *const ::core::ffi::c_char,
+            acts: *const *mut ::core::ffi::c_void,
+            act_count: ::core::ffi::c_int,
+            flts: *const f32,
+            flt_count: ::core::ffi::c_int,
+            points: *const f32,
+            point_count: ::core::ffi::c_int,
+        ) -> ::core::ffi::c_int,
+    >,
+    pub human_order_state: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            human: *mut ::core::ffi::c_void,
+            out: *mut MmlOrderState,
+        ) -> ::core::ffi::c_int,
+    >,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 684usize];
+    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 692usize];
     ["Alignment of MmlHost"][::core::mem::align_of::<MmlHost>() - 4usize];
     ["Offset of field: MmlHost::size"][::core::mem::offset_of!(MmlHost, size) - 0usize];
     ["Offset of field: MmlHost::api_version"]
@@ -3389,6 +3437,10 @@ const _: () = {
         [::core::mem::offset_of!(MmlHost, game_camera_fov) - 676usize];
     ["Offset of field: MmlHost::vehicle_kinds"]
         [::core::mem::offset_of!(MmlHost, vehicle_kinds) - 680usize];
+    ["Offset of field: MmlHost::human_order"]
+        [::core::mem::offset_of!(MmlHost, human_order) - 684usize];
+    ["Offset of field: MmlHost::human_order_state"]
+        [::core::mem::offset_of!(MmlHost, human_order_state) - 688usize];
 };
 pub type MmlModLoadFn = ::core::option::Option<
     unsafe extern "C" fn(host: *const MmlHost, mod_: *mut MmlMod) -> ::core::ffi::c_int,

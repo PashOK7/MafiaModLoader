@@ -517,6 +517,15 @@ int H_PlayerLock(MmlMod *m, int on) { return Alive(m) ? PlayerLock(m, on) : 0; }
 int H_VehicleHook(MmlMod *m, MmlVehicleFn fn, void *user) { return Alive(m) ? VehicleHook(m, fn, user) : 0; }
 int H_VehicleBody(MmlMod *m, void *car, MmlVehicleBody *read, const MmlVehicleBody *write) { return Alive(m) ? VehicleBody(car, read, write) : 0; }
 int H_VehicleKinds(MmlMod *m, unsigned kinds) { return Alive(m) ? VehicleKinds(m, kinds) : 0; }
+int H_HumanOrder(MmlMod *m, void *human, const char *code, void *const *acts, int nacts, const float *flts, int nflts, const float *points,
+                 int npoints) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    int id = HumanOrder(m, human, code, acts, nacts, flts, nflts, points, npoints, &err);
+    if (!id) Log(MML_LOG_WARN, ModIdOf(m), "human_order: %s", err.c_str());
+    return id;
+}
+int H_HumanOrderState(MmlMod *m, void *human, MmlOrderState *out) { return Alive(m) ? HumanOrderState(human, out) : 0; }
 int H_ZoneAdd(MmlMod *m, const float pos[3], float radius, void *frame, MmlZoneFn fn, void *user) {
     std::string err;
     int id = Alive(m) && fn ? ZoneAdd(m, pos, radius, frame, fn, user, &err) : 0;
@@ -1166,6 +1175,8 @@ void ModsInit() {
     g_host.game_camera_mode = H_GameCameraMode;
     g_host.game_camera_fov = H_GameCameraFov;
     g_host.vehicle_kinds = H_VehicleKinds;
+    g_host.human_order = H_HumanOrder;
+    g_host.human_order_state = H_HumanOrderState;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();
@@ -1286,6 +1297,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (ProfMethod(method, paramsJson, reply, &ok)) return ok;
     if (NativeMethod(method, paramsJson, reply, &ok)) return ok;
     if (HumansMethod(method, paramsJson, reply, &ok)) return ok;
+    if (OrdersMethod(method, paramsJson, reply, &ok)) return ok;
     if (WatchMethod(method, paramsJson, reply, &ok)) return ok;
     if (CameraMethod(method, paramsJson, reply, &ok)) return ok;
     if (method == "mods.list") { *reply = ModsList(); return true; }

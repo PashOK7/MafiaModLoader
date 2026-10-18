@@ -149,6 +149,53 @@ character into a car's seat), `car_setspeed` (km/h), `car_lock`, `zatmyse` (the 
 `player_lockcontrols`, `explosion`, `create_physicalobject`, `actor_delete`, `frm_seton` (a frame shown or hidden),
 the vector and matrix commands (`vect_*`, `matrix_*`, `quat_*`) on runs of `flt[]`.
 
+## Orders (a person's own program; host/orders.cpp)
+
+The people the missions place, and those `spawn` makes, are `C_entity` actors: each carries a program of his own
+whose vtable also knows the people's commands (`ENEMY_*`, and the same as `ENTITY_*`: st0rm94's structs/entity.md
+§4d lists the 64). `human.order {actor, code, act, flt, at}` (mods: `human_order`) puts `code` into that program and
+hands him to it; his AI runs it. Their arguments are register numbers (`act[i]`, `frm[i]`) and numbers, as the
+decoder reads them (`C_entity::DecodeParams`); the ones the named orders use, seen in both labs:
+
+| command | arguments | what he does |
+|---|---|---|
+| `enemy_move_to_frame` | `frm`, `radius`[, `run`] | walks (runs) to the frame and stands within `radius` metres of it; done there |
+| `enemy_action_follow` | `act`, `distance`[, `CROUCH`, `RETURN`, `NOLINK`...] | keeps `distance` from the actor, on foot or into his car; lasts |
+| `enemy_action_fire` | `act`[, `distance`] | fights the actor with what he holds; lasts while the fight does |
+| `enemy_action_runaway` | `act`, `distance`[, `return`] | runs from the actor while he sees, hears or smells him; lasts |
+| `enemy_move_to_car` | `act` (a car), `seat`[, `run`] | walks to the seat's door; done there |
+| `enemy_usecar` | `act` (a car), `seat` | gets into that seat (free, the car still, within 3 m); with no arguments, out of his car |
+| `enemy_stop` | | the command and his animation stopped |
+
+`at` gives the frames: `at: [[x, y, z], ...]` makes `frm[0]`, `frm[1]`... dummy frames of the loader's there (freed
+with the order). Each command that queues an action of the AI (a move, a follow, a fire: 16 of them) waits until
+the AI has done it; the others take one step.
+
+```
+enemy_move_to_frame 0, 1, run      // to frm[0], at: [[x, y, z]]
+enemy_move_to_car 0, 1             // to act[0]'s door beside the driver
+enemy_usecar 0, 1                  // and in
+```
+
+How the game runs it, read in both builds (the same code, 1.2's `C_entity::*` and st0rm94's 1.0 names):
+
+- `C_entity::ForceScript(entity, false)` (what the scripts' `ENEMY_FORCESCRIPT` calls) raises the event 0xEA63 on
+  his program, `SetEvent` jumps it to its `event 60003` (the loader's first line), and its callback sets the flag
+  0x200 of `+0xF08`: `C_entity::AI` then runs the program each tick (`CallProcess`, `scriptTick`).
+- An action command adds its job to his action queue, sets 0x800 and gives the AI the entity (`ForceAI(0, 1)`:
+  `+0xF44` 1, `+0xF58` 1.0). When the queue is empty, `actionsTick` puts `+0xF58` at 0 and `ScriptSwitch` hands
+  him back to the script once `+0xF58` is below the program's `+0x60` (raising 0x400: the command is done).
+  `C_program::Init` sets that `+0x60` to 0.5 for a program with instructions and to 0 for an empty one, so a
+  person made with no script would never be handed back: the loader sets it as Init does.
+- `END` calls `C_program::ClearAfterEnd`, which puts the owner's act state (`C_actor +0x1C`) at 2: the next
+  `C_game::ChangeActState` takes him out of both lists of actors (the ticked, state 0; the asleep, 1) and into
+  neither, and `SetActState` never changes a 2, so he is no longer ticked at all (no AI, no animation).
+  `C_actor::Rebirth` makes the state 0 again but puts him into no list (the game's own callers then add him by
+  `C_game::InternTempActAdd`, which does nothing for an actor already among the temporary ones, as spawn's are).
+  Hence the loader's own end (`label 60003`, `wait 1000`, `goto 60003`), the code's `end` lines made `goto 60003`,
+  and an order to a mission's NPC whose own script did end refused. (The loader's own programs, `script`, are freed
+  when they stand on their END, before the game runs it: their `owner` keeps his state.)
+
 ## What does not run here
 
 - Commands whose dispatcher arm is the default one (`"runs": false` in `script_commands`: `DEBUG_TEXT` and other

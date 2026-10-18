@@ -838,6 +838,17 @@ typedef struct MmlFrameStats {
     unsigned frames;        /* frames measured (0: none yet) */
 } MmlFrameStats;
 
+/* An order's state (human_order_state): where a person's own program stands. */
+typedef struct MmlOrderState {
+    uint32_t size;          /* sizeof(MmlOrderState) */
+    int id;                 /* the order's (human_order's), 0: none of the loader's for him */
+    int running;            /* 1 while his program has not reached the order's end (the loader's wait, or an `end`) */
+    int line;               /* the line of the order's code it stands on (1-based), 0 at its start or its end */
+    int script_drives;      /* 1: his script drives him (the flag the AI runs his program under); 0: his AI does */
+    int ai_state;           /* the AI's state (C_entity +0xF40; 0 while the script drives) */
+    int action;             /* 1: an action of the order runs (a move, a follow, a fire...) */
+} MmlOrderState;
+
 typedef void (*MmlEventFn)(const MmlEvent *ev, void *user);
 
 /* A command, reachable through the bridge (and so by agents over MCP) as "<mod id>.<name>" or, for the core mod,
@@ -1415,6 +1426,24 @@ typedef struct MmlHost {
      * MML_VEHICLES_AIRPLANES adds the game's airplanes (their steps' kind MML_VEHICLE_AIRPLANE, dt their AI's).
      * vehicle_body reads and writes an airplane's body as a car's. 0: not known for this build. Game thread. */
     int (*vehicle_kinds)(MmlMod *mod, unsigned kinds);
+
+    /* ---- orders for people (both builds; docs/MODDING.md "Orders for people"). A person with a script (a C_entity:
+     * actor_spawn's people, the missions' NPCs; not the player, not the traffic's pedestrians) has a program of his
+     * own the game's AI runs; human_order puts `code` into it (his old program replaced), in the missions' language
+     * and its people's own commands, ENEMY_* (enemy_move_to_frame 0, 1, run; enemy_action_follow 0, 2;
+     * enemy_action_fire 0; enemy_action_runaway 0, 20; enemy_move_to_car 0, 0 then enemy_usecar 0, 0; enemy_stop:
+     * docs/SCRIPTS.md "Orders"), and hands him to it (C_entity::ForceScript): his AI then runs it, a command that
+     * queues an action waits for it. The code needs no `end`: the loader ends it with a wait of its own (label 60003)
+     * where he stays ticked, and an `end` of the code's is a jump there (a program that reached END would take him
+     * out of the game's ticks for good). Their numbers are registers: act[i] from acts, flt[i] from flts, frm[i] a frame of the loader's
+     * at points[3*i..3*i+2] (the world). Returns the order's id (its end is the bridge's event ORDER_ENDED: `wait
+     * {"types": "ORDER_ENDED"}`), 0 refused (the log says why: not such a person, a line that does not compile, a
+     * mission's NPC whose own script has ended: the game ticks him no more). A new order
+     * replaces his last; the frames go with it, his death or the mission's close. human_order_state fills out (size
+     * set): 1 when an order of the loader's is known for him. Game thread. */
+    int (*human_order)(MmlMod *mod, void *human, const char *code, void *const *acts, int act_count, const float *flts, int flt_count,
+                       const float *points, int point_count);
+    int (*human_order_state)(MmlMod *mod, void *human, MmlOrderState *out);
 } MmlHost;
 
 #define MML_ZONE_PLAYER 0x1u

@@ -1025,6 +1025,21 @@ def main(a):
               f'{name} the airplane\'s fields: +0x24, +0xB4, +0xB8, +0xD0 (AI), +0x68, +0xB4, +0xD0 (Update)')
     if all(len(v) == 2 for v in fields.values()) and fields:
         check(all(v[0] == v[1] for v in fields.values()), 'the airplane: AI and Update touch the same fields in both builds')
+    # Orders (host/orders.cpp): entityForceScript is C_entity::ForceScript: it reads the AI state +0xF40, raises the
+    # event 0xEA63 on the program at +0xA9C, and ends with ret 4; the same instructions in both builds.
+    shapes = []
+    for name, (exe, ls, gexe, gls) in builds.items():
+        if not exe.get('entityForceScript'):
+            continue
+        body = list(gexe.md.disasm(gexe.at(exe['entityForceScript'] - 0x400000, 0xF0), exe['entityForceScript']))
+        ret = next((i for i in body if i.mnemonic == 'ret'), None)
+        text = ' | '.join('%s %s' % (i.mnemonic, i.op_str) for i in body)
+        check(ret is not None and ret.op_str == '4', f'{name} entityForceScript: ret 4')
+        check('0xea63' in text and '0xa9c' in text and '0xf40' in text, f'{name} entityForceScript: +0xF40, the event 0xEA63 on +0xA9C')
+        shapes.append([norm(gexe.insn(i.address - 0x400000)) for i in body[:12]])
+    if len(shapes) == 2:
+        check(shapes[0] == shapes[1], 'entityForceScript: the same first instructions in both builds')
+
     print('ALL PASSED' if not fails else f'{fails} FAILED')
     return 1 if fails else 0
 

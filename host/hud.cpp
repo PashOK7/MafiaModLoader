@@ -293,6 +293,12 @@ Picture *FindPic(int id) {
 
 } // namespace
 
+// An LS3D dummy frame of the loader's at a place of the world (not in the scene: a position to point at, as the
+// markers' and the orders' frames are); its Release the loader's (FrameRelease).
+void *DummyFrameAt(const float pos[3]) { return game::g_exe ? MakeDummy(V3{pos[0], pos[1], pos[2]}) : nullptr; }
+void DummyFrameMove(void *frame, const float pos[3]) { if (frame) MoveDummy(frame, V3{pos[0], pos[1], pos[2]}); }
+void FrameRelease(void *frame) { Release(frame); }
+
 int HudPictureLoad(MmlMod *mod, const char *file, const char *alpha, std::string *err) {
     if (!game::g_exe || !E().igraph) { *err = "no game"; return 0; }
     if (!file || !*file) { *err = "file: a picture's name (maps\\...)"; return 0; }

@@ -1,7 +1,9 @@
 address,kind,name,source,note
 004020B0,function,CacheTick,mafia-ragdoll,
 00405D90,function,actorDtor,mafia-ragdoll,
+00406DD0,function,C_actor::Rebirth,mml,"act state 2 (ClearAfterEnd: the program ended) made 0, C_game +0x10C set; adds to no list (callers follow it with InternTempActAdd); 1.0 0x44C820"
 004087E0,function,modelOpen,game_build.h,
+0040E890,function,animTime,MafiaModLoader,"C_animations_machine_de_luxe::GetActiveAnimTime(int *time, int *length) ret 8 (1.0 0x5AB3A0)"
 004123F0,function,PhysStep,mafia-ragdoll,
 0041E690,function,carRepair,game_build.h,
 0041FA2A,site,C_car::AI calls Tick,mml,"the car's Tick each frame, after the controls are set (notes/vehicle_physics.md)"
@@ -34,6 +36,8 @@ address,kind,name,source,note
 0047999F,site,scriptStay,pet1kk,the end of an instruction without advancing: a command that waits
 0047A070,function,HUD::SetFlags,pet1kk,[hud+0x40A4] = v
 0047A080,function,HUD::OrFlags,pet1kk,[hud+0x40A4] |= v
+0047A080,function,hudAddFlag,MafiaModLoader,"G_IndicatorsClass::AddFlag: thiscall(hud, flags) ret 4, ors into hud + 0x40A4 (1.0 0x424E20, + 0x90A4); 0x80 the compass, 0x80000 the radar; host/hud.cpp"
+0047A0A0,function,hudRemoveFlag,MafiaModLoader,"G_IndicatorsClass::RemoveFlag: thiscall(hud, flags) ret 4, and-nots hud + 0x40A4 (1.0 0x5C7DB0)"
 0047A0E0,function,HUD::PushFlags,pet1kk,saves the HUD's visibility flags
 0047A2A0,function,HUD::PopFlags,pet1kk,restores them
 0047ACD0,function,frameWorldMatrix,mafia-ragdoll,
@@ -59,19 +63,20 @@ address,kind,name,source,note
 004D6720,function,C_Vehicle::DamageEngine,mml,"lowers the engine health +0x1B4 (of +0x1B8), then the gearbox +0x1EC; at 0 the engine stops"
 004DEE90,function,VehicleExhaust,mafia-ragdoll,
 004DF9A0,function,C_Vehicle::Tick,mml,"thiscall(vehicle, ms) -> flags' low byte, ret 4; 0 ms taken as 1; drivetrain, then Engine (notes/vehicle_physics.md)"
-004E09A0,site,C_Vehicle::Tick rest counters,mml,"within 0.15 m: +4 += ms; calm (flag 2): +0x1A8 += ms; 1000 / 4000 ms: the awake flag 1 cleared"
+004E09A0,site,C_Vehicle::Tick rest counters,mml,within 0.15 m: +4 += ms; calm (flag 2): +0x1A8 += ms; 1000 / 4000 ms: the awake flag 1 cleared
 004E1CE0,function,C_Vehicle::Engine,mml,"thiscall(vehicle, dt s, f1, f2), ret 0xC; Move in equal substeps up to +0xC24 (0.028 s), then +0x4C8 = dt"
 004E2090,function,C_Vehicle::Move,mml,"thiscall, 6 stack args (dt first), ret 0x18: one physics substep; its decompile is wrong, read the disassembly"
 004E2FEE,site,C_Vehicle::Move tyre side force,mml,"per wheel: slip across the rolling direction, sin(slip)/9 degrees capped at 1, times the side limit +0xA4"
 004E6386,site,C_Vehicle::Move rest test,mml,"|v| < 0.01 m/s and |w| < 0.015 rad/s: velocities zeroed, calm flag 2 in +0x1A4"
 004E6AF0,function,C_Vehicle::DoWheelsCollision,mml,"thiscall(vehicle, up, dt, down, bool), ret 0x10: suspension and contact per wheel; dt read once (the damper)"
-004E7D37,site,C_Vehicle::DoWheelsCollision damper,mml,"the compression's speed = (last +0x94 - now) / dt"
+004E7D37,site,C_Vehicle::DoWheelsCollision damper,mml,the compression's speed = (last +0x94 - now) / dt
 004E8AF0,function,C_Vehicle::BodyCollision,mml,"thiscall, 7 args; the body against the world, called from Move at 0x4E552F; returns whether it touched"
 004EFDB0,function,C_controls::SetMouseRange,mml,"thiscall(controls, x, y, z): 400 each at the start; a mouse axis' value is its counts / range"
 004F01A0,function,C_controls::GetArray,mml,"thiscall(controls, float **out, char which) -> count: 0 held, 1 pressed this frame"
 004F0240,function,C_controls::GetValue,mml,"thiscall(controls, slot, char which) -> float (the cameras read slots 18, 19: the mouse axes)"
 004F0620,function,controlsUpdate,game_build.h,
 004F1830,function,controlsKeyName,game_build.h,
+00508150,function,C_entity::AI,mml,"the vtable's slot 13 (0x6250C4) points here; st0rm94's pairing put it 5 bytes early, at a stray call before it"
 0052CFCE,label,save1d,mafia-ragdoll,
 0052CFD6,label,save1dGo,mafia-ragdoll,
 0052CFE1,label,save1dNone,mafia-ragdoll,
@@ -84,6 +89,9 @@ address,kind,name,source,note
 005409D0,function,missionOpen,game_build.h,
 0055D460,function,PlayVideo,mml,"thiscall(name in ECX, float w, float h) -> bool, ret 8; InitSystem plays logo1, logo3, logo2"
 0055D460,function,playVideo,game_build.h,
+0055DD60,function,uoAdd,MafiaModLoader,"C_using_object::AddObject: thiscall(registry = C_game + 0x29EC, S_using_object*) ret 4 (1.0 0x61BB30); host/interact.cpp use_point_add"
+0055DF10,function,uoDel,MafiaModLoader,"C_using_object::DelObject: thiscall(registry, record) ret 4 (1.0 0x61BCE0)"
+0055E180,function,uoFind,MafiaModLoader,"C_using_object::FindNearObjects: thiscall(registry, at, dir, vector<S_GameItem> *out, frame) ret 0x10, nearest first (1.0 0x61BF50); Do_AB_OwnerNULL hands the list to the action menu"
 0056EFD0,function,humanCtor,mafia-ragdoll,
 00571B90,function,humanPlatform,game_build.h,
 00572B80,function,humanTick,mafia-ragdoll,
@@ -97,6 +105,10 @@ address,kind,name,source,note
 0057BAB1,label,waterWalkPast,mafia-ragdoll,
 0057C2C2,label,waterFall,mafia-ragdoll,
 0057C465,label,waterFallPast,mafia-ragdoll,
+0057D2E0,function,humanStopAnim,MafiaModLoader,C_human::Do_StopAnim (1.0 0x49D840)
+0057DD00,function,humanChangeAnim,MafiaModLoader,"C_human::ChangeAnim(own, with | null) (1.0 0x49E260)"
+00585E80,function,humanPlayAnim,MafiaModLoader,"C_human::Do_PlayAnim: thiscall(name, simple, load) ret 0xC -> length ms (1.0 0x4A63F0); host/anims.cpp"
+0058F160,function,SetPlayerNaviPoint,MafiaModLoader,"SETCOMPASS's: ECX into the global 0x6478B4, which nothing reads (1.0 0x4C6B80): the map has no target of its own"
 0058F4B0,function,C_player::InputOnFoot,mml,from C_player::AI with the held and pressed arrays; turns by mouseSensitivity * 5 * held[18]
 005917F0,function,C_player::InputDriving,mml,"slots 33..57 in pairs: accelerate, brake, steer left/right, handbrake, limiter, gears, horn, look, clutch; 57 gearbox"
 00594FA0,function,C_player::ActionInCar,mml,nothing while the car moves (speed >= 0.5); stops the engine when it runs; else gets out
@@ -105,13 +117,16 @@ address,kind,name,source,note
 005A84A0,function,Shot,mafia-ragdoll,
 005A8E70,function,bulletsTick,mafia-ragdoll,
 005A935C,label,bulletRay,mafia-ragdoll,
+005B9FE0,function,gameSetScore,MafiaModLoader,"C_game::SetScore: thiscall(C_game*, int), ret 4: the freeride's money +0x3640, the HUD told when +0x363E; host/state.cpp money_set"
 005BBE30,function,shotQueuePush,mafia-ragdoll,
 005BD8D0,function,draw2d,game_build.h,
 005C36C0,function,collGridAdd,mafia-ragdoll,
 005C38B0,function,collGridRemove,mafia-ragdoll,
 005C3AC0,function,collGridMove,game_build.h,
+005C3D60,function,collExclude,MafiaModLoader,"g_collision::DynSetNextCollOwnerMult: the moving objects the next tests pass (+0x2B8 array, +0x2BC count, +0x2B0), ret 0xC; host/collide.cpp's ignore"
 005C74D0,function,testLine,mafia-ragdoll,
 005C8440,function,collRayTest,mafia-ragdoll,
+005C8770,function,testLineAll,MafiaModLoader,"g_collision::_TestLineH: thiscall(g_collision*, from, delta, hit, normal, uint movingMask (-1 none), uint staticMask (-1 none)) -> the primitive or moving object hit, ret 0x18; host/collide.cpp world_ray"
 005D5940,function,sphereSweep,mafia-ragdoll,
 005D6FE0,function,humanBoneRayTest,mafia-ragdoll,
 005D9AB0,function,GM_ScrollWindow::SetScroll,mml,"wins slot 19: the scroll in pixels, clamped to 0..+0x40, at +0x44"
@@ -169,6 +184,10 @@ address,kind,name,source,note
 00603880,function,hudOutText,game_build.h,
 00605570,function,G_LoadSaveClass::ProfileSelect,pet1kk,"thiscall(manager, index)"
 006055C0,function,G_LoadSaveClass::ProfileCreate,pet1kk,"thiscall(manager, name) -> 1: created and selected"
+00605740,function,profileDelete,MafiaModLoader,"G_LoadSaveClass::ProfileDelete: thiscall(manager, index) ret 4, the profile's .sav and saves deleted (1.0 0x5577D0)"
+00605FF0,function,saveGameNew,MafiaModLoader,"G_LoadSaveClass::SaveGameNewGame: thiscall(manager), a new game's and every freeride's start (1.0 0x558020)"
+00606150,function,saveGameLoad,MafiaModLoader,"G_LoadSaveClass::SaveGameLoad: thiscall(manager), reads the save, opens the mission (1.0 0x558180)"
+00606EA0,function,saveGameSave,MafiaModLoader,"G_LoadSaveClass::SaveGameSave: thiscall(manager 0x6D4628, bool quick) ret 4, savegame\mafia%03d.%03d from +0x28 (profile), +0x7C (slot) (1.0 0x558ED0, manager 0x671FB0); host/saves.cpp"
 0060E5C0,function,G_IndicatorsClass::OutTextUnits,mml,"OutText with x, y, width, height in 800x600 units: times hud+0x40C0 / +0x40C4, x plus [0x6C4500]"
 0060E920,function,G_LoadSaveClass::FreerideStoreA,mml,"stdcall(car, flags, traffic, pedestrians, police): what the freeride menu's start stores"
 0060FB40,function,textGet,game_build.h,
@@ -187,6 +206,7 @@ address,kind,name,source,note
 00627834,label,menuBaseVt,game_build.h,
 006279DC,label,menuProfileVt,game_build.h,
 0062E488,label,animTable,mafia-ragdoll,
+0062E488,data,animTable,MafiaModLoader,"the animations' table: 576 records {file, number} (1.0 0x647808)"
 0063788C,label,missionPtr,mafia-ragdoll,
 0063D768,label,pedElements,mafia-ragdoll,
 0063D8A4,label,EmitterTable,mafia-ragdoll,
@@ -219,21 +239,3 @@ address,kind,name,source,note
 006D4C14,label,items,game_build.h,
 006D4C1C,label,ParticleDefs,mafia-ragdoll,
 006D8714,label,textDb,game_build.h,
-005C8770,function,testLineAll,MafiaModLoader,"g_collision::_TestLineH: thiscall(g_collision*, from, delta, hit, normal, uint movingMask (-1 none), uint staticMask (-1 none)) -> the primitive or moving object hit, ret 0x18; host/collide.cpp world_ray"
-005C3D60,function,collExclude,MafiaModLoader,"g_collision::DynSetNextCollOwnerMult: the moving objects the next tests pass (+0x2B8 array, +0x2BC count, +0x2B0), ret 0xC; host/collide.cpp's ignore"
-005B9FE0,function,gameSetScore,MafiaModLoader,"C_game::SetScore: thiscall(C_game*, int), ret 4: the freeride's money +0x3640, the HUD told when +0x363E; host/state.cpp money_set"
-0055DD60,function,uoAdd,MafiaModLoader,"C_using_object::AddObject: thiscall(registry = C_game + 0x29EC, S_using_object*) ret 4 (1.0 0x61BB30); host/interact.cpp use_point_add"
-0055DF10,function,uoDel,MafiaModLoader,"C_using_object::DelObject: thiscall(registry, record) ret 4 (1.0 0x61BCE0)"
-0055E180,function,uoFind,MafiaModLoader,"C_using_object::FindNearObjects: thiscall(registry, at, dir, vector<S_GameItem> *out, frame) ret 0x10, nearest first (1.0 0x61BF50); Do_AB_OwnerNULL hands the list to the action menu"
-0047A080,function,hudAddFlag,MafiaModLoader,"G_IndicatorsClass::AddFlag: thiscall(hud, flags) ret 4, ors into hud + 0x40A4 (1.0 0x424E20, + 0x90A4); 0x80 the compass, 0x80000 the radar; host/hud.cpp"
-0047A0A0,function,hudRemoveFlag,MafiaModLoader,"G_IndicatorsClass::RemoveFlag: thiscall(hud, flags) ret 4, and-nots hud + 0x40A4 (1.0 0x5C7DB0)"
-0058F160,function,SetPlayerNaviPoint,MafiaModLoader,"SETCOMPASS's: ECX into the global 0x6478B4, which nothing reads (1.0 0x4C6B80): the map has no target of its own"
-00606EA0,function,saveGameSave,MafiaModLoader,"G_LoadSaveClass::SaveGameSave: thiscall(manager 0x6D4628, bool quick) ret 4, savegame\mafia%03d.%03d from +0x28 (profile), +0x7C (slot) (1.0 0x558ED0, manager 0x671FB0); host/saves.cpp"
-00606150,function,saveGameLoad,MafiaModLoader,"G_LoadSaveClass::SaveGameLoad: thiscall(manager), reads the save, opens the mission (1.0 0x558180)"
-00605FF0,function,saveGameNew,MafiaModLoader,"G_LoadSaveClass::SaveGameNewGame: thiscall(manager), a new game's and every freeride's start (1.0 0x558020)"
-00605740,function,profileDelete,MafiaModLoader,"G_LoadSaveClass::ProfileDelete: thiscall(manager, index) ret 4, the profile's .sav and saves deleted (1.0 0x5577D0)"
-00585E80,function,humanPlayAnim,MafiaModLoader,"C_human::Do_PlayAnim: thiscall(name, simple, load) ret 0xC -> length ms (1.0 0x4A63F0); host/anims.cpp"
-0057D2E0,function,humanStopAnim,MafiaModLoader,"C_human::Do_StopAnim (1.0 0x49D840)"
-0057DD00,function,humanChangeAnim,MafiaModLoader,"C_human::ChangeAnim(own, with | null) (1.0 0x49E260)"
-0040E890,function,animTime,MafiaModLoader,"C_animations_machine_de_luxe::GetActiveAnimTime(int *time, int *length) ret 8 (1.0 0x5AB3A0)"
-0062E488,data,animTable,MafiaModLoader,"the animations' table: 576 records {file, number} (1.0 0x647808)"

@@ -41,6 +41,11 @@ constexpr int kVtFindChild = 0x38;   // stdcall(I3D_frame* this, const char* nam
 
 // C_actor / C_human
 constexpr int kActorType  = 0x10;
+// The act state (both builds): 0 ticked by C_game::Tick, 1 asleep (out of the player's sector), 2 its program
+// reached END (C_program::ClearAfterEnd): out of C_game's lists, never ticked again (SetActState never leaves 2;
+// C_actor::Rebirth makes it 0 but puts it into no list: knowledge/notes/game.md).
+constexpr int kActorActState = 0x1C;
+constexpr int kActStateTicked = 0, kActStateAsleep = 1, kActStateEnded = 2;
 constexpr int kActorPos   = 0x24;
 constexpr int kActorFacing = 0x30;   // V3, horizontal facing direction
 constexpr int kActorAlive = 0x5D;

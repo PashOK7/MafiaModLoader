@@ -668,6 +668,18 @@ What is done, what comes next and later, and what is known to be missing or wron
   none. The 1.0 Ghidra project takes them (2801 names -> 5082), `where` and `crash_triage` name 1.0 addresses by
   them (ours in names_10.csv over them), `kb_search` finds them in `functions_10`. 1.0 has no decompile of its own
   in the knowledge base (`kb_function` stays 1.2's): `ghidra_read` with build "1.0" decompiles it.
+- **Orders for people** (2026-10-18; item 26): `human.order {actor, code, act, flt, at}` (mods: `human_order`,
+  `human_order_state`, in C and Rust) puts the missions' own people's commands (`ENEMY_*`) into a person's own
+  program and hands him to it as the scripts' ENEMY_FORCESCRIPT does (`C_entity::ForceScript`): the game's AI walks,
+  runs, follows, fights, flees and gets into cars; `human.go`, `human.follow`, `human.attack`, `human.flee`,
+  `human.enter` (to the door, then in), `human.stop`, the event `ORDER_ENDED`. What the game needed that a spawned
+  person lacked: the program's hand-back level (+0x60, as `C_program::Init` sets it for a program with
+  instructions), and an order that never reaches END (END takes its person out of the game's ticks for good: the
+  loader's own wait ends it, the code's `end` jumps there). Seen in both labs by `tests/game/test_orders.py` (19
+  checks a build, two runs in a row).
+- **Tests in the real game: the frame** (2026-10-18; item 23 begun): `tests/game/` (`mml_game.py` a lab's game over
+  its own MCP server, `run.py` the labs at once, a fresh launch into a quiet freeride, a restore point before each
+  case); its first case is the orders'. The measuring mods' cases are item 23's rest.
 
 ## Next, by importance
 
@@ -710,7 +722,7 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
 9. *(Done 2026-10-17: 9a structures by name, item 24; 9b crash triage in one call, item 25; 9c restore points; see "Done".)* The agent's tools (items 24, 25 and the
    snapshots in Later: structures by name, crash triage in one call, restore points).
 10. *(Done 2026-10-17: the Rust crate; see "Done". No script mods: Lua dropped.)* Mod languages.
-11. Orders for the people made (item 26).
+11. *(Done 2026-10-18: see "Done".)* Orders for the people made (item 26).
 12. Tests in the real game, as scripts of steps (item 23).
 13. *(Done 2026-10-17, before 8 at the owner's wish; see "Done".)* The tuning panel (item 18).
 
@@ -849,9 +861,10 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
     fields named and typed from `game.h` and the decompile's layouts, kept in `knowledge/` as tables of offsets.
 25. *(Done 2026-10-17: see "Done".)* **Crash triage in one call** (A; from Later): the named stack, the log's last
     lines and the last taps' calls.
-26. **Orders for the people made** (A, for test scenes). Walk or drive to a place, follow, attack, flee: the AI's own
-    jobs and the mission commands that give them, as `world.*`; the scripts' events (`setplayerfireevent`...) to a
-    program of the loader's; people's models listed.
+26. *(Done 2026-10-18: see "Done"; driving to a place, the scripts' events to a loader's program and the people's
+    models listed are in Known gaps.)* **Orders for the people made** (A, for test scenes). Walk or drive to a
+    place, follow, attack, flee: the AI's own jobs and the mission commands that give them, as `world.*`; the
+    scripts' events (`setplayerfireevent`...) to a program of the loader's; people's models listed.
 
 ## Later
 
@@ -909,6 +922,14 @@ merged, sorted by importance):
 
 ## Known gaps
 
+- **Orders for people** (host/orders.cpp): a person with a script of his own only (a C_entity: spawn's, the
+  missions' NPCs); the traffic's pedestrians are another class, not ordered. A mission's NPC whose own script has
+  ended is refused (the game ticks him no more: act state 2, out of C_game's lists; putting him back would make him
+  one of the temporary actors, which the game deletes as its own). An order replaces his program: a mission NPC's own
+  script is gone for the rest of the mission (it is not saved and put back). Driving to a place (`enemy_car_moveto`,
+  `enemy_car_hunt`) is not one of the named orders and was not tried; neither are the scripts' events to a program
+  of the loader's (`setplayerfireevent`...) nor a list of the people's models (`spawn` takes a model file's name).
+  `attack` is the game's own aim: in the labs the first hit came 5 to 30 s after the first shot.
 
 - **A game folder no ANSI code page spells** (a Cyrillic name on a 1252 system, a CJK one on a 1251 system): the
   game, the loader and the mods' own files work there (both labs, 2026-10-17), but **dxwrapper does not**: its

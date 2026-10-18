@@ -2057,3 +2057,34 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   regeneration left the other tables as they were (only their line endings).
 - **Where they go**: the 1.0 Ghidra project (2801 names -> 5082; 71 functions made at his addresses), `where` and
   `crash_triage` in 1.0 (names_10.csv, then his, then the 1.2 twin's), `kb_search`'s `functions_10`.
+
+## 2026-10-18: orders for people (item 26), tests in the real game (item 23 begun)
+
+- **What**: `human.order {actor, code, act, flt, at}` and the named `human.go`, `follow`, `attack`, `flee`,
+  `enter`, `stop`, `human.order_state`, the event `ORDER_ENDED`; mods' `human_order`, `human_order_state` (C, Rust).
+  A person's own program (C_entity +0xA9C) is made anew with the order's code, compiled by its own vtable (the
+  people's ENEMY_* commands), and handed to him by the game's `C_entity::ForceScript`: the game's AI runs it.
+- **Three things kept a spawned person from doing it, each found by reading the code the game ran** (taps,
+  watchpoints, Ghidra in both builds):
+  - the start event: ForceScript raises 0xEA63, which is 60003, not the 59999 first written (the EVENT line never
+    matched: 0x200 never set);
+  - the hand-back: an action command gives him to the AI phase, and `ScriptSwitch` gives him back to the script
+    only when `+0xF58` (put at 0 by `actionsTick` when the queue is empty) is below the program's `+0x60`, which
+    `C_program::Init` makes 0 for a program with no instructions (spawn's): he walked, arrived and never took the
+    command as done. Set to 0.5 as Init sets it for a program with some (one write 0.5 by hand: ORDER_ENDED at once);
+  - END: `ClearAfterEnd` puts the owner's act state at 2, and `C_game::ChangeActState` then drops him from both
+    lists of actors to tick: the second order of the first version (the first had ended on `end`) found Paulie never
+    ticked again (no tap in C_entity::AI, no read of his fields; frozen). `C_actor::Rebirth` was tried: it makes the
+    state 0 but adds to no list (the game's callers add with `InternTempActAdd`, which skips an actor already
+    temporary, as spawn's are): the tests showed him still frozen, so it went. Now an order never reaches END: the
+    loader's wait (`label 60003`, `wait 1000`, `goto 60003`) ends it and the code's `end` lines jump there.
+- **Found on the way**: st0rm94's `C_entity::AI` is 5 bytes early (0x50814B, a stray call; the vtable's slot is
+  0x508150: the Ghidra project corrected, names.csv). `ENEMY_MOVE_TO_CAR` only walks to the door: `ENEMY_USECAR`
+  gets in. The 1.0 lab's profile FullSave never opened the freeride's settings, so police 0 did nothing: a patrol
+  arrested the armed player (Game Over) during a follow; the profile Run works. The loader's own programs
+  (`script`) were checked: they are freed standing on END before the game runs it, so their owner keeps state 0.
+- **Tests in the real game** (`tests/game/`, item 23): `mml_game.py` (a Game a lab, over its own MCP server),
+  `run.py` (the labs at once, a fresh launch, a restore point loaded before each case), `test_orders.py`: two goes,
+  an order with its own `end` and one after it, follow while the player walks off, stop, attack, flee, enter.
+  Its first runs found the frozen person above (9 checks failed in each build at the same step), then a test's own
+  leftover (a person left seated from the run before took the seat).

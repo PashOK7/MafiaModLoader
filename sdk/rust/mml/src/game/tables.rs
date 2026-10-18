@@ -247,6 +247,7 @@ pub struct Exe {
     pub gameCamera: i32,
     pub planeAI: usize,
     pub planeUpdate: usize,
+    pub entityForceScript: usize,
 }
 
 /// LS3DF.dll's, as RVAs (add the module's base; the int members are offsets): game_build.h Ls3dBuild.
@@ -556,6 +557,7 @@ pub static EXE_12: Exe = Exe {
     gameCamera: 0x4C,
     planeAI: 0x40BC10,
     planeUpdate: 0x40BEC0,
+    entityForceScript: 0x523F80,
 };
 
 pub static EXE_10: Exe = Exe {
@@ -800,6 +802,7 @@ pub static EXE_10: Exe = Exe {
     gameCamera: 0x4C,
     planeAI: 0x4516E0,
     planeUpdate: 0x451990,
+    entityForceScript: 0x42E8A0,
 };
 
 pub static LS3D_12: Ls3d = Ls3d {
@@ -989,6 +992,10 @@ pub const kFlagBoundValid: u32 = 0x100;
 pub const kFlagConstructed: u32 = 0x40000000;
 pub const kVtFindChild: i32 = 0x38;
 pub const kActorType: i32 = 0x10;
+pub const kActorActState: i32 = 0x1C;
+pub const kActStateTicked: i32 = 0;
+pub const kActStateAsleep: i32 = 1;
+pub const kActStateEnded: i32 = 2;
 pub const kActorPos: i32 = 0x24;
 pub const kActorFacing: i32 = 0x30;
 pub const kActorAlive: i32 = 0x5D;

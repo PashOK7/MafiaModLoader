@@ -31,7 +31,7 @@ namespace host {
 namespace {
 
 enum { kProgSize = 0x80, kInstrBegin = 0x10, kInstrEnd = 0x14, kPc = 0x1C, kLineBefore = 0x20, kCallHead = 0x40, kOwner = 0x44,
-       kFlt = 0x48, kFltCount = 0x4C, kFrm = 0x50, kFrmCount = 0x54, kAct = 0x58, kActCount = 0x5C };
+       kFlt = 0x48, kFltCount = 0x4C, kFrm = 0x50, kFrmCount = 0x54, kAct = 0x58, kActCount = 0x5C, kSwitchAt = 0x60 };
 enum { kOpEnd = 6, kFlts = 256, kActs = 64, kFrms = 64 };
 enum { kSlotDecodeInstruction = 6 };
 
@@ -207,12 +207,14 @@ std::vector<int> RunningIds() {
 }
 
 // Registers of the game's kind (allocated with its new: its Done frees them, its dim_* replaces them).
-bool GiveRegisters(uintptr_t prog, void *const *acts, int nacts, const float *flts, int nflts) {
+bool GiveRegisters(uintptr_t prog, void *const *acts, int nacts, const float *flts, int nflts, void *const *frms = nullptr,
+                   int nfrms = 0) {
     int na = std::max(static_cast<int>(kActs), nacts), nf = std::max(static_cast<int>(kFlts), nflts);
     void *a = GameNew(4 * static_cast<size_t>(na)), *f = GameNew(4 * static_cast<size_t>(nf)), *r = GameNew(4 * kFrms);
     if (!a || !f || !r) return false;
     if (acts) for (int i = 0; i < nacts; i++) reinterpret_cast<void **>(a)[i] = acts[i];
     if (flts) for (int i = 0; i < nflts; i++) reinterpret_cast<float *>(f)[i] = flts[i];
+    if (frms) for (int i = 0; i < nfrms && i < kFrms; i++) reinterpret_cast<void **>(r)[i] = frms[i];
     W32(prog + kAct, reinterpret_cast<uintptr_t>(a));
     W32(prog + kActCount, static_cast<uint32_t>(na));
     W32(prog + kFlt, reinterpret_cast<uintptr_t>(f));
@@ -222,15 +224,9 @@ bool GiveRegisters(uintptr_t prog, void *const *acts, int nacts, const float *fl
     return true;
 }
 
-// A program compiled and given its registers (s->prog, s->lines, s->id set); false: refused (err, logged for a mod).
-bool Build(Script *s, MmlMod *mod, const char *code, void *owner, void *const *acts, int nacts, const float *flts, int nflts,
-           std::string *err) {
-    if (!Known()) { *err = "the script machine is not known for this build"; return false; }
-    if (!code || !*code) { *err = "code: the program's text"; return false; }
-    if (nacts < 0 || nacts > 4096 || nflts < 0 || nflts > 4096) { *err = "acts, flts: at most 4096"; return false; }
-    if (MissionState() == MML_MISSION_NONE || !game::Mission()) { *err = "no mission: programs run in the mission's tick"; return false; }
-    // The text as the game's compiler wants it: one command a line, no empty lines (it takes them as errors), no
-    // leading blanks or tabs; each kept line's number remembered.
+// The text as the game's compiler wants it: one command a line, no empty lines (it takes them as errors), no leading
+// blanks or tabs; each kept line's number in `lines` (1-based, in `code`).
+bool PrepareText(const char *code, std::string *out, std::vector<int> *lines, std::string *err) {
     std::string text;
     int number = 0;
     const char *p = code;
@@ -244,29 +240,30 @@ bool Build(Script *s, MmlMod *mod, const char *code, void *owner, void *const *a
         for (char &c : line) if (c == '\t') c = ' ';
         if (!line.empty() && line.compare(0, 2, "//") != 0) {
             text += line + "\n";
-            s->lines.push_back(number);
+            lines->push_back(number);
         }
         if (*e == '\r' && e[1] == '\n') e++;
         p = *e ? e + 1 : e;
     }
-    if (s->lines.empty()) { *err = "code: no command in it"; return false; }
+    if (lines->empty()) { *err = "code: no command in it"; return false; }
     if (!text.empty()) text.pop_back();
+    *out = text;
+    return true;
+}
+
+// The text given to a constructed program and compiled by its own vtable (a standalone program's, an entity's: its
+// DecodeInstruction knows its own commands). false: a line did not compile (err names it) or the compile faulted.
+bool CompileText(uintptr_t prog, const std::string &text, const std::vector<int> &lines, std::string *err) {
     const game::ExeBuild &x = E();
-    uintptr_t prog = reinterpret_cast<uintptr_t>(GameNew(kProgSize));
-    if (!prog) { *err = "the game's new failed"; return false; }
     int errors = 0, at = -1, len = 0;
     std::vector<char> buf(text.begin(), text.end());
     buf.push_back(0);
     auto make = [&] {
-        reinterpret_cast<ThisFn>(x.progCtor)(prog, nullptr);
         reinterpret_cast<SetSourceFn>(x.progSetSource)(prog, nullptr, text.c_str());
         errors = reinterpret_cast<CompileFn>(x.progCompile)(prog, nullptr, buf.data(), 1, &at, &len);
     };
-    s->id = g_nextId++;
-    s->prog = prog;
     if (DWORD ex = Guarded(make)) {
         *err = "compiling faulted (" + Hex(ex) + " at " + DescribeAddress(g_faultAt) + ")";
-        s->prog = 0;   // (the half-made program is left as it is)
         return false;
     }
     if (errors) {
@@ -277,12 +274,33 @@ bool Build(Script *s, MmlMod *mod, const char *code, void *owner, void *const *a
         int known = -1, nameLen = 0;
         auto decode = [&] { known = reinterpret_cast<DecodeFn>(R32(R32(prog) + 4 * kSlotDecodeInstruction))(prog, nullptr, bad.c_str(), &nameLen); };
         Guarded(decode);
-        int src = index < static_cast<int>(s->lines.size()) ? s->lines[static_cast<size_t>(index)] : 0;
+        int src = index < static_cast<int>(lines.size()) ? lines[static_cast<size_t>(index)] : 0;
         *err = "line " + std::to_string(src) + ": \"" + bad + "\": " + (known < 0 ? "not a command of the game's" : "its arguments are not understood");
-        Free(s);
         return false;
     }
     W32(prog + kLineBefore, 0xFFFFFFFF);   // (what Init sets)
+    return true;
+}
+
+// A program compiled and given its registers (s->prog, s->lines, s->id set); false: refused (err, logged for a mod).
+bool Build(Script *s, MmlMod *mod, const char *code, void *owner, void *const *acts, int nacts, const float *flts, int nflts,
+           std::string *err) {
+    if (!Known()) { *err = "the script machine is not known for this build"; return false; }
+    if (!code || !*code) { *err = "code: the program's text"; return false; }
+    if (nacts < 0 || nacts > 4096 || nflts < 0 || nflts > 4096) { *err = "acts, flts: at most 4096"; return false; }
+    if (MissionState() == MML_MISSION_NONE || !game::Mission()) { *err = "no mission: programs run in the mission's tick"; return false; }
+    std::string text;
+    if (!PrepareText(code, &text, &s->lines, err)) return false;
+    uintptr_t prog = reinterpret_cast<uintptr_t>(GameNew(kProgSize));
+    if (!prog) { *err = "the game's new failed"; return false; }
+    auto make = [&] { reinterpret_cast<ThisFn>(E().progCtor)(prog, nullptr); };
+    s->id = g_nextId++;
+    if (DWORD ex = Guarded(make)) { *err = "making the program faulted (" + Hex(ex) + " at " + DescribeAddress(g_faultAt) + ")"; return false; }
+    s->prog = prog;
+    if (!CompileText(prog, text, s->lines, err)) {
+        Free(s);
+        return false;
+    }
     W32(prog + kOwner, reinterpret_cast<uintptr_t>(owner));
     if (!GiveRegisters(prog, acts, nacts, flts, nflts)) { Free(s); *err = "the game's new failed for the registers"; return false; }
     s->mod = mod;
@@ -290,6 +308,41 @@ bool Build(Script *s, MmlMod *mod, const char *code, void *owner, void *const *a
 }
 
 } // namespace
+
+// An order's code into a program already made (an entity's own, C_entity +0xA9C): its instructions and registers
+// freed by its own Done first, the text compiled by its vtable, the registers given (frames too). The program is
+// the game's: it runs in its entity's AI, not in ScriptTick.
+bool ScriptCompileInto(uintptr_t prog, const char *prefix, const char *code, void *const *acts, int nacts, const float *flts, int nflts,
+                       void *const *frms, int nfrms, std::vector<int> *lines, std::string *err) {
+    if (!Known()) { *err = "the script machine is not known for this build"; return false; }
+    if (!code || !*code) { *err = "code: the order's text"; return false; }
+    if (nacts < 0 || nacts > 4096 || nflts < 0 || nflts > 4096 || nfrms < 0 || nfrms > kFrms) { *err = "acts, flts: at most 4096, frames 64"; return false; }
+    std::string text;
+    if (!PrepareText(code, &text, lines, err)) return false;
+    if (prefix && *prefix) {   // a line of the loader's before the code (line 0: not one of the code's)
+        text = std::string(prefix) + "\n" + text;
+        lines->insert(lines->begin(), 0);
+    }
+    auto done = [&] { reinterpret_cast<ThisFn>(E().progDone)(prog, nullptr); };
+    if (DWORD ex = Guarded(done)) { *err = "the old program's Done faulted (" + Hex(ex) + " at " + DescribeAddress(g_faultAt) + ")"; return false; }
+    if (!CompileText(prog, text, *lines, err)) return false;
+    if (!GiveRegisters(prog, acts, nacts, flts, nflts, frms, nfrms)) { *err = "the game's new failed for the registers"; return false; }
+    W32(prog + kPc, 0);
+    // +0x60 is where the entity's ScriptSwitch hands it between its script and its AI (C_entity +0xAFC): an action
+    // command gives the AI the entity with +0xF58 at 1, the AI's empty queue puts that at 0, and the script takes the
+    // entity back (0x400, the command done) once +0xF58 is below +0x60. Init makes it 0.5 for a program with
+    // instructions and 0 for an empty one (1.2 0x461580, 1.0 0x5AF780), so a person made without a script would
+    // never take a finished order back: it is set as Init sets it for a program that has some.
+    W32(prog + kSwitchAt, 0x3F000000);   // 0.5f
+    return true;
+}
+
+// Where a program stands: its pc, its instructions' count, whether that instruction is END.
+void ScriptWhere(uintptr_t prog, unsigned *pc, unsigned *count, bool *atEnd) {
+    *count = Instructions(prog);
+    *pc = R32(prog + kPc);
+    *atEnd = *pc < *count && R32(R32(prog + kInstrBegin) + 8 * *pc) == kOpEnd;
+}
 
 int ScriptRun(MmlMod *mod, const char *code, void *owner, void *const *acts, int nacts, const float *flts, int nflts, uint32_t timeout,
               MmlScriptFn fn, void *user, std::string *err) {

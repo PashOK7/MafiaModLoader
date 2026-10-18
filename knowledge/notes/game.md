@@ -214,6 +214,38 @@ autosplitter; kept outside it, not ported). Checked against the above:
   (constant at 0x624058); a pedestrian hit (type 5) knocks down fully above strength 16 (0x624078). Falling and
   landing damage is hit type 6 (from 0x57B660).
 
+## A person's script and his AI (read 2026-10-18 in both builds' code, seen in both labs; host/orders.cpp)
+
+- **game** Which actors the game ticks: `C_game::Tick` (1.2 0x5A51C0) ticks the list of act state 0 (`C_actor
+  +0x1C`); 1 is asleep (out of the player's sector: the same tick moves actors between 0 and 1 every 5 s by
+  `+0x5F`); 2 is set by `C_program::ClearAfterEnd` (1.2 0x46CCF0, 1.0 0x5BAC10) when the owner's program reaches
+  END, and `SetActState` (0x406DA0, 1.0 0x44C750) never leaves 2. Any change sets `C_game +0x10C`;
+  `ChangeActState` (0x5A5070) then moves actors between the ticked list (`+0xF0`) and the asleep one (`+0x100`),
+  and one of state 2 out of both into neither: it is not ticked at all, no AI, no animation (a person stands
+  frozen; measured: a spawned Paulie after an order's `end`). `C_actor::Rebirth` (0x406DD0, 1.0 0x44C820) makes
+  2 a 0 but adds to no list: the game's callers (the police's pool, 0x49D860) follow it with
+  `C_game::InternTempActAdd` (0x5A7B70, 1.0 0x5E35D0), which returns at once for an actor already among the
+  temporary ones (`+0x124`: spawn's are). The loader's own programs (`script`) are freed when they stand on their
+  END, before it runs: their owner keeps state 0 (seen with `commandblock` too).
+- **game** `C_entity::AI` is 0x508150 (the vtable's slot 13, `+0x34`; st0rm94's pairing put it at 0x50814B, a stray
+  call before it: a tap there never fires). In AI state 0 (`+0xF40`) it runs the program (`CallProcess`,
+  `scriptTick`) while `+0xF44` is 0; while `+0xF44` is 1 (an action's phase) it runs the program only with 0x200 of
+  `+0xF08` and the action queue (`actionsTick` 0x51B050) with 0x800 or without 0x200; then `ScriptSwitch`
+  (0x523C91: its entry by the AI's call) moves `+0xF44`: 0 -> 1 when the program's `+0x60` (entity `+0xAFC`) is
+  below `+0xF58`, 1 -> 0 (and 0x400 raised when 0x200 is set) when `+0xF58` is below it.
+- **game** An action command (`ENEMY_MOVE_TO_FRAME`... 16 of them) adds a job, calls `ForceAI(0, 1)` (`+0xF44` 1,
+  `+0xF58` 1.0) and sets 0x800 and the dispatched flag `+0xF0C`; it is done when 0x400 is set (cleared with 0x800).
+  `actionsTick` puts `+0xF58` at 0 when the queue is empty (0x51B101). So the program's `+0x60` is the hand-back
+  level: `C_program::Init` (0x461580, 1.0 0x5AF780) makes it 0.5, or 0 when the program has no instructions, and
+  a person whose program was empty at Init (spawn's) never takes a finished action back until it is set.
+- **game** `ai_action` type 0 is the move (`NewMove(pos, 0, 0x13, flags, float, path, expiry)`): flags 1 run, 2
+  "done within the float" (MOVE_TO_FRAME always sets 2; the float is its radius). Type 9 (`blocked_way`) is queued
+  when the route is blocked: a person sent behind the player's car stood there.
+- **game** `ENEMY_MOVE_TO_CAR` only walks to the seat's door; `ENEMY_USECAR act, seat` gets in (`Use_Actor(car, 1,
+  seat)`: the seat free, the car's speed `+0x688` at most 0.1, within 3 m); with no arguments it gets out.
+- **game** `ENEMY_ACTION_RUNAWAY` (action type 0x0A) lasts while the person senses the one he runs from (sees,
+  hears, smells: `ai_sensors`); `ENEMY_ACTION_FOLLOW` lasts.
+
 ## A person's route: ai_path (read 2026-10-17 in both builds' code, seen in both labs; mods/examples/debug_views, routes)
 
 - **code** `ai_path::Tick` (1.2 0x5026C0, 1.0 0x40C970): thiscall `(ai_path*, uint, C_human *owner, bool, bool)`,

@@ -355,6 +355,8 @@ class Server:
         if a.get('in'):
             prog, ad = self.at(a['in'])
             f = self.func(prog, ad, create=False)
+            if f is None:
+                raise Fail('no function at %s (in= takes a function: an address or a name)' % a['in'])
             from ghidra.program.model.scalar import Scalar
             hits = []
             for ins in prog.getListing().getInstructions(f.getBody(), True):

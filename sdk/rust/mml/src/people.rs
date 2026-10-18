@@ -51,7 +51,37 @@ pub struct ItemDef<'a> {
     pub collected: Option<&'a str>,
 }
 
+pub use sys::MmlOrderState as OrderState;
+
 impl Host {
+    /// An order for a person with a script (actor_spawn's people, the missions' NPCs): `code` in the missions'
+    /// language and the people's own enemy_* commands (`enemy_move_to_frame 0, 1, run`; docs/SCRIPTS.md "Orders"),
+    /// put into his own program and run by his AI; act[i] from `acts`, flt[i] from `flts`, frm[i] a frame at
+    /// `points[i]`. Its id, None refused (the log says why).
+    pub fn human_order(&self, human: Actor, code: &str, acts: &[Option<Actor>], flts: &[f32], points: &[[f32; 3]]) -> Option<i32> {
+        let c = cstring(code);
+        let acts: Vec<*mut core::ffi::c_void> = acts.iter().map(|a| a.map_or(ptr::null_mut(), Actor::as_ptr)).collect();
+        let id = unsafe {
+            f!(self, human_order)(
+                self.module,
+                human.as_ptr(),
+                c.as_ptr(),
+                acts.as_ptr(),
+                acts.len() as c_int,
+                flts.as_ptr(),
+                flts.len() as c_int,
+                points.as_ptr() as *const f32,
+                points.len() as c_int,
+            )
+        };
+        if id > 0 { Some(id) } else { None }
+    }
+    /// Where his order stands; None: no order of the loader's for him
+    pub fn human_order_state(&self, human: Actor) -> Option<OrderState> {
+        let mut s = OrderState { size: core::mem::size_of::<OrderState>() as u32, ..Default::default() };
+        if unsafe { f!(self, human_order_state)(self.module, human.as_ptr(), &mut s) } != 0 { Some(s) } else { None }
+    }
+
     /// A person's bones (sys::MML_BONE_COUNT, in MML_BONE_* order); None: not a person known, or no skeleton
     pub fn human_skeleton(&self, human: Actor) -> Option<Vec<Bone>> {
         let mut b = vec![sys::MmlBone::default(); sys::MML_BONE_COUNT as usize];
