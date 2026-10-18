@@ -392,9 +392,35 @@ struct Last {
 };
 std::map<const void *, Last> g_last;   // a shape's last centre (its velocity), by its primitive
 
+float g_shapeLo[3], g_shapeHi[3];   // the box the shapes were taken from (the pass measures how far they moved since)
+struct Lag {
+    double sum, max;
+    uint64_t n;
+} g_lag;
+
+// How far the moving cars' boxes have gone between the shapes sent to Flow and the frame's drawing (the pass): the
+// gas meets them where they were then. Cars moving faster than 1 m/s only.
+void MeasureLag() {
+    int n = std::min(H->world_shapes(M, g_shapeLo, g_shapeHi, MML_WORLD_MOVING, g_shapes.data(), int(g_shapes.size())), int(g_shapes.size()));
+    for (int i = 0; i < n; i++) {
+        const MmlShape &sh = g_shapes[i];
+        if (!(sh.classes & 0x200) || sh.kind != MML_SHAPE_BOX || !(sh.classes & 0x2)) continue;
+        auto it = g_last.find(sh.prim);
+        if (it == g_last.end() || it->second.frame != g_frame) continue;
+        MmlVehicleBody b;
+        if (!CarBody(sh.actor, &b) || b.velocity[0] * b.velocity[0] + b.velocity[1] * b.velocity[1] + b.velocity[2] * b.velocity[2] < 1) continue;
+        double d = 0;
+        for (int k = 0; k < 3; k++) d += double(sh.center[k] - it->second.c[k]) * (sh.center[k] - it->second.c[k]);
+        d = std::sqrt(d);
+        g_lag.sum += d, g_lag.max = std::max(g_lag.max, d), g_lag.n++;
+    }
+}
+
 void Shapes(const float lo[3], const float hi[3], float dt) {
     fsm::Frame &f = g_rec;
     float rlo[3] = {lo[0] - 30, float(g_ground + g_origin[1]) - 3, lo[2] - 30}, rhi[3] = {hi[0] + 30, hi[1] + 25, hi[2] + 30};
+    memcpy(g_shapeLo, rlo, sizeof rlo);
+    memcpy(g_shapeHi, rhi, sizeof rhi);
     int n = std::min(H->world_shapes(M, rlo, rhi, MML_WORLD_MOVING, g_shapes.data(), int(g_shapes.size())), int(g_shapes.size()));
     for (int i = 0; i < n && f.shapes < fsm::kMaxShapes; i++) {
         const MmlShape &sh = g_shapes[i];
@@ -419,9 +445,10 @@ void Shapes(const float lo[3], const float hi[3], float dt) {
         for (auto it = g_last.begin(); it != g_last.end();) it = it->second.frame + 2 < g_frame ? g_last.erase(it) : std::next(it);
 }
 
-void OnFrame(float dt) {
-    g_frame++;
-    bool run = H->mission_state() == MML_MISSION_RUNNING;
+// The frame's record for the 64-bit half, once a frame: right after the mission's tick while it runs (the cars and
+// people where this frame draws them: written at FRAME, before the tick, they were a tick behind, 0.13 m on average
+// and 0.9 m at most for the cars measured), at FRAME while it does not (a menu, the pause: no step).
+void Record(float dt, bool run) {
     if (run) g_time += dt;
     if (!g_haveOrigin) return;
     fsm::Frame &f = g_rec;
@@ -538,6 +565,7 @@ void Pass(const MmlGfxFrame *f, void *) {
         G.generation = f->generation;
     }
     S.frames++;
+    if (!g_meshCollision && g_rec.shapes) MeasureLag();
     // the shared textures at this frame's size: else the 64-bit half is asked (it makes them) and the frame goes without
     const char *names[3] = {"color_in", "depth_in", "color_out"};
     MmlSharedTexture t[3];
@@ -608,7 +636,11 @@ void Pass(const MmlGfxFrame *f, void *) {
 // ---- events, keys and commands
 void OnEvent(const MmlEvent *ev, void *) {
     switch (ev->type) {
-    case MML_EVENT_FRAME: OnFrame(ev->dt); break;
+    case MML_EVENT_FRAME:
+        g_frame++;
+        if (H->mission_state() != MML_MISSION_RUNNING) Record(ev->dt, false);
+        break;
+    case MML_EVENT_MISSION_TICK: Record(ev->dt, true); break;
     case MML_EVENT_MISSION_CLOSE:   // (the world goes: the sources and the gas with it)
         g_sources.clear();
         g_clear++;
@@ -689,6 +721,7 @@ int CmdState(const char *, MmlReply *r, void *) {
               {"blocks", g_done.blocks}, {"steps", g_done.steps}, {"simulate_ms", g_done.simulateMs}, {"render_ms", g_done.renderMs},
               {"gpu_ms", g_done.gpuMs}, {"sources", sources},
               {"collision", g_meshCollision ? "meshes" : "shapes"}, {"shapes", g_rec.shapes},
+              {"shape_lag_m", {{"mean", g_lag.n ? g_lag.sum / g_lag.n : 0.0}, {"max", g_lag.max}, {"cars_frames", g_lag.n}}},
               {"movers", {{"count", g_moverRec.count}, {"vertices", g_moverRec.vertices}, {"triangles", g_moverRec.triangles}}},
               {"scenery", {{"serial", g_sceneSerial}, {"vertices", g_sceneVertices}, {"triangles", g_sceneTriangles}, {"in_flow", g_done.sceneTriangles}}},
               {"meshes_ms", {{"mean", S.meshFrames ? S.meshSum / S.meshFrames : 0.0}, {"max", S.meshMax}}},
@@ -759,6 +792,7 @@ int CmdCollision(const char *args, MmlReply *r, void *) {
 
 int CmdReset(const char *, MmlReply *r, void *) {
     S = Stats{};
+    g_lag = Lag{};
     Reply(r, {{"reset", true}});
     return 0;
 }
@@ -862,7 +896,8 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
         memcpy(g_origin, k.origin, sizeof g_origin);
         memcpy(g_wind, k.wind, sizeof g_wind);
     }
-    for (MmlEventType t : {MML_EVENT_FRAME, MML_EVENT_MISSION_CLOSE, MML_EVENT_ACTOR_DESTROYED}) H->subscribe(mod, t, OnEvent, nullptr);
+    for (MmlEventType t : {MML_EVENT_FRAME, MML_EVENT_MISSION_TICK, MML_EVENT_MISSION_CLOSE, MML_EVENT_ACTOR_DESTROYED})
+        H->subscribe(mod, t, OnEvent, nullptr);
     // (early among the passes: its picture is the whole frame, so the passes after it are laid over the gas)
     if (H->gfx_pass(mod, 50, Pass, nullptr) <= 0) {
         H->log(mod, MML_LOG_ERROR, "the graphics bridge refused the pass: flow_smoke needs \"gfx\": true on at the game's start");

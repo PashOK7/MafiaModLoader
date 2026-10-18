@@ -2291,3 +2291,10 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   `wall_out`), for a later look at what is wrong with it. F5 (the fire where the crosshair looks) seen used by the
   owner. A reload that changed the frame record's size failed once: the new 32-bit half opened "frame" at the new size
   while the old 64-bit half still held it at the old one (refused); the next `mod.reload` loaded (ROADMAP Known gaps).
+- **Then** (the owner, a picture of a car driving through the fire: "why does the fire lag behind the cars' fronts,
+  is it late?"): measured, not guessed: the cars' boxes sent to Flow against the same boxes in the frame's pass were
+  0.13 m apart on average and 0.91 m at most (835 frames of moving cars): the record was written at `FRAME`, before
+  the mission's tick moved the world. Now at `MISSION_TICK`: 0.00 m (913). Two more causes in Flow's use: its fixed 60
+  steps a second left the gas standing in some frames of a faster game (now a step of each frame's dt, two above
+  25 ms), and a box's couple rate of 20 gave the gas 27 % of the car's velocity a step at 75 fps (Flow's rate is
+  clamp(dt * rate, 0, 1)): 200 now (`tune` `shape_couple`).

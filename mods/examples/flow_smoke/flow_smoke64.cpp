@@ -331,6 +331,8 @@ struct Tune {
     float sceneInside = 0.5f;       // metres: the ground and walls are solid, a fence's one face makes no block behind it
     float wallOut = 0.03f;          // metres outside a surface
     float wallCouple = 100.f;       // how hard a mesh holds the gas there to its own velocity (Flow's couple rate)
+    float shapeCouple = 200.f;      // a sphere's or a box's: Flow takes dt * rate of the gap a step (at most all of it); 200
+                                    // holds the gas in a car's box at its velocity, 20 let a fast car slide through it
     float flip = 0;                 // 1: the faces taken as seen from inside (a test of the winding)
     float gravity = -2.f;           // m/s2 along y: with buoyancyPerTemp, how fast warm gas rises
     float buoyancy = 10.f;          // the smoke layer's buoyancyPerTemp (fire's: half; its burning heats it)
@@ -355,7 +357,7 @@ const struct {
     float Tune::*field;
 } kTuneFields[] = {{"cell_size", &Tune::cellSize}, {"fire_cell", &Tune::fireCell}, {"car_inside", &Tune::carInside},
                    {"scene_inside", &Tune::sceneInside}, {"wall_out", &Tune::wallOut}, {"flip", &Tune::flip},
-                   {"wall_couple", &Tune::wallCouple}, {"gravity", &Tune::gravity}, {"buoyancy", &Tune::buoyancy},
+                   {"wall_couple", &Tune::wallCouple}, {"shape_couple", &Tune::shapeCouple}, {"gravity", &Tune::gravity}, {"buoyancy", &Tune::buoyancy},
                    {"cooling", &Tune::cooling}, {"vorticity", &Tune::vorticity}, {"smoke_fade", &Tune::smokeFade},
                    {"attenuation", &Tune::attenuation}, {"color_scale", &Tune::colorScale},
                    {"shadow_attenuation", &Tune::shadowAttenuation}, {"shadow_min", &Tune::shadowMin},
@@ -404,9 +406,10 @@ void BuildParams(const fsm::Frame &f, bool clear) {
         s.layer = layer;
         s.densityCellSize = layer ? t.fireCell : t.cellSize;
         s.physicsCollisionEnabled = f.meshes ? NV_FLOW_TRUE : NV_FLOW_FALSE;   // (the meshes' obstacles: every layer)
-        s.stepsPerSecond = 60;
-        s.maxStepsPerSimulate = 4;
-        s.enableVariableTimeStep = NV_FLOW_FALSE;
+        // (a step every frame of its own dt, two when a frame is long: Flow's fixed 60 steps a second left the gas
+        // standing in some frames of a faster game while the cars went on)
+        s.enableVariableTimeStep = NV_FLOW_TRUE;
+        s.maxStepsPerSimulate = f.dt > 1.f / 40 ? 2 : 1;
         s.forceClear = clear;
         s.simulateWhenPaused = NV_FLOW_FALSE;
         s.blockMinLifetime = 8;
@@ -491,7 +494,7 @@ void BuildParams(const fsm::Frame &f, bool clear) {
                 e.velocityIsWorldSpace = NV_FLOW_TRUE;
                 e.velocity = NvFlowFloat3{m.velocity[0], m.velocity[1], m.velocity[2]};
                 e.temperature = e.fuel = e.smoke = 0;
-                e.coupleRateVelocity = 20;
+                e.coupleRateVelocity = t.shapeCouple;
                 e.coupleRateTemperature = e.coupleRateFuel = e.coupleRateBurn = e.coupleRateSmoke = 0;
                 e.allocationScale = 0;   // (it pushes gas that is there; it makes no blocks of its own)
                 P.spheres.push_back(e);
@@ -511,7 +514,7 @@ void BuildParams(const fsm::Frame &f, bool clear) {
             e.halfSize = NvFlowFloat3{m.half[0], m.half[1], m.half[2]};
             e.velocity = NvFlowFloat3{m.velocity[0], m.velocity[1], m.velocity[2]};
             e.temperature = e.fuel = e.smoke = 0;
-            e.coupleRateVelocity = 20;
+            e.coupleRateVelocity = t.shapeCouple;
             e.coupleRateTemperature = e.coupleRateFuel = e.coupleRateBurn = e.coupleRateSmoke = 0;
             e.allocationScale = 0;
             P.boxes.push_back(e);
