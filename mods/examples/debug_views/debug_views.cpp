@@ -1,10 +1,10 @@
-// debug_views: what the game does, drawn where it does it, for whoever writes missions and mods (both builds). Seven
+// debug_views: what the game does, drawn where it does it, for whoever writes missions and mods (both builds). Six
 // views, each in its own file and its own section of the settings (Options > Mods > Debug views: a tab each), each
 // shown and hidden by its own key:
 // - routes (routes.cpp, F6): the route each person and car the game moves follows, where it is sent now, its way;
 // - triggers (triggers.cpp, F7): the mission scripts' detectors, their radii and use points, the scene's areas;
-// - race (race.cpp, F8): the race of mission 6: its gates, the player's zone, the racers, their places and laps;
-// - walls (walls.cpp, F9): the static world's collision walls that nothing draws, painted in the frame;
+// - race (race.cpp, F8): the race of mission 6: its gates, the player's zone, the racers, their places and laps, and
+//   the walls nothing draws, painted in the frame (walls.cpp: the race's barriers; elsewhere the collision view);
 // - collision (collision.cpp, Shift+F9): the static world's whole collision, every shape, by surface and its name;
 // - web (web.cpp, Shift+F6): the pedestrians' web, the places people walk between;
 // - names (names.cpp, Shift+F8): the actors' names and kinds.

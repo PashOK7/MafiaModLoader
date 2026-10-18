@@ -10,7 +10,8 @@ int TriggersLoad(const MmlHost *host, MmlMod *mod);   // triggers.cpp: the missi
 void TriggersUnload();
 int RaceLoad(const MmlHost *host, MmlMod *mod);       // race.cpp: the race of mission 6
 void RaceUnload();
-int WallsLoad(const MmlHost *host, MmlMod *mod);      // walls.cpp: the static world's walls nothing draws
+bool RaceShown();                                     // the race view is on and a race runs (its walls are painted)
+int WallsLoad(const MmlHost *host, MmlMod *mod);      // walls.cpp: the race's walls nothing draws (part of race)
 void WallsUnload();
 int CollisionLoad(const MmlHost *host, MmlMod *mod);  // collision.cpp: the static world's collision, every shape, by surface
 void CollisionUnload();

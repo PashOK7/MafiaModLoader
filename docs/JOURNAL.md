@@ -2426,3 +2426,13 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   none) and a bolder one every 5, about a pixel and a half wide, antialiased by the surface point's change to the next
   pixels (worked out on the surface's own plane, so also right at a shape's edge, and no derivatives in the shader's
   branches), faded where the cells shrink under a few pixels. Seen in both labs; the offline suite ALL PASSED.
+
+## 2026-10-19: debug_views' walls are part of the race view
+
+- **Asked** (the owner): with the collision view drawing every shape, the walls view (F9) is of no use on its own: the
+  walls nothing draws matter in the race, outside it the collision view shows them. Made: walls.cpp is a part of the
+  race view: its settings are the race's section (`race.walls`, `walls_range`, `walls_grid`, `walls_period`,
+  `walls_strength`, `walls_color`), its own section, page and hotkey are gone, and it reads and paints the walls only
+  while the race view shows a race (race.cpp `RaceShown`; `debug_views.walls.state` says `race_shown`). Seen in the
+  1.2 lab: the Race page's second part holds the walls' controls with no overlap; outside the race the state reads no
+  walls. The offline suite (the pages' layout check included) ALL PASSED.

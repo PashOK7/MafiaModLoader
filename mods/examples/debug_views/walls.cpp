@@ -1,4 +1,5 @@
-// debug_views, walls: the walls of the static world that have no drawing (collision only), painted in the frame.
+// debug_views, walls: a part of the race view: the walls of the static world that have no drawing (collision only),
+// painted in the frame while a race is shown (race.cpp RaceShown). Outside the race the collision view shows them.
 //
 // What they are: the game's static collision has triangles of a material (the surface number in the game's own
 // table: MmlHit's flags >> 24, MmlShape's flags the same): material 33 is a wall nothing draws, the race's barriers
@@ -8,9 +9,9 @@
 // is in front, it hides the wall. The look is a glowing edge, a grid over the face, a fresnel rim and a band that rises
 // through it every few seconds.
 //
-// Commands: debug_views.walls.state (the walls near the player, their corners and normals, counts by material).
-// Settings (config.json): show and the hotkey (F9), the range the walls are read within, the grid's
-// cell, the band's period, the colour and the strength.
+// Command: debug_views.walls.state. Settings (the race's section, config.json): walls (shown with the race), the
+// range they are read within (walls_range), the grid's cell (walls_grid), the band's period (walls_period), the
+// colour (walls_color) and the strength (walls_strength).
 #include <windows.h>
 #include <d3d11.h>
 #include <algorithm>
@@ -25,7 +26,7 @@
 #include "shaders/PsWalls.h"
 #include "views.h"
 
-#define SECTION "walls."   // its settings' keys, under its section of the config
+#define SECTION "race."   // its settings' keys: the race view's section, each named walls...
 
 namespace {
 const MmlHost *H;
@@ -70,18 +71,17 @@ template <class T> T R(uintptr_t a) {
 }
 
 void ReadSettings() {
-    S.show = H->config_number(M, SECTION "show", 1) != 0;
-    S.range = static_cast<float>(H->config_number(M, SECTION "range", 60));
-    S.grid = static_cast<float>(H->config_number(M, SECTION "grid", 1));
-    S.period = static_cast<float>(H->config_number(M, SECTION "period", 8));
-    S.strength = static_cast<float>(H->config_number(M, SECTION "strength", 1));
-    const char *c = H->config_string(M, SECTION "color", "#4DD9FF");
+    S.show = H->config_number(M, SECTION "walls", 1) != 0;   // (and only while the race view shows a race: RaceShown)
+    S.range = static_cast<float>(H->config_number(M, SECTION "walls_range", 60));
+    S.grid = static_cast<float>(H->config_number(M, SECTION "walls_grid", 1));
+    S.period = static_cast<float>(H->config_number(M, SECTION "walls_period", 8));
+    S.strength = static_cast<float>(H->config_number(M, SECTION "walls_strength", 1));
+    const char *c = H->config_string(M, SECTION "walls_color", "#4DD9FF");
     if (*c == '#') c++;
     unsigned v = static_cast<unsigned>(strtoul(c, nullptr, 16));
     S.color[0] = ((v >> 16) & 255) / 255.0f;
     S.color[1] = ((v >> 8) & 255) / 255.0f;
     S.color[2] = (v & 255) / 255.0f;
-    H->hotkey(M, H->config_string(M, SECTION "hotkey", "F9"), [](void *) { S.show = !S.show; H->config_set(M, SECTION "show", S.show ? "true" : "false"); }, nullptr);
 }
 
 // The walls around the player: the static world's triangles of the material, in a box of `range` metres (game thread).
@@ -90,7 +90,7 @@ bool g_game;                       // the build is known (game::Detect): the gam
 void Scan() {
     g_scanAt = GetTickCount();
     g_walls.clear();
-    if (!g_game) return;
+    if (!g_game || !S.show || !RaceShown()) return;
     const int state = H->mission_state();
     if (state != MML_MISSION_RUNNING && state != MML_MISSION_PAUSED) return;
     // the player's place: his frame's world matrix, read the host's way (a stale pointer is a zero, not a fault)
@@ -147,7 +147,7 @@ bool MakePass(ID3D11Device *d) {
 }
 
 void Pass(const MmlGfxFrame *f, void *) {
-    if (!S.show || g_walls.empty()) return;
+    if (!S.show || !RaceShown() || g_walls.empty()) return;
     auto *d = static_cast<ID3D11Device *>(f->device);
     auto *ctx = static_cast<ID3D11DeviceContext *>(f->context);
     if (g_madeFor != f->generation || !g_ps) {
@@ -183,7 +183,7 @@ void OnFrame(const MmlEvent *, void *) {
 // debug_views.walls.state: the walls near the player as data
 int State(const char *, MmlReply *reply, void *) {
     std::string out = "{\"material\":" + std::to_string(kWallMaterial) + ",\"walls\":" + std::to_string(g_walls.size()) +
-                      ",\"shapes_seen\":" + std::to_string(g_seen) + ",\"show\":" + (S.show ? "true" : "false") + ",\"first\":[";
+                      ",\"shapes_seen\":" + std::to_string(g_seen) + ",\"show\":" + (S.show ? "true" : "false") + ",\"race_shown\":" + (RaceShown() ? "true" : "false") + ",\"first\":[";
     char b[320];
     for (size_t k = 0; k < g_walls.size() && k < 6; k++) {
         const Wall &w = g_walls[k];

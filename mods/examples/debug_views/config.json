@@ -3,7 +3,7 @@
   // section; they are kept in <game>\mml\data\debug_views\config.json; `config.set {"mod": "debug_views", "key":
   // "routes.trail_s", "value": 5}` too). routes: whose routes are drawn (people, cars; the traffic's own cars off),
   // their parts (the route, where each is sent now, the way gone and for how long). triggers: the mission scripts'
-  // detectors, areas and the distances they test. race: the race of mission 6. walls: the walls nothing draws.
+  // detectors, areas and the distances they test. race: the race of mission 6 and the walls nothing draws there.
   // collision: the static world's whole collision by surface. web: the pedestrians' web. names: the actors' names.
   // Each view's key shows and hides it.
   "routes": {
@@ -43,17 +43,14 @@
     "trail": true,
     "laps": true,
     "probe": true,
+    "walls": true,
+    "walls_range": 60,
+    "walls_grid": 1,
+    "walls_period": 8,
+    "walls_strength": 1,
+    "walls_color": "#4DD9FF",
     "range": 300,
     "label_range": 120
-  },
-  "walls": {
-    "show": true,
-    "hotkey": "F9",
-    "range": 60,
-    "grid": 1,
-    "period": 8,
-    "strength": 1,
-    "color": "#4DD9FF"
   },
   "collision": {
     "show": false,

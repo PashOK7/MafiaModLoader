@@ -1,6 +1,6 @@
 {
   "id": "debug_views",
-  "name": "Debug views: what the game does, drawn where it does it (routes, triggers, the race, invisible walls, collision, the pedestrians' web, names)",
+  "name": "Debug views: what the game does, drawn where it does it (routes, triggers, the race and its walls, collision, the pedestrians' web, names)",
   "version": "0.1.0",
   "type": "native",
   "entry": "debug_views.dll",
@@ -197,48 +197,38 @@
             "max": 300,
             "step": 5,
             "unit": "m"
-          }
-        ]
-      },
-      {
-        "title": "Walls",
-        "controls": [
-          {
-            "key": "walls.show",
-            "label": "Shown"
           },
           {
-            "key": "walls.hotkey",
-            "label": "Show and hide",
-            "kind": "key"
+            "key": "race.walls",
+            "label": "The walls nothing draws"
           },
           {
-            "key": "walls.range",
-            "label": "Read within",
+            "key": "race.walls_range",
+            "label": "Walls read within",
             "min": 10,
             "max": 150,
             "step": 5,
             "unit": "m"
           },
           {
-            "key": "walls.grid",
-            "label": "Grid",
+            "key": "race.walls_grid",
+            "label": "Walls' grid",
             "min": 0.5,
             "max": 5,
             "step": 0.5,
             "unit": "m"
           },
           {
-            "key": "walls.period",
-            "label": "The band's period",
+            "key": "race.walls_period",
+            "label": "Walls' band period",
             "min": 2,
             "max": 20,
             "step": 1,
             "unit": "s"
           },
           {
-            "key": "walls.strength",
-            "label": "Strength",
+            "key": "race.walls_strength",
+            "label": "Walls' strength",
             "min": 0.2,
             "max": 2,
             "step": 0.1

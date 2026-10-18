@@ -6,6 +6,8 @@
 //   marker, numbered (0 is the finish). The gate the player heads for is yellow, the others grey.
 // - Racers: a pole over each car, its label (place, name, the gate it heads for, its lap of the race), and a line
 //   from it to that gate (targets). The player is green.
+// - The walls nothing draws (walls.cpp: the static world's collision of material 33, the barriers of the race), painted
+//   in the frame while a race is shown (`walls`).
 // The F8 hotkey shows and hides it; Options > Mods > Debug views > Race has the rest. `debug_views.race.state` gives the race as
 // data, and checks the layout: each gate's midpoint against the average of its two nodes (the layout is right when
 // the error is zero).
@@ -655,6 +657,8 @@ int State(const char *, MmlReply *reply, void *) {
     return 0;
 }
 } // namespace
+
+bool RaceShown() { return g_on && g_race; }
 
 int RaceLoad(const MmlHost *host, MmlMod *mod) {
     H = host;
