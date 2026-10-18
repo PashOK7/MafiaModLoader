@@ -250,6 +250,9 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     # a mod in two halves: this 32-bit one shows what its 64-bit half (the x64 preset) draws with Direct3D 12
     mml_add_mod(side_picture ${CMAKE_SOURCE_DIR}/mods/examples/side_picture mods/examples/side_picture/side_picture.cpp
         SHADERS side_picture.hlsl:PsPicture:ps_5_0)
+    # a mod in two halves: this 32-bit one shows the crates its 64-bit half (the x64 preset) steps with PhysX 5
+    mml_add_mod(physx_crates ${CMAKE_SOURCE_DIR}/mods/examples/physx_crates mods/examples/physx_crates/physx_crates.cpp)
+    target_include_directories(mod_physx_crates PRIVATE third_party/json)
     mml_add_mod(puppet ${CMAKE_SOURCE_DIR}/mods/examples/puppet mods/examples/puppet/puppet.cpp)
     mml_add_mod(tally ${CMAKE_SOURCE_DIR}/mods/examples/tally mods/examples/tally/tally.cpp)
     mml_add_mod(orbit_cam ${CMAKE_SOURCE_DIR}/mods/examples/orbit_cam mods/examples/orbit_cam/orbit_cam.cpp)
@@ -340,6 +343,54 @@ else()
     mml_mod64(hello_side mods/examples/hello_side/hello_side64.cpp)
     mml_mod64(side_picture mods/examples/side_picture/side_picture64.cpp)
     target_link_libraries(mod64_side_picture PRIVATE d3d12)
+
+    # ---- PhysX 5 for the 64-bit halves: pinned by tools/deps.py (downloaded at the first configure, hash checked).
+    # Its CMake makes the whole build's configurations its own (debug, checked, profile, release: CMAKE_CONFIGURATION_TYPES
+    # forced), so it is an external project, configured and built in build/x64/physx by itself: static libraries, the
+    # static CRT (/MT, as the halves), CPU only (no CUDA, no GPU projects), no snippets or PVD runtime. Its release
+    # libraries go with this build's RelWithDebInfo and Release, its debug ones with Debug. A half links the target:
+    # target_link_libraries(mod64_<id> PRIVATE PhysX5)
+    option(MML_PHYSX "PhysX 5 for the mods' 64-bit halves (third_party/_deps/physx)" ON)
+    if(MML_PHYSX)
+        find_package(Python3 REQUIRED COMPONENTS Interpreter)
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tools/deps.py)
+        execute_process(COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/deps.py physx RESULT_VARIABLE rc)
+        if(NOT rc EQUAL 0)
+            message(FATAL_ERROR "tools/deps.py physx failed: the library is not there")
+        endif()
+        include(ExternalProject)
+        set(px_dir ${CMAKE_BINARY_DIR}/physx)
+        set(px_libs PhysX PhysXCommon PhysXFoundation PhysXExtensions PhysXCooking PhysXPvdSDK)
+        # (PhysX's own layout of its output: bin/win.x86_64.vc<toolset>.mt/<its configuration>/<lib>_static_64.lib)
+        set(px_out ${px_dir}/out/bin/win.x86_64.vc${MSVC_TOOLSET_VERSION}.mt)
+        set(px_byproducts)
+        foreach(lib ${px_libs})
+            list(APPEND px_byproducts ${px_out}/release/${lib}_static_64.lib ${px_out}/debug/${lib}_static_64.lib)
+        endforeach()
+        ExternalProject_Add(physx_build
+            SOURCE_DIR ${CMAKE_SOURCE_DIR}/third_party/_deps/physx
+            BINARY_DIR ${px_dir}/build
+            CMAKE_ARGS -DPHYSX_PRESET= -DPX_GENERATE_GPU_PROJECTS=OFF -DPX_GENERATE_STATIC_LIBRARIES=ON
+                -DNV_USE_STATIC_WINCRT=ON -DPX_BUILDSNIPPETS=OFF -DPX_BUILDPVDRUNTIME=OFF
+                -DPX_OUTPUT_LIB_DIR=${px_dir}/out -DPX_OUTPUT_BIN_DIR=${px_dir}/out -DPX_OUTPUT_DLL_DIR=${px_dir}/out
+            BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --config $<IF:$<CONFIG:Debug>,debug,release> --parallel
+                --target ${px_libs}
+            INSTALL_COMMAND ""
+            BUILD_BYPRODUCTS ${px_byproducts}
+            BUILD_ALWAYS ON   # (its own build knows what changed: a second build is a check of a few seconds)
+            EXCLUDE_FROM_ALL ON)
+        add_library(PhysX5 INTERFACE)
+        target_include_directories(PhysX5 INTERFACE ${CMAKE_SOURCE_DIR}/third_party/_deps/physx/include)
+        # (what the libraries were compiled with: static, and without CUDA, PX_SUPPORT_GPU_PHYSX 0 in the headers)
+        target_compile_definitions(PhysX5 INTERFACE PX_PHYSX_STATIC_LIB DISABLE_CUDA_PHYSX)
+        foreach(lib ${px_libs})
+            target_link_libraries(PhysX5 INTERFACE
+                $<IF:$<CONFIG:Debug>,${px_out}/debug/${lib}_static_64.lib,${px_out}/release/${lib}_static_64.lib>)
+        endforeach()
+        add_dependencies(PhysX5 physx_build)
+        mml_mod64(physx_crates mods/examples/physx_crates/physx_crates64.cpp)
+        target_link_libraries(mod64_physx_crates PRIVATE PhysX5)
+    endif()
     # the offline tests' 64-bit half (tests/run_tests.py copies it and the sidecar into the stand-in game's folder)
     add_library(testmod64_side_test SHARED tests/mods/side_test/side_test64.cpp)
     set_target_properties(testmod64_side_test PROPERTIES OUTPUT_NAME side_test RUNTIME_OUTPUT_DIRECTORY ${MML_OUT}/tests/side_test/x64/$<0:>)

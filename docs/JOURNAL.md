@@ -2200,3 +2200,34 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Seen**: offline tests ALL PASSED (side_test now has both halves: both channels' ways, another size refused, a
   read while the other process writes as fast as it can: about 30 000 versions in a second, none torn or gone back);
   both labs (above).
+
+## 2026-10-18: PhysX 5 in the 64-bit half, the sidecar's first heavy user
+
+- **Asked** (item 19's rest): PhysX 5 pinned and built for the x64 preset, an example in two halves, the frame's
+  round trip measured in both labs, reloads and a fault.
+- **Made**: PhysX SDK 5.9.0 pinned in `tools/deps.py` (the archive is NVIDIA-Omniverse's whole repository: `deps.py`
+  now keeps one folder of an archive, and its license files). PhysX's own CMake forces the whole build's
+  configurations to its own (debug, checked, profile, release), so it is an external project in `build/x64/physx`
+  (static, `/MT`, CPU only), its libraries an interface target `PhysX5`; its first build takes 100 s, a second one a
+  few seconds. `mods/examples/physx_crates`: the 32-bit half drops a pile of the game's crates (`bedna00`: a cube of
+  0.648 m about its origin, read from its `.4ds`), sends the static world around it (`world_shapes`) in a channel,
+  and at each `FRAME` the moving objects' collision shapes; the 64-bit half's worker steps them (the statics' triangles
+  cooked into a mesh at each new region; the movers kinematic over two substeps; CCD), the poses come back in a
+  channel and the 32-bit half places the props at `RENDER_BEGIN`.
+- **Found on the way**: the game's quaternions are PhysX's conjugate (a prop made with 45 degrees about y had its x axis
+  at +z where PhysX's is at -z): `prop_place` gets (w, -x, -y, -z). A person has two collision spheres (both builds):
+  0.3 m about the waist (classes 0x101) and 1.2 m (0x102); a car two boxes: its body over the wheels (0x201) and its
+  whole hull to the ground (0x202). With the wide sphere the crates were pushed a metre away from Tommy; the narrow
+  one alone passes over a crate on the ground, so a person is that sphere drawn out into a capsule from his feet to his
+  head. The first region of statics (16 m around the pile) lost crates that a car or the owner pushed out of it; the
+  region is now the crates' box with 8 m more, taken again when a crate is half a second from its side; a crate flung
+  farther than the widest region (64 m) kept it being taken again every quarter second until such crates were made
+  to leave the pile.
+- **Seen** (both labs at once): poses of 2343 of 2344 frames (1.2) and 2345 of 2346 (1.0) were the frame's own step,
+  whole 0.30 and 0.38 ms after the frame's start, placed 1.4 to 1.5 ms after it; the step 0.2 to 0.3 ms; 0.02 ms a
+  frame on the game thread. A car driven through the pile in 1.2 scattered it, nothing lost. Ten reloads in a row in
+  each build kept the pile, no handle, thread or memory left; 24 or 25 frames without new poses after a reload. A fault
+  in the 64-bit half (`physx_crates.fault`): `MOD_FAULTED` with `"half": "x64"`, the crates stood, the game went on;
+  `mod.reload` brought it back in 9 to 12 frames. The owner pushed the crates around in the 1.0 lab meanwhile.
+- **Next** (the owner): what 32 bits cannot do, PhysX's GPU part (particles, cloth, deformable bodies: ROADMAP 19a),
+  and collision from the visible models (19b).

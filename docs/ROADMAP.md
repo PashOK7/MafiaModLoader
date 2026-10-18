@@ -703,6 +703,15 @@ What is done, what comes next and later, and what is known to be missing or wron
   and shown in the same frame's pass, every frame (docs/MODDING.md "64-bit halves"). Offline: `side_test` (both
   halves, both channels' ways, 30 000 versions a second read across the processes with none torn, reloads, faults, the
   sidecar killed).
+- **PhysX 5 in the 64-bit halves** (2026-10-18; item 19's first heavy user): PhysX SDK 5.9.0 pinned in
+  `tools/deps.py` (its `physx/` folder and license kept), built by the x64 preset as an external project (target
+  `PhysX5`: static, `/MT`, CPU only). `mods/examples/physx_crates` (two halves): crates stepped by PhysX on the
+  game's own static collision (`world_shapes`' triangles cooked into a PhysX mesh, its boxes, spheres and poles),
+  pushed by the people and cars around them (their collision shapes as kinematic bodies: a person's narrow sphere
+  drawn out into a capsule, a car's whole hull), shown as the game's props. Both labs at once: the poses of
+  2343 of 2344 frames (1.2) and 2345 of 2346 (1.0) were that frame's own step, whole 0.3 to 0.4 ms after the frame's
+  start; 0.02 ms a frame on the game thread; reloads keep the pile, a fault of the 64-bit half leaves it standing
+  (docs/MODDING.md "64-bit halves").
 
 ## Next, by importance
 
@@ -859,8 +868,8 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
 
 ### Tier 4: what only exists for 64 bits
 
-19. *(The sidecar, its channels and shared textures done 2026-10-18: see "Done"; left: the first heavy user, PhysX 5,
-    and VR's question.)* **The 64-bit sidecar** (the owner's decision; S R with PhysX 5, V if a runtime needs it): `mml-sidecar64.exe`,
+19. *(Done 2026-10-18: the sidecar, its channels and shared textures, PhysX 5's first user: see "Done"; left: VR's
+    question, and PhysX's GPU part: below.)* **The 64-bit sidecar** (the owner's decision; S R with PhysX 5, V if a runtime needs it): `mml-sidecar64.exe`,
     started and watched by the host, loads 64-bit mods (the same kind of manifest, built for x64), their faults
     isolated and their reloads hot as 32-bit mods'. Shared memory between the processes: channels a frame (the
     game's state out: actors, bones, car bodies; results back: poses, forces) and calls both ways for what is rare;
@@ -868,6 +877,14 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
     first user and the test: PhysX 5 stepping a body the game shows, with a frame's round trip measured; the design
     is fixed against that measurement, not before. Whether the VR runtimes (OpenXR, OpenVR) take a 32-bit process
     is to be checked: OpenVR ships a 32-bit library; if OpenXR's runtimes do not, VR is the sidecar's second user.
+19a. **What 32 bits cannot do: PhysX's GPU part** (the owner, 2026-10-18: the crates only showed that the way works; the
+    test is what was impossible before). Particles (PBD: water, smoke as particles), cloth and deformable bodies (FEM
+    soft bodies) on the GPU, in a 64-bit half, shown in the game (a shared texture, or meshes). Needs the CUDA Toolkit
+    12.8 to build PhysX's GPU projects (`PhysXGpu`, a DLL beside the half) and a Volta GPU or newer to run.
+19b. **Collision from the visible models** (the owner, 2026-10-18): the physics meets what the player sees, not the
+    game's boxes, spheres and capsules. The host already gives the meshes the game draws (`scene_pieces` around a box,
+    `actor_meshes` an actor's parts posed): the static world as their triangles, a prop as the convex hull of its
+    `.4ds`, people and cars as their posed parts.
 
 ### Tier 5: the agent's own tools (to write and debug those mods)
 
@@ -948,12 +965,16 @@ merged, sorted by importance):
 ## Known gaps
 
 - **The sidecar** (2026-10-18): a channel has no way to wait for a new version (a 64-bit half reads it when `FRAME`
-  wakes it, as `side_picture` does, or polls); a channel is gone when both halves have closed it, so its versions
-  start again after a reload of both. A shared texture has no lock or fence between the processes: the halves keep to
-  the rule of two textures written in turn (docs/MODDING.md). Textures can be made only once the graphics bridge runs
-  (a mod with `"gfx": true` on at the start); the formats are the ones measured on one GPU (an RTX 3070). PhysX 5, the
-  design's first heavy user, is not written yet; with it the round trip of a frame's bodies (state out at `FRAME`,
-  poses back before the world is drawn) is to be measured again.
+  wakes it, as `side_picture` and `physx_crates` do, or polls); PhysX's measure did not need one (its poses were whole
+  1 ms before the frame read them), a heavier step might. A channel is gone when both halves have closed it, so its
+  versions start again after a reload of both. A shared texture has no lock or fence between the processes: the halves
+  keep to the rule of two textures written in turn (docs/MODDING.md). Textures can be made only once the graphics
+  bridge runs (a mod with `"gfx": true` on at the start); the formats are the ones measured on one GPU (an RTX 3070).
+- **PhysX 5** (2026-10-18): CPU only (no CUDA Toolkit on the build machine: item 19a); its Vehicle and
+  CharacterKinematic libraries are in the source but not built (a line of `CMakeLists.txt` each). `physx_crates` is one
+  way: the crates do not push the game's people and cars back (they are kinematic to PhysX), and the people and cars
+  are the game's collision shapes, not their models (item 19b). A crate flung farther than the widest region of
+  statics (64 m) or through the world leaves the pile.
 - **An actor made over the open river sleeps** (seen 2026-10-18, 1.2): a car spawned there is drawn but its model
   frame's stamp (`+0x13C`, what C_game::Tick wakes a sleeping actor by) stays -1, so it floats where it was made
   instead of falling in; a person put in the air there stands (a standing NPC does not fall). A ragdoll or a water

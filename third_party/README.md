@@ -15,7 +15,8 @@ Fetched by `tools/deps.py` (see the table in that script for the exact URLs and 
 |---|---|
 | Ultimate ASI Loader (pinned release, x86) | loads `MafiaModLoader.asi` into the game (as `dinput8.dll`) |
 | Jolt Physics 5.6.0 (pinned commit, MIT) | rigid bodies, joints, ragdolls for mods: built for x86 by `CMakeLists.txt` (target `Jolt`, its 32-bit SSE2 configuration, `/MT`), fetched by the first configure; `mods/examples/boxes` uses it |
+| NVIDIA PhysX SDK 5.9.0 (pinned commit of `NVIDIA-Omniverse/PhysX`, BSD 3-Clause; only its `physx/` folder kept) | rigid bodies, joints, articulations, cooking for the mods' 64-bit halves (PhysX 5 exists only for 64 bits): built by the x64 preset as an external project (target `PhysX5`: static, `/MT`, CPU only), fetched by the first `cmake --preset x64`; `mods/examples/physx_crates` uses it. A mod that ships it carries PhysX's license (`third_party/_deps/physx/LICENSE.md`) |
 
-The build asks `tools/deps.py` for each library it builds (`python tools/deps.py jolt`) at every configure: a library
+The build asks `tools/deps.py` for each library it builds (`python tools/deps.py jolt`, `physx`) at every configure: a library
 is fetched again when its pin changes or its unpacking was not completed (`_deps/<name>/.pinned` holds the hash it was
 unpacked from).

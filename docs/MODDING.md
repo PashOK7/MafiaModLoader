@@ -1580,7 +1580,8 @@ The game is a 32-bit process: a library made only for 64 bits (PhysX 5, NVIDIA F
 cannot be loaded into it. A mod may have a 64-bit half for it, run by the sidecar (`mml-sidecar64.exe`), a 64-bit
 process the loader starts beside the game in a job object (it ends with the game) and starts again when it ends
 without being asked. `sdk/include/mml/side.h` is the half's ABI (read it whole); `mods/examples/hello_side` is the
-smallest half alone, `mods/examples/side_picture` a mod in two halves that hands the frame a picture.
+smallest half alone, `mods/examples/side_picture` a mod in two halves that hands the frame a picture,
+`mods/examples/physx_crates` one whose 64-bit half steps PhysX 5 and hands the frame the bodies' poses.
 
 - **The manifest** names the half with `"entry64"` (a path inside the mod's folder: `"x64/my_mod.dll"`; that folder
   is the half's own, its libraries go beside it). With `"entry"` too the mod has two halves, loaded, reloaded and
@@ -1624,6 +1625,33 @@ smallest half alone, `mods/examples/side_picture` a mod in two halves that hands
   here), draws it. Every frame of 646 in each build drew its own frame's picture (`late` 0); 7 frames had none while
   the mod reloaded. So a 64-bit simulation that takes the frame's state at `FRAME` and gives its result back within
   the frame's own work is not a frame late.
+- **PhysX 5** (5.9.0, pinned in `tools/deps.py`) is built by the `x64` preset: target `PhysX5` (static, `/MT`, CPU
+  only: PhysX, Common, Foundation, Extensions, Cooking, PvdSDK; its own CMake as an external project in
+  `build/x64/physx`, since it takes the build's configurations for its own). A half links it:
+
+  ```cmake
+  mml_mod64(my_mod mods/my_mod/my_mod64.cpp)
+  target_link_libraries(mod64_my_mod PRIVATE PhysX5)
+  ```
+
+  PhysX lives inside the half's DLL: `PxCreateFoundation` in `mml_side_load`, everything released in
+  `mml_side_unload` (a reload is a fresh copy of the DLL and a fresh foundation). Its error callback and its
+  dispatcher's threads must not call the host (keep the errors, log them on the mod thread). The game's quaternions are
+  PhysX's conjugate (the game's matrix for the same four numbers is PhysX's transposed): give `prop_place` (w, -x, -y,
+  -z); a box from the game's axes (`MmlShape::axes`, rows) is `PxQuat(PxMat33(x, y, z))`.
+- **`physx_crates`, the frame's round trip with PhysX** (measured 2026-10-18 in both labs at once, PhysX on
+  2 threads of its own): the 32-bit half writes the frame's state at `FRAME` (the frame, its dt, the people's and
+  cars' collision shapes around the pile from `world_shapes`, about 0.01 ms); the 64-bit half's worker, woken by
+  `FRAME`, moves them as kinematic bodies over two substeps and steps 27 crates on the game's own static collision
+  (its triangles cooked into a PhysX mesh at each new region, about 0.5 ms): the poses were whole 0.30 ms (1.2) and
+  0.38 ms (1.0) after the frame's start, the step 0.2 to 0.3 ms; the 32-bit half places the props at `RENDER_BEGIN`,
+  1.4 to 1.5 ms after the frame's start, so the poses of 2343 frames of 2344 (1.2) and 2345 of 2346 (1.0) were that
+  very frame's step (Tommy walking through the pile and the owner pushing it meanwhile); the game thread spent 0.022
+  to 0.024 ms a frame on the mod. A channel needs no way to wait for this: the step is over long before the frame
+  needs it. A reload of both halves (state kept with `state_put`, the pile made again where it was) left 24 or 25
+  frames without new poses (the half loads PhysX); a fault in the 64-bit half left the crates where they were, the
+  game and the 32-bit half going on, and `mod.reload` brought it back in 9 to 12 frames. Ten reloads in a row: no
+  handle, thread or memory left behind.
 
 ## 4. A complete example
 
@@ -1667,6 +1695,6 @@ high-resolution timer if asked, and shows the frame rate and the game's clock st
 
 ## Not there yet
 
-The 64-bit sidecar's first heavy user (PhysX 5 stepping bodies the game shows): `docs/ROADMAP.md`. Mods are native (a DLL through the C ABI: C, C++, Rust through
+PhysX 5's GPU part (particles, cloth, deformable bodies: CUDA) for the 64-bit halves: `docs/ROADMAP.md`. Mods are native (a DLL through the C ABI: C, C++, Rust through
 `sdk/rust/mml`, or anything that exports C functions); there are no script mods (Lua was considered and dropped,
 2026-10-17).

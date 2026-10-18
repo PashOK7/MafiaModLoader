@@ -2,6 +2,7 @@
 
     python tools/deps.py            # everything missing (but the optional ones)
     python tools/deps.py jolt       # only these (the build asks for its libraries so: CMakeLists.txt)
+    python tools/deps.py physx      # PhysX 5 (the x64 preset's: the mods' 64-bit halves)
     python tools/deps.py ghidra     # an optional one: Ghidra and its Python bridge (tools/ghidra_cli.py)
     python tools/deps.py --force    # again, from scratch
 
@@ -26,6 +27,13 @@ PINNED = {
     # the tag (mafia-ragdoll's, whose 577 unit tests pass on the 32-bit build): all identical.
     'jolt': ('https://github.com/jrouwe/JoltPhysics/archive/e77f175595e64cb44218cc9d9d56fc365ad0e36a.zip',
              'ff13202d21a7a09efea72534a0a041cd4971cb9ac66b53262275881387cc6871'),
+    # NVIDIA PhysX SDK 5.9.0 (tag 110.1-omni-and-physx-5.9.0, commit 517a0073715120e114ee055b63b26c95e00d9039,
+    # 2026-07-14), BSD 3-Clause: rigid bodies for the mods' 64-bit halves (PhysX 5 exists only for 64 bits), built by
+    # the x64 preset (CMakeLists.txt, PhysX's own CMake as an external project: static, /MT, CPU only). The archive
+    # is the whole repository (Omniverse's, Blast, Flow); only its physx/ folder is kept, and its LICENSE.md. The hash
+    # is the archive's as GitHub served it on 2026-10-18 (the release publishes none for its source).
+    'physx': ('https://github.com/NVIDIA-Omniverse/PhysX/archive/517a0073715120e114ee055b63b26c95e00d9039.zip',
+              'b2f713bac94e2655614b1c8c34ba18750673d5d780fba19e0a23a21bda5695bb', 'physx'),
     # Ghidra 12.1.4 (2026-09-21), Apache 2.0: the reverse-engineering projects of both builds behind tools/ghidra_cli.py
     # and the MCP server's ghidra_* tools. 570 MB (about 900 unpacked); needs a JDK 21 or later. The hash is the one
     # the release publishes (its notes and the asset's digest). Its PyGhidra and JPype wheels are in the archive: the
@@ -38,7 +46,7 @@ PINNED = {
 OPTIONAL = {'ghidra'}
 
 
-def fetch(name, url, sha, force):
+def fetch(name, url, sha, force, keep=None):
     dest = os.path.join(DEPS, name)
     mark = os.path.join(dest, '.pinned')   # the hash it was unpacked from: a changed pin or a broken unpack is fetched anew
     if not force and os.path.exists(mark) and open(mark).read().strip() == sha:
@@ -68,6 +76,21 @@ def fetch(name, url, sha, force):
         for e in os.listdir(top):
             shutil.move(os.path.join(top, e), dest)
         os.rmdir(top)
+    if keep:   # one folder of the archive is the library: it alone is kept, as the folder's content (with the
+               # archive's license files beside it: LICENSE*)
+        inner = os.path.join(dest, keep)
+        if not os.path.isdir(inner):
+            sys.exit('%s: the archive has no %s/ folder' % (name, keep))
+        for e in os.listdir(dest):
+            path = os.path.join(dest, e)
+            if e.upper().startswith('LICENSE') and os.path.isfile(path) and not os.path.exists(os.path.join(inner, e)):
+                shutil.move(path, inner)
+            elif e != keep:
+                shutil.rmtree(path) if os.path.isdir(path) else os.remove(path)
+        os.rename(inner, inner + '.kept')
+        for e in os.listdir(inner + '.kept'):
+            shutil.move(os.path.join(inner + '.kept', e), dest)
+        os.rmdir(inner + '.kept')
     with open(mark, 'w') as f:
         f.write(sha + '\n')
     print('%-7s ok (sha256 %s)' % (name, sha[:16]))
@@ -100,8 +123,8 @@ def main():
     if unknown:
         sys.exit('not pinned: %s (pinned: %s)' % (', '.join(unknown), ', '.join(PINNED)))
     for name in names:
-        url, sha = PINNED[name]
-        fetch(name, url, sha, force)
+        url, sha = PINNED[name][:2]
+        fetch(name, url, sha, force, *PINNED[name][2:])
         if name == 'ghidra':
             pyghidra_venv(force)
 

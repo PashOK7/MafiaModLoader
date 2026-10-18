@@ -1,0 +1,12 @@
+{
+  "id": "physx_crates",
+  "name": "PhysX crates: a pile stepped by PhysX 5 in the 64-bit half, shown as the game's props, pushed by people and cars",
+  "version": "0.1.0",
+  "type": "native",
+  "entry": "physx_crates.dll",
+  "entry64": "x64/physx_crates.dll",
+  "enabled": false,
+  "builds": ["1.2", "1.0"],
+  "load_order": 100,
+  "depends": []
+}
