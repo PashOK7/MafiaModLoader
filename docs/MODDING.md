@@ -1662,9 +1662,11 @@ smallest half alone, `mods/examples/side_picture` a mod in two halves that hands
   pieces or their versions change), each car's own meshes posed now (`actor_meshes`, each vertex with the body's
   velocity, v + turn x r) and each person as capsules along his bones (`human_skeleton`: the host has no skinned
   meshes), each bone's velocity from its last place. In the half they are Flow's mesh emitters in physics-collision
-  mode (every layer that collides): a shell of 0.15 m each side of the surface (the game's meshes are often open: the
-  shell does not depend on which side a triangle faces) where the gas is held at the mesh's velocity with nothing in
-  it, so the smoke flows round a car's bonnet and a passer-by drags a wisp behind him. The half's worker steps Flow
+  mode (every layer that collides): what is behind a face is solid (Flow's signed distance to the nearest face is
+  negative behind it; the game's faces are seen from outside: `flow_smoke.winding` measures it), 0.6 m deep for cars
+  and people, 0.5 m for the scenery (a fence's single face makes no block behind it), and a layer of 0.03 m outside
+  holds the gas at the body's velocity, so a fire under a car's nose rises round its bonnet and a passer-by drags a
+  wisp behind him. The depth is the cost: Flow searches the nearest face that far (3 m for cars: 10 ms of GPU). The half's worker steps Flow
   then, submitted without a wait (the GPU does it while the game draws). In its graphics pass the 32-bit half draws
   the frame's linear colour and its depth as the game's projection makes it (`_33 + _43 / z`, the sky 1) into two
   shared textures, waits for the GPU to have them (an event query), and writes the camera into a channel; the half
