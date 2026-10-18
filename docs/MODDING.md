@@ -1574,6 +1574,57 @@ if (MML_HAS(H, frame_stats) && H->frame_stats(M, &fs) && fs.p95_ms > 11.1f)
   address space a reload; what each reload left was never measured there): the measure is the address space, and a
   device made and given back as above costs none.
 
+### 64-bit halves (the sidecar)
+
+The game is a 32-bit process: a library made only for 64 bits (PhysX 5, NVIDIA Flow, a modern GPU or ML runtime)
+cannot be loaded into it. A mod may have a 64-bit half for it, run by the sidecar (`mml-sidecar64.exe`), a 64-bit
+process the loader starts beside the game in a job object (it ends with the game) and starts again when it ends
+without being asked. `sdk/include/mml/side.h` is the half's ABI (read it whole); `mods/examples/hello_side` is the
+smallest half alone, `mods/examples/side_picture` a mod in two halves that hands the frame a picture.
+
+- **The manifest** names the half with `"entry64"` (a path inside the mod's folder: `"x64/my_mod.dll"`; that folder
+  is the half's own, its libraries go beside it). With `"entry"` too the mod has two halves, loaded, reloaded and
+  unloaded together (`mod.reload` reloads both, each from a fresh copy; a fault in the 32-bit half unloads both at the
+  next frame, a fault in the 64-bit half that half alone: `MOD_FAULTED` with `"half": "x64"`, `mod.reload` brings it
+  back); with `"entry64"` alone it is a 64-bit half alone. `mods.list` shows the
+  half under `x64`, `sidecar.state` the sidecar and every half.
+- **The build**: the 64-bit half is built by the `x64` preset (`cmake --preset x64`, `cmake --build --preset
+  x64-release`), `mml_mod64(<id> <sources...>)` in `CMakeLists.txt` (into `build/x64/out/mml/mods/<id>/x64/`); the
+  32-bit half by the usual `mml_add_mod`. `deploy` merges both outputs into the mod's folder and copies the sidecar
+  (while the game is closed: its exe is locked).
+- **What a half has** (side.h): the whole bridge as an agent has it (`call`, from any thread: `player`,
+  `world.near`, any mod's command); the game's events as they come (`subscribe`: `FRAME`, `MISSION_TICK` with their
+  `dt`, every event kept for agents, as JSON); commands of its own (`command`: `<mod>.<name>`, answered by the sidecar
+  without the game thread); shared textures and channels (below). Its callbacks run on the sidecar's mod thread, one
+  at a time, for every half: heavy work goes on threads of the half's own (stopped in `mml_side_unload`); the host's
+  functions other than `call` and the channels' are the mod thread's.
+- **Channels** (`channel_open(mod, name, size)` in both halves, the same name and size): a named block of shared
+  memory, each `channel_write` a whole new version (at most `size` bytes), each `channel_read` a copy of the latest
+  whole version and its number (0: nothing written yet). One writer a channel; a reader never gets half of two
+  versions (the offline tests read 30 000 versions a second while the other process writes as fast as it can: none
+  torn, none gone back). Any thread, both halves; open with another size: refused. A channel lives while either half
+  has it open (both unloaded: it is gone, the numbers start again). In Rust: `host.channel_open(name, size)`,
+  `Channel::write_value(&T)`, `read_value::<T>()` for a `#[repr(C)]` struct.
+- **Shared textures**: the 64-bit half makes one with `texture_create(mod, name, w, h, format, &out)` (a Direct3D 12
+  texture on the adapter the game draws on, `out.d3d12_resource`; Vulkan imports `out.shared_handle`). The formats
+  are the ones Direct3D 11 opens from Direct3D 12 (side.h lists them: `R8G8B8A8_UNORM`, `R16G16B16A16_FLOAT`,
+  `R32_UINT`, `R32_FLOAT`...); the texture is a render target with simultaneous access, so it needs no barriers (its
+  state is promoted from COMMON). The adapter is known once the graphics bridge runs (a mod with `"gfx": true` on at
+  the start: the mod itself, as a rule); until then `texture_d3d12_device` returns null and `texture_create` fails:
+  try again later (each second, not each frame). The 32-bit half opens it inside a graphics pass with
+  `gfx_shared_texture(mod, name, &t)`: `t.texture`, `t.srv` (the loader's, not to be released, opened again whenever
+  the half makes it anew or the bridge's device is new), its size, format and the half's generation; 0 while it is
+  not there. There is no lock between the processes: **the 64-bit half writes a texture only when the 32-bit half is
+  not reading it** (two textures, written in turn), waits for its GPU work (a fence) and only then says in a channel
+  which texture is whole; the 32-bit half draws the one the channel names.
+- **The frame's round trip** (`side_picture`, measured 2026-10-18 in both labs, an RTX 3070): the 32-bit half writes
+  the frame's number into a channel at `FRAME` (the frame's start); the sidecar is told of `FRAME` right after, the
+  half's worker draws that frame's picture (two clears) and waits for its GPU: 0.4 ms from the frame's start to the
+  picture whole; the pass, later in the same frame (the mission's tick and the world's drawing come between, 6 to 7 ms
+  here), draws it. Every frame of 646 in each build drew its own frame's picture (`late` 0); 7 frames had none while
+  the mod reloaded. So a 64-bit simulation that takes the frame's state at `FRAME` and gives its result back within
+  the frame's own work is not a frame late.
+
 ## 4. A complete example
 
 `mods/examples/telemetry/telemetry.cpp`: a speed, gear and lap-time overlay between two checkpoints, a hotkey that
@@ -1616,6 +1667,6 @@ high-resolution timer if asked, and shows the frame rate and the game's clock st
 
 ## Not there yet
 
-64-bit sidecar mods: `docs/ROADMAP.md`. Mods are native (a DLL through the C ABI: C, C++, Rust through
+The 64-bit sidecar's first heavy user (PhysX 5 stepping bodies the game shows): `docs/ROADMAP.md`. Mods are native (a DLL through the C ABI: C, C++, Rust through
 `sdk/rust/mml`, or anything that exports C functions); there are no script mods (Lua was considered and dropped,
 2026-10-17).

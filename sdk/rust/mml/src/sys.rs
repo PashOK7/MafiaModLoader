@@ -768,6 +768,50 @@ pub type MmlGfxPassFn = ::core::option::Option<
     unsafe extern "C" fn(frame: *const MmlGfxFrame, user: *mut ::core::ffi::c_void),
 >;
 #[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct MmlSharedTexture {
+    pub size: u32,
+    pub texture: *mut ::core::ffi::c_void,
+    pub srv: *mut ::core::ffi::c_void,
+    pub width: u32,
+    pub height: u32,
+    pub format: u32,
+    pub generation: u32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of MmlSharedTexture"][::core::mem::size_of::<MmlSharedTexture>() - 28usize];
+    ["Alignment of MmlSharedTexture"][::core::mem::align_of::<MmlSharedTexture>() - 4usize];
+    ["Offset of field: MmlSharedTexture::size"]
+        [::core::mem::offset_of!(MmlSharedTexture, size) - 0usize];
+    ["Offset of field: MmlSharedTexture::texture"]
+        [::core::mem::offset_of!(MmlSharedTexture, texture) - 4usize];
+    ["Offset of field: MmlSharedTexture::srv"]
+        [::core::mem::offset_of!(MmlSharedTexture, srv) - 8usize];
+    ["Offset of field: MmlSharedTexture::width"]
+        [::core::mem::offset_of!(MmlSharedTexture, width) - 12usize];
+    ["Offset of field: MmlSharedTexture::height"]
+        [::core::mem::offset_of!(MmlSharedTexture, height) - 16usize];
+    ["Offset of field: MmlSharedTexture::format"]
+        [::core::mem::offset_of!(MmlSharedTexture, format) - 20usize];
+    ["Offset of field: MmlSharedTexture::generation"]
+        [::core::mem::offset_of!(MmlSharedTexture, generation) - 24usize];
+};
+impl Default for MmlSharedTexture {
+    fn default() -> Self {
+        let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::core::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct MmlChannel {
+    _unused: [u8; 0],
+}
+#[repr(C)]
 #[derive(Debug, Default, Copy, Clone)]
 pub struct MmlViewCamera {
     pub size: u32,
@@ -3147,10 +3191,39 @@ pub struct MmlHost {
             out: *mut f32,
         ) -> ::core::ffi::c_int,
     >,
+    pub channel_open: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            name: *const ::core::ffi::c_char,
+            size: u32,
+        ) -> *mut MmlChannel,
+    >,
+    pub channel_write: ::core::option::Option<
+        unsafe extern "C" fn(
+            ch: *mut MmlChannel,
+            data: *const ::core::ffi::c_void,
+            bytes: u32,
+        ) -> ::core::ffi::c_int,
+    >,
+    pub channel_read: ::core::option::Option<
+        unsafe extern "C" fn(
+            ch: *mut MmlChannel,
+            data: *mut ::core::ffi::c_void,
+            cap: u32,
+            version: *mut u64,
+        ) -> u32,
+    >,
+    pub gfx_shared_texture: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            name: *const ::core::ffi::c_char,
+            out: *mut MmlSharedTexture,
+        ) -> ::core::ffi::c_int,
+    >,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 696usize];
+    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 712usize];
     ["Alignment of MmlHost"][::core::mem::align_of::<MmlHost>() - 4usize];
     ["Offset of field: MmlHost::size"][::core::mem::offset_of!(MmlHost, size) - 0usize];
     ["Offset of field: MmlHost::api_version"]
@@ -3449,6 +3522,14 @@ const _: () = {
     ["Offset of field: MmlHost::human_order_state"]
         [::core::mem::offset_of!(MmlHost, human_order_state) - 688usize];
     ["Offset of field: MmlHost::road_near"][::core::mem::offset_of!(MmlHost, road_near) - 692usize];
+    ["Offset of field: MmlHost::channel_open"]
+        [::core::mem::offset_of!(MmlHost, channel_open) - 696usize];
+    ["Offset of field: MmlHost::channel_write"]
+        [::core::mem::offset_of!(MmlHost, channel_write) - 700usize];
+    ["Offset of field: MmlHost::channel_read"]
+        [::core::mem::offset_of!(MmlHost, channel_read) - 704usize];
+    ["Offset of field: MmlHost::gfx_shared_texture"]
+        [::core::mem::offset_of!(MmlHost, gfx_shared_texture) - 708usize];
 };
 pub type MmlModLoadFn = ::core::option::Option<
     unsafe extern "C" fn(host: *const MmlHost, mod_: *mut MmlMod) -> ::core::ffi::c_int,

@@ -27,6 +27,7 @@
 #include "host.h"
 #include <d3d9.h>
 #include <d3d11.h>
+#include <d3d11_1.h>
 #include <dxgi.h>
 #include <algorithm>
 #include <cmath>
@@ -110,6 +111,20 @@ void *g_sunHandle;           // the handle it was opened from
 unsigned g_sunMade, g_sunGen;   // shadows.cpp's count of maps and the device generation it was opened on
 std::string g_sunError;
 
+// the 64-bit halves' shared textures (gfx_shared_texture): opened on this device at a pass's first ask, again when the
+// half makes one anew (the sidecar's stamp) or the device is new; a failed open is kept, not tried again every frame
+struct SideTex {
+    MmlMod *mod;
+    std::string name;
+    uint64_t stamp;
+    unsigned gen;
+    ID3D11Texture2D *tex;
+    ID3D11ShaderResourceView *srv;
+    SidecarTex info;
+};
+std::vector<SideTex> g_sideTex;
+bool g_inPasses;                 // the passes are running (RunPasses)
+void ReleaseSideTex(SideTex &t) { SafeRelease(t.srv); SafeRelease(t.tex); }
 // the 2D pass for mods (gfx_ui): the HUD and the menus drawn into a shared target (premultiplied RGBA8)
 std::vector<std::pair<MmlMod *, int>> g_uiAsk;   // each mod's mode
 IDirect3DTexture9 *g_ui9; IDirect3DSurface9 *g_uiSurf9;
@@ -462,6 +477,8 @@ void ReleaseAll() {
     ReleaseSized();
     for (auto &v : g_views) ReleaseView(*v);
     ReleaseTimers();
+    for (auto &t : g_sideTex) ReleaseSideTex(t);
+    g_sideTex.clear();
     SafeRelease(g_vsQuad); SafeRelease(g_psDepth); SafeRelease(g_psComposite);
     SafeRelease(g_decl); SafeRelease(g_quad); SafeRelease(g_event9); SafeRelease(g_block);
     SafeRelease(g_frameCB); SafeRelease(g_point); SafeRelease(g_linear); SafeRelease(g_vsFull); SafeRelease(g_over);
@@ -816,6 +833,7 @@ bool RunPasses(MmlGfxConstants &k, const PassTarget &t) {
     TimerFrame *tf = frame ? BeginTimers() : nullptr;
     if (tf) Mark(tf, 0);
     std::vector<Pass> passes = g_passes;   // (a pass may add or take back passes)
+    g_inPasses = true;
     for (const Pass &p : passes) {
         if (!ModAlive(p.mod) || (!frame && !p.inViews)) continue;
         D3D11_VIEWPORT vp{0, 0, static_cast<float>(t.w), static_cast<float>(t.h), 0, 1};
@@ -845,6 +863,7 @@ bool RunPasses(MmlGfxConstants &k, const PassTarget &t) {
             if (q.handle == p.handle) q.cpuMs = q.cpuMs <= 0 ? ms : q.cpuMs * 0.9 + ms * 0.1;
         Mark(tf, p.handle);
     }
+    g_inPasses = false;
     if (tf) EndTimers(tf);
     g_ctx->ClearState();   // the shared textures are Direct3D 9's again
     double t0 = NowMs();
@@ -1065,6 +1084,49 @@ void GfxPassRemove(MmlMod *mod, int handle) {
 void GfxRemove(MmlMod *mod) {
     GfxPassRemove(mod, 0);
     GfxUiAsk(mod, MML_GFX_UI_OFF);
+    for (auto &t : g_sideTex) if (t.mod == mod) ReleaseSideTex(t);
+    g_sideTex.erase(std::remove_if(g_sideTex.begin(), g_sideTex.end(), [&](const SideTex &t) { return t.mod == mod; }), g_sideTex.end());
+}
+
+// A 64-bit half's texture on this device, for its 32-bit half's pass: 1 there (out filled), 0 not (yet).
+int GfxSharedTexture(MmlMod *mod, const char *name, MmlSharedTexture *out) {
+    if (!name || !out || out->size < sizeof(MmlSharedTexture) || !g_inPasses || !g_dev11) return 0;
+    std::string id = ModIdOf(mod);
+    auto it = std::find_if(g_sideTex.begin(), g_sideTex.end(), [&](const SideTex &t) { return t.mod == mod && t.name == name; });
+    SidecarTex now{};
+    if (!SidecarTexture(id, name, &now, false)) {   // none (yet, or no more)
+        if (it != g_sideTex.end()) { ReleaseSideTex(*it); g_sideTex.erase(it); }
+        return 0;
+    }
+    if (it == g_sideTex.end() || it->stamp != now.stamp || it->gen != g_generation) {
+        if (it == g_sideTex.end()) it = g_sideTex.insert(g_sideTex.end(), SideTex{mod, name, 0, 0, nullptr, nullptr, {}});
+        ReleaseSideTex(*it);
+        SidecarTex mine{};
+        HRESULT hr = E_FAIL;
+        ID3D11Device1 *dev1 = nullptr;
+        if (SidecarTexture(id, name, &mine, true)) {
+            hr = g_dev11->QueryInterface(__uuidof(ID3D11Device1), reinterpret_cast<void **>(&dev1));
+            if (SUCCEEDED(hr)) hr = dev1->OpenSharedResource1(mine.handle, __uuidof(ID3D11Texture2D), reinterpret_cast<void **>(&it->tex));
+            if (SUCCEEDED(hr)) hr = g_dev11->CreateShaderResourceView(it->tex, nullptr, &it->srv);
+            SafeRelease(dev1);
+            CloseHandle(mine.handle);
+        }
+        it->stamp = mine.handle ? mine.stamp : now.stamp;
+        it->gen = g_generation;
+        it->info = mine.handle ? mine : now;
+        if (FAILED(hr)) {
+            Log(MML_LOG_WARN, id.c_str(), "gfx_shared_texture %s: Direct3D 11 did not open it (0x%08X)", name, static_cast<unsigned>(hr));
+            ReleaseSideTex(*it);
+        }
+    }
+    if (!it->tex) return 0;
+    out->texture = it->tex;
+    out->srv = it->srv;
+    out->width = it->info.w;
+    out->height = it->info.h;
+    out->format = it->info.format;
+    out->generation = it->info.generation;
+    return 1;
 }
 
 void GfxQuiet(bool on) { g_quiet += on ? 1 : -1; }

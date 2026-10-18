@@ -259,7 +259,16 @@ bool SidecarCommand(const std::string &method, const std::string &paramsJson, st
 std::string SidecarState();                       // sidecar.state's answer (JSON)
 std::string SidecarHalf(const std::string &id);   // a mod's 64-bit half in mods.list (JSON, "" none)
 std::vector<std::pair<std::string, std::string>> SidecarCommands();
-bool SidecarTexture(const std::string &mod, const std::string &name, void **handle, uint32_t *w, uint32_t *h, uint32_t *format, uint32_t *generation);
+// A half's shared texture by name: its size, format, the half's generation and the loader's stamp (a new one each time
+// the half makes it anew); with dup, handle is this process's own copy of its handle (the caller closes it).
+struct SidecarTex { void *handle; uint32_t w, h, format, generation; uint64_t stamp; };
+bool SidecarTexture(const std::string &mod, const std::string &name, SidecarTex *out, bool dup);
+// the channels of the mods' 32-bit halves (mml.h channel_open; the memory sidecar/channel.h describes); any thread
+MmlChannel *SidecarChannelOpen(MmlMod *mod, const char *name, uint32_t size, std::string *err);
+int SidecarChannelWrite(MmlChannel *ch, const void *data, uint32_t bytes);
+uint32_t SidecarChannelRead(MmlChannel *ch, void *data, uint32_t cap, uint64_t *version);
+void SidecarChannelsForget(MmlMod *mod);   // (the mod's unload) its channels closed
+int GfxSharedTexture(MmlMod *mod, const char *name, MmlSharedTexture *out);   // (gfx.cpp; inside a graphics pass)
 bool SidecarWants(const char *type);
 void SidecarShutdown();
 bool SidecarMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);

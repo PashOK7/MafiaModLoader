@@ -1,14 +1,21 @@
 // side_test: the offline tests' 64-bit half (tests/run_tests.py sidecar_tests): its commands answer from the sidecar,
-// it calls the bridge, counts the frames it is told about, writes a channel, faults when asked.
+// it calls the bridge, counts the frames it is told about, writes the channel box and reads back (its 32-bit half,
+// side_test.cpp, reads box and writes back), faults when asked.
+#include <windows.h>
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <thread>
+#include <vector>
 #include "mml/side.h"
 
 namespace {
 const MmlSideHost *H;
 unsigned long long g_frames;
-MmlSideChannel *g_ch;
+MmlSideChannel *g_ch, *g_back, *g_flood;
+std::thread g_flooder;
+std::atomic<bool> g_stop;
 unsigned g_loads;
 
 void OnFrame(MmlSideMod *, const char *, const char *, void *) { g_frames++; }
@@ -62,6 +69,39 @@ int Write(MmlSideMod *, const char *args, MmlSideReply *r, void *) {
     Reply(r, "{\"written\": " + std::to_string(a.size()) + "}");
     return 0;
 }
+// {} -> {"text", "version"}: back's latest whole version (as its 32-bit half wrote it)
+int Fetch(MmlSideMod *, const char *, MmlSideReply *r, void *) {
+    char buf[4096];
+    uint64_t version = 0;
+    uint32_t n = g_back ? H->channel_read(g_back, buf, sizeof buf, &version) : 0;
+    std::string q = "\"";
+    for (uint32_t i = 0; i < n; i++) {
+        if (buf[i] == '"' || buf[i] == '\\') q += '\\';
+        q += buf[i];
+    }
+    Reply(r, "{\"text\": " + q + "\", \"version\": " + std::to_string(version) + "}");
+    return 0;
+}
+// {} -> a thread writes the channel flood for 1.5 s, as fast as it can: each version 4096 bytes, the version's
+// number in the first 8 and its low byte in every other (the 32-bit half's `torn` reads meanwhile)
+int Flood(MmlSideMod *, const char *, MmlSideReply *r, void *) {
+    if (!g_flood) { H->reply_error(r, "no channel flood"); return 1; }
+    if (g_flooder.joinable()) g_flooder.join();
+    g_stop = false;
+    g_flooder = std::thread([] {
+        std::vector<unsigned char> v(4096);
+        unsigned long long n = 0;
+        auto end = GetTickCount64() + 1500;
+        while (!g_stop && GetTickCount64() < end) {
+            n++;
+            memcpy(v.data(), &n, 8);
+            memset(v.data() + 8, static_cast<int>(n & 0xFF), v.size() - 8);
+            H->channel_write(g_flood, v.data(), static_cast<uint32_t>(v.size()));
+        }
+    });
+    Reply(r, "{\"started\": true}");
+    return 0;
+}
 int Fault(MmlSideMod *, const char *, MmlSideReply *, void *) {
     volatile int *p = nullptr;
     return *p;
@@ -79,10 +119,18 @@ MML_EXPORT int mml_side_load(const MmlSideHost *host, MmlSideMod *mod) {
     H->command(mod, "frames", "{} -> the FRAME events seen", Frames, nullptr);
     H->command(mod, "call", "{method, params} -> that bridge call's answer, made from the 64-bit side", Call, nullptr);
     H->command(mod, "write", "args -> written to the channel side_test.box", Write, nullptr);
+    H->command(mod, "fetch", "{} -> {text, version}: the channel back (its 32-bit half writes it)", Fetch, nullptr);
+    H->command(mod, "flood", "{} -> the channel flood written by a thread for 1.5 s, as fast as it can", Flood, nullptr);
     H->command(mod, "fault", "faults (its half is unloaded)", Fault, nullptr);
     g_ch = H->channel_open(mod, "box", 4096);
+    g_back = H->channel_open(mod, "back", 4096);
+    g_flood = H->channel_open(mod, "flood", 4096);
     H->log(mod, 1, "side_test loaded (pointer bits %u)", static_cast<unsigned>(sizeof(void *) * 8));
     return 0;
 }
 
-MML_EXPORT void mml_side_unload(MmlSideMod *) { g_ch = nullptr; }
+MML_EXPORT void mml_side_unload(MmlSideMod *) {
+    g_stop = true;
+    if (g_flooder.joinable()) g_flooder.join();
+    g_ch = g_back = g_flood = nullptr;
+}

@@ -51,6 +51,22 @@ pub fn offline(host: Host) -> Value {
         file.is_some() && file != own && own.as_deref() == Some(b"the archive's own".as_slice()), json!([s(&file), s(&own)]));
     c.check("file_read: no such file: None", host.file_read("no\\such.file", 0).is_none(), json!(null));
     c.check("render_device with no game: null", host.render_device(9).is_null(), json!(null));
+    // a channel (the one a 64-bit half would open): a value written whole and read back, another size refused
+    #[derive(Clone, Copy, PartialEq, Debug)]
+    #[repr(C)]
+    struct Body {
+        pos: [f32; 3],
+        n: u32,
+    }
+    let ch = host.channel_open("bodies", core::mem::size_of::<Body>() as u32);
+    let before = ch.and_then(|ch| ch.read_value::<Body>());
+    let body = Body { pos: [1.0, 2.5, -3.0], n: 7 };
+    let wrote = ch.is_some_and(|ch| ch.write_value(&body));
+    let back = ch.and_then(|ch| ch.read_value::<Body>());
+    c.check("channel: nothing before the first write; a value written whole, read back as version 1",
+        before.is_none() && wrote && back == Some((body, 1)), json!(format!("{back:?}")));
+    c.check("channel: the same name with another size refused", host.channel_open("bodies", 4).is_none(), json!(null));
+    c.check("gfx_shared_texture outside a pass: None", host.gfx_shared_texture("picture").is_none(), json!(null));
     // (a pass and a view are kept with the bridge off, as mml.h says: refused only with no function, a size over
     // 8192, eight views; they run once the bridge is on)
     let pass = host.gfx_pass(0, |_| ());

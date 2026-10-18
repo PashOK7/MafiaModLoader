@@ -360,6 +360,17 @@ typedef struct MmlGfxFrame {
  * state too (premultiplied over: each pass is laid over the passes before it). */
 typedef void (*MmlGfxPassFn)(const MmlGfxFrame *frame, void *user);
 
+/* A texture of a mod's 64-bit half, opened on the graphics bridge's device (gfx_shared_texture). */
+typedef struct MmlSharedTexture {
+    uint32_t size;          /* sizeof(MmlSharedTexture), set by the caller */
+    void *texture;          /* ID3D11Texture2D* */
+    void *srv;              /* ID3D11ShaderResourceView* (its format's own view; a typeless one: NULL) */
+    uint32_t width, height;
+    uint32_t format;        /* DXGI_FORMAT */
+    uint32_t generation;    /* the half's: changes when it makes the texture anew */
+} MmlSharedTexture;
+typedef struct MmlChannel MmlChannel;   /* shared memory with the mod's 64-bit half (channel_open) */
+
 /* The mission's scene drawn again, by LS3D itself, from another camera into a target of the bridge's (scene_view;
  * docs/MODDING.md "The scene from another camera"): a planar reflection (a mirrored camera and a clip plane), the
  * eyes of a headset (asymmetric frusta), a rear-view mirror, a security camera. Before the frame's own drawing, each
@@ -1448,6 +1459,21 @@ typedef struct MmlHost {
      * nearest to `at` (C_roads::GetNearNode: what the game's drives, ENEMY_CAR_MOVETO, plan their way between), its
      * place into out. Its index + 1; 0 none (no mission, a mission with no road network). Game thread. */
     int (*road_near)(MmlMod *mod, const float at[3], float out[3]);
+
+    /* ---- a mod's 64-bit half (both builds; mml/side.h, docs/MODDING.md "64-bit halves"): what the two halves share.
+     * channel_open: "<name>" of this mod, the same block of shared memory its 64-bit half opens with
+     * side.h channel_open (the same size: else NULL); one half writes, the other reads. channel_write: a whole new
+     * version (at most size bytes); channel_read: the latest whole version copied (its length; 0 none yet), its
+     * number in *version. Any thread; the channels close with the mod's unload.
+     * gfx_shared_texture: the 64-bit half's texture of that name (side.h texture_create) on the graphics bridge's
+     * device, opened at the first ask and again whenever the half makes it anew (its generation): out's texture and
+     * srv (ID3D11Texture2D*, ID3D11ShaderResourceView*: the loader's, not to be released), size and format. 1 there,
+     * 0 not (yet). Inside a graphics pass (the bridge's device). The half writes it when the 32-bit half does not read
+     * it: a channel tells which version is whole (two textures, written in turn). */
+    MmlChannel *(*channel_open)(MmlMod *mod, const char *name, uint32_t size);
+    int (*channel_write)(MmlChannel *ch, const void *data, uint32_t bytes);
+    uint32_t (*channel_read)(MmlChannel *ch, void *data, uint32_t cap, uint64_t *version);
+    int (*gfx_shared_texture)(MmlMod *mod, const char *name, MmlSharedTexture *out);
 } MmlHost;
 
 #define MML_ZONE_PLAYER 0x1u

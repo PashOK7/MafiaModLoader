@@ -53,9 +53,12 @@ inline bool ChannelOpen(Channel *c, uint32_t gamePid, const std::string &mod, co
     } else {
         for (int i = 0; i < 200 && h->magic != kChannelMagic; i++) Sleep(1);   // (the other half is setting it up)
         if (h->magic != kChannelMagic || h->size != size) {
+            bool ready = h->magic == kChannelMagic;
+            uint32_t theirs = h->size;   // (read before the view is gone)
             UnmapViewOfFile(p);
             CloseHandle(m);
-            *err = "the channel exists with another size (" + std::to_string(h->size) + " bytes a version)";
+            *err = ready ? "the channel exists with another size (" + std::to_string(theirs) + " bytes a version)"
+                         : std::string("the channel exists and was never set up by the half that made it");
             return false;
         }
     }

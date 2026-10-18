@@ -9,6 +9,48 @@ use core::ptr;
 
 pub use sys::{MmlModelMaterial as ModelMaterial, MmlModelNode as ModelNode, MmlProgress as Progress, MmlStats as Stats};
 
+/// A channel with the mod's 64-bit half (channel_open): one block of shared memory, each write a whole new version,
+/// a read the latest whole one. Any thread; closed with the mod's unload (not to be used after it).
+#[derive(Clone, Copy)]
+pub struct Channel {
+    host: Host,
+    raw: *mut sys::MmlChannel,
+}
+unsafe impl Send for Channel {}
+unsafe impl Sync for Channel {}
+impl Channel {
+    /// A whole new version (at most the channel's size); false: too long
+    pub fn write(&self, data: &[u8]) -> bool {
+        unsafe { f!(self.host, channel_write)(self.raw, data.as_ptr() as *const c_void, data.len() as u32) != 0 }
+    }
+    /// The latest whole version copied into buf: its length and number; None: nothing written yet
+    pub fn read(&self, buf: &mut [u8]) -> Option<(usize, u64)> {
+        let mut version = 0u64;
+        let n = unsafe { f!(self.host, channel_read)(self.raw, buf.as_mut_ptr() as *mut c_void, buf.len() as u32, &mut version) };
+        if version != 0 { Some((n as usize, version)) } else { None }
+    }
+    /// A plain value written whole (a #[repr(C)] struct of numbers)
+    pub fn write_value<T: Copy>(&self, v: &T) -> bool {
+        self.write(unsafe { core::slice::from_raw_parts(v as *const T as *const u8, core::mem::size_of::<T>()) })
+    }
+    /// The latest version read as a plain value, with its number; None: nothing yet, or a version of another length
+    pub fn read_value<T: Copy>(&self) -> Option<(T, u64)> {
+        let mut v = core::mem::MaybeUninit::<T>::zeroed();
+        let buf = unsafe { core::slice::from_raw_parts_mut(v.as_mut_ptr() as *mut u8, core::mem::size_of::<T>()) };
+        let (n, version) = self.read(buf)?;
+        if n == core::mem::size_of::<T>() { Some((unsafe { v.assume_init() }, version)) } else { None }
+    }
+}
+impl Host {
+    /// The channel "<name>" of this mod, the one its 64-bit half opens (side.h channel_open) with the same size;
+    /// None: another size, or no memory
+    pub fn channel_open(&self, name: &str, size: u32) -> Option<Channel> {
+        let n = cstring(name);
+        let raw = unsafe { f!(self, channel_open)(self.module, n.as_ptr(), size) };
+        if raw.is_null() { None } else { Some(Channel { host: *self, raw }) }
+    }
+}
+
 /// A .4ds model read and parsed (model_open); closed when dropped (or at the unload).
 pub struct Model {
     host: Host,

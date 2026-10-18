@@ -27,10 +27,16 @@
 #include <set>
 #include <thread>
 #include "json.hpp"
+#include "../sidecar/channel.h"
 #include "../sidecar/proto.h"
 #include "../sidecar/ring.h"
 
 using json = nlohmann::json;
+
+struct MmlChannel {   // (mml.h's opaque channel)
+    side::Channel ch;
+    MmlMod *mod;
+};
 
 namespace host {
 json BridgeCall(const std::string &method, const json &params, int timeoutMs);   // (bridge.cpp)
@@ -60,7 +66,8 @@ struct HalfState {
 };
 std::map<std::string, HalfState> g_halves;
 std::map<std::string, std::string> g_commands;   // "<mod>.<name>" -> help
-struct SharedTex { HANDLE handle; uint32_t w, h, format, generation; };
+struct SharedTex { HANDLE handle; uint32_t w, h, format, generation; uint64_t stamp; };
+uint64_t g_texStamp;
 std::map<std::string, std::map<std::string, SharedTex>> g_textures;   // mod -> name -> texture
 std::set<std::string> g_subTypes;   // the union of every half's subscriptions ("*": all)
 std::atomic<bool> g_anySub{false}, g_tickSub{false}, g_frameSub{false};
@@ -199,7 +206,7 @@ void Handle(uint32_t type, uint32_t aux, const std::string &payload) {
         auto it = m.find(name);
         if (it != m.end() && it->second.handle) CloseHandle(it->second.handle);
         m[name] = SharedTex{reinterpret_cast<HANDLE>(static_cast<uintptr_t>(j.value("handle", 0ull))), j.value("width", 0u),
-                            j.value("height", 0u), j.value("format", 0u), j.value("generation", 0u)};
+                            j.value("height", 0u), j.value("format", 0u), j.value("generation", 0u), ++g_texStamp};
         break;
     }
     case side::kTextureGone: {
@@ -492,19 +499,61 @@ std::vector<std::pair<std::string, std::string>> SidecarCommands() {
     return std::vector<std::pair<std::string, std::string>>(g_commands.begin(), g_commands.end());
 }
 
-// A half's shared texture, for its 32-bit half (gfx.cpp opens it on its device): false, none of that name.
-bool SidecarTexture(const std::string &mod, const std::string &name, void **handle, uint32_t *w, uint32_t *h, uint32_t *format, uint32_t *generation) {
+// A half's shared texture, for its 32-bit half (gfx.cpp opens it on its device): false, none of that name. The handle
+// kept here is closed when the half makes the texture anew, so the caller gets a copy of its own.
+bool SidecarTexture(const std::string &mod, const std::string &name, SidecarTex *out, bool dup) {
     std::lock_guard<std::mutex> lk(g_mx);
     auto m = g_textures.find(mod);
     if (m == g_textures.end()) return false;
     auto t = m->second.find(name);
-    if (t == m->second.end()) return false;
-    *handle = t->second.handle;
-    *w = t->second.w;
-    *h = t->second.h;
-    *format = t->second.format;
-    *generation = t->second.generation;
+    if (t == m->second.end() || !t->second.handle) return false;
+    const SharedTex &s = t->second;
+    *out = SidecarTex{nullptr, s.w, s.h, s.format, s.generation, s.stamp};
+    if (dup) {
+        HANDLE mine = nullptr;
+        if (!DuplicateHandle(GetCurrentProcess(), s.handle, GetCurrentProcess(), &mine, 0, FALSE, DUPLICATE_SAME_ACCESS)) return false;
+        out->handle = mine;
+    }
     return true;
+}
+
+// ---- the 32-bit halves' channels: the same memory as the 64-bit half's channel_open (sidecar/channel.h), named by
+// the game's pid, the mod and the channel; they work whether or not the sidecar runs (either half may open first).
+namespace {
+std::mutex g_chMx;
+std::vector<MmlChannel *> g_channels;
+} // namespace
+
+MmlChannel *SidecarChannelOpen(MmlMod *mod, const char *name, uint32_t size, std::string *err) {
+    auto *c = new MmlChannel{};
+    c->mod = mod;
+    if (!side::ChannelOpen(&c->ch, GetCurrentProcessId(), ModIdOf(mod), name, size, err)) {
+        delete c;
+        return nullptr;
+    }
+    std::lock_guard<std::mutex> lk(g_chMx);
+    g_channels.push_back(c);
+    return c;
+}
+int SidecarChannelWrite(MmlChannel *ch, const void *data, uint32_t bytes) {
+    return ch && (data || !bytes) && side::ChannelWrite(&ch->ch, data, bytes) ? 1 : 0;
+}
+uint32_t SidecarChannelRead(MmlChannel *ch, void *data, uint32_t cap, uint64_t *version) {
+    if (!ch || (!data && cap)) {
+        if (version) *version = 0;
+        return 0;
+    }
+    return side::ChannelRead(&ch->ch, data, cap, version);
+}
+void SidecarChannelsForget(MmlMod *mod) {
+    std::lock_guard<std::mutex> lk(g_chMx);
+    for (MmlChannel *&c : g_channels)
+        if (c->mod == mod) {
+            side::ChannelClose(&c->ch);
+            delete c;
+            c = nullptr;
+        }
+    g_channels.erase(std::remove(g_channels.begin(), g_channels.end(), nullptr), g_channels.end());
 }
 
 void SidecarShutdown() {

@@ -2174,3 +2174,29 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   in 1.0 as it is) and loaded in both at once, the drives given together: both arrived (3218 and 3217 m in 348
   and 354 s), no knock, at most 13.6 and 13.9 m/s (49, 50 km/h), the game's unsticking at the same two stops in
   both (a crossing's wait), the two cars 0 to 34 m apart on the way (the driver's random speed factor).
+
+## 2026-10-18: the 64-bit sidecar, and what its two halves share
+
+- **Made** (the commit before this one): `mml-sidecar64.exe`, a 64-bit process the loader starts in a job object
+  beside the game, loading the mods' 64-bit halves (`"entry64"`, `sdk/include/mml/side.h`) from fresh copies; two
+  rings of messages in shared memory carry the bridge's calls, the events, the halves' commands, their shared
+  textures' handles. Then the 32-bit side of what the halves share: `channel_open`, `channel_write`, `channel_read`
+  and `gfx_shared_texture` in `MmlHost` (host/sidecar.cpp, host/gfx.cpp; Rust: `Host::channel_open`,
+  `Channel::write_value`/`read_value`, `Host::gfx_shared_texture`, `d3d_shared_texture`). A shared texture is opened
+  on the graphics bridge's device at a pass's first ask (`OpenSharedResource1` of a copy of its NT handle, the
+  sidecar's kept by the loader), again when the half makes it anew (a stamp the loader gives each one) or the device
+  is new; a failed open is kept, not tried every frame.
+- **Measured**: `mods/examples/side_picture` (two halves): the 32-bit half writes the frame's number into a channel
+  at `FRAME`, the 64-bit half's worker (woken by `FRAME`, which the sidecar is told of right after the mods) clears
+  one of two Direct3D 12 textures to that frame's colour and bar, waits for its fence, and names the texture in
+  another channel; the 32-bit half's pass draws it in the frame's corner. Both labs at once: 646 frames of 646 drew
+  their own frame's picture; the picture was whole 0.4 ms after the frame's start (6 to 7 ms before the pass);
+  a reload gave 7 frames with none, then the same. So the frame's state out at `FRAME` and a result back within the
+  frame is not a frame late: what PhysX 5 needs.
+- **Found on the way**: `side::ChannelOpen` (sidecar/channel.h, both processes) read the existing channel's size for
+  its error after unmapping its view: an open with another size faulted (the offline tests' new refusal case found
+  it). The session's MCP server was built before the sidecar's commit, so its `deploy` did not merge the 64-bit halves
+  (copied by hand once; the server is built again for the next session).
+- **Seen**: offline tests ALL PASSED (side_test now has both halves: both channels' ways, another size refused, a
+  read while the other process writes as fast as it can: about 30 000 versions in a second, none torn or gone back);
+  both labs (above).

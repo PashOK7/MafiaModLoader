@@ -10,7 +10,8 @@ use core::ptr;
 
 pub use sys::{
     MmlFrameStats as FrameStats, MmlGameCamera as GameCamera, MmlGfxConstants as GfxConstants, MmlGfxView as GfxView,
-    MmlRenderCamera as RenderCamera, MmlShadowSettings as ShadowSettings, MmlViewCamera as ViewCamera,
+    MmlRenderCamera as RenderCamera, MmlShadowSettings as ShadowSettings, MmlSharedTexture as SharedTexture,
+    MmlViewCamera as ViewCamera,
 };
 
 /// The graphics bridge's frame as a pass gets it (mml.h MmlGfxFrame; its shaders' side: mml/gfx/frame.hlsli).
@@ -141,6 +142,17 @@ mod typed {
         }
     }
     impl super::Host {
+        /// gfx_shared_texture typed: the texture and its view, references of their own
+        pub fn d3d_shared_texture(
+            &self,
+            name: &str,
+        ) -> Option<(windows::Win32::Graphics::Direct3D11::ID3D11Texture2D, Option<ID3D11ShaderResourceView>, super::SharedTexture)> {
+            let t = self.gfx_shared_texture(name)?;
+            unsafe {
+                let tex = windows::Win32::Graphics::Direct3D11::ID3D11Texture2D::from_raw_borrowed(&t.texture)?.clone();
+                Some((tex, ID3D11ShaderResourceView::from_raw_borrowed(&t.srv).cloned(), t))
+            }
+        }
         /// The game's device as Direct3D 9 (the game on a Direct3D 9 wrapper, as in the labs), during the frame's
         /// drawing (RENDER_* events). A reference of its own (released when dropped).
         pub fn d3d9_device(&self) -> Option<windows::Win32::Graphics::Direct3D9::IDirect3DDevice9> {
@@ -257,6 +269,22 @@ impl Host {
     /// A pass also run over every scene view's picture (its effect in mirrors and reflections)
     pub fn gfx_pass_views(&self, pass: i32, on: bool) -> bool {
         unsafe { f!(self, gfx_pass_views)(self.module, pass, on as c_int) != 0 }
+    }
+    /// The mod's 64-bit half's texture of that name (side.h texture_create) on the bridge's device, inside a pass:
+    /// its ID3D11Texture2D and view (the loader's: valid in this pass), size, format and the half's generation;
+    /// None: not there (yet)
+    pub fn gfx_shared_texture(&self, name: &str) -> Option<SharedTexture> {
+        let n = cstring(name);
+        let mut t = SharedTexture {
+            size: core::mem::size_of::<SharedTexture>() as u32,
+            texture: ptr::null_mut(),
+            srv: ptr::null_mut(),
+            width: 0,
+            height: 0,
+            format: 0,
+            generation: 0,
+        };
+        if unsafe { f!(self, gfx_shared_texture)(self.module, n.as_ptr(), &mut t) } != 0 { Some(t) } else { None }
     }
 
     // ---- the scene from another camera

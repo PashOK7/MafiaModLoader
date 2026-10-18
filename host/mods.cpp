@@ -535,6 +535,16 @@ int H_RoadNear(MmlMod *m, const float at[3], float out[3]) {
     if (out) for (int i = 0; i < 3; i++) out[i] = p[i];
     return id + 1;
 }
+MmlChannel *H_ChannelOpen(MmlMod *m, const char *name, uint32_t size) {
+    if (!Alive(m) || !name || !*name) return nullptr;
+    std::string err;
+    MmlChannel *c = SidecarChannelOpen(m, name, size, &err);
+    if (!c) Log(MML_LOG_WARN, ModIdOf(m), "channel_open %s: %s", name, err.c_str());
+    return c;
+}
+int H_ChannelWrite(MmlChannel *ch, const void *data, uint32_t bytes) { return SidecarChannelWrite(ch, data, bytes); }
+uint32_t H_ChannelRead(MmlChannel *ch, void *data, uint32_t cap, uint64_t *version) { return SidecarChannelRead(ch, data, cap, version); }
+int H_GfxSharedTexture(MmlMod *m, const char *name, MmlSharedTexture *out) { return Alive(m) ? GfxSharedTexture(m, name, out) : 0; }
 int H_ZoneAdd(MmlMod *m, const float pos[3], float radius, void *frame, MmlZoneFn fn, void *user) {
     std::string err;
     int id = Alive(m) && fn ? ZoneAdd(m, pos, radius, frame, fn, user, &err) : 0;
@@ -835,6 +845,7 @@ bool UnloadMod(ModEntry *e, const char *why) {
     HudModGone(m);
     AnimsModGone(m);
     CapturesRemove(m);
+    SidecarChannelsForget(m);
     ConfigForget(m);
     g_subs.erase(std::remove_if(g_subs.begin(), g_subs.end(), [&](const Sub &s) { return s.mod == m; }), g_subs.end());
     for (auto it = g_commands.begin(); it != g_commands.end();) it = it->second.mod == m ? g_commands.erase(it) : std::next(it);
@@ -1196,6 +1207,10 @@ void ModsInit() {
     g_host.human_order = H_HumanOrder;
     g_host.human_order_state = H_HumanOrderState;
     g_host.road_near = H_RoadNear;
+    g_host.channel_open = H_ChannelOpen;
+    g_host.channel_write = H_ChannelWrite;
+    g_host.channel_read = H_ChannelRead;
+    g_host.gfx_shared_texture = H_GfxSharedTexture;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();

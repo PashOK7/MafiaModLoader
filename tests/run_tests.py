@@ -937,6 +937,21 @@ def wait_for(fn, seconds=8.0):
     return v
 
 
+def channel_checks(b, when):
+    """side_test's channels both ways: box written by the 64-bit half, read by the 32-bit one; back the other way."""
+    v0 = (b.call('side_test.peek').get('result') or {}).get('version', 0)
+    w = b.call('side_test.write', {'text': 'from 64 bits', 'when': when})
+    r = b.call('side_test.peek')
+    got = r.get('result') or {}
+    check('a channel from the 64-bit half to the 32-bit one (%s): the latest version, whole' % when,
+          w['ok'] and r['ok'] and json.loads(got.get('text') or 'null') == {'text': 'from 64 bits', 'when': when} and got['version'] > v0, (w, r))
+    w = b.call('side_test.post', {'n': 7, 'when': when})
+    r = b.call('side_test.fetch')
+    got = r.get('result') or {}
+    check('a channel from the 32-bit half to the 64-bit one (%s)' % when,
+          w['ok'] and r['ok'] and json.loads(got.get('text') or 'null') == {'n': 7, 'when': when} and got['version'] >= 1, (w, r))
+
+
 def sidecar_tests(b):
     """The 64-bit sidecar (host/sidecar.cpp, sidecar/main.cpp): side_test's 64-bit half loaded in it, its commands
     answered from 64 bits, its calls to the bridge, the frames told to it, a reload, a fault (the half unloaded, the
@@ -973,6 +988,16 @@ def sidecar_tests(b):
     st = r['result'] if r['ok'] else {}
     check('sidecar.state: running, the half loaded and subscribed to FRAME',
           st.get('running') and st['halves']['side_test']['state'] == 'loaded' and 'FRAME' in st['halves']['side_test']['subscribed'], st)
+    channel_checks(b, 'the first load')
+    r = b.call('side_test.refusals')
+    check('channels: another size refused, a version longer than the channel refused; gfx_shared_texture outside a pass: 0',
+          r['ok'] and r['result'] == {'other_size': False, 'too_long': 0, 'texture_outside_pass': 0}, r)
+    r = b.call('side_test.flood')
+    t = b.call('side_test.torn') if r['ok'] else r
+    tr = t.get('result') or {}
+    check('a channel across the processes: read while the other half writes as fast as it can, every read one whole '
+          'version, none gone back (%s reads, %s versions)' % (tr.get('reads'), tr.get('versions')),
+          t['ok'] and tr['reads'] > 1000 and tr['versions'] > 100 and tr['torn'] == 0 and tr['backwards'] == 0, t)
 
     # a reload: both halves (here one), from a fresh copy
     gen = h.get('generation', 0) if h else 0
@@ -980,6 +1005,7 @@ def sidecar_tests(b):
     h = wait_for(lambda: half().get('state') == 'loaded' and half().get('generation', 0) > gen and half())
     r = b.call('side_test.frames')
     check('mod.reload: the 64-bit half loaded again, its state new', h and r['ok'] and r['result']['frames'] < f2 + 1000, (h, r))
+    channel_checks(b, 'after mod.reload')
 
     # a fault in the 64-bit half: unloaded, told; the sidecar and the game go on
     seq = b.call('events.since', {'seq': 1 << 62, 'limit': 1})['result']['latest']
@@ -1071,14 +1097,13 @@ def main():
     shutil.copytree(os.path.join(src, 'files_a'), os.path.join(mods, 'files_a'))
     shutil.rmtree(os.path.join(mods, 'files_b', 'files'), ignore_errors=True)
     shutil.copytree(os.path.join(src, 'files_b', 'files'), os.path.join(mods, 'files_b', 'files'))
-    # the sidecar and side_test, a mod with a 64-bit half alone (the x64 preset's build)
+    # the sidecar and side_test's 64-bit half (the x64 preset's build) beside its 32-bit half (this build's)
     side_dir = os.path.join(HARNESS, 'mml', 'sidecar')
     shutil.rmtree(side_dir, ignore_errors=True)
-    shutil.rmtree(os.path.join(mods, 'side_test'), ignore_errors=True)
+    shutil.rmtree(os.path.join(mods, 'side_test', 'x64'), ignore_errors=True)
     if os.path.exists(SIDECAR):
         shutil.copytree(os.path.dirname(SIDECAR), side_dir)
-        shutil.copytree(os.path.join(OUT64, 'tests', 'side_test'), os.path.join(mods, 'side_test'))
-        shutil.copy(os.path.join(src, 'side_test', 'mod.json'), os.path.join(mods, 'side_test', 'mod.json'))
+        shutil.copytree(os.path.join(OUT64, 'tests', 'side_test', 'x64'), os.path.join(mods, 'side_test', 'x64'))
     archive = os.path.join(HARNESS, 'archive')
     shutil.rmtree(archive, ignore_errors=True)
     os.makedirs(archive)

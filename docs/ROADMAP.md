@@ -693,6 +693,16 @@ What is done, what comes next and later, and what is known to be missing or wron
   camera turned and given back; a prop in the hand while he turns and walks; a car made over the open river (the
   whole city); an exhaust under the elevated railway (the pipe behind, pointing back, emitting, the deck over it).
   42 checks a build, two full runs in a row in both labs. They found `spawn`'s car over water flung 315 km (fixed).
+- **The 64-bit sidecar** (2026-10-18; item 19 but its first heavy user): `mml-sidecar64.exe`, started by the loader
+  in a job object and started again when it ends, loads the mods' 64-bit halves (`"entry64"`, `sdk/include/mml/side.h`)
+  from fresh copies (hot reload), a fault unloading the half alone. A half has the whole bridge, the game's events,
+  commands of its own; the two halves share channels (shared memory, whole versions: mml.h and side.h
+  `channel_open`) and textures (Direct3D 12 shared textures the 64-bit half draws, opened on the graphics bridge's
+  device for the 32-bit half's passes: `gfx_shared_texture`; C and Rust). The frame's round trip measured in both labs
+  by `mods/examples/side_picture`: the picture of each frame drawn by the 64-bit half 0.4 ms after the frame's start
+  and shown in the same frame's pass, every frame (docs/MODDING.md "64-bit halves"). Offline: `side_test` (both
+  halves, both channels' ways, 30 000 versions a second read across the processes with none torn, reloads, faults, the
+  sidecar killed).
 
 ## Next, by importance
 
@@ -849,7 +859,8 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
 
 ### Tier 4: what only exists for 64 bits
 
-19. **The 64-bit sidecar** (the owner's decision; S R with PhysX 5, V if a runtime needs it): `mml-sidecar64.exe`,
+19. *(The sidecar, its channels and shared textures done 2026-10-18: see "Done"; left: the first heavy user, PhysX 5,
+    and VR's question.)* **The 64-bit sidecar** (the owner's decision; S R with PhysX 5, V if a runtime needs it): `mml-sidecar64.exe`,
     started and watched by the host, loads 64-bit mods (the same kind of manifest, built for x64), their faults
     isolated and their reloads hot as 32-bit mods'. Shared memory between the processes: channels a frame (the
     game's state out: actors, bones, car bodies; results back: poses, forces) and calls both ways for what is rare;
@@ -936,6 +947,13 @@ merged, sorted by importance):
 
 ## Known gaps
 
+- **The sidecar** (2026-10-18): a channel has no way to wait for a new version (a 64-bit half reads it when `FRAME`
+  wakes it, as `side_picture` does, or polls); a channel is gone when both halves have closed it, so its versions
+  start again after a reload of both. A shared texture has no lock or fence between the processes: the halves keep to
+  the rule of two textures written in turn (docs/MODDING.md). Textures can be made only once the graphics bridge runs
+  (a mod with `"gfx": true` on at the start); the formats are the ones measured on one GPU (an RTX 3070). PhysX 5, the
+  design's first heavy user, is not written yet; with it the round trip of a frame's bodies (state out at `FRAME`,
+  poses back before the world is drawn) is to be measured again.
 - **An actor made over the open river sleeps** (seen 2026-10-18, 1.2): a car spawned there is drawn but its model
   frame's stamp (`+0x13C`, what C_game::Tick wakes a sleeping actor by) stays -1, so it floats where it was made
   instead of falling in; a person put in the air there stands (a standing NPC does not fall). A ragdoll or a water
