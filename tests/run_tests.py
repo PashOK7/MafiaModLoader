@@ -923,6 +923,89 @@ def rust_tests(b):
     check('kit_rs: loaded again after its fault', r['ok'] and b.call('kit_rs.add', {'a': 1, 'b': 1}).get('result') == 2, r)
 
 
+OUT64 = os.path.join(ROOT, 'build', 'x64', 'out')
+SIDECAR = os.path.join(OUT64, 'mml', 'sidecar', 'mml-sidecar64.exe')
+
+
+def wait_for(fn, seconds=8.0):
+    """fn() until it is true (its last value), polled every 0.1 s."""
+    end = time.time() + seconds
+    v = fn()
+    while not v and time.time() < end:
+        time.sleep(0.1)
+        v = fn()
+    return v
+
+
+def sidecar_tests(b):
+    """The 64-bit sidecar (host/sidecar.cpp, sidecar/main.cpp): side_test's 64-bit half loaded in it, its commands
+    answered from 64 bits, its calls to the bridge, the frames told to it, a reload, a fault (the half unloaded, the
+    game going on), the sidecar killed and started again with its halves."""
+    if not os.path.exists(SIDECAR):
+        check('the sidecar is built (cmake --preset x64, cmake --build --preset x64-release)', False, SIDECAR)
+        return
+
+    def half():
+        r = b.call('mods.list')
+        m = next((m for m in r['result'] if m['id'] == 'side_test'), {}) if r['ok'] else {}
+        return m.get('x64', {})
+    h = wait_for(lambda: half().get('state') == 'loaded' and half())
+    check('side_test: its 64-bit half loaded in the sidecar', h and h.get('state') == 'loaded', half())
+    r = b.call('side_test.echo', {'a': 1, 'b': [2, 3]})
+    check('a 64-bit command answered from 64 bits, its args as they were sent',
+          r['ok'] and r['result'].get('args') == {'a': 1, 'b': [2, 3]} and r['result'].get('pointer_bits') == 64, r)
+    pid = b.call('ping')['result']['pid']
+    r = b.call('side_test.call', {'method': 'ping'})
+    check('a bridge call from the 64-bit side (ping, the bridge\'s thread): the game\'s pid', r['ok'] and r['result'].get('pid') == pid, r)
+    r = b.call('side_test.call', {'method': 'mods.list'})
+    check('a bridge call from the 64-bit side answered by the game thread (mods.list)',
+          r['ok'] and isinstance(r['result'], list) and any(m['id'] == 'side_test' for m in r['result']), str(r)[:300])
+    r = b.call('side_test.call', {'method': 'kit.status'})
+    check('a 32-bit mod\'s command called from the 64-bit side', r['ok'], str(r)[:300])
+    f1 = b.call('side_test.frames')['result']['frames']
+    time.sleep(0.5)
+    f2 = b.call('side_test.frames')['result']['frames']
+    check('FRAME events reach the 64-bit half (%d -> %d)' % (f1, f2), f2 > f1 > 0, (f1, f2))
+    r = b.call('commands.list')
+    cmd = next((c for c in r['result'] if c['name'] == 'side_test.echo'), None) if r['ok'] else None
+    check('commands.list: the 64-bit half\'s commands, by the sidecar', cmd and cmd.get('thread') == 'sidecar', cmd)
+    r = b.call('sidecar.state')
+    st = r['result'] if r['ok'] else {}
+    check('sidecar.state: running, the half loaded and subscribed to FRAME',
+          st.get('running') and st['halves']['side_test']['state'] == 'loaded' and 'FRAME' in st['halves']['side_test']['subscribed'], st)
+
+    # a reload: both halves (here one), from a fresh copy
+    gen = h.get('generation', 0) if h else 0
+    b.call('mod.reload', {'id': 'side_test'})
+    h = wait_for(lambda: half().get('state') == 'loaded' and half().get('generation', 0) > gen and half())
+    r = b.call('side_test.frames')
+    check('mod.reload: the 64-bit half loaded again, its state new', h and r['ok'] and r['result']['frames'] < f2 + 1000, (h, r))
+
+    # a fault in the 64-bit half: unloaded, told; the sidecar and the game go on
+    seq = b.call('events.since', {'seq': 1 << 62, 'limit': 1})['result']['latest']
+    r = b.call('side_test.fault')
+    check('a 64-bit command that faults: an error', not r['ok'] and 'faulted' in r.get('error', ''), r)
+    h = wait_for(lambda: half().get('state') == 'faulted' and half())
+    check('the faulted half: marked faulted, where it faulted named', h and 'side_test' in h.get('where', '') + h.get('error', ''), half())
+    ev = b.call('events.since', {'seq': seq, 'limit': 50})['result']['events']
+    check('MOD_FAULTED told, the 64-bit half named', any(e['type'] == 'MOD_FAULTED' and e['data'].get('half') == 'x64' for e in ev), ev[-5:])
+    check('the game goes on after a 64-bit fault', b.call('ping')['ok'] and b.call('kit.status')['ok'])
+    b.call('mod.reload', {'id': 'side_test'})
+    check('a faulted half loaded again by mod.reload', wait_for(lambda: half().get('state') == 'loaded'), half())
+
+    # the sidecar killed: SIDECAR_EXITED, started again with its halves
+    st = b.call('sidecar.state')['result']
+    seq = b.call('events.since', {'seq': 1 << 62, 'limit': 1})['result']['latest']
+    subprocess.run(['taskkill', '/F', '/PID', str(st.get('pid'))], capture_output=True)
+    ev = wait_for(lambda: [e for e in b.call('events.since', {'seq': seq, 'limit': 50})['result']['events'] if e['type'] == 'SIDECAR_EXITED'])
+    check('the sidecar killed: SIDECAR_EXITED, a restart promised', ev and ev[0]['data'].get('restart'), ev)
+    h = wait_for(lambda: half().get('state') == 'loaded' and half(), 10)
+    r = b.call('side_test.echo', {'again': True})
+    st2 = b.call('sidecar.state')['result']
+    check('started again: another process, the half loaded, its commands answer',
+          h and r['ok'] and st2.get('pid') not in (None, st.get('pid')), (h, r, st2.get('pid')))
+
+
 def ghidra_names_tests():
     """What the Ghidra projects are given (tools/ghidra_names.py), with no Ghidra: the ranks, the SDK's aliases, 1.0's
     names through the twins, the prototypes made from the decompile's signatures, a name and an annotation written
@@ -988,6 +1071,14 @@ def main():
     shutil.copytree(os.path.join(src, 'files_a'), os.path.join(mods, 'files_a'))
     shutil.rmtree(os.path.join(mods, 'files_b', 'files'), ignore_errors=True)
     shutil.copytree(os.path.join(src, 'files_b', 'files'), os.path.join(mods, 'files_b', 'files'))
+    # the sidecar and side_test, a mod with a 64-bit half alone (the x64 preset's build)
+    side_dir = os.path.join(HARNESS, 'mml', 'sidecar')
+    shutil.rmtree(side_dir, ignore_errors=True)
+    shutil.rmtree(os.path.join(mods, 'side_test'), ignore_errors=True)
+    if os.path.exists(SIDECAR):
+        shutil.copytree(os.path.dirname(SIDECAR), side_dir)
+        shutil.copytree(os.path.join(OUT64, 'tests', 'side_test'), os.path.join(mods, 'side_test'))
+        shutil.copy(os.path.join(src, 'side_test', 'mod.json'), os.path.join(mods, 'side_test', 'mod.json'))
     archive = os.path.join(HARNESS, 'archive')
     shutil.rmtree(archive, ignore_errors=True)
     os.makedirs(archive)
@@ -1001,7 +1092,7 @@ def main():
         if os.path.exists(p):
             os.remove(p)
     shutil.rmtree(os.path.join(HARNESS, 'mml', 'data'), ignore_errors=True)   # the mods' data folders: a clean start
-    proc = subprocess.Popen([os.path.join(HARNESS, 'mml_harness.exe'), '--seconds', '90'], cwd=HARNESS,
+    proc = subprocess.Popen([os.path.join(HARNESS, 'mml_harness.exe'), '--seconds', '150'], cwd=HARNESS,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     info_path = os.path.join(HARNESS, 'mml', 'bridge.json')
     for _ in range(100):
@@ -1384,6 +1475,7 @@ def main():
         heavy_tests(b)
         boxes_tests(b)
         rust_tests(b)
+        sidecar_tests(b)
         methods_tests(b)
         r = b.call('nonexistent.method')
         check('an unknown method: an error', not r['ok'])

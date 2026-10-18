@@ -91,6 +91,7 @@ int __fastcall hkMissionTick(void *self, void *edx, int ms) {
     MmlEvent ev = Event(MML_EVENT_MISSION_TICK);
     ev.dt = ms > 0 && ms < 200 ? ms / 1000.0f : 1.0f / 60.0f;
     Dispatch(ev);
+    SidecarTick(ev.dt);   // (the 64-bit halves subscribed to it)
     ScriptTick(ms);   // the programs of agents and mods, after the mission's own
     OrdersTick(ms);   // the people's orders done: ORDER_ENDED (a retry's wait in the mission's time)
     InteractTick(ms);   // the timers on the mission's clock
@@ -214,6 +215,7 @@ void Frame() {
     MmlEvent ev = Event(MML_EVENT_FRAME);
     ev.dt = dt;
     Dispatch(ev);
+    SidecarFrame(dt);
     FpuFrameExit();    // (and as it goes back: the game's again)
 }
 

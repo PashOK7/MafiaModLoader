@@ -1,0 +1,9 @@
+{
+  "id": "side_test",
+  "name": "The offline tests' 64-bit half",
+  "version": "0.1.0",
+  "type": "native",
+  "entry64": "x64/side_test.dll",
+  "enabled": true,
+  "load_order": 100
+}

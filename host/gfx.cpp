@@ -503,6 +503,7 @@ bool MakeDevice11() {
                                                   D3DRTYPE_TEXTURE, kFmtIntz));
     SafeRelease(d3d9ex);
     SafeRelease(d3d9);
+    if (haveLuid) SidecarAdapter(luid.LowPart, static_cast<uint32_t>(luid.HighPart));
     if (!haveLuid) return Fail("no adapter LUID from Direct3D 9Ex");
     if (!intz) return Fail("the adapter has no INTZ (readable depth) format");
     IDXGIFactory1 *factory = nullptr;

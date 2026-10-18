@@ -164,6 +164,16 @@ bool Immediate(const std::string &m, const json &p, json *result, std::string *e
     if (m == "where") { *result = Where(); return true; }
     if (m == "tap") { *result = tap::Command(p.is_object() ? p.value("cmd", "") : ""); return true; }
     if (m == "events.since") { *result = EventsSince(p, err); return true; }   // (events.cpp)
+    if (m == "sidecar.state") { *result = json::parse(SidecarState(), nullptr, false); return true; }
+    // a 64-bit half's command: the sidecar answers it, the game's frame not waited for
+    std::string reply;
+    bool ok = false;
+    if (SidecarCommand(m, p.dump(-1, ' ', false, json::error_handler_t::replace), &reply, &ok)) {
+        if (!ok) { *err = reply; return true; }
+        json r = json::parse(reply, nullptr, false);
+        *result = r.is_discarded() ? json(reply) : r;
+        return true;
+    }
     return false;
 }
 
@@ -265,6 +275,14 @@ DWORD WINAPI ServerThread(void *) {
 } // namespace
 
 uint64_t Frames() { return g_frames.load(); }
+
+// A call made inside the loader as an agent's (the sidecar's halves): {"result": ...} or {"error": {"message"}}.
+json BridgeCall(const std::string &method, const json &params, int timeoutMs) {
+    json p = params.is_null() ? json::object() : params;
+    if (p.is_object() && !p.contains("timeout_ms")) p["timeout_ms"] = timeoutMs;
+    bool authed = true;
+    return Handle(json{{"id", 0}, {"method", method}, {"params", p}}, &authed);
+}
 
 void BridgeStart() {
     QueryPerformanceFrequency(&g_freq);

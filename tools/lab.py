@@ -180,7 +180,18 @@ def install(game):
                 if f.lower().endswith(('.ilk', '.exp', '.lib', '.mmltmp')):
                     continue
                 shutil.copy2(os.path.join(folder, f), os.path.join(dst, f))
-    print('installed: MafiaModLoader.asi and mods', ', '.join(defined))
+    # the 64-bit build (the x64 preset): the sidecar, and the mods' 64-bit halves merged into their folders
+    out64 = os.path.join(ROOT, 'build', 'x64', 'out')
+    for rel in [os.path.join('mml', 'sidecar')] + [os.path.join('mml', 'mods', m) for m in defined]:
+        src = os.path.join(out64, rel)
+        for folder, _, files in os.walk(src):
+            dst = os.path.join(game, os.path.relpath(folder, out64))
+            os.makedirs(dst, exist_ok=True)
+            for f in files:
+                if not f.lower().endswith(('.ilk', '.exp', '.lib', '.mmltmp')):
+                    shutil.copy2(os.path.join(folder, f), os.path.join(dst, f))
+    print('installed: MafiaModLoader.asi and mods', ', '.join(defined),
+          '(and the sidecar)' if os.path.isdir(os.path.join(out64, 'mml', 'sidecar')) else '(no 64-bit build: no sidecar)')
 
 
 def mode(game, which):

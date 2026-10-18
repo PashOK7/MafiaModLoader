@@ -324,6 +324,7 @@ fn copy_dir(from: &Path, to: &Path, mod_id: Option<&str>, copied: &mut Vec<Strin
 pub fn deploy(only: Option<&[String]>, running: bool) -> Result<Deployed, String> {
     let root = repo_root().ok_or("cannot find the repository")?;
     let out = root.join("build").join("x86").join("out");
+    let out64 = root.join("build").join("x64").join("out");   // the sidecar and the mods' 64-bit halves (x64 preset)
     let game = game_dir()?;
     let mut d = Deployed { copied: vec![], skipped: vec![], mods: vec![], kept: vec![], others: vec![] };
     let asi = out.join("MafiaModLoader.asi");
@@ -360,7 +361,21 @@ pub fn deploy(only: Option<&[String]>, running: bool) -> Result<Deployed, String
             continue;
         }
         copy_dir(&src, &game.join("mml").join("mods").join(id), Some(id), &mut d.copied, &mut d.kept)?;
+        // its 64-bit half (the x64 preset's build: <id>/x64/), merged into the same folder
+        let half = out64.join("mml").join("mods").join(id);
+        if half.is_dir() {
+            copy_dir(&half, &game.join("mml").join("mods").join(id), None, &mut d.copied, &mut d.kept)?;
+        }
         d.mods.push(id.clone());
+    }
+    // the sidecar (build/x64/out/mml/sidecar), when the game is not running (its exe is locked while it runs)
+    let side = out64.join("mml").join("sidecar");
+    if side.is_dir() && only.is_none() {
+        if running {
+            d.skipped.push("mml/sidecar (the game is running: its sidecar's exe is locked; game_close, then deploy)".into());
+        } else {
+            copy_dir(&side, &game.join("mml").join("sidecar"), None, &mut d.copied, &mut d.kept)?;
+        }
     }
     if let Ok(rd) = std::fs::read_dir(game.join("mml").join("mods")) {
         d.others = rd.flatten().filter(|e| e.path().is_dir())

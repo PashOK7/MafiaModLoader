@@ -32,6 +32,7 @@ struct MmlReply { std::string text; bool error = false; };
 
 struct ModEntry {
     std::string id, name, version, type, entry, dir, error;
+    std::string entry64;              // "entry64": its 64-bit half, run by the sidecar (sidecar.cpp); "" none
     bool enabled = true;
     int order = 100;
     std::vector<std::string> depends;
@@ -660,7 +661,9 @@ bool ReadManifest(const std::string &dir, const std::string &folder, ModEntry *e
         e->name = j.value("name", e->id);
         e->version = j.value("version", "0.0.0");
         e->type = j.value("type", "native");
-        e->entry = j.value("entry", e->id + ".dll");
+        e->entry64 = j.value("entry64", std::string());
+        // a 64-bit half alone: "entry64" and no "entry"
+        e->entry = j.contains("entry") || e->entry64.empty() ? j.value("entry", e->id + ".dll") : std::string();
         e->enabled = j.value("enabled", true);
         e->order = j.value("load_order", 100);
         e->depends.clear();
@@ -703,8 +706,8 @@ bool LoadFilesOnly(ModEntry *e) {
     e->liveDir.clear();
     e->faulted = false;
     ++e->generation;
-    Log(MML_LOG_INFO, "host", "mod %s %s loaded (files only: %zu files, generation %u)", e->id.c_str(), e->version.c_str(),
-        FilesCount(e->id), e->generation);
+    Log(MML_LOG_INFO, "host", "mod %s %s loaded (%s: %zu files, generation %u)", e->id.c_str(), e->version.c_str(),
+        e->type == "files" ? "files only" : "no 32-bit DLL, its 64-bit half in the sidecar", FilesCount(e->id), e->generation);
     MmlEvent ev{};
     ev.size = sizeof ev;
     ev.type = MML_EVENT_MOD_LOADED;
@@ -732,9 +735,11 @@ bool LoadMod(ModEntry *e, std::string *err, bool keepFiles = false) {
     }
     if (ok) {
         FilesModOn(e->id, e->dir, e->order, false);
-        ok = e->type == "files" ? LoadFilesOnly(e) : LoadModDll(e, err);
+        ok = e->type == "files" || e->entry.empty() ? LoadFilesOnly(e) : LoadModDll(e, err);
     }
     if (!ok && !keepFiles) FilesModOff(e->id);
+    if (ok && !e->entry64.empty())   // its 64-bit half, with the 32-bit one (or alone): the sidecar loads it
+        SidecarModLoad(e->id, e->dir, e->entry64, ModDataDir(e->current), e->generation);
     return ok;
 }
 
@@ -799,6 +804,7 @@ bool LoadModDll(ModEntry *e, std::string *err) {
 bool UnloadMod(ModEntry *e, const char *why) {
     MmlMod *m = e->current;
     if (!m) return false;
+    if (!e->entry64.empty()) SidecarModUnload(e->id, why);
     if (e->unload && !e->faulted) {
         DWORD ex;
         {
@@ -921,7 +927,7 @@ void Scan() {
         }
         e->settings = tmp.settings;   // (metadata only: a loaded mod's page follows its manifest too)
         if (e->current) continue;
-        e->name = tmp.name; e->version = tmp.version; e->type = tmp.type; e->entry = tmp.entry; e->enabled = tmp.enabled;
+        e->name = tmp.name; e->version = tmp.version; e->type = tmp.type; e->entry = tmp.entry; e->entry64 = tmp.entry64; e->enabled = tmp.enabled;
         e->order = tmp.order; e->depends = tmp.depends; e->builds = tmp.builds; e->gfx = tmp.gfx; e->dir = tmp.dir;
     }
     std::stable_sort(g_mods.begin(), g_mods.end(), [](const std::unique_ptr<ModEntry> &a, const std::unique_ptr<ModEntry> &b) {
@@ -965,6 +971,10 @@ json ModValue(const ModEntry &e) {
               {"depends", e.depends}};
     if (!e.builds.empty()) j["builds"] = e.builds;
     if (e.gfx) j["gfx"] = true;
+    if (!e.entry64.empty()) {
+        std::string half = SidecarHalf(e.id);
+        j["x64"] = half.empty() ? json({{"entry", e.entry64}, {"state", "not loaded"}}) : json::parse(half, nullptr, false);
+    }
     if (e.current && !e.liveDir.empty()) j["live_dir"] = e.liveDir;
     if (size_t n = FilesCount(e.id)) j["files"] = n;
     if (!e.error.empty()) j["error"] = e.error;
@@ -1207,6 +1217,7 @@ std::vector<std::string> ModsWantingGfx() {
 
 void ModsShutdown() {
     for (auto it = g_mods.rbegin(); it != g_mods.rend(); ++it) UnloadMod(it->get(), "the game is closing");
+    SidecarShutdown();
 }
 
 bool Subscribed(MmlEventType type) {
@@ -1309,6 +1320,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (OrdersMethod(method, paramsJson, reply, &ok)) return ok;
     if (WatchMethod(method, paramsJson, reply, &ok)) return ok;
     if (CameraMethod(method, paramsJson, reply, &ok)) return ok;
+    if (SidecarMethod(method, paramsJson, reply, &ok)) return ok;
     if (method == "mods.list") { *reply = ModsList(); return true; }
     if (method == "commands.list") { *reply = CommandsList(); return true; }
     if (method == "hooks.list") { *reply = HookList(); return true; }
@@ -1423,6 +1435,8 @@ std::string CommandsList() {
     for (const MethodDoc &m : kMethods)
         out.push_back({{"name", m.name}, {"owner", "host"}, {"thread", m.thread}, {"params", m.params}, {"result", m.result}});
     for (auto &kv : g_commands) out.push_back({{"name", kv.first}, {"owner", Who(kv.second.mod)}, {"help", kv.second.help}});
+    for (auto &kv : SidecarCommands())
+        out.push_back({{"name", kv.first}, {"owner", kv.first.substr(0, kv.first.find('.')) + " (x64)"}, {"help", kv.second}, {"thread", "sidecar"}});
     return out.dump(-1, ' ', false, json::error_handler_t::replace);
 }
 

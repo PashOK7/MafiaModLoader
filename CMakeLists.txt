@@ -27,7 +27,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     # ---- the loader
     add_library(MafiaModLoader SHARED
         host/main.cpp host/paths.cpp host/log.cpp host/memory.cpp host/crash.cpp host/hooks.cpp host/mods.cpp host/game_hooks.cpp
-        host/bridge.cpp host/tap.cpp host/start.cpp host/input.cpp host/screenshot.cpp host/draw.cpp host/config.cpp host/menus.cpp host/menus10.cpp host/script.cpp host/orders.cpp host/world.cpp host/lifecycle.cpp host/files.cpp host/render.cpp host/gfx.cpp host/view.cpp host/geom.cpp host/prof.cpp host/events.cpp host/native.cpp host/humans.cpp host/watch.cpp host/happen.cpp host/collide.cpp host/state.cpp host/lights.cpp host/effects.cpp host/props.cpp host/sound.cpp host/control.cpp host/interact.cpp host/hud.cpp host/saves.cpp host/anims.cpp host/items.cpp host/stats.cpp host/models.cpp host/meshes.cpp host/shaders.cpp host/shadows.cpp host/panel.cpp host/fpu.cpp host/gamecam.cpp)
+        host/bridge.cpp host/tap.cpp host/start.cpp host/input.cpp host/screenshot.cpp host/draw.cpp host/config.cpp host/menus.cpp host/menus10.cpp host/script.cpp host/orders.cpp host/world.cpp host/lifecycle.cpp host/files.cpp host/render.cpp host/gfx.cpp host/view.cpp host/geom.cpp host/prof.cpp host/events.cpp host/native.cpp host/humans.cpp host/watch.cpp host/happen.cpp host/collide.cpp host/state.cpp host/lights.cpp host/effects.cpp host/props.cpp host/sound.cpp host/control.cpp host/interact.cpp host/hud.cpp host/saves.cpp host/anims.cpp host/items.cpp host/stats.cpp host/models.cpp host/meshes.cpp host/shaders.cpp host/shadows.cpp host/panel.cpp host/fpu.cpp host/gamecam.cpp host/sidecar.cpp)
     # ($<0:> keeps Visual Studio from adding a per-configuration folder)
     set_target_properties(MafiaModLoader PROPERTIES SUFFIX ".asi" RUNTIME_OUTPUT_DIRECTORY ${MML_OUT}/$<0:>)
     target_include_directories(MafiaModLoader PRIVATE third_party/json host ${CMAKE_BINARY_DIR}/gen)
@@ -245,6 +245,8 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
         SHADERS sun_shafts.hlsl:PsMarch:ps_5_0 sun_shafts.hlsl:PsBlurX:ps_5_0 sun_shafts.hlsl:PsBlurY:ps_5_0
         sun_shafts.hlsl:PsComposite:ps_5_0)
     mml_add_files_mod(freeride_picture ${CMAKE_SOURCE_DIR}/mods/examples/freeride_picture)
+    # a mod with no 32-bit DLL, its 64-bit half alone (built by the x64 preset into build/x64/out; deploy merges them)
+    mml_add_files_mod(hello_side ${CMAKE_SOURCE_DIR}/mods/examples/hello_side)
     mml_add_mod(puppet ${CMAKE_SOURCE_DIR}/mods/examples/puppet mods/examples/puppet/puppet.cpp)
     mml_add_mod(tally ${CMAKE_SOURCE_DIR}/mods/examples/tally mods/examples/tally/tally.cpp)
     mml_add_mod(orbit_cam ${CMAKE_SOURCE_DIR}/mods/examples/orbit_cam mods/examples/orbit_cam/orbit_cam.cpp)
@@ -317,5 +319,23 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     target_link_libraries(testmod_heavy PRIVATE testlib_heavylib)
     add_dependencies(testmod_heavy testlib_heavyrt)
 else()
-    message(STATUS "64-bit configure: the sidecar only")
+    # ---- 64 bits: the sidecar (mml-sidecar64.exe: the mods' 64-bit halves, sdk/include/mml/side.h) and those halves
+    message(STATUS "64-bit configure: the sidecar and the mods' 64-bit halves")
+    add_executable(mml_sidecar64 sidecar/main.cpp)
+    set_target_properties(mml_sidecar64 PROPERTIES OUTPUT_NAME mml-sidecar64 RUNTIME_OUTPUT_DIRECTORY ${MML_OUT}/mml/sidecar/$<0:>)
+    target_include_directories(mml_sidecar64 PRIVATE third_party/json sdk/include sidecar)
+    target_link_libraries(mml_sidecar64 PRIVATE d3d12 dxgi)
+
+    # A mod's 64-bit half: mml_mod64(<id> <sources...>) builds <game>/mml/mods/<id>/x64/<id>.dll (its manifest:
+    # "entry64": "x64/<id>.dll"; the libraries it needs go beside it in x64/).
+    function(mml_mod64 id)
+        add_library(mod64_${id} SHARED ${ARGN})
+        set_target_properties(mod64_${id} PROPERTIES OUTPUT_NAME ${id} RUNTIME_OUTPUT_DIRECTORY ${MML_OUT}/mml/mods/${id}/x64/$<0:>)
+        target_include_directories(mod64_${id} PRIVATE sdk/include)
+    endfunction()
+    mml_mod64(hello_side mods/examples/hello_side/hello_side64.cpp)
+    # the offline tests' 64-bit half (tests/run_tests.py copies it and the sidecar into the stand-in game's folder)
+    add_library(testmod64_side_test SHARED tests/mods/side_test/side_test64.cpp)
+    set_target_properties(testmod64_side_test PROPERTIES OUTPUT_NAME side_test RUNTIME_OUTPUT_DIRECTORY ${MML_OUT}/tests/side_test/x64/$<0:>)
+    target_include_directories(testmod64_side_test PRIVATE sdk/include)
 endif()

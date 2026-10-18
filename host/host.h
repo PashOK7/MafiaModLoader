@@ -246,6 +246,23 @@ void GameCameraModGone(MmlMod *mod);
 void GameCameraMissionClose();
 void GameCameraActorGone(void *actor);    // (an actor's destructor) a followed car: the camera back on the player
 bool GameCameraMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+
+// the 64-bit sidecar (sidecar.cpp; sidecar/main.cpp the other side; sdk/include/mml/side.h)
+bool SidecarStart(std::string *err);
+void SidecarModLoad(const std::string &id, const std::string &dir, const std::string &entry64, const std::string &dataDir, unsigned generation);
+void SidecarModUnload(const std::string &id, const char *why);
+void SidecarEvent(const char *type, const std::string &dataJson);   // (any thread) to the halves subscribed to it
+void SidecarTick(float dt);
+void SidecarFrame(float dt);
+void SidecarAdapter(uint32_t luidLow, uint32_t luidHigh);         // the adapter the game draws on
+bool SidecarCommand(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);   // (bridge thread)
+std::string SidecarState();                       // sidecar.state's answer (JSON)
+std::string SidecarHalf(const std::string &id);   // a mod's 64-bit half in mods.list (JSON, "" none)
+std::vector<std::pair<std::string, std::string>> SidecarCommands();
+bool SidecarTexture(const std::string &mod, const std::string &name, void **handle, uint32_t *w, uint32_t *h, uint32_t *format, uint32_t *generation);
+bool SidecarWants(const char *type);
+void SidecarShutdown();
+bool SidecarMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 // the mods' settings in the game's Options > Mods (panel.cpp)
 void PanelInit();
 void PanelFrame();                        // (game_hooks.cpp) a key taken for a "key" row made the setting

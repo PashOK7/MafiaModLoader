@@ -1,0 +1,9 @@
+{
+  "id": "hello_side",
+  "name": "Hello (64-bit half): the smallest mod run by the sidecar, a 64-bit process beside the game",
+  "version": "0.1.0",
+  "type": "native",
+  "entry64": "x64/hello_side.dll",
+  "enabled": false,
+  "load_order": 100
+}

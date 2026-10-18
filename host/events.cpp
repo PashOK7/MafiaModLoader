@@ -38,6 +38,7 @@ std::string Hex(const void *p) {
 }
 
 void Push(const char *type, json data) {
+    if (SidecarWants(type)) SidecarEvent(type, data.dump(-1, ' ', false, json::error_handler_t::replace));
     std::lock_guard<std::mutex> lk(g_mx);
     g_ring.push_back({++g_seq, Now(), type, std::move(data)});
     if (g_ring.size() > kKeep) g_ring.pop_front();

@@ -28,6 +28,10 @@ Addresses: `"0x5762A0"`, `"5762A0"`, `"game+0x1762A0"`, `"ls3d+1AAE0"`, `"<modul
 | `modules` | | every loaded module: name, base, size, path |
 | `where` | | the main thread sampled 5 times, then its stack's code addresses |
 | `tap` | `cmd`: `"<at> [n=4] [ret\|fret] [ptr=<src>[+off][:len],...] [from=<ret>] [log] [max=N]"`, `"show <id> [k]"`, `"list"`, `"clear <id>"`, `"off <id>\|all"` | text: watch any function's calls (callers, ECX, stack arguments, memory behind them, strings as text, the result) |
+| `sidecar.state` | | the 64-bit sidecar (mml-sidecar64.exe: the mods' 64-bit halves, `"entry64"`): `state`, `running`, `pid`, `halves` (each mod's: `state` loading, loaded, failed, faulted, gone; `entry`, `generation`, `error`, `where` (a fault's module+offset), `subscribed` (its event types), `textures` (its shared textures: `width`, `height`, `format`, `generation`)), `commands`, `events_sent`, `events_dropped` (the link full), `restarts_last_minute`, `adapter_luid` |
+
+A 64-bit half's commands (`<mod>.<command>`, `commands.list` names their thread `sidecar`) are answered by the sidecar
+on the bridge's thread too: the game's frame is not waited for.
 
 Taps can also start with the game, before its first frame: `"taps": ["5409D0 n=4 ptr=1:32 log", ...]` in
 `<game>\mml\config.json`.
@@ -127,6 +131,7 @@ Taps can also start with the game, before its first frame: `"taps": ["5409D0 n=4
 | `camera.game` | `mode` (switched by the game's own SetMode: on foot 1 behind, 3 the eyes; in a vehicle 7, 8, 9 behind, 12 a wheel, 13 the head, 14 the bonnet), `fov` (radians across, held on the game's camera; `null` or 0: the game's back), `follow` (a car, or a person sitting in one: the game's own camera behind it, by its G_Camera::SetCar, as for the player's car (a car the game draws does not sleep); `"player"` or `null`: back on the player; the game takes it back itself when the player gets into or out of a car, and when the car is destroyed) | the game's camera: `mode`, `mode_name` (the game's own), `car`, `fov`, `fov_degrees`, `near`, `far`, `fov_held_by`, `following` (the car `follow` set, while the camera is on it), `modes_now` (what `mode` may be now) |
 | `camera.set` | `eye`, `at` or `dir`, `up` (default `[0, 1, 0]`), `fov` (vertical degrees; default the game's), `ms` (default 10000) | the frame drawn from that camera from the next frame for `ms` (over a mod's `camera_override` while held); only the drawing |
 | `camera.release` | | the bridge's camera given back |
+| `sidecar.restart` | | the sidecar ended and started again with the halves that are loaded (also after it was not started again by itself: 3 ends in a minute); `sidecar.state`'s answer |
 | `watch.set` | `addr`, `mode` (`write`: changes only; `access`: reads too), `len` (1, 2, 4; aligned) | a hardware watchpoint on the game thread (four at most): `id` |
 | `watch.show` | `id` | `hits`, `sites` (each piece of code: `at`, `count`, `stack` (the game's return addresses), `before`, `after`), `value` |
 | `watch.clear` | `id` or `all` | `cleared` |
