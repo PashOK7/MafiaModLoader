@@ -2274,3 +2274,14 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   time 3.3 to 4.9 ms (the ray march 1.7, the frame's copies 0.6, the meshes' obstacles 0.09), the game thread's
   gathering 0.23 ms. Offline tests not run for this step (a mod's change only).
 - **Next**: the ray march at half size (a Flow patch for its alpha, a depth-aware upsample): ROADMAP Known gaps.
+- **Then** (the owner: "the collision by the visual models works rather strangely"; a picture: the fire under the
+  taxi's back came out through its roof): the meshes were a shell of 0.15 m each side of their faces, the bodies'
+  insides air, so gas born under or in a car rose through it. Now a body is solid behind its faces (Flow's signed
+  distance to the nearest face: negative behind it), 0.6 m deep for cars and people, 0.5 m for the scenery (the ground
+  and the walls solid, a fence's single face makes no block behind it), and 0.03 m outside a surface hold the gas at
+  its velocity. The sign was measured, not assumed (`flow_smoke.winding`: of the ground's horizontal faces 883 point
+  up and 7 down by Flow's normal (v2 - v1) x (v3 - v1), a car's 776 out and 537 in, its cabin's inner panels), and
+  read in Flow's `EmitterMeshClosestCS` (Moller-Trumbore along the normal: behind it is negative); the people's
+  capsules were wound inside out and are turned. A 3 m depth for cars first made Flow's nearest-face search 10 ms of
+  GPU (181 frames late): 0.6 m costs 0.28 ms. The scenery was written again 57 times in a minute (its signature hung
+  on the scan's order): once now. Seen: the fire at the taxi's nose rises round the bonnet and the wing.

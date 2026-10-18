@@ -324,8 +324,14 @@ struct Params {
 struct Tune {
     float cellSize = 0.1f;          // metres, the smoke's: a block of Flow's (32 x 16 x 16 cells) is 3.2 x 1.6 x 1.6 m
     float fireCell = 0.04f;         // metres, the fire's: its tongues are finer than the smoke's billows
-    float wall = 0.15f;             // metres each side of a mesh's surface the gas cannot enter
+    // What the gas cannot enter, by Flow's signed distance to a mesh's nearest face (negative behind it: the game's
+    // faces are seen from outside, so behind one is inside): a body is solid this deep inside its surface, and the gas
+    // is held at its velocity `wallOut` outside it.
+    float carInside = 0.6f;         // metres: a car (or a person) is solid through (a car is 1.7 m wide)
+    float sceneInside = 0.5f;       // metres: the ground and walls are solid, a fence's one face makes no block behind it
+    float wallOut = 0.03f;          // metres outside a surface
     float wallCouple = 100.f;       // how hard a mesh holds the gas there to its own velocity (Flow's couple rate)
+    float flip = 0;                 // 1: the faces taken as seen from inside (a test of the winding)
     float gravity = -2.f;           // m/s2 along y: with buoyancyPerTemp, how fast warm gas rises
     float buoyancy = 10.f;          // the smoke layer's buoyancyPerTemp (fire's: half; its burning heats it)
     float cooling = 1.5f;           // the smoke layer's coolingRate (a second's share of its heat lost)
@@ -347,7 +353,8 @@ Tune g_tune;
 const struct {
     const char *name;
     float Tune::*field;
-} kTuneFields[] = {{"cell_size", &Tune::cellSize}, {"fire_cell", &Tune::fireCell}, {"wall", &Tune::wall},
+} kTuneFields[] = {{"cell_size", &Tune::cellSize}, {"fire_cell", &Tune::fireCell}, {"car_inside", &Tune::carInside},
+                   {"scene_inside", &Tune::sceneInside}, {"wall_out", &Tune::wallOut}, {"flip", &Tune::flip},
                    {"wall_couple", &Tune::wallCouple}, {"gravity", &Tune::gravity}, {"buoyancy", &Tune::buoyancy},
                    {"cooling", &Tune::cooling}, {"vorticity", &Tune::vorticity}, {"smoke_fade", &Tune::smokeFade},
                    {"attenuation", &Tune::attenuation}, {"color_scale", &Tune::colorScale},
@@ -360,16 +367,17 @@ NvFlowFloat4x4 Identity() {
     return m;
 }
 
-// What the gas cannot enter: a shell of `wall` metres each side of the mesh's surface (the game's meshes are often
-// open: a wall is one side of triangles, so the shell does not depend on which side they face), where Flow holds the
-// gas at the mesh's own velocity (a vertex's, moving) with nothing in it. In every layer that collides (both).
-NvFlowGridEmitterMeshParams Obstacle(uint64_t luid, MeshData &d, const Tune &t) {
+// What the gas cannot enter: the mesh's inside, `inside` metres deep behind its faces (Flow's signed distance to the
+// nearest face: negative behind it), and a thin layer outside, where Flow holds the gas at the mesh's own velocity (a
+// vertex's, moving) with nothing in it. In every layer that collides (both).
+NvFlowGridEmitterMeshParams Obstacle(uint64_t luid, MeshData &d, float inside, const Tune &t) {
     NvFlowGridEmitterMeshParams e = NvFlowEmitterMeshParams_default;
     e.luid = luid;
     e.isPhysicsCollision = NV_FLOW_TRUE;
     e.localToWorld = e.localToWorldVelocity = Identity();
     e.velocityIsWorldSpace = NV_FLOW_TRUE;
-    e.minDistance = -t.wall, e.maxDistance = t.wall;
+    e.minDistance = -inside, e.maxDistance = t.wallOut;
+    e.orientationLeftHanded = t.flip != 0;
     e.allocateMask = NV_FLOW_FALSE;   // (it acts where the gas is; it makes no blocks of its own)
     e.velocity = NvFlowFloat3{0, 0, 0};
     e.divergence = e.temperature = e.fuel = e.burn = e.smoke = 0;
@@ -471,9 +479,9 @@ void BuildParams(const fsm::Frame &f, bool clear) {
     }
     // the meshes the game draws: the scenery holds the gas off, each car and person carries it at its vertices' speed
     P.meshes.clear();
-    if (g_scene.Triangles()) P.meshes.push_back(Obstacle(4001, g_scene, t));
+    if (g_scene.Triangles()) P.meshes.push_back(Obstacle(4001, g_scene, t.sceneInside, t));
     for (MeshData &m : g_movers)
-        if (m.Triangles()) P.meshes.push_back(Obstacle(5000 + (m.id & 0xFFFFFF), m, t));
+        if (m.Triangles()) P.meshes.push_back(Obstacle(5000 + (m.id & 0xFFFFFF), m, t.carInside, t));
     // the ground: below it the gas is held still and taken away (it spreads along it)
     if (f.sources) {
         float cx = 0, cz = 0;

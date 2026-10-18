@@ -203,9 +203,9 @@ void Scenery(const float lo[3], const float hi[3]) {
         g_haveFocus = true;
     }
     int n = std::min(H->scene_pieces(M, g_pieces.data(), int(g_pieces.size())), int(g_pieces.size()));
-    uint64_t sig = 1469598103934665603ull;
-    for (int i = 0; i < n; i++) sig = Fnv(Fnv(sig, uint64_t(uintptr_t(g_pieces[i].visual))), g_pieces[i].version);
-    sig = Fnv(sig, uint64_t(g_clear));
+    // (the set of pieces and their versions, whatever order the scan gives them in)
+    uint64_t sig = Fnv(1469598103934665603ull, uint64_t(g_clear) * 0x9E3779B97F4A7C15ull + uint64_t(n));
+    for (int i = 0; i < n; i++) sig += Fnv(Fnv(1469598103934665603ull, uint64_t(uintptr_t(g_pieces[i].visual))), g_pieces[i].version);
     if (sig == g_sceneSig) return;
     g_sceneSig = sig;
     auto *hdr = reinterpret_cast<fsm::Scenery *>(g_sceneBuf.data());
@@ -265,10 +265,12 @@ void Capsule(const float a[3], const float b[3], float r, const float va[3], con
     for (int k = 0; k < 8; k++) {
         uint32_t k1 = (k + 1) % 8;
         uint32_t a0 = base + k, a1 = base + k1, b0 = base + 8 + k, b1 = base + 8 + k1;
-        *t++ = a0, *t++ = b0, *t++ = a1;   // (the side, facing out)
-        *t++ = a1, *t++ = b0, *t++ = b1;
-        *t++ = base + 16, *t++ = a0, *t++ = a1;   // (the end at a)
-        *t++ = base + 17, *t++ = b1, *t++ = b0;   // (the end at b)
+        // (wound as the game's meshes are, Direct3D's front faces: clockwise seen from outside, so that Flow's normal,
+        // (v2 - v1) x (v3 - v1), points out and what is behind it is inside)
+        *t++ = a0, *t++ = a1, *t++ = b0;   // (the side)
+        *t++ = a1, *t++ = b1, *t++ = b0;
+        *t++ = base + 16, *t++ = a1, *t++ = a0;   // (the end at a)
+        *t++ = base + 17, *t++ = b0, *t++ = b1;   // (the end at b)
     }
 }
 
@@ -651,6 +653,53 @@ int CmdState(const char *, MmlReply *r, void *) {
               {"wind", {g_wind[0], g_wind[1], g_wind[2]}}, {"error", err}});
     return 0;
 }
+// Which way the game's faces point, by (v2 - v1) x (v3 - v1) (Flow's normal: what is behind it is inside): of the
+// scenery's near-horizontal faces below the sources (the ground), how many point up; of a car's, how many point away
+// from its middle. The two signs Flow's inside depends on, measured, not assumed.
+int CmdWinding(const char *, MmlReply *r, void *) {
+    auto *hdr = reinterpret_cast<const fsm::Scenery *>(g_sceneBuf.data());
+    const float *pos = reinterpret_cast<const float *>(hdr + 1);
+    const uint32_t *idx = reinterpret_cast<const uint32_t *>(pos + 3 * hdr->vertices);
+    auto normal = [](const float *a, const float *b, const float *c, float n[3]) {
+        float u[3] = {b[0] - a[0], b[1] - a[1], b[2] - a[2]}, v[3] = {c[0] - a[0], c[1] - a[1], c[2] - a[2]};
+        n[0] = u[1] * v[2] - u[2] * v[1], n[1] = u[2] * v[0] - u[0] * v[2], n[2] = u[0] * v[1] - u[1] * v[0];
+        float l = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+        if (l > 0) n[0] /= l, n[1] /= l, n[2] /= l;
+        return l > 0;
+    };
+    uint32_t up = 0, down = 0;
+    for (uint32_t t = 0; t < hdr->triangles && g_sceneSerial; t++) {
+        float n[3];
+        const float *a = pos + 3 * idx[3 * t], *b = pos + 3 * idx[3 * t + 1], *c = pos + 3 * idx[3 * t + 2];
+        if (!normal(a, b, c, n) || std::fabs(n[1]) < 0.9f || (a[1] + b[1] + c[1]) / 3 > g_ground + 0.5f) continue;
+        (n[1] > 0 ? up : down)++;
+    }
+    uint32_t out = 0, in = 0;
+    const fsm::Movers &rec = g_moverRec;
+    const float *mpos = reinterpret_cast<const float *>(g_moverBuf.data() + sizeof(fsm::Movers));
+    const uint32_t *midx = reinterpret_cast<const uint32_t *>(mpos + 6 * rec.vertices);
+    for (uint32_t i = 0; i < rec.count; i++) {
+        const fsm::Mover &m = rec.mover[i];
+        if (m.kind != fsm::kCar || !m.vertices) continue;
+        float mid[3] = {};
+        for (uint32_t v = 0; v < m.vertices; v++)
+            for (int k = 0; k < 3; k++) mid[k] += mpos[3 * (m.firstVertex + v) + k] / m.vertices;
+        for (uint32_t t = 0; t < m.triangles; t++) {
+            const uint32_t *tri = midx + 3 * (m.firstTriangle + t);
+            const float *a = mpos + 3 * (m.firstVertex + tri[0]), *b = mpos + 3 * (m.firstVertex + tri[1]), *c = mpos + 3 * (m.firstVertex + tri[2]);
+            float n[3];
+            if (!normal(a, b, c, n)) continue;
+            float d = 0;
+            for (int k = 0; k < 3; k++) d += n[k] * ((a[k] + b[k] + c[k]) / 3 - mid[k]);
+            (d > 0 ? out : in)++;
+        }
+    }
+    Reply(r, {{"ground_faces", {{"up", up}, {"down", down}}}, {"car_faces", {{"out", out}, {"in", in}}},
+              {"note", "Flow takes what is behind (v2 - v1) x (v3 - v1) as inside: the ground's faces up and the car's out mean "
+                       "the winding as Flow wants it (flip 0)"}});
+    return 0;
+}
+
 int CmdReset(const char *, MmlReply *r, void *) {
     S = Stats{};
     Reply(r, {{"reset", true}});
@@ -703,6 +752,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     H->command(mod, "wind", "{velocity: [x, y, z]} -> the air's own motion, m/s", CmdWind, nullptr);
     H->command(mod, "wait", "{ms} -> how long the pass waits for this frame's picture (at most 100)", CmdWait, nullptr);
     H->command(mod, "state", "{} -> frames drawn, late, the round trip, Flow's blocks and times, the sources", CmdState, nullptr);
+    H->command(mod, "winding", "{} -> which way the game's faces point by Flow's normal: the ground's up or down, a car's out or in", CmdWinding, nullptr);
     H->command(mod, "reset", "{} -> the measures started again", CmdReset, nullptr);
     H->hotkey(mod, "F10", KeyFire, nullptr);
     H->hotkey(mod, "Shift+F10", KeyClear, nullptr);
