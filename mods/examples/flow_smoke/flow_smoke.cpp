@@ -14,7 +14,9 @@
 //   call flow_smoke.wind  {"velocity": [2, 0, 0]}
 //   call flow_smoke.state -> {"frames", "drawn", "late", "none", "round_trip_ms", "prepare_ms", "blocks", "steps",
 //                             "simulate_ms", "render_ms", "gpu_ms", "sources", "movers", "error"...}
-//   F10: fire in front of the player (again: one more); Shift+F10: everything cleared
+//   call flow_smoke.move  {"id": 2, "at": [x, y, z]}  the newest fire (or that source) moved where the crosshair looks
+//   F5: the newest fire moved where the crosshair looks (none: one made there); F10: fire in front of the player
+//   (again: one more); Shift+F10: everything cleared
 //
 // The frame: at FRAME this half writes "frame" (the sources, the movers near them, the time); the 64-bit half steps
 // the gas then (its GPU works while the game draws). In the pass (after the world is drawn) this half draws the frame
@@ -706,10 +708,75 @@ int CmdReset(const char *, MmlReply *r, void *) {
     return 0;
 }
 
+// Where the crosshair looks (the ray through the screen's middle, to the first thing it meets, the player left out):
+// a point just off that surface; with nothing in 80 m, 4 m in front of the player on the ground.
+bool Aimed(double at[3], float radius) {
+    float o[3], d[3];
+    if (H->mission_state() != MML_MISSION_RUNNING) return false;
+    if (H->camera_ray(M, 400, 300, o, d)) {
+        const float to[3] = {o[0] + 80 * d[0], o[1] + 80 * d[1], o[2] + 80 * d[2]};
+        MmlHit hit{};
+        hit.size = sizeof hit;
+        if (H->world_ray(M, o, to, MML_WORLD_ALL, H->human_player(M), &hit)) {
+            // (off the surface by the source's radius, so that it is not inside what it stands on)
+            for (int k = 0; k < 3; k++) at[k] = hit.pos[k] + hit.normal[k] * radius;
+            return true;
+        }
+    }
+    float dir[3];
+    if (!Player(at, dir)) return false;
+    for (int k = 0; k < 3; k += 2) at[k] += dir[k] * 4;
+    double y;
+    if (Ground(at, &y)) at[1] = y;
+    at[1] += radius;
+    return true;
+}
+
+// The newest fire (or `id`'s source) moved to `at`, no longer following a car; none: a fire made there.
+std::string Move(const json &a, uint32_t *id) {
+    uint32_t want = a.value("id", 0u);
+    auto it = std::find_if(g_sources.rbegin(), g_sources.rend(),
+                           [&](const Source &s) { return want ? s.id == want : s.kind == fsm::kFire; });
+    if (want && it == g_sources.rend()) return "no such source";
+    double at[3];
+    float radius = it != g_sources.rend() ? it->radius : 0.5f;
+    if (a.contains("at") && a["at"].is_array() && a["at"].size() == 3) {
+        for (int k = 0; k < 3; k++) at[k] = a["at"][k].get<double>();
+    } else if (!Aimed(at, radius)) {
+        return "no mission running";
+    }
+    if (it == g_sources.rend()) return Emit({{"kind", "fire"}, {"at", {at[0], at[1], at[2]}}}, id);
+    memcpy(it->at, at, sizeof at);
+    it->car = nullptr;
+    *id = it->id;
+    // (far from the origin Flow's floats lose their fineness: a new origin, the old gas blown away)
+    if (std::fabs(at[0] - g_origin[0]) > 500 || std::fabs(at[2] - g_origin[2]) > 500) SetOrigin(at);
+    return "";
+}
+
+int CmdMove(const char *args, MmlReply *r, void *) {
+    uint32_t id = 0;
+    std::string err;
+    try {
+        err = Move(Args(args), &id);
+    } catch (const json::exception &e) {
+        err = e.what();
+    }
+    if (!err.empty()) { H->reply_error(r, err.c_str()); return 1; }
+    auto s = std::find_if(g_sources.begin(), g_sources.end(), [id](const Source &x) { return x.id == id; });
+    Reply(r, {{"id", id}, {"at", {s->at[0], s->at[1], s->at[2]}}});
+    return 0;
+}
+
 void KeyFire(void *) {
     uint32_t id;
     std::string err = Emit({{"kind", "fire"}}, &id);
     if (!err.empty()) H->log(M, MML_LOG_WARN, "F10: %s", err.c_str());
+}
+void KeyMove(void *) {
+    uint32_t id;
+    std::string err = Move(json::object(), &id);
+    if (!err.empty()) H->log(M, MML_LOG_WARN, "F5: %s", err.c_str());
 }
 void KeyClear(void *) {
     g_sources.clear();
@@ -747,6 +814,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
         return 1;
     }
     H->command(mod, "emit", "{kind: smoke|fire|steam, ahead | at | on: \"car\", radius, strength, velocity, seconds} -> {id}: a source of gas (NVIDIA Flow on the GPU)", CmdEmit, nullptr);
+    H->command(mod, "move", "{id, at} -> the newest fire (or id's source) moved where the crosshair looks (or to at); none: a fire made there. F5", CmdMove, nullptr);
     H->command(mod, "stop", "{id} -> that source taken away (its gas fades)", CmdStop, nullptr);
     H->command(mod, "clear", "{} -> every source and all the gas taken away", CmdClear, nullptr);
     H->command(mod, "wind", "{velocity: [x, y, z]} -> the air's own motion, m/s", CmdWind, nullptr);
@@ -754,6 +822,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     H->command(mod, "state", "{} -> frames drawn, late, the round trip, Flow's blocks and times, the sources", CmdState, nullptr);
     H->command(mod, "winding", "{} -> which way the game's faces point by Flow's normal: the ground's up or down, a car's out or in", CmdWinding, nullptr);
     H->command(mod, "reset", "{} -> the measures started again", CmdReset, nullptr);
+    H->hotkey(mod, "F5", KeyMove, nullptr);
     H->hotkey(mod, "F10", KeyFire, nullptr);
     H->hotkey(mod, "Shift+F10", KeyClear, nullptr);
     return 0;
