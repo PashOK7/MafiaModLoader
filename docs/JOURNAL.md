@@ -2160,3 +2160,17 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   failed once in 1.2 (the game's aim, 45 s) and passed on the next run.
 - **Seen**: both labs, `tests/game/run.py orders world`: 1.0 40 of 40, 1.2 39 of 40 then the failed case again
   19 of 19; offline tests and mcp_smoke ALL PASSED.
+
+## 2026-10-18: one drive in both labs at once
+
+- **Asked** (the owner): Paulie in a taxi in both builds at the same moment, along the same way to a far point of
+  the city without traffic, the game's camera on his car, carefully, at most 60 km/h. Made with the tools as they
+  are: `spawn` (Falconer Yellowcar), `camera.game {follow}` (both labs in mode 9), `human.drive {speed: 16.67}`
+  to road node 1126 (17.8, 21.1, -658), the same in both builds; the way planned was the same 133 nodes in both.
+- **First try**: each lab from its own freeride start. The owner saw them part: other phases of the traffic lights
+  and trams (the freerides started at other moments), and in 1.2 the tunnel taken at 18 to 20 m/s (ROADMAP Known
+  gaps: not seen again, its cause not recorded).
+- **Second try**: one restore point of 1.2 copied into 1.0's `mml\restore` (the saves are one format: it loaded
+  in 1.0 as it is) and loaded in both at once, the drives given together: both arrived (3218 and 3217 m in 348
+  and 354 s), no knock, at most 13.6 and 13.9 m/s (49, 50 km/h), the game's unsticking at the same two stops in
+  both (a crossing's wait), the two cars 0 to 34 m apart on the way (the driver's random speed factor).

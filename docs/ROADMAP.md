@@ -962,6 +962,13 @@ merged, sorted by importance):
   (1.0's whole city, x -1774, z 130..220, surface 19) were looked into briefly only: in the small city there is
   nothing on that curb line (rays along x -1773..-1777, no actors within 50 m); the whole city was not looked at.
   `camera.game` follows a car only: a person on foot (an NPC walking) has no camera of the game's to put on him.
+  The same drive in both labs (2026-10-18, a taxi, 3.2 km across the city, `speed` 16.7) once went 18 to 20 m/s
+  for 12 s through the tunnel east of Little Italy in 1.2 only, over its road's 13.3 and over `speed`, when the
+  two games' worlds were in other phases (each its own freeride start); only the chase's way round an obstacle
+  (TickDriver, `+0x208` 1, its limit 1000) drives faster than the road, and the watcher did not record the
+  driver's fields then. Started from one save in both labs it went at most 13.9 m/s in both and was not seen
+  again. Two drives from one save still part by up to 34 m: the driver's speed factor (`+0x1C8`, 0.65..1.0) is
+  drawn anew every 5 s from the game's own random numbers, another in each process.
 
 - **A game folder no ANSI code page spells** (a Cyrillic name on a 1252 system, a CJK one on a 1251 system): the
   game, the loader and the mods' own files work there (both labs, 2026-10-17), but **dxwrapper does not**: its
