@@ -545,6 +545,9 @@ uint32_t SidecarChannelRead(MmlChannel *ch, void *data, uint32_t cap, uint64_t *
     }
     return side::ChannelRead(&ch->ch, data, cap, version);
 }
+uint64_t SidecarChannelWait(MmlChannel *ch, uint64_t after, uint32_t timeoutMs) {
+    return ch ? side::ChannelWait(&ch->ch, after, timeoutMs) : 0;
+}
 void SidecarChannelsForget(MmlMod *mod) {
     std::lock_guard<std::mutex> lk(g_chMx);
     for (MmlChannel *&c : g_channels)

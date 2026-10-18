@@ -1,0 +1,13 @@
+{
+  "id": "flow_smoke",
+  "name": "Flow smoke: NVIDIA Flow 2's smoke and fire, simulated and ray-marched on the GPU in the 64-bit half, in the frame",
+  "version": "0.1.0",
+  "type": "native",
+  "entry": "flow_smoke.dll",
+  "entry64": "x64/flow_smoke.dll",
+  "enabled": false,
+  "builds": ["1.2", "1.0"],
+  "gfx": true,
+  "load_order": 100,
+  "depends": []
+}

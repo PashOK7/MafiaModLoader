@@ -2231,3 +2231,30 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   `mod.reload` brought it back in 9 to 12 frames. The owner pushed the crates around in the 1.0 lab meanwhile.
 - **Next** (the owner): what 32 bits cannot do, PhysX's GPU part (particles, cloth, deformable bodies: ROADMAP 19a),
   and collision from the visible models (19b).
+
+## 2026-10-18: NVIDIA Flow 2's smoke and fire in the frame, through the 64-bit half
+
+- **Asked** (the owner): smoke like NVIDIA's demos, through the 64-bit bridge and NVIDIA's modern libraries, as the
+  proof that what was never made for 32 bits goes into Mafia; the newest libraries; anything may be downloaded and
+  installed, the proper way always.
+- **Chosen**: NVIDIA Flow 2.2.0 (the newest Flow, in the PhysX 5.9.0 repository; 64-bit only, Vulkan), not PhysX's
+  PBD particles: a sparse voxel gas with vorticity, combustion and a self-shadowing ray march, NVIDIA's own renderer.
+  mafia-ragdoll used Flow 1.0 (2017, Direct3D 11, a win32 DLL); Flow 2 has no 32-bit build at all.
+- **Made**: `tools/deps.py flow` (Flow's folder of the pinned archive, Slang 2026.20, premake 5.0.0, DXC 1.9.2609:
+  their releases instead of packman), `third_party/flow/premake5.lua` (Flow's premake script under premake 5.0),
+  the x64 preset's external project `flow_build` and `mml_flow(<id>)`, `mods/examples/flow_smoke` (records
+  `flow_smoke.h`; the 32-bit half's sources, movers and pass; the 64-bit half's Flow, CUDA bridge and `tune`).
+- **Found on the way**: Flow's build under the newest tools: premake 5.0 took out `flags` and `{COPY}`, Slang 2026's
+  `slang.dll` forwards to `slang-compiler.dll` and its header needs C++17, MSVC 14.44 warns C4756 on Flow's INFINITY
+  (warnings are errors there). A long path under the scratchpad broke MSBuild's trackers (MAX_PATH). Flow's editor's
+  `--headless` still opens a window (it hung on the owner's desktop once: never run it outside a lab). The 64-bit half
+  first looked hung in `createGrid`: Debugging Tools for Windows were installed (SDK 10.0.28000's debuggers; the
+  owner: install what the work needs) and cdb's stacks showed NVIDIA's compiler (`nvgpucomp64`) compiling Flow's
+  shaders: minutes the first time, under a second from the driver's cache. Flow in metres: its defaults are
+  Omniverse's centimetres (attenuations a hundred times larger), its buoyancy lives in combustion, its smoke colour
+  map is by temperature and clear when cold, and scaled by 2.5. The owner saw the first smoke as "very transparent"
+  (the centimetres' attenuation) and drove around the fire in the 1.2 lab while it burnt.
+- **Seen**: both labs (1.2, then 1.0): smoke columns and a fire with black smoke, pushed by a passer-by and the
+  owner's car; Flow 0.3 to 0.4 ms of GPU, the round trip about 3 ms; reload keeps the sources; a fault of the 64-bit
+  half: no gas and no wait, `mod.reload` brings it back. Offline tests and both presets' builds.
+- **Next** (the owner): only the 1.2 lab for now: a finer fire, and the gas meeting the visible models, not boxes.

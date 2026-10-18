@@ -989,6 +989,19 @@ def sidecar_tests(b):
     check('sidecar.state: running, the half loaded and subscribed to FRAME',
           st.get('running') and st['halves']['side_test']['state'] == 'loaded' and 'FRAME' in st['halves']['side_test']['subscribed'], st)
     channel_checks(b, 'the first load')
+    r = b.call('side_test.write_later', {'ms': 300})
+    w = b.call('side_test.wait_box', {'wait_ms': 3000}) if r['ok'] else r
+    wr = w.get('result') or {}
+    check('channel_wait in the 32-bit half: woken by the 64-bit half\'s write 300 ms later, not by its timeout (%s ms)' % wr.get('ms'),
+          w['ok'] and wr['version'] > wr['after'] and 200 <= wr['ms'] < 2000, (r, w))
+    w = b.call('side_test.wait_box', {'wait_ms': 150})
+    wr = w.get('result') or {}
+    check('channel_wait: nothing written, 0 after its timeout (%s ms)' % wr.get('ms'), w['ok'] and wr['version'] == 0 and 130 <= wr['ms'] < 1000, w)
+    r = b.call('side_test.post_later', {'ms': 300})
+    w = b.call('side_test.wait_back', {'wait_ms': 3000}) if r['ok'] else r
+    wr = w.get('result') or {}
+    check('channel_wait in the 64-bit half: woken by the 32-bit half\'s write 300 ms later (%s ms)' % wr.get('ms'),
+          w['ok'] and wr['version'] > wr['after'] and 200 <= wr['ms'] < 2000, (r, w))
     r = b.call('side_test.refusals')
     check('channels: another size refused, a version longer than the channel refused; gfx_shared_texture outside a pass: 0',
           r['ok'] and r['result'] == {'other_size': False, 'too_long': 0, 'texture_outside_pass': 0}, r)

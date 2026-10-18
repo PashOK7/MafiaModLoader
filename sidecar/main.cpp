@@ -377,13 +377,14 @@ MmlSideChannel *H_ChannelOpen(MmlSideMod *m, const char *name, uint32_t size) {
 }
 int H_ChannelWrite(MmlSideChannel *c, const void *data, uint32_t bytes) { return c && side::ChannelWrite(&c->ch, data, bytes) ? 1 : 0; }
 uint32_t H_ChannelRead(MmlSideChannel *c, void *data, uint32_t cap, uint64_t *version) { return c ? side::ChannelRead(&c->ch, data, cap, version) : 0; }
+uint64_t H_ChannelWait(MmlSideChannel *c, uint64_t after, uint32_t timeoutMs) { return c ? side::ChannelWait(&c->ch, after, timeoutMs) : 0; }
 
 const MmlSideHost g_host = {
     sizeof(MmlSideHost), MML_SIDE_API_VERSION,
     H_GameDir, H_GameBuild, H_ModId, H_ModDir, H_DataDir, H_Log,
     H_Call, H_Subscribe, H_Command, H_ReplyAppend, H_ReplyError,
     H_AdapterLuid, H_D3d12Device, H_TextureCreate, H_TextureRemove,
-    H_ChannelOpen, H_ChannelWrite, H_ChannelRead,
+    H_ChannelOpen, H_ChannelWrite, H_ChannelRead, H_ChannelWait,
 };
 
 // ---- calls into halves, each behind __try (no C++ objects with destructors here)

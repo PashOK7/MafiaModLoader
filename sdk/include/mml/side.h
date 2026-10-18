@@ -18,7 +18,8 @@
  *   half reads in its graphics passes (mml.h gfx_shared_texture): how a 64-bit simulation hands the game its picture
  *   or its data without a copy through memory. Its Vulkan or Direct3D 12 code imports the texture by its handle.
  * - Channels (`channel_open`): a named block of memory both halves see, each write a whole new version (the reader
- *   always gets the latest whole one): bodies, poses, parameters, a frame's worth of anything.
+ *   always gets the latest whole one, or waits for the next: `channel_wait`): bodies, poses, parameters, a frame's
+ *   worth of anything.
  *
  * The contract:
  * - Callbacks (events, commands, load and unload) run on the sidecar's mod thread, one at a time; a half may start
@@ -111,6 +112,9 @@ typedef struct MmlSideHost {
     MmlSideChannel *(*channel_open)(MmlSideMod *mod, const char *name, uint32_t size);
     int (*channel_write)(MmlSideChannel *ch, const void *data, uint32_t bytes);
     uint32_t (*channel_read)(MmlSideChannel *ch, void *data, uint32_t cap, uint64_t *version);
+    /* Until the channel holds a version after `after`, at most timeout_ms (0: only looks): that version's number, 0
+     * when none came in time; the other half's write wakes it at once. One waiter a channel. Any thread. */
+    uint64_t (*channel_wait)(MmlSideChannel *ch, uint64_t after, uint32_t timeout_ms);
 } MmlSideHost;
 
 typedef int (*MmlSideLoadFn)(const MmlSideHost *host, MmlSideMod *mod);

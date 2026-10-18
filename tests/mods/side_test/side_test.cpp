@@ -5,12 +5,20 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <thread>
 #include "mml/mml.h"
 
 namespace {
 const MmlHost *H;
 MmlMod *M;
 MmlChannel *g_box, *g_back, *g_flood;
+std::thread g_later;
+
+uint32_t Num(const char *args, const char *key, uint32_t def) {   // (the tests send flat objects of numbers)
+    std::string a = args ? args : "", k = std::string("\"") + key + "\"";
+    size_t at = a.find(k);
+    return at == std::string::npos ? def : static_cast<uint32_t>(strtoul(a.c_str() + a.find(':', at) + 1, nullptr, 10));
+}
 
 void Reply(MmlReply *r, const std::string &s) { H->reply_append(r, s.data(), s.size()); }
 
@@ -63,6 +71,27 @@ int Torn(const char *, MmlReply *r, void *) {
     Reply(r, out);
     return 0;
 }
+// {"wait_ms"} -> {"after", "version", "ms"}: channel_wait for a version of box after the latest one (0: none came)
+int WaitBox(const char *args, MmlReply *r, void *) {
+    char buf[16];
+    uint64_t after = 0;
+    H->channel_read(g_box, buf, sizeof buf, &after);
+    ULONGLONG t0 = GetTickCount64();
+    uint64_t v = H->channel_wait(g_box, after, Num(args, "wait_ms", 1000));
+    Reply(r, "{\"after\": " + std::to_string(after) + ", \"version\": " + std::to_string(v) + ", \"ms\": " + std::to_string(GetTickCount64() - t0) + "}");
+    return 0;
+}
+// {"ms"}: a thread of this half writes "later" to back after that long (the 64-bit half's wait_back waits for it)
+int PostLater(const char *args, MmlReply *r, void *) {
+    if (g_later.joinable()) g_later.join();
+    uint32_t ms = Num(args, "ms", 300);
+    g_later = std::thread([ms] {
+        Sleep(ms);
+        H->channel_write(g_back, "later", 5);
+    });
+    Reply(r, "{\"started\": true}");
+    return 0;
+}
 // {} -> what must be refused: box opened with another size, a write longer than the channel, a texture outside a pass
 int Refusals(const char *, MmlReply *r, void *) {
     MmlChannel *other = H->channel_open(M, "box", 100);
@@ -90,7 +119,14 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->command(mod, "peek", "{} -> {text, bytes, version}: the channel box's latest version (the 64-bit half writes it)", Peek, nullptr);
     host->command(mod, "post", "args -> written to the channel back (the 64-bit half's fetch reads it)", Post, nullptr);
     host->command(mod, "refusals", "{} -> channel_open of another size, a write too long, gfx_shared_texture outside a pass", Refusals, nullptr);
+    if (MML_HAS(H, channel_wait)) {
+        host->command(mod, "wait_box", "{wait_ms} -> {after, version, ms}: channel_wait for box's next version", WaitBox, nullptr);
+        host->command(mod, "post_later", "{ms} -> back written by a thread after that long", PostLater, nullptr);
+    }
     return g_box && g_back && g_flood ? 0 : 1;
 }
 
-MML_EXPORT void mml_mod_unload(MmlMod *) { g_box = g_back = g_flood = nullptr; }
+MML_EXPORT void mml_mod_unload(MmlMod *) {
+    if (g_later.joinable()) g_later.join();
+    g_box = g_back = g_flood = nullptr;
+}

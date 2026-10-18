@@ -544,6 +544,7 @@ MmlChannel *H_ChannelOpen(MmlMod *m, const char *name, uint32_t size) {
 }
 int H_ChannelWrite(MmlChannel *ch, const void *data, uint32_t bytes) { return SidecarChannelWrite(ch, data, bytes); }
 uint32_t H_ChannelRead(MmlChannel *ch, void *data, uint32_t cap, uint64_t *version) { return SidecarChannelRead(ch, data, cap, version); }
+uint64_t H_ChannelWait(MmlChannel *ch, uint64_t after, uint32_t timeoutMs) { return SidecarChannelWait(ch, after, timeoutMs); }
 int H_GfxSharedTexture(MmlMod *m, const char *name, MmlSharedTexture *out) { return Alive(m) ? GfxSharedTexture(m, name, out) : 0; }
 int H_ZoneAdd(MmlMod *m, const float pos[3], float radius, void *frame, MmlZoneFn fn, void *user) {
     std::string err;
@@ -1211,6 +1212,7 @@ void ModsInit() {
     g_host.channel_write = H_ChannelWrite;
     g_host.channel_read = H_ChannelRead;
     g_host.gfx_shared_texture = H_GfxSharedTexture;
+    g_host.channel_wait = H_ChannelWait;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();

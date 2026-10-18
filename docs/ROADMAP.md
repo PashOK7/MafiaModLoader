@@ -712,6 +712,19 @@ What is done, what comes next and later, and what is known to be missing or wron
   2343 of 2344 frames (1.2) and 2345 of 2346 (1.0) were that frame's own step, whole 0.3 to 0.4 ms after the frame's
   start; 0.02 ms a frame on the game thread; reloads keep the pile, a fault of the 64-bit half leaves it standing
   (docs/MODDING.md "64-bit halves").
+- **NVIDIA Flow 2 in the frame** (2026-10-18; item 19a's first part, the owner's ask: smoke as NVIDIA's demos have it,
+  as the proof that what was never made for 32 bits goes into the game): Flow 2.2.0 (the newest; its folder of the
+  PhysX 5.9.0 archive) pinned in `tools/deps.py flow` with the newest Slang (2026.20), premake (5.0.0) and DXC
+  (1.9.2609) instead of NVIDIA's packman, built by its own premake through `third_party/flow/premake5.lua` (Flow's
+  script under premake 5.0: its `flags` and `{COPY}`, Slang 2026's split DLLs and C++17) as an external project of
+  the x64 preset; `mml_flow(<id>)`. `mods/examples/flow_smoke` (two halves): smoke, fire and steam sources (`emit`
+  in front of the player, at a place, on the player's car; F10), simulated on a sparse grid and ray-marched with
+  self-shadowing by Flow on Vulkan in the 64-bit half, over this very frame's colour and depth (CUDA between Flow's
+  memory and the shared Direct3D 12 textures), the people and cars carrying the gas, the ground holding it. Both labs:
+  Flow's GPU time 0.3 to 0.4 ms, a round trip of about 3 ms on the game thread, all but 2 frames of thousands with
+  their own frame's gas; a reload keeps the sources, a fault of the 64-bit half leaves the frame without gas and
+  without a wait, `mod.reload` brings it back (docs/MODDING.md "64-bit halves"; Known gaps: the first start's shader
+  compile, the CPU waits).
 
 ## Next, by importance
 
@@ -881,6 +894,9 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
     test is what was impossible before). Particles (PBD: water, smoke as particles), cloth and deformable bodies (FEM
     soft bodies) on the GPU, in a 64-bit half, shown in the game (a shared texture, or meshes). Needs the CUDA Toolkit
     12.8 to build PhysX's GPU projects (`PhysXGpu`, a DLL beside the half) and a Volta GPU or newer to run.
+    *(2026-10-18: NVIDIA Flow 2's smoke and fire done first, the owner's ask: `flow_smoke`, see "Done". PhysX's GPU part
+    is built (CUDA from `tools/deps.py cuda`, `mml_physx_gpu`) and `physx_gpu` (water, cloth, a jelly) loads on the GPU
+    in both labs, but was not yet seen working in the game: the next step of this item.)*
 19b. **Collision from the visible models** (the owner, 2026-10-18): the physics meets what the player sees, not the
     game's boxes, spheres and capsules. The host already gives the meshes the game draws (`scene_pieces` around a box,
     `actor_meshes` an actor's parts posed): the static world as their triangles, a prop as the convex hull of its
@@ -975,6 +991,19 @@ merged, sorted by importance):
   way: the crates do not push the game's people and cars back (they are kinematic to PhysX), and the people and cars
   are the game's collision shapes, not their models (item 19b). A crate flung farther than the widest region of
   statics (64 m) or through the world leaves the pile.
+- **NVIDIA Flow in `flow_smoke`** (2026-10-18):
+  - The first start on a machine waits for NVIDIA's driver to compile Flow's several hundred compute shaders (5 minutes
+    the first time in the 1.2 lab, 100 s in the 1.0 lab): the driver's disk cache is kept by the executable's path, and
+    each game folder has its own `mml-sidecar64.exe`. Flow makes its pipelines with no `VkPipelineCache` (its
+    `ComputePipelineVulkan.cpp`); the fix is a pipeline cache of the mod's own, kept in its data folder (a patch of
+    Flow's Vulkan backend, applied by the build), so a start costs the compile once per driver and Flow.
+  - The round trip is waited for on the CPU (an event query for the frame's two textures, Flow's `waitForFrame`, CUDA's
+    stream synchronised): about 3 ms of the game thread a frame. Shared fences (Direct3D 11's signal for CUDA to wait
+    on, CUDA's for Direct3D 11) would leave only the half's recording, about 0.5 ms.
+  - The pass draws the whole frame back (Flow composites the gas over the colour it is given and gives no alpha):
+    the passes ordered before it (50) are under the gas, not over it.
+  - The gas meets the ground (a box under the sources), the people and the cars (they push it), not the buildings: the
+    static world as Flow obstacles (`EmitterMesh` from `world_shapes`' triangles, or the drawn meshes: item 19b).
 - **An actor made over the open river sleeps** (seen 2026-10-18, 1.2): a car spawned there is drawn but its model
   frame's stamp (`+0x13C`, what C_game::Tick wakes a sleeping actor by) stays -1, so it floats where it was made
   instead of falling in; a person put in the air there stands (a standing NPC does not fall). A ragdoll or a water

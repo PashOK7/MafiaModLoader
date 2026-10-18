@@ -253,6 +253,18 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     # a mod in two halves: this 32-bit one shows the crates its 64-bit half (the x64 preset) steps with PhysX 5
     mml_add_mod(physx_crates ${CMAKE_SOURCE_DIR}/mods/examples/physx_crates mods/examples/physx_crates/physx_crates.cpp)
     target_include_directories(mod_physx_crates PRIVATE third_party/json)
+    # a mod in two halves: this 32-bit one draws the water, cloth and jelly its 64-bit half steps with PhysX's GPU part
+    mml_add_mod(physx_gpu ${CMAKE_SOURCE_DIR}/mods/examples/physx_gpu mods/examples/physx_gpu/physx_gpu.cpp
+        SHADERS physx_gpu.hlsl:VsMesh:vs_5_0 physx_gpu.hlsl:PsMesh:ps_5_0 physx_gpu.hlsl:CsNormals:cs_5_0
+        physx_gpu.hlsl:VsSplat:vs_5_0 physx_gpu.hlsl:PsSplatDepth:ps_5_0 physx_gpu.hlsl:PsSplatThick:ps_5_0
+        physx_gpu.hlsl:PsSmooth:ps_5_0 physx_gpu.hlsl:PsFluid:ps_5_0)
+    target_include_directories(mod_physx_gpu PRIVATE third_party/json)
+    target_link_libraries(mod_physx_gpu PRIVATE d3d11)
+    # a mod in two halves: this 32-bit one hands the frame to NVIDIA Flow in its 64-bit half and shows the smoke and fire
+    mml_add_mod(flow_smoke ${CMAKE_SOURCE_DIR}/mods/examples/flow_smoke mods/examples/flow_smoke/flow_smoke.cpp
+        SHADERS flow_smoke.hlsl:PsPrepare:ps_5_0 flow_smoke.hlsl:PsComposite:ps_5_0)
+    target_include_directories(mod_flow_smoke PRIVATE third_party/json)
+    target_link_libraries(mod_flow_smoke PRIVATE d3d11)
     mml_add_mod(puppet ${CMAKE_SOURCE_DIR}/mods/examples/puppet mods/examples/puppet/puppet.cpp)
     mml_add_mod(tally ${CMAKE_SOURCE_DIR}/mods/examples/tally mods/examples/tally/tally.cpp)
     mml_add_mod(orbit_cam ${CMAKE_SOURCE_DIR}/mods/examples/orbit_cam mods/examples/orbit_cam/orbit_cam.cpp)
@@ -347,49 +359,150 @@ else()
     # ---- PhysX 5 for the 64-bit halves: pinned by tools/deps.py (downloaded at the first configure, hash checked).
     # Its CMake makes the whole build's configurations its own (debug, checked, profile, release: CMAKE_CONFIGURATION_TYPES
     # forced), so it is an external project, configured and built in build/x64/physx by itself: static libraries, the
-    # static CRT (/MT, as the halves), CPU only (no CUDA, no GPU projects), no snippets or PVD runtime. Its release
-    # libraries go with this build's RelWithDebInfo and Release, its debug ones with Debug. A half links the target:
+    # static CRT (/MT, as the halves), no snippets or PVD runtime. Its release libraries go with this build's
+    # RelWithDebInfo and Release, its debug ones with Debug. A half links the target:
     # target_link_libraries(mod64_<id> PRIVATE PhysX5)
+    #
+    # With MML_PHYSX_GPU (the default) PhysX's GPU part is built too: particles, cloth, deformable bodies, GPU rigid
+    # bodies (CUDA; a Volta GPU or newer to run). CUDA is the parts of NVIDIA's toolkit tools/deps.py pins (nothing
+    # installed), given to Visual Studio as its CUDA toolset. PhysXGpu.dll (shared: PhysX loads it when a CUDA
+    # context manager is made) goes beside a half that asks for it: mml_physx_gpu(<id>). The kernels are PhysX's own
+    # choice: machine code for Volta to Blackwell (sm_70, 75, 80, 86, 89, 90, 100, 120; 75 is CMAKE_CUDA_ARCHITECTURES,
+    # upstream's default) and PTX for later GPUs. Without it, PhysX is built for the CPU alone (DISABLE_CUDA_PHYSX).
     option(MML_PHYSX "PhysX 5 for the mods' 64-bit halves (third_party/_deps/physx)" ON)
+    option(MML_PHYSX_GPU "PhysX's GPU part for the 64-bit halves (CUDA from tools/deps.py cuda)" ON)
+    # (nvcc compiles each kernel for its nine architectures on every core at once: a lower number keeps the machine
+    # usable while PhysX's GPU part builds: 8 minutes with 2 at once on 12 cores; empty: every project at once)
+    set(MML_PHYSX_JOBS "" CACHE STRING "PhysX's own build: how many of its projects at once (cmake --build --parallel)")
     if(MML_PHYSX)
         find_package(Python3 REQUIRED COMPONENTS Interpreter)
         set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tools/deps.py)
-        execute_process(COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/deps.py physx RESULT_VARIABLE rc)
+        set(px_deps physx)
+        if(MML_PHYSX_GPU)
+            list(APPEND px_deps cuda)
+        endif()
+        execute_process(COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/deps.py ${px_deps} RESULT_VARIABLE rc)
         if(NOT rc EQUAL 0)
-            message(FATAL_ERROR "tools/deps.py physx failed: the library is not there")
+            message(FATAL_ERROR "tools/deps.py ${px_deps} failed: the library is not there")
         endif()
         include(ExternalProject)
-        set(px_dir ${CMAKE_BINARY_DIR}/physx)
         set(px_libs PhysX PhysXCommon PhysXFoundation PhysXExtensions PhysXCooking PhysXPvdSDK)
+        set(px_args -DPHYSX_PRESET= -DPX_GENERATE_STATIC_LIBRARIES=ON -DNV_USE_STATIC_WINCRT=ON -DPX_BUILDSNIPPETS=OFF
+            -DPX_BUILDPVDRUNTIME=OFF)
+        set(px_toolset)
+        if(MML_PHYSX_GPU)
+            set(MML_CUDA ${CMAKE_SOURCE_DIR}/third_party/_deps/cuda)
+            set(px_dir ${CMAKE_BINARY_DIR}/physx-gpu)
+            set(px_args ${px_args} -DPX_GENERATE_GPU_PROJECTS=ON -DPX_GENERATE_GPU_STATIC_LIBRARIES=OFF
+                -DCUDAToolkit_ROOT=${MML_CUDA} -DCMAKE_CUDA_COMPILER=${MML_CUDA}/bin/nvcc.exe
+                -DCMAKE_CUDA_ARCHITECTURES=75)
+            set(px_toolset CMAKE_GENERATOR ${CMAKE_GENERATOR} CMAKE_GENERATOR_PLATFORM ${CMAKE_GENERATOR_PLATFORM}
+                CMAKE_GENERATOR_TOOLSET cuda=${MML_CUDA})
+        else()
+            set(px_dir ${CMAKE_BINARY_DIR}/physx)
+            set(px_args ${px_args} -DPX_GENERATE_GPU_PROJECTS=OFF)
+        endif()
         # (PhysX's own layout of its output: bin/win.x86_64.vc<toolset>.mt/<its configuration>/<lib>_static_64.lib)
         set(px_out ${px_dir}/out/bin/win.x86_64.vc${MSVC_TOOLSET_VERSION}.mt)
         set(px_byproducts)
         foreach(lib ${px_libs})
             list(APPEND px_byproducts ${px_out}/release/${lib}_static_64.lib ${px_out}/debug/${lib}_static_64.lib)
         endforeach()
+        set(px_targets ${px_libs})
+        if(MML_PHYSX_GPU)
+            list(APPEND px_targets PhysXGpu)
+            list(APPEND px_byproducts ${px_out}/release/PhysXGpu.dll ${px_out}/debug/PhysXGpu.dll)
+        endif()
         ExternalProject_Add(physx_build
             SOURCE_DIR ${CMAKE_SOURCE_DIR}/third_party/_deps/physx
             BINARY_DIR ${px_dir}/build
-            CMAKE_ARGS -DPHYSX_PRESET= -DPX_GENERATE_GPU_PROJECTS=OFF -DPX_GENERATE_STATIC_LIBRARIES=ON
-                -DNV_USE_STATIC_WINCRT=ON -DPX_BUILDSNIPPETS=OFF -DPX_BUILDPVDRUNTIME=OFF
+            ${px_toolset}
+            CMAKE_ARGS ${px_args}
                 -DPX_OUTPUT_LIB_DIR=${px_dir}/out -DPX_OUTPUT_BIN_DIR=${px_dir}/out -DPX_OUTPUT_DLL_DIR=${px_dir}/out
-            BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --config $<IF:$<CONFIG:Debug>,debug,release> --parallel
-                --target ${px_libs}
+            BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --config $<IF:$<CONFIG:Debug>,debug,release> --parallel ${MML_PHYSX_JOBS}
+                --target ${px_targets}
             INSTALL_COMMAND ""
             BUILD_BYPRODUCTS ${px_byproducts}
             BUILD_ALWAYS ON   # (its own build knows what changed: a second build is a check of a few seconds)
             EXCLUDE_FROM_ALL ON)
         add_library(PhysX5 INTERFACE)
         target_include_directories(PhysX5 INTERFACE ${CMAKE_SOURCE_DIR}/third_party/_deps/physx/include)
-        # (what the libraries were compiled with: static, and without CUDA, PX_SUPPORT_GPU_PHYSX 0 in the headers)
-        target_compile_definitions(PhysX5 INTERFACE PX_PHYSX_STATIC_LIB DISABLE_CUDA_PHYSX)
+        # (what the libraries were compiled with: static; without the GPU part, PX_SUPPORT_GPU_PHYSX 0 in the headers)
+        target_compile_definitions(PhysX5 INTERFACE PX_PHYSX_STATIC_LIB)
+        if(NOT MML_PHYSX_GPU)
+            target_compile_definitions(PhysX5 INTERFACE DISABLE_CUDA_PHYSX)
+        endif()
         foreach(lib ${px_libs})
             target_link_libraries(PhysX5 INTERFACE
                 $<IF:$<CONFIG:Debug>,${px_out}/debug/${lib}_static_64.lib,${px_out}/release/${lib}_static_64.lib>)
         endforeach()
         add_dependencies(PhysX5 physx_build)
+        # mml_physx_gpu(<id>): PhysXGpu.dll copied beside the half's DLL (x64/), CUDA's headers and the driver API's
+        # import library given to the half (cuda.h: its own CUDA calls, e.g. memory shared with Direct3D 12)
+        function(mml_physx_gpu id)
+            target_include_directories(mod64_${id} PRIVATE ${MML_CUDA}/include)
+            target_link_libraries(mod64_${id} PRIVATE ${MML_CUDA}/lib/x64/cuda.lib)
+            add_custom_command(TARGET mod64_${id} POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${px_out}/$<IF:$<CONFIG:Debug>,debug,release>/PhysXGpu.dll $<TARGET_FILE_DIR:mod64_${id}>)
+        endfunction()
         mml_mod64(physx_crates mods/examples/physx_crates/physx_crates64.cpp)
         target_link_libraries(mod64_physx_crates PRIVATE PhysX5)
+        if(MML_PHYSX_GPU)
+            mml_mod64(physx_gpu mods/examples/physx_gpu/physx_gpu64.cpp)
+            target_link_libraries(mod64_physx_gpu PRIVATE PhysX5 d3d12)
+            mml_physx_gpu(physx_gpu)
+        endif()
+    endif()
+
+    # ---- NVIDIA Flow 2 for the 64-bit halves (smoke and fire on the GPU, Vulkan): pinned by tools/deps.py flow (its
+    # sources with the Slang, premake and DXC releases that build them). Flow's own build is premake's Visual Studio
+    # solution: an external project that runs premake through third_party/flow/premake5.lua (Flow's script under the
+    # newest premake) and MSBuild on its release configuration, in Flow's folder (its tools find each other by paths
+    # relative to it). The shader compiler makes Vulkan's SPIR-V (and DXIL) of its several hundred compute shaders:
+    # its first build takes some minutes, a second one a few seconds. A half uses Flow through its loader
+    # (NvFlowLoader.h) and CUDA (Flow's buffers to the game's shared textures): mml_flow(<id>) gives it the headers, CUDA's
+    # driver API and nvflow.dll, nvflowext.dll beside it.
+    include(ExternalProject)
+    option(MML_FLOW "NVIDIA Flow 2 for the mods' 64-bit halves (tools/deps.py flow; CUDA from tools/deps.py cuda)" ON)
+    if(MML_FLOW)
+        find_package(Python3 REQUIRED COMPONENTS Interpreter)
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tools/deps.py
+            ${CMAKE_SOURCE_DIR}/third_party/flow/premake5.lua)
+        execute_process(COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/deps.py flow cuda RESULT_VARIABLE rc)
+        if(NOT rc EQUAL 0)
+            message(FATAL_ERROR "tools/deps.py flow cuda failed: the library is not there")
+        endif()
+        set(MML_CUDA ${CMAKE_SOURCE_DIR}/third_party/_deps/cuda)
+        set(flow_dir ${CMAKE_SOURCE_DIR}/third_party/_deps/flow)
+        set(flow_out ${flow_dir}/_build/windows-x86_64/release)
+        # (premake5.lua takes the compiler's and MSBuild's folders from these: the ones this build uses)
+        get_filename_component(flow_msvc ${CMAKE_CXX_COMPILER} DIRECTORY)
+        get_filename_component(flow_msvc ${flow_msvc}/../../.. ABSOLUTE)
+        get_filename_component(flow_msbuild ${CMAKE_VS_MSBUILD_COMMAND} DIRECTORY)
+        ExternalProject_Add(flow_build
+            SOURCE_DIR ${flow_dir}
+            BUILD_IN_SOURCE ON
+            CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env MSVS_TOOLSET=${flow_msvc} MSBUILD_DIR=${flow_msbuild}
+                ${flow_dir}/external/premake/windows-x86_64/premake5.exe --file=${CMAKE_SOURCE_DIR}/third_party/flow/premake5.lua
+                --flow=${flow_dir} vs2022
+            BUILD_COMMAND ${CMAKE_COMMAND} -E env MSVS_TOOLSET=${flow_msvc} MSBUILD_DIR=${flow_msbuild}
+                ${CMAKE_VS_MSBUILD_COMMAND} ${flow_dir}/_compiler/vs2022/nvflow.sln -t:nvflowext -p:Configuration=release
+                -p:Platform=x64 -m -v:m -nologo
+            INSTALL_COMMAND ""
+            BUILD_BYPRODUCTS ${flow_out}/nvflow.dll ${flow_out}/nvflowext.dll
+            BUILD_ALWAYS ON   # (MSBuild knows what changed: a second build is a check of a few seconds)
+            EXCLUDE_FROM_ALL ON)
+        function(mml_flow id)
+            target_include_directories(mod64_${id} PRIVATE ${flow_dir}/include/nvflow ${flow_dir}/include/nvflowext ${MML_CUDA}/include)
+            target_link_libraries(mod64_${id} PRIVATE ${MML_CUDA}/lib/x64/cuda.lib)
+            add_dependencies(mod64_${id} flow_build)
+            add_custom_command(TARGET mod64_${id} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different ${flow_out}/nvflow.dll ${flow_out}/nvflowext.dll $<TARGET_FILE_DIR:mod64_${id}>)
+        endfunction()
+        mml_mod64(flow_smoke mods/examples/flow_smoke/flow_smoke64.cpp)
+        target_link_libraries(mod64_flow_smoke PRIVATE d3d12)
+        target_include_directories(mod64_flow_smoke PRIVATE third_party/json)
+        mml_flow(flow_smoke)
     endif()
     # the offline tests' 64-bit half (tests/run_tests.py copies it and the sidecar into the stand-in game's folder)
     add_library(testmod64_side_test SHARED tests/mods/side_test/side_test64.cpp)

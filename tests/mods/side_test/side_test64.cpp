@@ -14,7 +14,7 @@ namespace {
 const MmlSideHost *H;
 unsigned long long g_frames;
 MmlSideChannel *g_ch, *g_back, *g_flood;
-std::thread g_flooder;
+std::thread g_flooder, g_later;
 std::atomic<bool> g_stop;
 unsigned g_loads;
 
@@ -102,6 +102,32 @@ int Flood(MmlSideMod *, const char *, MmlSideReply *r, void *) {
     Reply(r, "{\"started\": true}");
     return 0;
 }
+uint32_t Num(const char *args, const char *key, uint32_t def) {   // (the tests send flat objects of numbers)
+    std::string a = args ? args : "", k = std::string("\"") + key + "\"";
+    size_t at = a.find(k);
+    return at == std::string::npos ? def : static_cast<uint32_t>(strtoul(a.c_str() + a.find(':', at) + 1, nullptr, 10));
+}
+// {"ms"}: a thread of this half writes "later" to box after that long (the 32-bit half's wait_box waits for it)
+int WriteLater(MmlSideMod *, const char *args, MmlSideReply *r, void *) {
+    if (g_later.joinable()) g_later.join();
+    uint32_t ms = Num(args, "ms", 300);
+    g_later = std::thread([ms] {
+        Sleep(ms);
+        H->channel_write(g_ch, "later", 5);
+    });
+    Reply(r, "{\"started\": true}");
+    return 0;
+}
+// {"wait_ms"} -> {"after", "version", "ms"}: channel_wait for a version of back after the latest one
+int WaitBack(MmlSideMod *, const char *args, MmlSideReply *r, void *) {
+    char buf[16];
+    uint64_t after = 0;
+    H->channel_read(g_back, buf, sizeof buf, &after);
+    ULONGLONG t0 = GetTickCount64();
+    uint64_t v = H->channel_wait(g_back, after, Num(args, "wait_ms", 1000));
+    Reply(r, "{\"after\": " + std::to_string(after) + ", \"version\": " + std::to_string(v) + ", \"ms\": " + std::to_string(GetTickCount64() - t0) + "}");
+    return 0;
+}
 int Fault(MmlSideMod *, const char *, MmlSideReply *, void *) {
     volatile int *p = nullptr;
     return *p;
@@ -122,6 +148,8 @@ MML_EXPORT int mml_side_load(const MmlSideHost *host, MmlSideMod *mod) {
     H->command(mod, "fetch", "{} -> {text, version}: the channel back (its 32-bit half writes it)", Fetch, nullptr);
     H->command(mod, "flood", "{} -> the channel flood written by a thread for 1.5 s, as fast as it can", Flood, nullptr);
     H->command(mod, "fault", "faults (its half is unloaded)", Fault, nullptr);
+    H->command(mod, "write_later", "{ms} -> box written by a thread after that long", WriteLater, nullptr);
+    H->command(mod, "wait_back", "{wait_ms} -> {after, version, ms}: channel_wait for back's next version", WaitBack, nullptr);
     g_ch = H->channel_open(mod, "box", 4096);
     g_back = H->channel_open(mod, "back", 4096);
     g_flood = H->channel_open(mod, "flood", 4096);
@@ -132,5 +160,6 @@ MML_EXPORT int mml_side_load(const MmlSideHost *host, MmlSideMod *mod) {
 MML_EXPORT void mml_side_unload(MmlSideMod *) {
     g_stop = true;
     if (g_flooder.joinable()) g_flooder.join();
+    if (g_later.joinable()) g_later.join();
     g_ch = g_back = g_flood = nullptr;
 }

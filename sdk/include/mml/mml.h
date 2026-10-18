@@ -1474,6 +1474,11 @@ typedef struct MmlHost {
     int (*channel_write)(MmlChannel *ch, const void *data, uint32_t bytes);
     uint32_t (*channel_read)(MmlChannel *ch, void *data, uint32_t cap, uint64_t *version);
     int (*gfx_shared_texture)(MmlMod *mod, const char *name, MmlSharedTexture *out);
+    /* channel_wait: until the channel holds a version after `after` (the number channel_read gave), at most timeout_ms
+     * (0: only looks); that version's number, 0 when none came in time. The writer's channel_write wakes it at once
+     * (an event a channel: one waiter a channel, its reader). Any thread; on the game thread a wait is the frame's
+     * time: a pass waiting for its 64-bit half's result of this frame waits at most a few milliseconds. */
+    uint64_t (*channel_wait)(MmlChannel *ch, uint64_t after, uint32_t timeout_ms);
 } MmlHost;
 
 #define MML_ZONE_PLAYER 0x1u

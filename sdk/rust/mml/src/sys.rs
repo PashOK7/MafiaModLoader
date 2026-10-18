@@ -3220,10 +3220,13 @@ pub struct MmlHost {
             out: *mut MmlSharedTexture,
         ) -> ::core::ffi::c_int,
     >,
+    pub channel_wait: ::core::option::Option<
+        unsafe extern "C" fn(ch: *mut MmlChannel, after: u64, timeout_ms: u32) -> u64,
+    >,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 712usize];
+    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 716usize];
     ["Alignment of MmlHost"][::core::mem::align_of::<MmlHost>() - 4usize];
     ["Offset of field: MmlHost::size"][::core::mem::offset_of!(MmlHost, size) - 0usize];
     ["Offset of field: MmlHost::api_version"]
@@ -3530,6 +3533,8 @@ const _: () = {
         [::core::mem::offset_of!(MmlHost, channel_read) - 704usize];
     ["Offset of field: MmlHost::gfx_shared_texture"]
         [::core::mem::offset_of!(MmlHost, gfx_shared_texture) - 708usize];
+    ["Offset of field: MmlHost::channel_wait"]
+        [::core::mem::offset_of!(MmlHost, channel_wait) - 712usize];
 };
 pub type MmlModLoadFn = ::core::option::Option<
     unsafe extern "C" fn(host: *const MmlHost, mod_: *mut MmlMod) -> ::core::ffi::c_int,

@@ -40,6 +40,12 @@ impl Channel {
         let (n, version) = self.read(buf)?;
         if n == core::mem::size_of::<T>() { Some((unsafe { v.assume_init() }, version)) } else { None }
     }
+    /// Waits until the channel holds a version after `after` (the number a read gave), at most `timeout_ms` (0: only
+    /// looks): that version's number; None: none came in time. The writer wakes it at once; one waiter a channel.
+    pub fn wait(&self, after: u64, timeout_ms: u32) -> Option<u64> {
+        let v = unsafe { f!(self.host, channel_wait)(self.raw, after, timeout_ms) };
+        if v != 0 { Some(v) } else { None }
+    }
 }
 impl Host {
     /// The channel "<name>" of this mod, the one its 64-bit half opens (side.h channel_open) with the same size;

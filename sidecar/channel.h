@@ -2,8 +2,11 @@
 // writer. Two slots: a write goes into the slot the latest version is not in, then becomes the latest; a reader copies
 // the latest and checks that the writer did not start on that slot meanwhile (it would be two versions on), else
 // copies again. So a reader always gets one whole version, never half of two. Compiled into both processes.
+// A reader may wait for a version after the one it has (ChannelWait): each write sets the channel's event (auto-reset:
+// one waiter a channel, the reader), and the waiter looks at the version again whenever it is set.
 //
-// The memory: "Local\mml-ch-<game pid>-<mod>-<name>", a Header, then two slots of `size` bytes.
+// The memory: "Local\mml-ch-<game pid>-<mod>-<name>", a Header, then two slots of `size` bytes; the event: the same
+// name and "-ev".
 #pragma once
 #include <string.h>
 #include <string>
@@ -26,6 +29,7 @@ struct Channel {
     ChannelHeader *h = nullptr;
     uint8_t *slot[2] = {};
     uint32_t size = 0;
+    HANDLE event = nullptr;    // set by each write (ChannelWait); NULL: a waiter polls
 };
 
 inline std::wstring ChannelName(uint32_t gamePid, const std::string &mod, const std::string &name) {
@@ -67,12 +71,14 @@ inline bool ChannelOpen(Channel *c, uint32_t gamePid, const std::string &mod, co
     c->size = size;
     c->slot[0] = static_cast<uint8_t *>(p) + sizeof(ChannelHeader);
     c->slot[1] = c->slot[0] + size;
+    c->event = CreateEventW(nullptr, FALSE, FALSE, (n + L"-ev").c_str());
     return true;
 }
 
 inline void ChannelClose(Channel *c) {
     if (c->h) UnmapViewOfFile(c->h);
     if (c->map) CloseHandle(c->map);
+    if (c->event) CloseHandle(c->event);
     *c = Channel{};
 }
 
@@ -86,6 +92,7 @@ inline bool ChannelWrite(Channel *c, const void *data, uint32_t bytes) {
     c->h->bytes[s] = bytes;
     MemoryBarrier();
     c->h->version = next;
+    if (c->event) SetEvent(c->event);
     return true;
 }
 
@@ -107,6 +114,25 @@ inline uint32_t ChannelRead(Channel *c, void *data, uint32_t cap, uint64_t *vers
         }
     }
     return 0;
+}
+
+// Waits until the channel holds a version after `after` (at most timeoutMs; 0: only looks): that version's number,
+// or 0 when none came in time. One waiter a channel (the event wakes one).
+inline uint64_t ChannelWait(Channel *c, uint64_t after, uint32_t timeoutMs) {
+    if (!c->h) return 0;
+    LARGE_INTEGER f, now;
+    QueryPerformanceFrequency(&f);
+    QueryPerformanceCounter(&now);
+    const LONGLONG end = now.QuadPart + f.QuadPart * timeoutMs / 1000;
+    for (;;) {
+        uint64_t v = c->h->version;
+        if (v > after) return v;
+        QueryPerformanceCounter(&now);
+        if (now.QuadPart >= end) return 0;
+        DWORD left = static_cast<DWORD>((end - now.QuadPart) * 1000 / f.QuadPart) + 1;
+        if (c->event) WaitForSingleObject(c->event, left);   // (a write's signal, or one left from an older write: looked again)
+        else Sleep(left > 1 ? 1 : left);
+    }
 }
 
 } // namespace side

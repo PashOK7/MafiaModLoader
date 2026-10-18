@@ -267,6 +267,7 @@ bool SidecarTexture(const std::string &mod, const std::string &name, SidecarTex 
 MmlChannel *SidecarChannelOpen(MmlMod *mod, const char *name, uint32_t size, std::string *err);
 int SidecarChannelWrite(MmlChannel *ch, const void *data, uint32_t bytes);
 uint32_t SidecarChannelRead(MmlChannel *ch, void *data, uint32_t cap, uint64_t *version);
+uint64_t SidecarChannelWait(MmlChannel *ch, uint64_t after, uint32_t timeoutMs);
 void SidecarChannelsForget(MmlMod *mod);   // (the mod's unload) its channels closed
 int GfxSharedTexture(MmlMod *mod, const char *name, MmlSharedTexture *out);   // (gfx.cpp; inside a graphics pass)
 bool SidecarWants(const char *type);

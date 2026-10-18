@@ -1,0 +1,13 @@
+{
+  "id": "physx_gpu",
+  "name": "PhysX GPU: water, cloth and a jelly stepped on the GPU by PhysX 5 in the 64-bit half, drawn into the frame",
+  "version": "0.1.0",
+  "type": "native",
+  "entry": "physx_gpu.dll",
+  "entry64": "x64/physx_gpu.dll",
+  "enabled": false,
+  "builds": ["1.2", "1.0"],
+  "gfx": true,
+  "load_order": 100,
+  "depends": []
+}

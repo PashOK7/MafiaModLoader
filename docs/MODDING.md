@@ -1581,7 +1581,8 @@ cannot be loaded into it. A mod may have a 64-bit half for it, run by the sideca
 process the loader starts beside the game in a job object (it ends with the game) and starts again when it ends
 without being asked. `sdk/include/mml/side.h` is the half's ABI (read it whole); `mods/examples/hello_side` is the
 smallest half alone, `mods/examples/side_picture` a mod in two halves that hands the frame a picture,
-`mods/examples/physx_crates` one whose 64-bit half steps PhysX 5 and hands the frame the bodies' poses.
+`mods/examples/physx_crates` one whose 64-bit half steps PhysX 5 and hands the frame the bodies' poses,
+`mods/examples/flow_smoke` one whose 64-bit half simulates and ray-marches NVIDIA Flow's smoke and fire into the frame.
 
 - **The manifest** names the half with `"entry64"` (a path inside the mod's folder: `"x64/my_mod.dll"`; that folder
   is the half's own, its libraries go beside it). With `"entry"` too the mod has two halves, loaded, reloaded and
@@ -1652,6 +1653,26 @@ smallest half alone, `mods/examples/side_picture` a mod in two halves that hands
   frames without new poses (the half loads PhysX); a fault in the 64-bit half left the crates where they were, the
   game and the 32-bit half going on, and `mod.reload` brought it back in 9 to 12 frames. Ten reloads in a row: no
   handle, thread or memory left behind.
+- **NVIDIA Flow 2 in a half, rendered into the same frame: `flow_smoke`** (`mods/examples/flow_smoke`). Flow (smoke and
+  fire as gas on a sparse voxel grid, ray-marched with self-shadowing) runs only on 64 bits and draws through Vulkan.
+  `mml_flow(<id>)` in `CMakeLists.txt` gives a half its headers, CUDA's driver API and `nvflow.dll`, `nvflowext.dll`
+  beside it (Flow itself is built by its own premake through `third_party/flow/premake5.lua`, `tools/deps.py flow`).
+  The frame: at `FRAME` the 32-bit half writes the sources and the people and cars near them (they become Flow
+  emitters that carry the gas at their velocity: a passer-by drags a wisp behind him); the half's worker steps Flow
+  then, submitted without a wait (the GPU does it while the game draws). In its graphics pass the 32-bit half draws
+  the frame's linear colour and its depth as the game's projection makes it (`_33 + _43 / z`, the sky 1) into two
+  shared textures, waits for the GPU to have them (an event query), and writes the camera into a channel; the half
+  copies them into Flow's buffers with CUDA (Vulkan's memory exported as an opaque Win32 handle, the Direct3D 12
+  texture imported as a resource: both on the game's adapter, found by LUID), ray-marches the gas over them, copies
+  the result into a third shared texture and answers; the pass (`channel_wait`) draws it as the frame. Measured
+  2026-10-18 at 1280x960 on an RTX 3070: Flow's GPU time 0.3 to 0.4 ms, the round trip 2.8 (1.2) and 3.0 ms (1.0) on
+  the game thread, 3243 frames of 3245 (1.2) and 1083 of 1085 (1.0) with their own frame's gas.
+  What it cost to find: Flow's defaults are Omniverse's centimetres and z up (gravity, the attenuations: per unit of
+  length, a hundred times larger in metres); its buoyancy and cooling are part of combustion (off, warm smoke never
+  rises); its colour map is looked up by temperature and its smoke map is clear at 0 (cooled smoke vanishes: a map
+  of one grey, alpha 0.9, keeps it), and multiplied by 2.5 (Omniverse's HDR); the first `createGrid` on a machine has
+  the driver compile several hundred compute shaders (1.5 to 5 minutes; NVIDIA's disk cache, kept by the
+  executable's path, makes the next start take under a second).
 
 ## 4. A complete example
 
