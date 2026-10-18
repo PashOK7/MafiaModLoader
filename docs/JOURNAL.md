@@ -2298,3 +2298,121 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   steps a second left the gas standing in some frames of a faster game (now a step of each frame's dt, two above
   25 ms), and a box's couple rate of 20 gave the gas 27 % of the car's velocity a step at 75 fps (Flow's rate is
   clamp(dt * rate, 0, 1)): 200 now (`tune` `shape_couple`).
+
+## 2026-10-18: pet1kk's developer tools (PR 2) brought into the loader, offline
+
+- **Asked** (the owner): a pull request came (pet1kk, "Add files via upload": `contrib/developer_tools/`, a standalone
+  ASI for 1.2 with its sources and a prebuilt `developer_tools.asi`: script triggers, collision, check.bin and
+  road.bin, names, god mode, endless ammunition, flying, wireframe, a free camera, the field of view, the HUD hidden,
+  DebugText). Can it be taken, and made the loader's? Then: "do it all properly"; then: "do not start the game, all
+  offline".
+- **Not merged as it is**: a binary nobody can check against its sources, the game's own gamemenu.mnu and
+  textdb_cz.def patched (the loader adds menu items and pages without that), hooks of places the loader keeps (the
+  game menu's vtable slot 9, the HUD's call, C_program::Process, C_player's vtable), 1.2 only, Czech texts. Its files
+  are kept on this machine in `re/ext/developer_tools/` (never committed) and the local branch `pr-2-review`; the PR
+  stays open, the reply to its author is the owner's to send.
+- **Read and checked** in Ghidra in both builds (knowledge/notes/game.md "pet1kk's developer tools"): C_player::Hit's
+  start (MafiaReverse's 0x594209 was 7 bytes early: renamed at 0x594210 in the project and names.csv), the player's
+  Hit and Collision gates, the distance tests' params (the handlers of GETACTORSDIST, IFFLTINRANGE, IF in both
+  builds' switch tables), the pedestrians' web (C_web_path::LoadNodes, FindNodeID, FlipOneWay, GetNearNode), the
+  surfaces' table (LoadMaterialsFromBin: the game's own names, not the PR's hand list), the actors' kinds
+  (C_mission::CreateActor: 9 is C_villa, not a box), DrawAll and Do_Jump with their 1.0 twins, GM_Menu::SetFocus
+  (named).
+- **Made**: in the host and the SDK (C, Rust): `human_invulnerable` (the loader's hook of C_human::Hit returns before
+  the game's for a person held), `hud_game` (DrawAll not run while held), `web_nodes`, `material_name`; the bridge's
+  `human.invulnerable`, `hud.game`, `world.web`, `world.materials` (`world.shapes` names a face's surface);
+  game_build.h `hudDrawAll`, `humanJump`, `materials`, `materialCount` for both builds; game.h's distance params, the
+  web's and the items' layouts, `ActorTypeName`. `mods/examples/devtools` (off by default): kept from harm, endless
+  ammunition, flying (the game's movement and jump hooked for the player, his place set as ACTOR_SETPOS sets it), a
+  free camera, the field of view, the HUD; a page in Options > Mods. `debug_views`: triggers draws the distances the
+  scripts test; three new views, `collision` (every static shape by surface, the names from the game's table, the
+  surface under the crosshair), `web` (check.bin's nodes and ways) and `names` (actors' names and kinds), the lines
+  drawn into the scene through the game's device at RENDER_WORLD (`lines.h`).
+- **Left** (ROADMAP Known gaps): wireframe (LS3D's own driver state not found yet; a mod setting the fill mode would
+  reach the HUD), DEBUG_TEXT's compile (three hooks in the script machine, the PR's claim not checked), the throwables'
+  trajectory the PR's source holds but its README does not name.
+- **Checked**: the loader and every mod build; `tools/check_builds.py` ALL PASSED; the offline suite ALL PASSED after
+  the host's part. Not run in either lab (the owner's word): every new switch and view is untested in the game.
+
+## 2026-10-18: the developer tools in the 1.2 lab: the owner's findings, the actions' bindings, a check of the pages
+
+- **Found by the owner** (in the 1.2 lab): flying answered the primary bindings only (the arrows), not the secondary
+  (W A S D). The tool's fault, not the mod's: `action_slot` names an action by its primary slot and `action_held`
+  read that one slot, so every mod reading actions saw half of what the player gave (the game takes both rows as one
+  action). Now `action_held` / `action_pressed` give the action's value from all its slots, whichever is asked
+  (host/input.cpp ActionValue; mml.h says so). Seen: Forwards' secondary slot (W) flew the player 45 m in a second.
+- **Asked** (the owner): the collision as solids, coloured and filled, not as frames. `debug_views` collision now draws
+  every shape's faces translucent (`fill`), lit by their facing, with darker outlines (`edges`), lifted off the
+  world's own surfaces along their normals (more far away); boxes as six sides, spheres, poles as closed cylinders.
+  Seen in the lab: the street's walls and pavements as coloured solids, the surfaces' names over them.
+- **Asked** (the owner): look through the rest for the same kind of thing. Found and fixed: flying would have pulled
+  the player out of a tram (only a car was tested; now any vehicle, +0x98); the free camera's mouse was a constant of
+  its own (now the options' sensitivity times 5, as the player turns); the hotkeys Ctrl+F1..F3 are F2..F4 (the
+  profile's bindings checked: F1 is Objectives, F5 the speed limiter, F2..F4 free); the surfaces' names were read in
+  the system's code page (1251 here: "Chodnнk"): the table is its makers' Czech, Windows-1250, in every build
+  ("Chodník" now); the labels of `collision`, `web`, `names` neither avoided each other nor stayed on the screen, and
+  `race` and `triggers` each kept their own list of places: one label function now (`lines.h`), one list for every
+  view, cleared once a frame, the labels kept on the screen.
+- **Asked** (the owner): an offline test that no interface lays elements or texts over each other. A page is now laid
+  out apart from the game (panel.cpp LayoutPage, LayoutList) and made from that layout; `panel.layout` gives it for
+  any manifest with no game; `tests/run_tests.py` ui_tests lays out every mod's `mod.json` in the repository and
+  fails on controls or texts over each other, out of the window or the screen, a button's text wider than it, a
+  label cut. The texts' widths are the loader's estimate of the game's menu fonts, measured on its pages in the lab
+  (a little above each measure). It found: flow_smoke's tab "Heat and motion" (139 units) in a 90-wide tab, over its
+  neighbours (the tabs are now as wide as their text and flow into rows; seen in the lab), and the key rows' prompt
+  "Press a key (Esc: keep)" wider than its button (now "Press a key (Esc)").
+- **Checked**: built; the offline suite ALL PASSED (the new page check among it); in the 1.2 lab: the materials'
+  names, the web's nodes, the invulnerable switch, the HUD hidden and back (F4), flying on W, the free camera (F3),
+  the endless ammunition, the filled collision, flow_smoke's tabs. Not in the 1.0 lab yet.
+
+## 2026-10-18: the mods' drawing under the game's menus; the collision view in the scene, in order, with the cars
+
+- **Asked** (the owner): why everything hides when a menu opens: the views hid themselves under the pause menu (so as
+  not to be drawn over it), a crutch. The loader drew the mods' 2D queue at the end of the game's 2D pass, over the
+  HUD, the open menu and the console. Now it draws it right after the HUD (its hook of G_IndicatorsClass::DrawAll,
+  always installed, the HUD's hiding a flag of it), so the menus and the console are drawn over the mods' drawing as
+  over the HUD; a pass with no HUD drawn falls back to the pass's end. The views (triggers, race, collision, web,
+  names) and devtools' line are drawn under the pause menu now. `draw.state` `under_menus`. Seen in the 1.2 lab: the
+  pause menu over the collision view, the view under it.
+- **Asked** (the owner): the collision drawn in the world (what stands before it in front of it: Tommy could not be
+  seen at full opacity), in order (far faces were laid over near ones), and with the cars (they are solid too).
+  Tommy hidden: the owner's lab had `through` on (no depth test); with the depth test the scene's people and cars are
+  in front of the fills (seen at a fill of 0.9). The order: the translucent faces are now drawn farthest first (the
+  static faces sorted again when the eye moves 1 m or every 0.5 s, the moving ones every frame, the two merged). The
+  cars: the view read the static grid only; it reads the moving objects too, every frame (`moving`: the cars' hulls in
+  white, doors and the rest grey; people's spheres with `people`, off by default: a sphere round a person hides him),
+  colours outside the surfaces' palette (a car in the concrete's orange looked like concrete). The line under the
+  crosshair names a moving object too, and its place is kept free of every view's labels (lines.h Reserve).
+- **Checked**: built; the offline suite ALL PASSED; the 1.2 lab as above. Not in 1.0 yet.
+- **Then** (the owner: people are solid too, why no box or capsule): a person has none. The game keeps two spheres
+  for him in its moving objects' grid, read in the lab again: 0.3 m about his waist (classes 0x101) and 1.2 m (0x102);
+  his own moves sweep three spheres against the world, bullets test his bones. The view now draws both (`people`,
+  on) as balls like every other shape (first as outlines, out of a fear that a filled ball hides him: the owner said
+  balls, and the translucent fill is in the scene, so he shows through it), the wide one at half the fill; a car's
+  body over its wheels (0x201) is outlined inside its filled hull (0x202) instead of a second fill. Seen in the 1.2
+  lab: Tommy inside his two balls, seen through the wide one. Then, the wide one read in the code (the aim's broad
+  phase: knowledge/notes/game.md "A person's two spheres"), the owner: not needed; it is not drawn now.
+
+## 2026-10-19: the collision view as a graphics pass
+
+- **The owner's findings** with the device-drawn fills: far parts of large triangles showed through small near ones
+  (a painter's order by the triangles' centres fails for large ones), no sense of volume, the world's own surfaces
+  fighting the fills, gaps between the ground's triangles (made by the view itself: each face was moved along its
+  normal by an amount taken at its own centre, so neighbours moved apart). Asked: where they fight the collision wins,
+  where the world really is nearer the world is drawn; something like ambient occlusion.
+- **Made**: the view is a pass of the graphics bridge (collision.hlsl). Its triangles (each vertex its face's normal;
+  no face moved) go into the mod's own colour and normal-and-depth targets with a depth buffer of its own: each pixel
+  keeps the nearest collision surface alone, so nothing shows through. A full-screen step lays it over the frame:
+  hidden only where the scene's linear depth is nearer by more than `tolerance` (0.15 m) plus 0.4 % of the depth, lit
+  by its facing, darkened by an ambient occlusion read from its own depth and normals (`ao`), outlined (`edges`) where
+  its normal turns, a neighbour's point leaves its plane (the distance to the plane: a ground at a grazing angle has
+  no false lines) or its surface changes: the faces of one plane have no seams. A car's body inside its hull is no
+  longer drawn (the hull covers it). Seen in the 1.2 lab (fill 0.75, edges on): solid walls and boxes, the concrete
+  square one plane, Tommy in front.
+- **Also**: devtools switched on in the 1.2 lab's manifest (the examples ship off; it had been loaded by hand).
+- **Both labs** (2026-10-19, before the commit): in 1.0, the surfaces' names (the same table, Czech in 1250), the web,
+  devtools' hooks, the 2D drawing under the menus (`draw.state` `under_menus`), the HUD hidden under the pause menu
+  (French: "Menu du jeu" over the views), flying on the secondary W and up on Jump, the free camera, the collision
+  pass with its defaults; invulnerability by a fall: 16.6 m took 163.8 health (a hit of type 6), the same fall held
+  invulnerable none and no HUMAN_HIT. In 1.2: four frames in a row of the collision pass, no flicker. The offline
+  suite ALL PASSED.

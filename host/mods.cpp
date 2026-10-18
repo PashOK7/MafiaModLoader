@@ -535,6 +535,24 @@ int H_RoadNear(MmlMod *m, const float at[3], float out[3]) {
     if (out) for (int i = 0; i < 3; i++) out[i] = p[i];
     return id + 1;
 }
+int H_HumanInvulnerable(MmlMod *m, void *human, int on) {
+    if (!Alive(m)) return -1;
+    std::string err;
+    int r = StateInvulnerableSet(m, human, on < 0 ? -1 : on ? 1 : 0, &err);
+    if (r < 0) Log(MML_LOG_WARN, ModIdOf(m), "human_invulnerable: %s", err.c_str());
+    return r;
+}
+int H_HudGame(MmlMod *m, int show) {
+    if (!Alive(m)) return -1;
+    std::string err;
+    int r = HudGame(m, show < 0 ? -1 : show ? 1 : 0, &err);
+    if (r < 0) Log(MML_LOG_WARN, ModIdOf(m), "hud_game: %s", err.c_str());
+    return r;
+}
+int H_WebNodes(MmlMod *m, const float at[3], float radius, MmlWebNode *out, int max) {
+    return Alive(m) && at ? WebNodes(at, radius, out, out ? max : 0) : 0;
+}
+const char *H_MaterialName(int material) { return MaterialName(material); }
 MmlChannel *H_ChannelOpen(MmlMod *m, const char *name, uint32_t size) {
     if (!Alive(m) || !name || !*name) return nullptr;
     std::string err;
@@ -844,6 +862,7 @@ bool UnloadMod(ModEntry *e, const char *why) {
     ControlModGone(m);
     InteractModGone(m);
     HudModGone(m);
+    StateModGone(m);
     AnimsModGone(m);
     CapturesRemove(m);
     SidecarChannelsForget(m);
@@ -1213,6 +1232,10 @@ void ModsInit() {
     g_host.channel_read = H_ChannelRead;
     g_host.gfx_shared_texture = H_GfxSharedTexture;
     g_host.channel_wait = H_ChannelWait;
+    g_host.human_invulnerable = H_HumanInvulnerable;
+    g_host.hud_game = H_HudGame;
+    g_host.web_nodes = H_WebNodes;
+    g_host.material_name = H_MaterialName;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();

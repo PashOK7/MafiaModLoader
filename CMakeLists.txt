@@ -279,10 +279,13 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     mml_add_mod(hover ${CMAKE_SOURCE_DIR}/mods/examples/hover mods/examples/hover/hover.cpp)
     mml_add_mod(debug_views ${CMAKE_SOURCE_DIR}/mods/examples/debug_views mods/examples/debug_views/debug_views.cpp
         mods/examples/debug_views/routes.cpp mods/examples/debug_views/triggers.cpp mods/examples/debug_views/race.cpp
-        mods/examples/debug_views/walls.cpp
-        SHADERS race.hlsl:PsRace:ps_5_0 walls.hlsl:PsWalls:ps_5_0)
+        mods/examples/debug_views/walls.cpp mods/examples/debug_views/collision.cpp mods/examples/debug_views/web.cpp
+        mods/examples/debug_views/names.cpp
+        SHADERS race.hlsl:PsRace:ps_5_0 walls.hlsl:PsWalls:ps_5_0
+        collision.hlsl:VsCollision:vs_5_0 collision.hlsl:PsCollisionG:ps_5_0 collision.hlsl:PsCollision:ps_5_0)
     mml_add_rust_mod(hello_rust ${CMAKE_SOURCE_DIR}/mods/examples/hello_rust)
     mml_add_rust_mod(depth_pulse_rs ${CMAKE_SOURCE_DIR}/mods/examples/depth_pulse_rs)
+    mml_add_mod(devtools ${CMAKE_SOURCE_DIR}/mods/examples/devtools mods/examples/devtools/devtools.cpp)
     # (tools/new_mod.py adds a mod's line above this one)
 
     # The mods this build defines: <out>/mml/build_mods.txt, one id a line (written only when it changes), which deploy

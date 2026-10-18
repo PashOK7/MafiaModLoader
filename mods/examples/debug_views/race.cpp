@@ -23,6 +23,7 @@
 #include <d3d11.h>
 #include <cstring>
 #include "shaders/PsRace.h"
+#include "lines.h"
 #include "views.h"
 
 #define SECTION "race."   // its settings' keys, under its section of the config
@@ -286,28 +287,8 @@ void Line3(P3 a, P3 b, uint32_t argb) {
     float ax, ay, bx, by;
     if (Project(a, &ax, &ay) && Project(b, &bx, &by)) H->draw_line(M, ax, ay, bx, by, argb);
 }
-// A label above a place; labels that would cover one drawn before them this frame go up past it.
-struct Box2 { float x0, y0, x1, y1; };
-std::vector<Box2> g_placed;
-void Label(const P3 &w, const std::vector<std::string> &lines, uint32_t argb) {
-    float x, y;
-    if (!Project(w, &x, &y)) return;
-    const float size = 13;
-    float wmax = 0;
-    for (const std::string &l : lines) wmax = (std::max)(wmax, H->draw_text_width(MML_FONT_SMALL, size, l.c_str()));
-    float h = size * lines.size() + 4;
-    for (int moved = 0; moved < 16; moved++) {
-        bool hit = false;
-        for (const Box2 &b : g_placed) {
-            if (x - wmax / 2 - 4 < b.x1 && x + wmax / 2 + 4 > b.x0 && y - h < b.y1 && y > b.y0) { y = b.y0 - 1; hit = true; }
-        }
-        if (!hit) break;
-    }
-    g_placed.push_back({x - wmax / 2 - 4, y - h, x + wmax / 2 + 4, y});
-    H->draw_rect(M, x - wmax / 2 - 4, y - h, wmax + 8, h, 0x90000000u, 1);
-    for (size_t k = 0; k < lines.size(); k++)
-        H->draw_text(M, x, y - h + 2 + size * k, size, k ? 0xFFE0E0E0u : argb, MML_FONT_SMALL, MML_DRAW_CENTER, lines[k].c_str());
-}
+// A label above a place (lines.h: kept on the screen and off every view's labels drawn before it this frame).
+void Label(const P3 &w, const std::vector<std::string> &text, uint32_t argb) { lines::Label(H, M, &w.x, text, argb); }
 
 // ---- the trace (config "trace"): the race's changes for the log (`log_tail`). Each racer's lap, gate and place when
 // they change; a gate reached by more than one step from the last one (a jump: the racer was lost or moved); the
@@ -613,12 +594,10 @@ void PaintPass(const MmlGfxFrame *f, void *) {
 }
 
 void OnFrame(const MmlEvent *, void *) {
-    // (its labels are 2D, drawn over everything: not over a menu that stops the world, the settings' own; nothing
-    // moves meanwhile)
-    if (!g_on || !g_game || H->mission_state() == MML_MISSION_NONE || H->mission_state() == MML_MISSION_PAUSED) return;
+    // (its labels are 2D, a layer of the HUD's: the game's menus are drawn over them)
+    if (!g_on || !g_game || H->mission_state() == MML_MISSION_NONE) return;
     Refresh();
     Trace();
-    g_placed.clear();
     const float range = static_cast<float>(H->config_number(M, SECTION "range", 300));
     const float labels = static_cast<float>(H->config_number(M, SECTION "label_range", 120));
     DrawRace(range, labels);

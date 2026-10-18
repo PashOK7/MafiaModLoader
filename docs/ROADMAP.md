@@ -725,6 +725,20 @@ What is done, what comes next and later, and what is known to be missing or wron
   their own frame's gas; a reload keeps the sources, a fault of the 64-bit half leaves the frame without gas and
   without a wait, `mod.reload` brings it back (docs/MODDING.md "64-bit halves"; Known gaps: the first start's shader
   compile, the CPU waits).
+- **pet1kk's developer tools brought in** (2026-10-18; PR 2, a standalone ASI for 1.2, not merged: a prebuilt binary,
+  the game's menu files patched, hooks of the places the loader keeps): its findings checked in both builds' code
+  (knowledge/notes/game.md "pet1kk's developer tools"; C_player::Hit's start corrected), then made the loader's for
+  1.2 and 1.0: `human_invulnerable` / `human.invulnerable` (the game's harm not run for a person, the loader's own hook
+  of C_human::Hit), `hud_game` / `hud.game` (the game's HUD hidden: DrawAll not run), `web_nodes` / `world.web` (the
+  pedestrians' web, check.bin), `material_name` / `world.materials` (the surfaces' names from the game's own
+  materials.def; `world.shapes` names them), game.h's distance tests' params, the web's and the items' layouts,
+  `ActorTypeName`; C and Rust. `mods/examples/devtools` (kept from harm, endless ammunition, flying, a free camera, the
+  field of view, the HUD; Options > Mods) and four new parts of `debug_views` (triggers: the distances the scripts
+  test; `collision` as filled solids, `web`, `names`). With it: `action_held` gives an action from both its bindings,
+  the settings pages laid out apart from the game (`panel.layout`) and checked offline for overlaps
+  (`tests/run_tests.py` ui_tests), tabs as wide as their text, the mods' 2D drawing under the game's menus, the
+  collision view a graphics pass. Seen in both labs (1.0: a fall of 16.6 m took 163.8 health, the same fall with
+  `human.invulnerable` none).
 
 ## Next, by importance
 
@@ -979,6 +993,17 @@ merged, sorted by importance):
   `fn load(host) -> Result<(), E>`.
 
 ## Known gaps
+
+- **The developer tools' block** (2026-10-19): seen in both labs, but not yet the distances `triggers` draws (a
+  mission waiting on a GETACTORSDIST) nor the `names` and `web` views looked at closely in 1.0.
+- **Wireframe** (2026-10-18, from PR 2): not made. The proper way is LS3D's own driver state (Insanity3D's
+  RS_WIREFRAME = 7: the driver sets D3DRS_FILLMODE and keeps a flag); its SetState in LS3DF (the driver's vtable
+  +0x14) is not found yet. Setting the fill mode from a mod at RENDER_BEGIN would also reach the HUD (the loader's
+  state block at RENDER_WORLD puts the wireframe back for the 2D pass); PR 2's other plugin set it on each draw call.
+- **DEBUG_TEXT** (2026-10-18, from PR 2): the retail game knows the keyword but runs nothing for it (PR 2's claim, not
+  checked here); a mission author's debug lines would be an event and a line of the log. Its compile (DecodeInstruction
+  1.2 0x463960, 1.0 0x5B1B60; ParseArgs 1.2 0x461C70, its 1.0 twin not paired yet) and the dispatch (1.2 0x46D3FE,
+  1.0 0x5BB31E) would take three hooks in the script machine.
 
 - **The sidecar** (2026-10-18): a channel has no way to wait for a new version (a 64-bit half reads it when `FRAME`
   wakes it, as `side_picture` and `physx_crates` do, or polls); PhysX's measure did not need one (its poses were whole

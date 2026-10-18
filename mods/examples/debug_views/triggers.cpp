@@ -8,6 +8,9 @@
 //   while DETECTOR_WAITFORUSE waits (where the Action key finds it: an upright cylinder, the record's reach and 1.5 m
 //   up and down; the Action menu's line); its boxes while DETECTOR_WAITFORHIT waits or DETECTOR_CREATEDYNCOLL made
 //   them.
+// - Distances (GETACTORSDIST, then IFFLTINRANGE or IF on its answer: a script waiting for someone to come near or go
+//   away, in a detector's or a person's script): the line between the two actors, the threshold as a sphere around
+//   the one that is not the player, green while the comparison holds (after pet1kk's developer tools, PR 2).
 // - Areas (I3D_area, LS3D's frames of type 14: closed meshes the scripts test with ISPOINTINAREA): their edges, green
 //   with the player inside (the area's own CheckPoint), brighter when a program's ISPOINTINAREA names it.
 //
@@ -25,6 +28,7 @@
 #include "mml/game/game_build.h"
 #include "mml/game/game.h"
 #include "mml/game/script_commands.h"
+#include "lines.h"
 #include "views.h"
 
 #define SECTION "triggers."   // its settings' keys, under its section of the config
@@ -121,7 +125,21 @@ struct Area {
     bool inside = false, scripted = false;
     P3 lo{}, hi{};                                      // its box in the world
 };
+// A distance a script tests: GETACTORSDIST a, b, f, then an IFFLTINRANGE or an IF on flt[f] a few lines on (game.h
+// ScriptDistParams and the rest: each command's params read in both builds' handlers). What pet1kk's developer tools
+// (PR 2) showed first: the line between the two actors, the threshold around the one that is not the player.
+struct DistTest {
+    std::string owner;           // the name of the actor whose script it is
+    P3 a{}, b{};                 // act[a]'s and act[b]'s places now
+    bool aPlayer = false, bPlayer = false;
+    float dist = 0;              // their distance now
+    int cmp = 0;                 // 0 not compared near it, 1 dist < hi, 2 dist > lo, 3 lo <= dist < hi
+    float lo = 0, hi = 0;
+    bool met = false;            // the comparison holds now
+    bool active = false;         // the script is at those lines now
+};
 std::vector<Detector> g_dets;
+std::vector<DistTest> g_dists;
 std::vector<Area> g_areas;
 DWORD g_areasAt;                         // when the scene was last walked for areas
 size_t g_framesWalked;
@@ -197,6 +215,64 @@ void ReadDetector(uintptr_t a, Detector *d, int opInrange, P3 player, uint32_t p
     }
 }
 
+// A program's distance tests (DistTest), those within `range` of the player.
+void ReadDistTests(uintptr_t prog, const std::string &owner, const P3 &pp, float range) {
+    static const int opDist = game::ScriptOpcode("getactorsdist"), opRange = game::ScriptOpcode("iffltinrange"), opIf = game::ScriptOpcode("if");
+    if (opDist < 0) return;
+    const std::vector<Instr> ins = Program(prog);
+    if (ins.empty()) return;
+    const int pc = R<int>(prog + game::kProgPc);
+    const uintptr_t flts = R<uintptr_t>(prog + game::kProgFlts), acts = R<uintptr_t>(prog + game::kProgActs);
+    const int nf = R<int>(prog + game::kProgFltCount), na = R<int>(prog + game::kProgActCount);
+    auto flt = [&](int k) { return k >= 0 && k < nf && nf < 10000 ? R<float>(flts + 4 * k) : 0.0f; };
+    const size_t first = g_dists.size();
+    for (size_t i = 0; i < ins.size(); i++) {
+        if (ins[i].op != opDist || !ins[i].params) continue;
+        const game::ScriptDistParams dp = R<game::ScriptDistParams>(ins[i].params);
+        if (dp.a < 0 || dp.b < 0 || dp.a >= na || dp.b >= na || na > 10000) continue;
+        const uintptr_t A = R<uintptr_t>(acts + 4 * dp.a), B = R<uintptr_t>(acts + 4 * dp.b);
+        DistTest t;
+        t.owner = owner;
+        if (!A || !B || !FrameWorldPos(R<uintptr_t>(A + game::kActorFrame), &t.a) || !FrameWorldPos(R<uintptr_t>(B + game::kActorFrame), &t.b)) continue;
+        t.aPlayer = R<int>(A + game::kActorType) == 2;
+        t.bPlayer = R<int>(B + game::kActorType) == 2;
+        t.dist = Len(t.a - t.b);
+        size_t end = i;
+        for (size_t j = i + 1; j < ins.size() && j <= i + 16; j++) {
+            if (!ins[j].params) continue;
+            if (ins[j].op == opDist && R<game::ScriptDistParams>(ins[j].params).f == dp.f) break;   // flt[f] made anew
+            if (ins[j].op == opRange) {
+                const game::ScriptRangeParams r = R<game::ScriptRangeParams>(ins[j].params);
+                if (r.f != dp.f) continue;
+                t.cmp = 3, t.lo = r.lo, t.hi = r.hi, end = j;
+                break;
+            }
+            if (ins[j].op == opIf) {
+                const game::ScriptIfParams q = R<game::ScriptIfParams>(ins[j].params);
+                if (q.cmp != game::kScriptIfLess && q.cmp != game::kScriptIfGreater) continue;
+                const bool left = q.left == dp.f, right = q.right == dp.f;
+                if (left == right) continue;
+                const float other = left ? (q.right < 0 ? q.rightImm : flt(q.right)) : (q.left < 0 ? q.leftImm : flt(q.left));
+                const bool less = left == (q.cmp == game::kScriptIfLess);   // "dist < x", or "x > dist"
+                t.cmp = less ? 1 : 2;
+                (less ? t.hi : t.lo) = other;
+                end = j;
+                break;
+            }
+        }
+        t.met = t.cmp == 1 ? t.dist < t.hi : t.cmp == 2 ? t.dist > t.lo : t.cmp == 3 ? t.dist >= t.lo && t.dist < t.hi : false;
+        t.active = pc >= static_cast<int>(i) - 2 && pc <= static_cast<int>(end) + 12;
+        if ((std::min)(Len(t.a - pp), Len(t.b - pp)) > range) continue;
+        bool seen = false;   // (a script asks the same pair in several places: one test a comparison)
+        for (size_t k = first; k < g_dists.size() && !seen; k++) {
+            const DistTest &o = g_dists[k];
+            seen = o.cmp == t.cmp && o.lo == t.lo && o.hi == t.hi && Len(o.a - t.a) < 0.01f && Len(o.b - t.b) < 0.01f;
+            if (seen && t.active) g_dists[k].active = true;
+        }
+        if (!seen) g_dists.push_back(t);
+    }
+}
+
 // The areas of the scene: its frames of type 14 (walked again every few seconds: a mission's scene keeps them).
 void FindAreas() {
     g_areas.clear();
@@ -267,6 +343,7 @@ void ReadArea(Area *a, P3 player) {
 // Everything read again (every frame: a script moves on; the scene's areas every 3 s).
 void Refresh() {
     g_dets.clear();
+    g_dists.clear();
     if (!g_game || H->mission_state() == MML_MISSION_NONE) { g_areas.clear(); return; }
     void *player = game::Player();
     P3 pp{};
@@ -294,6 +371,8 @@ void Refresh() {
                 for (Area &ar : g_areas) if (ar.frame == f) ar.scripted = true;
             }
         }
+        if (H->config_number(M, SECTION "distances", 1) != 0)
+            ReadDistTests(prog, game::TextUtf8(Str(R<uintptr_t>(R<uintptr_t>(a + game::kActorFrame) + game::kFrameName)).c_str()), pp, range);
         if (kind != game::kActorTypeDetector) continue;
         Detector d;
         ReadDetector(a, &d, opInrange, pp, ptype);
@@ -368,36 +447,15 @@ void Cylinder(const P3 &c, float r, float h, uint32_t argb) {
         Line3(p - P3{0, h, 0}, p + P3{0, h, 0}, argb);
     }
 }
-// A label above a place; labels that would cover one drawn before them this frame go up past it.
-struct Box2 { float x0, y0, x1, y1; };
-std::vector<Box2> g_placed;
-void Label(const P3 &w, const std::vector<std::string> &lines, uint32_t argb) {
-    float x, y;
-    if (!Project(w, &x, &y)) return;
-    const float size = 13;
-    float wmax = 0;
-    for (const std::string &l : lines) wmax = (std::max)(wmax, H->draw_text_width(MML_FONT_SMALL, size, l.c_str()));
-    float h = size * lines.size() + 4;
-    for (int moved = 0; moved < 16; moved++) {
-        bool hit = false;
-        for (const Box2 &b : g_placed) {
-            if (x - wmax / 2 - 4 < b.x1 && x + wmax / 2 + 4 > b.x0 && y - h < b.y1 && y > b.y0) { y = b.y0 - 1; hit = true; }
-        }
-        if (!hit) break;
-    }
-    g_placed.push_back({x - wmax / 2 - 4, y - h, x + wmax / 2 + 4, y});
-    H->draw_rect(M, x - wmax / 2 - 4, y - h, wmax + 8, h, 0x90000000u, 1);
-    for (size_t k = 0; k < lines.size(); k++)
-        H->draw_text(M, x, y - h + 2 + size * k, size, k ? 0xFFE0E0E0u : argb, MML_FONT_SMALL, MML_DRAW_CENTER, lines[k].c_str());
-}
+// A label above a place (lines.h: kept on the screen and off every view's labels drawn before it this frame).
+void Label(const P3 &w, const std::vector<std::string> &text, uint32_t argb) { lines::Label(H, M, &w.x, text, argb); }
 
 void DrawDetectors(const P3 &pp, float labels);
 
 void OnFrame(const MmlEvent *, void *) {
-    // (its lines and labels are 2D, drawn over everything: not over a menu that stops the world, the settings' own)
-    if (!g_on || !g_game || H->mission_state() == MML_MISSION_NONE || H->mission_state() == MML_MISSION_PAUSED) return;
+    // (its lines and labels are 2D, a layer of the HUD's: the game's menus are drawn over them)
+    if (!g_on || !g_game || H->mission_state() == MML_MISSION_NONE) return;
     Refresh();
-    g_placed.clear();
     void *player = game::Player();
     P3 pp{};
     if (!player || !FrameWorldPos(R<uintptr_t>(reinterpret_cast<uintptr_t>(player) + game::kActorFrame), &pp)) return;
@@ -405,6 +463,23 @@ void OnFrame(const MmlEvent *, void *) {
     const float labels = static_cast<float>(H->config_number(M, SECTION "label_range", 50));
     // the detectors first: what they draw is near; the areas (a district is hundreds of metres) after them
     if (H->config_number(M, SECTION "detectors", 1) != 0) DrawDetectors(pp, labels);
+    // the distances the scripts test: the line between the two actors, the threshold around the one that is not the
+    // player; green while the comparison holds, yellow while the script is at it, dim otherwise
+    for (const DistTest &t : g_dists) {
+        const uint32_t col = t.met ? 0xFF40FF60u : t.active ? 0xFFFFD040u : 0x80A0A0A0u;
+        Line3(t.a, t.b, col);
+        const P3 c = t.aPlayer && !t.bPlayer ? t.b : t.a;
+        const float r = t.cmp == 2 ? t.lo : t.hi;
+        if (t.cmp && r > 0 && r < 5000) Sphere(c, r, (col & 0x00FFFFFFu) | (t.active || t.met ? 0xA0000000u : 0x50000000u));
+        if (t.cmp == 3 && t.lo > 0 && t.lo < t.hi) Sphere(c, t.lo, (col & 0x00FFFFFFu) | 0x50000000u);
+        if (Len(c - pp) > labels) continue;
+        char b[96];
+        if (t.cmp == 1) snprintf(b, sizeof b, "distance %.1f < %.1f", t.dist, t.hi);
+        else if (t.cmp == 2) snprintf(b, sizeof b, "distance %.1f > %.1f", t.dist, t.lo);
+        else if (t.cmp == 3) snprintf(b, sizeof b, "distance %.1f in %.1f..%.1f", t.dist, t.lo, t.hi);
+        else snprintf(b, sizeof b, "distance %.1f (compared further on)", t.dist);
+        Label(c + P3{0, 2.2f, 0}, {t.owner + ": getactorsdist", std::string(b) + (t.met ? ": holds" : "")}, col);
+    }
     if (H->config_number(M, SECTION "areas", 1) == 0) return;
     const float range = static_cast<float>(H->config_number(M, SECTION "range", 150));
     for (const Area &a : g_areas) {

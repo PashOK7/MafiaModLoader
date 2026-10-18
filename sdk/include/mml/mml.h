@@ -593,6 +593,20 @@ typedef struct MmlShadowSettings {
 /* game_files' function: one file's name (as the game opens it) and where it comes from ("a2.dta", "folder", a mod's
    id); return nonzero to stop */
 typedef int (*MmlFileFn)(const char *name, const char *source, void *user);
+/* A node of the pedestrians' web (web_nodes): its place, its index in the web (what the links name), the game's bits
+   of its kind and its id, its links to other nodes (the first MML_WEB_LINKS of link_count). */
+#define MML_WEB_LINKS 8
+#define MML_WEB_ONE_WAY 0x80u    /* a link's flags: walked this way only */
+typedef struct MmlWebNode {
+    float pos[3];
+    int index;
+    uint16_t kind;
+    uint16_t id;
+    int link_count;
+    int link[MML_WEB_LINKS];             /* the other node's index */
+    uint16_t link_flags[MML_WEB_LINKS];
+    float link_cost[MML_WEB_LINKS];
+} MmlWebNode;
 enum { MML_SHAPE_TRIANGLE = 1, MML_SHAPE_BOX = 2, MML_SHAPE_SPHERE = 3, MML_SHAPE_POLE = 4 };
 typedef struct MmlShape {
     uint32_t kind;          /* MML_SHAPE_* */
@@ -912,7 +926,8 @@ typedef struct MmlHost {
 
     /* ---- drawing in the game's frame (see MmlFont above). Call these every frame the thing is to be seen (from
      * MML_EVENT_FRAME: every frame, the menus and the pause too; or MML_EVENT_MISSION_TICK): what is queued is
-     * drawn once, in the frame being made, and dropped. A text is UTF-8 (turned into the code page of the game's
+     * drawn once, in the frame being made, and dropped: right after the game's HUD, so the game's menus and console
+     * are drawn over it (an overlay stays under the pause menu). A text is UTF-8 (turned into the code page of the game's
      * fonts: a character that has none there is a '?'; game::TextUtf8 turns a game text into UTF-8) and at most
      * about 100 characters a call. A frame holds 4096 items, every mod's together: past them a mod's are dropped
      * (the log tells once; draw.state `dropped_last_frame`), so a mod that draws much keeps to what is near. A
@@ -926,9 +941,12 @@ typedef struct MmlHost {
     /* ---- keys and actions, as the game got them at its last read (the keys and actions the loader injects for
      * agents, `input`, are seen the same way as real ones). A key is a DirectInput code (key_code("F5"), "Ctrl",
      * "Space", "A"...; -1: no such name). key_pressed is true for the one frame the key went down: ask in one
-     * handler (FRAME or MISSION_TICK), each frame. An action is one of the game's binding slots (action_slot(
-     * "Accelerate"), "Fire", "Action"...; -1: no such name; `input.actions` lists them): its value is 0..1 for a
-     * button and the axis' value for the mouse; action_pressed is nonzero in the frame it was pressed. */
+     * handler (FRAME or MISSION_TICK), each frame. An action is named by one of the game's binding slots
+     * (action_slot("Accelerate"), "Fire", "Action"...: its primary slot; -1: no such name; `input.actions` lists
+     * them): action_held and action_pressed give the action's value from every binding of it (the controls menu's
+     * primary and secondary rows: the one pushed furthest, as the game takes them), whichever of its slots is
+     * asked; 0..1 for a button and the axis' value for the mouse; action_pressed is nonzero in the frame it was
+     * pressed. */
     int (*key_code)(const char *name);
     int (*key_down)(int key);
     int (*key_pressed)(int key);
@@ -1479,6 +1497,26 @@ typedef struct MmlHost {
      * (an event a channel: one waiter a channel, its reader). Any thread; on the game thread a wait is the frame's
      * time: a pass waiting for its 64-bit half's result of this frame waits at most a few milliseconds. */
     uint64_t (*channel_wait)(MmlChannel *ch, uint64_t after, uint32_t timeout_ms);
+
+    /* ---- the developer's switches (both builds; docs/MODDING.md "The developer's switches").
+     * human_invulnerable: a person the game's harm leaves alone (on 1) or not (0); -1 only asks. Every harm reaches a
+     * person through his Hit (C_human::Hit: bullets, blows, explosions, a car that strikes him, a fall): it is not run
+     * for him, as the game itself skips it for the player while a scene holds him. Held by each mod (and the bridge)
+     * on its own: he stays so while one of them holds him, until his removal, the mission's close or the holder's
+     * unload. Returns his state now (1, 0), -1 not a person. Game thread.
+     * hud_game: the game's HUD (the health, the ammo, the radar, the compass, its texts) drawn (show 1) or not (0)
+     * from the next frame; -1 only asks. Hidden while any mod (or the bridge) hides it; the menus, the console and the
+     * mods' drawing stay. Returns 1 shown, 0 hidden, -1 not known for this build. */
+    int (*human_invulnerable)(MmlMod *mod, void *human, int on);
+    int (*hud_game)(MmlMod *mod, int show);
+    /* ---- the pedestrians' web and the surfaces (both builds; docs/MODDING.md "Questions to the world").
+     * web_nodes: the nodes of the mission's web (missions\<name>\check.bin: the places people walk between, what
+     * their routes are built on) within `radius` of `at`, nearest first, up to max into out; returns how many there
+     * are within the radius (more than max: the first max written), 0 none (no mission, a mission with no web).
+     * material_name: a surface's name in the game's table (tables\materials.def: a static collision face's material,
+     * MmlHit's and MmlShape's flags >> 24), UTF-8; NULL not in the table (or no table yet). Game thread. */
+    int (*web_nodes)(MmlMod *mod, const float at[3], float radius, MmlWebNode *out, int max);
+    const char *(*material_name)(int material);
 } MmlHost;
 
 #define MML_ZONE_PLAYER 0x1u

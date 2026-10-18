@@ -12,3 +12,9 @@ int RaceLoad(const MmlHost *host, MmlMod *mod);       // race.cpp: the race of m
 void RaceUnload();
 int WallsLoad(const MmlHost *host, MmlMod *mod);      // walls.cpp: the static world's walls nothing draws
 void WallsUnload();
+int CollisionLoad(const MmlHost *host, MmlMod *mod);  // collision.cpp: the static world's collision, every shape, by surface
+void CollisionUnload();
+int WebLoad(const MmlHost *host, MmlMod *mod);        // web.cpp: the pedestrians' web (check.bin)
+void WebUnload();
+int NamesLoad(const MmlHost *host, MmlMod *mod);      // names.cpp: the actors' names and kinds
+void NamesUnload();

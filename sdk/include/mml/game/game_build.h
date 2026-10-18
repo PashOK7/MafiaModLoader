@@ -453,6 +453,19 @@ struct ExeBuild {
     // position first; the search is a binary one on x), what C_sledovacka::AddCarMoveTo (ENEMY_CAR_MOVETO) plans a
     // drive between.
     uintptr_t roadsNearNode;
+    // The game's HUD (host/hud.cpp hud.game, hud_game): hudDrawAll, G_IndicatorsClass::DrawAll, thiscall(hud) -> int,
+    // the whole HUD drawn (the radar, the compass, the health, the ammo, the texts); the 2D callback (draw2d) calls it
+    // first at stage 2, before the open menu and the console, and 1.0's menu scenes' callback too. Not called: no HUD
+    // that frame, the menus and the console as they were (pet1kk's developer tools hide the HUD so, 2026-10-18).
+    uintptr_t hudDrawAll;
+    // A person's jump (mods/examples/devtools): humanJump, C_human::Do_Jump, thiscall(C_human*) -> bool, plain ret;
+    // the player's jump key calls it (1.2 0x590098). Its first test is the person's +0x6F8 (both builds).
+    uintptr_t humanJump;
+    // The surfaces' table (host/collide.cpp world.materials, material_name): tables\materials.def read whole by
+    // LoadMaterialsFromBin (1.2 0x60F5C0, 1.0 0x592080) into a block the game keeps a pointer to at `materials`, its
+    // records' count at `materialCount`; a record is kMaterialSize bytes, its name the first 0x20 (the id is the
+    // record's index: a static collision face's material, MmlHit's flags >> 24). Read in both builds' code.
+    uintptr_t materials, materialCount;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -640,6 +653,12 @@ inline const ExeBuild kExe12 = {
     0x523F80,
     // the roads (2026-10-18: C_roads::GetNearNode, MafiaReverse's name; AddCarMoveTo 0x4A1220 calls it twice)
     0x55B370,
+    // the HUD's DrawAll (2026-10-18: draw2d's call at 0x5BD8E8; pet1kk's developer tools take that call)
+    0x5FB060,
+    // the jump (2026-10-18: MafiaReverse's C_human::Do_Jump; pet1kk's developer tools hook it)
+    0x586190,
+    // the surfaces' table (2026-10-18: LoadMaterialsFromBin 0x60F5C0 writes both)
+    0x6D4C24, 0x6D4C28,
 };
 
 inline const ExeBuild kExe10 = {
@@ -761,6 +780,12 @@ inline const ExeBuild kExe10 = {
     0x42E8A0,
     // the roads (2026-10-18: 1.2's twin, paired exactly; AddCarMoveTo 0x4ED0B0 calls it twice)
     0x619480,
+    // the HUD's DrawAll (2026-10-18: 1.2's twin by its calls; draw2d's call at 0x5F86D8, the menu scenes' at 0x56CCAF)
+    0x54D180,
+    // the jump (2026-10-18: 1.2's twin by its callers, the same first instructions)
+    0x4A6700,
+    // the surfaces' table (2026-10-18: LoadMaterialsFromBin 0x592080 writes both, the same code as 1.2's)
+    0x6EFBA4, 0x6EFBA8,
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,

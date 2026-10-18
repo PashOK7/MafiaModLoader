@@ -8,6 +8,8 @@ reload, the core mod with no game, the log; the mod author's kit (kit_tests: the
 hotkeys through injected keys, a mod's settings changed by the host, by the bridge and on disk, its data folder);
 a mod's own files in the game (files_tests: a stand-in rw_data.dll's names answered from the mods' `files` folders,
 the order, changes on disk, file_add, a file held open replaced, loads and unloads);
+every mod's settings pages in Options > Mods laid out by the loader's own code (ui_tests: nothing over another,
+off its window or cut, no text wider than its button);
 and a heavy mod's lifecycle (heavy_tests: its libraries in each load's folder, threads left in its code, leaks; boxes_tests:
 the heavy example, Jolt and its own shaders on a Direct3D 11 device, reloaded 20 times).
 Exit code 0: all passed.
@@ -434,6 +436,104 @@ def methods_tests(b):
             handled |= set(re.findall(r'method\s*[=!]=\s*"([a-z0-9_.]+)"', text))
     undocumented = sorted(handled - set(documented) - {'hello'})
     check('every method the host answers is documented in docs/PROTOCOL.md', not undocumented, undocumented)
+
+
+def json_with_comments(text):
+    """A mod's config.json: JSON with // comments (outside strings) taken out."""
+    out, in_str, esc, i = [], False, False, 0
+    while i < len(text):
+        c = text[i]
+        if in_str:
+            out.append(c)
+            esc = c == '\\' and not esc
+            if c == '"' and not esc:
+                in_str = False
+            i += 1
+        elif c == '"':
+            in_str, esc = True, False
+            out.append(c)
+            i += 1
+        elif text.startswith('//', i):
+            i = text.find('\n', i) if '\n' in text[i:] else len(text)
+        else:
+            out.append(c)
+            i += 1
+    return json.loads(''.join(out))
+
+
+def ui_layout_problems(page, header=44, text_h=15):
+    """A laid-out page's (panel.layout) controls and texts over each other, out of their window or the screen, or a
+    button's text wider than the button. Each item's `ink` is the loader's own estimate of its text's width (panel.cpp
+    TextWidth, measured on the game's pages): a static text is taken as its text (`ink` wide, a line of `text_h`: the
+    pages put a label's second line 15 under its first), the other controls as their boxes."""
+    items = page['items']
+    win = items[0]
+    problems = []
+    if win['x'] < 0 or win['y'] < 0 or win['x'] + win['w'] > 800 or win['y'] + win['h'] > 600:
+        problems.append('the window is off the screen: %s' % win)
+    if win['ink'] > win['w'] - 20:
+        problems.append('the title %r (%d) is wider than its window' % (win['text'], win['ink']))
+    boxes = []
+    for it in items[1:]:
+        if it['kind'] == 'stxt':
+            x0, y0, x1, y1 = it['x'], it['y'], it['x'] + it['ink'], it['y'] + text_h
+        else:
+            x0, y0, x1, y1 = it['x'], it['y'], it['x'] + it['w'], it['y'] + it['h']
+            if it['ink'] > it['w'] - 10:   # (a button's text keeps off its edges)
+                problems.append('%s %d: %r (%d) is wider than its %d' % (it['kind'], it['id'], it.get('sample') or it['text'], it['ink'], it['w'] - 10))
+        if x0 < 0 or y0 < 0 or x1 > win['w'] or y1 > win['h'] - header:
+            problems.append('%s %d %r out of its window' % (it['kind'], it['id'], it['text']))
+        boxes.append((it, x0, y0, x1, y1))
+    for i in range(len(boxes)):
+        for j in range(i + 1, len(boxes)):
+            a, b = boxes[i], boxes[j]
+            if a[1] < b[3] and b[1] < a[3] and a[2] < b[4] and b[2] < a[4]:
+                problems.append('%s %d %r over %s %d %r' % (a[0]['kind'], a[0]['id'], a[0]['text'], b[0]['kind'], b[0]['id'], b[0]['text']))
+    for label in page.get('cut', []):
+        problems.append('a label cut (more than two lines): %r' % label)
+    return problems
+
+
+def ui_tests(b):
+    """Every mod's settings pages in the game's Options > Mods, laid out by the loader's own code (panel.layout, no
+    game): no control or text over another, nothing off its window or the screen, no button's text wider than the
+    button, no label cut; and its row in the Mods list."""
+    manifests = sorted(glob.glob(os.path.join(ROOT, 'mods', '**', 'mod.json'), recursive=True))
+    seen, all_problems = [], {}
+    for path in manifests:
+        manifest = json_with_comments(open(path, encoding='utf-8-sig').read())
+        if 'settings' not in manifest:
+            continue
+        config = os.path.join(os.path.dirname(path), 'config.json')
+        defaults = json_with_comments(open(config, encoding='utf-8-sig').read()) if os.path.exists(config) else {}
+        r = b.call('panel.layout', {'settings': manifest['settings'], 'defaults': defaults, 'name': manifest['id']})
+        if not r['ok']:
+            all_problems[manifest['id']] = [str(r.get('error'))]
+            continue
+        seen.append(manifest['id'])
+        for page in r['result']['mods'][0]['pages']:
+            p = ui_layout_problems(page)
+            if p:
+                all_problems['%s: %s' % (manifest['id'], page['part'])] = p
+        p = ui_layout_problems(r['result']['list'])
+        if p:
+            all_problems['%s: its row in the Mods list' % manifest['id']] = p
+    check('the mods\' settings pages (%s): nothing over another, off its window or cut, no text wider than its button'
+          % ', '.join(seen), len(seen) >= 4 and not all_problems, all_problems)
+    r = b.call('panel.layout', {})
+    check('panel.layout with no settings: the loaded mods\' pages and the list', r['ok'] and 'list' in r['result'], r)
+    # the test sees what it should: a page made to fail is caught
+    bad = {'sections': [{'title': 'A', 'controls': [
+               {'key': 'a', 'label': 'A label far too long to fit into two lines of twenty characters each'},
+               {'key': 'b', 'label': 'B', 'min': 0, 'max': 1, 'unit': 'metres per second squared'},
+               {'key': 'c', 'label': 'C', 'options': [{'value': 0, 'label': 'An option far wider than its selector, surely'}]}]},
+           {'title': 'A second section with a long name', 'controls': [{'key': 'd', 'label': 'D'}]}]}
+    r = b.call('panel.layout', {'settings': bad, 'defaults': {'a': True, 'b': 0.5, 'c': 0, 'd': True}, 'name': 'bad'})
+    p = ui_layout_problems(r['result']['mods'][0]['pages'][0]) if r['ok'] else ['no layout: %s' % r]
+    check('ui_layout_problems catches a cut label, a value field running into the window\'s edge, an option wider than its selector',
+          any('cut' in x for x in p) and any('out of its window' in x for x in p) and any('An option' in x for x in p), p)
+    tabs = [i for i in r['result']['mods'][0]['pages'][0]['items'] if 150 <= i['id'] < 200] if r['ok'] else []
+    check('a tab is as wide as its text needs', tabs and all(t['ink'] <= t['w'] - 10 for t in tabs), tabs)
 
 
 def boxes_tests(b):
@@ -1515,6 +1615,7 @@ def main():
         rust_tests(b)
         sidecar_tests(b)
         methods_tests(b)
+        ui_tests(b)
         r = b.call('nonexistent.method')
         check('an unknown method: an error', not r['ok'])
         tail = '\n'.join(b.call('log.tail', {'lines': 400})['result'])

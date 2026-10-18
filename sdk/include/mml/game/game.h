@@ -68,6 +68,21 @@ constexpr int kMissionGame = 0x24;
 // at +0x18 (begin) / +0x1C (end) of 0x18-byte nodes, the position (x, y, z) first; Exe().roadsNearNode finds one.
 constexpr int kMissionRoads = 0x30, kRoadsNodes = 0x18, kRoadsNodesEnd = 0x1C, kRoadNodeSize = 0x18;
 constexpr int kMissionScene = 0x10;   // I3D_scene* the game renders each frame (found with `rstat`)
+// The pedestrians' web (check.bin; both builds, C_web_path::LoadNodes 1.2 0x54A8C0, 1.0 0x608CF0, the same code; host
+// world.web, web_nodes): C_web_path at C_mission +0x2C, its nodes an array at +0x04 of 0x1E-byte records, their count
+// at +0x0C; the nodes are sorted by x (GetNearNode's binary search). A node: its position f32[3], +0x0C its kind's
+// bits (u16: GetNearNode's mask; 0x4000 leaves it out of the search), +0x0E its id (u16, FindNodeID's), +0x18 its
+// links (a block of kWebLinkSize-byte records: {u16 the other node's index, u16 flags (0x80 one way: FlipOneWay),
+// f32 the cost}), +0x1D their count (u8). The file's records are read whole; +0x18 is then the game's own block.
+constexpr int kMissionWeb = 0x2C, kWebNodes = 0x04, kWebNodeCount = 0x0C, kWebNodeSize = 0x1E;
+constexpr int kWebNodeKind = 0x0C, kWebNodeId = 0x0E, kWebNodeLinks = 0x18, kWebNodeLinkCount = 0x1D, kWebLinkSize = 8;
+constexpr uint16_t kWebLinkOneWay = 0x80, kWebKindHidden = 0x4000;
+// The items' table (tables\predmety.def; Exe().items: the records, their count 4 bytes after; game_build.h): 188-byte
+// records, an item's id its index; the rounds a magazine holds and its usual reserve.
+constexpr int kItemSize = 188, kItemFlags = 0x20, kItemMagazine = 0x60, kItemReserve = 0x64;
+// The surfaces' table (tables\materials.def; Exe().materials, materialCount): records of 0x170 bytes, the name first
+// (0x20 bytes, its makers' Czech in Windows-1250 whatever the game's language); a record's index is the surface's number.
+constexpr int kMaterialSize = 0x170, kMaterialName = 0x20;
 constexpr int kGamePlayer  = 0xE4;
 constexpr int kGameScore = 0x3640, kGameScoreShown = 0x363E;   // the freeride's money (int), and whether the HUD shows it
 // C_game's state, read by the game loop every frame (GameLoopSingle1, both builds): 0 playing, 1 leaving, 3: load the
@@ -244,6 +259,22 @@ inline std::string TextUtf8(const char *text) {
 // The fields' offsets differ between the builds: they come from game_build.h (each read in the game's code and
 // seen in the running 1.2 game). Positions are metres, the world's; +y is up.
 constexpr int kActorTypeCar = 4;
+// An actor's type by the class the game makes for it (C_mission::CreateActor, 1.2 0x53F7D0, 1.0 0x5FED70: the same
+// switch in both builds, 2026-10-18); nullptr for a type it does not make (3, 0x11...).
+inline const char *ActorTypeName(int type) {
+    switch (type) {
+    case 1: return "actor";             case 2: return "player";          case 4: return "car";
+    case 5: return "detector";          case 6: return "door";            case 8: return "railway";
+    case 9: return "villa";             case 10: return "bottle";         case 0x0C: return "traffic car";
+    case 0x12: return "traffic generator"; case 0x14: return "bridge";    case 0x15: return "dog";
+    case 0x16: return "airplane";       case 0x17: return "seagulls";     case 0x18: return "turnout";
+    case 0x19: return "pumper";         case 0x1B: return "person";       case 0x1C: return "race camera";
+    case 0x1D: return "plant";          case 0x1E: return "wagon";        case 0x1F: return "irenka";
+    case 0x20: return "physics object"; case 0x21: return "shot actor";   case 0x22: return "clock";
+    case 0x23: return "box";            case 0x24: return "car (extended)"; case 0x26: return "rail generator";
+    default: return nullptr;
+    }
+}
 
 // The scripts' triggers (mods/examples/debug_views, triggers; knowledge/structs, read in both builds: the same offsets).
 // C_detector, actor kind 5: an invisible actor running a script (st0rm94's structs/detector.md). Its program is
@@ -267,6 +298,18 @@ constexpr int kEntityProgram = 0xA9C;   // C_entity's program (a person with a s
 // C_program (st0rm94's structs/program.md): its source text (char*), its instructions ({int opcode; void *params},
 // 8 bytes each: game::ScriptCommandName in script_commands.h names them), the one running now, the frame registers.
 constexpr int kProgSource = 0x08, kProgBegin = 0x10, kProgEnd = 0x14, kProgPc = 0x1C, kProgFrames = 0x50, kProgFrameCount = 0x54;
+// Its float and actor registers: flt[] (float*, count), act[] (C_actor**, count).
+constexpr int kProgFlts = 0x48, kProgFltCount = 0x4C, kProgActs = 0x58, kProgActCount = 0x5C;
+// The distance tests a script waits on (mods/examples/debug_views, triggers; each command's handler in C_program::Process
+// read in both builds, 2026-10-18: the same code, after pet1kk's developer tools). The params of
+// GETACTORSDIST a, b, f: {int a, int b, int f} (act[] indices, flt[] index): flt[f] = the distance between act[a]'s
+// and act[b]'s frames (0 when one is missing). IFFLTINRANGE lo, hi, f: {float lo, float hi, int f}: true while
+// lo <= flt[f] < hi. IF: {int left, float left_imm, int right, float right_imm, int cmp} (an index -1: the immediate)
+// with cmp 1 '<', 2 '>', 3 '=', 4 '!=' (its labels' names follow at +0x14 and +0x24).
+struct ScriptDistParams { int a, b, f; };
+struct ScriptRangeParams { float lo, hi; int f; };
+struct ScriptIfParams { int left; float leftImm; int right; float rightImm; int cmp; };
+constexpr int kScriptIfLess = 1, kScriptIfGreater = 2, kScriptIfEqual = 3, kScriptIfNotEqual = 4;
 // I3D_area, LS3D's frame type 14 (FRAME_AREA): a closed mesh the scripts test with ISPOINTINAREA (the frame's
 // CheckPoint, vtable +0x5C, stdcall(area, const float pt[3]) -> bool). Its vertices (count, its own space, the world)
 // and its triangles (u16[3] each), as I3D_area::Build fills them (LS3DF 1.2 0x10005880, 1.0 0x10005810: the same).

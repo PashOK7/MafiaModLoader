@@ -10,8 +10,14 @@
 // each 0x10 bytes {u16 id, u16, u32 rounds in it, u32 in reserve, u32}. An item is taken with the scripts' own
 // human_delweapon (as world.give gives with human_addweapon).
 //
+// A person can be kept from the game's harm (human_invulnerable): every harm reaches him through his Hit (vtable slot
+// 31: bullets, blows, explosions, a car striking him through C_human::Collision's call of it, a fall's landing, a hit
+// of type 6), which ends in C_human::Hit; game_hooks.cpp's hook of it returns 0 for him without running the game's, as
+// C_player::Hit itself does while the player's control is held by a scene (+0xADA; pet1kk's developer tools, PR 2,
+// skip the player's two slots for the same effect).
+//
 // Bridge methods (game thread): state.money {set}, human.health {actor, set}, human.items {actor},
-// human.ammo {actor, slot, loaded, reserve}, human.take {actor, item}.
+// human.ammo {actor, slot, loaded, reserve}, human.take {actor, item}, human.invulnerable {actor, on}.
 #include "host.h"
 #include <algorithm>
 #include <climits>
@@ -145,8 +151,46 @@ bool StateTakeItem(void *h, int item, std::string *err) {
     return ScriptExec(code, nullptr, &h, 1, nullptr, 0, nullptr, nullptr, err);
 }
 
+// The people the game's harm leaves alone (human_invulnerable, human.invulnerable): each person with the holders that
+// keep him so (a mod, or the bridge: null). game_hooks.cpp's C_human::Hit asks StateInvulnerable before the game's.
+namespace {
+struct Invulnerable { void *human; std::vector<MmlMod *> by; };
+std::vector<Invulnerable> g_invulnerable;
+} // namespace
+
+bool StateInvulnerable(void *human) {
+    for (const Invulnerable &i : g_invulnerable) if (i.human == human) return true;
+    return false;
+}
+
+int StateInvulnerableSet(MmlMod *mod, void *human, int on, std::string *err) {
+    if (!IsPerson(human)) { *err = "not a person (the player, type 2, or a character, type 27)"; return -1; }
+    auto it = std::find_if(g_invulnerable.begin(), g_invulnerable.end(), [&](const Invulnerable &i) { return i.human == human; });
+    if (on == 1) {
+        if (it == g_invulnerable.end()) it = g_invulnerable.insert(g_invulnerable.end(), Invulnerable{human, {}});
+        if (std::find(it->by.begin(), it->by.end(), mod) == it->by.end()) it->by.push_back(mod);
+    } else if (on == 0 && it != g_invulnerable.end()) {
+        it->by.erase(std::remove(it->by.begin(), it->by.end(), mod), it->by.end());
+        if (it->by.empty()) g_invulnerable.erase(it);
+    }
+    return StateInvulnerable(human) ? 1 : 0;
+}
+
+void StateActorGone(void *actor) {
+    g_invulnerable.erase(std::remove_if(g_invulnerable.begin(), g_invulnerable.end(), [&](const Invulnerable &i) { return i.human == actor; }),
+                         g_invulnerable.end());
+}
+void StateMissionClose() { g_invulnerable.clear(); }
+void StateModGone(MmlMod *mod) {
+    for (Invulnerable &i : g_invulnerable) i.by.erase(std::remove(i.by.begin(), i.by.end(), mod), i.by.end());
+    g_invulnerable.erase(std::remove_if(g_invulnerable.begin(), g_invulnerable.end(), [](const Invulnerable &i) { return i.by.empty(); }),
+                         g_invulnerable.end());
+}
+
 bool StateMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok) {
-    if (method != "state.money" && method != "human.health" && method != "human.items" && method != "human.ammo" && method != "human.take") return false;
+    if (method != "state.money" && method != "human.health" && method != "human.items" && method != "human.ammo" && method != "human.take" &&
+        method != "human.invulnerable")
+        return false;
     *ok = false;
     json p = json::parse(paramsJson.empty() ? "null" : paramsJson, nullptr, false);
     if (!p.is_object()) p = json::object();
@@ -172,6 +216,18 @@ bool StateMethod(const std::string &method, const std::string &paramsJson, std::
                 if (p.contains("set") && !StateHealthSet(h, p["set"].get<float>(), &err)) { *reply = "human.health: " + err; return true; }
                 float max = 0, v = StateHealth(h, &max);
                 *reply = dump({{"actor", HexOf(h)}, {"health", v}, {"max", max}});
+                *ok = true;
+                return true;
+            } else if (method == "human.invulnerable") {
+                int on = p.contains("on") ? (p["on"].get<bool>() ? 1 : 0) : -1;
+                int now = StateInvulnerableSet(nullptr, h, on, &err);
+                if (now < 0) { *reply = "human.invulnerable: " + err; return true; }
+                json by = json::array();
+                for (const Invulnerable &i : g_invulnerable)
+                    if (i.human == h) for (MmlMod *m : i.by) by.push_back(m ? ModIdOf(m) : "bridge");
+                *reply = dump({{"actor", HexOf(h)}, {"invulnerable", now == 1}, {"held_by", by}});
+                *ok = true;
+                return true;
             } else if (method == "human.ammo") {
                 int slot = p.value("slot", 0);
                 if (!StateAmmoSet(h, slot, p.value("loaded", -1), p.value("reserve", -1), &err)) { *reply = "human.ammo: " + err; return true; }

@@ -1,0 +1,17 @@
+{
+  // The defaults of devtools's settings (shipped with the mod; a deploy replaces this file in the game's folder).
+  // Changes are kept in <game>\mml\data\devtools\config.json: the game's Options > Mods > Developer tools, or
+  // `config.set {"mod": "devtools", "key": "fly", "value": true}`.
+  "god": false,
+  "infinite_ammo": false,
+  "fly": false,
+  "fly_hotkey": "F2",
+  "fly_speed": 10,
+  "freecam": false,
+  "freecam_hotkey": "F3",
+  "freecam_speed": 10,
+  "mouse": 1,
+  "fov": 0,
+  "hide_hud": false,
+  "hud_hotkey": "F4"
+}

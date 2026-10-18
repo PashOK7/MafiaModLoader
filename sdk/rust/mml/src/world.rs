@@ -9,7 +9,7 @@ use core::ptr;
 
 pub use sys::{
     MmlExhaust as Exhaust, MmlLight as Light, MmlParticle as Particle, MmlParticleDef as ParticleDef, MmlPropAnim as PropAnim,
-    MmlPropPhysics as PropPhysics, MmlShape as Shape, MmlWater as Water,
+    MmlPropPhysics as PropPhysics, MmlShape as Shape, MmlWater as Water, MmlWebNode as WebNode,
 };
 
 unsafe extern "C-unwind" fn on_exhaust<F: Fn(&Exhaust) -> bool>(e: *const sys::MmlExhaust, user: *mut c_void) -> c_int {
@@ -24,6 +24,26 @@ fn opt<T>(o: &Option<T>) -> *const T {
 }
 
 impl Host {
+    // ---- the pedestrians' web and the surfaces
+    /// The nodes of the mission's pedestrians' web (check.bin) within `radius` of `at`, nearest first (their first
+    /// sys::MML_WEB_LINKS links each)
+    pub fn web_nodes(&self, at: [f32; 3], radius: f32) -> Vec<WebNode> {
+        let get = f!(self, web_nodes);
+        let mut v = vec![WebNode::default(); 64];
+        let mut n = unsafe { get(self.module, at.as_ptr(), radius, v.as_mut_ptr(), v.len() as c_int) }.max(0) as usize;
+        if n > v.len() {
+            v.resize(n, WebNode::default());
+            n = (unsafe { get(self.module, at.as_ptr(), radius, v.as_mut_ptr(), v.len() as c_int) }.max(0) as usize).min(v.len());
+        }
+        v.truncate(n);
+        v
+    }
+    /// A surface's name in the game's table (tables\materials.def; a static face's material: Shape's flags >> 24)
+    pub fn material_name(&self, material: i32) -> Option<String> {
+        let p = unsafe { f!(self, material_name)(material) };
+        if p.is_null() { None } else { Some(unsafe { core::ffi::CStr::from_ptr(p) }.to_string_lossy().into_owned()) }
+    }
+
     // ---- questions to the world
     /// A sphere of `radius` moved from `from` to `to`: where it stops (hit.pos its centre), what it touched
     pub fn world_sweep(&self, from: [f32; 3], to: [f32; 3], radius: f32, what: u32, ignore: Option<Actor>) -> Option<Hit> {

@@ -109,6 +109,7 @@ int __fastcall hkMissionClose(void *self, void *edx) {
     ControlMissionClose();
     InteractMissionClose();
     HudMissionClose();
+    StateMissionClose();      // (the invulnerable people go with the mission)
     AnimsMissionClose();      // (the radar's marks and the compass given back while the HUD knows the mission's frames)
     SetPaused(false);
     Dispatch(Event(MML_EVENT_MISSION_CLOSE));
@@ -134,6 +135,7 @@ void __fastcall hkActorDtor(void *self, void *edx) {
     PropsActorGone(self);
     InteractActorGone(self);
     HudActorGone(self);
+    StateActorGone(self);
     AnimsActorGone(self);
     oActorDtor(self, edx);
 }
@@ -147,6 +149,9 @@ void *__fastcall hkHumanCtor(void *self, void *edx) {
 }
 int __fastcall hkHumanHit(void *self, void *edx, int type, MmlVec3 *dir, MmlVec3 *pos, MmlVec3 *normal, float dmg, void *attacker,
                           unsigned part, void *frame) {
+    // a person kept from harm (state.cpp human_invulnerable): the game's Hit not run for him, as C_player::Hit skips it
+    // while a scene holds the player (no damage, no reaction, no event: nothing happened to him)
+    if (StateInvulnerable(self)) return 0;
     uint8_t before = 0, after = 0;
     MemRead(reinterpret_cast<uintptr_t>(self) + game::kActorAlive, &before, 1);
     int r = oHumanHit(self, edx, type, dir, pos, normal, dmg, attacker, part, frame);

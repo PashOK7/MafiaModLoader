@@ -1017,6 +1017,13 @@ impl Host {
     pub fn set_health(&self, human: Actor, health: f32) -> bool {
         unsafe { f!(self, human_health_set)(self.module, human.as_ptr(), health) != 0 }
     }
+    /// a person kept from the game's harm (bullets, blows, explosions, a car, a fall) by this mod, or let go
+    /// (`Some(on)`), or only asked (`None`): his state now; None: not a person
+    pub fn invulnerable(&self, human: Actor, on: Option<bool>) -> Option<bool> {
+        let v = on.map_or(-1, |b| b as c_int);
+        let r = unsafe { f!(self, human_invulnerable)(self.module, human.as_ptr(), v) };
+        if r < 0 { None } else { Some(r != 0) }
+    }
     /// his inventory, slot by slot (sys::MML_SLOT_*)
     pub fn items(&self, human: Actor) -> Vec<Item> {
         let mut v = vec![Item::default(); sys::MML_SLOT_COUNT as usize];
@@ -1026,6 +1033,13 @@ impl Host {
     }
 
     // ---- the HUD
+    /// the game's own HUD hidden by this mod (`Some(false)`), given back (`Some(true)`) or only asked (`None`):
+    /// whether it is shown now (hidden while any mod hides it); None: not known for this build
+    pub fn hud_game(&self, show: Option<bool>) -> Option<bool> {
+        let v = show.map_or(-1, |b| b as c_int);
+        let r = unsafe { f!(self, hud_game)(self.module, v) };
+        if r < 0 { None } else { Some(r != 0) }
+    }
     /// a line of the game's console (bottom left; its colour argb's RGB)
     pub fn hud_console(&self, line: &str, argb: u32) -> bool {
         let t = cstring(line);
@@ -1160,7 +1174,7 @@ pub use data::{Model, ModelMesh, Progress, Stats};
 pub use gfx::{GeomCapture, GfxFrame, MeshPiece, ShaderRule, ViewCamera};
 pub use media::{Marker, MenuControl, SoundState};
 pub use people::{Bone, HumanAnim, ItemDef};
-pub use world::{Exhaust, Light, Particle, ParticleDef, Shape, Water};
+pub use world::{Exhaust, Light, Particle, ParticleDef, Shape, Water, WebNode};
 
 /// The `windows` crate this one is built with (feature "windows"): the typed Direct3D 11 and 9 interfaces.
 #[cfg(feature = "windows")]

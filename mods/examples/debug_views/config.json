@@ -3,8 +3,9 @@
   // section; they are kept in <game>\mml\data\debug_views\config.json; `config.set {"mod": "debug_views", "key":
   // "routes.trail_s", "value": 5}` too). routes: whose routes are drawn (people, cars; the traffic's own cars off),
   // their parts (the route, where each is sent now, the way gone and for how long). triggers: the mission scripts'
-  // detectors and areas. race: the race of mission 6. walls: the walls nothing draws. Each view's key shows and hides
-  // it.
+  // detectors, areas and the distances they test. race: the race of mission 6. walls: the walls nothing draws.
+  // collision: the static world's whole collision by surface. web: the pedestrians' web. names: the actors' names.
+  // Each view's key shows and hides it.
   "routes": {
     "show": true,
     "hotkey": "F6",
@@ -25,6 +26,7 @@
     "use": true,
     "boxes": true,
     "areas": true,
+    "distances": true,
     "range": 150,
     "label_range": 50
   },
@@ -52,5 +54,33 @@
     "period": 8,
     "strength": 1,
     "color": "#4DD9FF"
+  },
+  "collision": {
+    "show": false,
+    "hotkey": "Shift+F9",
+    "range": 40,
+    "fill": 0.6,
+    "edges": true,
+    "ao": 0.7,
+    "tolerance": 0.15,
+    "moving": true,
+    "people": true,
+    "through": false,
+    "labels": true,
+    "label_range": 15
+  },
+  "web": {
+    "show": false,
+    "hotkey": "Shift+F6",
+    "range": 80,
+    "through": false,
+    "labels": false,
+    "label_range": 15
+  },
+  "names": {
+    "show": false,
+    "hotkey": "Shift+F8",
+    "range": 40,
+    "max": 60
   }
 }

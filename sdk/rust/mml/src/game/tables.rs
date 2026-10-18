@@ -250,6 +250,10 @@ pub struct Exe {
     pub planeUpdate: usize,
     pub entityForceScript: usize,
     pub roadsNearNode: usize,
+    pub hudDrawAll: usize,
+    pub humanJump: usize,
+    pub materials: usize,
+    pub materialCount: usize,
 }
 
 /// LS3DF.dll's, as RVAs (add the module's base; the int members are offsets): game_build.h Ls3dBuild.
@@ -562,6 +566,10 @@ pub static EXE_12: Exe = Exe {
     planeUpdate: 0x40BEC0,
     entityForceScript: 0x523F80,
     roadsNearNode: 0x55B370,
+    hudDrawAll: 0x5FB060,
+    humanJump: 0x586190,
+    materials: 0x6D4C24,
+    materialCount: 0x6D4C28,
 };
 
 pub static EXE_10: Exe = Exe {
@@ -809,6 +817,10 @@ pub static EXE_10: Exe = Exe {
     planeUpdate: 0x451990,
     entityForceScript: 0x42E8A0,
     roadsNearNode: 0x619480,
+    hudDrawAll: 0x54D180,
+    humanJump: 0x4A6700,
+    materials: 0x6EFBA4,
+    materialCount: 0x6EFBA8,
 };
 
 pub static LS3D_12: Ls3d = Ls3d {
@@ -1018,6 +1030,21 @@ pub const kRoadsNodes: i32 = 0x18;
 pub const kRoadsNodesEnd: i32 = 0x1C;
 pub const kRoadNodeSize: i32 = 0x18;
 pub const kMissionScene: i32 = 0x10;
+pub const kMissionWeb: i32 = 0x2C;
+pub const kWebNodes: i32 = 0x04;
+pub const kWebNodeCount: i32 = 0x0C;
+pub const kWebNodeSize: i32 = 0x1E;
+pub const kWebNodeKind: i32 = 0x0C;
+pub const kWebNodeId: i32 = 0x0E;
+pub const kWebNodeLinks: i32 = 0x18;
+pub const kWebNodeLinkCount: i32 = 0x1D;
+pub const kWebLinkSize: i32 = 8;
+pub const kItemSize: i32 = 188;
+pub const kItemFlags: i32 = 0x20;
+pub const kItemMagazine: i32 = 0x60;
+pub const kItemReserve: i32 = 0x64;
+pub const kMaterialSize: i32 = 0x170;
+pub const kMaterialName: i32 = 0x20;
 pub const kGamePlayer: i32 = 0xE4;
 pub const kGameScore: i32 = 0x3640;
 pub const kGameScoreShown: i32 = 0x363E;
@@ -1064,6 +1091,14 @@ pub const kProgEnd: i32 = 0x14;
 pub const kProgPc: i32 = 0x1C;
 pub const kProgFrames: i32 = 0x50;
 pub const kProgFrameCount: i32 = 0x54;
+pub const kProgFlts: i32 = 0x48;
+pub const kProgFltCount: i32 = 0x4C;
+pub const kProgActs: i32 = 0x58;
+pub const kProgActCount: i32 = 0x5C;
+pub const kScriptIfLess: i32 = 1;
+pub const kScriptIfGreater: i32 = 2;
+pub const kScriptIfEqual: i32 = 3;
+pub const kScriptIfNotEqual: i32 = 4;
 pub const kFrameTypeArea: u32 = 14;
 pub const kAreaVertCount: i32 = 0x140;
 pub const kAreaVerts: i32 = 0x144;

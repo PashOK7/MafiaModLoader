@@ -111,6 +111,7 @@ address,kind,name,source,note
 0058F160,function,SetPlayerNaviPoint,MafiaModLoader,"SETCOMPASS's: ECX into the global 0x6478B4, which nothing reads (1.0 0x4C6B80): the map has no target of its own"
 0058F4B0,function,C_player::InputOnFoot,mml,from C_player::AI with the held and pressed arrays; turns by mouseSensitivity * 5 * held[18]
 005917F0,function,C_player::InputDriving,mml,"slots 33..57 in pairs: accelerate, brake, steer left/right, handbrake, limiter, gears, horn, look, clutch; 57 gearbox"
+00594210,function,C_player::Hit,mml,"C_player vtable 0x625878 slot 31 (+0x7C); MafiaReverse's 0x594209 is 7 bytes early, inside the previous function's padding; found by pet1kk's developer tools (PR 2)"
 00594FA0,function,C_player::ActionInCar,mml,nothing while the car moves (speed >= 0.5); stops the engine when it runs; else gets out
 005A77C0,function,gameAddTemp,game_build.h,
 005A79A0,function,gameRemoveTemp,game_build.h,
@@ -168,6 +169,7 @@ address,kind,name,source,note
 005EAE10,function,menuClose,game_build.h,
 005EB070,function,menuSetValue,game_build.h,
 005EB090,function,menuGetValue,game_build.h,
+005EB210,function,GM_Menu::SetFocus,mml,"thiscall(menu, id) ret 4: the control of that id (FindComponentByID) made the focused one (+0xC, its flags' 0x80000000), when it can take focus, else the next one; pet1kk's developer tools (PR 2) call it so"
 005EB2F0,function,GM_Menu::FindComponentByID,mml,"thiscall(menu, id) -> component; its vtable: +0x4C set value (float), +0x50 get value, +0x60 get check"
 005EB2F0,function,menuFind,game_build.h,
 005EB7D0,function,GM_Menu::PridejComponentPod,mml,"thiscall(menu, id, newId, growId, move1, move2, move3) ret 0x18: a clone of control id put under it as newId; growId grows, the three move down (how the profile and save lists grow; the loader adds mods' items with it)"

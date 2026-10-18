@@ -651,12 +651,40 @@ int ActionSlotOf(const char *name) {
     return SlotOf(json(std::string(name)), &found);
 }
 
-float ActionValue(int slot, bool pressed) {
-    if (!ActionsKnown() || slot < 0 || slot >= SlotCount()) return 0.0f;
+// The slots of the action a slot belongs to: its primary and, for an action with two rows in the controls menu, its
+// secondary (kActions' order); a slot past the list is alone.
+static void SlotGroup(int slot, int *first, int *count) {
+    *first = slot;
+    *count = 1;
+    int s = 0;
+    for (const Action &a : kActions) {
+        if (slot >= s && slot < s + a.slots) { *first = s; *count = a.slots; return; }
+        s += a.slots;
+    }
+}
+
+// One slot's value as the game got it (a captured slot: what the player gave, before the game was handed 0).
+static float SlotValue(int slot, bool pressed) {
     if (Captured(false, slot) && slot < static_cast<int>(g_realHeld.size())) return pressed ? g_realPressed[slot] : g_realHeld[slot];
     float v = 0.0f;
     MemRead(Rd(game::Exe().controls + (pressed ? game::Exe().controlsPressed : game::Exe().controlsHeld)) + 4 * slot, &v, 4);
     return v;
+}
+
+// An action's value, whichever of its slots is asked: every binding of it (the primary and the secondary row), the
+// one pushed furthest, as the game takes the two as one action (on foot either at 0.25 or more; driving the primary,
+// else the secondary). Asked by a mod's action_held / action_pressed: one slot alone read only the primary binding,
+// so a player on the secondary keys (the arrows) was not seen (found 2026-10-18: devtools' flying).
+float ActionValue(int slot, bool pressed) {
+    if (!ActionsKnown() || slot < 0 || slot >= SlotCount()) return 0.0f;
+    int first = 0, count = 1;
+    SlotGroup(slot, &first, &count);
+    float best = 0.0f;
+    for (int k = first; k < first + count && k < SlotCount(); k++) {
+        float v = SlotValue(k, pressed);
+        if (std::fabs(v) > std::fabs(best)) best = v;
+    }
+    return best;
 }
 
 bool KeyCapture(MmlMod *mod, int key, bool on) {
@@ -672,11 +700,8 @@ bool KeyCapture(MmlMod *mod, int key, bool on) {
 // was, not ramped (a joystick's axis) (knowledge/notes/game.md, "The controls").
 bool ActionCapture(MmlMod *mod, int slot, bool on) {
     if (!ActionsKnown() || slot < 0 || slot >= SlotCount()) return false;
-    int first = slot, count = 1, s = 0;
-    for (const Action &a : kActions) {
-        if (slot >= s && slot < s + a.slots) { first = s; count = a.slots; break; }
-        s += a.slots;
-    }
+    int first = slot, count = 1;
+    SlotGroup(slot, &first, &count);
     for (int k = first; k < first + count && k < SlotCount(); k++) {
         auto it = std::find_if(g_captures.begin(), g_captures.end(), [&](const Capture &c) { return c.mod == mod && !c.key && c.code == k; });
         if (on && it == g_captures.end()) g_captures.push_back({mod, false, k});

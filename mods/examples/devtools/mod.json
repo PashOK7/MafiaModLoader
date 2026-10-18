@@ -1,0 +1,38 @@
+{
+  "id": "devtools",
+  "name": "Developer tools: the player kept from harm, endless ammo, flying, a free camera, the field of view, the HUD hidden",
+  "version": "0.1.0",
+  "type": "native",
+  "entry": "devtools.dll",
+  "enabled": false,
+  "builds": ["1.2", "1.0"],
+  "load_order": 100,
+  "depends": [],
+  "settings": {
+    "title": "Developer tools",
+    "sections": [
+      {
+        "title": "The player",
+        "controls": [
+          {"key": "god", "label": "Kept from harm"},
+          {"key": "infinite_ammo", "label": "Endless ammunition"},
+          {"key": "fly", "label": "Flying"},
+          {"key": "fly_hotkey", "label": "Flying on and off", "kind": "key"},
+          {"key": "fly_speed", "label": "Flying speed", "min": 1, "max": 100, "step": 1, "unit": "m/s"}
+        ]
+      },
+      {
+        "title": "The camera",
+        "controls": [
+          {"key": "freecam", "label": "Free camera"},
+          {"key": "freecam_hotkey", "label": "Free camera on and off", "kind": "key"},
+          {"key": "freecam_speed", "label": "Its speed", "min": 1, "max": 100, "step": 1, "unit": "m/s"},
+          {"key": "mouse", "label": "Its mouse (times the game's)", "min": 0.25, "max": 4, "step": 0.25},
+          {"key": "fov", "label": "Field of view (0: the game's)", "min": 0, "max": 130, "step": 5, "unit": "deg"},
+          {"key": "hide_hud", "label": "The game's HUD hidden"},
+          {"key": "hud_hotkey", "label": "The HUD on and off", "kind": "key"}
+        ]
+      }
+    ]
+  }
+}

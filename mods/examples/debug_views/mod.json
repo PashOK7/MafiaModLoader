@@ -1,6 +1,6 @@
 {
   "id": "debug_views",
-  "name": "Debug views: what the game does, drawn where it does it (routes, triggers, the race, invisible walls)",
+  "name": "Debug views: what the game does, drawn where it does it (routes, triggers, the race, invisible walls, collision, the pedestrians' web, names)",
   "version": "0.1.0",
   "type": "native",
   "entry": "debug_views.dll",
@@ -100,6 +100,10 @@
           {
             "key": "triggers.areas",
             "label": "Areas"
+          },
+          {
+            "key": "triggers.distances",
+            "label": "Distances the scripts test"
           },
           {
             "key": "triggers.range",
@@ -238,6 +242,145 @@
             "min": 0.2,
             "max": 2,
             "step": 0.1
+          }
+        ]
+      },
+      {
+        "title": "Collision",
+        "controls": [
+          {
+            "key": "collision.show",
+            "label": "Shown"
+          },
+          {
+            "key": "collision.hotkey",
+            "label": "Show and hide",
+            "kind": "key"
+          },
+          {
+            "key": "collision.through",
+            "label": "Seen through the world"
+          },
+          {
+            "key": "collision.labels",
+            "label": "The surfaces' names"
+          },
+          {
+            "key": "collision.range",
+            "label": "Read within",
+            "min": 10,
+            "max": 150,
+            "step": 5,
+            "unit": "m"
+          },
+          {
+            "key": "collision.fill",
+            "label": "The shapes' fill",
+            "min": 0,
+            "max": 1,
+            "step": 0.05
+          },
+          {
+            "key": "collision.edges",
+            "label": "Their edges"
+          },
+          {
+            "key": "collision.ao",
+            "label": "Shading in corners",
+            "min": 0,
+            "max": 1,
+            "step": 0.05
+          },
+          {
+            "key": "collision.tolerance",
+            "label": "Wins over the world by",
+            "min": 0,
+            "max": 1,
+            "step": 0.05,
+            "unit": "m"
+          },
+          {
+            "key": "collision.moving",
+            "label": "Cars and doors"
+          },
+          {
+            "key": "collision.people",
+            "label": "People"
+          },
+          {
+            "key": "collision.label_range",
+            "label": "Names within",
+            "min": 5,
+            "max": 60,
+            "step": 5,
+            "unit": "m"
+          }
+        ]
+      },
+      {
+        "title": "Web",
+        "controls": [
+          {
+            "key": "web.show",
+            "label": "Shown"
+          },
+          {
+            "key": "web.hotkey",
+            "label": "Show and hide",
+            "kind": "key"
+          },
+          {
+            "key": "web.through",
+            "label": "Seen through the world"
+          },
+          {
+            "key": "web.labels",
+            "label": "The nodes' labels"
+          },
+          {
+            "key": "web.range",
+            "label": "Read within",
+            "min": 20,
+            "max": 300,
+            "step": 10,
+            "unit": "m"
+          },
+          {
+            "key": "web.label_range",
+            "label": "Labels within",
+            "min": 5,
+            "max": 60,
+            "step": 5,
+            "unit": "m"
+          }
+        ]
+      },
+      {
+        "title": "Names",
+        "controls": [
+          {
+            "key": "names.show",
+            "label": "Shown"
+          },
+          {
+            "key": "names.hotkey",
+            "label": "Show and hide",
+            "kind": "key"
+          },
+          {
+            "key": "names.range",
+            "label": "Within",
+            "min": 5,
+            "max": 200,
+            "step": 5,
+            "unit": "m"
+          },
+          {
+            "key": "names.max",
+            "label": "At most",
+            "min": 10,
+            "max": 200,
+            "step": 10
           }
         ]
       }

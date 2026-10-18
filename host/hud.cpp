@@ -21,8 +21,11 @@
 // reads a null). The compass taken by markers goes back to the target it had, and its flag, when the last of them
 // goes, unless the mission changed it meanwhile.
 //
+// The game's own HUD can be hidden (hud_game): its DrawAll is then not run (below, HudGame).
+//
 // Bridge methods (game thread): hud.console {text, color}, hud.help {text}, hud.marker {at | on, bone, pos, label,
-// color, picture, scale, screen, distance, edge, radar, compass; id: change one}, hud.remove {id | all}, hud.list.
+// color, picture, scale, screen, distance, edge, radar, compass; id: change one}, hud.remove {id | all}, hud.list,
+// hud.game {show}.
 #include "host.h"
 #include <algorithm>
 #include <cmath>
@@ -399,7 +402,28 @@ void HudPass() {
         if ((m.flags & MML_MARKER_SCREEN) && (!m.mod || ModAlive(m.mod))) DrawMarker(m, c, &player, have);
 }
 
+// The game's HUD hidden (hud_game, hud.game): its G_IndicatorsClass::DrawAll (game_build.h hudDrawAll), which the 2D
+// callback calls first (then the open menu and the console), is not run while a holder hides it (draw.cpp's hook of
+// it asks HudGameHidden; the mods' drawing goes on there).
+namespace {
+std::vector<MmlMod *> g_hudHiders;   // each holder once; the bridge's is null
+} // namespace
+
+bool HudGameHidden() { return !g_hudHiders.empty(); }
+
+int HudGame(MmlMod *mod, int show, std::string *err) {
+    if (!game::g_exe || !E().hudDrawAll) { *err = "this build's HUD is not known"; return -1; }
+    auto it = std::find(g_hudHiders.begin(), g_hudHiders.end(), mod);
+    if (show == 0 && it == g_hudHiders.end()) {
+        g_hudHiders.push_back(mod);
+    } else if (show == 1 && it != g_hudHiders.end()) {
+        g_hudHiders.erase(it);
+    }
+    return g_hudHiders.empty() ? 1 : 0;
+}
+
 void HudModGone(MmlMod *mod) {
+    g_hudHiders.erase(std::remove(g_hudHiders.begin(), g_hudHiders.end(), mod), g_hudHiders.end());
     for (size_t i = 0; i < g_markers.size();)
         if (g_markers[i].mod == mod) Drop(i);
         else i++;
@@ -426,7 +450,7 @@ void HudActorGone(void *actor) {
 }
 
 bool HudMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok) {
-    static const char *kMethods[] = {"hud.console", "hud.help", "hud.marker", "hud.remove", "hud.list"};
+    static const char *kMethods[] = {"hud.console", "hud.help", "hud.marker", "hud.remove", "hud.list", "hud.game"};
     if (std::none_of(std::begin(kMethods), std::end(kMethods), [&](const char *m) { return method == m; })) return false;
     *ok = false;
     json p = json::parse(paramsJson.empty() ? "null" : paramsJson, nullptr, false);
@@ -448,6 +472,13 @@ bool HudMethod(const std::string &method, const std::string &paramsJson, std::st
         if (method == "hud.console") {
             if (!HudConsole(p.value("text", ""), colour(0xFFFFFFFFu), &err)) { *reply = "hud.console: " + err; return true; }
             *reply = dump({{"shown", true}});
+        } else if (method == "hud.game") {
+            int show = p.contains("show") ? (p["show"].get<bool>() ? 1 : 0) : -1;
+            int now = HudGame(nullptr, show, &err);
+            if (now < 0) { *reply = "hud.game: " + err; return true; }
+            json by = json::array();
+            for (MmlMod *m : g_hudHiders) by.push_back(m ? ModIdOf(m) : "bridge");
+            *reply = dump({{"shown", now == 1}, {"hidden_by", by}});
         } else if (method == "hud.help") {
             std::string text = p.value("text", "");
             if (text.empty()) { *reply = "hud.help: text: the line"; return true; }

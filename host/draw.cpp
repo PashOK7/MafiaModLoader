@@ -2,8 +2,11 @@
 //
 // The game draws its 2D things (the HUD, the open menu, the console) in one place: the callback it gives its scene
 // (game_build.h `draw2d`), which LS3D's render calls with stage 2 once the 3D frame is drawn, in every state that
-// renders the scene (the game, the menus over it, the pause). The loader hooks that callback and, after the game's
-// own drawing, draws what was queued, with the game's own means: its text function (G_IndicatorsClass::OutText, the
+// renders the scene (the game, the menus over it, the pause): first the HUD (G_IndicatorsClass::DrawAll, game_build.h
+// hudDrawAll), then the open menu, then the console. The loader draws what was queued as a layer of the HUD's: right
+// after the HUD (its hook of DrawAll), so the game's menus and console are drawn over the mods' drawing as over the
+// HUD, and a mod's overlay stays on the screen under the pause menu (a pass with no HUD drawn: at the pass's end).
+// It draws with the game's own means: its text function (G_IndicatorsClass::OutText, the
 // fonts of the HUD and the menus) and the two IGraph calls its rectangles are made of (SetTexture, DrawPrimitive
 // with screen-space vertices). So the drawing is in the back buffer before the frame is shown (`screenshot` sees
 // it), under plain Direct3D 8 and under a wrapper alike: no device call of our own, no state of the device touched
@@ -203,10 +206,29 @@ void DrawQueued() {
     }
 }
 
+// The 2D pass's layers: the HUD, the mods' drawing (here, once a pass), the open menu, the console.
+bool g_inPass;      // inside a stage 2 of the frame's 2D callback
+bool g_drewPass;    // the queue was drawn in this pass (after the HUD)
+using DrawAllFn = int(__fastcall *)(void *hud, void *edx);
+DrawAllFn g_drawAll;
+bool g_drawAllHooked;
+int __fastcall DrawAllHook(void *hud, void *edx) {
+    const int r = HudGameHidden() ? 0 : g_drawAll(hud, edx);   // (hud.cpp hud_game: the game's HUD hidden)
+    if (g_inPass && !g_drewPass) {
+        g_drewPass = true;
+        DrawQueued();
+    }
+    return r;
+}
+
 int __stdcall Draw2dHook(int stage, int a, int b) {
     bool ui = stage == 2 && GfxUiBegin();   // (gfx.cpp: a mod takes the 2D pass: into its target)
+    if (stage == 2) { g_inPass = true; g_drewPass = false; }
     int r = g_draw2d(stage, a, b);
-    if (stage == 2) DrawQueued();
+    if (stage == 2) {
+        if (!g_drewPass) DrawQueued();   // (no HUD drawn in this pass: over what the game drew, as before)
+        g_inPass = false;
+    }
     if (ui) GfxUiEnd();
     RenderStage(stage);   // (render.cpp: stage 1, the 3D world drawn: MML_EVENT_RENDER_WORLD)
     return r;
@@ -318,6 +340,9 @@ void DrawInit() {
     std::string err;
     g_hooked = HookAdd(nullptr, game::Exe().draw2d, reinterpret_cast<void *>(&Draw2dHook), reinterpret_cast<void **>(&g_draw2d), &err);
     if (!g_hooked) HWARN("draw: cannot hook the frame's 2D pass: %s", err.c_str());
+    if (!g_hooked || !game::Exe().hudDrawAll) return;   // (without it: the mods' drawing over the menus, at the pass's end)
+    g_drawAllHooked = HookAdd(nullptr, game::Exe().hudDrawAll, reinterpret_cast<void *>(&DrawAllHook), reinterpret_cast<void **>(&g_drawAll), &err);
+    if (!g_drawAllHooked) HWARN("draw: cannot hook the HUD's DrawAll (the mods' drawing goes over the menus): %s", err.c_str());
 }
 
 void DrawFrame() {
@@ -402,7 +427,7 @@ bool DrawMethod(const std::string &method, const std::string &paramsJson, std::s
         if (method == "draw.state") {
             json off = json::array();
             for (MmlMod *m : g_off) off.push_back(ModIdOf(m));
-            *reply = dump({{"hooked", g_hooked}, {"passes", g_passes}, {"queued_last_frame", g_queuedLast},
+            *reply = dump({{"hooked", g_hooked}, {"under_menus", g_drawAllHooked}, {"passes", g_passes}, {"queued_last_frame", g_queuedLast},
                            {"dropped_last_frame", g_droppedLast}, {"max_items", kMaxItems}, {"drawn_last_pass", g_drawnLast}, {"held", g_held.size()}, {"off", off}, {"last_fault", g_lastFault}});
             *ok = true;
             return true;

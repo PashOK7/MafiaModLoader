@@ -50,6 +50,8 @@ pub const MML_SHADE_ALPHATEST: u32 = 2;
 pub const MML_SHADE_TRANSLUCENT: u32 = 4;
 pub const MML_SHADE_ADDITIVE: u32 = 8;
 pub const MML_SHADE_ALL_PASSES: u32 = 1;
+pub const MML_WEB_LINKS: u32 = 8;
+pub const MML_WEB_ONE_WAY: u32 = 128;
 pub const MML_EXHAUST_PIPES: u32 = 8;
 pub const MML_SOUND_LOOP: u32 = 1;
 pub const MML_SOUND_PAUSABLE: u32 = 2;
@@ -1419,6 +1421,34 @@ pub type MmlFileFn = ::core::option::Option<
         user: *mut ::core::ffi::c_void,
     ) -> ::core::ffi::c_int,
 >;
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct MmlWebNode {
+    pub pos: [f32; 3usize],
+    pub index: ::core::ffi::c_int,
+    pub kind: u16,
+    pub id: u16,
+    pub link_count: ::core::ffi::c_int,
+    pub link: [::core::ffi::c_int; 8usize],
+    pub link_flags: [u16; 8usize],
+    pub link_cost: [f32; 8usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of MmlWebNode"][::core::mem::size_of::<MmlWebNode>() - 104usize];
+    ["Alignment of MmlWebNode"][::core::mem::align_of::<MmlWebNode>() - 4usize];
+    ["Offset of field: MmlWebNode::pos"][::core::mem::offset_of!(MmlWebNode, pos) - 0usize];
+    ["Offset of field: MmlWebNode::index"][::core::mem::offset_of!(MmlWebNode, index) - 12usize];
+    ["Offset of field: MmlWebNode::kind"][::core::mem::offset_of!(MmlWebNode, kind) - 16usize];
+    ["Offset of field: MmlWebNode::id"][::core::mem::offset_of!(MmlWebNode, id) - 18usize];
+    ["Offset of field: MmlWebNode::link_count"]
+        [::core::mem::offset_of!(MmlWebNode, link_count) - 20usize];
+    ["Offset of field: MmlWebNode::link"][::core::mem::offset_of!(MmlWebNode, link) - 24usize];
+    ["Offset of field: MmlWebNode::link_flags"]
+        [::core::mem::offset_of!(MmlWebNode, link_flags) - 56usize];
+    ["Offset of field: MmlWebNode::link_cost"]
+        [::core::mem::offset_of!(MmlWebNode, link_cost) - 72usize];
+};
 pub const MML_SHAPE_TRIANGLE: ::core::ffi::c_int = 1;
 pub const MML_SHAPE_BOX: ::core::ffi::c_int = 2;
 pub const MML_SHAPE_SPHERE: ::core::ffi::c_int = 3;
@@ -3223,10 +3253,32 @@ pub struct MmlHost {
     pub channel_wait: ::core::option::Option<
         unsafe extern "C" fn(ch: *mut MmlChannel, after: u64, timeout_ms: u32) -> u64,
     >,
+    pub human_invulnerable: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            human: *mut ::core::ffi::c_void,
+            on: ::core::ffi::c_int,
+        ) -> ::core::ffi::c_int,
+    >,
+    pub hud_game: ::core::option::Option<
+        unsafe extern "C" fn(mod_: *mut MmlMod, show: ::core::ffi::c_int) -> ::core::ffi::c_int,
+    >,
+    pub web_nodes: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            at: *const f32,
+            radius: f32,
+            out: *mut MmlWebNode,
+            max: ::core::ffi::c_int,
+        ) -> ::core::ffi::c_int,
+    >,
+    pub material_name: ::core::option::Option<
+        unsafe extern "C" fn(material: ::core::ffi::c_int) -> *const ::core::ffi::c_char,
+    >,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 716usize];
+    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 732usize];
     ["Alignment of MmlHost"][::core::mem::align_of::<MmlHost>() - 4usize];
     ["Offset of field: MmlHost::size"][::core::mem::offset_of!(MmlHost, size) - 0usize];
     ["Offset of field: MmlHost::api_version"]
@@ -3535,6 +3587,12 @@ const _: () = {
         [::core::mem::offset_of!(MmlHost, gfx_shared_texture) - 708usize];
     ["Offset of field: MmlHost::channel_wait"]
         [::core::mem::offset_of!(MmlHost, channel_wait) - 712usize];
+    ["Offset of field: MmlHost::human_invulnerable"]
+        [::core::mem::offset_of!(MmlHost, human_invulnerable) - 716usize];
+    ["Offset of field: MmlHost::hud_game"][::core::mem::offset_of!(MmlHost, hud_game) - 720usize];
+    ["Offset of field: MmlHost::web_nodes"][::core::mem::offset_of!(MmlHost, web_nodes) - 724usize];
+    ["Offset of field: MmlHost::material_name"]
+        [::core::mem::offset_of!(MmlHost, material_name) - 728usize];
 };
 pub type MmlModLoadFn = ::core::option::Option<
     unsafe extern "C" fn(host: *const MmlHost, mod_: *mut MmlMod) -> ::core::ffi::c_int,

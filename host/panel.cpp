@@ -28,13 +28,21 @@
 // The pages are the loader's own (menus.cpp's owners kLoaderOwner: the list, kLoaderPage: a mod's page over it), so
 // Esc on a mod's page returns to the list, and on the list to Options, as the game's own pages do. Both builds.
 //
+// A page is laid out apart from the game (LayoutPage, LayoutList: every control's place and text, and what a value
+// field may come to show), then made from that: panel.layout hands the same layout out for any manifest, with no game,
+// so tests/run_tests.py checks every mod's pages for controls and texts laid over each other or cut.
+//
 // Bridge methods (game thread): panel.state (the mods with settings, their sections, controls and values, the parts
 // their pages are cut into, the open page), panel.open {mod, part} (the list, or a mod's page, opened over the open
-// menu: the pause menu first if none is).
+// menu: the pause menu first if none is), panel.layout {settings, defaults, name} (a manifest's pages laid out, every
+// part, no game needed; with no settings: every loaded mod's pages and the list).
 #include "host.h"
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
+#include <functional>
 #include <string>
 #include <vector>
 #include "json.hpp"
@@ -80,12 +88,69 @@ constexpr float kHeader = 44, kFooter = 25;
 // have 600 - 40 - 44 - 20 - 15 - 25 - 25 = 431 units, less 30 for each row of tabs above the buttons.
 constexpr float kRow1 = 25, kRow2 = 36, kTabRow = 30, kTop = 20, kScreen = 600, kMargin = 20;
 constexpr float kRowsMax = kScreen - 2 * kMargin - kHeader - kTop - 15 - 25 - kFooter;
-// The window: 460 wide, 580 with tabs (the game's Controls is 550). The tabs as the game's, 90 apart from 20 (its are
-// 100 wide and overlap by 10: ours 90, so a click is never between two); Defaults 90 and Back 70 at the row's end
-// (395..485, 490..560). Four tabs fit beside them (to 380), five in a row of their own (to 470).
-constexpr float kWidth = 460, kTabbedWidth = 580, kTabStep = 90, kTabW = 90, kDefaultsW = 90, kBackW = 70;
-constexpr size_t kTabsBeside = 4, kTabsInRow = 5;
-size_t TabRows(size_t tabs) { return tabs <= 1 || tabs <= kTabsBeside ? 0 : (tabs + kTabsInRow - 1) / kTabsInRow; }
+// The window: 460 wide, 580 with tabs (the game's Controls is 550). The tabs as the game's, side by side from 20 (its
+// are 100 wide and overlap by 10: ours touch, so a click is never between two), each 90 wide or as wide as its text
+// needs; Defaults 90 and Back 70 at the row's end (395..485, 490..560). The tabs stand beside them while they fit (to
+// 390), else in rows of their own above them (20..560), in their order.
+constexpr float kWidth = 460, kTabbedWidth = 580, kTabW = 90, kDefaultsW = 90, kBackW = 70;
+constexpr float kTabsLeft = 20, kTabsBesideRight = kTabbedWidth - 20 - kBackW - 5 - kDefaultsW - 5, kTabsRight = kTabbedWidth - 20;
+
+// A text's width in the menus' fonts (800x600 units), estimated: the game's button font measured on its own pages
+// (2026-10-18, the 1.2 lab, Options > Mods: "Triggers" 72, "Collision" 75, "Defaults" 69-70, "Web" 36, "Names" 55,
+// "Burning" 67, "Heat and motion" 139), the static texts' font ("Read within" 85, "Seen through the" 125, "Motion
+// damping" 117), a window's title ("Gas and fire: Heat and motion" 303). The table times its font's factor comes out
+// a few percent above every one of them. Not the game's own measure (a page is laid out with no game: panel.layout):
+// an estimate from above. The layout gives a tab the room its text needs; tests/run_tests.py checks every page by it.
+constexpr float kButtonFont = 1.05f, kTextFont = 0.9f, kTitleFont = 1.12f;
+// What a key's row shows while it waits for the key (Esc keeps the one it had): within its 200-wide button ("Press a
+// key (Esc: keep)" was wider, found by tests/run_tests.py's check of the pages).
+constexpr const char *kKeyPrompt = "Press a key (Esc)";
+float TextWidth(const std::string &t, float font) {
+    float w = 0;
+    for (unsigned char ch : t) {
+        if (strchr("il.,:;'|!", ch)) w += 5;
+        else if (strchr("fjtrI()[]/-", ch)) w += 7;
+        else if (ch == ' ') w += 5;
+        else if (ch == 'M' || ch == 'W') w += 16;
+        else if (ch == 'm' || ch == 'w' || ch == '%') w += 14;
+        else if (isupper(ch)) w += 13;
+        else w += 10;
+    }
+    return w * font;
+}
+// The tabs' places: each one's x, row (0: the buttons' row, beside Defaults and Back; 1..: rows of their own above
+// them, the first the highest) and width, in the parts' order; the rows of their own they take.
+struct TabSpot { float x, w; size_t row; };
+std::vector<TabSpot> TabSpots(const std::vector<std::string> &labels, size_t *rowsOwn) {
+    std::vector<TabSpot> spots;
+    std::vector<float> widths;
+    float all = 0;
+    for (const std::string &l : labels) {
+        widths.push_back(std::max(kTabW, std::ceil(TextWidth(l, kButtonFont) + 16)));
+        all += widths.back();
+    }
+    *rowsOwn = 0;
+    if (labels.size() <= 1) return spots;
+    if (kTabsLeft + all <= kTabsBesideRight) {   // beside Defaults and Back
+        float x = kTabsLeft;
+        for (float w : widths) { spots.push_back({x, w, 0}); x += w; }
+        return spots;
+    }
+    float x = kTabsLeft;
+    size_t row = 1;
+    for (float w : widths) {
+        if (x > kTabsLeft && x + w > kTabsRight) { row++; x = kTabsLeft; }
+        spots.push_back({x, std::min(w, kTabsRight - kTabsLeft), row});
+        x += w;
+    }
+    *rowsOwn = row;
+    return spots;
+}
+size_t TabRows(const std::vector<std::string> &labels) {
+    size_t rows = 0;
+    TabSpots(labels, &rows);
+    return rows;
+}
 // The tab whose button is the k-th (its id kTab + k): the 0th is the tab shown, the others in their order after it.
 size_t TabPart(size_t k, size_t shown) { return k == 0 ? shown : (k <= shown ? k - 1 : k); }
 
@@ -95,14 +160,16 @@ long g_reopen = -1;      // the part to show once the page's old menu is gone (i
 int g_grabbing = -1;     // the "key" row waiting for a key (input.cpp KeyGrab*), -1: none
 int g_item;              // the Mods row's handle in Options
 
-void ParseControls(MmlMod *mod, const json &list, std::vector<Control> *out, std::string *why) {
+using DefaultOf = std::function<std::string(const std::string &key)>;   // a setting's default, as JSON text ("": none)
+
+void ParseControls(const DefaultOf &defaultOf, const json &list, std::vector<Control> *out, std::string *why) {
     for (const json &c : list) {
         if (!c.is_object() || !c.contains("key") || !c["key"].is_string()) continue;
         Control k;
         k.key = c["key"].get<std::string>();
         k.label = c.value("label", k.key);
         k.unit = c.value("unit", "");
-        std::string def = ConfigDefaultJson(mod, k.key.c_str());
+        std::string def = defaultOf(k.key);
         json d = def.empty() ? json() : json::parse(def, nullptr, false);
         std::string kind = c.value("kind", "");
         if (kind.empty()) kind = c.contains("options") ? "choice" : d.is_boolean() ? "check" : "slider";
@@ -134,23 +201,22 @@ void ParseControls(MmlMod *mod, const json &list, std::vector<Control> *out, std
     }
 }
 
-bool ParseSettings(MmlMod *mod, Settings *out, std::string *why) {
-    std::string text = ModSettingsJson(mod);
-    if (text.empty()) return false;
-    json s = json::parse(text, nullptr, false);
+// A manifest's "settings" (s), its mod's id and name (the title's fallback: the name up to a colon).
+bool ParseSettingsJson(const json &s, const std::string &id, const std::string &name, const DefaultOf &defaultOf, Settings *out,
+                       std::string *why) {
     const bool listed = s.is_object() && s.contains("controls") && s["controls"].is_array(),
                sectioned = s.is_object() && s.contains("sections") && s["sections"].is_array();
     if (!listed && !sectioned) { *why = "\"settings\" has neither \"controls\" nor \"sections\""; return false; }
-    out->mod = ModIdOf(mod);
+    out->mod = id;
     out->title = s.value("title", "");
     if (out->title.empty()) {
-        out->title = ModNameOf(mod);
+        out->title = name;
         size_t colon = out->title.find(':');   // ("Sun shafts: the sun's light..." -> "Sun shafts")
         if (colon != std::string::npos && colon > 0) out->title.resize(colon);
     }
     if (listed) {
         Section one;
-        ParseControls(mod, s["controls"], &one.controls, why);
+        ParseControls(defaultOf, s["controls"], &one.controls, why);
         if (!one.controls.empty()) out->sections.push_back(std::move(one));
     }
     if (sectioned)
@@ -158,11 +224,18 @@ bool ParseSettings(MmlMod *mod, Settings *out, std::string *why) {
             if (!x.is_object() || !x.contains("controls") || !x["controls"].is_array()) { *why = "a section with no \"controls\""; continue; }
             Section sec;
             sec.title = x.value("title", "");
-            ParseControls(mod, x["controls"], &sec.controls, why);
+            ParseControls(defaultOf, x["controls"], &sec.controls, why);
             if (sec.title.empty()) sec.title = "Part " + std::to_string(out->sections.size() + 1);
             if (!sec.controls.empty()) out->sections.push_back(std::move(sec));
         }
     return !out->sections.empty();
+}
+
+bool ParseSettings(MmlMod *mod, Settings *out, std::string *why) {
+    std::string text = ModSettingsJson(mod);
+    if (text.empty()) return false;
+    return ParseSettingsJson(json::parse(text, nullptr, false), ModIdOf(mod), ModNameOf(mod),
+                             [mod](const std::string &key) { return ConfigDefaultJson(mod, key.c_str()); }, out, why);
 }
 
 std::vector<Settings> AllSettings() {
@@ -219,11 +292,13 @@ std::string Shown(const Control &k, MmlMod *mod) {
 
 // A label as one line, or two: a longer one is split at the last space that fits in a line (the rest is the second
 // line). A label whose second line is still too long is cut there: the manifests keep their labels to two lines.
-std::vector<std::string> LabelLines(const std::string &s) {
+std::vector<std::string> LabelLines(const std::string &s, bool *lost = nullptr) {
+    if (lost) *lost = false;
     if (s.size() <= kLabelChars) return {s};
     size_t cut = s.rfind(' ', kLabelChars);
     if (cut == std::string::npos || cut == 0) cut = kLabelChars;
     const size_t next = (cut < s.size() && s[cut] == ' ') ? cut + 1 : cut;
+    if (lost) *lost = s.size() - next > kLabelChars;
     return {s.substr(0, cut), s.substr(next, kLabelChars)};
 }
 
@@ -267,7 +342,9 @@ std::vector<Part> Parts(const Settings &s) {
             }
             parts.insert(parts.end(), mine.begin(), mine.end());
         }
-        if (TabRows(parts.size()) <= tabRows || tabRows == 3) return parts;   // (else cut again under the tabs' rows)
+        std::vector<std::string> labels;
+        for (const Part &p : parts) labels.push_back(p.label);
+        if (TabRows(labels) <= tabRows || tabRows == 3) return parts;   // (else cut again under the tabs' rows)
     }
     return {};
 }
@@ -329,7 +406,7 @@ void OnModPage(int id, void *) {
             MenuPageText(kLoaderPage, kInput + g_grabbing, Shown(*PartControl(s, part, static_cast<size_t>(g_grabbing)), mod).c_str());
         g_grabbing = i;
         KeyGrabStart();
-        MenuPageText(kLoaderPage, id, "Press a key (Esc: keep)");
+        MenuPageText(kLoaderPage, id, kKeyPrompt);
         return;
     }
     float v = 0;
@@ -342,25 +419,52 @@ void OnModPage(int id, void *) {
     if (k.kind == kSlider) MenuPageText(kLoaderPage, kValue + i, Shown(k, mod).c_str());
 }
 
-// A mod's page (one part of it), over the list (or over the open menu).
-bool OpenModPage(const std::string &modId, size_t partAt, std::string *err) {
-    Settings s;
-    MmlMod *mod = ModById(modId);
-    if (!mod || !Find(modId, &s)) { *err = "no loaded mod \"" + modId + "\" with settings"; return false; }
-    const std::vector<Part> parts = Parts(s);
-    if (partAt >= parts.size()) { *err = "part " + std::to_string(partAt) + ": the page has " + std::to_string(parts.size()); return false; }
+// A page as the game is asked to make it: the window first, then its controls (places inside the window), each with
+// its text; `sample`: the longest text a value field or a key's button may come to show (its text is " " until the
+// values are shown); `cut`: the labels that lost text (more than two lines).
+struct Item { int id; std::string kind; float x, y, w, h; std::string text, sample; };
+// The estimated width of what an item shows (its text or its sample, the wider): a window's title, a static text's,
+// a button's or a list row's label (a choice's widest option).
+float InkWidth(const Item &i) {
+    const float font = i.kind == "wind" ? kTitleFont : i.kind == "stxt" ? kTextFont : kButtonFont;
+    float w = 0;
+    std::string t = i.text;
+    if (i.kind == "bsel") t = i.sample;   // (its options are "A|B|C": the widest is its sample)
+    for (const std::string &x : {t, i.sample}) if (!x.empty() && x != " ") w = std::max(w, TextWidth(x, font));
+    return w;
+}
+struct Page {
+    std::vector<Item> items;
+    std::vector<std::string> cut;
+};
+
+// What a slider's value field may show at most: its ends (as Shown writes them) and 100%.
+std::string SliderSample(const Control &k) {
+    if (k.percent) return "100%";
+    char a[64], b[64];
+    snprintf(a, sizeof a, "%g%s%s", std::round(k.min * 1000) / 1000, k.unit.empty() ? "" : " ", k.unit.c_str());
+    snprintf(b, sizeof b, "%g%s%s", std::round(k.max * 1000) / 1000, k.unit.empty() ? "" : " ", k.unit.c_str());
+    return strlen(a) > strlen(b) ? a : b;
+}
+
+// One part of a mod's page laid out.
+void LayoutPage(const Settings &s, const std::vector<Part> &parts, size_t partAt, Page *out) {
     const Part &part = parts[partAt];
-    std::vector<MmlMenuControl> c;
     // a row is 25 units high; a row whose label takes two lines is 36, its control centred between them
     const bool tabbed = parts.size() > 1;
     const float w = tabbed ? kTabbedWidth : kWidth, dx = (w - kWidth) / 2;   // (the rows centred in a wider window)
-    const size_t tabRows = TabRows(parts.size());
+    std::vector<std::string> tabLabels;
+    for (const Part &p : parts) tabLabels.push_back(p.label);
+    size_t tabRows = 0;
+    const std::vector<TabSpot> spots = TabSpots(tabLabels, &tabRows);
     const float top = kTop;
     std::vector<std::vector<std::string>> labels(part.count);
     std::vector<float> rowTop(part.count);
     float rows = 0;
     for (size_t i = 0; i < part.count; i++) {
-        labels[i] = LabelLines(PartControl(s, part, i)->label);
+        bool lost = false;
+        labels[i] = LabelLines(PartControl(s, part, i)->label, &lost);
+        if (lost) out->cut.push_back(PartControl(s, part, i)->label);
         rowTop[i] = top + rows;
         rows += labels[i].size() > 1 ? kRow2 : kRow1;
     }
@@ -368,48 +472,68 @@ bool OpenModPage(const std::string &modId, size_t partAt, std::string *err) {
     const float bottom = tabsTop + kTabRow * static_cast<float>(tabRows);   // the buttons' row
     float h = kHeader + bottom + 25 + kFooter;
     const std::string title = tabbed ? s.title + ": " + part.label : s.title;
-    c.push_back({1, "wind", (800 - w) / 2, std::max(kMargin, (kScreen - h) / 2), w, h, title.c_str(), 0});
+    std::vector<Item> &c = out->items;
+    c.push_back({1, "wind", (800 - w) / 2, std::max(kMargin, (kScreen - h) / 2), w, h, title, ""});
     // The tabs: in the buttons' row, or rows of their own, in their order. The tab shown is the first of the page's
     // buttons, by id and in the definition: the game gives the focus (its underline) to that one when it makes the
     // page (1.2 the lowest id, 1.0 the first record), so the underline says which tab is open. A focus flag in the
     // definition does not move it, only adds a second underline.
     for (size_t k = 0; tabbed && k < parts.size(); k++) {
         const size_t p = TabPart(k, partAt);
-        const size_t row = tabRows ? p / kTabsInRow : 0, col = tabRows ? p % kTabsInRow : p;
-        const float y = tabRows ? tabsTop + kTabRow * static_cast<float>(row) : bottom;
-        c.push_back({kTab + static_cast<int>(k), "butt", 20 + kTabStep * static_cast<float>(col), y, kTabW, 25, parts[p].label.c_str(), 0});
+        const TabSpot &t = spots[p];
+        const float y = t.row ? tabsTop + kTabRow * static_cast<float>(t.row - 1) : bottom;
+        c.push_back({kTab + static_cast<int>(k), "butt", t.x, y, t.w, 25, parts[p].label, ""});
     }
-    std::vector<std::string> keep;
-    keep.reserve(part.count);
     for (size_t i = 0; i < part.count; i++) {
         const Control &k = *PartControl(s, part, i);
         const bool two = labels[i].size() > 1;
         const float ry = rowTop[i];
         const float y = ry + (two ? 6 : 0);   // the control's line (centred in a two-line row)
         int n = static_cast<int>(i);
-        c.push_back({kLabel + n, "stxt", dx + 30, two ? ry + 3 : ry, 160, 18, labels[i][0].c_str(), 0});
-        if (two) c.push_back({kLabel2 + n, "stxt", dx + 30, ry + 18, 160, 18, labels[i][1].c_str(), 0});
+        c.push_back({kLabel + n, "stxt", dx + 30, two ? ry + 3 : ry, 160, 18, labels[i][0], ""});
+        if (two) c.push_back({kLabel2 + n, "stxt", dx + 30, ry + 18, 160, 18, labels[i][1], ""});
         if (k.kind == kKey) {
-            c.push_back({kInput + n, "butt", dx + 200, y - 2, 200, 22, " ", 0});
+            c.push_back({kInput + n, "butt", dx + 200, y - 2, 200, 22, " ", kKeyPrompt});
         } else if (k.kind == kCheck) {
-            c.push_back({kInput + n, "chck", dx + 200, y, 20, 20, nullptr, 0});
+            c.push_back({kInput + n, "chck", dx + 200, y, 20, 20, "", ""});
         } else if (k.kind == kChoice) {
-            std::string options;
-            for (size_t o = 0; o < k.labels.size(); o++) options += (o ? "|" : "") + k.labels[o];
-            keep.push_back(options);
-            c.push_back({kInput + n, "bsel", dx + 200, y - 2, 200, 22, keep.back().c_str(), 0});
+            std::string options, longest;
+            for (size_t o = 0; o < k.labels.size(); o++) {
+                options += (o ? "|" : "") + k.labels[o];
+                if (k.labels[o].size() > longest.size()) longest = k.labels[o];
+            }
+            c.push_back({kInput + n, "bsel", dx + 200, y - 2, 200, 22, options, longest});
         } else {
-            c.push_back({kInput + n, "slid", dx + 200, y + 1, 160, 16, nullptr, 0});
-            c.push_back({kValue + n, "stxt", dx + 375, y, 60, 18, " ", 0});
+            c.push_back({kInput + n, "slid", dx + 200, y + 1, 160, 16, "", ""});
+            c.push_back({kValue + n, "stxt", dx + 375, y, 60, 18, " ", SliderSample(k)});
         }
     }
     if (tabbed) {   // as the game's Controls: Defaults and Back at the row's end, after the tabs
-        c.push_back({kDefaults, "butt", w - 20 - kBackW - 5 - kDefaultsW, bottom, kDefaultsW, 25, "Defaults", 0});
-        c.push_back({kBack, "butt", w - 20 - kBackW, bottom, kBackW, 25, "Back", 0});
+        c.push_back({kDefaults, "butt", w - 20 - kBackW - 5 - kDefaultsW, bottom, kDefaultsW, 25, "Defaults", ""});
+        c.push_back({kBack, "butt", w - 20 - kBackW, bottom, kBackW, 25, "Back", ""});
     } else {
-        c.push_back({kDefaults, "butt", 30, bottom, 170, 25, "Defaults", 0});
-        c.push_back({kBack, "butt", w - 130, bottom, 100, 25, "Back", 0});
+        c.push_back({kDefaults, "butt", 30, bottom, 170, 25, "Defaults", ""});
+        c.push_back({kBack, "butt", w - 130, bottom, 100, 25, "Back", ""});
     }
+}
+
+// The game's controls for a laid-out page (the texts stay the page's).
+std::vector<MmlMenuControl> Controls(const Page &page) {
+    std::vector<MmlMenuControl> c;
+    for (const Item &i : page.items) c.push_back({i.id, i.kind.c_str(), i.x, i.y, i.w, i.h, i.text.empty() ? nullptr : i.text.c_str(), 0});
+    return c;
+}
+
+// A mod's page (one part of it), over the list (or over the open menu).
+bool OpenModPage(const std::string &modId, size_t partAt, std::string *err) {
+    Settings s;
+    MmlMod *mod = ModById(modId);
+    if (!mod || !Find(modId, &s)) { *err = "no loaded mod \"" + modId + "\" with settings"; return false; }
+    const std::vector<Part> parts = Parts(s);
+    if (partAt >= parts.size()) { *err = "part " + std::to_string(partAt) + ": the page has " + std::to_string(parts.size()); return false; }
+    Page page;
+    LayoutPage(s, parts, partAt, &page);
+    std::vector<MmlMenuControl> c = Controls(page);
     if (!MenuPageOpen(kLoaderPage, "mod", c.data(), static_cast<int>(c.size()), OnModPage, nullptr)) {
         *err = "the game did not make the page (the log tells)";
         return false;
@@ -430,20 +554,26 @@ void OnList(int id, void *) {
     if (!OpenModPage(g_listed[i], 0, &err)) Log(MML_LOG_WARN, "host", "panel: %s", err.c_str());
 }
 
-bool OpenList(std::string *err) {
-    std::vector<Settings> all = AllSettings();
-    g_listed.clear();
-    std::vector<MmlMenuControl> c;
+// The Mods list laid out: a row a mod with settings, Back.
+void LayoutList(const std::vector<Settings> &all, Page *out) {
+    std::vector<Item> &c = out->items;
     const float row = 30, w = 260;
     float rows = static_cast<float>(std::max<size_t>(all.size(), 1));
     float h = kHeader + 10 + row * rows + 10 + 20 + kFooter;
-    c.push_back({1, "wind", 290, 180, w, h, "Mods", 0});
-    if (all.empty()) c.push_back({2, "stxt", 15, 15, w - 30, 18, "No loaded mod has settings", 0});
-    for (size_t i = 0; i < all.size(); i++) {
-        g_listed.push_back(all[i].mod);
-        c.push_back({kListRow + static_cast<int>(i), "item", 0, 10 + row * static_cast<float>(i), w, row, all[i].title.c_str(), 0});
-    }
-    c.push_back({kListBack, "item", 0, 10 + row * rows + 10, w, 20, "Back", 0});
+    c.push_back({1, "wind", 290, 180, w, h, "Mods", ""});
+    if (all.empty()) c.push_back({2, "stxt", 15, 15, w - 30, 18, "No loaded mod has settings", ""});
+    for (size_t i = 0; i < all.size(); i++)
+        c.push_back({kListRow + static_cast<int>(i), "item", 0, 10 + row * static_cast<float>(i), w, row, all[i].title, ""});
+    c.push_back({kListBack, "item", 0, 10 + row * rows + 10, w, 20, "Back", ""});
+}
+
+bool OpenList(std::string *err) {
+    std::vector<Settings> all = AllSettings();
+    g_listed.clear();
+    for (const Settings &s : all) g_listed.push_back(s.mod);
+    Page page;
+    LayoutList(all, &page);
+    std::vector<MmlMenuControl> c = Controls(page);
     if (!MenuPageOpen(kLoaderOwner, "mods", c.data(), static_cast<int>(c.size()), OnList, nullptr)) {
         *err = "the game did not make the page (the log tells)";
         return false;
@@ -493,10 +623,68 @@ void PanelInit() {
 }
 
 bool PanelMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok) {
-    if (method != "panel.state" && method != "panel.open") return false;
+    if (method != "panel.state" && method != "panel.open" && method != "panel.layout") return false;
     *ok = false;
     json p = json::parse(paramsJson.empty() ? "null" : paramsJson, nullptr, false);
     if (!p.is_object()) p = json::object();
+    auto pageJson = [](const Page &page) {
+        json items = json::array();
+        for (const Item &i : page.items) {
+            json j = {{"id", i.id}, {"kind", i.kind}, {"x", i.x}, {"y", i.y}, {"w", i.w}, {"h", i.h}, {"text", i.text},
+                      {"ink", std::round(InkWidth(i))}};
+            if (!i.sample.empty()) j["sample"] = i.sample;
+            items.push_back(j);
+        }
+        return json{{"items", items}, {"cut", page.cut}};
+    };
+    auto pagesJson = [&](const Settings &s) {
+        json out = json::array();
+        const std::vector<Part> parts = Parts(s);
+        for (size_t i = 0; i < parts.size(); i++) {
+            Page page;
+            LayoutPage(s, parts, i, &page);
+            json j = pageJson(page);
+            j["part"] = parts[i].label;
+            out.push_back(j);
+        }
+        return out;
+    };
+    if (method == "panel.layout") {   // the pages as they would be made: a manifest's given, or every loaded mod's
+        json mods = json::array();
+        std::vector<Settings> all;
+        if (p.contains("settings")) {
+            const json defaults = p.value("defaults", json::object());
+            Settings s;
+            std::string why;
+            const std::string name = p.value("name", std::string("mod"));
+            auto defaultOf = [&defaults](const std::string &key) {
+                // a key of a section ("routes.show") is the defaults' nested object's, as the mods' config.json has it
+                const json *at = &defaults;
+                for (size_t from = 0; at && at->is_object();) {
+                    size_t dot = key.find('.', from);
+                    std::string part = key.substr(from, dot == std::string::npos ? std::string::npos : dot - from);
+                    at = at->contains(part) ? &(*at)[part] : nullptr;
+                    if (dot == std::string::npos) break;
+                    from = dot + 1;
+                }
+                return at && !at->is_object() ? at->dump(-1, ' ', false, json::error_handler_t::replace) : std::string();
+            };
+            if (!ParseSettingsJson(p["settings"], name, name, defaultOf, &s, &why)) {
+                *reply = "panel.layout: " + (why.empty() ? std::string("no controls") : why);
+                return true;
+            }
+            all.push_back(std::move(s));
+            if (!why.empty()) { *reply = "panel.layout: " + why; return true; }   // (a control the page would leave out)
+        } else {
+            all = AllSettings();
+        }
+        for (const Settings &s : all) mods.push_back({{"mod", s.mod}, {"title", s.title}, {"pages", pagesJson(s)}});
+        Page list;
+        LayoutList(all, &list);
+        *reply = json{{"mods", mods}, {"list", pageJson(list)}}.dump(-1, ' ', false, json::error_handler_t::replace);
+        *ok = true;
+        return true;
+    }
     if (method == "panel.open") {
         std::string mod = p.value("mod", ""), err;
         size_t part = 0;

@@ -194,6 +194,9 @@ float w = H->draw_text_width(MML_FONT_SMALL, 14, "how wide is this");
 
 - **Every frame**: what is queued is drawn in the frame being made and dropped. Queue from `MML_EVENT_FRAME` to be
   seen in the pause and the menus too.
+- **Under the menus**: the mods' drawing is a layer of the HUD's, drawn right after it (the loader's hook of the
+  HUD's DrawAll), so the game's menus and console are drawn over it: an overlay need not hide itself when the pause
+  menu opens. Over everything: the device at `MML_EVENT_PRESENT`.
 - **Coordinates**: the menus' virtual units, whatever the resolution: the screen is 800 wide and 600 high, (0, 0)
   the top left corner. A text's size is its line height in these units (the HUD's money is 40, a menu's button 30).
 - **Colours**: `0xAARRGGBB`. **Fonts** (the game's own): `MML_FONT_SMALL` (plain), `MML_FONT_BIG` (bold, the
@@ -526,12 +529,25 @@ int k = H->world_shapes(M, lo, hi, MML_WORLD_STATIC, s, 256);  /* triangles, box
   triangles (normal out of the solid), boxes (centre, half sizes, axes), spheres and poles (vertical cylinders);
   the moving objects' boxes and spheres with their owner. What a physics library builds its world from near a
   body (a ragdoll's ground and walls, a fish's riverbed, a skateboard's ramps).
+- **The surfaces' names** (`material_name(n)`): a static face's surface (its material, `flags >> 24` of a hit or a
+  shape) by the game's own table, tables\materials.def as the game read it (its records' first 32 bytes), in UTF-8;
+  NULL for a number with no record. 31 is the deadly water, 33 the walls nothing draws.
+- **The pedestrians' web** (`web_nodes(M, at, radius, out, max)`): the mission's check.bin as the game keeps it, the
+  places people walk between: each node's place, its index (what the links name), the game's bits of its kind and its
+  id, and its links (the other node's index, MML_WEB_ONE_WAY, the cost), nearest first. What a person's route is built
+  on (`ai_path`'s waypoints name these nodes); the road network for cars is `road_near`.
 - Called on the game thread (in any event of the mod's or a command); every call is the game's work: a ray costs
   little, a large box of shapes more (tens of microseconds for a few metres around a person).
 - `call world.ray {"from": "camera"}` (what the crosshair looks at; `"screen": [x, y]`), `{"from": "player", "to":
   "car"}`, `{"from": [x, y, z], "dir": [x, y, z], "length": 50, "what": "static", "ignore": ""}`; `world.sweep`
   (the same and `radius`), `world.ground {"at"}`, `world.near {"at", "radius", "type"}`, `world.shapes {"at",
-  "radius"}` or `{"lo", "hi"}` (counts by kind, the first `max` shapes), `world.water {"at"}`.
+  "radius"}` or `{"lo", "hi"}` (counts by kind, the first `max` shapes, each static one's `material` named),
+  `world.water {"at"}`, `world.materials`, `world.web {"at", "radius", "max"}`.
+- `mods/examples/debug_views` draws them: `collision` the world's whole collision (the static shapes by surface with
+  the surfaces' names, the moving objects') as solids, a graphics pass: drawn into a depth buffer of its own, so each
+  pixel shows the nearest collision surface, then laid over the frame against its depth with a tolerance (the
+  collision wins over the world's own surfaces it lies on), with an ambient occlusion and screen-space outlines;
+  `web` the pedestrians' web (lines in the scene through the game's device at RENDER_WORLD).
 - `mods/examples/probe` (not enabled by default): what the crosshair looks at, the ground under the player, a
   sphere swept ahead of him, the people near him, and the static world's collision around him drawn as lines.
 
@@ -562,6 +578,30 @@ H->human_take_item(M, p, 12);                    /* the scripts' human_delweapon
   `human.ammo {"actor", "slot", "loaded", "reserve"}`, `human.take {"actor", "item": 12 | "Saw off shotgun"}`.
 - `mods/examples/bounty` (not enabled by default): each person the player kills pays `reward` dollars, his health
   comes back once nothing has hit him for a while, `endless_ammo` keeps the hand's weapon's reserve full.
+
+### The developer's switches: a person kept from harm, the game's HUD hidden
+
+```c
+void *p = H->human_player(M);
+H->human_invulnerable(M, p, 1);   /* the game's harm not run for him: 1 now; 0 lets go; -1 only asks */
+H->hud_game(M, 0);                /* the game's HUD not drawn (1 gives it back, -1 asks): 0 hidden now */
+```
+
+- **Kept from harm**: every harm reaches a person through his `Hit` (C_human::Hit, vtable slot 31: bullets, blows,
+  explosions, a car that strikes him through C_human::Collision, a fall's landing, a hit of type 6). The loader's
+  hook of it returns before the game's for him, as `C_player::Hit` itself skips it while a scene holds the player:
+  no damage, no reaction, no HUMAN_HIT. Each mod (and the bridge) holds him on its own; he stays so while one of
+  them does, until his removal or the mission's close. For the player, a hit still drops the sniper's scope
+  (C_player::Hit's own step after the call).
+- **The HUD hidden**: the game's G_IndicatorsClass::DrawAll (the health, the ammo, the radar, the compass, its
+  texts: the first thing of the 2D pass) is not run while any mod or the bridge hides it; the menus, the console and
+  every mod's drawing stay. Hooked at the first hide.
+- `call human.invulnerable {"actor": "player", "on": true}`, `hud.game {"show": false}`.
+- `mods/examples/devtools` (not enabled by default): these two, a weapon that never runs dry, flying (the game's
+  movement and jump hooked for the player: `game_build.h` `humanMove`, `humanJump`; his place set after each tick as
+  the scripts' ACTOR_SETPOS sets it), a free camera (`camera_override` and the mouse's actions captured) and the
+  field of view (`game_camera_fov`), each a switch on its page in the game's Options > Mods. A port of pet1kk's
+  Developer Tools (a standalone ASI for 1.2, PR 2) onto the loader, for both builds.
 
 ### A mod's own items
 
@@ -1369,8 +1409,8 @@ seen while it is dragged; the file in the data folder is written once the change
   as the game's own pages do. A key is a path (`"overlay.x"`), as for `config_number`.
 - **Sections** (a mod of several parts): `"sections": [{"title": "Routes", "controls": [...]}, ...]` in place of (or
   after) `"controls"`. Each is a tab, as the game's own Controls page has them (Player, Car, Other): buttons along the
-  bottom of the page before Defaults and Back (a row of their own above them past four), the page titled with the
-  tab shown ("Debug views: Routes"); a tab makes the page again with its controls (Defaults resets that tab's). Keys
+  bottom of the page before Defaults and Back (rows of their own above them when they do not fit there; a tab as wide
+  as its title needs), the page titled with the tab shown ("Debug views: Routes"); a tab makes the page again with its controls (Defaults resets that tab's). Keys
   under a section's name keep them apart in `config.json` (`"routes.show"`, `{"routes": {"show": true}}`):
   mods/examples/debug_views does so.
 - **The page never runs off the screen**: a section (or the one list) whose rows do not fit in the 600 units is cut
@@ -1380,6 +1420,11 @@ seen while it is dragged; the file in the data folder is written once the change
   its sections and the parts its page is cut into); `call panel.open {"mod": "<id>", "part": "Race 2/2"}` opens a
   page (a part by its number or its name) without the clicks. A control the panel cannot make (a slider with
   no `max`, a choice with no `options`) is left out, and the log says why.
+- **Checked offline**: `call panel.layout {"settings": {...}, "defaults": {...}}` lays a manifest's pages out with no
+  game (every part: each control's place, its text, the estimated width of its text); `tests/run_tests.py` does so
+  for every mod's `mod.json` in the repository and fails on a control or a text over another, anything out of its
+  window or the screen, a button's or a selector's text wider than it, or a label cut (more than two lines of 20
+  characters). The widths are the loader's estimate of the game's menu fonts (measured on its pages), a little wide.
 
 ### A mod's own files in the game
 

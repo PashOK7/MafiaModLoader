@@ -15,8 +15,10 @@
 // (with its tails: a car stopped, the lights' sector worked out again), car_repair, human_addweapon. Turning is what
 // ACTOR_SETDIR does with the direction it works out: the actor's facing (+0x30), the frame's SetDir and Update.
 //
+// The places people walk between: the mission's web (check.bin), its nodes near a point (WebNodes, web_nodes).
+//
 // Bridge methods (game thread): world.spawn, world.remove {actor}, world.teleport, world.give, world.cars {query},
-// world.items {query}, world.spawned (docs/PROTOCOL.md).
+// world.items {query}, world.road {at}, world.web {at, radius, max}, world.spawned (docs/PROTOCOL.md).
 #include "host.h"
 #include <algorithm>
 #include <cctype>
@@ -396,6 +398,51 @@ int RoadNear(const float at[3], float out[3]) {
     return static_cast<int>(node);
 }
 
+// The pedestrians' web (missions\<name>\check.bin; game.h kMissionWeb): its nodes within `radius` of a point, nearest
+// first, read as the game keeps them (C_web_path::LoadNodes reads the file's 0x1E-byte records whole; a node's links
+// are then the game's own block at +0x18). How many are within the radius; out gets the first max.
+int WebNodes(const float at[3], float radius, MmlWebNode *out, int max) {
+    if (!game::g_exe || !game::Mission() || !(radius > 0)) return 0;
+    uintptr_t web = R32(reinterpret_cast<uintptr_t>(game::Mission()) + game::kMissionWeb);
+    if (!web) return 0;
+    const uint32_t nodes = R32(web + game::kWebNodes), count = R32(web + game::kWebNodeCount);
+    if (!nodes || !count || count > 200000) return 0;
+    std::vector<uint8_t> raw(static_cast<size_t>(count) * game::kWebNodeSize);
+    if (!MemRead(nodes, raw.data(), raw.size())) return 0;
+    struct Close { float d2; uint32_t i; };
+    std::vector<Close> close;
+    const float r2 = radius * radius;
+    for (uint32_t i = 0; i < count; i++) {
+        const float *p = reinterpret_cast<const float *>(&raw[static_cast<size_t>(i) * game::kWebNodeSize]);
+        const float dx = p[0] - at[0], dy = p[1] - at[1], dz = p[2] - at[2], d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 <= r2) close.push_back({d2, i});
+    }
+    std::sort(close.begin(), close.end(), [](const Close &a, const Close &b) { return a.d2 < b.d2; });
+    for (size_t k = 0; out && k < close.size() && k < static_cast<size_t>((std::max)(max, 0)); k++) {
+        const uint8_t *n = &raw[static_cast<size_t>(close[k].i) * game::kWebNodeSize];
+        MmlWebNode &o = out[k];
+        o = MmlWebNode{};
+        memcpy(o.pos, n, 12);
+        o.index = static_cast<int>(close[k].i);
+        memcpy(&o.kind, n + game::kWebNodeKind, 2);
+        memcpy(&o.id, n + game::kWebNodeId, 2);
+        o.link_count = n[game::kWebNodeLinkCount];
+        uint32_t links = 0;
+        memcpy(&links, n + game::kWebNodeLinks, 4);
+        const int read = (std::min)(o.link_count, MML_WEB_LINKS);
+        uint8_t l[MML_WEB_LINKS * game::kWebLinkSize];
+        if (!links || !read || !MemRead(links, l, static_cast<size_t>(read) * game::kWebLinkSize)) continue;
+        for (int j = 0; j < read; j++) {
+            uint16_t to = 0;
+            memcpy(&to, l + j * game::kWebLinkSize, 2);
+            memcpy(&o.link_flags[j], l + j * game::kWebLinkSize + 2, 2);
+            memcpy(&o.link_cost[j], l + j * game::kWebLinkSize + 4, 4);
+            o.link[j] = to;
+        }
+    }
+    return static_cast<int>(close.size());
+}
+
 namespace {
 V3 Vec(const json &v) { return V3{v.at(0).get<float>(), v.at(1).get<float>(), v.at(2).get<float>()}; }
 json Arr(const V3 &v) { return json::array({std::round(v.x * 1000) / 1000, std::round(v.y * 1000) / 1000, std::round(v.z * 1000) / 1000}); }
@@ -574,6 +621,29 @@ bool WorldMethod(const std::string &method, const std::string &paramsJson, std::
                 j["distance"] = std::round(Len(n - pos) * 100) / 100;
             }
             *reply = dump(j);
+        } else if (method == "world.web") {
+            // {at: [x, y, z] | an actor (default "player"), radius (30), max (50)}
+            V3 pos, fwd;
+            bool fromActor = false;
+            if (!Place(p, "at", 0.0f, &pos, &fwd, &fromActor, &err)) { *reply = err; return true; }
+            const float radius = p.value("radius", 30.0f);
+            const int max = (std::max)(0, (std::min)(p.value("max", 50), 2000));
+            float at[3] = {pos.x, pos.y, pos.z};
+            std::vector<MmlWebNode> nodes(static_cast<size_t>(max));
+            const int n = WebNodes(at, radius, nodes.data(), max);
+            json list = json::array();
+            for (int k = 0; k < n && k < max; k++) {
+                const MmlWebNode &w = nodes[k];
+                json links = json::array();
+                for (int j = 0; j < w.link_count && j < MML_WEB_LINKS; j++)
+                    links.push_back({{"to", w.link[j]}, {"one_way", (w.link_flags[j] & MML_WEB_ONE_WAY) != 0}, {"flags", w.link_flags[j]},
+                                     {"cost", std::round(w.link_cost[j] * 100) / 100}});
+                list.push_back({{"index", w.index}, {"pos", Arr(V3{w.pos[0], w.pos[1], w.pos[2]})}, {"kind", w.kind}, {"id", w.id},
+                                {"links", links}, {"link_count", w.link_count}});
+            }
+            json j = {{"at", Arr(pos)}, {"radius", radius}, {"count", n}, {"nodes", list}};
+            if (!n) j["why"] = game::Mission() ? "no node within the radius (or this mission has no web)" : "no mission";
+            *reply = dump(j);
         } else if (method == "world.spawned") {
             json list = json::array();
             for (const Spawned &s : g_spawned) {
@@ -584,7 +654,7 @@ bool WorldMethod(const std::string &method, const std::string &paramsJson, std::
             }
             *reply = dump({{"known", SpawnKnown()}, {"spawned", list}});
         } else {
-            *reply = "unknown method '" + method + "': world.spawn, world.remove, world.teleport, world.seat, world.give, world.cars, world.items, world.road, world.spawned";
+            *reply = "unknown method '" + method + "': world.spawn, world.remove, world.teleport, world.seat, world.give, world.cars, world.items, world.road, world.web, world.spawned";
             return true;
         }
         *ok = true;

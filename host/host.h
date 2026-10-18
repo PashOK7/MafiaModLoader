@@ -345,6 +345,8 @@ std::string WorldItemName(int id);                         // "" for none
 bool WorldGive(void *human, int item, int loaded, int reserve, std::string *err);   // loaded/reserve < 0: the item's own
 bool WorldSeat(void *human, void *car, int seat, std::string *err);                 // human_force_settocar
 int RoadNear(const float at[3], float out[3]);   // the road network's node nearest (its index, out its place); -1 none
+int WebNodes(const float at[3], float radius, MmlWebNode *out, int max);   // the pedestrians' web near a point (how many)
+const char *MaterialName(int id);         // (collide.cpp) a surface's name in the game's table, UTF-8; null none
 void WorldActorGone(void *actor);         // (game_hooks.cpp) out of the spawned list
 void WorldMissionClose();
 bool WorldMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
@@ -362,6 +364,11 @@ bool StateHealthSet(void *human, float health, std::string *err);
 int StateItems(void *human, MmlItem *out, int max);
 bool StateAmmoSet(void *human, int slot, int loaded, int reserve, std::string *err);
 bool StateTakeItem(void *human, int item, std::string *err);
+bool StateInvulnerable(void *human);      // (C_human::Hit's hook) kept from the game's harm now
+int StateInvulnerableSet(MmlMod *mod, void *human, int on, std::string *err);   // on 1, 0, -1 asks; his state, -1 not a person
+void StateActorGone(void *actor);
+void StateMissionClose();
+void StateModGone(MmlMod *mod);
 // the game's effects (effects.cpp): the car exhaust read and hooked, tables\particles.def read and written
 int CarExhaust(void *car, MmlExhaust *out);
 int ExhaustHook(MmlMod *mod, MmlExhaustFn fn, void *user);
@@ -497,6 +504,8 @@ int HudMarkerAdd(MmlMod *mod, const MmlHudMarker *m, std::string *err);
 bool HudMarkerSet(MmlMod *mod, int id, const MmlHudMarker *m, std::string *err);
 bool HudMarkerRemove(MmlMod *mod, int id);
 void HudPass();                           // (draw.cpp, each 2D pass) the markers queued where the camera puts them
+int HudGame(MmlMod *mod, int show, std::string *err);
+bool HudGameHidden();                     // (draw.cpp's hook of DrawAll) the game's HUD not to be drawn now   // the game's HUD hidden (0), shown (1), asked (-1): 1 shown, 0 hidden, -1 not known
 void HudModGone(MmlMod *mod);
 void HudMissionClose();                   // (before the game's) markers, their frames, the compass
 void HudActorGone(void *actor);

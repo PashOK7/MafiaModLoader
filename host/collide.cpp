@@ -21,7 +21,10 @@
 //
 // The water: the static faces of the water's surfaces under a point (WorldWater).
 //
-// Bridge methods (game thread): world.ray, world.sweep, world.ground, world.water, world.near, world.shapes.
+// The surfaces' names: the game's own table, tables\materials.def (MaterialName).
+//
+// Bridge methods (game thread): world.ray, world.sweep, world.ground, world.water, world.near, world.shapes,
+// world.materials.
 #include "host.h"
 #include <algorithm>
 #include <cmath>
@@ -529,9 +532,43 @@ int WorldShapes(const float lo[3], const float hi[3], uint32_t what, MmlShape *o
     return Shapes(V3{lo[0], lo[1], lo[2]}, V3{hi[0], hi[1], hi[2]}, what, out, std::max(0, max));
 }
 
+// The surfaces' names: tables\materials.def as the game read it (game_build.h materials, materialCount; game.h
+// kMaterialSize), a record's name its first 0x20 bytes (Czech, Windows-1250). Kept once read, for the block the
+// game holds (it reads the file once, at its start); nullptr out of the table or an empty name.
+namespace {
+uint32_t g_matTable;
+std::vector<std::string> g_matNames;
+// The table's names are its makers' Czech in Windows-1250 in every build and language ("Chodník", "Dřevo 30%"; seen
+// in the 1.2 lab, where the system's code page 1251 made them "Chodnнk"): read in that code page, not the system's.
+std::string CzechUtf8(const char *text) {
+    wchar_t w[64];
+    int n = MultiByteToWideChar(1250, 0, text, -1, w, 64);
+    if (n <= 0) return std::string();
+    char u[192];
+    int m = WideCharToMultiByte(CP_UTF8, 0, w, -1, u, sizeof u, nullptr, nullptr);
+    return m > 0 ? std::string(u) : std::string();
+}
+} // namespace
+const char *MaterialName(int id) {
+    if (!game::g_exe || !game::Exe().materials || !game::Exe().materialCount || id < 0) return nullptr;
+    uint32_t table = 0, count = 0;
+    if (!MemRead(game::Exe().materials, &table, 4) || !MemRead(game::Exe().materialCount, &count, 4) || !table || !count || count > 256) return nullptr;
+    if (table != g_matTable || g_matNames.size() != count) {
+        g_matNames.clear();
+        for (uint32_t i = 0; i < count; i++) {
+            char name[game::kMaterialName + 1] = {};
+            MemRead(table + i * game::kMaterialSize, name, game::kMaterialName);
+            g_matNames.push_back(CzechUtf8(name));
+        }
+        g_matTable = table;
+    }
+    if (static_cast<uint32_t>(id) >= count || g_matNames[id].empty()) return nullptr;
+    return g_matNames[id].c_str();
+}
+
 bool CollideMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok) {
     if (method != "world.ray" && method != "world.sweep" && method != "world.ground" && method != "world.near" && method != "world.shapes" &&
-        method != "world.water")
+        method != "world.water" && method != "world.materials")
         return false;
     *ok = false;
     json p = json::parse(paramsJson.empty() ? "null" : paramsJson, nullptr, false);
@@ -600,7 +637,7 @@ bool CollideMethod(const std::string &method, const std::string &paramsJson, std
                 arr.push_back(j);
             }
             *reply = dump({{"count", list.size()}, {"at", Arr(at)}, {"actors", arr}});
-        } else {   // world.shapes
+        } else if (method == "world.shapes") {
             V3 lo{}, hi{};
             if (p.contains("lo") && p.contains("hi") && IsVec(p["lo"]) && IsVec(p["hi"])) {
                 lo = Vec(p["lo"]);
@@ -633,10 +670,18 @@ bool CollideMethod(const std::string &method, const std::string &paramsJson, std
                     j["classes"] = HexOf(reinterpret_cast<void *>(static_cast<uintptr_t>(s.classes)));
                 } else {
                     j["surface"] = s.flags >> 24;
+                    if (const char *name = MaterialName(static_cast<int>(s.flags >> 24))) j["material"] = name;
                 }
                 list.push_back(j);
             }
             *reply = dump({{"count", n}, {"lo", Arr(lo)}, {"hi", Arr(hi)}, {"kinds", kinds}, {"shapes", list}});
+        } else if (method == "world.materials") {
+            json list = json::array();
+            for (int id = 0; id < 256; id++)
+                if (const char *name = MaterialName(id)) list.push_back({{"id", id}, {"name", name}});
+            json out = {{"materials", list}};
+            if (list.empty()) out["why"] = game::g_exe && game::Exe().materials ? "the game has not read tables\\materials.def yet" : "this build's table is not known";
+            *reply = dump(out);
         }
         *ok = true;
     } catch (const json::exception &e) {

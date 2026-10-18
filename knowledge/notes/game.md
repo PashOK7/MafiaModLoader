@@ -726,3 +726,65 @@ autosplitter; kept outside it, not ported). Checked against the above:
 - **ours** The depth's last bits matter: a sign behind a wall of the building across the street from the
   freeride's start is hidden from the parking lot by the fixed pipeline's arithmetic and shows through the wall
   when a shader computes the position with the matrices multiplied together first.
+
+## pet1kk's developer tools (MafiaModLoader PR 2, read and checked 2026-10-18 in both builds' code; not run yet)
+
+A standalone ASI for 1.2 (its source in the PR; on this machine in `re/ext/developer_tools/`, never committed: a
+prebuilt binary and the game's own menu files patched). What it found, each checked in Ghidra in both builds before
+it was used here; what the loader makes of it: host human_invulnerable, hud_game, web_nodes, material_name;
+mods/examples/devtools; debug_views' distances, collision, web and names.
+
+- **code** `C_player::Hit` starts at 1.2 0x594210 (C_player's vtable 0x625878, slot 31 +0x7C); MafiaReverse's
+  0x594209 is 7 bytes early, in the previous function's padding (renamed: the Ghidra project and names.csv). It
+  returns 0 without calling C_human::Hit while +0xADA is set and SemTrefenaLocklaKurva refuses (the player held by a
+  scene); else C_human::Hit, then PlayerSetLives (and SetSniperMode(0) in the scope). 1.0's is st0rm94's
+  player_hit, 0x4CBC10. C_player::Collision (0x5941C0, 1.0 0x4CBBC0, slot 30) has the same gate; C_human::Collision calls the Hit slot (+0x7C) for a
+  car's blow, and a fall's landing is a hit of type 6: every harm is a Hit.
+- **code** The scripts' distance tests (C_program::Process's switch, 1.2 table 0x4799BC, 1.0 0x5C7700, the opcode
+  minus 1; the handlers read in both): GETACTORSDIST {int a, int b, int f}: flt[f] = 0, then the distance of
+  act[a]'s and act[b]'s frames; IFFLTINRANGE {float lo, float hi, int f}: lo <= flt[f] < hi; IF {int left, float
+  left_imm, int right, float right_imm, int cmp}: an index -1 takes the immediate; cmp 1 '<', 2 '>', 3 '=', 4 '!='
+  (the x87 compare's flags), its two labels at +0x14 and +0x24. game.h ScriptDistParams and the rest.
+- **code** The pedestrians' web: C_mission +0x2C C_web_path, read by C_web_path::LoadNodes (1.2 0x54A8C0, 1.0
+  0x608CF0, the same code): magic 0x1ABCEDF, the count, 0x1E-byte nodes read whole (+0x0C the kind's bits, 0x4000
+  out of searches; +0x0E the id, FindNodeID's), then each node's links (+0x1D their count) into a block at +0x18,
+  8 bytes each: the other node's index (FlipOneWay finds a link by it), flags (0x80 one way), a float. The nodes are
+  sorted by x (GetNearNode's binary search). C_roads at +0x30 (road.bin) the same in both.
+- **code** The surfaces' names: LoadMaterialsFromBin (1.2 0x60F5C0, 1.0 0x592080) reads tables\materials.def whole
+  into [0x6D4C24] (1.0 [0x6EFBA4]), the count (size / 0x170) at 0x6D4C28 (0x6EFBA8); a record's first 0x20 bytes its
+  name. The PR's own list of names (some marked "?") is not used: the game's table is.
+- **code** The actors' kinds: C_mission::CreateActor's switch (1.2 0x53F7D0, 1.0 0x5FED70, the same) makes 1 C_actor,
+  2 C_player, 4 C_car, 5 C_detector, 6 C_door, 8 C_railway, 9 C_villa (the PR's "box"), 10 C_bottle, 0xC
+  C_traffic_car, 0x12 its generator, 0x14 C_bridge, 0x15 C_dog, 0x16 C_airplane, 0x17 the seagulls, 0x18 C_turnout,
+  0x19 C_pumper, 0x1B C_entity, 0x1C C_racecam, 0x1D a bending plant, 0x1E C_wagon, 0x1F C_irenka, 0x20
+  C_public_physics, 0x21 C_actor_shot, 0x22 C_clock, 0x23 C_box_new, 0x24 C_car_ex, 0x26 C_rail_generator
+  (game.h ActorTypeName).
+- **code** The HUD: G_IndicatorsClass::DrawAll (1.2 0x5FB060, 1.0 0x54D180; thiscall(hud)) is draw2d's first call at
+  stage 2 (1.2 0x5BD8E8), and 1.0's menu scenes' callback calls it too (0x56CCAF). The jump: C_human::Do_Jump (1.2
+  0x586190, 1.0 0x4A6700; thiscall -> bool). The movement: C_human::MovementIntern (game_build.h humanMove).
+- **code** GM_Menu: 0x5EB210 is SetFocus (thiscall(menu, id); renamed), 0x5EAE10 MenuClose, 0x5EAE40 MenuCloseAll,
+  0x5EB2F0 FindComponentByID (MafiaReverse's names already). C_detector::Process 1.2 0x433D10, 1.0 0x47A840.
+- **lead** Wireframe: Insanity3D's I3D_driver keeps it as its own state (RS_WIREFRAME = 7: D3DRS_FILLMODE set by the
+  driver, its flag kept); LS3D's driver SetState (its vtable +0x14) was not found yet. The PR's other plugin sets the
+  fill mode on each draw of the device instead. ROADMAP.
+- **lead** DEBUG_TEXT: the retail game knows the keyword but compiles nothing for it (the PR's claim: its DebugText
+  hooks DecodeInstruction 1.2 0x463960 (1.0 0x5B1B60), ParseArgs 0x461C70 and the dispatch 0x46D3FE to run it).
+  Not checked here yet. ROADMAP.
+
+## A person's two spheres in the moving objects' grid (read 2026-10-18 in 1.2's code; seen in the 1.2 lab)
+
+- **code** `C_human::CreateDynColls` (1.2 0x575CA0) makes two moving objects of kind 0x42 (a sphere) for a person and
+  puts them into the dynamic grid (DynInsert): class 0x101, radius 0.3 (0x3E99999A), at his model frame's place; and,
+  when the model has a frame named `base` (the string at 0x632444; its vtable +0x38 finds it), class 0x102, radius
+  1.2 (0x3F99999A), at that frame's place. Their owner (+0x44) is the person. A car has the same pair: 0x201 its body
+  over the wheels, 0x202 its whole hull (physx_crates' notes).
+- **code** A test's moving mask is an exclusion: `g_collision::SphereInDynamics` (0x5CAFB0) tests an object only when
+  `(query mask & object classes) == 0` (its +0x48 against the object's +8). So 0x102 (G_Camera::WantPos' camera
+  sphere of 0.29, C_human::Can_EnterToCar's 0.3) leaves out every person (0x100) and every "wide" shape (0x2): it
+  meets car bodies alone; a mask of 1 leaves out the narrow shapes and meets the wide ones and car hulls; 0 meets all.
+- **code** The wide sphere is the people's broad phase for the aim: `C_player::InputOnFoot` (0x58F4B0, with
+  IndicatorSetAimed) and 0x592B70 cast a 100 m ray with mask 1 (`TestLineH`); when it meets a moving object with an
+  owner, the scene's `TestColGeo` tests that owner's own geometry along the ray, and when the model is missed the ray
+  goes on past the sphere (a loop). `C_airplane::AI_fly` (0x40AE30) sweeps a 2.7 m sphere ahead with mask 0 and looks
+  for people (types 2, 3, 27) in it. Who meets the narrow sphere (a mask without 0x100 and 0x1) was not looked for
+  yet.
