@@ -249,6 +249,21 @@ autosplitter; kept outside it, not ported). Checked against the above:
 - **game** `ENEMY_ACTION_RUNAWAY` (action type 0x0A) lasts while the person senses the one he runs from (sees,
   hears, smells: `ai_sensors`); `ENEMY_ACTION_FOLLOW` lasts.
 
+## Drives and the road network (read 2026-10-18 in both builds' code, seen in both labs; host/orders.cpp, world.cpp)
+
+- **game** `ENEMY_CAR_MOVETO act, frm[, stop|vzad|stopvzad[, natvrdo]]` (opcode 0x100E) takes only someone sitting in
+  the car (`C_entity +0x98` == act's car), then calls `C_sledovacka::AddCarMoveTo` (1.2 0x4A1220, 1.0 0x4ED0B0) on
+  the chase manager at `C_game +0x2B18` (both builds): a record of 0x44 bytes in its vector at `+0x14`/`+0x18`
+  (`[0]` the car, `[1]` a new `C_driver`, 0x29C bytes; `+0x20` its status), the car's engine started, a way planned
+  by `C_roads::FindPath` between `C_roads::GetNearNode` of the car and of the place. The command polls
+  `C_sledovacka::ActionStatus` (1.2 0x4A8670, 1.0 0x4F4470): 1 arrived, 3 given up (both end the command and drop
+  the record), 2 goes on. Seen: traffic pushed a driven car onto a bridge's low railing and it gave up, ending the
+  command as an arrival does.
+- **game** `C_roads` is `C_mission +0x30` (what `C_sledovacka +0x20` takes, both builds). `GetNearNode` (1.2
+  0x55B370, 1.0 0x619480), thiscall `(roads, x, y, z)`, ret 0xC: a binary search on x over the nodes at `+0x18`
+  (0x18 bytes, the position first), the nearest's index (0xFFFF none). Nodes are crossings and bends: the start of
+  the city's freeride is 44.7 m from its nearest (node 216, the same in both builds).
+
 ## A person's route: ai_path (read 2026-10-17 in both builds' code, seen in both labs; mods/examples/debug_views, routes)
 
 - **code** `ai_path::Tick` (1.2 0x5026C0, 1.0 0x40C970): thiscall `(ai_path*, uint, C_human *owner, bool, bool)`,

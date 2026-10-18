@@ -81,8 +81,10 @@ coordinates), `call input.text {"text": "Tommy"}` types. **In the world**: `spaw
 to}` moves one, `give {actor, item: "Thompson 1928"}` arms by name (`call world.cars`, `world.items` list the names;
 `world.seat`, `world.remove`). **Orders for people** (spawn's, the missions' NPCs: the game's AI does it): `call
 human.go {actor, to, run}`, `human.follow {actor, target}`, `human.attack`, `human.flee {actor, from}`, `human.enter
-{actor, car, seat}`, `human.stop`, any `human.order {actor, code}` of the people's `enemy_*` commands
-(docs/SCRIPTS.md "Orders"); `wait {"types": "ORDER_ENDED"}`. **Ask the world**: `call world.ray {"from": "camera"}` (what the crosshair looks at),
+{actor, car, seat}`, `human.drive {actor, car, to}` (the game's own drive by the road network), `human.stop`, any
+`human.order {actor, code}` of the people's `enemy_*` commands (docs/SCRIPTS.md "Orders"); `wait {"types":
+"ORDER_ENDED"}` tells the outcome (`arrived`, `seated`; `retries` gives an order again when it ended short);
+`world.road {at}` is the road network's nearest node. **Ask the world**: `call world.ray {"from": "camera"}` (what the crosshair looks at),
 `world.ground {"at"}`, `world.water {"at"}`, `world.near {"radius"}`, `world.shapes` (the game's own collision tests and grids).
 **The game's state**: `call state.money {"set": 500}` (the freeride's money, the HUD shows it), `human.health
 {"set"}`, `human.items`, `human.ammo {"slot", "loaded", "reserve"}`, `human.take {"item"}`, a mod's own items `items.define {"name", "label", "like"}`, `stats.state`, `profile.progress`. **People**:

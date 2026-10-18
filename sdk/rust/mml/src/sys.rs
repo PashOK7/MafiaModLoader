@@ -3140,10 +3140,17 @@ pub struct MmlHost {
             out: *mut MmlOrderState,
         ) -> ::core::ffi::c_int,
     >,
+    pub road_near: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            at: *const f32,
+            out: *mut f32,
+        ) -> ::core::ffi::c_int,
+    >,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 692usize];
+    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 696usize];
     ["Alignment of MmlHost"][::core::mem::align_of::<MmlHost>() - 4usize];
     ["Offset of field: MmlHost::size"][::core::mem::offset_of!(MmlHost, size) - 0usize];
     ["Offset of field: MmlHost::api_version"]
@@ -3441,6 +3448,7 @@ const _: () = {
         [::core::mem::offset_of!(MmlHost, human_order) - 684usize];
     ["Offset of field: MmlHost::human_order_state"]
         [::core::mem::offset_of!(MmlHost, human_order_state) - 688usize];
+    ["Offset of field: MmlHost::road_near"][::core::mem::offset_of!(MmlHost, road_near) - 692usize];
 };
 pub type MmlModLoadFn = ::core::option::Option<
     unsafe extern "C" fn(host: *const MmlHost, mod_: *mut MmlMod) -> ::core::ffi::c_int,

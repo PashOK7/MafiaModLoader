@@ -526,6 +526,14 @@ int H_HumanOrder(MmlMod *m, void *human, const char *code, void *const *acts, in
     return id;
 }
 int H_HumanOrderState(MmlMod *m, void *human, MmlOrderState *out) { return Alive(m) ? HumanOrderState(human, out) : 0; }
+int H_RoadNear(MmlMod *m, const float at[3], float out[3]) {
+    if (!Alive(m) || !at) return 0;
+    float p[3];
+    int id = RoadNear(at, p);
+    if (id < 0) return 0;
+    if (out) for (int i = 0; i < 3; i++) out[i] = p[i];
+    return id + 1;
+}
 int H_ZoneAdd(MmlMod *m, const float pos[3], float radius, void *frame, MmlZoneFn fn, void *user) {
     std::string err;
     int id = Alive(m) && fn ? ZoneAdd(m, pos, radius, frame, fn, user, &err) : 0;
@@ -1177,6 +1185,7 @@ void ModsInit() {
     g_host.vehicle_kinds = H_VehicleKinds;
     g_host.human_order = H_HumanOrder;
     g_host.human_order_state = H_HumanOrderState;
+    g_host.road_near = H_RoadNear;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();

@@ -1444,6 +1444,10 @@ typedef struct MmlHost {
     int (*human_order)(MmlMod *mod, void *human, const char *code, void *const *acts, int act_count, const float *flts, int flt_count,
                        const float *points, int point_count);
     int (*human_order_state)(MmlMod *mod, void *human, MmlOrderState *out);
+    /* ---- the road network (both builds; docs/MODDING.md "Orders for people"): the node of the game's road network
+     * nearest to `at` (C_roads::GetNearNode: what the game's drives, ENEMY_CAR_MOVETO, plan their way between), its
+     * place into out. Its index + 1; 0 none (no mission, a mission with no road network). Game thread. */
+    int (*road_near)(MmlMod *mod, const float at[3], float out[3]);
 } MmlHost;
 
 #define MML_ZONE_PLAYER 0x1u

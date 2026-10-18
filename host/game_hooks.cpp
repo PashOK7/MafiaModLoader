@@ -92,7 +92,7 @@ int __fastcall hkMissionTick(void *self, void *edx, int ms) {
     ev.dt = ms > 0 && ms < 200 ? ms / 1000.0f : 1.0f / 60.0f;
     Dispatch(ev);
     ScriptTick(ms);   // the programs of agents and mods, after the mission's own
-    OrdersTick();     // the people's orders done: ORDER_ENDED
+    OrdersTick(ms);   // the people's orders done: ORDER_ENDED (a retry's wait in the mission's time)
     InteractTick(ms);   // the timers on the mission's clock
     return r;
 }

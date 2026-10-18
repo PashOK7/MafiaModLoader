@@ -115,6 +115,17 @@ class Game:
                 return None
             raise
 
+    def order_end(self, order, since, timeout=60.0):
+        """The ORDER_ENDED of an order (a human.* reply) after `since`: its data, with the named orders' outcome
+        (`arrived`, `distance`, `seated`, `retried`), or None when it did not end in time."""
+        ev = self.wait('ORDER_ENDED', {'id': order['id']}, since=since, timeout=timeout)
+        return ev['data'] if ev else None
+
+    def road(self, at):
+        """The game's road network's node nearest to a place or an actor: its position (None: no road network)."""
+        r = self.call('world.road', at=at)
+        return r.get('pos') if r.get('node') is not None else None
+
     def sleep(self, ms):
         """The game's own time: an input sequence of nothing, so a paused game does not count."""
         self.tool('input', steps=[{'wait_ms': int(ms)}])

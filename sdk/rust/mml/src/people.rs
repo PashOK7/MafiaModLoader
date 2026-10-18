@@ -81,6 +81,13 @@ impl Host {
         let mut s = OrderState { size: core::mem::size_of::<OrderState>() as u32, ..Default::default() };
         if unsafe { f!(self, human_order_state)(self.module, human.as_ptr(), &mut s) } != 0 { Some(s) } else { None }
     }
+    /// The game's road network: the node nearest to `at` (what its drives, `enemy_car_moveto`, run between): its
+    /// index and place; None: no mission, or a mission with no road network
+    pub fn road_near(&self, at: [f32; 3]) -> Option<(i32, [f32; 3])> {
+        let mut out = [0.0f32; 3];
+        let id = unsafe { f!(self, road_near)(self.module, at.as_ptr(), out.as_mut_ptr()) };
+        if id > 0 { Some((id - 1, out)) } else { None }
+    }
 
     /// A person's bones (sys::MML_BONE_COUNT, in MML_BONE_* order); None: not a person known, or no skeleton
     pub fn human_skeleton(&self, human: Actor) -> Option<Vec<Bone>> {

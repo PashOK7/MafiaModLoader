@@ -168,10 +168,14 @@ decoder reads them (`C_entity::DecodeParams`); the ones the named orders use, se
 | `enemy_action_runaway` | `act`, `distance`[, `return`] | runs from the actor while he sees, hears or smells him; lasts |
 | `enemy_move_to_car` | `act` (a car), `seat`[, `run`] | walks to the seat's door; done there |
 | `enemy_usecar` | `act` (a car), `seat` | gets into that seat (free, the car still, within 3 m); with no arguments, out of his car |
+| `enemy_car_moveto` | `act` (the car he sits in), `frm`[, `stop` \| `vzad` \| `stopvzad`[, `natvrdo`]] | drives it there by the road network (`C_sledovacka::AddCarMoveTo`: a `C_driver` and a way planned between the road nodes nearest the car and the frame, `C_roads::FindPath`); `stop`: stops there; `vzad` backwards; `natvrdo` a flag not read here. Done when the drive ends, arrived or given up (status 1, or 3: the car stuck): the same to the script |
 | `enemy_stop` | | the command and his animation stopped |
 
 `at` gives the frames: `at: [[x, y, z], ...]` makes `frm[0]`, `frm[1]`... dummy frames of the loader's there (freed
-with the order). Each command that queues an action of the AI (a move, a follow, a fire: 16 of them) waits until
+with the order). `human.drive` is the two commands of `human.enter` (the driver's seat) and `enemy_car_moveto ..., stop`,
+its outcome measured by the loader (the game ends a drive it gave up as one that arrived); `world.road {at}` is the
+road node a drive's way would end at (`C_roads::GetNearNode`): the network's nodes are its crossings and bends, tens
+of metres apart. Each command that queues an action of the AI (a move, a follow, a fire: 16 of them) waits until
 the AI has done it; the others take one step.
 
 ```

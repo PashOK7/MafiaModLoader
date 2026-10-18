@@ -444,6 +444,12 @@ struct ExeBuild {
     // scriptTick; the AI state +0xF40 is 0 again and its actions cleared. The script's own commands (ENEMY_*, its
     // vtable's DecodeInstruction) are compiled into that program.
     uintptr_t entityForceScript;
+    // The road network (host/world.cpp world.road, road_near; game.h kMissionRoads): roadsNearNode,
+    // C_roads::GetNearNode, thiscall(C_roads*, float x, float y, float z) -> unsigned short, ret 0xC: the road node
+    // nearest to a point (0xFFFF none), an index into the C_roads +0x18 vector (0x18-byte nodes sorted by x, the
+    // position first; the search is a binary one on x), what C_sledovacka::AddCarMoveTo (ENEMY_CAR_MOVETO) plans a
+    // drive between.
+    uintptr_t roadsNearNode;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -628,6 +634,8 @@ inline const ExeBuild kExe12 = {
     0x40BC10, 0x40BEC0,
     // orders (2026-10-18: C_entity::ForceScript, MafiaReverse's name; ENEMY_FORCESCRIPT's handler 0x470590 calls it)
     0x523F80,
+    // the roads (2026-10-18: C_roads::GetNearNode, MafiaReverse's name; AddCarMoveTo 0x4A1220 calls it twice)
+    0x55B370,
 };
 
 inline const ExeBuild kExe10 = {
@@ -746,6 +754,8 @@ inline const ExeBuild kExe10 = {
     0x4516E0, 0x451990,
     // orders (2026-10-18: st0rm94's entity_force_script, 1.2's twin by its callers, the same 229 bytes' code)
     0x42E8A0,
+    // the roads (2026-10-18: 1.2's twin, paired exactly; AddCarMoveTo 0x4ED0B0 calls it twice)
+    0x619480,
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,

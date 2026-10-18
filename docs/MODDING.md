@@ -1238,6 +1238,16 @@ if (H->human_order_state(M, paulie, &s) && !s.running) { /* done; the bridge als
 - What lasts and what ends: `go` (`enemy_move_to_frame`) ends at the place (its number is the radius); `enter` ends
   when he sits; `follow`, `flee` and `attack` last until another order (or until the game's own action ends:
   the target dead, out of sight). `stop` ends at once.
+- Driving: `enemy_car_moveto 0, 0, stop` (act[0] the car he sits in, frm[0] the place) is the game's own drive by the
+  road network, its traffic lights and bridges; `human.drive {actor, car, to}` on the bridge gets him in first. The
+  game ends a drive it gives up (the car stuck, pushed off its way) the same as one that arrived, so the bridge's
+  named orders measure their goal at the end: ORDER_ENDED says `arrived` and `distance` (go, drive), `seated`
+  (enter), and with `retries` an order that ended short of its goal is given again after `retry_ms` (a drive goes on
+  from where the car is; `retried` counts them). A mod measures its own: `human_order_state` tells the end,
+  `actor_*` the place.
+- The road network: `road_near(M, at, out)` (`world.road {at}`) is the node nearest to a place, where a drive's way
+  ends (`C_roads::GetNearNode`); the nodes are the crossings and bends, tens of metres apart. A drive's place need
+  not be on a road.
 - The bridge has the same: `human.order {actor, code, act, flt, at}` and the named ones, `human.go`, `human.follow`,
   `human.attack`, `human.flee`, `human.enter`, `human.stop`, `human.order_state` (docs/PROTOCOL.md); MCP `wait
   {"types": "ORDER_ENDED"}`. Seen in both labs: tests/game/test_orders.py does each of them.

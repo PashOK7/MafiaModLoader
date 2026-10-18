@@ -1040,6 +1040,20 @@ def main(a):
     if len(shapes) == 2:
         check(shapes[0] == shapes[1], 'entityForceScript: the same first instructions in both builds')
 
+    # roadsNearNode is C_roads::GetNearNode: the nodes' vector at +0x18 / +0x1C, divided by 0x18 (0x2aaaaaab, sar 2),
+    # ret 0xC; the same first instructions in both builds.
+    shapes = []
+    for name, (exe, ls, gexe, gls) in builds.items():
+        if not exe.get('roadsNearNode'):
+            continue
+        body = list(gexe.md.disasm(gexe.at(exe['roadsNearNode'] - 0x400000, 0x210), exe['roadsNearNode']))
+        text = ' | '.join('%s %s' % (i.mnemonic, i.op_str) for i in body)
+        check('[ecx + 0x18]' in text and '[ecx + 0x1c]' in text and '0x2aaaaaab' in text,
+              f'{name} roadsNearNode: the nodes at +0x18 / +0x1C, 0x18 bytes each')
+        check(any(i.mnemonic == 'ret' and i.op_str == '0xc' for i in body), f'{name} roadsNearNode: ret 0xC')
+        shapes.append([norm(gexe.insn(i.address - 0x400000)) for i in body[:12]])
+    if len(shapes) == 2:
+        check(shapes[0] == shapes[1], 'roadsNearNode: the same first instructions in both builds')
     print('ALL PASSED' if not fails else f'{fails} FAILED')
     return 1 if fails else 0
 

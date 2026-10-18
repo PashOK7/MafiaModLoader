@@ -2114,3 +2114,20 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **What the game has not drawn lately sleeps** (C_game::Tick's code: `+0x5F` and the frame's stamp `+0x13C`
   against the scene's, looked at every 5 s; first misread here as the player's sector): the river's cases take the
   player there first. (The floating Paulie above read state 0: he did not fall because he stood.)
+
+## 2026-10-18: driving orders, their outcome, the road network
+
+- **What was missing** for scenes with driven cars: no named drive (only `human.order` with a command not yet
+  read), no way to tell an order that reached its goal from one the game gave up (both end the command alike), no
+  road point to send a car to (a destination was picked by hand), no retry.
+- **Read in both builds** (Ghidra; the same offsets): ENEMY_CAR_MOVETO hands the car to the chase manager
+  (`C_sledovacka` at C_game +0x2B18): a record a car, a new C_driver, a way planned by C_roads::FindPath between
+  `GetNearNode` of the car and of the place; the command ends on status 1 (arrived) or 3 (given up) alike and the
+  record is dropped then. C_roads is C_mission +0x30; its nodes (crossings and bends, tens of metres apart) are what
+  `GetNearNode` searches.
+- **Made**: `human.drive` (in as the driver unless seated, then the drive), the named orders' outcome in ORDER_ENDED
+  and `human.order_state` (`arrived`/`distance`, `seated`), `retries`/`retry_ms` (a short order given again in the
+  mission's time, a drive from where the car is), `world.road` and mods' `road_near` (C, Rust).
+- **Found on the way** (the checks in both labs): iterating `Outcome(o).items()` of a temporary dangled (a json
+  exception); a retry compiled its lines after the first's (ScriptCompileInto appends), so its end was looked for
+  past the program and it never ended: cleared first.

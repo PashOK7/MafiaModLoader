@@ -676,7 +676,11 @@ What is done, what comes next and later, and what is known to be missing or wron
   person lacked: the program's hand-back level (+0x60, as `C_program::Init` sets it for a program with
   instructions), and an order that never reaches END (END takes its person out of the game's ticks for good: the
   loader's own wait ends it, the code's `end` jumps there). Seen in both labs by `tests/game/test_orders.py` (19
-  checks a build, two runs in a row).
+  checks a build, two runs in a row). Then (2026-10-18) driving: `human.drive {actor, car, to}` (in as the driver,
+  then the game's `enemy_car_moveto` by the road network), the named orders' outcome in ORDER_ENDED (`arrived`,
+  `distance`, `seated`: the game ends a drive it gave up as one that arrived) and their `retries`; the road
+  network's nearest node, `world.road` and mods' `road_near` (C, Rust). Seen in both labs: a drive of 290 m
+  arrived 3.9 m from its road end, a drive asked to within 1 m ended short, was given again once and told so.
 - **Tests in the real game** (2026-10-18; item 23): `tests/game/` (`mml_game.py` a lab's game over its own MCP
   server, `run.py` the labs at once, a fresh launch into a quiet freeride of each kind a module asks, a restore
   point before each case). The cases: the orders; a car driven into a person (HUMAN_HIT, the car's hit type); a
@@ -934,10 +938,12 @@ merged, sorted by importance):
   missions' NPCs); the traffic's pedestrians are another class, not ordered. A mission's NPC whose own script has
   ended is refused (the game ticks him no more: act state 2, out of C_game's lists; putting him back would make him
   one of the temporary actors, which the game deletes as its own). An order replaces his program: a mission NPC's own
-  script is gone for the rest of the mission (it is not saved and put back). Driving to a place (`enemy_car_moveto`,
-  `enemy_car_hunt`) is not one of the named orders and was not tried; neither are the scripts' events to a program
-  of the loader's (`setplayerfireevent`...) nor a list of the people's models (`spawn` takes a model file's name).
-  `attack` is the game's own aim: in the labs the first hit came 5 to 30 s after the first shot.
+  script is gone for the rest of the mission (it is not saved and put back). A drive's outcome is measured by the
+  place (the car within `radius` of the place or of the road's end), not read from the game's chase record (it is
+  gone when the command ends); `enemy_car_moveto`'s `natvrdo` and a drive by someone not at the wheel were not
+  tried, nor `enemy_car_hunt`; neither are the scripts' events to a program of the loader's (`setplayerfireevent`...)
+  nor a list of the people's models (`spawn` takes a model file's name). `attack` is the game's own aim: in the labs
+  the first hit came 5 to 30 s after the first shot.
 
 - **A game folder no ANSI code page spells** (a Cyrillic name on a 1252 system, a CJK one on a 1251 system): the
   game, the loader and the mods' own files work there (both labs, 2026-10-17), but **dxwrapper does not**: its

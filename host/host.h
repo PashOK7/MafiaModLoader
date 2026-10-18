@@ -295,7 +295,7 @@ void ScriptWhere(uintptr_t prog, unsigned *pc, unsigned *count, bool *atEnd);
 int HumanOrder(MmlMod *mod, void *human, const char *code, void *const *acts, int nacts, const float *flts, int nflts,
                const float *points, int npoints, std::string *err);   // its id, 0: refused (err)
 int HumanOrderState(void *human, MmlOrderState *out);                 // 1: an order of the loader's is known for him
-void OrdersTick();                        // (game_hooks.cpp) after the mission's tick: ORDER_ENDED for those done
+void OrdersTick(int ms);                        // (game_hooks.cpp) after the mission's tick: ORDER_ENDED for those done
 void OrdersActorGone(void *actor);        // ... an actor's destructor
 void OrdersMissionClose();
 bool OrdersMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
@@ -316,6 +316,7 @@ int WorldItemId(const char *name, std::string *err);      // -1: none (err tells
 std::string WorldItemName(int id);                         // "" for none
 bool WorldGive(void *human, int item, int loaded, int reserve, std::string *err);   // loaded/reserve < 0: the item's own
 bool WorldSeat(void *human, void *car, int seat, std::string *err);                 // human_force_settocar
+int RoadNear(const float at[3], float out[3]);   // the road network's node nearest (its index, out its place); -1 none
 void WorldActorGone(void *actor);         // (game_hooks.cpp) out of the spawned list
 void WorldMissionClose();
 bool WorldMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);

@@ -64,6 +64,9 @@ constexpr int kHumanFallSpeed = 0x418, kHumanStateAir = 3;
 
 // C_mission / C_game
 constexpr int kMissionGame = 0x24;
+// The road network (both builds): C_roads at C_mission +0x30 (what C_sledovacka +0x20 takes); its nodes a vector
+// at +0x18 (begin) / +0x1C (end) of 0x18-byte nodes, the position (x, y, z) first; Exe().roadsNearNode finds one.
+constexpr int kMissionRoads = 0x30, kRoadsNodes = 0x18, kRoadsNodesEnd = 0x1C, kRoadNodeSize = 0x18;
 constexpr int kMissionScene = 0x10;   // I3D_scene* the game renders each frame (found with `rstat`)
 constexpr int kGamePlayer  = 0xE4;
 constexpr int kGameScore = 0x3640, kGameScoreShown = 0x363E;   // the freeride's money (int), and whether the HUD shows it

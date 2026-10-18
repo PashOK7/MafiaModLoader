@@ -379,6 +379,23 @@ void WorldMissionClose() {
     g_removing.clear();
 }
 
+// The road network's node nearest to a point: the game's own C_roads::GetNearNode, what ENEMY_CAR_MOVETO plans its
+// drive between (C_sledovacka::AddCarMoveTo: the car's node and the goal's). Its index, its position in out; -1: no
+// mission, no road network, no node.
+int RoadNear(const float at[3], float out[3]) {
+    if (!game::g_exe || !game::Exe().roadsNearNode || !game::Mission()) return -1;
+    uintptr_t roads = R32(reinterpret_cast<uintptr_t>(game::Mission()) + game::kMissionRoads);
+    if (!roads) return -1;
+    using NearFn = unsigned(__fastcall *)(uintptr_t roads, void *edx, float x, float y, float z);
+    unsigned node = 0xFFFF;
+    auto ask = [&] { node = reinterpret_cast<NearFn>(game::Exe().roadsNearNode)(roads, nullptr, at[0], at[1], at[2]) & 0xFFFF; };
+    if (Guarded(ask) || node == 0xFFFF) return -1;
+    uint32_t b = R32(roads + game::kRoadsNodes), e = R32(roads + game::kRoadsNodesEnd);
+    if (!b || e <= b || node >= (e - b) / game::kRoadNodeSize) return -1;
+    if (out && !MemRead(b + node * game::kRoadNodeSize, out, 12)) return -1;
+    return static_cast<int>(node);
+}
+
 namespace {
 V3 Vec(const json &v) { return V3{v.at(0).get<float>(), v.at(1).get<float>(), v.at(2).get<float>()}; }
 json Arr(const V3 &v) { return json::array({std::round(v.x * 1000) / 1000, std::round(v.y * 1000) / 1000, std::round(v.z * 1000) / 1000}); }
@@ -539,6 +556,24 @@ bool WorldMethod(const std::string &method, const std::string &paramsJson, std::
                     list.push_back(j);
                 }
             *reply = dump({{"count", list.size()}, {"items", list}});
+        } else if (method == "world.road") {
+            // {at: [x, y, z] | an actor (default "player")}
+            V3 pos, fwd;
+            bool fromActor = false;
+            if (!Place(p, "at", 0.0f, &pos, &fwd, &fromActor, &err)) { *reply = err; return true; }
+            float at[3] = {pos.x, pos.y, pos.z}, node[3] = {};
+            int id = RoadNear(at, node);
+            json j = {{"at", Arr(pos)}};
+            if (id < 0) {
+                j["node"] = nullptr;
+                j["why"] = game::Mission() ? "no road node (this mission has no road network)" : "no mission";
+            } else {
+                V3 n{node[0], node[1], node[2]};
+                j["node"] = id;
+                j["pos"] = Arr(n);
+                j["distance"] = std::round(Len(n - pos) * 100) / 100;
+            }
+            *reply = dump(j);
         } else if (method == "world.spawned") {
             json list = json::array();
             for (const Spawned &s : g_spawned) {
@@ -549,7 +584,7 @@ bool WorldMethod(const std::string &method, const std::string &paramsJson, std::
             }
             *reply = dump({{"known", SpawnKnown()}, {"spawned", list}});
         } else {
-            *reply = "unknown method '" + method + "': world.spawn, world.remove, world.teleport, world.seat, world.give, world.cars, world.items, world.spawned";
+            *reply = "unknown method '" + method + "': world.spawn, world.remove, world.teleport, world.seat, world.give, world.cars, world.items, world.road, world.spawned";
             return true;
         }
         *ok = true;

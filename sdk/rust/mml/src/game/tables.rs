@@ -248,6 +248,7 @@ pub struct Exe {
     pub planeAI: usize,
     pub planeUpdate: usize,
     pub entityForceScript: usize,
+    pub roadsNearNode: usize,
 }
 
 /// LS3DF.dll's, as RVAs (add the module's base; the int members are offsets): game_build.h Ls3dBuild.
@@ -558,6 +559,7 @@ pub static EXE_12: Exe = Exe {
     planeAI: 0x40BC10,
     planeUpdate: 0x40BEC0,
     entityForceScript: 0x523F80,
+    roadsNearNode: 0x55B370,
 };
 
 pub static EXE_10: Exe = Exe {
@@ -803,6 +805,7 @@ pub static EXE_10: Exe = Exe {
     planeAI: 0x4516E0,
     planeUpdate: 0x451990,
     entityForceScript: 0x42E8A0,
+    roadsNearNode: 0x619480,
 };
 
 pub static LS3D_12: Ls3d = Ls3d {
@@ -1007,6 +1010,10 @@ pub const kHumanInventory: i32 = 0x480;
 pub const kHumanFallSpeed: i32 = 0x418;
 pub const kHumanStateAir: i32 = 3;
 pub const kMissionGame: i32 = 0x24;
+pub const kMissionRoads: i32 = 0x30;
+pub const kRoadsNodes: i32 = 0x18;
+pub const kRoadsNodesEnd: i32 = 0x1C;
+pub const kRoadNodeSize: i32 = 0x18;
 pub const kMissionScene: i32 = 0x10;
 pub const kGamePlayer: i32 = 0xE4;
 pub const kGameScore: i32 = 0x3640;
