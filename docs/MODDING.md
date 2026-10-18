@@ -1657,7 +1657,10 @@ smallest half alone, `mods/examples/side_picture` a mod in two halves that hands
   fire as gas on a sparse voxel grid, ray-marched with self-shadowing) runs only on 64 bits and draws through Vulkan.
   `mml_flow(<id>)` in `CMakeLists.txt` gives a half its headers, CUDA's driver API and `nvflow.dll`, `nvflowext.dll`
   beside it (Flow itself is built by its own premake through `third_party/flow/premake5.lua`, `tools/deps.py flow`).
-  The frame: at `FRAME` the 32-bit half writes the sources, and the world the gas meets as the game draws it: the
+  The frame: at `FRAME` the 32-bit half writes the sources and the people's spheres and the cars' boxes near them
+  (the game's own collision shapes, `world_shapes`: Flow emitters that carry the gas at their velocity; the ground a
+  box). With `flow_smoke.collision {"mode": "meshes"}` (off: the owner found it still strange) it writes instead the
+  world the gas meets as the game draws it: the
   scenery around the sources (`scene_focus`, `scene_pieces`: one soup of triangles, written again only when the scan's
   pieces or their versions change), each car's own meshes posed now (`actor_meshes`, each vertex with the body's
   velocity, v + turn x r) and each person as capsules along his bones (`human_skeleton`: the host has no skinned
