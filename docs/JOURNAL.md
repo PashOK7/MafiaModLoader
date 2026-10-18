@@ -2285,3 +2285,9 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   capsules were wound inside out and are turned. A 3 m depth for cars first made Flow's nearest-face search 10 ms of
   GPU (181 frames late): 0.6 m costs 0.28 ms. The scenery was written again 57 times in a minute (its signature hung
   on the scan's order): once now. Seen: the fire at the taxi's nose rises round the bonnet and the wing.
+- **Then** (the owner: "bring the collision by boxes and spheres back, something is still wrong"): the game's shapes
+  are the default again (a person's sphere, a car's hull box, the ground's box); the meshes' collision stays, off,
+  behind `flow_smoke.collision {"mode": "meshes"}` (with `winding` and `tune`'s `car_inside`, `scene_inside`,
+  `wall_out`), for a later look at what is wrong with it. F5 (the fire where the crosshair looks) seen used by the
+  owner. A reload that changed the frame record's size failed once: the new 32-bit half opened "frame" at the new size
+  while the old 64-bit half still held it at the old one (refused); the next `mod.reload` loaded (ROADMAP Known gaps).

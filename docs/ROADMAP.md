@@ -1007,6 +1007,12 @@ merged, sorted by importance):
     transmittance into alpha (its `RayMarchBlockCS`), a ray march at half size over black and a depth-aware upsample
     in the composite would take it to about a quarter and drop the colour's copy in.
   - People are capsules along their bones (the host gives no skinned meshes): their clothes' shapes are not there.
+  - The meshes' collision (`flow_smoke.collision {"mode": "meshes"}`) is off by default: the owner found it still
+    behaving strangely after the bodies were made solid behind their faces; what is wrong was not found yet.
+- **A two-halves mod whose channel changes size cannot be reloaded in one go** (seen 2026-10-18): `mod.reload` loads
+  the new 32-bit half, whose `channel_open` asks the new size, while the old 64-bit half still holds the channel at
+  the old one: refused, the load fails; a second `mod.reload` works (the old half is gone by then). The host should
+  unload both halves (and drop their channels) before it loads either.
 - **An actor made over the open river sleeps** (seen 2026-10-18, 1.2): a car spawned there is drawn but its model
   frame's stamp (`+0x13C`, what C_game::Tick wakes a sleeping actor by) stays -1, so it floats where it was made
   instead of falling in; a person put in the air there stands (a standing NPC does not fall). A ragdoll or a water

@@ -403,7 +403,7 @@ void BuildParams(const fsm::Frame &f, bool clear) {
         s.luid = 1 + layer;
         s.layer = layer;
         s.densityCellSize = layer ? t.fireCell : t.cellSize;
-        s.physicsCollisionEnabled = NV_FLOW_TRUE;   // (the meshes' obstacles: every layer)
+        s.physicsCollisionEnabled = f.meshes ? NV_FLOW_TRUE : NV_FLOW_FALSE;   // (the meshes' obstacles: every layer)
         s.stepsPerSecond = 60;
         s.maxStepsPerSimulate = 4;
         s.enableVariableTimeStep = NV_FLOW_FALSE;
@@ -477,11 +477,54 @@ void BuildParams(const fsm::Frame &f, bool clear) {
         }
         P.spheres.push_back(e);
     }
-    // the meshes the game draws: the scenery holds the gas off, each car and person carries it at its vertices' speed
+    // the game's shapes (the default): a person's sphere (in each layer) and a car's box (in every layer) carry the
+    // gas at their velocity
+    for (uint32_t i = 0; i < std::min(f.shapes, fsm::kMaxShapes); i++) {
+        const fsm::Shape &m = f.shape[i];
+        if (m.kind == fsm::kSphere) {
+            for (int layer = 0; layer < 2; layer++) {
+                NvFlowGridEmitterSphereParams e = NvFlowEmitterSphereParams_default;
+                e.luid = 2000 + i * 2 + layer;
+                e.layer = layer;
+                e.position = NvFlowFloat3{m.center[0], m.center[1], m.center[2]};
+                e.radius = m.half[0];
+                e.velocityIsWorldSpace = NV_FLOW_TRUE;
+                e.velocity = NvFlowFloat3{m.velocity[0], m.velocity[1], m.velocity[2]};
+                e.temperature = e.fuel = e.smoke = 0;
+                e.coupleRateVelocity = 20;
+                e.coupleRateTemperature = e.coupleRateFuel = e.coupleRateBurn = e.coupleRateSmoke = 0;
+                e.allocationScale = 0;   // (it pushes gas that is there; it makes no blocks of its own)
+                P.spheres.push_back(e);
+            }
+        } else {
+            NvFlowGridEmitterBoxParams e = NvFlowEmitterBoxParams_default;
+            e.luid = 3000 + i;
+            e.allLayers = NV_FLOW_TRUE;
+            NvFlowFloat4x4 w = Identity();
+            w.x = NvFlowFloat4{m.axes[0], m.axes[1], m.axes[2], 0};
+            w.y = NvFlowFloat4{m.axes[3], m.axes[4], m.axes[5], 0};
+            w.z = NvFlowFloat4{m.axes[6], m.axes[7], m.axes[8], 0};
+            w.w = NvFlowFloat4{m.center[0], m.center[1], m.center[2], 1};
+            e.localToWorld = w;
+            e.velocityIsWorldSpace = NV_FLOW_TRUE;
+            e.position = NvFlowFloat3{0, 0, 0};
+            e.halfSize = NvFlowFloat3{m.half[0], m.half[1], m.half[2]};
+            e.velocity = NvFlowFloat3{m.velocity[0], m.velocity[1], m.velocity[2]};
+            e.temperature = e.fuel = e.smoke = 0;
+            e.coupleRateVelocity = 20;
+            e.coupleRateTemperature = e.coupleRateFuel = e.coupleRateBurn = e.coupleRateSmoke = 0;
+            e.allocationScale = 0;
+            P.boxes.push_back(e);
+        }
+    }
+    // the meshes the game draws (flow_smoke.collision "meshes"): the scenery holds the gas off, each car and person
+    // carries it at its vertices' speed
     P.meshes.clear();
-    if (g_scene.Triangles()) P.meshes.push_back(Obstacle(4001, g_scene, t.sceneInside, t));
-    for (MeshData &m : g_movers)
-        if (m.Triangles()) P.meshes.push_back(Obstacle(5000 + (m.id & 0xFFFFFF), m, t.carInside, t));
+    if (f.meshes) {
+        if (g_scene.Triangles()) P.meshes.push_back(Obstacle(4001, g_scene, t.sceneInside, t));
+        for (MeshData &m : g_movers)
+            if (m.Triangles()) P.meshes.push_back(Obstacle(5000 + (m.id & 0xFFFFFF), m, t.carInside, t));
+    }
     // the ground: below it the gas is held still and taken away (it spreads along it)
     if (f.sources) {
         float cx = 0, cz = 0;

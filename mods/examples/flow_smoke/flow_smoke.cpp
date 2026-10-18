@@ -383,6 +383,42 @@ void Movers(const float lo[3], const float hi[3], float dt) {
     H->channel_write(g_moverCh, g_moverBuf.data(), uint32_t(sizeof rec + 24 * size_t(rec.vertices) + 12 * size_t(rec.triangles)));
 }
 
+// The collision by the game's own shapes (the default): each person's sphere (a body's, 0.45 m about his waist), each
+// car's whole hull (its box), with their velocities from their last places; the ground is the half's.
+bool g_meshCollision;   // flow_smoke.collision {"mode": "meshes"}: the drawn meshes' instead (Scenery, Movers)
+struct Last {
+    float c[3];
+    uint64_t frame;
+};
+std::map<const void *, Last> g_last;   // a shape's last centre (its velocity), by its primitive
+
+void Shapes(const float lo[3], const float hi[3], float dt) {
+    fsm::Frame &f = g_rec;
+    float rlo[3] = {lo[0] - 30, float(g_ground + g_origin[1]) - 3, lo[2] - 30}, rhi[3] = {hi[0] + 30, hi[1] + 25, hi[2] + 30};
+    int n = std::min(H->world_shapes(M, rlo, rhi, MML_WORLD_MOVING, g_shapes.data(), int(g_shapes.size())), int(g_shapes.size()));
+    for (int i = 0; i < n && f.shapes < fsm::kMaxShapes; i++) {
+        const MmlShape &sh = g_shapes[i];
+        bool person = sh.classes & 0x100, car = sh.classes & 0x200;
+        // (a person's narrow sphere about his waist, a car's whole hull: physx_crates found these the ones)
+        if (!(person && sh.kind == MML_SHAPE_SPHERE && (sh.classes & 0x1)) && !(car && sh.kind == MML_SHAPE_BOX && (sh.classes & 0x2)))
+            continue;
+        fsm::Shape &m = f.shape[f.shapes++];
+        m = fsm::Shape{};
+        m.kind = car ? fsm::kBox : fsm::kSphere;
+        for (int k = 0; k < 3; k++) m.center[k] = float(sh.center[k] - g_origin[k]);
+        memcpy(m.half, sh.half, sizeof m.half);
+        memcpy(m.axes, sh.axes, sizeof m.axes);
+        if (person) m.half[0] = 0.45f;   // (his body, not the narrow sphere: what pushes the air)
+        Last &last = g_last[sh.prim];
+        if (last.frame + 1 == g_frame && dt > 0)
+            for (int k = 0; k < 3; k++) m.velocity[k] = (sh.center[k] - last.c[k]) / dt;
+        memcpy(last.c, sh.center, sizeof last.c);
+        last.frame = g_frame;
+    }
+    if (g_last.size() > 512)
+        for (auto it = g_last.begin(); it != g_last.end();) it = it->second.frame + 2 < g_frame ? g_last.erase(it) : std::next(it);
+}
+
 void OnFrame(float dt) {
     g_frame++;
     bool run = H->mission_state() == MML_MISSION_RUNNING;
@@ -426,8 +462,11 @@ void OnFrame(float dt) {
             lo[i] = std::min(lo[i], float(s.at[i])), hi[i] = std::max(hi[i], float(s.at[i]));
         }
     }
-    H->channel_write(g_frameCh, &f, uint32_t(offsetof(fsm::Frame, source) + f.sources * sizeof(fsm::Source)));
-    if (f.sources && run) {
+    f.meshes = g_meshCollision;
+    f.shapes = 0;
+    if (f.sources && !g_meshCollision) Shapes(lo, hi, dt);
+    H->channel_write(g_frameCh, &f, uint32_t(offsetof(fsm::Frame, shape) + f.shapes * sizeof(fsm::Shape)));
+    if (f.sources && run && g_meshCollision) {
         int64_t t0 = Qpc();
         Scenery(lo, hi);
         Movers(lo, hi, dt);
@@ -575,6 +614,7 @@ void OnEvent(const MmlEvent *ev, void *) {
         g_clear++;
         g_haveOrigin = false;
         g_bonesLast.clear();
+        g_last.clear();
         g_haveFocus = false;
         g_sceneSig = 0;
         break;
@@ -648,6 +688,7 @@ int CmdState(const char *, MmlReply *r, void *) {
               {"prepare_ms", {{"mean", S.prepSum * kp}, {"max", S.prepMax}}},
               {"blocks", g_done.blocks}, {"steps", g_done.steps}, {"simulate_ms", g_done.simulateMs}, {"render_ms", g_done.renderMs},
               {"gpu_ms", g_done.gpuMs}, {"sources", sources},
+              {"collision", g_meshCollision ? "meshes" : "shapes"}, {"shapes", g_rec.shapes},
               {"movers", {{"count", g_moverRec.count}, {"vertices", g_moverRec.vertices}, {"triangles", g_moverRec.triangles}}},
               {"scenery", {{"serial", g_sceneSerial}, {"vertices", g_sceneVertices}, {"triangles", g_sceneTriangles}, {"in_flow", g_done.sceneTriangles}}},
               {"meshes_ms", {{"mean", S.meshFrames ? S.meshSum / S.meshFrames : 0.0}, {"max", S.meshMax}}},
@@ -699,6 +740,20 @@ int CmdWinding(const char *, MmlReply *r, void *) {
     Reply(r, {{"ground_faces", {{"up", up}, {"down", down}}}, {"car_faces", {{"out", out}, {"in", in}}},
               {"note", "Flow takes what is behind (v2 - v1) x (v3 - v1) as inside: the ground's faces up and the car's out mean "
                        "the winding as Flow wants it (flip 0)"}});
+    return 0;
+}
+
+int CmdCollision(const char *args, MmlReply *r, void *) {
+    json a = Args(args);
+    std::string mode = a.value("mode", std::string());
+    if (mode == "shapes" || mode == "meshes") {
+        g_meshCollision = mode == "meshes";
+        g_sceneSig = 0;   // (the scenery written again when the meshes are back)
+    } else if (!mode.empty()) {
+        H->reply_error(r, "mode: shapes or meshes");
+        return 1;
+    }
+    Reply(r, {{"mode", g_meshCollision ? "meshes" : "shapes"}});
     return 0;
 }
 
@@ -820,6 +875,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     H->command(mod, "wind", "{velocity: [x, y, z]} -> the air's own motion, m/s", CmdWind, nullptr);
     H->command(mod, "wait", "{ms} -> how long the pass waits for this frame's picture (at most 100)", CmdWait, nullptr);
     H->command(mod, "state", "{} -> frames drawn, late, the round trip, Flow's blocks and times, the sources", CmdState, nullptr);
+    H->command(mod, "collision", "{mode: shapes | meshes} -> what the gas meets: the game's shapes (a person's sphere, a car's box; the default) or the drawn meshes", CmdCollision, nullptr);
     H->command(mod, "winding", "{} -> which way the game's faces point by Flow's normal: the ground's up or down, a car's out or in", CmdWinding, nullptr);
     H->command(mod, "reset", "{} -> the measures started again", CmdReset, nullptr);
     H->hotkey(mod, "F5", KeyMove, nullptr);

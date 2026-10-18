@@ -39,6 +39,19 @@ struct Source {
     float strength;         // 0..: how much it gives (1: the default)
 };
 
+// The collision by the game's own shapes (the default; `flow_smoke.collision`): a person's sphere, a car's box,
+// moving through the gas: it carries the gas with it at its velocity.
+const uint32_t kMaxShapes = 48;
+enum : uint32_t { kSphere = 1, kBox = 2 };                // Shape::kind
+struct Shape {
+    uint32_t kind;          // kSphere, kBox
+    uint32_t pad;
+    float center[3];        // about the origin
+    float half[3];          // a sphere: half[0] its radius
+    float axes[9];          // a box's axes (rows)
+    float velocity[3];      // m/s
+};
+
 struct Frame {
     uint64_t frame;
     double time;            // seconds since the 32-bit half's load (the simulation's clock)
@@ -51,8 +64,10 @@ struct Frame {
     float wind[3];          // m/s, the air's own motion
     float toSun[3];         // towards the sun (unit): Flow's self-shadowing lights the gas from there
     float light[3];         // the scene's light on the gas (its sun and ambient, linear): smoke is as bright as it
-    float pad[2];
+    uint32_t shapes;        // the game's shapes (shapes' collision; 0 with the meshes')
+    uint32_t meshes;        // 1: the meshes' collision ("scenery", "movers"); 0: the shapes'
     Source source[kMaxSources];
+    Shape shape[kMaxShapes];
 };
 
 // "scenery": this header, then float positions[3 * vertices], then uint32_t indices[3 * triangles].
@@ -105,7 +120,8 @@ const uint32_t kSceneryBytes = sizeof(Scenery) + 12 * kMaxSceneVertices + 12 * k
 const uint32_t kMoversBytes = sizeof(Movers) + 24 * kMaxMoverVertices + 12 * kMaxMoverTriangles;
 
 static_assert(sizeof(Source) == 40, "Source");
-static_assert(sizeof(Frame) == 104 + 40 * kMaxSources, "Frame");
+static_assert(sizeof(Shape) == 80, "Shape");
+static_assert(sizeof(Frame) == 104 + 40 * kMaxSources + 80 * kMaxShapes, "Frame");
 static_assert(sizeof(Scenery) == 16, "Scenery");
 static_assert(sizeof(Mover) == 32, "Mover");
 static_assert(sizeof(Movers) == 24 + 32 * kMaxMovers, "Movers");
