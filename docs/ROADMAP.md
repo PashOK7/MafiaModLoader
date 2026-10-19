@@ -1060,9 +1060,6 @@ merged, sorted by importance):
     on 2026-10-19). Since 2026-10-19 Flow keeps a pipeline cache of its own in the mod's data folder
     (`third_party/flow/patch.py`, `vk_pipelines.bin`, 8.4 MB): the sidecar rebuilt again, Flow started in 0.49 s from
     it. What is left: the first start in each game folder (each has its own data folder) and after a new driver.
-  - The round trip is waited for on the CPU (an event query for the frame's two textures, Flow's `waitForFrame`, CUDA's
-    stream synchronised): about 3 ms of the game thread a frame. Shared fences (Direct3D 11's signal for CUDA to wait
-    on, CUDA's for Direct3D 11) would leave only the half's recording, about 0.5 ms.
   - The pass draws the whole frame back (Flow composites the gas over the colour it is given and gives no alpha):
     the passes ordered before it (50) are under the gas, not over it.
   - The ray march runs at the frame's full size over the frame's colour (Flow composites and gives no alpha): with a

@@ -1730,6 +1730,18 @@ smallest half alone, `mods/examples/side_picture` a mod in two halves that hands
   fire on a 4 cm grid (the smoke's 10 cm), 1.2: Flow's GPU time 3.3 to 4.9 ms, of it the ray march 1.7 ms and the
   frame's copies in and out 0.6 ms, the meshes' obstacles 0.09 ms (1500 triangles of scenery, a car's 1300, a person's
   350); the game thread's part 0.23 ms (the meshes gathered), the round trip 3.3 ms.
+  **No thread waits for a GPU** since 2026-10-19: the 32-bit half makes two shared Direct3D 11.4 fences
+  (`ID3D11Device5::CreateFence`, `D3D11_FENCE_FLAG_SHARED`, named for the game's pid and a generation), signals "in"
+  after drawing the two textures (`ID3D11DeviceContext4::Signal`); the half imports both into CUDA by name
+  (`CU_EXTERNAL_SEMAPHORE_HANDLE_TYPE_D3D11_FENCE`), and its CUDA stream waits for "in", copies, signals one of
+  Flow's exported Vulkan semaphores (Flow's `createSemaphore`, `CU_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32`);
+  Flow's flush waits for it and signals a second one; the stream waits for that, copies out, signals "out". The
+  half answers once all of it is queued; the pass has its device wait for "out" (`ID3D11DeviceContext4::Wait`) before
+  the composite. The fences are used only once the half has confirmed it imported them (`Done::fenceGen`); until
+  then, and on a device without Direct3D 11.4's fences, every step is waited for on the CPU as before
+  (`flow_smoke.wait {"fences": false}` too). Measured 2026-10-19 on one scene, 1280x960, an RTX 3070: the pass on
+  the game thread 2.22 ms (CPU waits) and 0.40 ms (fences) in 1.2, 0.39 ms in 1.0; the round trip 1.85 and 0.33 ms
+  (`flow_smoke.state` `pass_ms`, `round_trip_ms`, `fenced`).
   What it cost to find: Flow's defaults are Omniverse's centimetres and z up (gravity, the attenuations: per unit of
   length, a hundred times larger in metres); its buoyancy and cooling are part of combustion (off, warm smoke never
   rises); its colour map is looked up by temperature and its smoke map is clear at 0 (cooled smoke vanishes: a map

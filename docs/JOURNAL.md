@@ -2507,3 +2507,23 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   version whole. With the old host the 8192 reload fails (`mml_mod_load returned 1`), as it did in the game. The
   1.2 and 1.0 labs ran the new loader and sidecar (flow_smoke reloaded several times in each, the sidecar
   restarted); no reload of a changed channel size was made in a lab.
+
+## 2026-10-19: flow_smoke's round trip on the GPUs alone (shared fences)
+
+- The Known gap: the round trip was waited for on the CPU three times (the pass's event query for the frame's two
+  textures; in the half `cuStreamSynchronize` after the copies in, Flow's `waitForFrame`, `cuStreamSynchronize` after
+  the copy out), so the game thread waited for the whole of it each frame.
+- **Made**: the 32-bit half makes two shared Direct3D 11.4 fences on the bridge's device, named
+  `mml-flow_smoke-<pid>-<generation>-in/out` (a new generation each time: CUDA's import keeps an old name alive), and
+  sends their generation and the frame's value in `View`; the half imports them into CUDA by name (D3D11_FENCE) and
+  says so in `Done::fenceGen`; from then the pass signals "in" instead of waiting, the half's CUDA stream waits for
+  it, copies in, signals Flow's exported Vulkan semaphore, Flow's flush waits for it and signals a second one, the
+  stream waits for that, copies out and signals "out"; the half answers as soon as that is queued, and the pass has
+  its device wait for "out" before the composite. Binary semaphores in pairs: a failure after Flow's signal makes them
+  again. Without the fences (no Direct3D 11.4, an import that fails, `flow_smoke.wait {"fences": false}`) the old CPU
+  waits stay. The View and Done records grew (176, 224 bytes): their reload in the 1.2 lab went in one go.
+- **Measured** (1280x960, RTX 3070, the freeride's start, two fires): 1.2, the pass on the game thread 0.40 ms with
+  the fences against 2.22 ms with the CPU waits on the same scene (from two snapshots of `flow_smoke.state` 736
+  frames apart), the round trip 0.33 against 1.85 ms; 1.0, 0.39 ms and 0.32 ms. Every frame drawn was fenced (824
+  of 825 in 1.2, 629 of 630 in 1.0: the first one confirms them); none late. Screenshots in a row: the fire whole,
+  the traffic moving.

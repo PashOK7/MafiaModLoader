@@ -148,6 +148,97 @@ struct Buf {
 Buf g_buf[3];   // the colour in, the depth in, the colour out
 uint32_t g_bufW, g_bufH;
 
+// The frame's GPU waits (fsm::View's fences), so no thread here waits for a GPU: the 32-bit half's two Direct3D 11
+// fences imported into CUDA by their names (its stream waits for "in", signals "out"), and two of Flow's Vulkan
+// semaphores between the CUDA stream and Flow's queue (CUDA signals `toFlow` after the copies in, Flow's flush waits
+// for it and signals `fromFlow`, CUDA waits for that before the copy out). Binary semaphores: one signal, one wait a
+// frame, always in pairs.
+struct Sync {
+    uint32_t fenceGen = 0;                    // the 32-bit half's fences imported (0: none)
+    CUexternalSemaphore fenceIn = nullptr, fenceOut = nullptr;
+    NvFlowDeviceSemaphore *toFlow = nullptr, *fromFlow = nullptr;
+    CUexternalSemaphore cuToFlow = nullptr, cuFromFlow = nullptr;
+    HANDLE semHandle[2] = {};
+    bool semTried = false, semOk = false;
+    uint32_t failedGen = 0;                   // (a generation that would not import: not tried again)
+} g_sync;
+
+void DropFences() {
+    if (g_sync.fenceIn) cuDestroyExternalSemaphore(g_sync.fenceIn);
+    if (g_sync.fenceOut) cuDestroyExternalSemaphore(g_sync.fenceOut);
+    g_sync.fenceIn = g_sync.fenceOut = nullptr;
+    g_sync.fenceGen = 0;
+}
+
+void DropSemaphores() {
+    if (g_sync.cuToFlow) cuDestroyExternalSemaphore(g_sync.cuToFlow);
+    if (g_sync.cuFromFlow) cuDestroyExternalSemaphore(g_sync.cuFromFlow);
+    for (HANDLE &h : g_sync.semHandle)
+        if (h) CloseHandle(h), h = nullptr;
+    if (g_sync.toFlow) g_flow.deviceInterface.destroySemaphore(g_sync.toFlow);
+    if (g_sync.fromFlow) g_flow.deviceInterface.destroySemaphore(g_sync.fromFlow);
+    g_sync.cuToFlow = g_sync.cuFromFlow = nullptr;
+    g_sync.toFlow = g_sync.fromFlow = nullptr;
+    g_sync.semOk = false;
+}
+
+// Flow's two semaphores, shared with CUDA (once: false when they cannot be, and the frame is waited for on the CPU).
+bool Semaphores() {
+    if (g_sync.semTried) return g_sync.semOk;
+    g_sync.semTried = true;
+    NvFlowDeviceSemaphore **s[2] = {&g_sync.toFlow, &g_sync.fromFlow};
+    CUexternalSemaphore *cu[2] = {&g_sync.cuToFlow, &g_sync.cuFromFlow};
+    for (int i = 0; i < 2; i++) {
+        *s[i] = g_flow.deviceInterface.createSemaphore(g_device);
+        if (!*s[i]) { Error("Flow's createSemaphore failed: the frame is waited for on the CPU"); DropSemaphores(); return false; }
+        g_flow.deviceInterface.getSemaphoreExternalHandle(*s[i], &g_sync.semHandle[i], sizeof(HANDLE));
+        CUDA_EXTERNAL_SEMAPHORE_HANDLE_DESC d{};
+        d.type = CU_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32;
+        d.handle.win32.handle = g_sync.semHandle[i];
+        if (!g_sync.semHandle[i] || !Cu(cuImportExternalSemaphore(cu[i], &d), "cuImportExternalSemaphore (Flow's semaphore)")) {
+            DropSemaphores();
+            return false;
+        }
+    }
+    g_sync.semOk = true;
+    return true;
+}
+
+// The 32-bit half's fences of this generation, imported (false: not, the frame waited for on the CPU).
+bool Fences(const fsm::View &v) {
+    if (!v.fenceGen || !Semaphores()) return false;
+    if (g_sync.fenceGen == v.fenceGen) return true;
+    if (g_sync.failedGen == v.fenceGen) return false;
+    DropFences();
+    CUexternalSemaphore *cu[2] = {&g_sync.fenceIn, &g_sync.fenceOut};
+    const wchar_t *which[2] = {L"in", L"out"};
+    for (int i = 0; i < 2; i++) {
+        wchar_t name[96];
+        fsm::FenceName(name, 96, v.gamePid, v.fenceGen, which[i]);
+        CUDA_EXTERNAL_SEMAPHORE_HANDLE_DESC d{};
+        d.type = CU_EXTERNAL_SEMAPHORE_HANDLE_TYPE_D3D11_FENCE;
+        d.handle.win32.name = name;
+        if (!Cu(cuImportExternalSemaphore(cu[i], &d), "cuImportExternalSemaphore (the 32-bit half's fence)")) {
+            DropFences();
+            g_sync.failedGen = v.fenceGen;
+            return false;
+        }
+    }
+    g_sync.fenceGen = v.fenceGen;
+    return true;
+}
+
+bool CuFence(CUexternalSemaphore s, uint64_t value, bool signal) {
+    if (signal) {
+        CUDA_EXTERNAL_SEMAPHORE_SIGNAL_PARAMS p{};
+        p.params.fence.value = value;
+        return Cu(cuSignalExternalSemaphoresAsync(&s, &p, 1, g_stream), "cuSignalExternalSemaphoresAsync");
+    }
+    CUDA_EXTERNAL_SEMAPHORE_WAIT_PARAMS p{};
+    p.params.fence.value = value;
+    return Cu(cuWaitExternalSemaphoresAsync(&s, &p, 1, g_stream), "cuWaitExternalSemaphoresAsync");
+}
+
 void FreeBuf(Buf &b) {
     if (b.ext) cuDestroyExternalMemory(b.ext);
     if (b.handle) CloseHandle(b.handle);
@@ -728,8 +819,10 @@ void Simulate() {
     g_steps++;
 }
 
-void Answer(const fsm::View &v, bool ok, uint32_t outGen) {
+void Answer(const fsm::View &v, bool ok, uint32_t outGen, bool fenced = false) {
     fsm::Done d{};
+    d.fenceGen = g_sync.fenceGen;
+    d.fenced = fenced;
     d.frame = v.frame;
     d.askQpc = v.askQpc;
     LARGE_INTEGER t;
@@ -776,10 +869,21 @@ void Render(const fsm::View &v) {
     if (!ok) return Answer(v, false, 0);
     if ((g_bufW != w || g_bufH != h) && !MakeBuffers(w, h)) return Answer(v, false, 0);
     double t0 = Now();
+    // On the GPU alone when the 32-bit half signalled its "in" fence for this frame (fenceValue) and its fences are
+    // imported: CUDA waits for it, Flow for CUDA, CUDA for Flow, and "out" is signalled; else the CPU waits at each step.
+    // (imported at the first view naming them, so Done::fenceGen confirms them and the next frames are signalled)
+    const bool imported = Fences(v);
+    const bool gpu = v.fenceValue && imported;
     // the frame into Flow's buffers
-    ok = CopyArray(in, g_buf[0].ptr, w, h, 8, true) && CopyArray(depth, g_buf[1].ptr, w, h, 4, true) &&
-         Cu(cuStreamSynchronize(g_stream), "cuStreamSynchronize (in)");
-    if (!ok) return Answer(v, false, 0);
+    ok = (!gpu || CuFence(g_sync.fenceIn, v.fenceValue, false)) && CopyArray(in, g_buf[0].ptr, w, h, 8, true) &&
+         CopyArray(depth, g_buf[1].ptr, w, h, 4, true);
+    if (gpu) {
+        CUDA_EXTERNAL_SEMAPHORE_SIGNAL_PARAMS p{};
+        ok = ok && Cu(cuSignalExternalSemaphoresAsync(&g_sync.cuToFlow, &p, 1, g_stream), "cuSignalExternalSemaphoresAsync (to Flow)");
+    } else {
+        ok = ok && Cu(cuStreamSynchronize(g_stream), "cuStreamSynchronize (in)");
+    }
+    if (!ok) return Answer(v, false, 0);   // (the signal to Flow is the last step: none was made then)
     // Flow: the buffers into textures, the ray march over them, the result into the out buffer
     NvFlowBufferTransient *bIn = g_ci.registerBufferAsTransient(g_ctx, g_buf[0].buf);
     NvFlowBufferTransient *bDepth = g_ci.registerBufferAsTransient(g_ctx, g_buf[1].buf);
@@ -811,10 +915,27 @@ void Render(const fsm::View &v) {
     co.src = tOut, co.dst = bOut, co.debugLabel = "flow_smoke color out";
     g_ci.addPassCopyTextureToBuffer(g_ctx, &co);
     NvFlowUint64 id = 0;
-    if (g_flow.deviceInterface.flush(g_queue, &id, nullptr, nullptr)) {
+    if (g_flow.deviceInterface.flush(g_queue, &id, gpu ? g_sync.toFlow : nullptr, gpu ? g_sync.fromFlow : nullptr)) {
         Error("Flow's device was lost");
         g_broken = true;
         return Answer(v, false, 0);
+    }
+    if (gpu) {
+        // the result into "color_out" once Flow is done, then "out": nothing waited for here
+        CUDA_EXTERNAL_SEMAPHORE_WAIT_PARAMS p{};
+        ok = Cu(cuWaitExternalSemaphoresAsync(&g_sync.cuFromFlow, &p, 1, g_stream), "cuWaitExternalSemaphoresAsync (from Flow)") &&
+             CopyArray(out, g_buf[2].ptr, w, h, 8, false) && CuFence(g_sync.fenceOut, v.fenceValue, true);
+        if (!ok) {
+            // (Flow's signal left unwaited breaks the semaphores' pairs: made again, the CPU waits until then)
+            cuStreamSynchronize(g_stream);
+            g_flow.deviceInterface.waitIdle(g_queue);
+            DropSemaphores();
+            DropFences();
+            g_sync.semTried = false;
+        }
+        g_renderMs = float(Now() - t0);
+        g_renders++;
+        return Answer(v, ok, outGen, ok);
     }
     g_flow.deviceInterface.waitForFrame(g_queue, id);
     // the result into "color_out"
@@ -975,6 +1096,9 @@ void Shutdown() {
     }
     if (g_queue) g_flow.deviceInterface.waitIdle(g_queue);
     if (g_cuCtx) cuCtxSetCurrent(g_cuCtx);
+    if (g_stream) cuStreamSynchronize(g_stream);
+    DropFences();       // (CUDA's imports first, Flow's semaphores while its device lives)
+    DropSemaphores();
     for (Buf &b : g_buf) FreeBuf(b);
     for (Tex &t : g_tex) Unmap(t);
     if (g_stream) cuStreamDestroy(g_stream), g_stream = nullptr;

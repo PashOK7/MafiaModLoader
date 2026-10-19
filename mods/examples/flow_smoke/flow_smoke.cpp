@@ -16,19 +16,24 @@
 //   call flow_smoke.stop  {"id": 1}         a source taken away (its gas stays and fades)
 //   call flow_smoke.clear                   everything taken away, the gas too
 //   call flow_smoke.wind  {"velocity": [2, 0, 0]}
-//   call flow_smoke.state -> {"frames", "drawn", "late", "none", "round_trip_ms", "prepare_ms", "blocks", "steps",
-//                             "simulate_ms", "render_ms", "gpu_ms", "sources", "movers", "error"...}
+//   call flow_smoke.state -> {"frames", "drawn", "late", "none", "round_trip_ms", "prepare_ms", "pass_ms", "fences",
+//                             "fenced", "blocks", "steps", "simulate_ms", "render_ms", "gpu_ms", "sources", "movers", "error"...}
+//   call flow_smoke.wait  {"ms": 20, "fences": true}   the pass's budget; fences false: the CPU waits for each GPU step
 //   call flow_smoke.move  {"id": 2, "at": [x, y, z]}  the newest fire (or that source) moved where the crosshair looks
 //   F5: the newest fire moved where the crosshair looks (none: one made there); F10: fire in front of the player
 //   (again: one more); Shift+F10: everything cleared
 //
 // The frame: at FRAME this half writes "frame" (the sources, the movers near them, the time); the 64-bit half steps
 // the gas then (its GPU works while the game draws). In the pass (after the world is drawn) this half draws the frame
-// into "color_in" and "depth_in", waits for the GPU to have them, writes "view"; the 64-bit half copies them into Flow
-// (CUDA), ray-marches, copies the result into "color_out" and answers in "done"; the pass waits for that answer (a few
-// milliseconds at most) and draws "color_out" over the frame. A frame whose answer did not come in time shows no gas.
+// into "color_in" and "depth_in", signals its shared fence "in", writes "view"; the 64-bit half has CUDA wait for that
+// fence, copy them into Flow, signal Flow, Flow ray-march and signal CUDA back, CUDA copy the result into "color_out"
+// and signal the fence "out", all queued on the GPUs without a wait, and answers in "done"; the pass waits for that
+// answer (the 64-bit half's queueing: well under a millisecond), has this device's GPU wait for "out" and draws
+// "color_out" over the frame. Without Direct3D 11.4's fences (or until the 64-bit half has them) each step is waited
+// for on the CPU instead. A frame whose answer did not come in time shows no gas.
 #include <windows.h>
 #include <d3d11.h>
+#include <d3d11_4.h>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -54,6 +59,7 @@ double g_freqMs;
 uint64_t g_frame;
 double g_time;
 uint32_t g_waitMs = 20;   // the pass's budget for this frame's picture
+bool g_useFences = true;  // the frame's GPU waits through the shared fences when both halves have them (`wait` {fences})
 
 int64_t Qpc() {
     LARGE_INTEGER t;
@@ -90,8 +96,8 @@ float g_smokeCell = 0.1f, g_fireCell = 0.04f;   // metres: the grids' cells (the
 fsm::Fire g_fire{};   // the fire layer's parameters (the settings; ReadSettings)
 
 struct Stats {
-    uint64_t frames, asked, drawn, late, none, noTextures, silent, meshFrames;
-    double rtSum, rtMax, prepSum, prepMax, meshSum, meshMax;
+    uint64_t frames, asked, drawn, late, none, noTextures, silent, meshFrames, fenced;
+    double rtSum, rtMax, prepSum, prepMax, meshSum, meshMax, passSum, passMax;
 } S;
 fsm::Done g_done;
 uint64_t g_doneVersion;   // the last "done" seen, and when (QueryPerformanceCounter)
@@ -556,18 +562,57 @@ struct Gfx {
     ID3D11Texture2D *inTex[2] = {};
     uint32_t inGen[2] = {};
     ID3D11RenderTargetView *inRtv[2] = {};
+    // The frame's GPU waits (fsm::View's fences): "in" signalled after the prepare, "out" waited for before the
+    // composite; their shared handles kept open (their names live while a handle does). None on a device without
+    // Direct3D 11.4's fences: the CPU waits then, as before.
+    ID3D11DeviceContext4 *ctx4 = nullptr;
+    ID3D11Fence *fenceIn = nullptr, *fenceOut = nullptr;
+    HANDLE fenceHandle[2] = {};
+    uint32_t fenceGen = 0;
+    uint64_t fenceValue = 0;
     void FreeIn() {
         for (int i = 0; i < 2; i++) SafeRelease(inRtv[i]), inTex[i] = nullptr, inGen[i] = 0;
     }
-    void Free() { FreeIn(), SafeRelease(prepare), SafeRelease(composite), SafeRelease(done); }
+    void FreeFences() {
+        for (HANDLE &h : fenceHandle)
+            if (h) CloseHandle(h), h = nullptr;
+        SafeRelease(fenceIn), SafeRelease(fenceOut), SafeRelease(ctx4);
+        fenceGen = 0;
+    }
+    void Free() { FreeIn(), FreeFences(), SafeRelease(prepare), SafeRelease(composite), SafeRelease(done); }
 } G;
 
-bool Make(ID3D11Device *d) {
+// The two shared fences on the bridge's device, named for the 64-bit half (false: not offered; the CPU waits).
+bool MakeFences(ID3D11Device *d, ID3D11DeviceContext *c) {
+    ID3D11Device5 *d5 = nullptr;
+    if (FAILED(d->QueryInterface(__uuidof(ID3D11Device5), reinterpret_cast<void **>(&d5)))) return false;
+    bool ok = SUCCEEDED(c->QueryInterface(__uuidof(ID3D11DeviceContext4), reinterpret_cast<void **>(&G.ctx4))) &&
+              SUCCEEDED(d5->CreateFence(0, D3D11_FENCE_FLAG_SHARED, __uuidof(ID3D11Fence), reinterpret_cast<void **>(&G.fenceIn))) &&
+              SUCCEEDED(d5->CreateFence(0, D3D11_FENCE_FLAG_SHARED, __uuidof(ID3D11Fence), reinterpret_cast<void **>(&G.fenceOut)));
+    d5->Release();
+    // (a name of its own each time: the 64-bit half's import of an older pair keeps that name alive a while, and a
+    // reload of this half starts every count again; the clock's low bits never repeat within a game's life here)
+    G.fenceGen = uint32_t(Qpc()) | 1u;
+    ID3D11Fence *f[2] = {G.fenceIn, G.fenceOut};
+    const wchar_t *which[2] = {L"in", L"out"};
+    for (int i = 0; ok && i < 2; i++) {
+        wchar_t name[96];
+        fsm::FenceName(name, 96, GetCurrentProcessId(), G.fenceGen, which[i]);
+        ok = SUCCEEDED(f[i]->CreateSharedHandle(nullptr, GENERIC_ALL, name, &G.fenceHandle[i]));
+    }
+    if (!ok) G.FreeFences();
+    G.fenceValue = 0;
+    return ok;
+}
+
+bool Make(ID3D11Device *d, ID3D11DeviceContext *c) {
     G.Free();
     D3D11_QUERY_DESC qd{D3D11_QUERY_EVENT, 0};
-    return SUCCEEDED(d->CreatePixelShader(kPsPrepare, sizeof kPsPrepare, nullptr, &G.prepare)) &&
-           SUCCEEDED(d->CreatePixelShader(kPsComposite, sizeof kPsComposite, nullptr, &G.composite)) &&
-           SUCCEEDED(d->CreateQuery(&qd, &G.done));
+    bool ok = SUCCEEDED(d->CreatePixelShader(kPsPrepare, sizeof kPsPrepare, nullptr, &G.prepare)) &&
+              SUCCEEDED(d->CreatePixelShader(kPsComposite, sizeof kPsComposite, nullptr, &G.composite)) &&
+              SUCCEEDED(d->CreateQuery(&qd, &G.done));
+    if (ok && !MakeFences(d, c)) H->log(M, MML_LOG_INFO, "no shared Direct3D 11.4 fences: the frame's round trip is waited for on the CPU");
+    return ok;
 }
 
 void FullScreen(ID3D11DeviceContext *c, const MmlGfxFrame *f, ID3D11PixelShader *ps) {
@@ -585,7 +630,7 @@ void ViewAboutOrigin(const float *view, float *out) {
         out[12 + j] = float(g_origin[0] * view[j] + g_origin[1] * view[4 + j] + g_origin[2] * view[8 + j] + view[12 + j]);
 }
 
-void Ask(const MmlGfxFrame *f, const uint32_t inGen[2]) {
+void Ask(const MmlGfxFrame *f, const uint32_t inGen[2], uint64_t fenceValue) {
     fsm::View v{};
     v.frame = g_frame;
     v.askQpc = Qpc();
@@ -593,6 +638,9 @@ void Ask(const MmlGfxFrame *f, const uint32_t inGen[2]) {
     ViewAboutOrigin(f->view, v.view);
     memcpy(v.proj, f->proj, sizeof v.proj);
     v.inGeneration[0] = inGen[0], v.inGeneration[1] = inGen[1];
+    v.gamePid = GetCurrentProcessId();
+    v.fenceGen = G.fenceGen;
+    v.fenceValue = fenceValue;
     H->channel_write(g_viewCh, &v, sizeof v);
     S.asked++;
 }
@@ -603,7 +651,7 @@ void Pass(const MmlGfxFrame *f, void *) {
     auto *d = static_cast<ID3D11Device *>(f->device);
     auto *c = static_cast<ID3D11DeviceContext *>(f->context);
     if (G.generation != f->generation || !G.prepare) {
-        if (!Make(d)) { G.Free(); return; }
+        if (!Make(d, c)) { G.Free(); return; }
         G.generation = f->generation;
     }
     S.frames++;
@@ -619,7 +667,7 @@ void Pass(const MmlGfxFrame *f, void *) {
     }
     if (!have) {
         const uint32_t none[2] = {};
-        Ask(f, none);
+        Ask(f, none, 0);
         S.noTextures++;
         return;
     }
@@ -643,12 +691,21 @@ void Pass(const MmlGfxFrame *f, void *) {
     FullScreen(c, f, G.prepare);
     ID3D11RenderTargetView *target = static_cast<ID3D11RenderTargetView *>(f->target);
     c->OMSetRenderTargets(1, &target, nullptr);
-    c->End(G.done);
-    c->Flush();
-    while (c->GetData(G.done, nullptr, 0, 0) == S_FALSE && Ms(t0, Qpc()) < 50) YieldProcessor();
+    // Whole before the 64-bit half reads them: with the fences the 64-bit half confirmed (Done::fenceGen), "in" is
+    // signalled and its CUDA stream waits for it on the GPU; else the CPU waits here for the GPU to have drawn them.
+    uint64_t fenceValue = 0;
+    if (g_useFences && G.fenceIn && g_done.fenceGen == G.fenceGen) {
+        fenceValue = ++G.fenceValue;
+        G.ctx4->Signal(G.fenceIn, fenceValue);
+        c->Flush();
+    } else {
+        c->End(G.done);
+        c->Flush();
+        while (c->GetData(G.done, nullptr, 0, 0) == S_FALSE && Ms(t0, Qpc()) < 50) YieldProcessor();
+    }
     double prep = Ms(t0, Qpc());
     S.prepSum += prep, S.prepMax = std::max(S.prepMax, prep);
-    Ask(f, G.inGen);
+    Ask(f, G.inGen, fenceValue);
     // this frame's picture: waited for within the budget. A 64-bit half that has not answered for half a second
     // (gone: a fault, a reload, its device lost) is not waited for: the frame goes on without the gas until it does
     uint64_t v = 0;
@@ -662,11 +719,18 @@ void Pass(const MmlGfxFrame *f, void *) {
         if (left <= 0 || !H->channel_wait(g_doneCh, v, uint32_t(std::ceil(left)))) break;
         H->channel_read(g_doneCh, &g_done, sizeof g_done, &v);
     }
+    double pass = Ms(t0, Qpc());
+    S.passSum += pass, S.passMax = std::max(S.passMax, pass);
     if (g_done.frame != g_frame) { S.late++; return; }
     if (!g_done.ok || g_done.outGeneration != t[2].generation || !t[2].srv) { S.none++; return; }
     double rt = Ms(g_done.askQpc, Qpc());
     S.rtSum += rt, S.rtMax = std::max(S.rtMax, rt);
     S.drawn++;
+    // the 64-bit half has asked its GPU for the picture, not waited for it: this device's GPU waits for "out"
+    if (g_done.fenced && fenceValue && G.ctx4) {
+        G.ctx4->Wait(G.fenceOut, fenceValue);
+        S.fenced++;
+    }
     // the frame with the gas over it, into the effects target (the bridge's blending; alpha 1)
     auto *out = static_cast<ID3D11ShaderResourceView *>(t[2].srv);
     c->PSSetShaderResources(3, 1, &out);
@@ -791,7 +855,8 @@ int CmdWind(const char *args, MmlReply *r, void *) {
 int CmdWait(const char *args, MmlReply *r, void *) {
     json a = Args(args);
     if (a.contains("ms") && a["ms"].is_number()) g_waitMs = std::min(a["ms"].get<uint32_t>(), 100u);
-    Reply(r, {{"wait_ms", g_waitMs}});
+    if (a.contains("fences") && a["fences"].is_boolean()) g_useFences = a["fences"].get<bool>();
+    Reply(r, {{"wait_ms", g_waitMs}, {"fences", g_useFences}});
     return 0;
 }
 int CmdState(const char *, MmlReply *r, void *) {
@@ -805,6 +870,9 @@ int CmdState(const char *, MmlReply *r, void *) {
               {"no_textures", S.noTextures}, {"half_silent", S.silent}, {"wait_budget_ms", g_waitMs},
               {"round_trip_ms", {{"mean", S.rtSum * k}, {"max", S.rtMax}}},
               {"prepare_ms", {{"mean", S.prepSum * kp}, {"max", S.prepMax}}},
+              {"pass_ms", {{"mean", S.passSum * kp}, {"max", S.passMax}}}, {"fenced", S.fenced},
+              {"fences", G.fenceIn ? (g_done.fenceGen == G.fenceGen ? "in use" : "made, not confirmed by the 64-bit half")
+                                   : "none (Direct3D 11.4 fences not offered: waited for on the CPU)"},
               {"blocks", g_done.blocks}, {"steps", g_done.steps}, {"simulate_ms", g_done.simulateMs}, {"render_ms", g_done.renderMs},
               {"gpu_ms", g_done.gpuMs}, {"sources", sources},
               {"collision", g_meshCollision ? "meshes" : "shapes"}, {"shapes", g_rec.shapes},
@@ -997,7 +1065,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     H->command(mod, "stop", "{id} -> that source taken away (its gas fades)", CmdStop, nullptr);
     H->command(mod, "clear", "{} -> every source and all the gas taken away", CmdClear, nullptr);
     H->command(mod, "wind", "{velocity: [x, y, z]} -> the air's own motion, m/s", CmdWind, nullptr);
-    H->command(mod, "wait", "{ms} -> how long the pass waits for this frame's picture (at most 100)", CmdWait, nullptr);
+    H->command(mod, "wait", "{ms, fences} -> how long the pass waits for this frame's picture (at most 100); fences false: the CPU waits for each GPU step (as before the shared fences)", CmdWait, nullptr);
     H->command(mod, "state", "{} -> frames drawn, late, the round trip, Flow's blocks and times, the sources", CmdState, nullptr);
     H->command(mod, "collision", "{mode: shapes | meshes} -> what the gas meets: the game's shapes (a person's sphere, a car's box; the default) or the drawn meshes", CmdCollision, nullptr);
     H->command(mod, "winding", "{} -> which way the game's faces point by Flow's normal: the ground's up or down, a car's out or in", CmdWinding, nullptr);

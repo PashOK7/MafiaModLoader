@@ -19,6 +19,7 @@
 // "color_out" R16G16B16A16_FLOAT  the frame with the gas over it, linear
 #pragma once
 #include <stdint.h>
+#include <stdio.h>   // (swprintf_s: the fences' names)
 
 namespace fsm {
 
@@ -135,7 +136,19 @@ struct View {
     uint32_t width, height; // the frame's (the textures are made at this size)
     float view[16], proj[16];   // row vectors, world about the origin: p * view * proj
     uint32_t inGeneration[2];   // the generations of "color_in" and "depth_in" the 32-bit half wrote
+    // The frame's GPU waits without the CPU (FenceName): the 32-bit half's two shared Direct3D 11 fences, "in" (it
+    // signals fenceValue once "color_in" and "depth_in" are drawn) and "out" (the 64-bit half signals fenceValue once
+    // "color_out" holds the picture; the 32-bit half's GPU waits for it before drawing it). fenceGen 0: no fences;
+    // fenceValue 0: this frame was waited for on the CPU (the fences are not confirmed yet: Done::fenceGen).
+    uint32_t gamePid;
+    uint32_t fenceGen;
+    uint64_t fenceValue;
 };
+
+// A fence's name (CreateSharedHandle, cuImportExternalSemaphore by name): the game's pid, its generation, "in"/"out".
+inline void FenceName(wchar_t *out, size_t cap, uint32_t gamePid, uint32_t gen, const wchar_t *which) {
+    swprintf_s(out, cap, L"mml-flow_smoke-%u-%u-%ls", gamePid, gen, which);
+}
 
 struct Done {
     uint64_t frame;         // View::frame answered
@@ -150,6 +163,8 @@ struct Done {
     float gpuMs;            // the last frame's GPU time in Flow (its profiler; 0 unknown)
     uint32_t sceneTriangles;   // the scenery's triangles in Flow now
     char error[160];        // the last error ("" none)
+    uint32_t fenceGen;      // the 32-bit half's fences the 64-bit half has imported (0: none, or they failed)
+    uint32_t fenced;        // 1: "color_out" is whole once the "out" fence reaches View::fenceValue (not yet now)
 };
 
 const uint32_t kSceneryBytes = sizeof(Scenery) + 12 * kMaxSceneVertices + 12 * kMaxSceneTriangles;
@@ -162,7 +177,7 @@ static_assert(sizeof(Frame) == 112 + sizeof(Fire) + sizeof(Source) * kMaxSources
 static_assert(sizeof(Scenery) == 16, "Scenery");
 static_assert(sizeof(Mover) == 32, "Mover");
 static_assert(sizeof(Movers) == 24 + 32 * kMaxMovers, "Movers");
-static_assert(sizeof(View) == 160, "View");
-static_assert(sizeof(Done) == 216, "Done");
+static_assert(sizeof(View) == 176, "View");
+static_assert(sizeof(Done) == 224, "Done");
 
 } // namespace fsm
