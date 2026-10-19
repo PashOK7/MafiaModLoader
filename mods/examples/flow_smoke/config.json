@@ -1,0 +1,46 @@
+{
+  // The defaults of flow_smoke's settings (config.set {"mod": "flow_smoke", "key": "fire_cell", "value": 0.02}).
+  // The grids: each one's cell in metres (Flow's blocks are 32 x 16 x 16 cells: the smoke's 0.1 is a block 3.2 x 1.6 x 1.6 m).
+  "smoke_cell": 0.1,                 // the smoke's grid: its billows
+  "fire_cell": 0.04,                 // the fire's grid: its tongues are finer than the smoke's billows
+
+  // The fire's burning (Flow's combustion: fuel burns where it is hot enough, and burning makes heat, smoke, expansion)
+  "fire_combustion": true,           // advection.combustionEnabled: the fuel burns (false: the fire is only gas that moves)
+  "fire_ignition": 0.05,             // ignitionTemp: the temperature a fuel starts to burn at
+  "fire_burn_per_temp": 4,           // burnPerTemp: burn made per unit of temperature above ignition
+  "fire_fuel_per_burn": 0.25,        // fuelPerBurn: fuel used per unit of burn
+  "fire_temp_per_burn": 5,           // tempPerBurn: heat made per unit of burn
+  "fire_smoke_per_burn": 3,          // smokePerBurn: smoke made per unit of burn
+  "fire_divergence_per_burn": 0,     // divergencePerBurn: expansion per unit of burn
+
+  // The fire's heat and motion
+  "fire_buoyancy": 5,                // buoyancyPerTemp: how fast the hot gas rises (the smoke's: tune buoyancy)
+  "fire_buoyancy_smoke": 0,          // buoyancyPerSmoke: how fast smoke rises by itself
+  "fire_cooling": 1.5,               // coolingRate: a second's share of the heat lost
+  "fire_gravity": -2,                // gravity along y, m/s2
+  "fire_vorticity_on": true,         // vorticity.enabled: the swirls are kept
+  "fire_vorticity": 1.33333,         // vorticity.forceScale: how much swirl is kept (the smoke's: tune vorticity)
+  "fire_velocity_damping": 0.01,     // advection velocity: damping
+  "fire_velocity_fade": 1,           // advection velocity: fade (how much of it a second is kept)
+
+  // How long each quantity of the fire lasts (damping: a share lost a second; fade: a share lost a step)
+  "fire_temp_damping": 0,            // temperature: damping
+  "fire_temp_fade": 0,               // temperature: fade
+  "fire_fuel_damping": 0,            // fuel: damping
+  "fire_fuel_fade": 0,               // fuel: fade
+  "fire_burn_damping": 0,            // burn: damping
+  "fire_burn_fade": 0,               // burn: fade
+  "fire_smoke_damping": 0.3,         // smoke made by the fire: damping
+  "fire_smoke_fade": 0.65,           // smoke made by the fire: fade
+
+  // The fire's light (the ray march over the frame)
+  "fire_color_scale": 2.5,           // colormap.colorScale: how bright the fire's colours are
+  "fire_attenuation": 8,             // rayMarch.attenuation: how opaque the fire is (the smoke's: tune attenuation)
+  "fire_brightness": 1,              // rayMarch.colorScale: the light the march gives
+  "fire_step_size": 0.75,            // rayMarch.stepSizeScale: the march's steps, of a cell (smaller: finer, more GPU)
+  "fire_shadow_factor": 1,           // rayMarch.shadowFactor: how dark the fire's own shadow is
+
+  // The fire's time
+  "fire_time_scale": 1,              // timeScale: the fire's speed (1: the simulation's own)
+  "fire_block_lifetime": 8           // blockMinLifetime: steps a block of the fire stays allocated
+}

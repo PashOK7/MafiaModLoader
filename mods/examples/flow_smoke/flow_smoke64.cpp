@@ -61,13 +61,21 @@ std::string LastError() {
     std::lock_guard<std::mutex> lk(g_errMx);
     return g_error;
 }
+// (g_errMx) what the pipeline cache did: Flow's own lines (third_party/flow/patch.py), its read at the device's start and
+// its last write (none: every pipeline came from the file)
+std::string g_cacheRead = "none", g_cacheWritten = "none";
 void FlowLog(NvFlowLogLevel level, const char *format, ...) {
-    if (level != eNvFlowLogLevel_error && level != eNvFlowLogLevel_warning) return;
     char b[512];
     va_list a;
     va_start(a, format);
     vsnprintf(b, sizeof b, format, a);
     va_end(a);
+    if (level == eNvFlowLogLevel_info && !strncmp(b, "pipeline cache: ", 16)) {
+        std::lock_guard<std::mutex> lk(g_errMx);
+        (strstr(b, "written") ? g_cacheWritten : g_cacheRead) = b + 16;
+        return;
+    }
+    if (level != eNvFlowLogLevel_error && level != eNvFlowLogLevel_warning) return;
     Error(std::string("Flow: ") + b);
 }
 void FlowLoaderError(const char *s, void *) { Error(std::string("Flow's libraries: ") + (s ? s : "")); }
@@ -80,6 +88,7 @@ bool Cu(CUresult r, const char *what) {
 }
 
 // ---- Flow
+std::wstring g_pipelineCachePath;   // the mod's data folder's vk_pipelines.bin (Flow's Vulkan pipeline cache)
 HMODULE g_dll[2];
 NvFlowLoader g_flow;
 bool g_flowLoaded;
@@ -92,6 +101,7 @@ NvFlowGrid *g_grid;
 std::string g_gpuName;
 std::atomic<float> g_gpuMs;
 std::atomic<const char *> g_stage{"not started"};   // where Start is (side's "stage")
+std::atomic<float> g_startMs{0};   // how long Start took (side's "start_ms": the driver's compile of Flow's pipelines is most of it when no cache has them)
 
 // ---- CUDA, on the same GPU
 CUdevice g_cuDev;
@@ -322,8 +332,7 @@ struct Params {
 
 // What `tune` changes (the mod thread writes, the worker reads at the next frame's parameters)
 struct Tune {
-    float cellSize = 0.1f;          // metres, the smoke's: a block of Flow's (32 x 16 x 16 cells) is 3.2 x 1.6 x 1.6 m
-    float fireCell = 0.04f;         // metres, the fire's: its tongues are finer than the smoke's billows
+    // (the grids' cells, metres, are the settings': each frame's record, `smoke_cell` and `fire_cell`)
     // What the gas cannot enter, by Flow's signed distance to a mesh's nearest face (negative behind it: the game's
     // faces are seen from outside, so behind one is inside): a body is solid this deep inside its surface, and the gas
     // is held at its velocity `wallOut` outside it.
@@ -355,7 +364,7 @@ Tune g_tune;
 const struct {
     const char *name;
     float Tune::*field;
-} kTuneFields[] = {{"cell_size", &Tune::cellSize}, {"fire_cell", &Tune::fireCell}, {"car_inside", &Tune::carInside},
+} kTuneFields[] = {{"car_inside", &Tune::carInside},
                    {"scene_inside", &Tune::sceneInside}, {"wall_out", &Tune::wallOut}, {"flip", &Tune::flip},
                    {"wall_couple", &Tune::wallCouple}, {"shape_couple", &Tune::shapeCouple}, {"gravity", &Tune::gravity}, {"buoyancy", &Tune::buoyancy},
                    {"cooling", &Tune::cooling}, {"vorticity", &Tune::vorticity}, {"smoke_fade", &Tune::smokeFade},
@@ -404,7 +413,7 @@ void BuildParams(const fsm::Frame &f, bool clear) {
         s = NvFlowGridSimulateLayerParams_default;
         s.luid = 1 + layer;
         s.layer = layer;
-        s.densityCellSize = layer ? t.fireCell : t.cellSize;
+        s.densityCellSize = layer ? f.fireCell : f.smokeCell;
         s.physicsCollisionEnabled = f.meshes ? NV_FLOW_TRUE : NV_FLOW_FALSE;   // (the meshes' obstacles: every layer)
         // (a step every frame of its own dt, two when a frame is long: Flow's fixed 60 steps a second left the gas
         // standing in some frames of a faster game while the cars went on)
@@ -412,12 +421,35 @@ void BuildParams(const fsm::Frame &f, bool clear) {
         s.maxStepsPerSimulate = f.dt > 1.f / 40 ? 2 : 1;
         s.forceClear = clear;
         s.simulateWhenPaused = NV_FLOW_FALSE;
-        s.blockMinLifetime = 8;
+        s.blockMinLifetime = layer ? uint32_t(f.fire.blockLifetime) : 8;
         // metres, y up (Flow's defaults are Omniverse's: centimetres, z up)
-        s.advection.gravity = NvFlowFloat3{0, t.gravity, 0};
-        s.advection.buoyancyPerTemp = layer ? t.buoyancy / 2 : t.buoyancy;
-        if (!layer) s.advection.coolingRate = t.cooling;
-        s.vorticity.forceScale = layer ? t.vorticity * 2 / 3 : t.vorticity;
+        const fsm::Fire &F = f.fire;
+        s.timeScale = layer ? F.timeScale : 1;
+        s.advection.gravity = NvFlowFloat3{0, layer ? F.gravity : t.gravity, 0};
+        if (layer) {
+            // the fire layer: the settings' numbers, each one Flow's own
+            s.advection.combustionEnabled = F.combustion ? NV_FLOW_TRUE : NV_FLOW_FALSE;
+            s.advection.ignitionTemp = F.ignition;
+            s.advection.burnPerTemp = F.burnPerTemp;
+            s.advection.fuelPerBurn = F.fuelPerBurn;
+            s.advection.tempPerBurn = F.tempPerBurn;
+            s.advection.smokePerBurn = F.smokePerBurn;
+            s.advection.divergencePerBurn = F.divergencePerBurn;
+            s.advection.buoyancyPerTemp = F.buoyancy;
+            s.advection.buoyancyPerSmoke = F.buoyancySmoke;
+            s.advection.coolingRate = F.cooling;
+            s.advection.velocity.damping = F.velocityDamping, s.advection.velocity.fade = F.velocityFade;
+            s.advection.temperature.damping = F.tempDamping, s.advection.temperature.fade = F.tempFade;
+            s.advection.fuel.damping = F.fuelDamping, s.advection.fuel.fade = F.fuelFade;
+            s.advection.burn.damping = F.burnDamping, s.advection.burn.fade = F.burnFade;
+            s.advection.smoke.damping = F.smokeDamping, s.advection.smoke.fade = F.smokeFade;
+            s.vorticity.enabled = F.vorticityOn ? NV_FLOW_TRUE : NV_FLOW_FALSE;
+            s.vorticity.forceScale = F.vorticity;
+        } else {
+            s.advection.buoyancyPerTemp = t.buoyancy;
+            s.advection.coolingRate = t.cooling;
+            s.vorticity.forceScale = t.vorticity;
+        }
         // (combustion stays on in the smoke layer too: Flow's buoyancy and cooling are part of it; with no fuel
         // there nothing burns)
         if (!layer) {
@@ -434,6 +466,7 @@ void BuildParams(const fsm::Frame &f, bool clear) {
         o.shadow.numSteps = NvFlowUint(std::clamp(t.shadowSteps, 1.f, 256.f));
         if (layer) {
             o.colormap.rgbaPoints = NvFlowRayMarchColormapParams_default_rgbaPoints_fire;
+            o.colormap.colorScale = f.fire.colorScale;
         } else {
             // (Flow's colour map is looked up by temperature, its alpha times the smoke's density. Its own smoke map
             // is clear at temperature 0: smoke that has cooled would be gone. Here the grey is the same at every
@@ -447,8 +480,15 @@ void BuildParams(const fsm::Frame &f, bool clear) {
         r = NvFlowGridRenderLayerParams_default;
         r.luid = 21 + layer;
         r.layer = layer;
-        r.rayMarch.attenuation = t.attenuation;
-        r.rayMarch.colorScale = t.colorScale;
+        if (layer) {
+            r.rayMarch.attenuation = f.fire.attenuation;
+            r.rayMarch.colorScale = f.fire.brightness;
+            r.rayMarch.stepSizeScale = f.fire.stepSize;
+            r.rayMarch.shadowFactor = f.fire.shadowFactor;
+        } else {
+            r.rayMarch.attenuation = t.attenuation;
+            r.rayMarch.colorScale = t.colorScale;
+        }
         r.rayMarch.enableBlockWireframe = t.wireframe;
     }
     P.spheres.clear();
@@ -636,7 +676,7 @@ bool Start(const uint32_t luid[2]) {
         !Cu(cuStreamCreate(&g_stream, CU_STREAM_NON_BLOCKING), "cuStreamCreate"))
         return false;
     g_stage = "Flow's device manager";
-    g_manager = g_flow.deviceInterface.createDeviceManager(NV_FLOW_FALSE, nullptr, 0);
+    g_manager =g_flow.deviceInterface.createDeviceManager(NV_FLOW_FALSE, nullptr, 0);
     if (!g_manager) { Error("Flow's device manager (Vulkan) was not made"); return false; }
     NvFlowUint index = ~0u;
     NvFlowPhysicalDeviceDesc pd{};
@@ -644,6 +684,10 @@ bool Start(const uint32_t luid[2]) {
         if (pd.deviceLUIDValid && !memcmp(pd.deviceLUID, luid, 8)) { index = i; break; }
     if (index == ~0u) { Error("no Vulkan device of Flow's on the game's adapter"); return false; }
     g_stage = "Flow's Vulkan device";
+    // (its compute pipelines through a cache kept in the mod's data folder: Flow as patched by third_party/flow/patch.py
+    // reads it here and writes it once its pipelines are made; the driver's own cache is kept by the sidecar's path,
+    // which every game folder and every rebuild changes: without it each such start compiled them all again, minutes)
+    SetEnvironmentVariableW(L"NV_FLOW_VK_PIPELINE_CACHE", g_pipelineCachePath.empty() ? nullptr : g_pipelineCachePath.c_str());
     NvFlowDeviceDesc dd{};
     dd.deviceIndex = index;
     dd.enableExternalUsage = NV_FLOW_TRUE;
@@ -785,7 +829,11 @@ void Work() {
         uint32_t luid[2] = {};
         if (g_tried || !H->adapter_luid(luid)) return;   // (the game's adapter is known once its graphics bridge runs)
         g_tried = true;
+        LARGE_INTEGER t0, t1;
+        QueryPerformanceCounter(&t0);
         g_ready = Start(luid);
+        QueryPerformanceCounter(&t1);
+        g_startMs = float((t1.QuadPart - t0.QuadPart) / g_freqMs);
         if (!g_ready) return;
     }
     uint64_t fv = 0;
@@ -885,7 +933,13 @@ int Side(MmlSideMod *, const char *, MmlSideReply *r, void *) {
     for (size_t i = 0; i < prof.size() && i < 10; i++) top[prof[i].first] = std::round(prof[i].second * 1000) / 1000;
     std::string out(b);
     out.pop_back();
-    out += ", \"gpu_top\": " + top.dump() + "}";
+    nlohmann::json cache;
+    {
+        std::lock_guard<std::mutex> lk(g_errMx);
+        cache = {{"read", g_cacheRead}, {"written", g_cacheWritten}};
+    }
+    out += ", \"start_ms\": " + std::to_string(std::lround(g_startMs.load()));
+    out += ", \"gpu_top\": " + top.dump() + ", \"pipeline_cache\": " + cache.dump() + "}";
     H->reply_append(r, out.c_str(), out.size());
     return 0;
 }
@@ -899,7 +953,6 @@ int TuneCmd(MmlSideMod *, const char *args, MmlSideReply *r, void *) {
         for (const auto &f : kTuneFields)
             if (a.contains(f.name) && a[f.name].is_number()) g_tune.*f.field = a[f.name].get<float>();
         if (a.contains("wireframe") && a["wireframe"].is_boolean()) g_tune.wireframe = a["wireframe"].get<bool>();
-        g_tune.cellSize = std::clamp(g_tune.cellSize, 0.02f, 2.f);
         t = g_tune;
     }
     nlohmann::json out = {{"wireframe", t.wireframe}};
@@ -953,6 +1006,12 @@ MML_EXPORT int mml_side_load(const MmlSideHost *host, MmlSideMod *mod) {
     LARGE_INTEGER f;
     QueryPerformanceFrequency(&f);
     g_freqMs = f.QuadPart / 1000.0;
+    if (const char *dir = H->data_dir(mod)) {   // (UTF-8: the game may be in a Cyrillic folder)
+        std::string p = std::string(dir) + "vk_pipelines.bin";
+        g_pipelineCachePath.assign(MultiByteToWideChar(CP_UTF8, 0, p.c_str(), -1, nullptr, 0), L'\0');
+        MultiByteToWideChar(CP_UTF8, 0, p.c_str(), -1, g_pipelineCachePath.data(), int(g_pipelineCachePath.size()));
+        g_pipelineCachePath.pop_back();   // (the terminating zero)
+    }
     g_frameCh = H->channel_open(mod, "frame", sizeof(fsm::Frame));
     g_viewCh = H->channel_open(mod, "view", sizeof(fsm::View));
     g_doneCh = H->channel_open(mod, "done", sizeof(fsm::Done));
@@ -966,7 +1025,7 @@ MML_EXPORT int mml_side_load(const MmlSideHost *host, MmlSideMod *mod) {
     g_worker = std::thread(Worker);
     H->subscribe(mod, "FRAME", OnFrame, nullptr);
     H->command(mod, "side", "{} -> what the 64-bit half has done: ready, gpu, steps, renders, simulate_ms, render_ms, gpu_ms, blocks, error", Side, nullptr);
-    H->command(mod, "tune", "{cell_size, gravity, buoyancy, cooling, vorticity, smoke_fade, attenuation, color_scale, shadow_attenuation, shadow_min, shadow_steps, albedo, wireframe} -> Flow's parameters now", TuneCmd, nullptr);
+    H->command(mod, "tune", "{gravity, buoyancy, cooling, vorticity, smoke_fade, attenuation, color_scale, shadow_attenuation, shadow_min, shadow_steps, albedo, wireframe} -> Flow's parameters now (the grids' cells: the settings)", TuneCmd, nullptr);
     H->command(mod, "fault","{} -> a fault on purpose in the 64-bit half (it is unloaded; mod.reload brings it back)", Fault, nullptr);
     return 0;
 }

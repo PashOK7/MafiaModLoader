@@ -1056,10 +1056,10 @@ merged, sorted by importance):
   statics (64 m) or through the world leaves the pile.
 - **NVIDIA Flow in `flow_smoke`** (2026-10-18):
   - The first start on a machine waits for NVIDIA's driver to compile Flow's several hundred compute shaders (5 minutes
-    the first time in the 1.2 lab, 100 s in the 1.0 lab): the driver's disk cache is kept by the executable's path, and
-    each game folder has its own `mml-sidecar64.exe`. Flow makes its pipelines with no `VkPipelineCache` (its
-    `ComputePipelineVulkan.cpp`); the fix is a pipeline cache of the mod's own, kept in its data folder (a patch of
-    Flow's Vulkan backend, applied by the build), so a start costs the compile once per driver and Flow.
+    the first time in the 1.2 lab, 100 s in the 1.0 lab; again whenever the sidecar is rebuilt: 110 s in the 1.0 lab
+    on 2026-10-19). Since 2026-10-19 Flow keeps a pipeline cache of its own in the mod's data folder
+    (`third_party/flow/patch.py`, `vk_pipelines.bin`, 8.4 MB): the sidecar rebuilt again, Flow started in 0.49 s from
+    it. What is left: the first start in each game folder (each has its own data folder) and after a new driver.
   - The round trip is waited for on the CPU (an event query for the frame's two textures, Flow's `waitForFrame`, CUDA's
     stream synchronised): about 3 ms of the game thread a frame. Shared fences (Direct3D 11's signal for CUDA to wait
     on, CUDA's for Direct3D 11) would leave only the half's recording, about 0.5 ms.

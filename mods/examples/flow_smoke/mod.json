@@ -9,5 +9,54 @@
   "builds": ["1.2", "1.0"],
   "gfx": true,
   "load_order": 100,
-  "depends": []
+  "depends": [],
+  "settings": {
+    "title": "Gas and fire",
+    "sections": [
+      {"title": "Grids", "controls": [
+        {"key": "fire_cell", "label": "Fire cell", "min": 0.02, "max": 0.5, "step": 0.01, "unit": "m"},
+        {"key": "smoke_cell", "label": "Smoke cell", "min": 0.02, "max": 2, "step": 0.01, "unit": "m"}
+      ]},
+      {"title": "Burning", "controls": [
+        {"key": "fire_combustion", "label": "Fuel burns"},
+        {"key": "fire_ignition", "label": "Ignition temperature", "min": 0, "max": 1, "step": 0.01},
+        {"key": "fire_burn_per_temp", "label": "Burn per heat", "min": 0, "max": 20, "step": 0.5},
+        {"key": "fire_fuel_per_burn", "label": "Fuel per burn", "min": 0, "max": 2, "step": 0.05},
+        {"key": "fire_temp_per_burn", "label": "Heat per burn", "min": 0, "max": 30, "step": 0.5},
+        {"key": "fire_smoke_per_burn", "label": "Smoke per burn", "min": 0, "max": 20, "step": 0.5},
+        {"key": "fire_divergence_per_burn", "label": "Expansion per burn", "min": 0, "max": 5, "step": 0.1}
+      ]},
+      {"title": "Heat and motion", "controls": [
+        {"key": "fire_buoyancy", "label": "Rise per heat", "min": 0, "max": 20, "step": 0.5},
+        {"key": "fire_buoyancy_smoke", "label": "Rise per smoke", "min": 0, "max": 5, "step": 0.1},
+        {"key": "fire_cooling", "label": "Cooling", "min": 0, "max": 10, "step": 0.1},
+        {"key": "fire_gravity", "label": "Gravity", "min": -20, "max": 20, "step": 0.5, "unit": "m/s2"},
+        {"key": "fire_vorticity_on", "label": "Swirls"},
+        {"key": "fire_vorticity", "label": "Swirl strength", "min": 0, "max": 10, "step": 0.1},
+        {"key": "fire_velocity_damping", "label": "Motion damping", "min": 0, "max": 1, "step": 0.01},
+        {"key": "fire_velocity_fade", "label": "Motion fade", "min": 0, "max": 1, "step": 0.01}
+      ]},
+      {"title": "Fading", "controls": [
+        {"key": "fire_temp_damping", "label": "Heat damping", "min": 0, "max": 1, "step": 0.01},
+        {"key": "fire_temp_fade", "label": "Heat fade", "min": 0, "max": 1, "step": 0.01},
+        {"key": "fire_fuel_damping", "label": "Fuel damping", "min": 0, "max": 1, "step": 0.01},
+        {"key": "fire_fuel_fade", "label": "Fuel fade", "min": 0, "max": 1, "step": 0.01},
+        {"key": "fire_burn_damping", "label": "Burn damping", "min": 0, "max": 1, "step": 0.01},
+        {"key": "fire_burn_fade", "label": "Burn fade", "min": 0, "max": 1, "step": 0.01},
+        {"key": "fire_smoke_damping", "label": "Smoke damping", "min": 0, "max": 1, "step": 0.01},
+        {"key": "fire_smoke_fade", "label": "Smoke fade", "min": 0, "max": 1, "step": 0.01}
+      ]},
+      {"title": "Light", "controls": [
+        {"key": "fire_color_scale", "label": "Colour", "min": 0, "max": 10, "step": 0.1},
+        {"key": "fire_attenuation", "label": "Opacity", "min": 0, "max": 50, "step": 0.5},
+        {"key": "fire_brightness", "label": "Brightness", "min": 0, "max": 5, "step": 0.1},
+        {"key": "fire_step_size", "label": "March step", "min": 0.1, "max": 3, "step": 0.05},
+        {"key": "fire_shadow_factor", "label": "Own shadow", "min": 0, "max": 2, "step": 0.05}
+      ]},
+      {"title": "Time", "controls": [
+        {"key": "fire_time_scale", "label": "Speed", "min": 0, "max": 4, "step": 0.05},
+        {"key": "fire_block_lifetime", "label": "Block lifetime", "min": 1, "max": 64, "step": 1, "unit": "steps"}
+      ]}
+    ]
+  }
 }

@@ -1733,7 +1733,17 @@ smallest half alone, `mods/examples/side_picture` a mod in two halves that hands
   rises); its colour map is looked up by temperature and its smoke map is clear at 0 (cooled smoke vanishes: a map
   of one grey, alpha 0.9, keeps it), and multiplied by 2.5 (Omniverse's HDR); the first `createGrid` on a machine has
   the driver compile several hundred compute shaders (1.5 to 5 minutes; NVIDIA's disk cache, kept by the
-  executable's path, makes the next start take under a second).
+  executable's path, makes the next start take under a second). Flow as built here keeps a Vulkan pipeline cache of
+  its own besides (`third_party/flow/patch.py`: Flow made its pipelines with none): the half names a file in the
+  mod's data folder (`vk_pipelines.bin`, through the environment variable `NV_FLOW_VK_PIPELINE_CACHE`), the device
+  starts its cache from it when the file is the same GPU's and driver's, and writes it back once new pipelines stop
+  coming (2 s after the last, from its queue's flush: the sidecar is killed with the game, so not at an orderly end).
+  `flow_smoke.side` tells `pipeline_cache` (`read`, `written`) and `start_ms`.
+  Its settings (Options > Mods, `config.json`): the grids' cells (`smoke_cell`, `fire_cell`) and the fire layer's
+  parameters, each named as Flow names it; the smoke's are `flow_smoke.tune`'s. A source on the player's car is put
+  just behind its hull (the game's box of it, `world_shapes`): inside the hull the car's own box holds the gas out and
+  nothing shows. `"jet": true` makes it a jet leaving the car's back at `speed` (a rocket's exhaust), `local` places
+  its nozzle in the car's frame.
 
 ## 4. A complete example
 

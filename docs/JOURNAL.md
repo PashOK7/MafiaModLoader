@@ -2299,6 +2299,22 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   25 ms), and a box's couple rate of 20 gave the gas 27 % of the car's velocity a step at 75 fps (Flow's rate is
   clamp(dt * rate, 0, 1)): 200 now (`tune` `shape_couple`).
 
+## 2026-10-18: flow_smoke: the grids' cells and the fire's parameters as settings
+
+- **Asked** (the owner): a setting for the fire's grid cell (he quoted 50%; the code had 4 cm for the fire and 10 cm for
+  the smoke, 40% of it, and no 50% anywhere: the fire's ray march runs at the frame's full size, the half size is the
+  next step). Then, for the grids of fire and smoke, and every fire parameter Flow gives.
+- **Made**: `smoke_cell` and `fire_cell` (metres, the defaults unchanged) and 30 fire parameters, each named as Flow
+  names it (`fsm::Fire` in the frame record; `combustion`, `ignition`, `burn_per_temp`... to `block_lifetime`), in the
+  Options' Mods page in sections, and in `config.json`. The 32-bit half reads them at load and on
+  `MML_EVENT_CONFIG_CHANGED`; the 64-bit half applies the fire layer's ones in `BuildParams`. The smoke keeps `tune`.
+  The `tune` command lost `cell_size` and `fire_cell`: the settings are their one source.
+- **Not exposed** (Flow's, left at their defaults): the second-order blend of each advection channel, the vorticity's
+  masks, pressure, the colour map's points (the fire's colours), the shadow of the fire (shared with the smoke's
+  `tune shadow_*`), and the smoke layer's settings beyond `tune`.
+- **Checked**: both halves build; the offline suite passed before this step (not run again on request: the limits).
+  Lab 1.2 started with the new build; the settings' effect in the game was not looked at.
+
 ## 2026-10-18: pet1kk's developer tools (PR 2) brought into the loader, offline
 
 - **Asked** (the owner): a pull request came (pet1kk, "Add files via upload": `contrib/developer_tools/`, a standalone
@@ -2451,3 +2467,28 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   roadmap (ROADMAP "Decisions").
 - Seen on the way: LS3D's skinned drawing has a second vertex layout (position, normal, UV, 0x20 bytes) chosen by a
   global flag (`ls3d+1C563C` bit 0): a hardware-lit path, perhaps; not tried.
+
+## 2026-10-19: flow_smoke: its settings seen, a car's source behind its hull, jets, a pipeline cache of its own
+
+- The settings of 2026-10-18 (the grids' cells, the fire's 30 parameters) seen in the 1.2 lab: a fire 6 m ahead,
+  then `fire_cell` 0.15 and `fire_color_scale` 6 through `config.set`: the fire coarser and brighter at once (each
+  frame's record carries them), then put back. The lab's own changes held `fire_block_lifetime` 1 from an earlier
+  try; put back to the default, 8.
+- `emit` with `"jet": true` (a car's exhaust leaving its back at `speed`; `local` its nozzle; made 2026-10-18 for a
+  rocket car, not written down then) gave nothing at its first try: the default place, 2.4 m behind the car's
+  centre, is inside the hull of a long car (the box of `spawn {"car": "Bolt-Thrower"}`'s thunderbird ends about
+  3.0 m behind it), where the car's own box holds the gas out. A source on a car is now put just behind its hull,
+  read from the game's box of it (`world_shapes`, class 0x200 and 0x2, its extent along the car's forward): the jet
+  streams back at the camera behind the car. Seen in both labs (1.0: Tommy's car at the freeride's start).
+- **A Vulkan pipeline cache for Flow** (ROADMAP Known gaps): Flow made its several hundred compute pipelines with no
+  `VkPipelineCache`. `third_party/flow/patch.py` (run by CMake after `tools/deps.py flow`; it keeps Flow's own text
+  beside each file it changes, `<file>.mml-orig`, and makes the file again from it, so a newer patch replaces an older
+  one) gives Flow's Vulkan device a cache started from the file `NV_FLOW_VK_PIPELINE_CACHE` names, when its header is
+  the same GPU's and driver's (vendor, device, pipelineCacheUUID), passes it to every pipeline, and writes it back
+  (a .tmp renamed into place) 2 s after the last new pipeline, from the queue's flush, and when the device goes: the
+  sidecar is killed with the game. `flow_smoke64` names `<data>\vk_pipelines.bin` and tells `pipeline_cache` (read,
+  written) and `start_ms` in `flow_smoke.side`. Measured: 1.0 lab, its sidecar rebuilt (the driver's cache missed):
+  110 s, 8.4 MB written; the sidecar rebuilt again and the game started anew: 0.49 s, the file read and nothing
+  written. 1.2 lab, the driver's cache warm: 0.87 s without the file, 0.45 s with it. `__GL_SHADER_DISK_CACHE=0` set in
+  the sidecar did not turn the driver's cache off (tried for a cold measurement in 1.2; taken out). The pristine
+  copies of the four files came from the pinned commit's raw files on GitHub (the archive is not kept).

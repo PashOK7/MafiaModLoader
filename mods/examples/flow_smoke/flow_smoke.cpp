@@ -9,6 +9,10 @@
 //   call flow_smoke.emit  {"kind": "smoke", "ahead": 4, "radius": 0.6, "strength": 1}   a source in front of the player
 //                         {"kind": "fire", "at": [x, y, z]}, {"kind": "smoke", "on": "car"} (the player's car: it
 //                         follows it, at its back), "velocity": [x, y, z], "seconds": 20 (then it stops) -> {"id"}
+//                         {"kind": "fire", "on": "car", "jet": true, "speed": 30, "local": [0.3, 0.6, -3.2]}: a rocket's
+//                         exhaust from a nozzle (local: [side, up, forward] in the car's frame, forward negative = back;
+//                         without it, just behind the car's hull: a nozzle inside the hull gives nothing, the car's own
+//                         box holds the gas out)
 //   call flow_smoke.stop  {"id": 1}         a source taken away (its gas stays and fades)
 //   call flow_smoke.clear                   everything taken away, the gas too
 //   call flow_smoke.wind  {"velocity": [2, 0, 0]}
@@ -64,7 +68,9 @@ struct Source {
     double at[3];
     float radius, velocity[3], strength;
     void *car;              // followed: a car (its back, at `local` in its frame)
-    float local[3];
+    float local[3];         // in the car's frame: [along axes[1], up, forward] (forward negative: its back)
+    bool jet;               // a jet: its gas leaves the car's back at jetSpeed (flow_smoke.emit "jet")
+    float jetSpeed;         // m/s
     double until;           // g_time when it stops (0: never)
 };
 std::vector<Source> g_sources;
@@ -80,6 +86,8 @@ bool g_haveOrigin;
 double g_origin[3];
 float g_wind[3];
 float g_ground;   // about the origin
+float g_smokeCell = 0.1f, g_fireCell = 0.04f;   // metres: the grids' cells (the settings; ReadSettings)
+fsm::Fire g_fire{};   // the fire layer's parameters (the settings; ReadSettings)
 
 struct Stats {
     uint64_t frames, asked, drawn, late, none, noTextures, silent, meshFrames;
@@ -125,6 +133,28 @@ bool CarBody(void *car, MmlVehicleBody *b) { return car && H->vehicle_body(M, ca
 
 const char *KindName(uint32_t k) { return k == fsm::kFire ? "fire" : k == fsm::kSteam ? "steam" : "smoke"; }
 
+// Where a car's hull ends behind it, along its forward axis from its place (negative: behind), by the game's own box
+// of its hull (the shape the gas meets: a source inside it gives no gas); `fallback` when the box is not found.
+float CarBack(void *car, const MmlVehicleBody &b, float fallback) {
+    MmlShape shapes[64];
+    float lo[3], hi[3];
+    for (int i = 0; i < 3; i++) lo[i] = b.pos[i] - 8, hi[i] = b.pos[i] + 8;
+    int n = std::min(H->world_shapes(M, lo, hi, MML_WORLD_MOVING, shapes, 64), 64);
+    for (int i = 0; i < n; i++) {
+        const MmlShape &sh = shapes[i];
+        if (sh.actor != car || sh.kind != MML_SHAPE_BOX || !(sh.classes & 0x200) || !(sh.classes & 0x2)) continue;
+        float along = 0, extent = 0;
+        for (int k = 0; k < 3; k++) along += (sh.center[k] - b.pos[k]) * b.axes[0][k];
+        for (int a = 0; a < 3; a++) {   // (the box's half along the car's forward: each of its axes' share)
+            float d = 0;
+            for (int k = 0; k < 3; k++) d += sh.axes[a * 3 + k] * b.axes[0][k];
+            extent += std::fabs(d) * sh.half[a];
+        }
+        return along - extent;
+    }
+    return fallback;
+}
+
 std::string Emit(const json &a, uint32_t *id) {
     std::string kind = a.value("kind", std::string("smoke"));
     Source s{};
@@ -144,8 +174,14 @@ std::string Emit(const json &a, uint32_t *id) {
         if (!s.car) s.car = game::LastCar();
         MmlVehicleBody b;
         if (!CarBody(s.car, &b)) return "the player has no car";
-        s.local[2] = -2.4f, s.local[1] = 0.4f;   // (its back, low: where an exhaust or a burning boot is)
-        for (int i = 0; i < 3; i++) s.at[i] = b.pos[i] + b.axes[0][i] * s.local[2] + b.axes[2][i] * s.local[1];
+        // (its back, low, just outside its hull: where an exhaust or a burning boot is; inside the hull the gas is
+        // held out by the car's own box and nothing shows)
+        s.local[2] = CarBack(s.car, b, -2.4f) - s.radius - 0.1f, s.local[1] = 0.4f;
+        if (a.contains("local") && a["local"].is_array() && a["local"].size() == 3)
+            for (int i = 0; i < 3; i++) s.local[i] = a["local"][i].get<float>();   // (a nozzle: see "local" in the header)
+        s.jet = a.value("jet", false);
+        s.jetSpeed = std::clamp(a.value("speed", 20.0f), 0.0f, 100.0f);
+        for (int i = 0; i < 3; i++) s.at[i] = b.pos[i] + b.axes[0][i] * s.local[2] + b.axes[2][i] * s.local[1] + b.axes[1][i] * s.local[0];
     } else if (a.contains("at") && a["at"].is_array() && a["at"].size() == 3) {
         for (int i = 0; i < 3; i++) s.at[i] = a["at"][i].get<double>();
     } else {
@@ -156,6 +192,7 @@ std::string Emit(const json &a, uint32_t *id) {
         if (Ground(s.at, &y)) s.at[1] = y;
         s.at[1] += s.radius * 0.5f;
     }
+    if (s.jet && !s.car) return "jet: a source on the player's car (\"on\": \"car\")";
     double seconds = a.value("seconds", 0.0);
     s.until = seconds > 0 ? g_time + seconds : 0;
     if (!g_haveOrigin || g_sources.empty()) SetOrigin(s.at);
@@ -460,6 +497,8 @@ void Record(float dt, bool run) {
     f.clear = g_clear;
     f.ground = g_ground;
     memcpy(f.wind, g_wind, sizeof g_wind);
+    f.smokeCell = g_smokeCell, f.fireCell = g_fireCell;
+    f.fire = g_fire;
     // the scene's sun and ambient light (the game's colours, display gamma: linear here), on the gas
     float toSun[3] = {0.4f, 0.8f, 0.45f}, sun[3] = {0.8f, 0.8f, 0.75f}, ambient[3] = {0.35f, 0.35f, 0.4f};
     H->scene_sun(M, toSun, sun, ambient);
@@ -476,12 +515,15 @@ void Record(float dt, bool run) {
         fsm::Source &o = f.source[f.sources++];
         o = fsm::Source{};
         o.id = s.id, o.kind = s.kind, o.radius = s.radius, o.strength = s.strength;
+        o.jet = s.jet, o.jetSpeed = s.jetSpeed;
         memcpy(o.velocity, s.velocity, sizeof o.velocity);
         MmlVehicleBody b;
         if (s.car && CarBody(s.car, &b)) {
             for (int i = 0; i < 3; i++) {
                 s.at[i] = b.pos[i] + b.axes[0][i] * s.local[2] + b.axes[2][i] * s.local[1] + b.axes[1][i] * s.local[0];
                 o.velocity[i] += b.velocity[i];
+                // (the car's forward is axes[0]: a jet leaves backwards along it, at the car's own speed plus its speed back)
+                if (s.jet) o.velocity[i] -= b.axes[0][i] * s.jetSpeed;
             }
         }
         for (int i = 0; i < 3; i++) {
@@ -634,8 +676,53 @@ void Pass(const MmlGfxFrame *f, void *) {
 }
 
 // ---- events, keys and commands
+// A number of the settings, clamped to its range (what the Options' page lets a player choose).
+float Setting(const char *key, double def, float lo, float hi) {
+    return std::clamp(float(H->config_number(M, key, def)), lo, hi);
+}
+
+// The settings (config.json's defaults; the Options' Mods page or config.set): read at load and when they change.
+// The 64-bit half gets them in each frame's record: the grids' cells (a cell is clamped to what Flow's grid takes
+// here) and the fire layer's parameters.
+void ReadSettings() {
+    g_smokeCell = Setting("smoke_cell", 0.1, 0.02f, 2.f);
+    g_fireCell = Setting("fire_cell", 0.04, 0.02f, 2.f);
+    fsm::Fire &F = g_fire;
+    F.combustion = Setting("fire_combustion", 1, 0, 1) >= 0.5f;
+    F.vorticityOn = Setting("fire_vorticity_on", 1, 0, 1) >= 0.5f;
+    F.ignition = Setting("fire_ignition", 0.05, 0, 1);
+    F.burnPerTemp = Setting("fire_burn_per_temp", 4, 0, 20);
+    F.fuelPerBurn = Setting("fire_fuel_per_burn", 0.25, 0, 2);
+    F.tempPerBurn = Setting("fire_temp_per_burn", 5, 0, 30);
+    F.smokePerBurn = Setting("fire_smoke_per_burn", 3, 0, 20);
+    F.divergencePerBurn = Setting("fire_divergence_per_burn", 0, 0, 5);
+    F.buoyancy = Setting("fire_buoyancy", 5, 0, 20);
+    F.buoyancySmoke = Setting("fire_buoyancy_smoke", 0, 0, 5);
+    F.cooling = Setting("fire_cooling", 1.5, 0, 10);
+    F.gravity = Setting("fire_gravity", -2, -20, 20);
+    F.vorticity = Setting("fire_vorticity", 4.0 / 3, 0, 10);
+    F.velocityDamping = Setting("fire_velocity_damping", 0.01, 0, 1);
+    F.velocityFade = Setting("fire_velocity_fade", 1, 0, 1);
+    F.tempDamping = Setting("fire_temp_damping", 0, 0, 1);
+    F.tempFade = Setting("fire_temp_fade", 0, 0, 1);
+    F.fuelDamping = Setting("fire_fuel_damping", 0, 0, 1);
+    F.fuelFade = Setting("fire_fuel_fade", 0, 0, 1);
+    F.burnDamping = Setting("fire_burn_damping", 0, 0, 1);
+    F.burnFade = Setting("fire_burn_fade", 0, 0, 1);
+    F.smokeDamping = Setting("fire_smoke_damping", 0.3, 0, 1);
+    F.smokeFade = Setting("fire_smoke_fade", 0.65, 0, 1);
+    F.colorScale = Setting("fire_color_scale", 2.5, 0, 10);
+    F.attenuation = Setting("fire_attenuation", 8, 0, 50);
+    F.brightness = Setting("fire_brightness", 1, 0, 5);
+    F.stepSize = Setting("fire_step_size", 0.75, 0.1f, 3);
+    F.shadowFactor = Setting("fire_shadow_factor", 1, 0, 2);
+    F.timeScale = Setting("fire_time_scale", 1, 0, 4);
+    F.blockLifetime = std::round(Setting("fire_block_lifetime", 8, 1, 64));
+}
+
 void OnEvent(const MmlEvent *ev, void *) {
     switch (ev->type) {
+    case MML_EVENT_CONFIG_CHANGED: ReadSettings(); break;
     case MML_EVENT_FRAME:
         g_frame++;
         if (H->mission_state() != MML_MISSION_RUNNING) Record(ev->dt, false);
@@ -883,6 +970,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     QueryPerformanceFrequency(&f);
     g_freqMs = f.QuadPart / 1000.0;
     g_game = game::Detect(host->module_base("LS3DF.dll"));
+    ReadSettings();
     g_frameCh = H->channel_open(mod, "frame", sizeof(fsm::Frame));
     g_viewCh = H->channel_open(mod, "view", sizeof(fsm::View));
     g_doneCh = H->channel_open(mod, "done", sizeof(fsm::Done));
@@ -896,14 +984,15 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
         memcpy(g_origin, k.origin, sizeof g_origin);
         memcpy(g_wind, k.wind, sizeof g_wind);
     }
-    for (MmlEventType t : {MML_EVENT_FRAME, MML_EVENT_MISSION_TICK, MML_EVENT_MISSION_CLOSE, MML_EVENT_ACTOR_DESTROYED})
+    for (MmlEventType t : {MML_EVENT_FRAME, MML_EVENT_MISSION_TICK, MML_EVENT_MISSION_CLOSE, MML_EVENT_ACTOR_DESTROYED,
+                           MML_EVENT_CONFIG_CHANGED})
         H->subscribe(mod, t, OnEvent, nullptr);
     // (early among the passes: its picture is the whole frame, so the passes after it are laid over the gas)
     if (H->gfx_pass(mod, 50, Pass, nullptr) <= 0) {
         H->log(mod, MML_LOG_ERROR, "the graphics bridge refused the pass: flow_smoke needs \"gfx\": true on at the game's start");
         return 1;
     }
-    H->command(mod, "emit", "{kind: smoke|fire|steam, ahead | at | on: \"car\", radius, strength, velocity, seconds} -> {id}: a source of gas (NVIDIA Flow on the GPU)", CmdEmit, nullptr);
+    H->command(mod, "emit", "{kind: smoke|fire|steam, ahead | at | on: \"car\", radius, strength, velocity, seconds, jet, speed, local} -> {id}: a source of gas (NVIDIA Flow on the GPU); jet: a car's exhaust backwards at speed; local: [side, up, forward] of its nozzle", CmdEmit, nullptr);
     H->command(mod, "move", "{id, at} -> the newest fire (or id's source) moved where the crosshair looks (or to at); none: a fire made there. F5", CmdMove, nullptr);
     H->command(mod, "stop", "{id} -> that source taken away (its gas fades)", CmdStop, nullptr);
     H->command(mod, "clear", "{} -> every source and all the gas taken away", CmdClear, nullptr);
