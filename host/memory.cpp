@@ -48,6 +48,30 @@ uintptr_t ModuleBase(const char *name) {
     return reinterpret_cast<uintptr_t>(GetModuleHandleA(name));
 }
 
+AddressSpace AddressSpaceNow() {
+    AddressSpace a{};
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    uintptr_t at = reinterpret_cast<uintptr_t>(si.lpMinimumApplicationAddress);
+    uintptr_t top = reinterpret_cast<uintptr_t>(si.lpMaximumApplicationAddress);
+    a.totalMb = static_cast<unsigned>((static_cast<uint64_t>(top) + 1) >> 20);
+    MEMORY_BASIC_INFORMATION mi;
+    while (at < top && VirtualQuery(reinterpret_cast<const void *>(at), &mi, sizeof mi)) {
+        if (mi.State == MEM_FREE) {
+            uint64_t mb = mi.RegionSize >> 20;
+            a.freeMb += static_cast<unsigned>(mb);
+            if (mb > a.largestMb) a.largestMb = static_cast<unsigned>(mb);
+        }
+        uintptr_t next = reinterpret_cast<uintptr_t>(mi.BaseAddress) + mi.RegionSize;
+        if (next <= at) break;
+        at = next;
+    }
+    const auto *dos = reinterpret_cast<const IMAGE_DOS_HEADER *>(GetModuleHandleW(nullptr));
+    const auto *nt = reinterpret_cast<const IMAGE_NT_HEADERS *>(reinterpret_cast<const uint8_t *>(dos) + dos->e_lfanew);
+    a.largeAddressAware = (nt->FileHeader.Characteristics & IMAGE_FILE_LARGE_ADDRESS_AWARE) != 0;
+    return a;
+}
+
 uintptr_t ParseAddress(const std::string &text) {
     std::string s;
     for (char c : text) if (!isspace(static_cast<unsigned char>(c))) s += c;

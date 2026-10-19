@@ -2691,3 +2691,23 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   250. 1.2 without DXVK: as before (`Direct3D 9Ex: textures shared by handle`). The bridge off on purpose (1.0, no
   gfx mod at the start, dlss_nr loaded later: a multisampled device): the console line and the reason in the log.
 - **Lab**: both labs as they were (DXVK, dlss_nr's DLL out; dlss_nr off; debug_views, devtools, flow_smoke on).
+
+## 2026-10-19: DLSS 5 NR's first picture on an RTX 50: too dark; a crash for want of address space
+
+- **The player's logs** (RTX 5060 Laptop, Steam 1.2 with DXVK, ReShade, MafiaWaterShaderMod.asi and a texture pack):
+  `DLSS 5 NR ready on NVIDIA GeForce RTX 5060 Laptop GPU`, NGX's log made the DLSSNR feature in two missions: the
+  first time NVIDIA's model ran in this mod. The player's screenshot: the menus fine, the missions' picture far too
+  dark.
+- **Why dark**: the mod gave DLSS-NR the frame in linear values (Lin, pow 2.2) and showed its answer re-encoded (Enc).
+  RTX Remix, the one public integration (dxvk-remix: rtx_context.cpp dispatchDlssNR, the fast tone mapping shader),
+  gives it `linearToGamma(ACES(hdr * exposure))` (pow 1/2.2) and reads its picture back with `gammaToLinear`:
+  DLSS-NR's model works on gamma values. Given linear ones it saw a far darker scene and drew it so (the round trip
+  could not show it: its encoding is symmetric). Now `color_in` is the frame as the game drew it (already in the
+  display's gamma) and `color_out` is shown as it comes. Not seen yet on an RTX 50 (the labs' RTX 3070 cannot run the
+  model); the round trip in both labs as bright as before.
+- **The crash** (the run before the player's 4 GB patch, mise14-parnik loading): LS3DF.dll+0x79923, a `rep stosd`
+  through a null pointer: `operator new(1024 * 1024 * 16)` in ITexture::Create (+0x77500) returned null, so the game
+  had no 16 MB left in its 2 GB (a texture pack, DXVK, ReShade, the drivers, the bridge). The player's 4 GB patch
+  (Large Address Aware) cured it. The loader now writes the address space at its start (`address space: total,
+  free, the largest piece; Game.exe Large Address Aware or not`, with the advice when not) and in a crash report
+  (`address_space`, tested offline); the pack's README advises the 4 GB patch.

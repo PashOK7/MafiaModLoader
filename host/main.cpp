@@ -81,6 +81,12 @@ void Init() {
     HLOG("MafiaModLoader (API %u) loaded into %s", MML_API_VERSION, exe.c_str());
     HLOG("instance: the game's one-at-a-time mutex is this folder's (%ls): games of other folders run beside it%s",
          g_mutexName.c_str(), oCreateMutexA ? "" : " (Game.exe's CreateMutexA import not found: not linked)");
+    {
+        AddressSpace a = AddressSpaceNow();
+        HLOG("address space: %u MB, %u MB free (the largest piece %u MB)%s", a.totalMb, a.freeMb, a.largestMb,
+             a.largeAddressAware ? " (Game.exe is Large Address Aware)" :
+             " (Game.exe is not Large Address Aware: the 4 GB patch would double it, for texture packs, DXVK, ReShade)");
+    }
     EnsureCrashFilter();
     if (GameHooksInstall()) {
         HLOG("game: Mafia %s", GameBuild());

@@ -32,6 +32,11 @@ DXVK works with it: keep DXVK's d3d9.dll (and dxvk.conf) in the game
 folder, but not DXVK's d3d8.dll (this archive's d3d8.dll must stay).
 ReShade on top of DXVK (Vulkan) is not tested yet.
 
+With a texture pack, DXVK or ReShade, and at high resolutions, apply the
+"4GB patch" (Large Address Aware) to Game.exe: the game is 32-bit and
+otherwise runs out of memory while a mission loads (a crash in LS3DF.dll).
+The first line of mml\logs\mml.log says how much it has.
+
 
 USE
 ---

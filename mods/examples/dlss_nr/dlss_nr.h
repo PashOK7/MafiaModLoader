@@ -9,13 +9,14 @@
 //          not.
 //
 // The textures (the 64-bit half's, made at the frame's size, opened by the bridge's Direct3D 11 device):
-// "color_in"  R16G16B16A16_FLOAT  the frame where the world is drawn and the HUD is not yet, linear (0..1: the game's
-//                                 colours decoded from their gamma: what DLSS-NR takes, an SDR picture in linear terms)
+// "color_in"  R16G16B16A16_FLOAT  the frame where the world is drawn and the HUD is not yet, in the display's gamma
+//                                 (0..1, as the game drew it: DLSS-NR's model works on gamma values, as RTX Remix gives
+//                                 it; the first version gave it linear values and the picture came back far too dark)
 // "depth_in"  R32_FLOAT           its depth as the game's projection makes it (0 near .. 1 far; the sky 1)
 // "mvec_in"   R16G16B16A16_FLOAT  rg: each pixel's motion vector in pixels, from where it is to where it was the frame
 //                                 before (DLSS's convention); the camera's motion (the depth reprojected)
 // "mask_in"   R8G8B8A8_UNORM      DLSS-NR's control mask: 1 where it may change the picture fully, 0 where not at all
-// "color_out" R16G16B16A16_FLOAT  DLSS-NR's picture, linear
+// "color_out" R16G16B16A16_FLOAT  DLSS-NR's picture, in the display's gamma
 #pragma once
 #include <stdint.h>
 

@@ -4,7 +4,7 @@
 // (Blackwell: NVIDIA's DLL checks the GPU itself). The 64-bit half (dlss_nr64.cpp) runs it; this 32-bit half gives it
 // the frame in its graphics pass and puts its picture on the screen, under the HUD.
 //
-// What DLSS-NR is given: the frame where the world is drawn and the HUD is not yet (linear), its depth, each pixel's
+// What DLSS-NR is given: the frame where the world is drawn and the HUD is not yet (in its gamma), its depth, each pixel's
 // motion vector (the camera's motion: the depth reprojected through the last frame's camera; the game's moving
 // actors are not told apart: a compromise, the game has no motion vectors of its own), and a control mask (how much
 // it may change each pixel: the sky's share a setting). The settings are NVIDIA's own (intensity, local tone and

@@ -690,6 +690,10 @@ def crash_tests():
     check('the report: the taps\' last calls', any('1 calls' in t for t in r.get('taps', [])), r.get('taps'))
     check('the report: the last events and the mods', r.get('events') and any(m.get('id') == 'hook_a' for m in r.get('mods', [])),
           (r.get('events', [])[-2:], r.get('mods')))
+    a = r.get('address_space', {})
+    check('the report: the address space (free, its largest piece, Large Address Aware or not)',
+          a.get('total_mb', 0) >= 2000 and 0 < a.get('largest_mb', 0) <= a.get('free_mb', 0) < a.get('total_mb', 0)
+          and isinstance(a.get('large_address_aware'), bool), a)
 
     out, r = run_crash('crash_notls', tap_crash=True)
     check('a thread without TLS: the harness made it (fs:[0x2C] 0)', 'fs:[0x2C] = 00000000' in out, out[-600:])

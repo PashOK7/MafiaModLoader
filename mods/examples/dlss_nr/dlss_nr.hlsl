@@ -13,7 +13,7 @@ cbuffer DlssNr : register(b1) {
                           // (0..1 of the width, 0: none), w: the debug view (1 motion, 2 depth, 3 mask)
 };
 
-Texture2D<float4> g_nrOut : register(t3);   // "color_out": DLSS-NR's picture, linear
+Texture2D<float4> g_nrOut : register(t3);   // "color_out": DLSS-NR's picture, in the display's gamma (as it was given)
 Texture2D<float4> g_prevColor : register(t4);   // the frame before (the debug views' reprojection check)
 
 // Where a world direction or point was on the screen the frame before (pixels). A point at infinity (the sky): its
@@ -39,7 +39,9 @@ float2 Motion(float2 pixel) {
 float Mask(float2 pixel) { return IsSky(SceneDepth(pixel)) ? g_opts.x : 1; }
 
 struct Prepared {
-    float4 color : SV_Target0;   // the frame, linear: DLSS-NR takes an SDR picture in linear terms (0..1)
+    float4 color : SV_Target0;   // the frame as the game drew it: an SDR picture in the display's gamma (0..1), what
+                                 // DLSS-NR takes (RTX Remix gives it pow(x, 1 / 2.2) of its tone-mapped colour and
+                                 // reads its picture back with pow(x, 2.2): DLSS-NR's model works on gamma values)
     float depth : SV_Target1;    // its depth as the game's projection makes it: _33 + _43 / z (the sky 1)
     float4 motion : SV_Target2;  // rg: the motion vector in pixels
     float4 mask : SV_Target3;    // DLSS-NR's control mask: how much it may change each pixel
@@ -47,7 +49,7 @@ struct Prepared {
 
 Prepared PsPrepare(float4 pos : SV_Position) {
     Prepared o;
-    o.color = float4(saturate(Lin(g_sceneColor.Load(int3(pos.xy, 0)).rgb)), 1);
+    o.color = float4(saturate(g_sceneColor.Load(int3(pos.xy, 0)).rgb), 1);
     float z = SceneDepth(pos.xy);
     o.depth = IsSky(z) ? 1 : saturate(g_depthProj.x + g_depthProj.y / max(z, 1e-3));
     o.motion = float4(Motion(pos.xy), 0, 0);
@@ -55,13 +57,13 @@ Prepared PsPrepare(float4 pos : SV_Position) {
     return o;
 }
 
-// DLSS-NR's picture as the frame (alpha 1), back into the game's gamma. With the split on, the game's own frame left
+// DLSS-NR's picture as the frame (alpha 1), in the gamma it came in. With the split on, the game's own frame left
 // of it and a thin line where it is: the difference seen at once.
 float4 PsComposite(float4 pos : SV_Position) : SV_Target {
     float split = g_opts.z * g_size.x;
     if (g_opts.z > 0 && abs(pos.x - split) < 1) return float4(1, 1, 1, 1);
     if (g_opts.z > 0 && pos.x < split) return float4(g_sceneColor.Load(int3(pos.xy, 0)).rgb, 1);
-    return float4(Enc(saturate(g_nrOut.Load(int3(pos.xy, 0)).rgb)), 1);
+    return float4(saturate(g_nrOut.Load(int3(pos.xy, 0)).rgb), 1);
 }
 
 // The inputs as DLSS-NR gets them (the settings' debug view): the motion vectors as colours (grey: still; red right,

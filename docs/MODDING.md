@@ -1796,7 +1796,9 @@ smallest half alone, `mods/examples/side_picture` a mod in two halves that hands
   (`NVSDK_NGX_VULKAN_GetFeature*ExtensionRequirements`: `VK_NVX_binary_import`, `VK_NVX_image_view_handle`,
   `VK_KHR_buffer_device_address`, `VK_KHR_push_descriptor`) and `VK_KHR_external_memory_win32`, and starts NGX with a
   project id of its own (`NVSDK_NGX_VULKAN_Init_with_ProjectID`, a custom engine). The frame: the pass draws the
-  world's colour (linear, 0..1: DLSS-NR takes an SDR picture in linear terms), its depth as the projection makes it
+  world's colour (as the game drew it, in the display's gamma, 0..1: DLSS-NR's model works on gamma values, as RTX
+  Remix gives it pow(x, 1/2.2) of its tone-mapped colour; given linear values it made the picture far too dark, seen
+  on a player's RTX 5060), its depth as the projection makes it
   (0 near .. 1 far), each pixel's motion vector in pixels (to where it was the frame before: the depth reprojected
   through the last frame's camera; the game has no motion vectors, so its moving actors move as the world behind
   them) and a control mask (1 everywhere, the sky's share a setting) into four shared textures, and waits; the half

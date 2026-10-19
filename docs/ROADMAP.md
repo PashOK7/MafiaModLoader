@@ -1041,8 +1041,9 @@ merged, sorted by importance):
 
 ## Known gaps
 
-- **dlss_nr** (2026-10-19): DLSS 5 NR's own picture has not been seen: NVIDIA's `nvngx_dlssnr.dll` refuses every GPU
-  but an RTX 50 (Blackwell), and the labs have an RTX 3070. Everything up to NGX's answer is seen in both labs (the
+- **dlss_nr** (2026-10-19): DLSS 5 NR's own picture has been seen once, on a player's RTX 5060, far too dark: the
+  mod gave the model linear values where it takes gamma ones (fixed, as RTX Remix does; not yet seen again).
+  NVIDIA's `nvngx_dlssnr.dll` refuses every GPU but an RTX 50 (Blackwell), and the labs have an RTX 3070. Everything up to NGX's answer is seen in both labs (the
   Vulkan device on the game's adapter, NGX started, its verdict, the round trip of the frame, the inputs as debug
   views); the feature's creation and evaluation, their image layouts and the picture's look wait for an RTX 50 (the
   owner's friend's 5060). The motion vectors are the camera's (the game's moving actors get the world's behind them:

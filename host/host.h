@@ -71,6 +71,11 @@ void LogQuiet();                                  // no log file from now on (ma
 bool MemRead(uintptr_t addr, void *dst, size_t n);
 bool MemWrite(uintptr_t addr, const void *src, size_t n);
 uintptr_t ModuleBase(const char *name);
+// The game's address space (a 32-bit process: 2 GB, or 4 GB on 64-bit Windows when Game.exe is Large Address Aware,
+// "the 4 GB patch"): what is free and its largest piece. A texture pack, DXVK, ReShade and the bridge together once
+// left the game no 16 MB for a texture (an operator new that returned null in ITexture::Create).
+struct AddressSpace { unsigned totalMb, freeMb, largestMb; bool largeAddressAware; };
+AddressSpace AddressSpaceNow();
 // "0x5762A0", "5762A0", "game+0x1762A0", "ls3d+1AAE0", "<module>+<hex>"; 0 when it cannot be parsed or resolved.
 uintptr_t ParseAddress(const std::string &text);
 std::string DescribeAddress(uintptr_t addr);   // "Game.exe+0x1762A0", "LS3DF.dll+0x1AAE0" or the hex value

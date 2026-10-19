@@ -125,6 +125,10 @@ LONG WINAPI CrashFilter(EXCEPTION_POINTERS *ep) {
             static_cast<unsigned>(c->Eax), static_cast<unsigned>(c->Ebx), static_cast<unsigned>(c->Ecx),
             static_cast<unsigned>(c->Edx), static_cast<unsigned>(c->Esi), static_cast<unsigned>(c->Edi),
             static_cast<unsigned>(c->Ebp), static_cast<unsigned>(c->Esp));
+        // (an allocation that failed for want of address space shows here as little free and a small largest piece)
+        AddressSpace as = AddressSpaceNow();
+        Log(MML_LOG_ERROR, "crash", "address space: %u MB free of %u (the largest piece %u MB)%s", as.freeMb, as.totalMb, as.largestMb,
+            as.largeAddressAware ? "" : ", Game.exe not Large Address Aware");
         uintptr_t pcs[32];
         int npc = StackOf(c, pcs, 32);
         for (int i = 0; i < npc; i++) Log(MML_LOG_ERROR, "crash", "  %s %s", i ? "from" : "at  ", Frame(pcs[i]).c_str());
@@ -168,7 +172,9 @@ LONG WINAPI CrashFilter(EXCEPTION_POINTERS *ep) {
         char code[16];
         snprintf(code, sizeof code, "%08X", static_cast<unsigned>(er->ExceptionCode));
         rep->head = {{"exception", code}, {"at", Frame(reinterpret_cast<uintptr_t>(er->ExceptionAddress))},
-                     {"thread", GetCurrentThreadId()}, {"main_thread", GetCurrentThreadId() == g_mainTid}};
+                     {"thread", GetCurrentThreadId()}, {"main_thread", GetCurrentThreadId() == g_mainTid},
+                     {"address_space", {{"total_mb", as.totalMb}, {"free_mb", as.freeMb}, {"largest_mb", as.largestMb},
+                                        {"large_address_aware", as.largeAddressAware}}}};
         if (av) rep->head["access"] = {{"kind", er->ExceptionInformation[0] == 1 ? "write" : er->ExceptionInformation[0] == 8 ? "execute" : "read"},
                                        {"address", DescribeAddress(er->ExceptionInformation[1])}};
         json stack = json::array();
