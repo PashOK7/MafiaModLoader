@@ -2728,3 +2728,17 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Seen**: 1.2 lab with DXVK's d3d9.dll, dxgi.dll and d3d11.dll in the game folder: the bridge on, no DXVK dxgi or
   d3d11 log (neither loaded), dlss_nr's round trip (146 frames, none late). 1.0 lab without DXVK: the bridge on.
   ReShade's layer itself was not in the labs (system-wide).
+
+## 2026-10-19: dlss_nr writes what its frames did into the log
+
+- **The player's next logs** (after the d3d11 fix): the game ran, DLSS 5 NR ready and its feature made in
+  mise20-galery, no error anywhere (NGX, DXVK, dxwrapper, the loader), two runs of a few seconds. The player: "still
+  same ... sometimes it is good but then it looks horrible". Nothing in the log could say what the frames did:
+  dlss_nr's counts were only in `dlss_nr.state` (MCP, which a player has not).
+- **Made**: dlss_nr logs, once a minute in a mission and at its close, the frames since: how many had DLSS-NR's
+  picture, late (over wait_ms), without a picture, waiting for the textures, the history's resets (and how many at a
+  camera cut), the round trip (average, most) and DLSS-NR's GPU time. Seen in the 1.2 lab (the round trip mode):
+  "3085 frames, 3063 with DLSS-NR's picture, 0 late ... reset 1 times ... 0.36 ms (at most 1.72)".
+- **Open**: what "horrible" is. Candidates: the motion vectors are the camera's only (moving cars and people smear),
+  the model's own look on the old game, a Steam screenshot on F12 switching dlss_nr each time. The next log and a
+  split-screen pair of screenshots tell.

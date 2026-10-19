@@ -138,9 +138,31 @@ void CheckBridge(bool always) {
 
 // ---- the measures
 struct Stats {
-    uint64_t frames, drawn, late, none, noTextures, silent;
+    uint64_t frames, drawn, late, none, noTextures, silent, resets, cuts;
     double rtSum, rtMax, workSum, gpuSum, prepSum;
 } T;
+
+// What the frames did, into the log once a minute in a mission and at its close (a player's log then says it: how
+// many frames had DLSS-NR's picture, how many went late or without one, the history's resets, the times).
+Stats g_logged{};
+double g_windowRtMax;
+int64_t g_loggedQpc;
+void LogStats(const char *when) {
+    const Stats &a = T, &b = g_logged;
+    uint64_t frames = a.frames - b.frames, drawn = a.drawn - b.drawn;
+    if (!frames) return;
+    double n = drawn ? double(drawn) : 1;
+    H->log(M, MML_LOG_INFO,
+           "%s: %llu frames, %llu with DLSS-NR's picture, %llu late (over %u ms), %llu without its picture, %llu waiting for the "
+           "textures; the history reset %llu times (%llu at a camera cut); the round trip %.2f ms (at most %.2f), DLSS-NR on "
+           "the GPU %.2f ms",
+           when, (unsigned long long)frames, (unsigned long long)drawn, (unsigned long long)(a.late - b.late), S.waitMs,
+           (unsigned long long)(a.none - b.none), (unsigned long long)(a.noTextures - b.noTextures),
+           (unsigned long long)(a.resets - b.resets), (unsigned long long)(a.cuts - b.cuts), (a.rtSum - b.rtSum) / n, g_windowRtMax,
+           (a.gpuSum - b.gpuSum) / n);
+    g_logged = T;
+    g_windowRtMax = 0;
+}
 
 // ---- drawing (the bridge's Direct3D 11 device)
 template <class X> void SafeRelease(X *&p) {
@@ -256,7 +278,8 @@ void Pass(const MmlGfxFrame *f, void *) {
         G.generation = f->generation;
     }
     const MmlGfxConstants *k = f->k;
-    const bool cut = g_resetNext || Cut(k, f);
+    const bool camera = Cut(k, f);
+    const bool cut = g_resetNext || camera;
     const bool havePrev = !cut;
     // the inputs alone, as DLSS-NR would get them (any GPU: nothing goes to the 64-bit half)
     if (S.debug >= 1 && S.debug != 4) {
@@ -336,6 +359,7 @@ void Pass(const MmlGfxFrame *f, void *) {
     while (c->GetData(G.done, nullptr, 0, 0) == S_FALSE && Ms(t0, Qpc()) < 100) YieldProcessor();
     T.prepSum += Ms(t0, Qpc());
     v.reset = cut ? 1 : 0;
+    if (cut) T.resets++, T.cuts += camera && !g_resetNext ? 1 : 0;
     for (int i = 0; i < 4; i++) v.inGeneration[i] = G.inGen[i];
     v.askQpc = Qpc();
     H->channel_write(g_viewCh, &v, sizeof v);
@@ -358,7 +382,7 @@ void Pass(const MmlGfxFrame *f, void *) {
     if (g_done.frame != g_frame) { T.late++; g_resetNext = true; return; }
     if (!g_done.ok || g_done.outGeneration != t[dnr::kColorOut].generation || !t[dnr::kColorOut].srv) { T.none++; return; }
     double rt = Ms(g_done.askQpc, Qpc());
-    T.rtSum += rt, T.rtMax = std::max(T.rtMax, rt);
+    T.rtSum += rt, T.rtMax = std::max(T.rtMax, rt), g_windowRtMax = std::max(g_windowRtMax, rt);
     T.workSum += g_done.workMs, T.gpuSum += g_done.gpuMs;
     T.drawn++;
     // DLSS-NR's picture as the frame, into the effects target (alpha 1: the passes after this one are laid over it)
@@ -389,7 +413,14 @@ void OnEvent(const MmlEvent *ev, void *) {
         g_toldStage = UINT32_MAX;   // (told again in the new mission: the player sees why it is or is not there)
         g_bridgeTold = false;
         break;
-    case MML_EVENT_RENDER_END: CheckBridge(false); break;
+    case MML_EVENT_RENDER_END: {
+        CheckBridge(false);
+        int64_t now = Qpc();
+        if (!g_loggedQpc) g_loggedQpc = now;
+        if (Ms(g_loggedQpc, now) >= 60000) { LogStats("the last minute"); g_loggedQpc = now; }
+        break;
+    }
+    case MML_EVENT_MISSION_CLOSE: LogStats("the mission"); g_loggedQpc = Qpc(); break;
     default: break;
     }
 }
@@ -453,7 +484,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     g_statusCh = H->channel_open(mod, "status", sizeof(dnr::Status));
     if (!g_viewCh || !g_doneCh || !g_statusCh) return 1;
     ReadSettings();
-    for (MmlEventType t : {MML_EVENT_CONFIG_CHANGED, MML_EVENT_MISSION_LOADED, MML_EVENT_RENDER_END}) H->subscribe(mod, t, OnEvent, nullptr);
+    for (MmlEventType t : {MML_EVENT_CONFIG_CHANGED, MML_EVENT_MISSION_LOADED, MML_EVENT_RENDER_END, MML_EVENT_MISSION_CLOSE}) H->subscribe(mod, t, OnEvent, nullptr);
     // (first among the passes: its picture is the whole frame, so the other mods' effects are laid over it)
     if (H->gfx_pass(mod, 10, Pass, nullptr) <= 0) {
         H->log(mod, MML_LOG_ERROR, "the graphics bridge refused the pass: dlss_nr needs \"gfx\": true on at the game's start");
