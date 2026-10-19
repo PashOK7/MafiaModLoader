@@ -2711,3 +2711,20 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   (Large Address Aware) cured it. The loader now writes the address space at its start (`address space: total,
   free, the largest piece; Game.exe Large Address Aware or not`, with the advice when not) and in a crash report
   (`address_space`, tested offline); the pack's README advises the 4 GB patch.
+
+## 2026-10-19: the bridge takes Windows' own d3d11.dll and dxgi.dll
+
+- **The player's next logs**: two starts died at the bridge's first frame in `d3d11.dll+0x9E06F` (a read through
+  null), inside D3D11CreateDevice (called through ReShade's hook of it: ReShade 6.8 runs as a global Vulkan layer and
+  hooks Windows' d3d9, dxgi and d3d11 in the game). DXVK's `game_dxgi.log` beside it: the player had put DXVK's
+  `dxgi.dll` in the game folder too; the bridge loaded `dxgi.dll` by its bare name, got DXVK's, and Windows'
+  d3d11.dll, given DXVK's adapter, asked it for its private interfaces ("DxgiAdapter::QueryInterface: Unknown
+  interface query") and faulted on the null answer. Also in those logs: the 4 GB patch on (4095 MB of address
+  space), the address space line and the crash report's `address_space` working.
+- **Made**: gfx.cpp loads Windows' `dxgi.dll` then `d3d11.dll` by their full paths in System32 (d3d11's import of
+  dxgi binds to that one), as soon as the game makes its Direct3D 8 while a mod wants the bridge: before the mods
+  load, so their own imports of d3d11 by name find these already loaded. `tools/deps.py dxvk` now also gives DXVK's
+  `dxgi.dll` and `d3d11.dll`.
+- **Seen**: 1.2 lab with DXVK's d3d9.dll, dxgi.dll and d3d11.dll in the game folder: the bridge on, no DXVK dxgi or
+  d3d11 log (neither loaded), dlss_nr's round trip (146 frames, none late). 1.0 lab without DXVK: the bridge on.
+  ReShade's layer itself was not in the labs (system-wide).

@@ -273,8 +273,10 @@ Rendering over the game's frame, NGX through Vulkan in the sidecar; a GeForce RT
   crash filter, so no dump either. Ask `ThreadHasTls()` (host.h); `tests/run_tests.py` crashes such a thread.
 - **A player's Direct3D 9 may be DXVK's** (its `d3d9.dll` beside the game, for ReShade on Vulkan: dxwrapper loads the
   game folder's `d3d9.dll` first). Its shared handles are Vulkan's, which Direct3D 11 cannot open (0x80070057): the
-  bridge copies on DXVK's queue there (`host/gfx_vk.cpp`). Test it with `python tools/deps.py dxvk` and
-  `third_party/_deps/dxvk/x32/d3d9.dll` copied into a lab (and taken out after).
+  bridge copies on DXVK's queue there (`host/gfx_vk.cpp`). Players put DXVK's `dxgi.dll` and `d3d11.dll` there too:
+  the bridge loads Windows' own by full path (a bare name found DXVK's dxgi, and Windows' d3d11 faulted on its
+  adapter). Test it with `python tools/deps.py dxvk` and `third_party/_deps/dxvk/x32/*.dll` copied into a lab (and
+  taken out after).
 - **The MCP server's own binary is locked while your session runs it**: to build a new one, rename
   `mcp/target/release/mml-mcp.exe` first (Windows allows that), build, and test the new one with a client of your
   own (`tests/mcp_smoke.py` shows how); the session gets it at its next start.

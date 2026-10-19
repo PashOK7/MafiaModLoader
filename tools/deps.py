@@ -140,10 +140,12 @@ PINNED = {
     # DXVK 3.1.1 (doitsujin/dxvk, 2026-09-15), zlib: Direct3D 9 on Vulkan, as players put its d3d9.dll beside the game
     # (under dxwrapper, which loads the game folder's d3d9.dll first; ReShade on Vulkan then). The labs test the
     # graphics bridge's Vulkan path with it (host/gfx_vk.cpp: DXVK's shared handles are Vulkan's own, which Direct3D 11
-    # cannot open). Only the 32-bit d3d9.dll, and its license from the tag. The hashes: GitHub's published digest for
+    # cannot open). Its 32-bit d3d9.dll, and dxgi.dll and d3d11.dll (players put them beside the game too: the bridge
+    # must still take Windows' own), and its license from the tag. The hashes: GitHub's published digest for
     # the release's archive, the license as GitHub served it on 2026-10-19.
     'dxvk': [('https://github.com/doitsujin/dxvk/releases/download/v3.1.1/dxvk-3.1.1.tar.gz',
-              '40565b4a724aadc4433fa4e010b4b23916d9b1f1baeee64e17186db94f54e608', '', {'dxvk-3.1.1/x32/d3d9.dll': 'x32'}),
+              '40565b4a724aadc4433fa4e010b4b23916d9b1f1baeee64e17186db94f54e608', '',
+              {'dxvk-3.1.1/x32/d3d9.dll': 'x32', 'dxvk-3.1.1/x32/dxgi.dll': 'x32', 'dxvk-3.1.1/x32/d3d11.dll': 'x32'}),
              ('https://raw.githubusercontent.com/doitsujin/dxvk/v3.1.1/LICENSE',
               'a5cb1a6ded7d2d7e92d550ba28edd21be2d1d4044662b399887351023e30ce64', '')],
     # Ghidra 12.1.4 (2026-09-21), Apache 2.0: the reverse-engineering projects of both builds behind tools/ghidra_cli.py

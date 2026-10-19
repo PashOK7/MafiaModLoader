@@ -507,9 +507,20 @@ bool Fail(const std::string &why) {
     return false;
 }
 
+// Windows' own dxgi.dll and d3d11.dll, by their full paths in System32, dxgi first (d3d11's import of it then binds to
+// that one): a player's game folder may hold DXVK's dxgi.dll (or d3d11.dll), which a bare name would find first, and
+// Windows' d3d11.dll given DXVK's adapter faulted (seen 2026-10-19). Loaded before the mods (hkDirect3DCreate8, when a
+// mod wants the bridge), so the mods' own imports of them by name find these, already loaded.
+HMODULE SystemDll(const wchar_t *name) {
+    wchar_t dir[MAX_PATH];
+    UINT n = GetSystemDirectoryW(dir, MAX_PATH);
+    if (!n || n >= MAX_PATH) return nullptr;
+    std::wstring path = std::wstring(dir) + L"\\" + name;
+    return LoadLibraryExW(path.c_str(), nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32 | LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR);
+}
 bool LoadD3d11() {
     if (pD3D11CreateDevice && pCreateDXGIFactory1) return true;
-    HMODULE d11 = LoadLibraryA("d3d11.dll"), dx = LoadLibraryA("dxgi.dll");
+    HMODULE dx = SystemDll(L"dxgi.dll"), d11 = SystemDll(L"d3d11.dll");
     pD3D11CreateDevice = d11 ? reinterpret_cast<CreateDevice11Fn>(GetProcAddress(d11, "D3D11CreateDevice")) : nullptr;
     pCreateDXGIFactory1 = dx ? reinterpret_cast<CreateFactory1Fn>(GetProcAddress(dx, "CreateDXGIFactory1")) : nullptr;
     return pD3D11CreateDevice && pCreateDXGIFactory1;
@@ -1109,6 +1120,7 @@ HRESULT STDMETHODCALLTYPE hkCreateDevice8(void *self, UINT adapter, DWORD type, 
     return hr;
 }
 void *WINAPI hkDirect3DCreate8(UINT sdk) {
+    if (!ModsWantingGfx().empty() && !LoadD3d11()) HWARN("gfx: Windows' d3d11.dll or dxgi.dll did not load from System32");
     void *d3d = oDirect3DCreate8(sdk);
     if (d3d && !oCreateDevice8) {
         std::string err;
