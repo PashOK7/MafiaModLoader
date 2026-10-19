@@ -347,6 +347,51 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     target_link_libraries(testmod_heavy PRIVATE testlib_heavylib)
     add_dependencies(testmod_heavy testlib_heavyrt)
 
+    # ---- dxwrapper: the game's Direct3D 8 on Direct3D 9Ex (the d3d8.dll stub and dxwrapper.dll beside Game.exe, as
+    # both labs run it; the graphics bridge, screenshots behind other windows and the shaders need 9Ex). Its sources
+    # pinned by tools/deps.py dxwrapper, our changes by third_party/dxwrapper/patch.py (its hooks safe on threads
+    # without TLS: a player's game died in one), its own Visual Studio projects built by MSBuild as an external project
+    # (MakeShader first: it compiles dxwrapper's shaders). Out to <out>/dxwrapper/ with its PDB and the settings the
+    # game needs (third_party/dxwrapper/dxwrapper.ini); tools/lab.py install puts it in a lab.
+    # tests/dxwrapper/notls.cpp (run_tests.py) calls its hooks from a thread without TLS.
+    option(MML_DXWRAPPER "dxwrapper built from its sources with our patch (tools/deps.py dxwrapper)" ON)
+    if(MML_DXWRAPPER)
+        include(ExternalProject)
+        mml_dep(dxwrapper)
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/third_party/dxwrapper/patch.py)
+        execute_process(COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/third_party/dxwrapper/patch.py RESULT_VARIABLE rc)
+        if(NOT rc EQUAL 0)
+            message(FATAL_ERROR "third_party/dxwrapper/patch.py failed: dxwrapper's sources are not the ones it knows")
+        endif()
+        set(dxw_dir ${CMAKE_SOURCE_DIR}/third_party/_deps/dxwrapper)
+        # ($(SolutionDir): its projects' custom steps run MakeShader by it; forward slashes, as a native path's final
+        # backslash would escape the command line's closing quote)
+        set(dxw_msb ${CMAKE_VS_MSBUILD_COMMAND} -p:Configuration=Release -p:Platform=Win32 -p:SolutionDir=${dxw_dir}/
+            -nologo -v:minimal)
+        ExternalProject_Add(dxwrapper_build
+            SOURCE_DIR ${dxw_dir}
+            BUILD_IN_SOURCE ON
+            CONFIGURE_COMMAND ""
+            # (the pre-build step counts the build number up and writes d3d8\BuildNo.rc: patch.py writes both instead)
+            BUILD_COMMAND ${dxw_msb} ${dxw_dir}/MakeShader/MakeShader.vcxproj
+                COMMAND ${dxw_msb} -m -p:PreBuildEventUseInBuild=false ${dxw_dir}/dxwrapper.vcxproj
+                COMMAND ${dxw_msb} ${dxw_dir}/Stub/stub.vcxproj
+            INSTALL_COMMAND ${CMAKE_COMMAND} -E make_directory ${MML_OUT}/dxwrapper
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different ${dxw_dir}/bin/Release/dxwrapper.dll
+                    ${dxw_dir}/bin/Release/dxwrapper.pdb ${dxw_dir}/bin/Release/Build/Stub/d3d8.dll ${dxw_dir}/License.txt
+                    ${CMAKE_SOURCE_DIR}/third_party/dxwrapper/dxwrapper.ini ${MML_OUT}/dxwrapper/
+            BUILD_BYPRODUCTS ${dxw_dir}/bin/Release/dxwrapper.dll
+            BUILD_ALWAYS ON)   # (MSBuild knows what changed: a second build is a check of a few seconds)
+        # the test: dxwrapper's hooks called from a thread made without TLS (it crashed the release v1.8.8600.25)
+        add_executable(dxwrapper_notls tests/dxwrapper/notls.cpp)
+        set(dxw_test ${CMAKE_BINARY_DIR}/dxwrapper_test)
+        set_target_properties(dxwrapper_notls PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${dxw_test}/$<0:>)
+        target_link_libraries(dxwrapper_notls PRIVATE advapi32 user32)
+        add_dependencies(dxwrapper_notls dxwrapper_build)
+        add_custom_command(TARGET dxwrapper_notls POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MML_OUT}/dxwrapper/dxwrapper.dll ${MML_OUT}/dxwrapper/d3d8.dll
+                ${MML_OUT}/dxwrapper/dxwrapper.ini ${dxw_test}/)
+    endif()
 else()
     # ---- 64 bits: the sidecar (mml-sidecar64.exe: the mods' 64-bit halves, sdk/include/mml/side.h) and those halves
     message(STATUS "64-bit configure: the sidecar and the mods' 64-bit halves")

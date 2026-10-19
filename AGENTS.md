@@ -178,8 +178,8 @@ Rendering over the game's frame, NGX through Vulkan in the sidecar; a GeForce RT
 | `mcp/` | the MCP server (Rust, `rmcp`): bridge client, game process, crash dumps, deploy, the knowledge base (`kb.rs`), screenshots (`shot.rs`) |
 | `tests/` | `harness/` (the stand-in game), `mods/` (test mods: `hook_a`, `hook_b`, `kit`, `kit_rs` in Rust), `run_tests.py`, `mcp_smoke.py`, `game/` (tests in the real game: `run.py`, `mml_game.py`, `test_*.py`) |
 | `docs/SCRIPTS.md` | the game's script machine: the language, the registers, tested recipes |
-| `tools/` | `lab.py` (the lab's modes, install), `deps.py` (pinned downloads), `check_builds.py` (the address tables against the game's files), `kb_import.py` (the knowledge base from MafiaReverse), `kb_external.py` (other projects' names, checked), `kb_structs.py` (the structures: classes, fields, vtables of both builds), `start.py` (launch into a profile and the freeride), `new_mod.py` (a new mod: its folder, manifest, settings, CMake line; `--rust` one in Rust), `rust_sys` (sdk/rust/mml/src/sys.rs from mml.h), `gen_rust_game.py` (the Rust crate's game tables from game_build.h, racing.h, game.h), `ghidra_cli.py` (both builds' Ghidra projects: `setup`, every op from a terminal; its server `ghidra_server.py`, the names it is given `ghidra_names.py`), `replace.py` (exact text edits), `gen_methods.py` (`host/methods.inc` from docs/PROTOCOL.md) |
-| `third_party/` | MinHook, nlohmann/json (vendored); `flow/premake5.lua` (NVIDIA Flow's own build under the newest premake); `_deps/` (downloaded: Ultimate ASI Loader, Jolt Physics, PhysX 5, CUDA's build parts and NVIDIA Flow 2 for the 64-bit halves: the build fetches what it builds) |
+| `tools/` | `lab.py` (the lab's modes, install: the loader, the mods with the lab's own `enabled` kept, our dxwrapper), `pack.py` (a player's archive: the loader, a pack's mods and what they need, its README from `tools/pack/`), `deps.py` (pinned downloads), `check_builds.py` (the address tables against the game's files), `kb_import.py` (the knowledge base from MafiaReverse), `kb_external.py` (other projects' names, checked), `kb_structs.py` (the structures: classes, fields, vtables of both builds), `start.py` (launch into a profile and the freeride), `new_mod.py` (a new mod: its folder, manifest, settings, CMake line; `--rust` one in Rust), `rust_sys` (sdk/rust/mml/src/sys.rs from mml.h), `gen_rust_game.py` (the Rust crate's game tables from game_build.h, racing.h, game.h), `ghidra_cli.py` (both builds' Ghidra projects: `setup`, every op from a terminal; its server `ghidra_server.py`, the names it is given `ghidra_names.py`), `replace.py` (exact text edits), `gen_methods.py` (`host/methods.inc` from docs/PROTOCOL.md) |
+| `third_party/` | MinHook, nlohmann/json (vendored); `flow/premake5.lua` (NVIDIA Flow's own build under the newest premake); `dxwrapper/` (`patch.py`: dxwrapper built from its sources by the x86 preset, its hooks safe on threads without TLS; `dxwrapper.ini`, the game's settings: Direct3D 8 on 9Ex); `_deps/` (downloaded: Ultimate ASI Loader, dxwrapper, Jolt Physics, PhysX 5, CUDA's build parts and NVIDIA Flow 2 for the 64-bit halves: the build fetches what it builds) |
 
 ## Facts that cost time to find
 
@@ -265,6 +265,12 @@ Rendering over the game's frame, NGX through Vulkan in the sidecar; a GeForce RT
   the game make its device without multisampling; one loaded later (`mod.load`) finds the bridge off (`gfx: off`
   in the log, `gfx.state`). Switch it on in the lab's copy of its mod.json (`"enabled": true`) and start the game
   again: `deploy` keeps a lab's own `enabled` (its reply's `kept`), whatever the build's manifest says.
+- **Code that any thread may run keeps off thread-local storage** (a hook on a Windows function, the crash filter, a
+  tap's thunk): a thread made with NtCreateThreadEx's SkipThreadAttach (injectors, overlays, mod packs make theirs
+  so) has no TLS vector, and a `thread_local` or a function's static with a dynamic initializer (MSVC checks an epoch
+  kept in TLS) read on it faults at null + 4 * the TLS index. It killed a player's game twice over (2026-10-19):
+  dxwrapper's DDrawCompat hooks (now built from source with `third_party/dxwrapper/patch.py`) and then the loader's
+  crash filter, so no dump either. Ask `ThreadHasTls()` (host.h); `tests/run_tests.py` crashes such a thread.
 - **The MCP server's own binary is locked while your session runs it**: to build a new one, rename
   `mcp/target/release/mml-mcp.exe` first (Windows allows that), build, and test the new one with a client of your
   own (`tests/mcp_smoke.py` shows how); the session gets it at its next start.

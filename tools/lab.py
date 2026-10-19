@@ -5,7 +5,7 @@ switching labs and modes, installing the build.
     python tools/lab.py use 1.0         # game_dir to the 1.0 lab (mml.config.json's "labs"); `use 1.2` back
     python tools/lab.py mode loader     # MafiaModLoader.asi in, the ragdoll's host out (kept)
     python tools/lab.py mode ragdoll    # back as it was: the ragdoll's host IJoy.dll, the loader out (kept)
-    python tools/lab.py install         # build/x86/out -> the game folder (the loader, the mods)
+    python tools/lab.py install         # build/x86/out -> the game folder (the loader, the mods, our dxwrapper)
 
 The labs are the user's folders, one a build, listed in mml.config.json: {"game_dir": ..., "labs": {"1.2": ...,
 "1.0": ...}}. `use` points game_dir at one of them (the MCP server and every tool read game_dir at each call); which
@@ -21,6 +21,7 @@ import filecmp
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -28,6 +29,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, 'build', 'x86', 'out')
 UAL = os.path.join(ROOT, 'third_party', '_deps', 'ual', 'dinput8.dll')
+DXWRAPPER = ('d3d8.dll', 'dxwrapper.dll', 'dxwrapper.pdb')   # our build's files (build/x86/out/dxwrapper)
 
 
 CFG = os.path.join(ROOT, 'mml.config.json')
@@ -137,8 +139,16 @@ def status(game):
         'ragdoll_host_in': host_in,
         'loader_in': asi_in,
         'ual': 'pinned v9.7.4' if ual and ual == sha(UAL) else ('other' if ual else 'missing'),
+        'dxwrapper': dxwrapper_state(game),
         'game_running': running(game),
     }
+
+
+def dxwrapper_state(game):
+    here = sha(os.path.join(game, 'dxwrapper.dll'))
+    if not here:
+        return 'missing (the game on Direct3D 8: no graphics bridge)'
+    return 'ours (third_party/dxwrapper/patch.py)' if here == sha(os.path.join(OUT, 'dxwrapper', 'dxwrapper.dll')) else 'other'
 
 
 def backup_saves(game):
@@ -154,6 +164,48 @@ def backup_saves(game):
 def keep(game, rel):
     os.makedirs(os.path.join(game, 'mml_lab'), exist_ok=True)
     return os.path.join(game, 'mml_lab', rel)
+
+
+def install_manifest(src, dst):
+    """The build's mod.json, with the lab's own `enabled` kept when the lab switched the mod on (as the MCP tool
+    `deploy` does: mcp/src/game.rs): every example ships off, and an install once turned a lab's mods off so."""
+    text = open(src, encoding='utf-8').read()
+    try:
+        on_here = loose_json(open(dst, encoding='utf-8').read()).get('enabled', True) if os.path.exists(dst) else False
+        on_built = loose_json(text).get('enabled', True)
+    except ValueError:
+        on_here = on_built = None
+    if on_here and not on_built:
+        kept = re.sub(r'"enabled"\s*:\s*false', '"enabled": true', text, count=1)
+        if loose_json(kept) == dict(loose_json(text), enabled=True):
+            text = kept
+            print('%s: the lab\'s own "enabled": true kept' % os.path.basename(os.path.dirname(os.path.abspath(dst))))
+    open(dst, 'w', encoding='utf-8', newline='').write(text)
+
+
+def loose_json(text):
+    """A manifest as the loader reads it: JSON with // comments (outside strings) allowed."""
+    out, i, quoted = [], 0, False
+    while i < len(text):
+        c = text[i]
+        if quoted:
+            out.append(c)
+            if c == '\\' and i + 1 < len(text):
+                out.append(text[i + 1])
+                i += 1
+            elif c == '"':
+                quoted = False
+        elif c == '"':
+            quoted = True
+            out.append(c)
+        elif text.startswith('//', i):
+            while i < len(text) and text[i] != '\n':
+                i += 1
+            continue
+        else:
+            out.append(c)
+        i += 1
+    return json.loads(''.join(out))
 
 
 def install(game):
@@ -179,6 +231,9 @@ def install(game):
             for f in files:
                 if f.lower().endswith(('.ilk', '.exp', '.lib', '.mmltmp')):
                     continue
+                if f == 'mod.json' and folder == src:
+                    install_manifest(os.path.join(folder, f), os.path.join(dst, f))
+                    continue
                 shutil.copy2(os.path.join(folder, f), os.path.join(dst, f))
     # the 64-bit build (the x64 preset): the sidecar, and the mods' 64-bit halves merged into their folders
     out64 = os.path.join(ROOT, 'build', 'x64', 'out')
@@ -192,6 +247,38 @@ def install(game):
                     shutil.copy2(os.path.join(folder, f), os.path.join(dst, f))
     print('installed: MafiaModLoader.asi and mods', ', '.join(defined),
           '(and the sidecar)' if os.path.isdir(os.path.join(out64, 'mml', 'sidecar')) else '(no 64-bit build: no sidecar)')
+    install_dxwrapper(game)
+
+
+def install_dxwrapper(game):
+    """Our dxwrapper build (CMakeLists.txt, third_party/dxwrapper/patch.py) beside Game.exe: the d3d8.dll stub and
+    dxwrapper.dll. What was there first (mafia-ragdoll's release copy in the labs) is kept once in mml_lab\\ and put
+    back by `mode ragdoll`; the lab's own dxwrapper.ini stays (ours is written only where there is none)."""
+    src = os.path.join(OUT, 'dxwrapper')
+    if not os.path.exists(os.path.join(src, 'dxwrapper.dll')):
+        print('dxwrapper: not built (MML_DXWRAPPER off?): the lab keeps its own')
+        return
+    changed = []
+    for f in DXWRAPPER:
+        mine, theirs = os.path.join(src, f), os.path.join(game, f)
+        if os.path.exists(theirs) and not os.path.exists(keep(game, f + '.prev')) and sha(theirs) != sha(mine):
+            shutil.copy2(theirs, keep(game, f + '.prev'))
+        if sha(theirs) != sha(mine):
+            shutil.copy2(mine, theirs)
+            changed.append(f)
+    if not os.path.exists(os.path.join(game, 'dxwrapper.ini')):
+        shutil.copy2(os.path.join(src, 'dxwrapper.ini'), os.path.join(game, 'dxwrapper.ini'))
+        changed.append('dxwrapper.ini')
+    print('dxwrapper: ours in (%s; the previous kept in mml_lab)' % ', '.join(changed) if changed else 'dxwrapper: ours, unchanged')
+
+
+def restore_dxwrapper(game):
+    """The dxwrapper that was there before ours (kept by install_dxwrapper), back in place."""
+    back = [f for f in DXWRAPPER if os.path.exists(keep(game, f + '.prev'))]
+    for f in back:
+        shutil.copy2(keep(game, f + '.prev'), os.path.join(game, f))
+    if back:
+        print('dxwrapper: the previous one back (%s)' % ', '.join(back))
 
 
 def mode(game, which):
@@ -223,6 +310,7 @@ def mode(game, which):
         if os.path.exists(host):
             shutil.copy2(host, ijoy)
             print('ragdoll host back as IJoy.dll')
+        restore_dxwrapper(game)
     else:
         sys.exit('mode loader | ragdoll')
     print(json.dumps(status(game), indent=2))

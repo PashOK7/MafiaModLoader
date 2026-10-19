@@ -1049,6 +1049,14 @@ merged, sorted by importance):
   per-object motion would take each drawn object's last matrix); the frame waits for DLSS-NR each frame (no
   pipelining a frame behind). Stage `other_gpu` (the game on a CPU's own graphics beside the GeForce, as a player's
   RTX 5060 machine ran it) is not seen: the labs' machine has NVIDIA GPUs only.
+- **A thread without TLS in a player's game** (2026-10-19): the Mafia 1.2 of a player's mod pack (Freeride Deluxe,
+  the 4 GB patch, a Czech retail release; Windows 11 24H2, the game on "AMD Radeon(TM) Graphics") had a thread made
+  with SkipThreadAttach that died in dxwrapper's hooks; the same package ran on the player's clean game. Fixed where
+  it can be (dxwrapper built with `third_party/dxwrapper/patch.py`, the crash filter and the taps without TLS; both
+  tested offline by such a thread, the release dxwrapper dies there as it did for the player), but not yet run on
+  that player's mod pack, and the thread's maker is not known (no dump: the old crash filter died too). dxwrapper's
+  upstream (elishacloud/dxwrapper) has the same code on master: an issue or a pull request for it waits for the
+  owner's go-ahead.
 - **The developer tools' block** (2026-10-19): seen in both labs, but not yet the distances `triggers` draws (a
   mission waiting on a GETACTORSDIST) nor the `names` and `web` views looked at closely in 1.0.
 - **Wireframe** (2026-10-18, from PR 2): not made. The proper way is LS3D's own driver state (Insanity3D's

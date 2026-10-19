@@ -5,7 +5,7 @@
 // loaded before it, as Game.exe imports the game's file layer. It exports harness_add, a function the test
 // mods hook (two of them on the same function: the hook chains). It quits when a file named `quit` appears next to
 // it, or after `--seconds N` (default 120); a file named `crash` makes it crash, an exception nobody handles (the
-// loader's crash report is tested so).
+// loader's crash report is tested so), `crash_notls` the same on a thread of its own made without TLS.
 #include <windows.h>
 #include <cstdio>
 #include <cstdlib>
@@ -20,6 +20,28 @@ extern "C" __declspec(dllexport) __declspec(noinline) int harness_add(int a, int
 
 extern "C" __declspec(dllexport) __declspec(noinline) void harness_crash(volatile int *p) {
     *p = 1;
+}
+
+// A thread made as injectors and overlays make theirs (NtCreateThreadEx with SkipThreadAttach): no DllMain, no TLS
+// vector. One of those faulted in a player's game, and the loader's crash filter faulted again on its thread_local.
+LONG NTAPI NoTlsThread(void *) {
+    printf("harness: a thread without TLS (fs:[0x2C] = %08lX) crashes\n", __readfsdword(0x2C));
+    fflush(stdout);
+    harness_crash(nullptr);
+    return 0;
+}
+
+bool StartNoTlsThread() {
+    using NtCreateThreadExFn = LONG(NTAPI *)(HANDLE *, ACCESS_MASK, void *, HANDLE, void *, void *, ULONG, SIZE_T,
+                                             SIZE_T, SIZE_T, void *);
+    auto create = reinterpret_cast<NtCreateThreadExFn>(GetProcAddress(GetModuleHandleA("ntdll.dll"), "NtCreateThreadEx"));
+    HANDLE t = nullptr;
+    const ULONG kSkipThreadAttach = 0x2;
+    if (!create || create(&t, THREAD_ALL_ACCESS, nullptr, GetCurrentProcess(), reinterpret_cast<void *>(NoTlsThread),
+                          nullptr, kSkipThreadAttach, 0, 0, 0, nullptr) < 0)
+        return false;
+    CloseHandle(t);
+    return true;
 }
 
 int main(int argc, char **argv) {
@@ -79,6 +101,10 @@ int main(int argc, char **argv) {
         if (GetFileAttributesW((dir + L"crash").c_str()) != INVALID_FILE_ATTRIBUTES) {
             DeleteFileW((dir + L"crash").c_str());
             harness_crash(nullptr);
+        }
+        if (GetFileAttributesW((dir + L"crash_notls").c_str()) != INVALID_FILE_ATTRIBUTES) {
+            DeleteFileW((dir + L"crash_notls").c_str());
+            if (!StartNoTlsThread()) printf("harness: NtCreateThreadEx failed\n");
         }
         Sleep(16);
     }

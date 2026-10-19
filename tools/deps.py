@@ -6,6 +6,7 @@
     python tools/deps.py cuda       # the parts of NVIDIA's CUDA Toolkit that build PhysX's GPU part (no installation)
     python tools/deps.py flow       # NVIDIA Flow 2 with its shader compiler and premake (the x64 preset's)
     python tools/deps.py ngx vulkan # NVIDIA NGX (DLSS SDK) with DLSS 5 Neural Rendering, the Vulkan headers (x64)
+    python tools/deps.py dxwrapper  # dxwrapper's sources (Direct3D 8 on 9Ex), built by the x86 preset with our patch
     python tools/deps.py ghidra     # an optional one: Ghidra and its Python bridge (tools/ghidra_cli.py)
     python tools/deps.py --force    # again, from scratch
 
@@ -28,9 +29,12 @@ DLSSNR_URL = 'https://d1oqksizpb0e3d.cloudfront.net/rtx-remix-ngx_sdk_dlnr@2.7z'
 DLSSNR_SHA = '4bb8651b3ac2180f23df1f39422c489810a13d445a94dc836c876c18c93ecefe'
 
 PINNED = {
-    # Ultimate ASI Loader v9.7.4 (x86, with PDB), MIT; the hash is the one GitHub publishes for the asset
-    'ual': ('https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases/download/v9.7.4/Ultimate-ASI-Loader.zip',
-            '952cebfc30d525afc2bdbaca954329d405ded3aa688a83027354dae14dfd5c5f'),
+    # Ultimate ASI Loader v9.7.4 (x86, with PDB), MIT; the hash is the one GitHub publishes for the asset. Its license
+    # (the tag's `license`, as GitHub served it on 2026-10-19) beside it: a player's package carries it (tools/pack.py).
+    'ual': [('https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases/download/v9.7.4/Ultimate-ASI-Loader.zip',
+             '952cebfc30d525afc2bdbaca954329d405ded3aa688a83027354dae14dfd5c5f'),
+            ('https://raw.githubusercontent.com/ThirteenAG/Ultimate-ASI-Loader/v9.7.4/license',
+             'ceca73c504e39084b0b80d2a437aea9988313d1915418d3c629c3e4a8313f5a1', '')],
     # Jolt Physics v5.6.0, commit e77f175595e64cb44218cc9d9d56fc365ad0e36a (2026-07-11), MIT: the rigid bodies for
     # mods, built for x86 by CMakeLists.txt (target Jolt). The archive's 1250 files were compared with a clone of
     # the tag (mafia-ragdoll's, whose 577 unit tests pass on the 32-bit build): all identical.
@@ -105,6 +109,33 @@ PINNED = {
     # the headers. The hash is the archive's as GitHub served it on 2026-10-19.
     'vulkan': ('https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/vulkan-sdk-1.4.363.0.zip',
                'f4be95220ff0ee0b1c620301ff4fe9ae48592d71f4c30f2d5c571351a153ae81', 'include'),
+    # dxwrapper v1.8.8600.25 (elishacloud/dxwrapper, commit 2607aa3d73e4c063ecbcbab9b2395e9011d5cdd3, 2026-08-22), zlib:
+    # the game's Direct3D 8 on Direct3D 9Ex (d3d8.dll stub and dxwrapper.dll: the release both labs run), built from
+    # its sources by the x86 preset with third_party/dxwrapper/patch.py's changes (hooks that any thread may call keep
+    # off thread_local and magic statics on a thread without TLS: one crashed a player's game). GitHub's archives have
+    # no submodules: each submodule's archive at the commit the tag points to (all but DirectX, documentation), unpacked
+    # where the submodule lives. The hashes are the archives' as GitHub served them on 2026-10-19.
+    'dxwrapper': [
+        ('https://github.com/elishacloud/dxwrapper/archive/2607aa3d73e4c063ecbcbab9b2395e9011d5cdd3.zip',
+         '7be2c4c99607d30a60d81df7c7110a9efe888ad80efe219684a913063ad02db9', ''),
+        ('https://github.com/microsoft/DirectXMath/archive/d33ba2f150aeb6d3cf62d10f454652ee83672200.zip',
+         'c45263119b4b0310ad69f953574ea49c2ce84555bbd8584846abb3baf76e4a21', 'External/DirectXMath'),
+        ('https://github.com/elishacloud/Hooking/archive/4fec9831ae7a4e99f58a9c837d37f76a88bf88da.zip',
+         '5b39e8d4d8705f2beb2850586055355631588216710fd5b481420287b9bf8106', 'External/Hooking'),
+        ('https://github.com/ThirteenAG/Hooking.Patterns/archive/460a47bc813085b66c79768531caab1ed5ea96fc.zip',
+         '37a812b0ee905ccd00f85a18dc9e4ad336df2ad71fcb74e283bc22696458cee0', 'External/Hooking.Patterns'),
+        ('https://github.com/elishacloud/Logging/archive/d352bb946ae25d2af1cc91227192f581baefbe92.zip',
+         'eebf7de2455e064cffe7fe58e1e9c825422db510e38d964da4669b22299b2d7f', 'External/Logging'),
+        ('https://github.com/fancycode/MemoryModule/archive/5f83e41c3a3e7c6e8284a5c1afa5a38790809461.zip',
+         '4aec529595663ef5baa8bc30305de550d28d8832481720cfbbd58524dca3747f', 'External/MemoryModule'),
+        ('https://github.com/crosire/d3d8to9/archive/6cdb8a82184898f1b9371e4c8412c2d33ebb7b51.zip',
+         'b37d5e399e2f9c238d118cbe7502c441238544167310db300b0d373886e1ec60', 'External/d3d8to9'),
+        ('https://github.com/microsoft/detours/archive/734ac64899c44933151c1335f6ef54a590219221.zip',
+         'a42df660f6130b3272da7692fe24696ee032b6df58c035a33a2018b2f6c67370', 'External/detours'),
+        ('https://github.com/elishacloud/dinputto8/archive/f18224808c58c84e46c003e100804bd3184d8168.zip',
+         'cb4bac7802ec442fcce4824db9942f8f0473479682b222bdd04a4e8fcc090b69', 'External/dinputto8'),
+        ('https://github.com/ocornut/imgui/archive/f1cc2ae15e53a861a874c3034aae6798fde194ab.zip',
+         '008e1f3398e1c6e4d317ae4a05d2dec597bd360f4f3717b1d96e9edb66dba34f', 'External/imgui')],
     # Ghidra 12.1.4 (2026-09-21), Apache 2.0: the reverse-engineering projects of both builds behind tools/ghidra_cli.py
     # and the MCP server's ghidra_* tools. 570 MB (about 900 unpacked); needs a JDK 21 or later. The hash is the one
     # the release publishes (its notes and the asset's digest). Its PyGhidra and JPype wheels are in the archive: the
@@ -114,7 +145,7 @@ PINNED = {
                'ddac49f903da9d5bac833e5cc79395098b9c33cfd3279be5f31bd00387d2d4db'),
 }
 # fetched only when named: not every build needs them
-OPTIONAL = {'ghidra', 'cuda', 'flow', 'ngx', 'vulkan'}
+OPTIONAL = {'ghidra', 'cuda', 'flow', 'ngx', 'vulkan', 'dxwrapper'}
 
 
 def download(name, url, sha, archive):

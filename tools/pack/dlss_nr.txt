@@ -1,0 +1,66 @@
+NVIDIA DLSS 5 Neural Rendering for Mafia: The City of Lost Heaven
+=================================================================
+
+For personal use only: do not upload or share this archive publicly
+(it contains NVIDIA's nvngx_dlssnr.dll, under NVIDIA's license).
+
+
+YOU NEED
+--------
+- A GeForce RTX 50 graphics card (RTX 5060 and up). Older cards cannot
+  run DLSS 5 Neural Rendering: NVIDIA's file refuses them.
+- NVIDIA driver 617.42 or newer (nvidia.com/drivers or the NVIDIA App).
+- Mafia 1.2 (Steam / GOG / patched retail) or 1.0.
+- The game running on the GeForce. A PC whose processor has graphics of
+  its own (AMD Radeon(TM) Graphics, Intel UHD...) or a laptop may run it
+  there instead: Windows Settings > System > Display > Graphics > add
+  Game.exe > Options > "High performance" (the NVIDIA GPU), and the
+  monitor plugged into the graphics card, not the motherboard.
+
+
+INSTALL
+-------
+Unpack everything from this archive into the game's folder (the folder
+with Game.exe) and start the game as usual. That's all.
+
+Start with a clean game (no other mods): if it works there, add your
+other mods back one by one. If the game folder already has dinput8.dll,
+d3d8.dll or dxwrapper files from other mods, back them up first: this
+archive replaces them.
+
+
+USE
+---
+F12           DLSS 5 NR on / off (remembered).
+Esc > Options > Mods > DLSS 5 NR
+              strength, tone, detail, model A/B/C, a split screen to
+              compare with and without (tab "Compare").
+
+When a mission or the free ride starts, the message line at the bottom
+left says "DLSS 5 NR: on". If it says something else, it says why
+(for example "needs a GeForce RTX 50 GPU" or "the game is not on the
+NVIDIA GPU").
+
+The frame rate will be lower: the game waits for DLSS 5 every frame.
+
+
+UNINSTALL
+---------
+Delete from the game's folder: dinput8.dll, MafiaModLoader.asi,
+d3d8.dll, dxwrapper.dll, dxwrapper.ini, the "mml" folder (and
+README.txt, licenses). No game files were changed.
+
+
+IF SOMETHING GOES WRONG
+-----------------------
+Send these files (the ones that exist):
+  <game>\mml\logs\mml.log and mml.prev.log
+  <game>\dxwrapper-game.log
+  <game>\mml\data\dlss_nr\nvngx.log
+  everything in <game>\mml\crash\
+
+
+WHAT IS INSIDE
+--------------
+{inside}
+Licenses in the "licenses" folder.

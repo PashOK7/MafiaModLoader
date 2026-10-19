@@ -213,6 +213,8 @@ extern "C" void __cdecl TapEntry(int idx, uint32_t *f) {
     }
     Unlock(t);
     if (!record) return;
+    // a thread without a TLS vector (made with SkipThreadAttach) has no shadow stack: its calls are logged at entry
+    if (!ThreadHasTls()) { LogRec(t, idx, copy, n); return; }
     // entries at or below this call's stack pointer belong to frames already gone (an exception unwound them)
     while (t_depth > 0 && t_shadow[t_depth - 1].esp <= f[4]) t_depth--;
     if ((t.ret || t.fret) && t_depth < kShadow) {

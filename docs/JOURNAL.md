@@ -2617,3 +2617,42 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   the water is deep; the cloth lying in folds; the jelly a red cube standing (from behind the car it had looked
   flattened: the side view showed it whole).
 - Both labs' copies of the manifest put back to `enabled: false` (on at the next start only if switched again).
+
+## 2026-10-19: a player's game died in dxwrapper on a thread without TLS; dxwrapper built from source
+
+- **Asked** (the owner): why the DLSS 5 NR package (dlss_nr, made earlier today) does not start for a friend with an
+  RTX 5060; then: fix everything found.
+- **What the player sent**: dxwrapper's log, two lines "Error occurred in the application: code=0xC0000005
+  addr=02E7ED96 bad=00000030 module=dxwrapper.dll EAX=0 ECX=0xC" on thread 37208 (dxwrapper was loaded by thread
+  40196, 8 ms before), and two loader logs that stop after their third and fourth lines (no crash line, no dump).
+  The same log: Windows 11 24H2 (26100), the GPU "AMD Radeon(TM) Graphics", `__COMPAT_LAYER` "RunAsAdmin HighDpiAware
+  DetectorsAdminProtection Installer"; the game a Czech retail 1.2 with a mod pack (Freeride Deluxe, the 4 GB patch).
+  Later the player said the package runs on a clean game (Options > Mods > DLSS 5 NR there).
+- **Found**: the address is dxwrapper.dll+0xAED96 (its base 0x02DD0000: the only candidate RVA ending in ED96 whose
+  instruction fits, `mov ecx, [eax+ecx*4]` with EAX 0, ECX 0xC = 0x30), in DDrawCompat's `mitigateBusyWaiting`
+  (Win32/WaitFunctions.cpp): `fs:[0x2C]` (the thread's TLS vector) read for its `thread_local`. dxwrapper puts it in
+  front of GetTickCount, timeGetTime, PeekMessage, GetMessage and the waits in every thread whenever D3d8to9 is on
+  (`InstallDd7to9Hooks`, no setting turns it off; the labs' log shows "Installing Win32 hooks" too). A thread made
+  with NtCreateThreadEx's SkipThreadAttach has no TLS vector (m417z's write-up of Windhawk's injected threads): some
+  program in the player's game made one. The loader's own crash filter then faulted the same way (its re-entry guard
+  was a `thread_local`), so the game died with no log line and no dump.
+- **Made**: the loader: the crash filter's guard is a table of thread ids; a tap's thunk keeps no shadow stack on a
+  thread without TLS (`ThreadHasTls()`, host.h). dxwrapper: built from its sources (v1.8.8600.25, the release the
+  labs ran, with its submodules' archives: `tools/deps.py dxwrapper`) by the x86 preset (MSBuild on its projects as
+  an external project, out to build/x86/out/dxwrapper/), with `third_party/dxwrapper/patch.py`: every HOOK_FUNCTION
+  and HOOK_SHIM_FUNCTION hook calls the original on a thread without TLS (the registry hooks' function static and
+  EnumDisplaySettings' thread_local were the same trap), the busy-waiting mitigation skipped there, the build number
+  fixed (its pre-build step counted up and failed to write d3d8\BuildNo.rc here), and its log's first line says the
+  build is ours. `tools/lab.py install` puts it in a lab (the previous kept in mml_lab, back with `mode ragdoll`) and
+  now keeps a lab's own `enabled` (it had turned the labs' switched-on mods off: put back from the last runs' logs).
+  dlss_nr: a game drawn on another vendor's GPU is stage `other_gpu`, its message naming both GPUs and Windows'
+  per-application GPU setting, before NGX (which would have said "the driver may be too old"). `tools/pack.py
+  dlss_nr` makes the player's archive (build/dist), with Ultimate ASI Loader's license now pinned beside it.
+- **Tested**: offline, a thread made with SkipThreadAttach crashes in the stand-in game: the old loader left no dump
+  and no report (as for the player), the new one both, the stack at harness_crash, a tap with its return on it;
+  `dxwrapper_notls` calls 18 hooked functions from such a thread: the release dxwrapper dies at dxwrapper.dll+0xAED96
+  with the player's log line, ours returns from all. In both labs (dlss_nr on, our dxwrapper and loader): the log's
+  first line ours, no error, the graphics bridge on 9Ex, DLSS 5 NR "unsupported" on the RTX 3070, the frame's round
+  trip through the half 372 of 396 frames (1.2) and 327 of 344 (1.0), 0.46 to 0.48 ms, none late, the picture right.
+- **Lab**: both labs run our dxwrapper (release copies in mml_lab); dlss_nr off and its DLL out in both; flow_smoke,
+  debug_views and devtools on in both, as the last runs before had them (physx_gpu off, as its session left it).

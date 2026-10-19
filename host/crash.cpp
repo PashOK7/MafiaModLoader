@@ -98,11 +98,18 @@ DWORD WINAPI WriteReport(void *arg) {
 
 typedef BOOL(WINAPI *MiniDumpWriteDumpFn)(HANDLE, DWORD, HANDLE, int, void *, void *, void *);
 
+// The threads inside the filter now, by id: a filter we chain to may chain back to us (it saw ours as its previous
+// one), and that loop stops at the second entry. Not thread_local: the filter runs on whichever thread faults, and a
+// thread without a TLS vector (made with SkipThreadAttach: a player's game had one) faulted again on reading it, so
+// the game died with neither a log line nor a dump.
+volatile LONG g_inside[16];
+
 LONG WINAPI CrashFilter(EXCEPTION_POINTERS *ep) {
-    // a filter we chain to may chain back to us (it saw ours as its previous one): stop the loop there
-    static thread_local bool inside;
-    if (inside) return EXCEPTION_CONTINUE_SEARCH;
-    inside = true;
+    const LONG me = static_cast<LONG>(GetCurrentThreadId());
+    int slot = -1;
+    for (int i = 0; i < 16; i++) if (g_inside[i] == me) return EXCEPTION_CONTINUE_SEARCH;
+    for (int i = 0; i < 16 && slot < 0; i++) if (InterlockedCompareExchange(&g_inside[i], me, 0) == 0) slot = i;
+    // (more than 16 threads faulting at once: the rest go on unguarded; the dump is written once anyway)
     if (InterlockedExchange(&g_crashing, 1) == 0) {
         const EXCEPTION_RECORD *er = ep->ExceptionRecord;
         const bool av = er->ExceptionCode == EXCEPTION_ACCESS_VIOLATION && er->NumberParameters >= 2;
@@ -175,7 +182,7 @@ LONG WINAPI CrashFilter(EXCEPTION_POINTERS *ep) {
         }
     }
     LONG r = g_prevFilter ? g_prevFilter(ep) : EXCEPTION_CONTINUE_SEARCH;
-    inside = false;
+    if (slot >= 0) InterlockedExchange(&g_inside[slot], 0);
     return r;
 }
 } // namespace

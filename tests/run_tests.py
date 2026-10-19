@@ -22,6 +22,7 @@ import os
 import re
 import shutil
 import socket
+import struct
 import subprocess
 import sys
 import time
@@ -612,9 +613,28 @@ def boxes_tests(b):
     check('boxes: back to the defaults: a device again, two threads', s4['gpu']['device'] and s4['threads'] == 2, s4)
 
 
-def crash_tests():
-    """A crash nobody handles (the harness's `crash` file): the dump and, beside it, the report of what dies with the
-    process (the stack, the log, the taps' calls, the events, the mods)."""
+def export_rva(path, name):
+    """An exported function's RVA in a PE file (the tap takes `module+rva`, not a name)."""
+    d = open(path, 'rb').read()
+    pe = struct.unpack_from('<I', d, 0x3C)[0]
+    opt = pe + 24
+    nsec = struct.unpack_from('<H', d, pe + 6)[0]
+    sec0 = opt + struct.unpack_from('<H', d, pe + 20)[0]
+    secs = [struct.unpack_from('<IIII', d, sec0 + 40 * i + 8) for i in range(nsec)]   # vsize, va, rawsize, raw
+
+    def off(rva):
+        return next(raw + rva - va for vs, va, rs, raw in secs if va <= rva < va + max(vs, rs))
+    exp = off(struct.unpack_from('<I', d, opt + 96)[0])   # the export directory (PE32)
+    n, funcs, names, ords = struct.unpack_from('<IIII', d, exp + 24)
+    for i in range(n):
+        at = off(struct.unpack_from('<I', d, off(names) + 4 * i)[0])
+        if d[at:d.index(b'\0', at)].decode() == name:
+            return struct.unpack_from('<I', d, off(funcs) + 4 * struct.unpack_from('<H', d, off(ords) + 2 * i)[0])[0]
+    return None
+
+
+def run_crash(trigger, tap_crash=False):
+    """The harness started, a tap and a call made, then crashed by its `trigger` file; (its output, the report or None)."""
     crash_dir = os.path.join(HARNESS, 'mml', 'crash')
     shutil.rmtree(crash_dir, ignore_errors=True)
     info_path = os.path.join(HARNESS, 'mml', 'bridge.json')
@@ -631,21 +651,35 @@ def crash_tests():
     target = next((h['target'] for h in b.call('hooks.list')['result'] if h['target'].startswith('mml_harness.exe')), None)
     if target:
         b.call('tap', {'cmd': target + ' n=2'})
+    if tap_crash:
+        # with its return: the tap's thunk keeps a shadow of the return in the thread's TLS, when it has one
+        rva = export_rva(os.path.join(HARNESS, 'mml_harness.exe'), 'harness_crash')
+        r = b.call('tap', {'cmd': 'mml_harness.exe+%X n=2 ret' % rva})
+        check('a tap with its return on harness_crash', r.get('ok') and not str(r.get('result')).startswith('error'), r)
     b.call('hook_a.call', {'a': 2, 'b': 3})
-    open(os.path.join(HARNESS, 'crash'), 'w').close()
+    open(os.path.join(HARNESS, trigger), 'w').close()
     try:
-        proc.communicate(timeout=20)
+        out = proc.communicate(timeout=20)[0].decode(errors='replace')
     except subprocess.TimeoutExpired:
         proc.kill()
-        proc.communicate()
-    check('a crash: the harness ended by it', proc.returncode not in (0, None), proc.returncode)
+        out = proc.communicate()[0].decode(errors='replace')
+    tag = 'a crash (%s): ' % trigger
+    check(tag + 'the harness ended by it', proc.returncode not in (0, None), proc.returncode)
     dumps = sorted(glob.glob(os.path.join(crash_dir, '*.dmp')))
     reports = sorted(glob.glob(os.path.join(crash_dir, '*.json')))
-    check('a crash: its dump and the report beside it', len(dumps) == 1 and len(reports) == 1 and
-          reports[0][:-5] == dumps[0][:-4], (dumps, reports))
-    if not reports:
+    check(tag + 'its dump and the report beside it', len(dumps) == 1 and len(reports) == 1 and
+          reports[0][:-5] == dumps[0][:-4], (dumps, reports, out[-600:]))
+    return out, json.load(open(reports[0])) if reports else None
+
+
+def crash_tests():
+    """A crash nobody handles (the harness's `crash` file): the dump and, beside it, the report of what dies with the
+    process (the stack, the log, the taps' calls, the events, the mods). Then the same on a thread made without TLS
+    (`crash_notls`: NtCreateThreadEx's SkipThreadAttach, as injectors make theirs): the filter and a tap's thunk run on
+    it without touching thread_local (a player's game died silently so, the filter faulting again)."""
+    out, r = run_crash('crash')
+    if not r:
         return
-    r = json.load(open(reports[0]))
     check('the report: the exception, a write to address 0, on the main thread',
           r.get('exception') == 'C0000005' and r.get('access', {}).get('kind') == 'write' and r['access'].get('address') == '0x00000000'
           and r.get('main_thread') is True, {k: r.get(k) for k in ('exception', 'access', 'main_thread')})
@@ -656,6 +690,38 @@ def crash_tests():
     check('the report: the taps\' last calls', any('1 calls' in t for t in r.get('taps', [])), r.get('taps'))
     check('the report: the last events and the mods', r.get('events') and any(m.get('id') == 'hook_a' for m in r.get('mods', [])),
           (r.get('events', [])[-2:], r.get('mods')))
+
+    out, r = run_crash('crash_notls', tap_crash=True)
+    check('a thread without TLS: the harness made it (fs:[0x2C] 0)', 'fs:[0x2C] = 00000000' in out, out[-600:])
+    if not r:
+        return
+    check('a thread without TLS: the report, a write to address 0 in harness_crash, not the main thread',
+          r.get('exception') == 'C0000005' and r.get('access', {}).get('address') == '0x00000000'
+          and r.get('main_thread') is False and r.get('stack', [''])[0].startswith('mml_harness.exe+0x'),
+          {k: r.get(k) for k in ('exception', 'access', 'main_thread', 'stack')})
+    check('a thread without TLS: both taps saw their call (harness_crash\'s thunk ran there)',
+          sum('1 calls' in t for t in r.get('taps', [])) >= 2, r.get('taps'))
+
+
+def dxwrapper_tests():
+    """dxwrapper built with third_party/dxwrapper/patch.py: its hooks (DDrawCompat's, in every thread) called from a
+    thread made without TLS (tests/dxwrapper/notls.cpp). The release v1.8.8600.25 dies at the first one, as a player's
+    game did."""
+    folder = os.path.join(ROOT, 'build', 'x86', 'dxwrapper_test')
+    exe = os.path.join(folder, 'dxwrapper_notls.exe')
+    if not os.path.exists(exe):
+        check('dxwrapper: its test built (MML_DXWRAPPER on: cmake --preset x86)', False, exe)
+        return
+    for stale in glob.glob(os.path.join(folder, '*.log')):
+        os.remove(stale)
+    proc = subprocess.run([exe], cwd=folder, capture_output=True, timeout=60)
+    out = proc.stdout.decode(errors='replace')
+    check('dxwrapper: its hooks called from a thread without TLS, every one came back',
+          proc.returncode == 0 and 'fs:[0x2C]) = 00000000' in out and 'the thread came back' in out,
+          (proc.returncode, out[-800:]))
+    logs = glob.glob(os.path.join(folder, 'dxwrapper-*.log'))
+    first = open(logs[0], encoding='utf-8', errors='replace').readline() if logs else ''
+    check('dxwrapper: its log says the build is ours (the patch\'s mark)', "MafiaModLoader's build" in first, first)
 
 
 def instances_tests():
@@ -1653,6 +1719,7 @@ def main():
     check('files: a mod\'s file answers before the first frame (the game\'s first tables)',
           "before the first frame, tables\\test.txt is 'files_b'" in out.decode(errors='replace'), out.decode(errors='replace'))
     crash_tests()
+    dxwrapper_tests()
     instances_tests()
     unicode_dir_tests()
     print('ALL PASSED' if not failures else '%d FAILED: %s' % (len(failures), ', '.join(failures)))

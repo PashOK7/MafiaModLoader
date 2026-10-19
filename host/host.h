@@ -85,6 +85,10 @@ std::string Where();           // what the game's main thread is doing (any thre
 int StackOf(const CONTEXT *c, uintptr_t *out, int cap);
 void SetMainThread(DWORD tid);
 DWORD MainThread();
+// Whether this thread has a TLS vector (the TEB's ThreadLocalStoragePointer, fs:[0x2C]): a thread made with
+// NtCreateThreadEx's SkipThreadAttach (injectors, overlays: one ran in a player's game) has none, and `thread_local`
+// read on it faults at null. Code any thread may run (the crash filter, a tap's thunks) asks before using one.
+inline bool ThreadHasTls() { return __readfsdword(0x2C) != 0; }
 
 // ---- hook chains (hooks.cpp): several owners may hook one function; owner null: the host
 bool HookAdd(MmlMod *owner, uintptr_t target, void *detour, void **original, std::string *err);
