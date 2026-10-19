@@ -1742,6 +1742,17 @@ smallest half alone, `mods/examples/side_picture` a mod in two halves that hands
   (`flow_smoke.wait {"fences": false}` too). Measured 2026-10-19 on one scene, 1280x960, an RTX 3070: the pass on
   the game thread 2.22 ms (CPU waits) and 0.40 ms (fences) in 1.2, 0.39 ms in 1.0; the round trip 1.85 and 0.33 ms
   (`flow_smoke.state` `pass_ms`, `round_trip_ms`, `fenced`).
+  **The gas alone, at half size** since 2026-10-19: Flow as patched (`third_party/flow/patch.py`, its
+  `RayMarchBlockCS`) gives the gas's light premultiplied and its transmittance in alpha instead of laying it over the
+  colour it is handed, so the half gets the frame's depth only (the colour's copy in is gone) and marches at half the
+  frame's size each way (`render`'s width and height apart from the scene depth's; the `march_half` setting, on by
+  default). The pass brings it up to the frame by the depth (four march pixels, each weighted by its distance and by
+  how near its depth is to the pixel's) and lays `Enc(gas + T * Lin(frame))` over the frame as premultiplied "over":
+  what passes ordered before it drew shows through the gas by T (it was drawn over before). Measured on the
+  freeride's start (a fire, a smoke): Flow's ray march 0.56 ms at full size, 0.25 to 0.33 at half; the frame's colour
+  in (0.22 ms) and out (0.35) gone, the gas out 0.08 ms. A Flow buffer is never asked again at a size it had: an
+  allocation Flow's pool hands out again after CUDA imported it once is refused a second import, so the buffers only
+  grow (the gas's at the frame's size, so the setting switches without one).
   What it cost to find: Flow's defaults are Omniverse's centimetres and z up (gravity, the attenuations: per unit of
   length, a hundred times larger in metres); its buoyancy and cooling are part of combustion (off, warm smoke never
   rises); its colour map is looked up by temperature and its smoke map is clear at 0 (cooled smoke vanishes: a map

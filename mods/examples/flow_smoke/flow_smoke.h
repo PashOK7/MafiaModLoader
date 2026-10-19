@@ -9,14 +9,16 @@
 // "movers" (32 -> 64, at each FRAME): what moves there, as meshes too: each car's own (actor_meshes: its body, doors,
 // wheels where they are now) and each person's body made of capsules along his bones (the host has no skinned
 // meshes), each vertex with its velocity: they push the gas aside and drag it along.
-// "view" (32 -> 64, in the graphics pass, after the pass has put the frame into "color_in" and "depth_in"): the
-// camera this frame was drawn with; the 64-bit half ray-marches the gas into "color_out" over it.
-// "done" (64 -> 32): that frame's picture is whole in "color_out" (or why not).
+// "view" (32 -> 64, in the graphics pass, after the pass has put the frame's depth into "depth_in"): the camera this
+// frame was drawn with and the march's size; the 64-bit half ray-marches the gas into "color_out".
+// "done" (64 -> 32): that frame's gas is whole in "color_out" (or will be, by the "out" fence; or why not).
 //
-// The textures (the 64-bit half's, made at the frame's size, opened by the bridge's Direct3D 11 device):
-// "color_in"  R16G16B16A16_FLOAT  the frame so far, linear (the game's colours decoded from their gamma)
-// "depth_in"  R32_FLOAT           its depth as the projection in "view" makes it (0 near .. 1 far; the sky 1)
-// "color_out" R16G16B16A16_FLOAT  the frame with the gas over it, linear
+// The textures (the 64-bit half's, opened by the bridge's Direct3D 11 device):
+// "depth_in"  R32_FLOAT           the frame's size: its depth as the projection in "view" makes it (0 near .. 1 far; the
+//                                 sky 1)
+// "color_out" R16G16B16A16_FLOAT  the march's size: the gas alone, linear: rgb its light (premultiplied), a its
+//                                 transmittance (Flow as patched by third_party/flow/patch.py); the pass lays it over
+//                                 the frame, brought to the frame's size by the depth
 #pragma once
 #include <stdint.h>
 #include <stdio.h>   // (swprintf_s: the fences' names)
@@ -135,14 +137,15 @@ struct View {
     int64_t askQpc;         // QueryPerformanceCounter when the 32-bit half asked
     uint32_t width, height; // the frame's (the textures are made at this size)
     float view[16], proj[16];   // row vectors, world about the origin: p * view * proj
-    uint32_t inGeneration[2];   // the generations of "color_in" and "depth_in" the 32-bit half wrote
+    uint32_t inGeneration[2];   // [0] the generation of "depth_in" the 32-bit half wrote; [1] unused (0)
     // The frame's GPU waits without the CPU (FenceName): the 32-bit half's two shared Direct3D 11 fences, "in" (it
-    // signals fenceValue once "color_in" and "depth_in" are drawn) and "out" (the 64-bit half signals fenceValue once
+    // signals fenceValue once "depth_in" is drawn) and "out" (the 64-bit half signals fenceValue once
     // "color_out" holds the picture; the 32-bit half's GPU waits for it before drawing it). fenceGen 0: no fences;
     // fenceValue 0: this frame was waited for on the CPU (the fences are not confirmed yet: Done::fenceGen).
     uint32_t gamePid;
     uint32_t fenceGen;
     uint64_t fenceValue;
+    uint32_t marchWidth, marchHeight;   // the ray march's size ("color_out"): the frame's, or half of it each way
 };
 
 // A fence's name (CreateSharedHandle, cuImportExternalSemaphore by name): the game's pid, its generation, "in"/"out".
@@ -177,7 +180,7 @@ static_assert(sizeof(Frame) == 112 + sizeof(Fire) + sizeof(Source) * kMaxSources
 static_assert(sizeof(Scenery) == 16, "Scenery");
 static_assert(sizeof(Mover) == 32, "Mover");
 static_assert(sizeof(Movers) == 24 + 32 * kMaxMovers, "Movers");
-static_assert(sizeof(View) == 176, "View");
+static_assert(sizeof(View) == 184, "View");
 static_assert(sizeof(Done) == 224, "Done");
 
 } // namespace fsm

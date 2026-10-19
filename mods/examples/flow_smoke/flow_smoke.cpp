@@ -59,7 +59,8 @@ double g_freqMs;
 uint64_t g_frame;
 double g_time;
 uint32_t g_waitMs = 20;   // the pass's budget for this frame's picture
-bool g_useFences = true;  // the frame's GPU waits through the shared fences when both halves have them (`wait` {fences})
+bool g_useFences = true;
+bool g_marchHalf = true;   // the ray march at half the frame's size each way (the `march_half` setting)  // the frame's GPU waits through the shared fences when both halves have them (`wait` {fences})
 
 int64_t Qpc() {
     LARGE_INTEGER t;
@@ -558,10 +559,12 @@ struct Gfx {
     unsigned generation = 0;
     ID3D11PixelShader *prepare = nullptr, *composite = nullptr;
     ID3D11Query *done = nullptr;
-    // the render target views on the 64-bit half's "color_in" and "depth_in" (made again when it makes them anew)
-    ID3D11Texture2D *inTex[2] = {};
-    uint32_t inGen[2] = {};
-    ID3D11RenderTargetView *inRtv[2] = {};
+    ID3D11BlendState *over = nullptr;     // premultiplied "over" (ONE, INV_SRC_ALPHA): the gas over what was drawn before
+    ID3D11Buffer *march = nullptr;        // PsComposite's constants (flow_smoke.hlsl Composite)
+    // the render target view on the 64-bit half's "depth_in" (made again when it makes it anew)
+    ID3D11Texture2D *inTex = nullptr;
+    uint32_t inGen = 0;
+    ID3D11RenderTargetView *inRtv = nullptr;
     // The frame's GPU waits (fsm::View's fences): "in" signalled after the prepare, "out" waited for before the
     // composite; their shared handles kept open (their names live while a handle does). None on a device without
     // Direct3D 11.4's fences: the CPU waits then, as before.
@@ -570,16 +573,17 @@ struct Gfx {
     HANDLE fenceHandle[2] = {};
     uint32_t fenceGen = 0;
     uint64_t fenceValue = 0;
-    void FreeIn() {
-        for (int i = 0; i < 2; i++) SafeRelease(inRtv[i]), inTex[i] = nullptr, inGen[i] = 0;
-    }
+    void FreeIn() { SafeRelease(inRtv), inTex = nullptr, inGen = 0; }
     void FreeFences() {
         for (HANDLE &h : fenceHandle)
             if (h) CloseHandle(h), h = nullptr;
         SafeRelease(fenceIn), SafeRelease(fenceOut), SafeRelease(ctx4);
         fenceGen = 0;
     }
-    void Free() { FreeIn(), FreeFences(), SafeRelease(prepare), SafeRelease(composite), SafeRelease(done); }
+    void Free() {
+        FreeIn(), FreeFences(), SafeRelease(prepare), SafeRelease(composite), SafeRelease(done), SafeRelease(over);
+        SafeRelease(march);
+    }
 } G;
 
 // The two shared fences on the bridge's device, named for the 64-bit half (false: not offered; the CPU waits).
@@ -608,9 +612,18 @@ bool MakeFences(ID3D11Device *d, ID3D11DeviceContext *c) {
 bool Make(ID3D11Device *d, ID3D11DeviceContext *c) {
     G.Free();
     D3D11_QUERY_DESC qd{D3D11_QUERY_EVENT, 0};
+    D3D11_BLEND_DESC bd{};
+    D3D11_RENDER_TARGET_BLEND_DESC &rt = bd.RenderTarget[0];
+    rt.BlendEnable = TRUE;
+    rt.SrcBlend = rt.SrcBlendAlpha = D3D11_BLEND_ONE;
+    rt.DestBlend = rt.DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
+    rt.BlendOp = rt.BlendOpAlpha = D3D11_BLEND_OP_ADD;
+    rt.RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+    D3D11_BUFFER_DESC cd{16, D3D11_USAGE_DEFAULT, D3D11_BIND_CONSTANT_BUFFER, 0, 0, 0};
     bool ok = SUCCEEDED(d->CreatePixelShader(kPsPrepare, sizeof kPsPrepare, nullptr, &G.prepare)) &&
               SUCCEEDED(d->CreatePixelShader(kPsComposite, sizeof kPsComposite, nullptr, &G.composite)) &&
-              SUCCEEDED(d->CreateQuery(&qd, &G.done));
+              SUCCEEDED(d->CreateQuery(&qd, &G.done)) && SUCCEEDED(d->CreateBlendState(&bd, &G.over)) &&
+              SUCCEEDED(d->CreateBuffer(&cd, nullptr, &G.march));
     if (ok && !MakeFences(d, c)) H->log(M, MML_LOG_INFO, "no shared Direct3D 11.4 fences: the frame's round trip is waited for on the CPU");
     return ok;
 }
@@ -630,14 +643,21 @@ void ViewAboutOrigin(const float *view, float *out) {
         out[12 + j] = float(g_origin[0] * view[j] + g_origin[1] * view[4 + j] + g_origin[2] * view[8 + j] + view[12 + j]);
 }
 
-void Ask(const MmlGfxFrame *f, const uint32_t inGen[2], uint64_t fenceValue) {
+// The ray march's size for a frame: the frame's, or half of it each way (the `march_half` setting), rounded up.
+void MarchSize(const MmlGfxFrame *f, uint32_t *w, uint32_t *h) {
+    *w = g_marchHalf ? (f->width + 1) / 2 : f->width;
+    *h = g_marchHalf ? (f->height + 1) / 2 : f->height;
+}
+
+void Ask(const MmlGfxFrame *f, uint32_t depthGen, uint64_t fenceValue) {
     fsm::View v{};
     v.frame = g_frame;
     v.askQpc = Qpc();
     v.width = f->width, v.height = f->height;
+    MarchSize(f, &v.marchWidth, &v.marchHeight);
     ViewAboutOrigin(f->view, v.view);
     memcpy(v.proj, f->proj, sizeof v.proj);
-    v.inGeneration[0] = inGen[0], v.inGeneration[1] = inGen[1];
+    v.inGeneration[0] = depthGen;
     v.gamePid = GetCurrentProcessId();
     v.fenceGen = G.fenceGen;
     v.fenceValue = fenceValue;
@@ -656,43 +676,39 @@ void Pass(const MmlGfxFrame *f, void *) {
     }
     S.frames++;
     if (!g_meshCollision && g_rec.shapes) MeasureLag();
-    // the shared textures at this frame's size: else the 64-bit half is asked (it makes them) and the frame goes without
-    const char *names[3] = {"color_in", "depth_in", "color_out"};
-    MmlSharedTexture t[3];
-    bool have = true;
-    for (int i = 0; i < 3; i++) {
-        t[i] = MmlSharedTexture{};
-        t[i].size = sizeof t[i];
-        have = have && H->gfx_shared_texture(M, names[i], &t[i]) && t[i].width == f->width && t[i].height == f->height;
-    }
-    if (!have) {
-        const uint32_t none[2] = {};
-        Ask(f, none, 0);
+    // the shared textures at this frame's and the march's sizes: else the 64-bit half is asked (it makes them) and
+    // the frame goes without
+    uint32_t mw, mh;
+    MarchSize(f, &mw, &mh);
+    MmlSharedTexture depthIn{}, out{};
+    depthIn.size = out.size = sizeof depthIn;
+    if (!H->gfx_shared_texture(M, "depth_in", &depthIn) || depthIn.width != f->width || depthIn.height != f->height ||
+        !H->gfx_shared_texture(M, "color_out", &out) || out.width != mw || out.height != mh) {
+        Ask(f, 0, 0);
         S.noTextures++;
         return;
     }
-    for (int i = 0; i < 2; i++)
-        if (G.inTex[i] != t[i].texture || G.inGen[i] != t[i].generation) {
-            SafeRelease(G.inRtv[i]);
-            G.inTex[i] = static_cast<ID3D11Texture2D *>(t[i].texture);
-            G.inGen[i] = t[i].generation;
-            if (FAILED(d->CreateRenderTargetView(G.inTex[i], nullptr, &G.inRtv[i]))) { G.FreeIn(); return; }
-        }
-    // the frame into "color_in" and "depth_in", whole on the GPU before the 64-bit half reads them
+    if (G.inTex != depthIn.texture || G.inGen != depthIn.generation) {
+        SafeRelease(G.inRtv);
+        G.inTex = static_cast<ID3D11Texture2D *>(depthIn.texture);
+        G.inGen = depthIn.generation;
+        if (FAILED(d->CreateRenderTargetView(G.inTex, nullptr, &G.inRtv))) { G.FreeIn(); return; }
+    }
+    // the frame's depth into "depth_in", whole on the GPU before the 64-bit half reads it
     int64_t t0 = Qpc();
     ID3D11ShaderResourceView *base[2] = {static_cast<ID3D11ShaderResourceView *>(f->depth), static_cast<ID3D11ShaderResourceView *>(f->color)};
-    ID3D11Buffer *cb = static_cast<ID3D11Buffer *>(f->constants);
-    c->PSSetConstantBuffers(0, 1, &cb);
+    ID3D11Buffer *cb[2] = {static_cast<ID3D11Buffer *>(f->constants), G.march};
+    c->PSSetConstantBuffers(0, 2, cb);
     c->PSSetShaderResources(0, 2, base);
-    c->OMSetRenderTargets(2, G.inRtv, nullptr);
+    c->OMSetRenderTargets(1, &G.inRtv, nullptr);
     c->OMSetBlendState(nullptr, nullptr, 0xFFFFFFFF);
     D3D11_VIEWPORT vp{0, 0, float(f->width), float(f->height), 0, 1};
     c->RSSetViewports(1, &vp);
     FullScreen(c, f, G.prepare);
     ID3D11RenderTargetView *target = static_cast<ID3D11RenderTargetView *>(f->target);
     c->OMSetRenderTargets(1, &target, nullptr);
-    // Whole before the 64-bit half reads them: with the fences the 64-bit half confirmed (Done::fenceGen), "in" is
-    // signalled and its CUDA stream waits for it on the GPU; else the CPU waits here for the GPU to have drawn them.
+    // Whole before the 64-bit half reads it: with the fences the 64-bit half confirmed (Done::fenceGen), "in" is
+    // signalled and its CUDA stream waits for it on the GPU; else the CPU waits here for the GPU to have drawn it.
     uint64_t fenceValue = 0;
     if (g_useFences && G.fenceIn && g_done.fenceGen == G.fenceGen) {
         fenceValue = ++G.fenceValue;
@@ -706,8 +722,8 @@ void Pass(const MmlGfxFrame *f, void *) {
     double prep = Ms(t0, Qpc());
     S.prepSum += prep, S.prepMax = std::max(S.prepMax, prep);
     Ask(f, G.inGen, fenceValue);
-    // this frame's picture: waited for within the budget. A 64-bit half that has not answered for half a second
-    // (gone: a fault, a reload, its device lost) is not waited for: the frame goes on without the gas until it does
+    // this frame's gas: waited for within the budget. A 64-bit half that has not answered for half a second (gone: a
+    // fault, a reload, its device lost) is not waited for: the frame goes on without the gas until it does
     uint64_t v = 0;
     H->channel_read(g_doneCh, &g_done, sizeof g_done, &v);
     int64_t w0 = Qpc();
@@ -722,18 +738,21 @@ void Pass(const MmlGfxFrame *f, void *) {
     double pass = Ms(t0, Qpc());
     S.passSum += pass, S.passMax = std::max(S.passMax, pass);
     if (g_done.frame != g_frame) { S.late++; return; }
-    if (!g_done.ok || g_done.outGeneration != t[2].generation || !t[2].srv) { S.none++; return; }
+    if (!g_done.ok || g_done.outGeneration != out.generation || !out.srv) { S.none++; return; }
     double rt = Ms(g_done.askQpc, Qpc());
     S.rtSum += rt, S.rtMax = std::max(S.rtMax, rt);
     S.drawn++;
-    // the 64-bit half has asked its GPU for the picture, not waited for it: this device's GPU waits for "out"
+    // the 64-bit half has asked its GPU for the gas, not waited for it: this device's GPU waits for "out"
     if (g_done.fenced && fenceValue && G.ctx4) {
         G.ctx4->Wait(G.fenceOut, fenceValue);
         S.fenced++;
     }
-    // the frame with the gas over it, into the effects target (the bridge's blending; alpha 1)
-    auto *out = static_cast<ID3D11ShaderResourceView *>(t[2].srv);
-    c->PSSetShaderResources(3, 1, &out);
+    // the gas over what the passes before drew (premultiplied "over"), brought to the frame's size by the depth
+    const float march[4] = {float(mw), float(mh), float(f->width) / mw, float(f->height) / mh};
+    c->UpdateSubresource(G.march, 0, nullptr, march, 0, 0);
+    c->OMSetBlendState(G.over, nullptr, 0xFFFFFFFF);
+    auto *gas = static_cast<ID3D11ShaderResourceView *>(out.srv);
+    c->PSSetShaderResources(3, 1, &gas);
     FullScreen(c, f, G.composite);
     ID3D11ShaderResourceView *none = nullptr;
     c->PSSetShaderResources(3, 1, &none);
@@ -751,6 +770,7 @@ float Setting(const char *key, double def, float lo, float hi) {
 void ReadSettings() {
     g_smokeCell = Setting("smoke_cell", 0.1, 0.02f, 2.f);
     g_fireCell = Setting("fire_cell", 0.04, 0.02f, 2.f);
+    g_marchHalf = Setting("march_half", 1, 0, 1) >= 0.5f;
     fsm::Fire &F = g_fire;
     F.combustion = Setting("fire_combustion", 1, 0, 1) >= 0.5f;
     F.vorticityOn = Setting("fire_vorticity_on", 1, 0, 1) >= 0.5f;

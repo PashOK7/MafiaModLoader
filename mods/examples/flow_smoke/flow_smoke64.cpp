@@ -120,9 +120,12 @@ std::atomic<float> g_simMs, g_renderMs;
 std::atomic<uint32_t> g_blocks;
 
 // The shared textures (made on the mod thread at the size the worker asks for) and their CUDA mappings.
-const char *const kTexNames[3] = {"color_in", "depth_in", "color_out"};
-const uint32_t kTexFormats[3] = {10 /* R16G16B16A16_FLOAT */, 41 /* R32_FLOAT */, 10};
-const uint32_t kTexBytes[3] = {8, 4, 8};
+// "depth_in" at the frame's size, "color_out" at the march's (the frame's, or half of it each way: View::march*): the
+// gas alone, its light and its transmittance (Flow as patched: the 32-bit half lays it over the frame)
+enum { kDepth, kOut, kTexCount };
+const char *const kTexNames[kTexCount] = {"depth_in", "color_out"};
+const uint32_t kTexFormats[kTexCount] = {41 /* R32_FLOAT */, 10 /* R16G16B16A16_FLOAT */};
+const uint32_t kTexBytes[kTexCount] = {4, 8};
 struct Tex {
     ID3D12Resource *res = nullptr;
     HANDLE handle = nullptr;
@@ -133,9 +136,9 @@ struct Tex {
     uint32_t mappedGen = 0;
 };
 std::mutex g_texMx;
-Tex g_tex[3];
-uint32_t g_texW, g_texH;                 // what was made (g_texMx)
-std::atomic<uint32_t> g_wantW, g_wantH;  // what the worker wants
+Tex g_tex[kTexCount];
+uint32_t g_texW, g_texH, g_texMW, g_texMH;                    // what was made: the frame's size, the march's (g_texMx)
+std::atomic<uint32_t> g_wantW, g_wantH, g_wantMW, g_wantMH;   // what the worker wants
 
 // Flow's buffers at the frame's size, each shared with CUDA (an opaque Win32 handle of its Vulkan memory)
 struct Buf {
@@ -145,8 +148,8 @@ struct Buf {
     CUdeviceptr ptr = 0;
     uint64_t bytes = 0;
 };
-Buf g_buf[3];   // the colour in, the depth in, the colour out
-uint32_t g_bufW, g_bufH;
+Buf g_buf[kTexCount];   // the depth in (the frame's size), the gas out (the march's)
+uint32_t g_bufW, g_bufH;   // the last frame the buffers were checked for
 
 // The frame's GPU waits (fsm::View's fences), so no thread here waits for a GPU: the 32-bit half's two Direct3D 11
 // fences imported into CUDA by their names (its stream waits for "in", signals "out"), and two of Flow's Vulkan
@@ -240,37 +243,49 @@ bool CuFence(CUexternalSemaphore s, uint64_t value, bool signal) {
 }
 
 void FreeBuf(Buf &b) {
+    // (the mapping first: cuExternalMemoryGetMappedBuffer's pointer is CUDA's to free; left, the memory stays
+    // imported, and Flow's pool hands the same allocation out again, whose next import then fails)
+    if (b.ptr) cuMemFree(b.ptr);
     if (b.ext) cuDestroyExternalMemory(b.ext);
     if (b.handle) CloseHandle(b.handle);
     if (b.buf) g_ci.destroyBuffer(g_ctx, b.buf);
     b = Buf{};
 }
 
-bool MakeBuffers(uint32_t w, uint32_t h) {
-    for (Buf &b : g_buf) FreeBuf(b);
-    g_bufW = g_bufH = 0;
-    for (int i = 0; i < 3; i++) {
-        Buf &b = g_buf[i];
-        NvFlowBufferDesc d{};
-        d.usageFlags = eNvFlowBufferUsage_bufferCopySrc | eNvFlowBufferUsage_bufferCopyDst;
-        d.format = eNvFlowFormat_unknown;
-        d.structureStride = 0;
-        // (a whole number of 64 KiB: Vulkan's allocation is then this size, the size CUDA imports)
-        d.sizeInBytes = (uint64_t(w) * h * kTexBytes[i] + 0xFFFF) & ~uint64_t(0xFFFF);
-        b.buf = g_ci.createBuffer(g_ctx, eNvFlowMemoryType_device, &d);
-        if (!b.buf) { Error("Flow's createBuffer failed"); return false; }
-        uint64_t size = 0;
-        g_flow.deviceInterface.getBufferExternalHandle(g_ctx, b.buf, &b.handle, sizeof b.handle, &size);
-        if (!b.handle) { Error("Flow's buffer has no external handle"); return false; }
-        CUDA_EXTERNAL_MEMORY_HANDLE_DESC hd{};
-        hd.type = CU_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32;
-        hd.handle.win32.handle = b.handle;
-        hd.size = d.sizeInBytes;
-        if (!Cu(cuImportExternalMemory(&b.ext, &hd), "cuImportExternalMemory (Flow's buffer)")) return false;
-        CUDA_EXTERNAL_MEMORY_BUFFER_DESC bd{};
-        bd.size = d.sizeInBytes;
-        if (!Cu(cuExternalMemoryGetMappedBuffer(&b.ptr, b.ext, &bd), "cuExternalMemoryGetMappedBuffer")) return false;
-        b.bytes = d.sizeInBytes;
+// One of Flow's buffers of `bytes` (a whole number of 64 KiB: Vulkan's allocation is then this size, the size CUDA
+// imports), shared with CUDA. They only grow (Buffers): a Vulkan allocation Flow's pool hands out again after CUDA
+// imported it once was refused a second import ("OS call failed", 2026-10-19, an RTX 3070), so a buffer is never
+// asked again at a size it had; a new, larger one is a new allocation.
+bool MakeBuffer(Buf &b, uint64_t bytes) {
+    FreeBuf(b);
+    NvFlowBufferDesc d{};
+    d.usageFlags = eNvFlowBufferUsage_bufferCopySrc | eNvFlowBufferUsage_bufferCopyDst;
+    d.format = eNvFlowFormat_unknown;
+    d.structureStride = 0;
+    d.sizeInBytes = (bytes + 0xFFFF) & ~uint64_t(0xFFFF);
+    b.buf = g_ci.createBuffer(g_ctx, eNvFlowMemoryType_device, &d);
+    if (!b.buf) { Error("Flow's createBuffer failed"); return false; }
+    uint64_t size = 0;
+    g_flow.deviceInterface.getBufferExternalHandle(g_ctx, b.buf, &b.handle, sizeof b.handle, &size);
+    if (!b.handle) { Error("Flow's buffer has no external handle"); return false; }
+    CUDA_EXTERNAL_MEMORY_HANDLE_DESC hd{};
+    hd.type = CU_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32;
+    hd.handle.win32.handle = b.handle;
+    hd.size = d.sizeInBytes;
+    if (!Cu(cuImportExternalMemory(&b.ext, &hd), "cuImportExternalMemory (Flow's buffer)")) return false;
+    CUDA_EXTERNAL_MEMORY_BUFFER_DESC bd{};
+    bd.size = d.sizeInBytes;
+    if (!Cu(cuExternalMemoryGetMappedBuffer(&b.ptr, b.ext, &bd), "cuExternalMemoryGetMappedBuffer")) return false;
+    b.bytes = d.sizeInBytes;
+    return true;
+}
+// The buffers big enough for the frame's depth and its gas (the gas's at the frame's size: either march fits).
+bool Buffers(uint32_t w, uint32_t h) {
+    const uint64_t need[kTexCount] = {uint64_t(w) * h * kTexBytes[kDepth], uint64_t(w) * h * kTexBytes[kOut]};
+    for (int i = 0; i < kTexCount; i++) {
+        if (g_buf[i].ptr && g_buf[i].bytes >= need[i]) continue;
+        cuStreamSynchronize(g_stream);   // (the copies queued without a wait may still use the old one)
+        if (!MakeBuffer(g_buf[i], need[i])) return false;
     }
     g_bufW = w, g_bufH = h;
     return true;
@@ -847,36 +862,35 @@ NvFlowFloat4x4 Matrix(const float *m) {
 }
 
 void Render(const fsm::View &v) {
-    const uint32_t w = v.width, h = v.height;
-    if (!w || !h || w > 8192 || h > 8192) return Answer(v, false, 0);
-    // the textures at this size: asked of the mod thread (it makes them), this frame goes without
+    const uint32_t w = v.width, h = v.height, mw = v.marchWidth, mh = v.marchHeight;
+    if (!w || !h || w > 8192 || h > 8192 || !mw || !mh || mw > w || mh > h) return Answer(v, false, 0);
+    // the textures at these sizes: asked of the mod thread (it makes them), this frame goes without
     std::unique_lock<std::mutex> lk(g_texMx);
-    if (g_texW != w || g_texH != h || !g_tex[0].res || !g_tex[1].res || !g_tex[2].res) {
-        g_wantW = w, g_wantH = h;
+    if (g_texW != w || g_texH != h || g_texMW != mw || g_texMH != mh || !g_tex[kDepth].res || !g_tex[kOut].res) {
+        g_wantW = w, g_wantH = h, g_wantMW = mw, g_wantMH = mh;
         lk.unlock();
         return Answer(v, false, 0);
     }
     // (the 32-bit half drew into the generation it names: one made since is not written yet)
-    if (v.inGeneration[0] != g_tex[0].gen || v.inGeneration[1] != g_tex[1].gen) {
-        uint32_t gen = g_tex[2].gen;
+    if (v.inGeneration[0] != g_tex[kDepth].gen) {
+        uint32_t gen = g_tex[kOut].gen;
         lk.unlock();
         return Answer(v, false, gen);
     }
-    bool ok = Map(g_tex[0], 0) && Map(g_tex[1], 1) && Map(g_tex[2], 2);
-    CUarray in = g_tex[0].arr, depth = g_tex[1].arr, out = g_tex[2].arr;
-    uint32_t outGen = g_tex[2].gen;
-    lk.unlock();
-    if (!ok) return Answer(v, false, 0);
-    if ((g_bufW != w || g_bufH != h) && !MakeBuffers(w, h)) return Answer(v, false, 0);
+    bool ok = Map(g_tex[kDepth], kDepth) && Map(g_tex[kOut], kOut);
+    CUarray depth = g_tex[kDepth].arr, out = g_tex[kOut].arr;
+    uint32_t outGen = g_tex[kOut].gen;
+    // (g_texMx kept to the end: the copies into and out of these arrays are queued below, and MakeTextures waits for
+    // the stream before it takes the arrays away; a short hold now that nothing here waits for a GPU)
+    if (!ok || !Buffers(w, h)) return Answer(v, false, 0);
     double t0 = Now();
     // On the GPU alone when the 32-bit half signalled its "in" fence for this frame (fenceValue) and its fences are
     // imported: CUDA waits for it, Flow for CUDA, CUDA for Flow, and "out" is signalled; else the CPU waits at each step.
     // (imported at the first view naming them, so Done::fenceGen confirms them and the next frames are signalled)
     const bool imported = Fences(v);
     const bool gpu = v.fenceValue && imported;
-    // the frame into Flow's buffers
-    ok = (!gpu || CuFence(g_sync.fenceIn, v.fenceValue, false)) && CopyArray(in, g_buf[0].ptr, w, h, 8, true) &&
-         CopyArray(depth, g_buf[1].ptr, w, h, 4, true);
+    // the frame's depth into Flow's buffer (its colour is not Flow's to see: the gas comes back alone)
+    ok = (!gpu || CuFence(g_sync.fenceIn, v.fenceValue, false)) && CopyArray(depth, g_buf[kDepth].ptr, w, h, 4, true);
     if (gpu) {
         CUDA_EXTERNAL_SEMAPHORE_SIGNAL_PARAMS p{};
         ok = ok && Cu(cuSignalExternalSemaphoresAsync(&g_sync.cuToFlow, &p, 1, g_stream), "cuSignalExternalSemaphoresAsync (to Flow)");
@@ -884,36 +898,37 @@ void Render(const fsm::View &v) {
         ok = ok && Cu(cuStreamSynchronize(g_stream), "cuStreamSynchronize (in)");
     }
     if (!ok) return Answer(v, false, 0);   // (the signal to Flow is the last step: none was made then)
-    // Flow: the buffers into textures, the ray march over them, the result into the out buffer
-    NvFlowBufferTransient *bIn = g_ci.registerBufferAsTransient(g_ctx, g_buf[0].buf);
-    NvFlowBufferTransient *bDepth = g_ci.registerBufferAsTransient(g_ctx, g_buf[1].buf);
-    NvFlowBufferTransient *bOut = g_ci.registerBufferAsTransient(g_ctx, g_buf[2].buf);
+    // Flow: the depth into a texture, the ray march at the march's size, the gas into the out buffer
+    NvFlowBufferTransient *bDepth = g_ci.registerBufferAsTransient(g_ctx, g_buf[kDepth].buf);
+    NvFlowBufferTransient *bOut = g_ci.registerBufferAsTransient(g_ctx, g_buf[kOut].buf);
     NvFlowTextureDesc td{};
     td.textureType = eNvFlowTextureType_2d;
     td.usageFlags = eNvFlowTextureUsage_texture | eNvFlowTextureUsage_textureCopyDst;
-    td.format = eNvFlowFormat_r16g16b16a16_float;
-    td.width = w, td.height = h, td.depth = 1, td.mipLevels = 1;
-    NvFlowTextureTransient *tIn = g_ci.getTextureTransient(g_ctx, &td);
     td.format = eNvFlowFormat_r32_float;
+    td.width = w, td.height = h, td.depth = 1, td.mipLevels = 1;
     NvFlowTextureTransient *tDepth = g_ci.getTextureTransient(g_ctx, &td);
+    // (the colour Flow is handed: bound, never read since the patch; at the march's size, as its binding wants)
+    td.format = eNvFlowFormat_r16g16b16a16_float;
+    td.width = mw, td.height = mh;
+    NvFlowTextureTransient *tUnused = g_ci.getTextureTransient(g_ctx, &td);
     NvFlowPassCopyBufferToTextureParams cp{};
-    cp.bufferRowPitch = w * 8, cp.bufferDepthPitch = w * 8 * h;
-    cp.textureExtent = NvFlowUint3{w, h, 1};
-    cp.src = bIn, cp.dst = tIn, cp.debugLabel = "flow_smoke color in";
-    g_ci.addPassCopyBufferToTexture(g_ctx, &cp);
     cp.bufferRowPitch = w * 4, cp.bufferDepthPitch = w * 4 * h;
+    cp.textureExtent = NvFlowUint3{w, h, 1};
     cp.src = bDepth, cp.dst = tDepth, cp.debugLabel = "flow_smoke depth in";
     g_ci.addPassCopyBufferToTexture(g_ctx, &cp);
     NvFlowFloat4x4 view = Matrix(v.view), proj = Matrix(v.proj);
     NvFlowTextureTransient *tOut = nullptr;
-    g_flow.gridInterface.render(g_ctx, g_grid, &P.desc, &view, &proj, &proj, w, h, w, h, 1.f, tDepth,
-                                eNvFlowFormat_r16g16b16a16_float, tIn, &tOut);
-    if (!tOut) tOut = tIn;
-    NvFlowPassCopyTextureToBufferParams co{};
-    co.bufferRowPitch = w * 8, co.bufferDepthPitch = w * 8 * h;
-    co.textureExtent = NvFlowUint3{w, h, 1};
-    co.src = tOut, co.dst = bOut, co.debugLabel = "flow_smoke color out";
-    g_ci.addPassCopyTextureToBuffer(g_ctx, &co);
+    g_flow.gridInterface.render(g_ctx, g_grid, &P.desc, &view, &proj, &proj, mw, mh, w, h, 1.f, tDepth,
+                                eNvFlowFormat_r16g16b16a16_float, tUnused, &tOut);
+    // (no picture from Flow: the flush still goes, so the semaphores' pair is kept, and the frame shows no gas)
+    const bool haveOut = tOut != nullptr;
+    if (haveOut) {
+        NvFlowPassCopyTextureToBufferParams co{};
+        co.bufferRowPitch = mw * 8, co.bufferDepthPitch = mw * 8 * mh;
+        co.textureExtent = NvFlowUint3{mw, mh, 1};
+        co.src = tOut, co.dst = bOut, co.debugLabel = "flow_smoke gas out";
+        g_ci.addPassCopyTextureToBuffer(g_ctx, &co);
+    }
     NvFlowUint64 id = 0;
     if (g_flow.deviceInterface.flush(g_queue, &id, gpu ? g_sync.toFlow : nullptr, gpu ? g_sync.fromFlow : nullptr)) {
         Error("Flow's device was lost");
@@ -921,10 +936,10 @@ void Render(const fsm::View &v) {
         return Answer(v, false, 0);
     }
     if (gpu) {
-        // the result into "color_out" once Flow is done, then "out": nothing waited for here
+        // the gas into "color_out" once Flow is done, then "out": nothing waited for here
         CUDA_EXTERNAL_SEMAPHORE_WAIT_PARAMS p{};
         ok = Cu(cuWaitExternalSemaphoresAsync(&g_sync.cuFromFlow, &p, 1, g_stream), "cuWaitExternalSemaphoresAsync (from Flow)") &&
-             CopyArray(out, g_buf[2].ptr, w, h, 8, false) && CuFence(g_sync.fenceOut, v.fenceValue, true);
+             (!haveOut || CopyArray(out, g_buf[kOut].ptr, mw, mh, 8, false)) && CuFence(g_sync.fenceOut, v.fenceValue, true);
         if (!ok) {
             // (Flow's signal left unwaited breaks the semaphores' pairs: made again, the CPU waits until then)
             cuStreamSynchronize(g_stream);
@@ -935,11 +950,11 @@ void Render(const fsm::View &v) {
         }
         g_renderMs = float(Now() - t0);
         g_renders++;
-        return Answer(v, ok, outGen, ok);
+        return Answer(v, ok && haveOut, outGen, ok && haveOut);
     }
     g_flow.deviceInterface.waitForFrame(g_queue, id);
-    // the result into "color_out"
-    ok = CopyArray(out, g_buf[2].ptr, w, h, 8, false) && Cu(cuStreamSynchronize(g_stream), "cuStreamSynchronize (out)");
+    // the gas into "color_out"
+    ok = haveOut && CopyArray(out, g_buf[kOut].ptr, mw, mh, 8, false) && Cu(cuStreamSynchronize(g_stream), "cuStreamSynchronize (out)");
     g_renderMs = float(Now() - t0);
     g_renders++;
     Answer(v, ok, outGen);
@@ -998,17 +1013,21 @@ void Worker() {
 
 // ---- the mod thread: the textures at the size the worker wants, the errors logged
 void MakeTextures() {
-    uint32_t w = g_wantW, h = g_wantH;
-    if (!w || !h || !H->texture_d3d12_device()) return;
+    uint32_t w = g_wantW, h = g_wantH, mw = g_wantMW, mh = g_wantMH;
+    if (!w || !h || !mw || !mh || !H->texture_d3d12_device()) return;
     {
         std::lock_guard<std::mutex> lk(g_texMx);
-        if (w == g_texW && h == g_texH) return;
+        if (w == g_texW && h == g_texH && mw == g_texMW && mh == g_texMH) return;
+        // (the worker's copies are queued without a wait: the stream done before their arrays go; the worker is held
+        // off by g_texMx meanwhile)
+        if (g_cuCtx && g_stream) cuCtxSetCurrent(g_cuCtx), cuStreamSynchronize(g_stream);
         for (Tex &t : g_tex) Unmap(t);
     }
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < kTexCount; i++) {
         MmlSideTexture t{};
         t.size = sizeof t;
-        if (!H->texture_create(M, kTexNames[i], w, h, kTexFormats[i], &t)) {
+        // (the depth at the frame's size, the gas at the march's)
+        if (!H->texture_create(M, kTexNames[i], i == kOut ? mw : w, i == kOut ? mh : h, kTexFormats[i], &t)) {
             Error(std::string("texture_create ") + kTexNames[i] + " failed");
             return;
         }
@@ -1018,11 +1037,11 @@ void MakeTextures() {
         g_tex[i].gen = t.generation;
     }
     std::lock_guard<std::mutex> lk(g_texMx);
-    g_texW = w, g_texH = h;
+    g_texW = w, g_texH = h, g_texMW = mw, g_texMH = mh;
 }
 
 void OnFrame(MmlSideMod *, const char *, const char *, void *) {
-    if (g_ready && (g_wantW != g_texW || g_wantH != g_texH)) MakeTextures();
+    if (g_ready && (g_wantW != g_texW || g_wantH != g_texH || g_wantMW != g_texMW || g_wantMH != g_texMH)) MakeTextures();
     std::string log;
     {
         std::lock_guard<std::mutex> lk(g_errMx);
@@ -1038,11 +1057,11 @@ int Side(MmlSideMod *, const char *, MmlSideReply *r, void *) {
     char b[1024];
     snprintf(b, sizeof b,
              "{\"ready\": %s, \"stage\": \"%s\", \"broken\": %s, \"gpu\": \"%s\", \"steps\": %llu, \"renders\": %llu, \"simulate_ms\": %.3f, \"render_ms\": %.3f, "
-             "\"gpu_ms\": %.3f, \"blocks\": %u, \"textures\": [%u, %u], \"buffers\": [%u, %u], \"scene_triangles\": %u, "
+             "\"gpu_ms\": %.3f, \"blocks\": %u, \"frame\": [%u, %u], \"march\": [%u, %u], \"scene_triangles\": %u, "
              "\"movers\": %u, \"mover_triangles\": %u, \"error\": \"%s\"}",
              g_ready ? "true" : "false", g_stage.load(), g_broken ? "true" : "false", g_gpuName.c_str(), static_cast<unsigned long long>(g_steps.load()),
              static_cast<unsigned long long>(g_renders.load()), g_simMs.load(), g_renderMs.load(), g_gpuMs.load(), g_blocks.load(), g_texW, g_texH,
-             g_bufW, g_bufH, g_sceneTris.load(), g_moverCount.load(), g_moverTris.load(), e.c_str());
+             g_texMW, g_texMH, g_sceneTris.load(), g_moverCount.load(), g_moverTris.load(), e.c_str());
     // (Flow's dearest passes, ms of GPU a frame)
     std::vector<std::pair<std::string, float>> prof;
     {
@@ -1103,7 +1122,7 @@ void Shutdown() {
     for (Tex &t : g_tex) Unmap(t);
     if (g_stream) cuStreamDestroy(g_stream), g_stream = nullptr;
     if (g_cuCtx) cuDevicePrimaryCtxRelease(g_cuDev), g_cuCtx = nullptr;
-    for (int i = 0; i < 3; i++)
+    for (int i = 0; i < kTexCount; i++)
         if (g_tex[i].res) H->texture_remove(M, kTexNames[i]);
     if (g_grid) {
         g_flow.deviceInterface.disableProfiler(g_ctx);

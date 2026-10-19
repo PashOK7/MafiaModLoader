@@ -1060,12 +1060,10 @@ merged, sorted by importance):
     on 2026-10-19). Since 2026-10-19 Flow keeps a pipeline cache of its own in the mod's data folder
     (`third_party/flow/patch.py`, `vk_pipelines.bin`, 8.4 MB): the sidecar rebuilt again, Flow started in 0.49 s from
     it. What is left: the first start in each game folder (each has its own data folder) and after a new driver.
-  - The pass draws the whole frame back (Flow composites the gas over the colour it is given and gives no alpha):
-    the passes ordered before it (50) are under the gas, not over it.
-  - The ray march runs at the frame's full size over the frame's colour (Flow composites and gives no alpha): with a
-    fire on a 4 cm grid it is 1.7 ms of GPU, and the frame's copies in and out 0.6 ms. A Flow patch writing the
-    transmittance into alpha (its `RayMarchBlockCS`), a ray march at half size over black and a depth-aware upsample
-    in the composite would take it to about a quarter and drop the colour's copy in.
+  - The gas at half size (2026-10-19, the default) is brought up by four taps weighted by the depth: a thin thing
+    in front of the gas narrower than two pixels (a wire, a lamp post far away) takes the gas's colour of what is
+    behind it at its edge. Measured on one scene only (the freeride's start, a fire and a smoke); the ray march's
+    cost did not fall to a quarter (0.56 to 0.25..0.33 ms: Flow's per-block work does not scale with the pixels).
   - People are capsules along their bones (the host gives no skinned meshes): their clothes' shapes are not there.
   - The meshes' collision (`flow_smoke.collision {"mode": "meshes"}`) is off by default: the owner found it still
     behaving strangely after the bodies were made solid behind their faces; what is wrong was not found yet.

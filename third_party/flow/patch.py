@@ -12,6 +12,10 @@ made is left as it is, so the script may run at every configure. Flow's license 
    checks nothing it did not make), gives it to every pipeline, and writes it back (a .tmp file renamed into its
    place) 2 s after the last new pipeline, from its queue's flush, and when the device is destroyed: the sidecar
    ends with the game (a job object kills it), so the file must not wait for an orderly end.
+2. The ray march (shaders/RayMarchBlockCS.hlsl) gives the gas alone: its light, premultiplied, and in alpha its
+   transmittance (how much of what is behind it shows), instead of laying it over the colour it is given. The caller
+   lays it over the frame itself: at another size than the frame's (flow_smoke marches at half the size and brings it
+   up by the depth), over what other passes drew, without handing Flow the frame's colour.
 """
 import os
 import sys
@@ -173,6 +177,15 @@ EDITS = [
      '    int ret = flushStepA(ptr, waitSemaphore, signalSemaphore);\n'
      '    flushStepB(ptr);\n'
      '    device_pipelineCacheSave(ptr->device, NV_FLOW_FALSE);   // (MML: once new pipelines stop coming)\n'),
+    # 2. the ray march gives the gas alone: its light (premultiplied) and in alpha its transmittance, not composited
+    # over the colour it is given (which it no longer reads)
+    ('../shaders/RayMarchBlockCS.hlsl',
+     '    float4 color = colorIn[tidx];\n\n    sum.rgb *= globalParamsIn.compositeColorScale;\n\n    color.rgb = sum.rgb + sum.a * color.rgb;\n',
+     '    // (MML: the gas alone, its light premultiplied and its transmittance in alpha: the caller lays it over the frame,\n'
+     '    // at another size if it likes; third_party/flow/patch.py)\n'
+     '    sum.rgb *= globalParamsIn.compositeColorScale;\n'
+     '\n'
+     '    float4 color = sum;\n'),
     # every pipeline made through the cache
     ('ComputePipelineVulkan.cpp', '        loader->vkCreateComputePipelines(\n            vulkanDevice,\n            VK_NULL_HANDLE,\n',
      '        auto device = context->deviceQueue->device;   // (MML: through the pipeline cache)\n'

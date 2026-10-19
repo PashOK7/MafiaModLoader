@@ -15,7 +15,8 @@
     "sections": [
       {"title": "Grids", "controls": [
         {"key": "fire_cell", "label": "Fire cell", "min": 0.02, "max": 0.5, "step": 0.01, "unit": "m"},
-        {"key": "smoke_cell", "label": "Smoke cell", "min": 0.02, "max": 2, "step": 0.01, "unit": "m"}
+        {"key": "smoke_cell", "label": "Smoke cell", "min": 0.02, "max": 2, "step": 0.01, "unit": "m"},
+        {"key": "march_half", "label": "Drawn at half size"}
       ]},
       {"title": "Burning", "controls": [
         {"key": "fire_combustion", "label": "Fuel burns"},

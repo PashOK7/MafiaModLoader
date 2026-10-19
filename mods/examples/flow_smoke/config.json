@@ -3,6 +3,9 @@
   // The grids: each one's cell in metres (Flow's blocks are 32 x 16 x 16 cells: the smoke's 0.1 is a block 3.2 x 1.6 x 1.6 m).
   "smoke_cell": 0.1,                 // the smoke's grid: its billows
   "fire_cell": 0.04,                 // the fire's grid: its tongues are finer than the smoke's billows
+  // The drawing: the gas ray-marched at half the frame's size each way (a quarter of the GPU's work), brought up to the
+  // frame by its depth (false: at the frame's size)
+  "march_half": true,
 
   // The fire's burning (Flow's combustion: fuel burns where it is hot enough, and burning makes heat, smoke, expansion)
   "fire_combustion": true,           // advection.combustionEnabled: the fuel burns (false: the fire is only gas that moves)

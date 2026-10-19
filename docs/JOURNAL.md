@@ -2527,3 +2527,27 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   frames apart), the round trip 0.33 against 1.85 ms; 1.0, 0.39 ms and 0.32 ms. Every frame drawn was fenced (824
   of 825 in 1.2, 629 of 630 in 1.0: the first one confirms them); none late. Screenshots in a row: the fire whole,
   the traffic moving.
+
+## 2026-10-19: flow_smoke's gas alone and at half size
+
+- The Known gaps: Flow composited the gas over the colour it was handed and gave no alpha, so the half had to get the
+  whole frame's colour and send the whole frame back (0.22 + 0.35 ms of copies), the ray march ran at the frame's size,
+  and the passes ordered before flow_smoke were under the gas.
+- **Made**: `third_party/flow/patch.py` change 2: `RayMarchBlockCS` writes the gas alone (its light premultiplied, its
+  transmittance in alpha). The half gets the frame's depth only (`depth_in`), Flow marches at the march size the
+  view names (`View::marchWidth/Height`: half the frame each way with the new `march_half` setting, on by default),
+  `color_out` is at that size. The pass's PsComposite brings it up by the depth (four taps: bilinear weights times
+  exp(-(dz/z)^2 * 400)) and writes `Enc(Bright(gas + T Lin(frame))) - T frame` with alpha 1 - T into the effects
+  target as premultiplied "over": exact where nothing else was drawn, earlier passes show through by T.
+- **Found on the way**: switching the setting failed with "cuImportExternalMemory (Flow's buffer): OS call failed".
+  `FreeBuf` never freed the CUDA mapping of a buffer (`cuExternalMemoryGetMappedBuffer`'s pointer is CUDA's to free:
+  now `cuMemFree`), but that alone did not cure it: Flow's context pools its buffers by their description, and the
+  allocation it hands out again after CUDA imported it once is refused a second import. The buffers now only grow
+  (a new size is a new allocation), the gas's sized for the whole frame, so the setting switches with no new buffer.
+  The copies queued without a wait (the fences) made two more races: a buffer or a texture freed while the stream
+  still copied into it. The worker now holds the textures' lock until its copies are queued, and both the buffers'
+  growth and the textures' remaking wait for the stream first.
+- **Measured** (1.2, the freeride's start, a fire and a smoke): Flow's ray march 0.56 ms at full size, 0.25 to 0.33 at
+  half; the colour in and out gone, the gas out 0.08 ms; the car's roof against the fire behind it crisp (crops of the
+  two screenshots compared). The setting switched both ways in the game, no error. 1.0: the fire at half size, fenced,
+  none late.
