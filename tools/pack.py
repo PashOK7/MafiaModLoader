@@ -1,6 +1,9 @@
 """pack.py: a player's archive: the loader, the mods it names and what they need, laid out as the game's folder.
 
     python tools/pack.py dlss_nr      # build/dist/Mafia-DLSS5-NR-RTX50.zip (and the folder beside it)
+    python tools/pack.py dlss_nr --since <an older archive of it>
+                                      # also <name>-update.zip: only what changed since that archive (a player
+                                      # unpacks it over the old version), with UPDATE.txt saying what and what to delete
 
 From the builds' outputs (cmake --build --preset x86-release and x64-release: they must be current) and the pinned
 third-party files (tools/deps.py): Ultimate ASI Loader as dinput8.dll, MafiaModLoader.asi, our dxwrapper build
@@ -124,6 +127,33 @@ def main():
                 path = os.path.join(folder, f)
                 z.write(path, os.path.relpath(path, dest))
     print('pack: %s (%.1f MB)' % (os.path.relpath(archive, ROOT), os.path.getsize(archive) / 1e6))
+    if '--since' in sys.argv:
+        update(dest, sys.argv[sys.argv.index('--since') + 1])
+
+
+def update(dest, old_archive):
+    """<dest>-update.zip: the files of the new pack that the old archive lacks or holds otherwise, and UPDATE.txt."""
+    with zipfile.ZipFile(need(old_archive)) as z:
+        old = {i.filename: z.read(i) for i in z.infolist() if not i.is_dir()}
+    new = {}
+    for folder, _, files in os.walk(dest):
+        for f in files:
+            path = os.path.join(folder, f)
+            new[os.path.relpath(path, dest).replace(os.sep, '/')] = path
+    changed = sorted(rel for rel, path in new.items() if old.get(rel) != open(path, 'rb').read())
+    gone = sorted(rel for rel in old if rel not in new)
+    note = ['Update for %s' % os.path.basename(dest), '',
+            'Unpack into the game\'s folder over the previous version (replace the files).', '',
+            'Changed or new:'] + ['  ' + rel for rel in changed]
+    if gone:
+        note += ['', 'Delete (no longer part of it):'] + ['  ' + rel for rel in gone]
+    archive = dest + '-update.zip'
+    with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+        for rel in changed:
+            z.write(new[rel], rel)
+        z.writestr('UPDATE.txt', '\r\n'.join(note) + '\r\n')
+    print('update: %s (%.1f MB, %d files changed, %d to delete)' % (os.path.relpath(archive, ROOT),
+                                                                     os.path.getsize(archive) / 1e6, len(changed), len(gone)))
 
 
 if __name__ == '__main__':
