@@ -1780,6 +1780,40 @@ smallest half alone, `mods/examples/side_picture` a mod in two halves that hands
   just behind its hull (the game's box of it, `world_shapes`): inside the hull the car's own box holds the gas out and
   nothing shows. `"jet": true` makes it a jet leaving the car's back at `speed` (a rocket's exhaust), `local` places
   its nozzle in the car's frame.
+- **NVIDIA DLSS 5 Neural Rendering over the game's frame: `dlss_nr`** (`mods/examples/dlss_nr`). DLSS-NR ("DLSS 5 with
+  3D-guided neural rendering", NGX feature DLSSNR, `nvngx_dlssnr.dll`) adds lighting and material detail to the frame
+  an engine drew (one frame in, one out; no upscaling, no frame generation). NGX exists for 64 bits only and DLSS-NR's
+  API for Vulkan only, so the 64-bit half makes a Vulkan device of its own on the game's adapter (the sidecar's
+  `adapter_luid` matched to `VkPhysicalDeviceIDProperties::deviceLUID`; `vulkan-1.dll` loaded at run time, the headers
+  from `tools/deps.py vulkan`), with the instance and device extensions NGX asks for DLSSNR
+  (`NVSDK_NGX_VULKAN_GetFeature*ExtensionRequirements`: `VK_NVX_binary_import`, `VK_NVX_image_view_handle`,
+  `VK_KHR_buffer_device_address`, `VK_KHR_push_descriptor`) and `VK_KHR_external_memory_win32`, and starts NGX with a
+  project id of its own (`NVSDK_NGX_VULKAN_Init_with_ProjectID`, a custom engine). The frame: the pass draws the
+  world's colour (linear, 0..1: DLSS-NR takes an SDR picture in linear terms), its depth as the projection makes it
+  (0 near .. 1 far), each pixel's motion vector in pixels (to where it was the frame before: the depth reprojected
+  through the last frame's camera; the game has no motion vectors, so its moving actors move as the world behind
+  them) and a control mask (1 everywhere, the sky's share a setting) into four shared textures, and waits; the half
+  imports them as Direct3D 12 resources (`VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D12_RESOURCE_BIT`, a dedicated
+  allocation, layout GENERAL taken from and given back to `VK_QUEUE_FAMILY_EXTERNAL` each frame), copies them into
+  images of its own (DLSS-NR reads sampled and writes storage images; the shared textures are render targets with no
+  UAV), evaluates DLSS-NR (`NGX_VULKAN_EVALUATE_DLSSNR_EXT`, RTX Remix's defaults: intensity 1, tone 0.3, structure
+  0.7, preset B), copies its picture into `color_out` and answers; the pass draws it as the frame, under the HUD. Its
+  settings (NVIDIA's parameters, a split screen to compare, what it is given as debug views, a round trip of the frame
+  through the half untouched) are on the Options > Mods page; F12 switches it (`dlss_nr.state`, `dlss_nr.toggle`).
+  **It runs on a GeForce RTX 50 only**: NGX's DLL checks the GPU's architecture itself (measured 2026-10-19 on an RTX
+  3070, driver 617.42: `GetFeatureRequirements` AdapterUnsupported (4), MinHWArchitecture 0x1B0, Blackwell;
+  `DLSSNR.Available` 0, `FeatureInitResult` 0xBAD0000B; NGX's log in the mod's data folder: "snippet is using newer
+  GPU arch 1B0 > 170"). The half says so (`dlss_nr.side`, the game's console: "needs a GeForce RTX 50 GPU") and the
+  game's own frame stays. A game drawn on another vendor's GPU (a CPU's own graphics beside the GeForce: a player's
+  RTX 5060 machine ran the game on "AMD Radeon(TM) Graphics") is told apart before NGX: stage `other_gpu`, the
+  message naming both GPUs and Windows' per-application GPU setting (Settings > System > Display > Graphics). The round trip, the debug views and the motion vectors' check (`debug` 5: the frame before
+  moved by them against this one; 6 the same without them) work on any GPU: measured 2026-10-19 on the RTX 3070 at
+  1280x960, the round trip 0.56 ms (1.2) and 0.50 ms (1.0) on the game thread, 0.07 to 0.08 ms of the half's GPU, no
+  frame late. `nvngx_dlssnr.dll` is NVIDIA's (the RTX SDKs license): not in the repository nor in the build's output;
+  `tools/deps.py ngx` pins the newest (310.9.16, from NVIDIA's RTX Remix package; the public DLSS SDK has no DLSSNR) in
+  `third_party/_deps/ngx/bin/`, and a player puts it beside the mod's `mod.json` (`<game>\mml\mods\dlss_nr\`, not in
+  `x64\`: the sidecar copies that folder at each load, and the DLL is 266 MB). Bypassing NGX's check of the GPU is
+  against NVIDIA's license (4.d): the mod does not and will not.
 
 ## 4. A complete example
 

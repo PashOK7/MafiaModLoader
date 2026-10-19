@@ -2453,6 +2453,40 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   1.2 lab: the Race page's second part holds the walls' controls with no overlap; outside the race the state reads no
   walls. The offline suite (the pages' layout check included) ALL PASSED.
 
+## 2026-10-19: DLSS 5 Neural Rendering over the game's frame (dlss_nr)
+
+- **Asked** (the owner, through another session): the newest "DLSS 5 NR" running in Mafia 1.2, for a guide for a
+  friend's RTX 5060; then (the owner): the vanilla game, no ray tracing, with DLSS 5 NR, as a proper mod (settings, a
+  hotkey, everything a game needs).
+- **What it is** (NVIDIA's pages): "DLSS 5 with 3D-Guided Neural Rendering", announced March 2026, shipped 2026-09-03
+  in NBA 2K27 (driver 616.64), a 2x faster model on 2026-10-13/16. GeForce RTX 50 only. Its runtime is
+  `nvngx_dlssnr.dll`, newest 310.9.16.0 (signed by NVIDIA). The public DLSS SDK (NVIDIA/DLSS v310.9.16) has no DLSSNR;
+  RTX Remix's runtime has it since dxvk-remix's commit of 2026-10-16 (CI builds; the release with it announced for
+  2026-10-23), from NVIDIA's package `rtx-remix-ngx_sdk_dlnr` 2 (headers: a Vulkan API; the DLL).
+- **Tried first**: RTX Remix's CI runtime with crosire's d3d8to9 in the 1.2 lab: it stopped at its driver check
+  (616.56 < 616.92), and it path-traces the scene (not the vanilla look the owner wanted). Taken out again.
+- **Measured**: a 64-bit NGX probe (Vulkan, NGX from the DLSS SDK, the DLL beside it) on the RTX 3070, driver 617.42:
+  DLSSNR MinHWArchitecture 0x1B0 (Blackwell), FeatureSupported AdapterUnsupported, Available 0; NGX's log: "GPU
+  architecture : 0x170, Snippet expects at least : 0x1B0". Bypassing it is against the RTX SDKs license (4.d). Also:
+  before the owner's driver update the RTX 3070's adapter key had no VulkanDriverName (only Vulkan SC; a GTX 760 on
+  475.14 beside it): the system's Vulkan loader found no driver for it; 617.42 fixed that.
+- **Made**: `mods/examples/dlss_nr` (docs/MODDING.md "64-bit halves"): the 32-bit pass gives the frame (linear),
+  its depth (0..1), camera motion vectors and a mask through four shared textures; the 64-bit half runs NGX on a Vulkan
+  device of its own on the game's adapter (by LUID), imports them (D3D12 resources), copies them into its own images,
+  evaluates DLSS-NR, copies the picture back; the pass shows it under the HUD. Settings page (Picture, Compare,
+  Advanced), F12, console lines in the game's style, `dlss_nr.state`, `dlss_nr.side`, debug views (motion, depth,
+  mask, the round trip, the motion vectors' check). `tools/deps.py ngx vulkan`: the DLSS SDK's headers and static
+  library from its tag, NVIDIA's DLSSNR package (a 7z: 7-Zip's own `7zr.exe` 26.04 unpacks it), the Vulkan headers
+  1.4.363; `deps.py` learned single files and 7z parts.
+- **Checked** in both labs on the RTX 3070 (the mod on, the DLL beside it): NGX started (project id, custom engine),
+  its verdict "unsupported" in the log, in `dlss_nr.state` and in the game's console ("DLSS 5 NR: needs a GeForce RTX
+  50 GPU", at F12 too); the round trip of the frame through the half untouched: 1.2 200 frames of 219 (the first 19
+  waited for the textures), 0.56 ms on the game thread, 1.0 168 of 187, 0.50 ms, none late, the picture right; the
+  motion vectors by the check view while Tommy turned (a building's windows vanish with them, stand out without
+  them); the Options > Mods page (its first tab and Advanced) in 1.2; a hot reload of both halves (NGX up again). The offline
+  suite (the pages' layout check included) ALL PASSED. Not seen: DLSS-NR's feature made and evaluated (an RTX 50).
+- **Lab**: both labs back as they were (dlss_nr off, the DLL taken out, debug_views' views in 1.2 back on).
+
 ## 2026-10-19: the roadmap: people's skinning, the renderer's bottleneck, the stages
 
 - **Asked** (the owner, from the community's Discord): more than two bone weights a vertex, a mod's own shader

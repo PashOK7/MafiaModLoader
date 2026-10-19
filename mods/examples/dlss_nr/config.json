@@ -1,0 +1,27 @@
+{
+  // The defaults of dlss_nr's settings (the game's Options > Mods > DLSS 5 NR, or
+  // config.set {"mod": "dlss_nr", "key": "intensity", "value": 0.8}). The strengths are NVIDIA's own parameters of
+  // DLSS 5 Neural Rendering (NGX's DLSSNR evaluation), with RTX Remix's defaults.
+  "on": true,              // DLSS 5 NR over the frame (the hotkey switches it and keeps the choice)
+  "hotkey": "F12",         // on and off
+  "intensity": 1.0,        // InIntensity: how much of DLSS-NR's picture (0 the game's own)
+  "tone": 0.3,             // InLocalToneStrength: how much it may change the local tones (light and shade)
+  "structure": 0.7,        // InLocalStructureStrength: how much it may change the local structure (detail)
+  "model": 0,              // InStyle: NVIDIA's model, 0 A, 1 B, 2 C
+  "auto_mask": true,       // InUseAutoMask: DLSS-NR's own mask of the people, with the mask below (the lower of the two)
+  "skin": 0.5,             // InSkinStructureStrength: the structure it may change on the people (with auto_mask)
+  "sky": 1.0,              // the control mask on the sky (1: as the world; 0: the sky left as the game drew it)
+
+  // Seeing the difference
+  "split": false,          // the game's own frame left of the line, DLSS-NR's right of it
+  "split_at": 0.5,         // where the line is (a share of the width)
+
+  // Advanced
+  "preset": 2,             // NVSDK_NGX_DLSSNR_Hint_Render_Preset at the feature's creation: 0 default, 1 A, 2 B (RTX Remix's)
+  "wait_ms": 250,          // how long a frame waits for DLSS-NR's picture at most (a slow GPU: more; late frames show the game's)
+  "messages": true,        // a line in the game's console when it is switched, and why it cannot run
+  "debug": 0               // 0 DLSS-NR's picture; what it is given: 1 the motion vectors, 2 the depth, 3 the mask;
+                           // 4 the round trip: the frame through the 64-bit half and back untouched (any GPU);
+                           // 5 the motion vectors checked: the frame before moved by them against this one (black where
+                           // they are right), 6 the same without them (to compare)
+}

@@ -5,6 +5,7 @@
     python tools/deps.py physx      # PhysX 5 (the x64 preset's: the mods' 64-bit halves)
     python tools/deps.py cuda       # the parts of NVIDIA's CUDA Toolkit that build PhysX's GPU part (no installation)
     python tools/deps.py flow       # NVIDIA Flow 2 with its shader compiler and premake (the x64 preset's)
+    python tools/deps.py ngx vulkan # NVIDIA NGX (DLSS SDK) with DLSS 5 Neural Rendering, the Vulkan headers (x64)
     python tools/deps.py ghidra     # an optional one: Ghidra and its Python bridge (tools/ghidra_cli.py)
     python tools/deps.py --force    # again, from scratch
 
@@ -22,6 +23,9 @@ DEPS = os.path.join(ROOT, 'third_party', '_deps')
 CUDA_REDIST = 'https://developer.download.nvidia.com/compute/cuda/redist/'
 PHYSX_URL = 'https://github.com/NVIDIA-Omniverse/PhysX/archive/517a0073715120e114ee055b63b26c95e00d9039.zip'
 PHYSX_SHA = 'b2f713bac94e2655614b1c8c34ba18750673d5d780fba19e0a23a21bda5695bb'
+DLSS_RAW = 'https://raw.githubusercontent.com/NVIDIA/DLSS/v310.9.16/'
+DLSSNR_URL = 'https://d1oqksizpb0e3d.cloudfront.net/rtx-remix-ngx_sdk_dlnr@2.7z'
+DLSSNR_SHA = '4bb8651b3ac2180f23df1f39422c489810a13d445a94dc836c876c18c93ecefe'
 
 PINNED = {
     # Ultimate ASI Loader v9.7.4 (x86, with PDB), MIT; the hash is the one GitHub publishes for the asset
@@ -72,6 +76,35 @@ PINNED = {
              (CUDA_REDIST + 'visual_studio_integration/windows-x86_64/'
               'visual_studio_integration-windows-x86_64-12.8.90-archive.zip',
               'f41d12a0e49b7848ed35e8a15b58926b83f635c723cab7e9952bc633e3c1f200', 'extras')],
+    # NVIDIA NGX for the mods' 64-bit halves (mods/examples/dlss_nr: DLSS 5 Neural Rendering over the game's frame),
+    # under the NVIDIA RTX SDKs license (LICENSE.txt beside them: for building; nothing of it is committed or shipped by
+    # this repository). The NGX API's headers and its static library (/MT) from the DLSS SDK 310.9.16 (NVIDIA/DLSS, tag
+    # v310.9.16, 2026-10-16; the repository is 880 MB, so its files one by one, from that tag). DLSS 5 Neural
+    # Rendering is not in the public DLSS SDK: its headers (a Vulkan API) and its runtime nvngx_dlssnr.dll 310.9.16
+    # (signed by NVIDIA, the same file the RTX Remix runtime of 2026-10-16 ships) come from NVIDIA's own package for
+    # RTX Remix, rtx-remix-ngx_sdk_dlnr version 2 (the package NVIDIAGameWorks/dxvk-remix's packman-external.xml
+    # names, from the CDN its config.packman.xml names; 351 MB), a 7z archive unpacked by 7-Zip's own console 7zr.exe
+    # 26.04 (ip7z/7zip's release; Python has no LZMA2 7z reader, nor Windows' tar). As Remix builds: the common NGX
+    # headers from the DLSS SDK, only the DLSSNR ones from the package. The hashes: GitHub's published digest for
+    # 7zr.exe, the files as GitHub and NVIDIA's CDN served them on 2026-10-19.
+    'ngx': [(DLSS_RAW + 'include/nvsdk_ngx_defs.h', 'ea23f33497cd274860d1c25a97644fce807dcb0037c594547203343103fad03e', 'include'),
+            (DLSS_RAW + 'include/nvsdk_ngx_defs_vk.h', '0a24d0861ace7d6b9362a67b7f08bea1b33ea123c5ce730b19133de8a891d031', 'include'),
+            (DLSS_RAW + 'include/nvsdk_ngx_params.h', '943bc8cc5cdae03b6303016fbad3183636f2335ae27a2d18776798c3b4efabbc', 'include'),
+            (DLSS_RAW + 'include/nvsdk_ngx_vk.h', '2d364ce7132881eb669e9498fd570d74cba563b1fbebc82c235f8e1ad2dd8b6d', 'include'),
+            (DLSS_RAW + 'include/nvsdk_ngx_helpers_vk.h', 'c192bff72138f12f770db48e12c1d8f712dfc81ea0e8e055ebb27d8dd1b31623', 'include'),
+            (DLSS_RAW + 'lib/Windows_x86_64/x64/nvsdk_ngx_s.lib', '7b9a5239c1145af5f645ab472aa066f9ea79db36ac819562312aae69d65f3765', 'lib'),
+            (DLSS_RAW + 'LICENSE.txt', 'd4216e39ebef5f9b50a6712ebb37beeb5379862a67733a9999c651f21592aaf0', ''),
+            ('https://github.com/ip7z/7zip/releases/download/26.04/7zr.exe',
+             '256feca8e274e5da655e2a284fabafd9f554365eb164862089dacd4e8276d282', 'tools'),
+            (DLSSNR_URL, DLSSNR_SHA, '', {'include/nvsdk_ngx_defs_dlssnr.h': 'include',
+                                          'include/nvsdk_ngx_helpers_dlssnr_vk.h': 'include',
+                                          'lib/Windows_x86_64/rel/nvngx_dlssnr.dll': 'bin',
+                                          'LICENSE.txt': 'bin'})],
+    # The Vulkan headers (KhronosGroup/Vulkan-Headers, tag vulkan-sdk-1.4.363.0, the newest), Apache 2.0 / MIT: a
+    # 64-bit half that draws through Vulkan itself (dlss_nr) loads vulkan-1.dll at run time (VK_NO_PROTOTYPES), so only
+    # the headers. The hash is the archive's as GitHub served it on 2026-10-19.
+    'vulkan': ('https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/vulkan-sdk-1.4.363.0.zip',
+               'f4be95220ff0ee0b1c620301ff4fe9ae48592d71f4c30f2d5c571351a153ae81', 'include'),
     # Ghidra 12.1.4 (2026-09-21), Apache 2.0: the reverse-engineering projects of both builds behind tools/ghidra_cli.py
     # and the MCP server's ghidra_* tools. 570 MB (about 900 unpacked); needs a JDK 21 or later. The hash is the one
     # the release publishes (its notes and the asset's digest). Its PyGhidra and JPype wheels are in the archive: the
@@ -81,7 +114,7 @@ PINNED = {
                'ddac49f903da9d5bac833e5cc79395098b9c33cfd3279be5f31bd00387d2d4db'),
 }
 # fetched only when named: not every build needs them
-OPTIONAL = {'ghidra', 'cuda', 'flow'}
+OPTIONAL = {'ghidra', 'cuda', 'flow', 'ngx', 'vulkan'}
 
 
 def download(name, url, sha, archive):
@@ -100,19 +133,39 @@ def download(name, url, sha, archive):
 
 def fetch_parts(name, parts, force):
     """Several archives (each one top folder) merged into third_party/_deps/<name>/ (a part's third element: the
-    subfolder its content goes to; a fourth: the one folder of the archive taken, with the archive's LICENSE* files)."""
+    subfolder its content goes to; a fourth: the one folder of the archive taken, with the archive's LICENSE* files).
+    A part that is not a .zip is a file put into that subfolder as it is; a .7z is unpacked by the 7zr.exe an earlier
+    part put into tools/, and its fourth element names the files taken ({path in the archive: subfolder})."""
     dest = os.path.join(DEPS, name)
     mark = os.path.join(dest, '.pinned')
-    want = hashlib.sha256(' '.join('/'.join(p[1:]) for p in parts).encode()).hexdigest()
+    want = hashlib.sha256(' '.join('/'.join(map(str, p[1:])) for p in parts).encode()).hexdigest()
     if not force and os.path.exists(mark) and open(mark).read().strip() == want:
         print('%-7s present' % name)
         return
     os.makedirs(DEPS, exist_ok=True)
     shutil.rmtree(dest, ignore_errors=True)
-    archive, tmp = os.path.join(DEPS, name + '.zip'), os.path.join(DEPS, name + '.part')
+    tmp = os.path.join(DEPS, name + '.part')
     for url, sha, *rest in parts:
         sub, pick = (rest + ['', ''])[:2]
+        kind = os.path.splitext(url)[1].lower()
+        archive = os.path.join(DEPS, name + (kind if kind in ('.zip', '.7z') else '.file'))
         download(name, url, sha, archive)
+        if kind not in ('.zip', '.7z'):
+            os.makedirs(os.path.join(dest, sub), exist_ok=True)
+            shutil.move(archive, os.path.join(dest, sub, url.rsplit('/', 1)[1]))
+            continue
+        if kind == '.7z':
+            import subprocess
+            shutil.rmtree(tmp, ignore_errors=True)
+            seven = os.path.join(dest, 'tools', '7zr.exe')
+            subprocess.run([seven, 'x', '-y', '-bso0', '-bsp0', '-o' + tmp, archive] + [p.replace('/', os.sep) for p in pick],
+                           check=True)
+            os.remove(archive)
+            for path, to in pick.items():
+                os.makedirs(os.path.join(dest, to), exist_ok=True)
+                shutil.move(os.path.join(tmp, path.replace('/', os.sep)), os.path.join(dest, to, os.path.basename(path)))
+            shutil.rmtree(tmp)
+            continue
         shutil.rmtree(tmp, ignore_errors=True)
         with zipfile.ZipFile(archive) as z:
             z.extractall(tmp)

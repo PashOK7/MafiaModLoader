@@ -265,6 +265,12 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
         SHADERS flow_smoke.hlsl:PsPrepare:ps_5_0 flow_smoke.hlsl:PsComposite:ps_5_0)
     target_include_directories(mod_flow_smoke PRIVATE third_party/json)
     target_link_libraries(mod_flow_smoke PRIVATE d3d11)
+    # a mod in two halves: this 32-bit one hands the frame to NVIDIA's DLSS 5 Neural Rendering in its 64-bit half and
+    # shows DLSS-NR's picture as the frame
+    mml_add_mod(dlss_nr ${CMAKE_SOURCE_DIR}/mods/examples/dlss_nr mods/examples/dlss_nr/dlss_nr.cpp
+        SHADERS dlss_nr.hlsl:PsPrepare:ps_5_0 dlss_nr.hlsl:PsComposite:ps_5_0 dlss_nr.hlsl:PsDebug:ps_5_0)
+    target_include_directories(mod_dlss_nr PRIVATE third_party/json)
+    target_link_libraries(mod_dlss_nr PRIVATE d3d11)
     mml_add_mod(puppet ${CMAKE_SOURCE_DIR}/mods/examples/puppet mods/examples/puppet/puppet.cpp)
     mml_add_mod(tally ${CMAKE_SOURCE_DIR}/mods/examples/tally mods/examples/tally/tally.cpp)
     mml_add_mod(orbit_cam ${CMAKE_SOURCE_DIR}/mods/examples/orbit_cam mods/examples/orbit_cam/orbit_cam.cpp)
@@ -340,6 +346,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     endforeach()
     target_link_libraries(testmod_heavy PRIVATE testlib_heavylib)
     add_dependencies(testmod_heavy testlib_heavyrt)
+
 else()
     # ---- 64 bits: the sidecar (mml-sidecar64.exe: the mods' 64-bit halves, sdk/include/mml/side.h) and those halves
     message(STATUS "64-bit configure: the sidecar and the mods' 64-bit halves")
@@ -475,17 +482,17 @@ else()
         if(NOT rc EQUAL 0)
             message(FATAL_ERROR "tools/deps.py flow cuda failed: the library is not there")
         endif()
+        # (our changes to Flow's sources: its Vulkan pipelines through a cache kept in a file; third_party/flow/patch.py)
+        execute_process(COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/third_party/flow/patch.py RESULT_VARIABLE rc)
+        if(NOT rc EQUAL 0)
+            message(FATAL_ERROR "third_party/flow/patch.py failed: Flow's sources are not the ones it knows")
+        endif()
         set(MML_CUDA ${CMAKE_SOURCE_DIR}/third_party/_deps/cuda)
         set(flow_dir ${CMAKE_SOURCE_DIR}/third_party/_deps/flow)
         set(flow_out ${flow_dir}/_build/windows-x86_64/release)
         # (premake5.lua takes the compiler's and MSBuild's folders from these: the ones this build uses)
         get_filename_component(flow_msvc ${CMAKE_CXX_COMPILER} DIRECTORY)
         get_filename_component(flow_msvc ${flow_msvc}/../../.. ABSOLUTE)
-        # (our changes to Flow's sources: its Vulkan pipelines through a cache kept in a file; third_party/flow/patch.py)
-        execute_process(COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/third_party/flow/patch.py RESULT_VARIABLE rc)
-        if(NOT rc EQUAL 0)
-            message(FATAL_ERROR "third_party/flow/patch.py failed: Flow's sources are not the ones it knows")
-        endif()
         get_filename_component(flow_msbuild ${CMAKE_VS_MSBUILD_COMMAND} DIRECTORY)
         ExternalProject_Add(flow_build
             SOURCE_DIR ${flow_dir}
@@ -511,6 +518,24 @@ else()
         target_link_libraries(mod64_flow_smoke PRIVATE d3d12)
         target_include_directories(mod64_flow_smoke PRIVATE third_party/json)
         mml_flow(flow_smoke)
+    endif()
+
+    # ---- NVIDIA NGX for the 64-bit halves (DLSS 5 Neural Rendering: dlss_nr): pinned by tools/deps.py ngx vulkan (the
+    # DLSS SDK's headers and static library, /MT; the DLSSNR headers from NVIDIA's RTX Remix package; the Vulkan
+    # headers: the half loads vulkan-1.dll itself). Under NVIDIA's RTX SDKs license: built against, never committed or
+    # shipped. nvngx_dlssnr.dll (NVIDIA's runtime, 266 MB) is not copied by the build: the player puts it into the mod's
+    # folder (docs/MODDING.md "DLSS 5 Neural Rendering"); third_party/_deps/ngx/bin/ has the pinned one.
+    option(MML_NGX "NVIDIA NGX (DLSS 5 Neural Rendering) for the mods' 64-bit halves (tools/deps.py ngx vulkan)" ON)
+    if(MML_NGX)
+        find_package(Python3 REQUIRED COMPONENTS Interpreter)
+        execute_process(COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/deps.py ngx vulkan RESULT_VARIABLE rc)
+        if(NOT rc EQUAL 0)
+            message(FATAL_ERROR "tools/deps.py ngx vulkan failed: NGX's SDK is not there")
+        endif()
+        set(ngx_dir ${CMAKE_SOURCE_DIR}/third_party/_deps/ngx)
+        mml_mod64(dlss_nr mods/examples/dlss_nr/dlss_nr64.cpp)
+        target_include_directories(mod64_dlss_nr PRIVATE ${ngx_dir}/include third_party/_deps/vulkan third_party/json)
+        target_link_libraries(mod64_dlss_nr PRIVATE ${ngx_dir}/lib/nvsdk_ngx_s.lib version)
     endif()
     # the offline tests' 64-bit half (tests/run_tests.py copies it and the sidecar into the stand-in game's folder)
     add_library(testmod64_side_test SHARED tests/mods/side_test/side_test64.cpp)

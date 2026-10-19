@@ -958,6 +958,11 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
     `actor_meshes` an actor's parts posed): the static world as their triangles, a prop as the convex hull of its
     `.4ds`, people and cars as their posed parts.
 
+19c. *(2026-10-19: made, `dlss_nr`; NVIDIA's model itself not seen yet: below, "Known gaps".)* **NVIDIA DLSS 5 Neural
+    Rendering over the game's own frame** (the owner, 2026-10-19: the game as it is, no ray tracing, with DLSS 5 NR;
+    a guide for a friend's RTX 5060). NGX's DLSSNR through Vulkan in a 64-bit half, the frame, its depth, motion
+    vectors and a mask from the graphics bridge, the picture back under the HUD; settings, a hotkey, a split screen.
+
 ### Tier 5: the agent's own tools (to write and debug those mods)
 
 20. *(Done 2026-10-16: see "Done".)* **Waiting for what happens** (A). The bridge keeps the last events (item 7's, missions, actors destroyed,
@@ -1036,6 +1041,14 @@ merged, sorted by importance):
 
 ## Known gaps
 
+- **dlss_nr** (2026-10-19): DLSS 5 NR's own picture has not been seen: NVIDIA's `nvngx_dlssnr.dll` refuses every GPU
+  but an RTX 50 (Blackwell), and the labs have an RTX 3070. Everything up to NGX's answer is seen in both labs (the
+  Vulkan device on the game's adapter, NGX started, its verdict, the round trip of the frame, the inputs as debug
+  views); the feature's creation and evaluation, their image layouts and the picture's look wait for an RTX 50 (the
+  owner's friend's 5060). The motion vectors are the camera's (the game's moving actors get the world's behind them:
+  per-object motion would take each drawn object's last matrix); the frame waits for DLSS-NR each frame (no
+  pipelining a frame behind). Stage `other_gpu` (the game on a CPU's own graphics beside the GeForce, as a player's
+  RTX 5060 machine ran it) is not seen: the labs' machine has NVIDIA GPUs only.
 - **The developer tools' block** (2026-10-19): seen in both labs, but not yet the distances `triggers` draws (a
   mission waiting on a GETACTORSDIST) nor the `names` and `web` views looked at closely in 1.0.
 - **Wireframe** (2026-10-18, from PR 2): not made. The proper way is LS3D's own driver state (Insanity3D's
