@@ -322,6 +322,17 @@ int H_GfxPass(MmlMod *m, int order, MmlGfxPassFn fn, void *user) {
 void H_GfxPassRemove(MmlMod *m, int handle) { if (m && handle > 0) GfxPassRemove(m, handle); }
 void H_GfxUi(MmlMod *m, int mode) { if (Alive(m)) GfxUiAsk(m, mode); }
 int H_GfxPassViews(MmlMod *m, int pass, int on) { return Alive(m) && GfxPassViews(m, pass, on != 0) ? 1 : 0; }
+int H_GfxState(MmlMod *, char *why, int cap) {
+    std::string w;
+    int s = GfxStateNow(&w);
+    if (why && cap > 0) {
+        size_t n = std::min<size_t>(w.size(), static_cast<size_t>(cap - 1));
+        while (n > 0 && n < w.size() && (static_cast<unsigned char>(w[n]) & 0xC0) == 0x80) n--;   // (whole UTF-8 characters)
+        memcpy(why, w.data(), n);
+        why[n] = 0;
+    }
+    return s;
+}
 int H_SceneView(MmlMod *m, int w, int h, MmlViewFn fn, void *user) {
     if (!Alive(m)) return 0;
     std::string err;
@@ -1236,6 +1247,7 @@ void ModsInit() {
     g_host.hud_game = H_HudGame;
     g_host.web_nodes = H_WebNodes;
     g_host.material_name = H_MaterialName;
+    g_host.gfx_state = H_GfxState;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();

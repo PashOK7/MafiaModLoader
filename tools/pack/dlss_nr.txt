@@ -28,6 +28,10 @@ other mods back one by one. If the game folder already has dinput8.dll,
 d3d8.dll or dxwrapper files from other mods, back them up first: this
 archive replaces them.
 
+DXVK works with it: keep DXVK's d3d9.dll (and dxvk.conf) in the game
+folder, but not DXVK's d3d8.dll (this archive's d3d8.dll must stay).
+ReShade on top of DXVK (Vulkan) is not tested yet.
+
 
 USE
 ---
@@ -38,8 +42,8 @@ Esc > Options > Mods > DLSS 5 NR
 
 When a mission or the free ride starts, the message line at the bottom
 left says "DLSS 5 NR: on". If it says something else, it says why
-(for example "needs a GeForce RTX 50 GPU" or "the game is not on the
-NVIDIA GPU").
+(for example "needs a GeForce RTX 50 GPU", "the game is not on the
+NVIDIA GPU" or "the graphics bridge is off": the log says why).
 
 The frame rate will be lower: the game waits for DLSS 5 every frame.
 

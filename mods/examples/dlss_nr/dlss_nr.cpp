@@ -121,6 +121,21 @@ void TellStatus(bool always) {
     Tell(b, 0xFFFF8040);
 }
 
+// The graphics bridge off (a game device it cannot share with): the pass never runs, so the player is told here why,
+// once a mission and at F12 (a player's game once showed every setting on and nothing happening).
+std::string g_bridgeOff;    // the reason, while off
+bool g_bridgeTold;
+void CheckBridge(bool always) {
+    if (!MML_HAS(H, gfx_state)) return;
+    char why[256];
+    if (H->gfx_state(M, why, sizeof why) != 0) { g_bridgeOff.clear(); return; }
+    if (!always && g_bridgeTold && g_bridgeOff == why) return;
+    if (g_bridgeOff != why) H->log(M, MML_LOG_WARN, "the graphics bridge is off, so DLSS 5 NR gets no frame: %s", why);
+    g_bridgeOff = why;
+    g_bridgeTold = true;
+    Tell("DLSS 5 NR: the graphics bridge is off (see the log)", 0xFFFF8040);
+}
+
 // ---- the measures
 struct Stats {
     uint64_t frames, drawn, late, none, noTextures, silent;
@@ -362,6 +377,7 @@ void Switch(bool on) {
     S.on = on;
     g_resetNext = true;
     TellStatus(true);
+    CheckBridge(true);
 }
 void KeyToggle(void *) { Switch(!S.on); }
 
@@ -371,7 +387,9 @@ void OnEvent(const MmlEvent *ev, void *) {
     case MML_EVENT_MISSION_LOADED:
         g_resetNext = true;
         g_toldStage = UINT32_MAX;   // (told again in the new mission: the player sees why it is or is not there)
+        g_bridgeTold = false;
         break;
+    case MML_EVENT_RENDER_END: CheckBridge(false); break;
     default: break;
     }
 }
@@ -402,7 +420,7 @@ int CmdState(const char *, MmlReply *r, void *) {
               {"late", T.late}, {"none", T.none}, {"no_textures", T.noTextures}, {"silent", T.silent},
               {"round_trip_ms", r3(T.rtSum / n)}, {"round_trip_max_ms", r3(T.rtMax)}, {"work_ms", r3(T.workSum / n)},
               {"gpu_ms", r3(T.gpuSum / n)}, {"prepare_ms", r3(T.prepSum / std::max<double>(1, double(T.frames)))},
-              {"last_error", g_done.error}});
+              {"last_error", g_done.error}, {"bridge_off", g_bridgeOff}});
     return 0;
 }
 
@@ -435,7 +453,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     g_statusCh = H->channel_open(mod, "status", sizeof(dnr::Status));
     if (!g_viewCh || !g_doneCh || !g_statusCh) return 1;
     ReadSettings();
-    for (MmlEventType t : {MML_EVENT_CONFIG_CHANGED, MML_EVENT_MISSION_LOADED}) H->subscribe(mod, t, OnEvent, nullptr);
+    for (MmlEventType t : {MML_EVENT_CONFIG_CHANGED, MML_EVENT_MISSION_LOADED, MML_EVENT_RENDER_END}) H->subscribe(mod, t, OnEvent, nullptr);
     // (first among the passes: its picture is the whole frame, so the other mods' effects are laid over it)
     if (H->gfx_pass(mod, 10, Pass, nullptr) <= 0) {
         H->log(mod, MML_LOG_ERROR, "the graphics bridge refused the pass: dlss_nr needs \"gfx\": true on at the game's start");

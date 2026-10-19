@@ -441,7 +441,8 @@ void ShadowsMissionClose();
 void ShadowsConstants(const void *visual, float *c);   // game.hlsli's c76..c116 for a draw of this visual
 ::IDirect3DBaseTexture9 *ShadowsTexture();  // the map drawn this frame, or null
 // the map drawn this frame as gfx.cpp opens it in Direct3D 11: its shared handle, a count of the maps made (a new
-// map, a new handle), its matrix and mml.h's sun_shadow_info; false: none this frame, or it is not shared
+// map, a new handle; the handle null when the map is not shared: DXVK's device, ShadowsTexture copied then), its
+// matrix and mml.h's sun_shadow_info; false: none this frame
 bool ShadowsShared(void **handle, unsigned *made, float viewProj[16], float info[4]);
 void ShadowsState(std::string *json);
 void *ActorFrame(void *actor);
@@ -577,6 +578,7 @@ void GfxInit();
 int GfxPassAdd(MmlMod *mod, int order, MmlGfxPassFn fn, void *user);
 void GfxPassRemove(MmlMod *mod, int handle);
 bool GfxPassViews(MmlMod *mod, int handle, bool on);   // mml.h gfx_pass_views
+int GfxStateNow(std::string *why);        // mml.h gfx_state: 1 on, 0 off (why), -1 not yet
 void GfxRemove(MmlMod *mod);              // its mod unloads: its passes go
 void GfxQuiet(bool on);                   // drawing that is not the game's (not tallied as the world's light)
 void GfxBeforeWorld();                    // (render.cpp) the world's Render begins: the readable depth buffer in

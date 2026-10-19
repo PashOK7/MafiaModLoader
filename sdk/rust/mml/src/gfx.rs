@@ -270,6 +270,16 @@ impl Host {
     pub fn gfx_pass_views(&self, pass: i32, on: bool) -> bool {
         unsafe { f!(self, gfx_pass_views)(self.module, pass, on as c_int) != 0 }
     }
+    /// The graphics bridge's state: Some(Ok(())) on (the passes run), Some(Err(why)) off and why (the log's reason),
+    /// None not yet (no pass, or no frame of the mission's world drawn since)
+    pub fn gfx_state(&self) -> Option<Result<(), String>> {
+        let mut why = [0 as c_char; 512];
+        match unsafe { f!(self, gfx_state)(self.module, why.as_mut_ptr(), why.len() as c_int) } {
+            1 => Some(Ok(())),
+            0 => Some(Err(unsafe { core::ffi::CStr::from_ptr(why.as_ptr()) }.to_string_lossy().into_owned())),
+            _ => None,
+        }
+    }
     /// The mod's 64-bit half's texture of that name (side.h texture_create) on the bridge's device, inside a pass:
     /// its ID3D11Texture2D and view (the loader's: valid in this pass), size, format and the half's generation;
     /// None: not there (yet)

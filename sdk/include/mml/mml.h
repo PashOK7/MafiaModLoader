@@ -1517,6 +1517,12 @@ typedef struct MmlHost {
      * MmlHit's and MmlShape's flags >> 24), UTF-8; NULL not in the table (or no table yet). Game thread. */
     int (*web_nodes)(MmlMod *mod, const float at[3], float radius, MmlWebNode *out, int max);
     const char *(*material_name)(int material);
+    /* ---- the graphics bridge's state (both builds; docs/MODDING.md "Effects over the frame").
+     * gfx_state: 1 on (the passes run at each frame of the mission's world), 0 off and why (the log's reason, UTF-8,
+     * cut to cap: a game device with multisampling, a Direct3D 9 that shares nothing...), -1 not yet (no pass
+     * registered, or no frame of the mission's world drawn since). A mod tells its player why its effect is missing.
+     * Game thread. */
+    int (*gfx_state)(MmlMod *mod, char *why, int cap);
 } MmlHost;
 
 #define MML_ZONE_PLAYER 0x1u

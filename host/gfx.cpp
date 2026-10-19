@@ -15,6 +15,8 @@
 //   5. After Render the game's own depth buffer is put back.
 // The devices wait for each other with event queries (Direct3D 9Ex has no keyed mutex). With no pass registered the
 // bridge does nothing at all; its device is made at the first frame with a pass and kept (reloads do not remake it).
+// When Direct3D 9 is DXVK's (its d3d9.dll beside the game: Vulkan underneath, whose shared handles Direct3D 11 cannot
+// open) each shared texture is two, copied on DXVK's queue at the hand-overs (gfx_vk.cpp: Hand11, Hand9 here).
 //
 // The frame's constants: the camera from the device's transforms at stage 1; the world's fog and sun from the
 // game's own drawing: LS3D turns its fog off for what it draws last and enables its lights around the objects they
@@ -36,6 +38,7 @@
 #include <memory>
 #include <vector>
 #include "json.hpp"
+#include "gfx_vk.h"
 #include "shaders/VsQuad.h"
 #include "shaders/PsDepth.h"
 #include "shaders/PsComposite.h"
@@ -103,11 +106,13 @@ IDirect3DTexture9 *g_fx9;                                     // the effects tar
 ID3D11Texture2D *g_color11, *g_depth11, *g_fx11;
 ID3D11ShaderResourceView *g_colorSRV, *g_depthSRV;
 ID3D11RenderTargetView *g_fxRTV;
+gfxvk::Link *g_colorLink, *g_depthLink, *g_fxLink;            // on DXVK: each one's two halves (null on 9Ex)
 
 // the sun's shadow map (shadows.cpp makes it shared; opened here while a mod wants it), t2 of every pass
 ID3D11Texture2D *g_sun11;
 ID3D11ShaderResourceView *g_sunSRV;
-void *g_sunHandle;           // the handle it was opened from
+gfxvk::Link *g_sunLink;      // on DXVK: the map's Direct3D 11 half, copied each frame
+void *g_sunHandle;           // the handle it was opened from (on DXVK: the map's texture)
 unsigned g_sunMade, g_sunGen;   // shadows.cpp's count of maps and the device generation it was opened on
 std::string g_sunError;
 
@@ -130,6 +135,7 @@ std::vector<std::pair<MmlMod *, int>> g_uiAsk;   // each mod's mode
 IDirect3DTexture9 *g_ui9; IDirect3DSurface9 *g_uiSurf9;
 ID3D11Texture2D *g_ui11;
 ID3D11ShaderResourceView *g_uiSRV;
+gfxvk::Link *g_uiLink;
 unsigned g_uiFrames;
 IDirect3DSurface9 *g_uiGameRT;     // the frame's target while the 2D pass draws into ours
 D3DVIEWPORT9 g_uiViewport;
@@ -148,6 +154,7 @@ struct ViewTargets {
     IDirect3DTexture9 *fx9 = nullptr;          // its effects target (gfx_pass_views; made when a pass asks)
     ID3D11Texture2D *fx11 = nullptr;
     ID3D11RenderTargetView *fxRTV = nullptr;
+    gfxvk::Link *colorLink = nullptr, *depthLink = nullptr, *fxLink = nullptr;   // on DXVK
     unsigned passRuns = 0, passFails = 0;      // times the passes ran over it, failed
     unsigned generation = 0;       // the device they were made on
     MmlGfxView info{};
@@ -441,6 +448,7 @@ void EndTimers(TimerFrame *t) {
 
 // ---- set up and tear down
 void ReleaseView(ViewTargets &v) {
+    gfxvk::Free(v.colorLink); gfxvk::Free(v.depthLink); gfxvk::Free(v.fxLink);
     SafeRelease(v.colorSRV); SafeRelease(v.depthSRV); SafeRelease(v.color11); SafeRelease(v.depth11);
     SafeRelease(v.colorSurf); SafeRelease(v.color9); SafeRelease(v.intzSurf); SafeRelease(v.intz);
     SafeRelease(v.depthSurf); SafeRelease(v.depth9);
@@ -451,6 +459,7 @@ void ReleaseView(ViewTargets &v) {
 }
 
 void ReleaseSized() {
+    gfxvk::Free(g_colorLink); gfxvk::Free(g_depthLink); gfxvk::Free(g_fxLink); gfxvk::Free(g_uiLink); gfxvk::Free(g_sunLink);
     SafeRelease(g_colorSRV); SafeRelease(g_depthSRV); SafeRelease(g_fxRTV);
     SafeRelease(g_color11); SafeRelease(g_depth11); SafeRelease(g_fx11);
     SafeRelease(g_intzSurf); SafeRelease(g_intz);
@@ -484,6 +493,7 @@ void ReleaseAll() {
     SafeRelease(g_frameCB); SafeRelease(g_point); SafeRelease(g_linear); SafeRelease(g_vsFull); SafeRelease(g_over);
     SafeRelease(g_event11);
     if (g_ctx) { g_ctx->ClearState(); g_ctx->Flush(); }
+    gfxvk::Stop();   // (every link freed above)
     SafeRelease(g_ctx); SafeRelease(g_dev11);
     SafeRelease(g_dev9);
     g_d3d8 = nullptr;
@@ -612,6 +622,9 @@ bool Acquire(void *d3d8) {
     auto qi = (*reinterpret_cast<HRESULT(__stdcall ***)(void *, REFIID, void **)>(d3d8))[0];
     if (FAILED(qi(d3d8, __uuidof(IDirect3DDevice9Ex), reinterpret_cast<void **>(&g_dev9))) || !g_dev9)
         return Fail("the game's device is not Direct3D 9Ex underneath (a wrapper: dxwrapper with D3d8to9 and D3d9to9Ex)");
+    std::string why;
+    if (gfxvk::Start(g_dev9, &why)) HLOG("gfx: Direct3D 9 is DXVK's (Vulkan): the shared textures are copied on its queue");
+    else if (!why.empty()) return Fail(why);
     if (!MakeDevice11() || !MakeFixed9()) return false;
     HookState(g_dev9);
     g_generation++;
@@ -619,14 +632,40 @@ bool Acquire(void *d3d8) {
     return true;
 }
 
-// A shared texture: made by Direct3D 9Ex as a render target, opened by Direct3D 11.
-bool MakeShared(D3DFORMAT f9, IDirect3DTexture9 **t9, ID3D11Texture2D **t11, const char *what) {
-    HANDLE h = nullptr;
-    HRESULT hr = g_dev9->CreateTexture(g_w, g_h, 1, D3DUSAGE_RENDERTARGET, f9, D3DPOOL_DEFAULT, t9, &h);
-    if (FAILED(hr) || !h) return Fail(Fmt("the shared %s texture (0x%08X)", what, static_cast<unsigned>(hr)));
-    hr = g_dev11->OpenSharedResource(h, __uuidof(ID3D11Texture2D), reinterpret_cast<void **>(t11));
-    if (FAILED(hr)) return Fail(Fmt("Direct3D 11 could not open the shared %s texture (0x%08X)", what, static_cast<unsigned>(hr)));
+// A texture both devices use, as a render target of Direct3D 9's: on Direct3D 9Ex one texture, made by 9Ex with a
+// shared handle and opened by Direct3D 11 (link null); on DXVK two, the Direct3D 11 one imported into DXVK's device
+// and copied at the hand-overs (link set). False and why when it cannot be made.
+bool MakePair(UINT w, UINT h, D3DFORMAT f9, IDirect3DTexture9 **t9, ID3D11Texture2D **t11, gfxvk::Link **link, std::string *why) {
+    *link = nullptr;
+    HANDLE sh = nullptr;
+    const bool dxvk = gfxvk::On();
+    HRESULT hr = g_dev9->CreateTexture(w, h, 1, D3DUSAGE_RENDERTARGET, f9, D3DPOOL_DEFAULT, t9, dxvk ? nullptr : &sh);
+    if (FAILED(hr) || (!dxvk && !sh)) { *why = Fmt("Direct3D 9 made no texture to share (0x%08X)", static_cast<unsigned>(hr)); return false; }
+    if (dxvk) {
+        *link = gfxvk::Make(*t9, g_dev11, t11, why);
+        return *link != nullptr;
+    }
+    hr = g_dev11->OpenSharedResource(sh, __uuidof(ID3D11Texture2D), reinterpret_cast<void **>(t11));
+    if (FAILED(hr)) { *why = Fmt("Direct3D 11 could not open it (0x%08X)", static_cast<unsigned>(hr)); return false; }
     return true;
+}
+bool MakeShared(D3DFORMAT f9, IDirect3DTexture9 **t9, ID3D11Texture2D **t11, gfxvk::Link **link, const char *what) {
+    std::string why;
+    if (!MakePair(g_w, g_h, f9, t9, t11, link, &why)) return Fail(Fmt("the shared %s texture: %s", what, why.c_str()));
+    return true;
+}
+
+// The hand-overs on DXVK (nothing to do on 9Ex, where both devices draw into one texture): Direct3D 9's pictures to
+// Direct3D 11 once Direct3D 9 has finished them (Wait9), Direct3D 11's back once it has (Wait11).
+bool Hand(bool to11, std::initializer_list<gfxvk::Link *> links) {
+    if (!gfxvk::On()) return true;
+    std::vector<gfxvk::Link *> v;
+    for (gfxvk::Link *l : links) if (l) v.push_back(l);
+    if (v.empty()) return true;
+    std::string why;
+    bool ok = to11 ? gfxvk::To11(v.data(), static_cast<int>(v.size()), &why) : gfxvk::To9(v.data(), static_cast<int>(v.size()), &why);
+    if (!ok) g_frameError = "the textures' copy on DXVK's queue: " + why;
+    return ok;
 }
 
 bool EnsureSize(UINT w, UINT h) {
@@ -636,8 +675,9 @@ bool EnsureSize(UINT w, UINT h) {
     g_h = h;
     if (FAILED(g_dev9->CreateTexture(w, h, 1, D3DUSAGE_DEPTHSTENCIL, kFmtIntz, D3DPOOL_DEFAULT, &g_intz, nullptr))) return Fail("the INTZ depth texture");
     g_intz->GetSurfaceLevel(0, &g_intzSurf);
-    if (!MakeShared(D3DFMT_A8R8G8B8, &g_color9, &g_color11, "colour") || !MakeShared(D3DFMT_R32F, &g_depth9, &g_depth11, "depth") ||
-        !MakeShared(D3DFMT_A16B16G16R16F, &g_fx9, &g_fx11, "effects"))
+    if (!MakeShared(D3DFMT_A8R8G8B8, &g_color9, &g_color11, &g_colorLink, "colour") ||
+        !MakeShared(D3DFMT_R32F, &g_depth9, &g_depth11, &g_depthLink, "depth") ||
+        !MakeShared(D3DFMT_A16B16G16R16F, &g_fx9, &g_fx11, &g_fxLink, "effects"))
         return false;
     g_color9->GetSurfaceLevel(0, &g_colorSurf9);
     g_depth9->GetSurfaceLevel(0, &g_depthSurf9);
@@ -775,13 +815,38 @@ void CallPass(void *p) {
 // The sun's shadow map for this frame's passes (shadows.cpp drew it before the world, on Direct3D 9: done by the time
 // stage 1 has waited for Direct3D 9), opened again when shadows.cpp made a new one or the device is new; its matrix
 // and size into the constants. Null: none this frame.
-ID3D11ShaderResourceView *SunShadow(MmlGfxConstants &k) {
+ID3D11ShaderResourceView *SunShadow(MmlGfxConstants &k, bool frame) {
     void *h = nullptr;
     unsigned made = 0;
-    if (!ShadowsShared(&h, &made, k.sun_shadow_view_proj, k.sun_shadow_info)) {
+    bool dxvk = gfxvk::On();
+    if (!ShadowsShared(&h, &made, k.sun_shadow_view_proj, k.sun_shadow_info) || (!h && !dxvk)) {
         memset(k.sun_shadow_view_proj, 0, sizeof k.sun_shadow_view_proj);
         memset(k.sun_shadow_info, 0, sizeof k.sun_shadow_info);
         return nullptr;
+    }
+    if (dxvk) {   // DXVK: the map's Direct3D 11 half, made with the map, copied once a frame (the map is redrawn each)
+        IDirect3DBaseTexture9 *base = ShadowsTexture();
+        IDirect3DTexture9 *map = nullptr;
+        if (!base || FAILED(base->QueryInterface(__uuidof(IDirect3DTexture9), reinterpret_cast<void **>(&map))) || !map) return nullptr;
+        if (!g_sunSRV || map != g_sunHandle || made != g_sunMade || g_sunGen != g_generation) {
+            gfxvk::Free(g_sunLink);
+            SafeRelease(g_sunSRV);
+            SafeRelease(g_sun11);
+            g_sunHandle = map;
+            g_sunMade = made;
+            g_sunGen = g_generation;
+            std::string why;
+            g_sunLink = gfxvk::Make(map, g_dev11, &g_sun11, &why);
+            HRESULT hr = g_sunLink ? g_dev11->CreateShaderResourceView(g_sun11, nullptr, &g_sunSRV) : E_FAIL;
+            g_sunError = !g_sunLink ? "the sun's shadow map through Vulkan: " + why :
+                         FAILED(hr) ? Fmt("the sun's shadow map's view (0x%08X)", static_cast<unsigned>(hr)) : "";
+            if (!g_sunError.empty()) { gfxvk::Free(g_sunLink); SafeRelease(g_sunSRV); SafeRelease(g_sun11); }
+        }
+        map->Release();
+        std::string why;
+        if (g_sunSRV && frame && !gfxvk::To11(&g_sunLink, 1, &why)) g_sunError = "the sun's shadow map's copy: " + why;
+        if (!g_sunSRV) k.sun_shadow_info[0] = 0;
+        return g_sunSRV;
     }
     if (!g_sunSRV || h != g_sunHandle || made != g_sunMade || g_sunGen != g_generation) {
         SafeRelease(g_sunSRV);
@@ -801,7 +866,7 @@ ID3D11ShaderResourceView *SunShadow(MmlGfxConstants &k) {
 bool RunPasses(MmlGfxConstants &k, const PassTarget &t) {
     bool frame = t.view == 0;
     if (frame) ReadTimers();
-    ID3D11ShaderResourceView *sun = SunShadow(k);
+    ID3D11ShaderResourceView *sun = SunShadow(k, frame);
     const float clear[4] = {0, 0, 0, 0};
     g_ctx->ClearRenderTargetView(t.rtv, clear);
     g_ctx->UpdateSubresource(g_frameCB, 0, nullptr, &k, 0, 0);
@@ -947,12 +1012,22 @@ bool DoStage1() {
     g_dev9->SetDepthStencilSurface(nullptr);   // the INTZ texture is read now: not bound for writing
     FullScreen9(g_psDepth, g_intz, c);
     ok = ok && Wait9();
+    if (ok && gfxvk::On()) {   // (on DXVK: the pictures copied to Direct3D 11's halves, the 2D pass's and the views' too)
+        std::vector<gfxvk::Link *> to11{g_colorLink, g_depthLink};
+        if (UiMode() != MML_GFX_UI_OFF && g_uiFrames) to11.push_back(g_uiLink);
+        for (auto &v : g_views)
+            if (v->info.fresh) { to11.push_back(v->colorLink); to11.push_back(v->depthLink); }
+        std::string why;
+        ok = gfxvk::To11(to11.data(), static_cast<int>(to11.size()), &why);
+        if (!ok) g_frameError = "the textures' copy on DXVK's queue: " + why;
+    }
     double t1 = NowMs();
     // 2. the passes
     if (ok) {
         FillConstants(g_k, g_w, g_h, g_viewM, g_projM);
         ok = RunPasses(g_k, {g_depthSRV, g_colorSRV, g_fxRTV, g_w, g_h, 0, g_viewM, g_projM});
     }
+    ok = ok && Hand(false, {g_fxLink});
     double t2 = NowMs();
     // 3. the effects over the frame, then everything back
     g_dev9->SetRenderTarget(0, rt);
@@ -1131,6 +1206,14 @@ int GfxSharedTexture(MmlMod *mod, const char *name, MmlSharedTexture *out) {
 
 void GfxQuiet(bool on) { g_quiet += on ? 1 : -1; }
 
+int GfxStateNow(std::string *why) {
+    if (g_failed) {
+        *why = g_state.compare(0, 5, "off: ") == 0 ? g_state.substr(5) : g_state;
+        return 0;
+    }
+    return g_dev11 && g_frames ? 1 : -1;
+}
+
 void GfxUiAsk(MmlMod *mod, int mode) {
     g_uiAsk.erase(std::remove_if(g_uiAsk.begin(), g_uiAsk.end(), [&](const std::pair<MmlMod *, int> &a) { return a.first == mod; }),
                   g_uiAsk.end());
@@ -1144,12 +1227,11 @@ bool GfxUiBegin() {
     g_quiet++;
     bool ok = false;
     if (!g_ui9) {
-        HANDLE h = nullptr;
-        if (SUCCEEDED(g_dev9->CreateTexture(g_w, g_h, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &g_ui9, &h)) && h &&
-            SUCCEEDED(g_dev11->OpenSharedResource(h, __uuidof(ID3D11Texture2D), reinterpret_cast<void **>(&g_ui11))) &&
+        std::string why;
+        if (MakePair(g_w, g_h, D3DFMT_A8R8G8B8, &g_ui9, &g_ui11, &g_uiLink, &why) &&
             SUCCEEDED(g_dev11->CreateShaderResourceView(g_ui11, nullptr, &g_uiSRV)))
             g_ui9->GetSurfaceLevel(0, &g_uiSurf9);
-        if (!g_uiSurf9) HWARN("gfx: the 2D pass's target could not be made: the HUD stays on the frame");
+        if (!g_uiSurf9) HWARN("gfx: the 2D pass's target could not be made (%s): the HUD stays on the frame", why.c_str());
     }
     if (g_uiSurf9 && SUCCEEDED(g_dev9->GetRenderTarget(0, &g_uiGameRT)) && g_uiGameRT) {
         D3DSURFACE_DESC d{};
@@ -1247,16 +1329,12 @@ ViewTargets *FindView(int handle) {
     return nullptr;
 }
 bool ViewTex(ViewTargets &v, D3DFORMAT f, IDirect3DTexture9 **t9, IDirect3DSurface9 **s9, ID3D11Texture2D **t11,
-             ID3D11ShaderResourceView **srv, const char *what, std::string *why) {
-    HANDLE h = nullptr;
-    HRESULT hr = g_dev9->CreateTexture(v.w, v.h, 1, D3DUSAGE_RENDERTARGET, f, D3DPOOL_DEFAULT, t9, &h);
-    if (FAILED(hr) || !h) { *why = Fmt("its %s target could not be made (0x%08X)", what, static_cast<unsigned>(hr)); return false; }
+             ID3D11ShaderResourceView **srv, gfxvk::Link **link, const char *what, std::string *why) {
+    std::string err;
+    if (!MakePair(v.w, v.h, f, t9, t11, link, &err)) { *why = Fmt("its %s target: %s", what, err.c_str()); return false; }
     (*t9)->GetSurfaceLevel(0, s9);
-    hr = g_dev11->OpenSharedResource(h, __uuidof(ID3D11Texture2D), reinterpret_cast<void **>(t11));
-    if (FAILED(hr) || FAILED(hr = g_dev11->CreateShaderResourceView(*t11, nullptr, srv))) {
-        *why = Fmt("Direct3D 11 could not open its %s target (0x%08X)", what, static_cast<unsigned>(hr));
-        return false;
-    }
+    HRESULT hr = g_dev11->CreateShaderResourceView(*t11, nullptr, srv);
+    if (FAILED(hr)) { *why = Fmt("its %s target's view (0x%08X)", what, static_cast<unsigned>(hr)); return false; }
     return true;
 }
 bool ViewTargetsFor(ViewTargets &v, UINT w, UINT h, std::string *why) {
@@ -1268,8 +1346,8 @@ bool ViewTargetsFor(ViewTargets &v, UINT w, UINT h, std::string *why) {
     HRESULT hr = g_dev9->CreateTexture(w, h, 1, D3DUSAGE_DEPTHSTENCIL, kFmtIntz, D3DPOOL_DEFAULT, &v.intz, nullptr);
     if (FAILED(hr)) { *why = Fmt("its depth buffer could not be made (0x%08X)", static_cast<unsigned>(hr)); ReleaseView(v); return false; }
     v.intz->GetSurfaceLevel(0, &v.intzSurf);
-    if (!ViewTex(v, D3DFMT_A8R8G8B8, &v.color9, &v.colorSurf, &v.color11, &v.colorSRV, "colour", why) ||
-        !ViewTex(v, D3DFMT_R32F, &v.depth9, &v.depthSurf, &v.depth11, &v.depthSRV, "linear depth", why)) {
+    if (!ViewTex(v, D3DFMT_A8R8G8B8, &v.color9, &v.colorSurf, &v.color11, &v.colorSRV, &v.colorLink, "colour", why) ||
+        !ViewTex(v, D3DFMT_R32F, &v.depth9, &v.depthSurf, &v.depth11, &v.depthSRV, &v.depthLink, "linear depth", why)) {
         ReleaseView(v);
         return false;
     }
@@ -1334,10 +1412,10 @@ void ViewPasses(ViewTargets &v, const float c[8]) {
     for (const Pass &p : g_passes) any = any || (p.inViews && ModAlive(p.mod));
     if (!any || g_failed) return;
     if (!v.fx9) {
-        HANDLE h = nullptr;
-        if (FAILED(g_dev9->CreateTexture(v.w, v.h, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F, D3DPOOL_DEFAULT, &v.fx9, &h)) || !h ||
-            FAILED(g_dev11->OpenSharedResource(h, __uuidof(ID3D11Texture2D), reinterpret_cast<void **>(&v.fx11))) ||
+        std::string why;
+        if (!MakePair(v.w, v.h, D3DFMT_A16B16G16R16F, &v.fx9, &v.fx11, &v.fxLink, &why) ||
             FAILED(g_dev11->CreateRenderTargetView(v.fx11, nullptr, &v.fxRTV))) {
+            gfxvk::Free(v.fxLink);
             SafeRelease(v.fxRTV); SafeRelease(v.fx11); SafeRelease(v.fx9);
             v.passFails++;
             return;
@@ -1346,11 +1424,12 @@ void ViewPasses(ViewTargets &v, const float c[8]) {
     g_frameError.clear();
     MmlGfxConstants k{};
     float vm[16], pm[16];
-    bool ok = Wait9();   // (its colour and depth written)
+    bool ok = Wait9() && Hand(true, {v.colorLink, v.depthLink});   // (its colour and depth written)
     if (ok) {
         FillConstants(k, v.w, v.h, vm, pm);
         ok = RunPasses(k, {v.depthSRV, v.colorSRV, v.fxRTV, v.w, v.h, v.handle, vm, pm});
     }
+    ok = ok && Hand(false, {v.fxLink});
     if (!ok) { v.passFails++; return; }
     g_dev9->SetRenderTarget(0, v.colorSurf);
     g_dev9->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
@@ -1480,6 +1559,7 @@ bool GfxMethod(const std::string &method, const std::string &, std::string *repl
                          {"pass_runs", v->passRuns}, {"pass_fails", v->passFails}});
     out["views"] = views;
     out["view_sky_sets"] = g_viewSkySets;
+    out["d3d9"] = gfxvk::On() ? gfxvk::Describe() : g_dev9 ? "Direct3D 9Ex: textures shared by handle" : "";
     out["sun_shadow"] = {{"bound", g_sunSRV != nullptr && g_k.sun_shadow_info[0] > 0.5f}, {"size", g_k.sun_shadow_info[3]}};
     if (!g_sunError.empty()) out["sun_shadow"]["error"] = g_sunError;
     if (g_frames) {

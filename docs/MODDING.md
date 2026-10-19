@@ -289,6 +289,13 @@ float4 PsMine(float4 pos : SV_Position) : SV_Target {
   the loader makes the game's device without multisampling (at its creation and at a Reset; the game's own setting
   is left as it is). A pass registered by a mod without it, on a multisampled device, is not run: `gfx.state` says
   why. Enabling such a mod takes a restart of the game.
+- **Whether the passes run**: `H->gfx_state(M, why, cap)` (1 on, 0 off and why, -1 not yet), for a mod to tell its
+  player why its effect is missing (dlss_nr does so in the game's console, once a mission and at its hotkey).
+- **Under DXVK** (its `d3d9.dll` beside the game, for ReShade on Vulkan or its own sake: dxwrapper loads the game
+  folder's `d3d9.dll` before the system's) the game's Direct3D 9 runs on Vulkan, whose shared textures Direct3D 11
+  cannot open. The bridge then keeps two of each texture and copies them on DXVK's own queue at each hand-over
+  (DXVK's interop interfaces, `host/gfx_vk.cpp`): the passes see the same textures as on 9Ex, about 0.5 ms a copy at
+  1280x960 on an RTX 3070. `gfx.state`'s `d3d9` says which way the frame goes.
 - **Each frame of the mission's world** (not the menus): the frame's depth buffer is a readable one while the world
   is drawn; at the point where the world is drawn and the HUD not yet (after the mods' `RENDER_WORLD` drawing, so
   their Direct3D 9 drawing is in the frame the passes see), the frame's colour and linear depth (metres along the

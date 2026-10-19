@@ -2656,3 +2656,38 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   trip through the half 372 of 396 frames (1.2) and 327 of 344 (1.0), 0.46 to 0.48 ms, none late, the picture right.
 - **Lab**: both labs run our dxwrapper (release copies in mml_lab); dlss_nr off and its DLL out in both; flow_smoke,
   debug_views and devtools on in both, as the last runs before had them (physx_gpu off, as its session left it).
+
+## 2026-10-19: the graphics bridge on DXVK (Direct3D 9 on Vulkan)
+
+- **Asked** (the owner, from the player's logs; "make everything work", not a roadmap line): the player's Steam game
+  ran the fixed package, but `gfx: off: Direct3D 11 could not open the shared colour texture (0x80070057)`, so
+  DLSS 5 NR got no frame (the player: "everything is checked and nothing happens"). The player uses ReShade on Vulkan
+  through DXVK (their dxvk.conf).
+- **Found**: dxwrapper loads the real `d3d9.dll` by `LoadLibraryA("d3d9.dll")` (Wrappers/wrapper.cpp), the game's
+  folder first: DXVK's `d3d9.dll` there runs the game's Direct3D 9 on Vulkan. DXVK makes a Direct3D 9 shared
+  texture from Vulkan memory exported as `OPAQUE_WIN32_KMT` (d3d9_common_texture.cpp), which Direct3D 11 cannot open.
+  Reproduced in the 1.2 lab with DXVK 3.1.1's `d3d9.dll` (the same error). The rest of the player's logs: the game on
+  "NVIDIA GeForce RTX 5060 Laptop GPU" (dxwrapper's first line names the system's first GPU, an AMD Radeon: not the
+  game's), NGX started and found the DLL; `scripts\libMafiaCountrysideMap2.0.asi` faulted once (dxwrapper went on).
+- **Made**: `host/gfx_vk.cpp`: when the game's device answers DXVK's `ID3D9VkInteropDevice` (through dxwrapper's
+  QueryInterface, which passes unknown IIDs on), each texture the bridge shares is two: the Direct3D 9 one (DXVK's
+  VkImage, `ID3D9VkInteropTexture`) and a Direct3D 11 one made shared by Direct3D 11 (a KMT handle; an NT one where the
+  driver imports only those) and imported into DXVK's VkDevice (`D3D11_TEXTURE_KMT`, a dedicated allocation; DXVK
+  enables `VK_KHR_external_memory_win32` when the driver has it). At each hand-over (after Wait9: Direct3D 9's pictures
+  to Direct3D 11; after Wait11: the effects back) a command buffer of ours on DXVK's queue (locked for the submit)
+  copies them, DXVK's image taken from its layout and given back, the imported one from and to
+  `VK_QUEUE_FAMILY_EXTERNAL` in GENERAL, waited for by a fence (DXVK's interop lock does not drain its own submission
+  thread: the event query waited for before is what makes the copy safe). Every shared texture goes so: the frame's
+  colour, depth and effects, the 2D pass's target, the views' colour, depth and effects, the sun's shadow map
+  (shadows.cpp makes it unshared on DXVK). `gfx.state` `d3d9` says which way. A new host member `gfx_state` (1 on,
+  0 off and why, -1 not yet; the Rust crate's `gfx_state()`): dlss_nr tells its player when the bridge is off ("DLSS 5
+  NR: the graphics bridge is off (see the log)", the reason in the log), once a mission and at F12, and
+  `dlss_nr.state` `bridge_off`. `tools/deps.py dxvk` pins DXVK 3.1.1's 32-bit `d3d9.dll` for the labs (deps.py
+  learned `.tar.gz`).
+- **Seen**: 1.2 lab with DXVK: the bridge on, `debug_views`' collision solids over the world in place, dlss_nr's round
+  trip 333 of 359 frames (0.58 ms, none late), the picture right; `sun_shafts` with the shadow map bound, `rear_mirror`
+  (its view 1548 frames), `depth_pulse` over the view (608 runs, no failure), `hud_panel` (the HUD on its panel); about
+  0.5 to 1 ms a hand-over at 1280x960. 1.0 lab with DXVK: the bridge on, the collision solids, the round trip 225 of
+  250. 1.2 without DXVK: as before (`Direct3D 9Ex: textures shared by handle`). The bridge off on purpose (1.0, no
+  gfx mod at the start, dlss_nr loaded later: a multisampled device): the console line and the reason in the log.
+- **Lab**: both labs as they were (DXVK, dlss_nr's DLL out; dlss_nr off; debug_views, devtools, flow_smoke on).

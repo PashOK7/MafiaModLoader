@@ -7,6 +7,7 @@
     python tools/deps.py flow       # NVIDIA Flow 2 with its shader compiler and premake (the x64 preset's)
     python tools/deps.py ngx vulkan # NVIDIA NGX (DLSS SDK) with DLSS 5 Neural Rendering, the Vulkan headers (x64)
     python tools/deps.py dxwrapper  # dxwrapper's sources (Direct3D 8 on 9Ex), built by the x86 preset with our patch
+    python tools/deps.py dxvk       # DXVK's 32-bit d3d9.dll: the graphics bridge's Vulkan path tested in a lab
     python tools/deps.py ghidra     # an optional one: Ghidra and its Python bridge (tools/ghidra_cli.py)
     python tools/deps.py --force    # again, from scratch
 
@@ -136,6 +137,15 @@ PINNED = {
          'cb4bac7802ec442fcce4824db9942f8f0473479682b222bdd04a4e8fcc090b69', 'External/dinputto8'),
         ('https://github.com/ocornut/imgui/archive/f1cc2ae15e53a861a874c3034aae6798fde194ab.zip',
          '008e1f3398e1c6e4d317ae4a05d2dec597bd360f4f3717b1d96e9edb66dba34f', 'External/imgui')],
+    # DXVK 3.1.1 (doitsujin/dxvk, 2026-09-15), zlib: Direct3D 9 on Vulkan, as players put its d3d9.dll beside the game
+    # (under dxwrapper, which loads the game folder's d3d9.dll first; ReShade on Vulkan then). The labs test the
+    # graphics bridge's Vulkan path with it (host/gfx_vk.cpp: DXVK's shared handles are Vulkan's own, which Direct3D 11
+    # cannot open). Only the 32-bit d3d9.dll, and its license from the tag. The hashes: GitHub's published digest for
+    # the release's archive, the license as GitHub served it on 2026-10-19.
+    'dxvk': [('https://github.com/doitsujin/dxvk/releases/download/v3.1.1/dxvk-3.1.1.tar.gz',
+              '40565b4a724aadc4433fa4e010b4b23916d9b1f1baeee64e17186db94f54e608', '', {'dxvk-3.1.1/x32/d3d9.dll': 'x32'}),
+             ('https://raw.githubusercontent.com/doitsujin/dxvk/v3.1.1/LICENSE',
+              'a5cb1a6ded7d2d7e92d550ba28edd21be2d1d4044662b399887351023e30ce64', '')],
     # Ghidra 12.1.4 (2026-09-21), Apache 2.0: the reverse-engineering projects of both builds behind tools/ghidra_cli.py
     # and the MCP server's ghidra_* tools. 570 MB (about 900 unpacked); needs a JDK 21 or later. The hash is the one
     # the release publishes (its notes and the asset's digest). Its PyGhidra and JPype wheels are in the archive: the
@@ -145,7 +155,7 @@ PINNED = {
                'ddac49f903da9d5bac833e5cc79395098b9c33cfd3279be5f31bd00387d2d4db'),
 }
 # fetched only when named: not every build needs them
-OPTIONAL = {'ghidra', 'cuda', 'flow', 'ngx', 'vulkan', 'dxwrapper'}
+OPTIONAL = {'ghidra', 'cuda', 'flow', 'ngx', 'vulkan', 'dxwrapper', 'dxvk'}
 
 
 def download(name, url, sha, archive):
@@ -178,9 +188,18 @@ def fetch_parts(name, parts, force):
     tmp = os.path.join(DEPS, name + '.part')
     for url, sha, *rest in parts:
         sub, pick = (rest + ['', ''])[:2]
-        kind = os.path.splitext(url)[1].lower()
-        archive = os.path.join(DEPS, name + (kind if kind in ('.zip', '.7z') else '.file'))
+        kind = '.tar.gz' if url.lower().endswith('.tar.gz') else os.path.splitext(url)[1].lower()
+        archive = os.path.join(DEPS, name + (kind if kind in ('.zip', '.7z', '.tar.gz') else '.file'))
         download(name, url, sha, archive)
+        if kind == '.tar.gz':   # (the files its fourth element names: {path in the archive: subfolder})
+            import tarfile
+            with tarfile.open(archive, 'r:gz') as t:
+                for path, to in pick.items():
+                    os.makedirs(os.path.join(dest, to), exist_ok=True)
+                    with t.extractfile(path) as src, open(os.path.join(dest, to, os.path.basename(path)), 'wb') as out:
+                        shutil.copyfileobj(src, out)
+            os.remove(archive)
+            continue
         if kind not in ('.zip', '.7z'):
             os.makedirs(os.path.join(dest, sub), exist_ok=True)
             shutil.move(archive, os.path.join(dest, sub, url.rsplit('/', 1)[1]))

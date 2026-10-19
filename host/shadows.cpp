@@ -27,6 +27,7 @@
 #include <unordered_map>
 #include <vector>
 #include "json.hpp"
+#include "gfx_vk.h"
 #include "mml/game/game.h"
 
 namespace host {
@@ -117,9 +118,11 @@ bool Make(IDirect3DDevice9 *d, int size) {
     g_size = size;
     g_shared = nullptr;
     g_mapMade++;
-    // shared when the device is 9Ex (the labs' dxwrapper): the graphics bridge's passes read it in Direct3D 11
+    // shared when the device is 9Ex (the labs' dxwrapper): the graphics bridge's passes read it in Direct3D 11. Not on
+    // DXVK (its handles are Vulkan's own): the bridge copies the map there (gfx_vk.cpp)
     IDirect3DDevice9Ex *ex = nullptr;
-    bool canShare = SUCCEEDED(d->QueryInterface(__uuidof(IDirect3DDevice9Ex), reinterpret_cast<void **>(&ex))) && ex;
+    bool canShare = SUCCEEDED(d->QueryInterface(__uuidof(IDirect3DDevice9Ex), reinterpret_cast<void **>(&ex))) && ex &&
+                    !gfxvk::IsDxvk(d);
     if (ex) ex->Release();
     HANDLE shared = nullptr;
     HRESULT hr = d->CreateTexture(size, size, 1, D3DUSAGE_RENDERTARGET, D3DFMT_R32F, D3DPOOL_DEFAULT, &g_map, canShare ? &shared : nullptr);
@@ -501,8 +504,8 @@ void ShadowsConstants(const void *visual, float *c) {
 IDirect3DBaseTexture9 *ShadowsTexture() { return g_valid ? g_map : nullptr; }
 
 bool ShadowsShared(void **handle, unsigned *made, float viewProj[16], float info[4]) {
-    if (!g_valid || !g_shared) return false;
-    *handle = g_shared;
+    if (!g_valid) return false;
+    *handle = g_shared;   // (null: not shared; DXVK's device, whose map the bridge copies)
     *made = g_mapMade;
     memcpy(viewProj, g_lightVP, 64);
     info[0] = 1;

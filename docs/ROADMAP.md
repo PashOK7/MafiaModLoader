@@ -1056,7 +1056,12 @@ merged, sorted by importance):
   tested offline by such a thread, the release dxwrapper dies there as it did for the player), but not yet run on
   that player's mod pack, and the thread's maker is not known (no dump: the old crash filter died too). dxwrapper's
   upstream (elishacloud/dxwrapper) has the same code on master: an issue or a pull request for it waits for the
-  owner's go-ahead.
+  owner's go-ahead. The same player's clean Steam game ran the fixed package (its logs: no crash).
+- **The graphics bridge on DXVK** (2026-10-19): made and seen in both labs with DXVK 3.1.1 (`tools/deps.py dxvk`): the
+  frame, the views and their passes, the 2D pass, the sun's shadow map. Not seen: ReShade's Vulkan layer on top (the
+  player's setup; it is installed system-wide, not tried in the labs), a DXVK older than 3.x (its interop interfaces
+  are from 2.1; `gfx.state` says what is missing), DXVK's own `d3d8.dll` instead of dxwrapper's (the bridge needs a
+  9Ex device underneath: off, and it says so).
 - **The developer tools' block** (2026-10-19): seen in both labs, but not yet the distances `triggers` draws (a
   mission waiting on a GETACTORSDIST) nor the `names` and `web` views looked at closely in 1.0.
 - **Wireframe** (2026-10-18, from PR 2): not made. The proper way is LS3D's own driver state (Insanity3D's

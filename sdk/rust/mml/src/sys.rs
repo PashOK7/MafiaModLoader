@@ -3275,10 +3275,17 @@ pub struct MmlHost {
     pub material_name: ::core::option::Option<
         unsafe extern "C" fn(material: ::core::ffi::c_int) -> *const ::core::ffi::c_char,
     >,
+    pub gfx_state: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            why: *mut ::core::ffi::c_char,
+            cap: ::core::ffi::c_int,
+        ) -> ::core::ffi::c_int,
+    >,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 732usize];
+    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 736usize];
     ["Alignment of MmlHost"][::core::mem::align_of::<MmlHost>() - 4usize];
     ["Offset of field: MmlHost::size"][::core::mem::offset_of!(MmlHost, size) - 0usize];
     ["Offset of field: MmlHost::api_version"]
@@ -3593,6 +3600,7 @@ const _: () = {
     ["Offset of field: MmlHost::web_nodes"][::core::mem::offset_of!(MmlHost, web_nodes) - 724usize];
     ["Offset of field: MmlHost::material_name"]
         [::core::mem::offset_of!(MmlHost, material_name) - 728usize];
+    ["Offset of field: MmlHost::gfx_state"][::core::mem::offset_of!(MmlHost, gfx_state) - 732usize];
 };
 pub type MmlModLoadFn = ::core::option::Option<
     unsafe extern "C" fn(host: *const MmlHost, mod_: *mut MmlMod) -> ::core::ffi::c_int,
