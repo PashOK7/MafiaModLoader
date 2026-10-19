@@ -13,7 +13,19 @@
 namespace {
 const MmlSideHost *H;
 unsigned long long g_frames;
-MmlSideChannel *g_ch, *g_back, *g_flood;
+MmlSideChannel *g_ch, *g_back, *g_flood, *g_grow;
+
+uint32_t GrowSize(const char *dataDir) {   // grow.txt's number in the data folder (0: none; side_test.cpp's twin)
+    std::string p = std::string(dataDir ? dataDir : "") + "grow.txt";
+    std::wstring w(MultiByteToWideChar(CP_UTF8, 0, p.c_str(), -1, nullptr, 0), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, p.c_str(), -1, w.data(), static_cast<int>(w.size()));
+    FILE *f = _wfopen(w.c_str(), L"rb");
+    if (!f) return 0;
+    unsigned long n = 0;
+    if (fscanf(f, "%lu", &n) != 1) n = 0;
+    fclose(f);
+    return static_cast<uint32_t>(n);
+}
 std::thread g_flooder, g_later;
 std::atomic<bool> g_stop;
 unsigned g_loads;
@@ -153,6 +165,11 @@ MML_EXPORT int mml_side_load(const MmlSideHost *host, MmlSideMod *mod) {
     g_ch = H->channel_open(mod, "box", 4096);
     g_back = H->channel_open(mod, "back", 4096);
     g_flood = H->channel_open(mod, "flood", 4096);
+    if (uint32_t size = GrowSize(H->data_dir(mod))) {   // (a version of the whole size, for the 32-bit half's grow)
+        g_grow = H->channel_open(mod, "grow", size);
+        std::vector<char> v(size, 'g');
+        if (g_grow) H->channel_write(g_grow, v.data(), size);
+    }
     H->log(mod, 1, "side_test loaded (pointer bits %u)", static_cast<unsigned>(sizeof(void *) * 8));
     return 0;
 }
@@ -161,5 +178,8 @@ MML_EXPORT void mml_side_unload(MmlSideMod *) {
     g_stop = true;
     if (g_flooder.joinable()) g_flooder.join();
     if (g_later.joinable()) g_later.join();
-    g_ch = g_back = g_flood = nullptr;
+    // (a half that takes its time to go, as a heavy one does (Vulkan, a worker): the channel grow stays open at its
+    // size meanwhile, and the reload's new 32-bit half must wait for it)
+    if (g_grow) Sleep(300);
+    g_ch = g_back = g_flood = g_grow = nullptr;
 }

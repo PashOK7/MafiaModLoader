@@ -2492,3 +2492,18 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   written. 1.2 lab, the driver's cache warm: 0.87 s without the file, 0.45 s with it. `__GL_SHADER_DISK_CACHE=0` set in
   the sidecar did not turn the driver's cache off (tried for a cold measurement in 1.2; taken out). The pristine
   copies of the four files came from the pinned commit's raw files on GitHub (the archive is not kept).
+
+## 2026-10-19: a two-halves mod reloaded in one go when a channel changes size
+
+- The Known gap of 2026-10-18: `mod.reload` loaded the new 32-bit half while the old 64-bit half still held its
+  channel at the old size (the sidecar is told to unload by a message it reads when it can), so the new half's
+  `channel_open` at the new size was refused and the load failed; a second reload worked.
+- **Made**: the loader keeps the halves it asked the sidecar to unload (their generation) until the sidecar says
+  "unloaded" (host/sidecar.cpp); a `channel_open` refused while the same mod's old 64-bit half is still going waits
+  for that (at most 5 s, logged) and opens the channel anew. The sidecar now says "unloaded" for a faulted half too
+  (its channels are closed then); the loader keeps such a half's state "faulted" until it is loaded again.
+- **Tested** offline (tests/run_tests.py, `side_test`): a channel `grow` sized by a file in the mod's data folder, the
+  64-bit half taking 300 ms to unload; `mod.reload` once at 4096 and once at 8192 bytes: both halves loaded, the new
+  version whole. With the old host the 8192 reload fails (`mml_mod_load returned 1`), as it did in the game. The
+  1.2 and 1.0 labs ran the new loader and sidecar (flow_smoke reloaded several times in each, the sidecar
+  restarted); no reload of a changed channel size was made in a lab.

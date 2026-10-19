@@ -487,7 +487,7 @@ void Unload(const std::string &id, const char *why) {
     Send(side::kSubscribe, 0, {{"mod", id}, {"types", json::array()}});
     if (h->dll) FreeLibrary(h->dll);
     if (!h->liveDir.empty()) RemoveTree(Wide(h->liveDir));
-    if (!h->faulted) State(*h, "unloaded", why);
+    State(*h, "unloaded", why);   // (a faulted half's too: the loader waits for its channels to be closed)
     Log(id, 1, std::string("64-bit half unloaded (") + why + ")");
     g_halves.erase(it);
 }

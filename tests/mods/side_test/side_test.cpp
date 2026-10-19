@@ -1,6 +1,8 @@
 // side_test's 32-bit half (tests/run_tests.py sidecar_tests): the channels both halves see. It reads "box" (the
 // 64-bit half's `write`), writes "back" (the 64-bit half's `fetch` reads it), and tells what channel_open and
-// gfx_shared_texture give where they must refuse.
+// gfx_shared_texture give where they must refuse. "grow" is opened at the size its data folder's grow.txt names (0 or
+// none: not opened), as both halves read it at their load: a reload after the test changes it is a channel that
+// changed size, which the load must not be refused for (the old 64-bit half still holds the old size a moment).
 #include <windows.h>
 #include <cstdio>
 #include <cstring>
@@ -11,8 +13,33 @@
 namespace {
 const MmlHost *H;
 MmlMod *M;
-MmlChannel *g_box, *g_back, *g_flood;
+MmlChannel *g_box, *g_back, *g_flood, *g_grow;
+uint32_t g_growSize;
 std::thread g_later;
+
+uint32_t GrowSize(const char *dataDir) {   // grow.txt's number in the data folder (0: none)
+    std::string p = std::string(dataDir ? dataDir : "") + "grow.txt";
+    std::wstring w(MultiByteToWideChar(CP_UTF8, 0, p.c_str(), -1, nullptr, 0), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, p.c_str(), -1, w.data(), static_cast<int>(w.size()));
+    FILE *f = _wfopen(w.c_str(), L"rb");
+    if (!f) return 0;
+    unsigned long n = 0;
+    if (fscanf(f, "%lu", &n) != 1) n = 0;
+    fclose(f);
+    return static_cast<uint32_t>(n);
+}
+
+void Reply(MmlReply *r, const std::string &s);
+
+// {} -> {"size", "bytes", "version"}: the channel grow as this load opened it and its latest version (the 64-bit half
+// writes one of the whole size at its load)
+int Grow(const char *, MmlReply *r, void *) {
+    uint64_t version = 0;
+    std::string buf(g_growSize, '\0');
+    uint32_t n = g_grow && g_growSize ? H->channel_read(g_grow, buf.data(), g_growSize, &version) : 0;
+    Reply(r, "{\"size\": " + std::to_string(g_growSize) + ", \"bytes\": " + std::to_string(n) + ", \"version\": " + std::to_string(version) + "}");
+    return 0;
+}
 
 uint32_t Num(const char *args, const char *key, uint32_t def) {   // (the tests send flat objects of numbers)
     std::string a = args ? args : "", k = std::string("\"") + key + "\"";
@@ -115,6 +142,10 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     g_box = H->channel_open(mod, "box", 4096);
     g_back = H->channel_open(mod, "back", 4096);
     g_flood = H->channel_open(mod, "flood", 4096);
+    g_growSize = GrowSize(H->mod_data_dir(mod));
+    g_grow = g_growSize ? H->channel_open(mod, "grow", g_growSize) : nullptr;
+    if (g_growSize && !g_grow) return 1;   // (as a real mod does: its channel is not there, the load fails)
+    host->command(mod, "grow", "{} -> {size, bytes, version}: the channel grow at grow.txt's size, the 64-bit half's version", Grow, nullptr);
     host->command(mod, "torn", "{} -> the channel flood read for 1 s: {reads, versions, torn, backwards}", Torn, nullptr);
     host->command(mod, "peek", "{} -> {text, bytes, version}: the channel box's latest version (the 64-bit half writes it)", Peek, nullptr);
     host->command(mod, "post", "args -> written to the channel back (the 64-bit half's fetch reads it)", Post, nullptr);

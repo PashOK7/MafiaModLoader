@@ -72,6 +72,12 @@ std::map<std::string, std::map<std::string, SharedTex>> g_textures;   // mod -> 
 std::set<std::string> g_subTypes;   // the union of every half's subscriptions ("*": all)
 std::atomic<bool> g_anySub{false}, g_tickSub{false}, g_frameSub{false};
 
+// The halves asked to unload and not yet gone (id -> generation; g_mx): their channels are still open in the sidecar
+// until it says "unloaded". A reload's new 32-bit half that opens a channel of another size waits for that
+// (SidecarChannelOpen): the old 64-bit half held it at the old size, and the open was refused.
+std::map<std::string, unsigned> g_unloading;
+std::condition_variable g_unloadCv;
+
 // a command's answer, waited for by the bridge's thread
 struct Wait { bool done = false, ok = false; std::string text; };
 std::mutex g_waitMx;
@@ -182,8 +188,15 @@ void Handle(uint32_t type, uint32_t aux, const std::string &payload) {
         std::string id = j.value("id", std::string()), state = j.value("state", std::string());
         {
             std::lock_guard<std::mutex> lk(g_mx);
+            auto u = g_unloading.find(id);
+            if (u != g_unloading.end() && state == "unloaded" && j.value("generation", 0u) == u->second) {
+                g_unloading.erase(u);
+                g_unloadCv.notify_all();
+            }
             auto it = g_halves.find(id);
-            if (it != g_halves.end() && j.value("generation", 0u) == it->second.generation) {
+            // (a faulted half is unloaded by the sidecar at once: "faulted" stays its state until it is loaded again)
+            if (it != g_halves.end() && j.value("generation", 0u) == it->second.generation &&
+                !(state == "unloaded" && it->second.state == "faulted")) {
                 it->second.state = state;
                 it->second.error = j.value("error", std::string());
                 it->second.where = j.value("where", std::string());
@@ -292,6 +305,8 @@ DWORD WINAPI Watcher(void *proc) {
         CloseHandle(g_proc);
         g_proc = nullptr;
         g_started = false;
+        g_unloading.clear();   // (its channels are gone with it)
+        g_unloadCv.notify_all();
         if (g_quitting) return 0;
         for (auto &kv : g_halves) { kv.second.state = "gone (the sidecar ended)"; kv.second.subs.clear(); }
         UpdateSubs();
@@ -395,10 +410,17 @@ void SidecarModLoad(const std::string &id, const std::string &dir, const std::st
 
 void SidecarModUnload(const std::string &id, const char *why) {
     std::lock_guard<std::mutex> lk(g_mx);
-    if (!g_halves.erase(id)) return;
+    auto h = g_halves.find(id);
+    if (h == g_halves.end()) return;
+    unsigned generation = h->second.generation;
+    // (a half the sidecar holds: loaded, loading or faulted; one that failed to load or went with the sidecar has
+    // nothing open there, and the sidecar says nothing of it)
+    const std::string &st = h->second.state;
+    bool held = st == "loaded" || st == "loading" || st == "faulted";
+    g_halves.erase(h);
     UpdateSubs();
     for (auto it = g_commands.begin(); it != g_commands.end();) it = it->first.rfind(id + ".", 0) == 0 ? g_commands.erase(it) : std::next(it);
-    if (g_started) Send(side::kModUnload, 0, {{"id", id}, {"why", why}}, 2000);
+    if (g_started && Send(side::kModUnload, 0, {{"id", id}, {"why", why}}, 2000) && held) g_unloading[id] = generation;
 }
 
 // An event for the halves subscribed to its type (never waits: a full ring drops it).
@@ -527,7 +549,23 @@ std::vector<MmlChannel *> g_channels;
 MmlChannel *SidecarChannelOpen(MmlMod *mod, const char *name, uint32_t size, std::string *err) {
     auto *c = new MmlChannel{};
     c->mod = mod;
-    if (!side::ChannelOpen(&c->ch, GetCurrentProcessId(), ModIdOf(mod), name, size, err)) {
+    const std::string id = ModIdOf(mod);
+    bool open = side::ChannelOpen(&c->ch, GetCurrentProcessId(), id, name, size, err);
+    if (!open) {
+        // A reload whose channel changed size: the old 64-bit half may still hold it at the old size (its unload is
+        // on its way to the sidecar). Wait for the sidecar to say it is gone (at most 5 s), then open it anew.
+        std::unique_lock<std::mutex> lk(g_mx);
+        if (g_unloading.count(id)) {
+            ULONGLONG t0 = GetTickCount64();
+            bool gone = g_unloadCv.wait_for(lk, std::chrono::seconds(5), [&] { return !g_unloading.count(id); });
+            lk.unlock();
+            HLOG("mod %s: channel %s waited %llu ms for the old 64-bit half to close it%s", id.c_str(), name,
+                 static_cast<unsigned long long>(GetTickCount64() - t0), gone ? "" : " (it did not say so in 5 s)");
+            err->clear();
+            open = side::ChannelOpen(&c->ch, GetCurrentProcessId(), id, name, size, err);
+        }
+    }
+    if (!open) {
         delete c;
         return nullptr;
     }

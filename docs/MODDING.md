@@ -1650,7 +1650,9 @@ smallest half alone, `mods/examples/side_picture` a mod in two halves that hands
   whole version and its number (0: nothing written yet). One writer a channel; a reader never gets half of two
   versions (the offline tests read 30 000 versions a second while the other process writes as fast as it can: none
   torn, none gone back). Any thread, both halves; open with another size: refused. A channel lives while either half
-  has it open (both unloaded: it is gone, the numbers start again). In Rust: `host.channel_open(name, size)`,
+  has it open (both unloaded: it is gone, the numbers start again). A reload may change a channel's size: the new
+  32-bit half's `channel_open` then waits (at most 5 s, logged) for the sidecar to say the old 64-bit half is gone,
+  and opens it anew. In Rust: `host.channel_open(name, size)`,
   `Channel::write_value(&T)`, `read_value::<T>()` for a `#[repr(C)]` struct.
 - **Shared textures**: the 64-bit half makes one with `texture_create(mod, name, w, h, format, &out)` (a Direct3D 12
   texture on the adapter the game draws on, `out.d3d12_resource`; Vulkan imports `out.shared_handle`). The formats

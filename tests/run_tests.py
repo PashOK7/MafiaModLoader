@@ -1132,6 +1132,24 @@ def sidecar_tests(b):
     b.call('mod.reload', {'id': 'side_test'})
     check('a faulted half loaded again by mod.reload', wait_for(lambda: half().get('state') == 'loaded'), half())
 
+    # a reload whose channel changed size, in one go: the old 64-bit half holds "grow" at the old size for 300 ms
+    # after it is told to go; the new 32-bit half's channel_open waits for it instead of being refused
+    grow_txt = os.path.join(HARNESS, 'mml', 'data', 'side_test', 'grow.txt')
+    os.makedirs(os.path.dirname(grow_txt), exist_ok=True)
+    for size in (4096, 8192):
+        with open(grow_txt, 'w') as f:
+            f.write(str(size))
+        gen = half().get('generation', 0)
+        r = b.call('mod.reload', {'id': 'side_test'})
+        loaded = r['ok'] and wait_for(lambda: half().get('state') == 'loaded' and half().get('generation', 0) > gen)
+        g = wait_for(lambda: (lambda x: x['ok'] and x['result']['bytes'] == size and x)(b.call('side_test.grow')))
+        check('a channel of %d bytes after one mod.reload: both halves loaded, the 64-bit half\'s version whole' % size,
+              loaded and g and g['result']['size'] == size, (r, half(), b.call('side_test.grow')))
+    os.remove(grow_txt)
+    gen = half().get('generation', 0)
+    b.call('mod.reload', {'id': 'side_test'})
+    wait_for(lambda: half().get('state') == 'loaded' and half().get('generation', 0) > gen)
+
     # the sidecar killed: SIDECAR_EXITED, started again with its halves
     st = b.call('sidecar.state')['result']
     seq = b.call('events.since', {'seq': 1 << 62, 'limit': 1})['result']['latest']
