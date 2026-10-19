@@ -27,6 +27,13 @@ What is done, what comes next and later, and what is known to be missing or wron
 - The toolkit is built for whatever mod a user can think of, written by another agent (2026-10-14); its measuring
   cases: a ragdoll, shader water, realistic smoke, VR, fishing, skateboarding, a working airplane, achievements.
   Those mods are not written here; mafia-ragdoll is not ported (its code is the reference).
+- **The stages** (the owner, 2026-10-19): now, the original game: reversed, and made better with its style kept
+  (fixes, speed, the toolkit), until neither the game nor the loader can be made better. Only then the next stage:
+  **NVIDIA RTX Remix through its own API** (`remix_c.h` in dxvk-remix: the engine hands Remix its meshes, materials,
+  skinned people, lights and camera directly, no Direct3D 9 calls intercepted), a stage of its own, not an item of
+  this roadmap. What the present work leaves on the way should keep that door open: a scene's clean data (meshes
+  uploaded once with their normals, materials, instances, skinning as a bind pose with weights and bones' matrices,
+  lights, the camera) is what both a faster renderer for the original look and Remix's API take.
 
 ## Done
 
@@ -822,6 +829,37 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
     back after each. The draws' classes (vertex-lit, lightmapped, alpha-tested, translucent, additive, fogged or not)
     each get a reference shader that draws them as the game does: switched on, the picture stays the game's (screenshots
     compared in both labs); a mod copies one and changes it. Plain Direct3D 8 (no wrapper) is not served.
+28. **People's skinning extended** (R and every mod with new characters; asked on the community's Discord,
+    2026-10-17: more than two bone weights a vertex, models of many bones). How LS3D skins (read 2026-10-19 in 1.2's
+    LS3DF, 1.0's not yet): `I3D_singlemesh`'s vtable slot 0x9C (`ls3d+54F60`) runs on the CPU each time the bones'
+    stamp changes. The mesh's vertices are sorted by bone; each bone's record (0x68 bytes) has `+0x40` vertices wholly
+    its own (one matrix), `+0x44` vertices blended with one other bone (its index at `+0x48`, 1-based, 0 the mesh's
+    root) by a weight each (`+0x64`): two influences at most, in the data itself. It writes position and normal
+    (0x18 bytes a vertex) into a cache; `ls3d+65A70` then lights the vertices on the CPU from those normals, and the
+    draw gets position, colour and UVs (FVF 0x142): no normals or bones reach the GPU. Two steps:
+    - **28a, N weights on the CPU**: slot 0x9C replaced for marked models only (a model's flag the format leaves
+      unused, as the community suggested; every other model keeps LS3D's own code), skinning with up to 8 weights
+      into the same cache, so the lighting, the drawing and whatever else reads the cache go on unchanged: both
+      builds, plain Direct3D 8 too. The weights come from a file beside the model (a mod's `files\`), so the .4ds
+      stays readable by every existing tool. Tested on weights generated for Tommy (3 or 4 bones at the joints),
+      screenshots before and after; an exporter (Blender) is a separate piece of work.
+    - **28b, on the GPU**, with item 27: for marked models a vertex shader skins (the bones' matrices in a vertex
+      texture: vs_3_0's 256 registers hold about 50 beside the contract's), lights (the game's lights are in
+      game.hlsli's registers already) and carries normals and MikkTSpace tangents (normal maps); LS3D's CPU skinning
+      and lighting are skipped for them. Needs the second vertex stream below; under a Direct3D 9 wrapper only.
+    The same block answers the Discord's other asks for item 27: **a mod's own constants** (a register range of the
+    mod's, set per rule or per frame) and **its own vertex data** (a second stream per face group, in LS3D's vertex
+    order, made from the meshes block 6d reads: normals, tangents, a mod's attributes).
+29. **The renderer's bottleneck at long view distances** (the owner, 2026-10-19: the whole city in view runs at
+    about 30 fps on any machine, on two or three cores, though its triangles are few for a modern GPU). Not measured
+    yet; the leads, from what is known of LS3D: one game thread does everything; every face group is a draw call of
+    its own (362 to 497 a frame at the freeride's start with a 280 m far plane), through Direct3D 8 and a wrapper's
+    translation; LS3D lights the vertices of what it draws on the CPU and refills dynamic vertex buffers each frame
+    (Lock and Unlock per mesh; skinned people too, item 28); the sectors' and LODs' culling and the sorting run on the
+    CPU too. First `profile` (the game thread sampled, named) and `shader.survey` (the draws, their kinds) with the
+    camera's far plane pushed (`I3D_camera::SetRange`, `ls3d+B7B0`), to know which of them it is; then the fix that
+    fits: lighting in the shaders of item 27 (static buffers, no CPU lighting), draws batched or instanced, work moved
+    off the game thread where LS3D's data allows. A 64-bit process does not help a CPU-bound draw loop by itself.
 
 ### Tier 2: the game's world as data, read and changed
 

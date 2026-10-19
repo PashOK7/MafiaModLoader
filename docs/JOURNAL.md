@@ -2436,3 +2436,18 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   while the race view shows a race (race.cpp `RaceShown`; `debug_views.walls.state` says `race_shown`). Seen in the
   1.2 lab: the Race page's second part holds the walls' controls with no overlap; outside the race the state reads no
   walls. The offline suite (the pages' layout check included) ALL PASSED.
+
+## 2026-10-19: the roadmap: people's skinning, the renderer's bottleneck, the stages
+
+- **Asked** (the owner, from the community's Discord): more than two bone weights a vertex, a mod's own shader
+  constants and vertex data, tangents for normal maps. Read in 1.2's LS3DF how people are skinned: on the CPU
+  (`I3D_singlemesh` slot 0x9C, `ls3d+54F60`), two influences at most in the data itself, then lit on the CPU
+  (`ls3d+65A70`); the draw gets no normals or bones. Item 28 of the roadmap (28a N weights on the CPU in the same
+  cache, 28b on the GPU with item 27, a mod's constants and a second vertex stream).
+- **Asked**: why the whole city in view runs at about 30 fps on any machine. Not measured yet (the owner asked for a
+  short answer first): item 29 holds the leads and the measurement to make first.
+- **Decided** (the owner): the stages. The original game is reversed and made better with its style kept until
+  nothing more can be done; NVIDIA RTX Remix through its own API is the next stage after that, not an item of the
+  roadmap (ROADMAP "Decisions").
+- Seen on the way: LS3D's skinned drawing has a second vertex layout (position, normal, UV, 0x20 bytes) chosen by a
+  global flag (`ls3d+1C563C` bit 0): a hardware-lit path, perhaps; not tried.
