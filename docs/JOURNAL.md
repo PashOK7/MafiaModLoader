@@ -2551,3 +2551,16 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   half; the colour in and out gone, the gas out 0.08 ms; the car's roof against the fire behind it crisp (crops of the
   two screenshots compared). The setting switched both ways in the game, no error. 1.0: the fire at half size, fenced,
   none late.
+
+## 2026-10-19: physx_gpu's water looked at in the game
+
+- The 1.2 lab with `physx_gpu` on at the start (the lab's mod.json `enabled`): CUDA and PhysX 5.9.0 up, `pour` of
+  32 768 particles steps at 5.8 ms on the RTX 3070, 373 frames of 382 drawn with their own step. On the screen no
+  water but specks over the whole parking lot.
+- `physx_gpu.points` (new: the particles' bounds read back from the GPU by the worker after a step) told why: right
+  after the pour the block is where it should be (3.1 m a side, 1.3 m above the asphalt); 1.2 s later it is 39 x 34 m
+  and reaches 17 m below the ground. Poured from 0.2 m (8000 particles) it lands whole and in about three seconds
+  spreads into a sheet 30 x 19 m, one particle thick: what the screen-space surface draws as specks. So two things:
+  particles falling through the game's ground at speed (the static world is a cooked triangle mesh here, NVIDIA's
+  snippet has planes; its particle settings are the same as ours), and water with no depth to keep (10 cm particles
+  on flat ground spread as far as they can). In ROADMAP 19a; not fixed in this block.

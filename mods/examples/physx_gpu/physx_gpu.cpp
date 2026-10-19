@@ -18,9 +18,9 @@
 // on the GPU and names the texture holding that step's points in "out"; this half's pass (after the world is drawn,
 // the same frame) draws them and counts how many frames late they were. The GPU's step takes a few milliseconds and
 // shares the GPU with the game's drawing: when it is not over by the pass, the pass waits for it (channel_wait), at
-// most a budget of milliseconds, then draws the latest one. The GPU's step takes a few milliseconds and
-// shares the GPU with the game's drawing: when it is not over by the pass, the pass waits for it (channel_wait), at
 // most a budget of milliseconds, then draws the latest one.
+//   call physx_gpu.points -> where the water's particles are, read back from the GPU after a step (each call answers
+//                           the last measure and asks for the next)
 #include <windows.h>
 #include <d3d11.h>
 #include <algorithm>

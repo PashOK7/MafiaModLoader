@@ -654,6 +654,44 @@ void Unmap(Tex &t) {
     t.mappedGen = 0;
 }
 
+// `points`: where the water's particles are, read back from the GPU by the worker after a step (asked here, measured
+// at the next frame: each call answers the last measure and asks for the next)
+std::mutex g_boundsMx;
+std::string g_bounds = "{\"measured\": false}";
+std::atomic<bool> g_wantBounds;
+void MeasureBounds() {   // (the worker, the CUDA context acquired)
+    std::vector<PxVec4> p;
+    float lo[3] = {1e30f, 1e30f, 1e30f}, hi[3] = {-1e30f, -1e30f, -1e30f};
+    uint64_t nan = 0, total = 0;
+    for (PxParticleBuffer *b : g_fluidBuffers) {
+        uint32_t n = b->getNbActiveParticles();
+        p.resize(n);
+        if (!n || cuMemcpyDtoH(p.data(), reinterpret_cast<CUdeviceptr>(b->getPositionInvMasses()), n * sizeof(PxVec4)) != CUDA_SUCCESS) continue;
+        for (const PxVec4 &q : p) {
+            total++;
+            if (!(q.x == q.x && q.y == q.y && q.z == q.z)) { nan++; continue; }
+            const float v[3] = {q.x + g_origin.x, q.y + g_origin.y, q.z + g_origin.z};
+            for (int k = 0; k < 3; k++) lo[k] = std::min(lo[k], v[k]), hi[k] = std::max(hi[k], v[k]);
+        }
+    }
+    char b[512];
+    snprintf(b, sizeof b, "{\"measured\": true, \"particles\": %llu, \"nan\": %llu, \"lo\": [%.2f, %.2f, %.2f], \"hi\": [%.2f, %.2f, %.2f], "
+             "\"origin\": [%.2f, %.2f, %.2f], \"step\": %llu}", static_cast<unsigned long long>(total), static_cast<unsigned long long>(nan),
+             lo[0], lo[1], lo[2], hi[0], hi[1], hi[2], g_origin.x, g_origin.y, g_origin.z, static_cast<unsigned long long>(g_steps.load()));
+    std::lock_guard<std::mutex> lk(g_boundsMx);
+    g_bounds = b;
+}
+int Points(MmlSideMod *, const char *, MmlSideReply *r, void *) {
+    std::string s;
+    {
+        std::lock_guard<std::mutex> lk(g_boundsMx);
+        s = g_bounds;
+    }
+    g_wantBounds = true;
+    H->reply_append(r, s.c_str(), s.size());
+    return 0;
+}
+
 // The frame's points into the texture the 32-bit half is not reading; false: none there yet.
 bool Copy(uint32_t which) {
     double t0 = Now();
@@ -674,6 +712,7 @@ bool Copy(uint32_t which) {
         if (ok && g_jelly && g_jellyVerts)
             ok = CopyRun(arr, reinterpret_cast<CUdeviceptr>(g_jelly->getPositionInvMassBufferD()), g_jellyVerts, gpux::kJellyRow * gpux::kPointsPerRow);
         ok = ok && Cu(cuStreamSynchronize(g_stream), "cuStreamSynchronize");   // (whole before the channel names it)
+        if (g_wantBounds.exchange(false)) MeasureBounds();
     }
     g_cuda->releaseContext();
     double ms = Now() - t0;
@@ -910,6 +949,7 @@ MML_EXPORT int mml_side_load(const MmlSideHost *host, MmlSideMod *mod) {
     H->subscribe(mod, "FRAME", OnFrame, nullptr);
     H->command(mod, "side", "{} -> what the 64-bit half has done: cuda, gpu, steps, step_ms, copy_ms, fluid, cloth, jelly, error", Side, nullptr);
     H->command(mod, "fault", "{} -> a fault on purpose in the 64-bit half (it is unloaded; mod.reload brings it back)", Fault, nullptr);
+    H->command(mod, "points", "{} -> where the water's particles are (read back from the GPU after a step): the last measure, and the next asked", Points, nullptr);
     return 0;
 }
 
