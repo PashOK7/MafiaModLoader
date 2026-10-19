@@ -258,6 +258,11 @@ void Pour(const gpux::Op &op) {
         g_fluid->setSolidRestOffset(rest);
         g_fluid->setFluidRestOffset(rest * 0.6f);
         g_fluid->setMaxLinearVelocity(rest * 100.f);
+        // (the game's ground is a triangle mesh, one-sided and thin, where NVIDIA's snippet has planes: a particle
+        // that crosses a face in a step is under it for good. Speculative CCD keeps a fast particle on its side, and
+        // more position iterations hold a deep body of water up on it)
+        g_fluid->setParticleFlag(PxParticleFlag::eENABLE_SPECULATIVE_CCD, true);
+        g_fluid->setSolverIterationCounts(8, 1);
         g_scene->addActor(*g_fluid);
         g_fluidPhase = g_fluid->createPhase(g_fluidMat, PxParticlePhaseFlags(PxParticlePhaseFlag::eParticlePhaseFluid | PxParticlePhaseFlag::eParticlePhaseSelfCollide));
     }

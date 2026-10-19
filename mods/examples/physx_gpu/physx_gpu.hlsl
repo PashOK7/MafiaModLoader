@@ -14,7 +14,8 @@ cbuffer Gpu : register(b1) {
     float4 g_origin;      // xyz: the points' origin in the world; w: the water particles' radius
     uint4 g_rows;         // x: the first point of what is drawn (a row times 1024), y: points, z: the smoothing's direction
                           // (0 x, 1 y), w: the mesh (0 the cloth, 1 the jelly)
-    float4 g_water;       // x: the smoothing's radius in pixels at 1 m, y: its depth falloff, z: the thickness' scale
+    float4 g_water;       // x: the smoothing's radius in pixels at 1 m, y: its depth falloff, z: the thickness' scale,
+                          // w: the splats' radius over the particles' (above 1: a sheet one particle thick drawn whole)
 };
 
 Texture2D<float> g_points : register(t3);        // the shared texture
@@ -86,12 +87,15 @@ MeshOut PsMesh(MeshV i) {
     return o;
 }
 
-// ---- the water's particles: quads facing the camera, a sphere's front in each
+// ---- the water's particles: quads facing the camera, a sphere's front in each. Drawn larger than the particles
+// (g_water.w): water spread thin on the ground is one particle thick, its particles a spacing apart, and drawn at
+// their own size they leave the ground showing between them (specks, not a sheet).
+float SplatRadius() { return g_origin.w * max(g_water.w, 1); }
 struct SplatV { float4 pos : SV_Position; float2 uv : UV; float z : DEPTH; };
 SplatV VsSplat(uint v : SV_VertexID) {
     uint i = v / 6, c = v % 6;
     float2 corner = float2(c == 1 || c == 4 || c == 5 ? 1 : -1, c == 2 || c == 3 || c == 5 ? 1 : -1);
-    float r = g_origin.w;
+    float r = SplatRadius();
     float3 world = Point(i) + (g_right.xyz * corner.x + g_up.xyz * corner.y) * r;
     SplatV o;
     o.pos = Project(world);
@@ -103,7 +107,7 @@ struct DepthOut { float z : SV_Target0; float depth : SV_Depth; };
 DepthOut PsSplatDepth(SplatV i) {
     float d2 = dot(i.uv, i.uv);
     if (d2 > 1) discard;
-    float z = i.z - sqrt(1 - d2) * g_origin.w;
+    float z = i.z - sqrt(1 - d2) * SplatRadius();
     if (z > Occluder(i.pos.xy)) discard;
     DepthOut o;
     o.z = z;
@@ -113,8 +117,9 @@ DepthOut PsSplatDepth(SplatV i) {
 float PsSplatThick(SplatV i) : SV_Target {
     float d2 = dot(i.uv, i.uv);
     if (d2 > 1) discard;
-    if (i.z - sqrt(1 - d2) * g_origin.w > Occluder(i.pos.xy)) discard;
-    return 2 * sqrt(1 - d2) * g_origin.w;
+    if (i.z - sqrt(1 - d2) * SplatRadius() > Occluder(i.pos.xy)) discard;
+    float k = 1 / max(g_water.w, 1);
+    return 2 * sqrt(1 - d2) * SplatRadius() * k * k * k;   // (the water's own volume: a larger splat, spread thinner)
 }
 
 // ---- the depth smoothed: a bilateral Gaussian along one direction, its width the particles' size on the screen
@@ -157,10 +162,18 @@ float4 PsFluid(float4 pos : SV_Position) : SV_Target {
     float3 toEye = normalize(g_eye.xyz - P);
     if (dot(n, toEye) < 0) n = -n;
     float thick = g_fluidThick.Load(int3(p, 0)) * g_water.z;
-    // the frame behind it, bent by the surface and darkened by the water's depth (Beer's law)
+    // Water spread thin lies flat on what is under it: its surface takes that surface's normal (the world's own, from
+    // its depth), the particles' bumps only where it has depth. A film on the asphalt mirrors the sky evenly.
+    float3 g0 = ScenePoint(p), gx = ScenePoint(p + float2(1, 0)) - g0, gy = ScenePoint(p + float2(0, 1)) - g0;
+    float3 ground = normalize(cross(gy, gx));
+    if (dot(ground, toEye) < 0) ground = -ground;
+    const float film = SplatRadius() * 2;   // (a sheet one splat thick and less: a film)
+    n = normalize(lerp(ground, n, saturate(thick / film - 0.5)));
+    // the frame behind it, bent by the surface and darkened by the water's depth (Beer's law); a wet surface is
+    // darker than a dry one (less light scattered back from its pores): the frame under a film too
     float2 bend = float2(dot(n, g_right.xyz), -dot(n, g_up.xyz));   // (the normal on the screen)
     float2 uv = (p + bend * min(thick, 1) * 40) * g_size.zw;
-    float3 behind = Lin(g_sceneColor.SampleLevel(g_linear, saturate(uv), 0).rgb);
+    float3 behind = Lin(g_sceneColor.SampleLevel(g_linear, saturate(uv), 0).rgb) * lerp(1, 0.55, saturate(thick / 0.01));
     float3 absorb = exp(-thick * float3(1.6, 0.5, 0.35));
     float3 refracted = behind * absorb + Lin(float3(0.10, 0.22, 0.25)) * (1 - absorb) * Lin(g_ambient.rgb + g_sunColor.rgb * 0.3);
     // the sky reflected (the fog's colour as the sky's, as the game's own distance has it) and the sun's glint
@@ -169,5 +182,7 @@ float4 PsFluid(float4 pos : SV_Position) : SV_Target {
     float3 h = normalize(g_sun.xyz + toEye);
     float3 glint = Lin(g_sunColor.rgb) * pow(saturate(dot(n, h)), 300) * 3;
     float3 c = lerp(refracted, sky, fres) + glint;
-    return float4(ApplyFog(Enc(c), z), 1);
+    // its edge: where the sheet thins out to nothing it fades (premultiplied over the frame) instead of ending sharp
+    float cover = saturate(thick / (film * 0.15));
+    return float4(ApplyFog(Enc(c), z), 1) * cover;
 }

@@ -246,7 +246,7 @@ struct Gfx {
     ID3D11PixelShader *psMesh = nullptr, *psDepth = nullptr, *psThick = nullptr, *psSmooth = nullptr, *psFluid = nullptr;
     ID3D11ComputeShader *csNormals = nullptr;
     ID3D11Buffer *cb = nullptr;
-    ID3D11BlendState *add = nullptr, *opaque = nullptr;
+    ID3D11BlendState *add = nullptr, *opaque = nullptr, *over = nullptr;   // (over: premultiplied, the water's surface)
     ID3D11DepthStencilState *depthOn = nullptr, *depthOff = nullptr;
     ID3D11RasterizerState *noCull = nullptr;
     Target meshZ, fluidZ, fluidZ2, thick;
@@ -260,7 +260,7 @@ struct Gfx {
         cloth.Free(), jelly.Free();
         topology = 0;
         SafeRelease(vsMesh), SafeRelease(vsSplat), SafeRelease(psMesh), SafeRelease(psDepth), SafeRelease(psThick), SafeRelease(psSmooth);
-        SafeRelease(psFluid), SafeRelease(csNormals), SafeRelease(cb), SafeRelease(add), SafeRelease(opaque), SafeRelease(depthOn);
+        SafeRelease(psFluid), SafeRelease(csNormals), SafeRelease(cb), SafeRelease(add), SafeRelease(opaque), SafeRelease(over), SafeRelease(depthOn);
         SafeRelease(depthOff), SafeRelease(noCull);
     }
 } G;
@@ -281,6 +281,8 @@ bool Make(ID3D11Device *d) {
     D3D11_BUFFER_DESC bd{sizeof(Cb), D3D11_USAGE_DEFAULT, D3D11_BIND_CONSTANT_BUFFER, 0, 0, 0};
     D3D11_BLEND_DESC add{};
     add.RenderTarget[0] = {TRUE, D3D11_BLEND_ONE, D3D11_BLEND_ONE, D3D11_BLEND_OP_ADD, D3D11_BLEND_ONE, D3D11_BLEND_ONE, D3D11_BLEND_OP_ADD, D3D11_COLOR_WRITE_ENABLE_ALL};
+    D3D11_BLEND_DESC over{};
+    over.RenderTarget[0] = {TRUE, D3D11_BLEND_ONE, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_OP_ADD, D3D11_BLEND_ONE, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_OP_ADD, D3D11_COLOR_WRITE_ENABLE_ALL};
     D3D11_BLEND_DESC opaque{};
     opaque.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
     D3D11_DEPTH_STENCIL_DESC on{TRUE, D3D11_DEPTH_WRITE_MASK_ALL, D3D11_COMPARISON_LESS}, off{FALSE, D3D11_DEPTH_WRITE_MASK_ZERO, D3D11_COMPARISON_ALWAYS};
@@ -295,7 +297,7 @@ bool Make(ID3D11Device *d) {
            SUCCEEDED(d->CreatePixelShader(kPsFluid, sizeof kPsFluid, nullptr, &G.psFluid)) &&
            SUCCEEDED(d->CreateComputeShader(kCsNormals, sizeof kCsNormals, nullptr, &G.csNormals)) &&
            SUCCEEDED(d->CreateBuffer(&bd, nullptr, &G.cb)) && SUCCEEDED(d->CreateBlendState(&add, &G.add)) &&
-           SUCCEEDED(d->CreateBlendState(&opaque, &G.opaque)) && SUCCEEDED(d->CreateDepthStencilState(&on, &G.depthOn)) &&
+           SUCCEEDED(d->CreateBlendState(&opaque, &G.opaque)) && SUCCEEDED(d->CreateBlendState(&over, &G.over)) && SUCCEEDED(d->CreateDepthStencilState(&on, &G.depthOn)) &&
            SUCCEEDED(d->CreateDepthStencilState(&off, &G.depthOff)) && SUCCEEDED(d->CreateRasterizerState(&rd, &G.noCull));
 }
 
@@ -361,8 +363,10 @@ void SetCb(ID3D11DeviceContext *c, uint32_t first, uint32_t count, uint32_t dir,
     memcpy(k.origin, g_out.origin, 12);
     k.origin[3] = g_out.radius;
     k.rows[0] = first, k.rows[1] = count, k.rows[2] = dir, k.rows[3] = kind;
-    k.water[0] = g_pxPerMetre * g_out.radius * 4;   // (the smoothing's radius in pixels at 1 m: two particles across)
-    k.water[1] = 1.f / (g_out.radius * g_out.radius * 4);
+    k.water[3] = 1.8f;   // (the splats' radius over the particles': a sheet one particle thick drawn whole)
+    const float splat = g_out.radius * k.water[3];
+    k.water[0] = g_pxPerMetre * splat * 4;   // (the smoothing's radius in pixels at 1 m: two splats across)
+    k.water[1] = 1.f / (splat * splat * 4);
     k.water[2] = 0.6f;
     c->UpdateSubresource(G.cb, 0, nullptr, &k, 0, 0);
 }
@@ -515,7 +519,7 @@ void Pass(const MmlGfxFrame *f, void *) {
         c->OMSetRenderTargets(1, &target, nullptr);
         ID3D11ShaderResourceView *fl[2] = {G.fluidZ.srv, G.thick.srv};
         c->PSSetShaderResources(6, 2, fl);
-        c->OMSetBlendState(nullptr, nullptr, 0xFFFFFFFF);   // (its alpha is 1 where it is: it covers the frame there)
+        c->OMSetBlendState(G.over, nullptr, 0xFFFFFFFF);   // (premultiplied over: its thin edge fades into what is under it)
         FullScreen(c, f, G.psFluid);
     }
     ID3D11ShaderResourceView *clear[8] = {};

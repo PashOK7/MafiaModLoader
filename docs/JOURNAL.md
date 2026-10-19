@@ -2564,3 +2564,22 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   particles falling through the game's ground at speed (the static world is a cooked triangle mesh here, NVIDIA's
   snippet has planes; its particle settings are the same as ours), and water with no depth to keep (10 cm particles
   on flat ground spread as far as they can). In ROADMAP 19a; not fixed in this block.
+
+## 2026-10-19: physx_gpu's water fixed: it stays on the ground and looks wet
+
+- **Asked** (the owner): go on with the water (the owner asked first whether the screenshots were simply taken after
+  the water had fallen: partly, `points` showed both, see the entry before).
+- **Falling through**: the static world in the half is the game's ground as a cooked, one-sided triangle mesh (its
+  faces turned by the host's normals already: not the cause); NVIDIA's snippet has planes, whose inside is infinite. A
+  3 m block of 32 768 particles landing from 1.5 m pushed its lower layers through the faces, after which nothing
+  brings them back. `PxParticleFlag::eENABLE_SPECULATIVE_CCD` and 8 position iterations (default 4): the same pour
+  stays above the ground (`points`: lowest -5.33 m, the road beside the lot) in 1.2 and 1.0 (-5.14).
+- **Specks**: the water spreads into a sheet one particle thick, 10 cm particles a spacing apart, drawn at their own
+  size: specks with the ground between them, each with its own bump in the smoothed depth (glints). The splats are
+  now 1.8 times the particles (the thickness scaled back to the water's volume), a thin sheet takes the normal of
+  the world under it (from the frame's depth) and so lies flat, what it wets is darkened (to 0.55), and its edge
+  fades with its thickness (premultiplied over, which also keeps passes before it under the water). Seen: the block
+  falling as a clear body with the frame refracted through it, landing, the lot dark and wet around it, glints where
+  the water is deep; the cloth lying in folds; the jelly a red cube standing (from behind the car it had looked
+  flattened: the side view showed it whole).
+- Both labs' copies of the manifest put back to `enabled: false` (on at the next start only if switched again).

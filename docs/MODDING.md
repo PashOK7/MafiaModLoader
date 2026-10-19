@@ -1700,6 +1700,17 @@ smallest half alone, `mods/examples/side_picture` a mod in two halves that hands
   frames without new poses (the half loads PhysX); a fault in the 64-bit half left the crates where they were, the
   game and the 32-bit half going on, and `mod.reload` brought it back in 9 to 12 frames. Ten reloads in a row: no
   handle, thread or memory left behind.
+- **PhysX's GPU part: `physx_gpu`** (`mods/examples/physx_gpu`; PhysX built with CUDA, `PhysXGpu.dll` beside the
+  half): water (PBD particles), a cloth and a jelly (FEM) stepped on the GPU on the game's static collision (its
+  triangles cooked with `buildGPUData`), their points copied into a shared texture without the CPU and drawn by the
+  32-bit half's pass (the water as a screen-space surface, the cloth and the jelly as lit meshes). What it took
+  (2026-10-19, both labs): the game's ground is a one-sided triangle mesh, where NVIDIA's snippet has planes, and a
+  deep block of water falling on it pushed particles through it for good (17 m under the ground in a second):
+  speculative CCD for the particles (`PxParticleFlag::eENABLE_SPECULATIVE_CCD`) and 8 position iterations keep it up.
+  Water on flat ground spreads into a sheet one particle thick (10 cm particles have no thinner film): the splats
+  are drawn 1.8 times the particles' size so the sheet is whole, a thin sheet takes the normal of what is under it
+  (the world's, from its depth: a flat, evenly lit film), darkens what it wets and fades at its edges (premultiplied
+  over the frame). `physx_gpu.points` reads the particles' bounds back from the GPU.
 - **NVIDIA Flow 2 in a half, rendered into the same frame: `flow_smoke`** (`mods/examples/flow_smoke`). Flow (smoke and
   fire as gas on a sparse voxel grid, ray-marched with self-shadowing) runs only on 64 bits and draws through Vulkan.
   `mml_flow(<id>)` in `CMakeLists.txt` gives a half its headers, CUDA's driver API and `nvflow.dll`, `nvflowext.dll`

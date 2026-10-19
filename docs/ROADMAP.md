@@ -948,14 +948,11 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
     12.8 to build PhysX's GPU projects (`PhysXGpu`, a DLL beside the half) and a Volta GPU or newer to run.
     *(2026-10-18: NVIDIA Flow 2's smoke and fire done first, the owner's ask: `flow_smoke`, see "Done". PhysX's GPU part
     is built (CUDA from `tools/deps.py cuda`, `mml_physx_gpu`) and `physx_gpu` (water, cloth, a jelly) loads on the GPU
-    in both labs, but was not yet seen working in the game: the next step of this item. 2026-10-19, the 1.2 lab: the
-    water steps on the GPU (32 768 particles, 5.8 ms a step on an RTX 3070) and is drawn, but does not yet look like
-    water: poured from 1.5 m part of it falls through the game's ground (17 m below it after 1.2 s) and the rest
-    spreads in a second or two into a sheet one particle thick (8000 particles, 30 x 19 m), which the screen-space
-    surface draws as specks on the asphalt. Next: the particles' collision with the static world's triangles at
-    speed (PhysX's speculative CCD for particles, the contact offsets against a mesh, NVIDIA's snippet has planes),
-    and water held where it has depth (a basin, the river) or a surface drawn from a thin sheet. Cloth and jelly not
-    looked at yet.)*
+    in both labs. 2026-10-19: seen working in both labs (water, cloth, a jelly; MODDING "PhysX's GPU part"): the water
+    no longer falls through the game's ground (speculative CCD, 8 iterations), its thin sheet is drawn as a wet film.
+    Left: the film mirrors only the fog's colour (no reflection of the world: a screen-space reflection would), the
+    sheet's edges are its particles' clusters (round blots, not a puddle's line), 32 768 particles (30 m3, the default)
+    is a lot of water for a street.)*
 19b. **Collision from the visible models** (the owner, 2026-10-18): the physics meets what the player sees, not the
     game's boxes, spheres and capsules. The host already gives the meshes the game draws (`scene_pieces` around a box,
     `actor_meshes` an actor's parts posed): the static world as their triangles, a prop as the convex hull of its
