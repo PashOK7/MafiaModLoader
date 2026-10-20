@@ -109,8 +109,15 @@ void Init() {
 // For the offline tests (tests/harness): no game frame limiter there, the harness pumps the loader's frames itself.
 extern "C" __declspec(dllexport) void mml_host_pump() { host::Frame(); }
 
-BOOL WINAPI DllMain(HINSTANCE, DWORD reason, LPVOID) {
+BOOL WINAPI DllMain(HINSTANCE, DWORD reason, LPVOID reserved) {
     if (reason == DLL_PROCESS_ATTACH) host::Init();
-    else if (reason == DLL_PROCESS_DETACH) HLOG("process detaching");
+    else if (reason == DLL_PROCESS_DETACH && !reserved) HLOG("process detaching (the loader unloaded)");
+    else if (reason == DLL_PROCESS_DETACH) {   // (the process ends: on the thread that called ExitProcess)
+        if (host::ThreadHasTls())
+            HLOG("process exiting (ExitProcess on thread %lu%s): %s", GetCurrentThreadId(),
+                 GetCurrentThreadId() == host::MainThread() ? ", the game's" : "", host::ExitStack().c_str());
+        else
+            HLOG("process exiting (ExitProcess on thread %lu, a thread without TLS)", GetCurrentThreadId());
+    }
     return TRUE;
 }

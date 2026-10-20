@@ -85,6 +85,7 @@ bool PatchImport(HMODULE module, const char *dll, const char *fn, void *replacem
 // ---- crash reports and the main thread (crash.cpp)
 void EnsureCrashFilter();      // ours first; called at start and every frame (others may install theirs later)
 std::string Where();           // what the game's main thread is doing (any thread)
+std::string ExitStack();       // who is ending the process: the calls on this thread's stack (DllMain's detach)
 // A thread's call stack from a context of its own (the faulting thread's, in a filter): its eip, then the likely
 // return addresses on its stack (code with a call right before it), at most cap; the count.
 int StackOf(const CONTEXT *c, uintptr_t *out, int cap);

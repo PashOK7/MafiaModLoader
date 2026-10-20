@@ -301,4 +301,21 @@ std::string Where() {
     return out;
 }
 
+// The process ending without a fault (ExitProcess: DllMain's detach runs on the thread that called it, under it on
+// the stack): the calls that led there, found by a scan of this thread's stack as a crash's report finds them. A
+// player's game once quit by itself in the main menu with no dump and no word: this line names who ended it.
+std::string ExitStack() {
+    uintptr_t sp = reinterpret_cast<uintptr_t>(_AddressOfReturnAddress());
+    uintptr_t top = __readfsdword(4);   // NT_TIB's StackBase
+    std::string out;
+    int found = 0;
+    for (; sp + 4 <= top && found < 32; sp += 4) {
+        uintptr_t v = *reinterpret_cast<const uintptr_t *>(sp);
+        if (!AfterCall(v)) continue;
+        out += (found ? ", " : "") + Frame(v);
+        found++;
+    }
+    return out.empty() ? "(no calls found on the stack)" : out;
+}
+
 } // namespace host

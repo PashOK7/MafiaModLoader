@@ -2811,3 +2811,28 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   into dxwrapper.dll+189E40, dxwrapper's own hook; LS3DF.dll's import of it is taken instead.
 - **Seen**: 1.0, with DXVK and without: the game's window never above the user's through the launch, at the bottom
   after it; screenshots from the background as before. Not yet in the 1.2 lab (the owner was playing there).
+
+## 2026-10-20: who ends the process, in the log
+
+- **Seen**: a player's game (RTX 5060 Laptop, dlss_nr working, DXVK, ReShade 6.8.0 as a Vulkan layer, ThirteenAG's
+  scripts) quit by itself 0.7 s after coming back from a mission to the main menu, twice, with no dump and no word:
+  the log's last line was "process detaching", dxwrapper and ReShade wrote their normal exits. So it was ExitProcess,
+  not a fault. His whole pack (his loader, his ASIs, his DXVK and settings, ReShade 6.8.0 loaded as a Vulkan layer
+  for that process tree only, his saves, his route: a save of mission 20, the pause menu, the main menu) ran in a
+  copy of his folder here (RTX 3070: NGX refuses DLSS-NR, the 64-bit half's round trip ran instead) and never quit.
+  The one part not run here is DLSS-NR itself.
+- **Made** (host/main.cpp, host/crash.cpp ExitStack): DllMain's detach at the process's end runs on the thread that
+  called ExitProcess, so the log now says "process exiting (ExitProcess on thread N, the game's): <the calls>" from a
+  scan of that thread's stack (as a crash's report finds them); "process detaching" stays for the loader unloaded.
+- **Seen**: 1.2, the main menu's Quit: Game.exe+0x1216, the CRT's exit (Game.exe+0x2161E3), ExitProcess; 1.0, the
+  window closed: through ls3df.dll. The player gets the new loader in the dlss_nr pack: his next log names who ends
+  his game.
+
+## 2026-10-20: dlss_nr with ReShade's effects
+
+- **Seen**, in the player's folder: ReShade 6.8.0 (a Vulkan layer over DXVK) with his preset's six effects compiled
+  (crosire/reshade-shaders legacy and slim's headers, SweetFX) and dlss_nr's round trip running (debug 4): his route
+  (a save of mission 20, the pause menu, the main menu) kept going. A test mode that sent the frame back upside down
+  (to see the round trip at a glance) was tried in the labs and taken out again: the released mod shows DLSS-NR's
+  picture only.
+- The player's update: `tools/pack.py dlss_nr --since` the archive he has (Discord takes 20 MB at most).

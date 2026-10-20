@@ -31,7 +31,8 @@ archive replaces them.
 DXVK works with it: keep DXVK's d3d9.dll, dxgi.dll, d3d11.dll (and
 dxvk.conf) in the game folder, but not DXVK's d3d8.dll (this archive's
 d3d8.dll must stay).
-ReShade on top of DXVK (Vulkan) is not tested yet.
+ReShade 6.8 on top of DXVK (Vulkan) with its effects runs with the mod
+(tested on an RTX 3070, the mod's frame path without DLSS 5 itself).
 
 With a texture pack, DXVK or ReShade, and at high resolutions, apply the
 "4GB patch" (Large Address Aware) to Game.exe: the game is 32-bit and
