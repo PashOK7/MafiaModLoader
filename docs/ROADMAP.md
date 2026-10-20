@@ -1074,6 +1074,12 @@ merged, sorted by importance):
   draws, reference.hlsl) that is some 4 ms a frame in 1.0. The states that change once a frame (the view, the
   projection, the fog) or once a visual could be kept; a person's draw without a rule already reads 25 (CoreConstants).
   For item 29 too.
+- **The demo's LS3D names** (2026-10-20, `tools/kb_demo.py`, knowledge/notes/external.md): 1255 of the demo's 3109
+  functions have no place in LS3DF (qhull, DirectShow, the editor's code, tiny ones folded away); a function 1.2
+  rewrote much (I3D_singlemesh::PoseLod, 47 % like 1.0's) pairs only through a hand-checked name of both builds
+  (`names.csv` and `names_10.csv` alike), so 1.2 lacks a few. The demo's prototypes go into 1.2's project only where
+  MafiaReverse gave none, and only into functions whose prototype is not set already (`sync` keeps one set before).
+  The repository carries none of the demo's names (its licence): a machine without the demo has the twins only.
 - **dlss_nr** (2026-10-19): DLSS 5 NR's own picture has been seen once, on a player's RTX 5060, far too dark: the
   mod gave the model linear values where it takes gamma ones (fixed, as RTX Remix does; not yet seen again).
   NVIDIA's `nvngx_dlssnr.dll` refuses every GPU but an RTX 50 (Blackwell), and the labs have an RTX 3070. Everything up to NGX's answer is seen in both labs (the
