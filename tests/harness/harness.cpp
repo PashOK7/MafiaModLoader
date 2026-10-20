@@ -60,6 +60,8 @@ int main(int argc, char **argv) {
     if (!loader) { printf("harness: cannot load MafiaModLoader.asi (%lu)\n", GetLastError()); return 1; }
     auto pump = reinterpret_cast<void (*)()>(GetProcAddress(loader, "mml_host_pump"));
     if (!pump) { printf("harness: no mml_host_pump\n"); return 1; }
+    // a frame's end as the game's Present makes it (prof.frames), 1 ms blocked in it
+    auto present = reinterpret_cast<void (*)(unsigned)>(GetProcAddress(loader, "mml_host_present"));
     // the game's one-at-a-time check, as its entry makes it (after the loader, as Ultimate ASI Loader loads it before
     // the game's code): the loader gives it this folder's mutex (run_tests.py's instances_tests)
     CreateMutexA(nullptr, FALSE, "Mafia Launcher Super Mutex Shit");
@@ -94,6 +96,7 @@ int main(int argc, char **argv) {
     DWORD end = GetTickCount() + seconds * 1000u;
     while (GetTickCount() < end) {
         pump();
+        if (present) present(1);
         frames++;
         _controlfp_s(&cw, 0, 0);
         if ((cw & _MCW_PC) != _PC_24) { changed++; _controlfp_s(&cw, _PC_24, _MCW_PC); }

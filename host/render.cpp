@@ -284,7 +284,6 @@ void RenderViewWorld(int handle) {
 
 void RenderPresent(void *dev8) {
     g_presents++;
-    ProfFrame();
     DispatchDrawing(MML_EVENT_PRESENT, dev8);
 }
 

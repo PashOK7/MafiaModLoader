@@ -13,6 +13,7 @@
 #endif
 #include <winsock2.h>
 #include <windows.h>
+#include <intrin.h>
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -84,6 +85,10 @@ bool PatchImport(HMODULE module, const char *dll, const char *fn, void *replacem
 
 // ---- crash reports and the main thread (crash.cpp)
 void EnsureCrashFilter();      // ours first; called at start and every frame (others may install theirs later)
+// The game's time scaled (game_hooks.cpp, the frame limiter's step: every system's): 0 the world stands still while
+// it is drawn; `step` and `real` the last frame's given and real steps (ms). state.time.
+void GameTimeScaleSet(double scale);
+double GameTimeScale(int *step, int *real);
 std::string Where();           // what the game's main thread is doing (any thread)
 std::string ExitStack();       // who is ending the process: the calls on this thread's stack (DllMain's detach)
 // A thread's call stack from a context of its own (the faulting thread's, in a filter): its eip, then the likely
@@ -98,6 +103,10 @@ inline bool ThreadHasTls() { return __readfsdword(0x2C) != 0; }
 
 // ---- hook chains (hooks.cpp): several owners may hook one function; owner null: the host
 bool HookAdd(MmlMod *owner, uintptr_t target, void *detour, void **original, std::string *err);
+// A link kept outermost whatever is added after it (the host's counters: the caller's own return address is theirs),
+// or innermost (the time past every other hook: the game's own function's, the driver's)
+bool HookAddOuter(uintptr_t target, void *detour, void **original, std::string *err);
+bool HookAddInner(uintptr_t target, void *detour, void **original, std::string *err);
 bool HookRemove(MmlMod *owner, uintptr_t target);
 bool HookRemoveLink(MmlMod *owner, uintptr_t target, void *detour);   // one link only (the host's taps)
 void HookRemoveAll(MmlMod *owner);
@@ -734,8 +743,55 @@ double ProfNow();
 const char *ProfEventSite(int type);      // an event's name ("RENDER_WORLD")
 void ProfPhase(int phase);                // what the game thread does now, for the sampler (1 drawing the frame, 2 the
                                           // scene views, 3 the graphics bridge); 0: back to the one before
-void ProfFrame();                         // (render.cpp) Present: a frame complete
+// A frame is from one return of the game's own Present to the next (screenshot.cpp's Present hook calls these around
+// it): its time, the time Present blocked, the game thread's and the process's CPU time, the GPU's (d3dstats.cpp), the
+// device's calls, the host's own costly sites; kept a frame each in a ring (prof.frames), labelled for comparisons
+// (prof.mark).
+void ProfPresentBegin();
+void ProfPresentEnd(long hr);
+uint32_t ProfFrameSeq();                  // the frame being made now
+void ProfGpuOf(uint32_t seq, float ms);   // (d3dstats.cpp) the GPU's time of a frame, known a few frames later
+double ProfTscPerMs();                    // the time stamp counter's rate (0 until known)
 bool ProfFrameStats(const MmlMod *mod, MmlFrameStats *out);   // mml.h frame_stats
+// The host's own costly sites, timed while the device's calls are counted (prof.counters): a hook's whole time and the
+// game's own function it calls (its share), so the host's part is the difference.
+enum ProfHot { kHotSkinLod, kHotSkinLodGame, kHotSkinCopy, kHotSkinCopyGame, kHotSkinLight, kHotSkinLightGame, kHotCount };
+extern bool g_profHotOn;
+extern uint64_t g_profHotTicks[kHotCount];
+extern uint32_t g_profHotCalls[kHotCount];
+struct ProfHotScope {
+    int site;
+    uint64_t t0;
+    explicit ProfHotScope(int s) : site(s), t0(g_profHotOn ? __rdtsc() : 0) {}
+    ~ProfHotScope() { if (t0) { g_profHotTicks[site] += __rdtsc() - t0; g_profHotCalls[site]++; } }
+    ProfHotScope(const ProfHotScope &) = delete;
+    ProfHotScope &operator=(const ProfHotScope &) = delete;
+};
+
+// ---- the Direct3D 9 device's calls counted and timed a frame, by kind and by caller (the game, the host), the time
+// in the driver under the draws, the pipeline's switches, the GPU's time of each frame (d3dstats.cpp); prof.counters
+enum D3dWho { kWhoGame, kWhoHost, kWhoCount };
+enum D3dKind {
+    kKindDrawPrimitive, kKindDrawIndexed, kKindDrawUp, kKindRenderState, kKindTextureStage, kKindSampler, kKindTexture,
+    kKindTransform, kKindLight, kKindMaterial, kKindVertexFormat, kKindStream, kKindIndices, kKindShader,
+    kKindShaderConstants, kKindViewport, kKindTargets, kKindClear, kKindScene, kKindStateBlock, kKindGet, kKindLock,
+    kKindCount
+};
+struct D3dFrameCounts {
+    uint32_t calls[kKindCount][kWhoCount];
+    uint64_t ticks[kKindCount][kWhoCount];   // inclusive: a game's draw holds the host's work in its chain
+    uint32_t prims[kWhoCount];
+    uint64_t driverTicks[kWhoCount];         // under the draws: the time past every hook (whose draw it was)
+    uint32_t driverDraws[2];                 // the draws reaching the driver: [0] fixed pipeline, [1] shaders
+    uint32_t switches;                       // between the fixed pipeline and shaders, draw to draw at the driver
+};
+const char *D3dKindName(int kind);
+bool D3dStatsOn();
+bool D3dStatsSet(bool on, bool gpu, std::string *why);   // game thread; gpu: each frame's GPU time too
+void D3dStatsTake(D3dFrameCounts *out);        // this frame's, zeroed after (prof.cpp at a frame's end)
+void D3dStatsFrameEnd(uint32_t seq);           // before the game's Present: the GPU's mark of the frame's end
+void D3dStatsFrameStart();                     // after it: the next frame's start
+std::string D3dStatsWhyGpu();                  // "" while the GPU's time is measured
 bool ProfMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 struct ProfScope {                        // times a call into a mod (mod null: a part of the host's own)
     const MmlMod *mod;

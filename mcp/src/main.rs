@@ -6,13 +6,16 @@
 //!
 //! The game's folder: `MML_GAME_DIR`, else `game_dir` in `mml.config.json` at the repository's root.
 
+mod bench;
 mod bridge;
 mod crash;
 mod game;
 mod kb;
 mod script;
 mod shot;
+mod stacks;
 mod structs;
+mod syms;
 mod ghidra;
 
 use base64::Engine;
@@ -490,6 +493,46 @@ struct WaitArgs {
     since: Option<u64>,
 }
 
+#[derive(Deserialize, JsonSchema, Clone)]
+struct BenchCall {
+    /// A bridge method or a mod's command (`skin.gpu`, `config.set`, `prof.counters`...).
+    method: String,
+    /// Its parameters.
+    #[serde(default)]
+    params: Option<Value>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct BenchArgs {
+    /// The calls that make configuration A, made before each of its segments (none: the game as it is), e.g.
+    /// [{"method": "skin.gpu", "params": {"on": false}}].
+    #[serde(default)]
+    a: Option<Vec<BenchCall>>,
+    /// The calls that make configuration B. None: A against itself (the measure's own noise: no difference
+    /// should be found).
+    #[serde(default)]
+    b: Option<Vec<BenchCall>>,
+    /// Their names (default "A", "B"; "A", "A'" when B is A).
+    #[serde(default)]
+    names: Option<Vec<String>>,
+    /// Blocks of four segments, ABBA then BAAB (default 4, 2..20): the interval narrows with more.
+    #[serde(default)]
+    blocks: Option<u32>,
+    /// Frames measured a segment (default 300, 30..4000).
+    #[serde(default)]
+    frames: Option<u32>,
+    /// Frames let pass after each switch before a segment's own (default 60: shaders made, caches filled).
+    #[serde(default)]
+    settle: Option<u32>,
+    /// Count and time the device's calls by kind and caller, and the host's costly sites (default true). Their own
+    /// cost, measured: some 35 ns a call of the device, 2 % of a 2.8 ms frame; both configurations bear it alike.
+    #[serde(default)]
+    counters: Option<bool>,
+    /// The calls made at the end (default A's).
+    #[serde(default)]
+    after: Option<Vec<BenchCall>>,
+}
+
 #[derive(Deserialize, JsonSchema)]
 struct ProfileArgs {
     /// How long the game thread is sampled (seconds, default 3, 0.5..30): let the game do the thing meanwhile.
@@ -498,6 +541,8 @@ struct ProfileArgs {
     /// hitches); default true. `reset: true` starts them over first.
     state: Option<bool>,
     reset: Option<bool>,
+    /// The time between samples (ms, default 1: a timer, no core kept busy; down to 0.25 by a wait on the clock).
+    interval_ms: Option<f64>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -590,6 +635,29 @@ impl Server {
             obj.insert("timeout_ms".into(), json!(t));
         }
         self.bridge.call(method, params, timeout_ms.unwrap_or(5000) + 2000).await
+    }
+
+    /// One segment of `bench`: the configuration's calls made, the frames labelled after `settle`, `frames` of them
+    /// read back (`since`: the last frame read, carried from segment to segment).
+    async fn bench_segment(&self, calls: &[BenchCall], label: &str, settle: u32, frames: usize, since: &mut u64) -> Result<Vec<bench::Frame>, String> {
+        for c in calls {
+            self.call_value(&c.method, c.params.clone().unwrap_or(Value::Null), None).await
+                .map_err(|e| format!("bench: {} failed: {e}", c.method))?;
+        }
+        self.call_value("prof.mark", json!({"label": label, "settle": settle}), None).await?;
+        let mut got = vec![];
+        let mut last_new = std::time::Instant::now();
+        while got.len() < frames {
+            tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+            let r = self.call_value("prof.frames", json!({"since": *since, "limit": 4096}), None).await?;
+            let next = r["next"].as_u64().unwrap_or(*since);
+            if next > *since { last_new = std::time::Instant::now(); }
+            *since = next;
+            got.extend(bench::frames_of(&r, label));
+            if last_new.elapsed().as_secs() > 15 { return Err(format!("bench: no frames for 15 s in {label} (the game paused, a menu, a load?)")); }
+        }
+        got.truncate(frames);
+        Ok(got)
     }
 
     /// The next frame the game presents, as a JPEG in `<game>\mml\shots` (the loader writes it raw).
@@ -1000,16 +1068,19 @@ impl Server {
         }
     }
 
-    /// Where the game thread's time goes: samples it every half millisecond for `seconds` (the phase: the game's own
+    /// Where the game thread's time goes: samples it every `interval_ms` for `seconds` (the phase: the game's own
     /// work, LS3D drawing the frame, the scene views, the graphics bridge; inside which mod's call; the address, and
-    /// for samples in Direct3D or the driver the game's code that called them), with the game's functions named
-    /// from the knowledge base; and what each mod costs a frame by site (events, passes, views, commands), the frame
-    /// times and the hitches since the last reset.
+    /// for samples in Direct3D or the driver the game's code that called them, or the loader's); `functions`: each
+    /// function's self time, its calls into Direct3D and the system (calls_out) and its total (on the stack, checked
+    /// frame by frame), the game's named from the knowledge base and the loader's and mods' from their PDBs; and what
+    /// each mod costs a frame by site, the frame times and the hitches since the last reset.
     #[tool(annotations(read_only_hint = true))]
     async fn profile(&self, Parameters(a): Parameters<ProfileArgs>) -> Out {
         if a.reset == Some(true) { self.call_value("prof.reset", Value::Null, None).await?; }
         let secs = a.seconds.unwrap_or(3.0).clamp(0.5, 30.0);
-        let start = self.call_value("prof.sample", json!({"seconds": secs}), None).await?;
+        let mut ask = json!({"seconds": secs});
+        if let Some(i) = a.interval_ms { ask["interval_ms"] = json!(i); }
+        let start = self.call_value("prof.sample", ask, None).await?;
         let id = start["id"].as_u64().ok_or("prof.sample gave no id")?;
         let begun = std::time::Instant::now();
         let report = loop {
@@ -1018,9 +1089,128 @@ impl Server {
             if r["done"].as_bool() == Some(true) { break r; }
             if begun.elapsed().as_secs_f64() > secs + 20.0 { return Err("the sampler did not finish (the game thread paused or hung?)".into()); }
         };
-        let mut out = json!({"sample": report});
+        let mut report = report;
+        let functions = tokio::task::spawn_blocking({
+            let r = report.clone();
+            let dir = game::game_dir()?;   // (the call's game: the build that names the addresses, its PDBs)
+            move || game::with_game_sync(dir, || stacks::by_function(&r))
+        }).await.map_err(|e| e.to_string())?;
+        if let Some(o) = report.as_object_mut() { o.remove("addresses"); o.remove("chains"); }
+        let mut out = json!({"sample": report, "functions": functions});
         if a.state.unwrap_or(true) { out["frame"] = self.call_value("prof.state", Value::Null, None).await?; }
         Ok(kb::annotate(&pretty(&out)))
+    }
+
+    /// Compare two configurations of the running game in one run: what B costs or saves against A, with a 95 %
+    /// interval, free of the run's drifts. They take turns in blocks (ABBA, BAAB), each turn a segment of `frames`
+    /// frames after `settle` let pass; each frame's record (prof.frames) gives its time, the time Present blocked,
+    /// the game thread's own CPU time (off_cpu_ms: what it was not running outside Present: other processes, waits),
+    /// the process's other threads, the GPU's span, and while counted the device's calls by kind and caller (the game,
+    /// the host), the driver's time under the draws, the pipeline's switches and the host's costly sites. Returns
+    /// each configuration's figures, B less A with its interval and the measure's own noise, and the run's conditions
+    /// (other games, the machine's other load, frames not presented) with warnings. Without `b`, A against itself:
+    /// the check of the measure. Keep the scene still meanwhile (a camera set, no traffic): what moves adds noise.
+    #[tool]
+    async fn bench(&self, Parameters(a): Parameters<BenchArgs>) -> Out {
+        let blocks = a.blocks.unwrap_or(10).clamp(2, 40) as usize;
+        let frames = a.frames.unwrap_or(100).clamp(30, 4000) as usize;
+        let settle = a.settle.unwrap_or(30).min(1000);
+        let counters = a.counters.unwrap_or(true);
+        let same = a.b.is_none();
+        let calls = [a.a.clone().unwrap_or_default(), a.b.clone().unwrap_or_else(|| a.a.clone().unwrap_or_default())];
+        let mut names = a.names.clone().unwrap_or_default();
+        if names.len() < 2 { names = if same { vec!["A".into(), "A'".into()] } else { vec!["A".into(), "B".into()] }; }
+        if names[0] == names[1] { names[1].push('\''); }
+        let before = self.call_value("prof.state", Value::Null, None).await?;
+        let was_counting = before["counters"].as_bool().unwrap_or(false);
+        // the counters when asked (they need the game's Direct3D 9); the GPU's time whenever the device allows it
+        let mut gpu_note = Value::Null;
+        if counters {
+            self.call_value("prof.counters", json!({"on": true, "gpu": true}), None).await
+                .map_err(|e| format!("bench: prof.counters: {e} (a loader with prof.frames is needed: deploy it with the game closed)"))?;
+        } else {
+            match self.call_value("prof.counters", json!({"on": false, "gpu": true}), None).await {
+                Ok(r) if r["gpu"].as_str() != Some("measured") => gpu_note = json!(format!("no GPU time: {}", r["gpu"].as_str().unwrap_or("?"))),
+                Err(e) => gpu_note = json!(format!("no GPU time: {e}")),
+                _ => {}
+            }
+        }
+        let pid = game::running_pid(&game::game_dir()?);
+        let games = bench::game_processes();
+        let cpu0 = bench::cpu_mark(pid);
+        let mut since = before["seq"].as_u64().unwrap_or(1).saturating_sub(1);
+        let run = format!("bench{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() % 100000).unwrap_or(0));
+        let mut segs = vec![];
+        let mut flags = [0usize; 2];   // frames Present answered otherwise, frames the sampler stopped
+        let result: Result<(), String> = async {
+            // each configuration once first: hooks made, shaders compiled, caches filled
+            for c in 0..2 {
+                self.bench_segment(&calls[c], &format!("{run}/warmup/{c}"), settle, settle.max(30) as usize, &mut since).await?;
+            }
+            for b in 0..blocks {
+                let order = if b % 2 == 0 { [0, 1, 1, 0] } else { [1, 0, 0, 1] };
+                for (k, &c) in order.iter().enumerate() {
+                    let f = self.bench_segment(&calls[c], &format!("{run}/{b}/{k}"), settle, frames, &mut since).await?;
+                    for fr in &f {
+                        let fl = fr.get("flags").copied().unwrap_or(0.0) as u32;
+                        if fl & 2 != 0 { flags[0] += 1; }
+                        if fl & 8 != 0 { flags[1] += 1; }
+                    }
+                    segs.push(bench::Segment { config: c, block: b, frames: f.len(), stats: bench::segment_stats(&f) });
+                }
+            }
+            Ok(())
+        }.await;
+        let cpu1 = bench::cpu_mark(pid);
+        // the game left as asked (A's by default), labels and counting as they were
+        let _ = self.call_value("prof.mark", json!({"label": ""}), None).await;
+        for c in a.after.clone().unwrap_or_else(|| calls[0].clone()) {
+            let _ = self.call_value(&c.method, c.params.clone().unwrap_or(Value::Null), None).await;
+        }
+        if !was_counting { let _ = self.call_value("prof.counters", json!({"on": false, "gpu": false}), None).await; }
+        result?;
+        let state = self.call_value("prof.state", Value::Null, None).await.unwrap_or(Value::Null);
+        let mut out = bench::compare(&segs, [&names[0], &names[1]]);
+        let cpu = bench::cpu_between(&cpu0, &cpu1);
+        let others: Vec<u32> = games.iter().copied().filter(|p| Some(*p) != pid).collect();
+        let mut warnings = vec![];
+        if !others.is_empty() { warnings.push(format!("{} other Game.exe running (pids {:?}): they share the machine", others.len(), others)); }
+        if cpu["others_percent"].as_f64().unwrap_or(0.0) > 10.0 {
+            warnings.push(format!("other processes kept {}% of the machine busy", cpu["others_percent"]));
+        }
+        if flags[0] > 0 { warnings.push(format!("{} frames Present did not answer S_OK (the window occluded, the device lost)", flags[0])); }
+        if flags[1] > 0 { warnings.push(format!("{} frames the sampler stopped the game thread in (prof.sample ran meanwhile)", flags[1])); }
+        for (i, n) in names.iter().enumerate() {
+            let off = out["configs"][n]["off_cpu_ms"].as_f64().unwrap_or(0.0);
+            let work = out["configs"][n]["work_ms"].as_f64().unwrap_or(0.0);
+            if work > 0.0 && off > 0.1 * work {
+                warnings.push(format!("{n}: the game thread was not running {off:.2} ms of its {work:.2} ms of work a frame (other processes, the game's waits)"));
+            }
+            let _ = i;
+        }
+        // the game's other threads (the driver's, the sound's, the bridge's): the process's cores over the run less the
+        // game thread's (its frames' own CPU time over their time)
+        let mut cpu = cpu;
+        if let (Some(gp), Some(cores)) = (cpu["game_percent"].as_f64(), cpu["cores"].as_f64()) {
+            let (c, w): (f64, f64) = segs.iter().fold((0.0, 0.0), |acc, s| {
+                (acc.0 + s.stats.get("cpu_ms").copied().unwrap_or(0.0), acc.1 + s.stats.get("wall_ms").copied().unwrap_or(0.0))
+            });
+            if w > 0.0 {
+                let main = c / w;
+                cpu["game_thread_cores"] = json!((main * 100.0).round() / 100.0);
+                cpu["game_other_threads_cores"] = json!(((gp / 100.0 * cores - main).max(0.0) * 100.0).round() / 100.0);
+            }
+        }
+        if !gpu_note.is_null() { warnings.push(gpu_note.as_str().unwrap_or("").to_string()); }
+        out["conditions"] = json!({"game_processes": games.len(), "cpu": cpu, "in_front": state["in_front"],
+                                   "frames_present_not_ok": flags[0], "frames_sampled": flags[1], "warnings": warnings});
+        out["names"] = json!(names);
+        out["settings"] = json!({"blocks": blocks, "frames": frames, "settle": settle, "counters": counters, "same": same,
+                                 "a": calls[0].iter().map(|c| json!({"method": c.method, "params": c.params})).collect::<Vec<_>>(),
+                                 "b": calls[1].iter().map(|c| json!({"method": c.method, "params": c.params})).collect::<Vec<_>>()});
+        out["segments"] = json!(segs.iter().map(|s| json!({"config": names[s.config], "block": s.block, "frames": s.frames,
+            "wall_ms": s.stats.get("wall_ms"), "cpu_ms": s.stats.get("cpu_ms")})).collect::<Vec<_>>());
+        Ok(pretty(&out))
     }
 
     /// Run a program on the game's own script machine (the mission scripts' language, compiled and run by the game's

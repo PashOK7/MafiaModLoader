@@ -222,6 +222,22 @@ def main():
         check('restore with nothing asked: the list (none here)', ok and '"points": []' in text, text)
         ok, text = c.tool('restore', {'save': 'smoke'})
         check('restore save with no game: refused, saying so', not ok and 'not a known build' in text, text)
+        # bench: A against itself on the stand-in game's frames (no device: no counters, no GPU time, said so)
+        ok, text = c.tool('bench', {'blocks': 2, 'frames': 30, 'settle': 5, 'counters': False})
+        r = json.loads(text) if ok else {}
+        d = r.get('difference', {}).get('wall_ms', {})
+        check('bench A/A: each configuration\'s frames, B less A with its interval, 8 segments of 30 frames',
+              ok and r.get('names') == ['A', "A'"] and 'ci95' in d and d.get('blocks') == 2 and len(r.get('segments', [])) == 8
+              and all(s['frames'] == 30 for s in r['segments']), text[:600])
+        check('bench: the run\'s conditions (the machine\'s load, the games), no GPU time said so',
+              ok and 'machine_busy_percent' in r['conditions']['cpu'] and any('no GPU time' in w for w in r['conditions']['warnings']), text[:600])
+        ok, text = c.tool('bench', {'blocks': 2, 'frames': 30, 'settle': 5})
+        check('bench with the counters and no device: refused, saying why', not ok and 'Direct3D 9' in text, text)
+        ok, text = c.tool('call', {'method': 'state.time', 'params': {'scale': 0.5}})
+        check('state.time: the game\'s time scaled (no game: only kept)', ok and '"scale": 0.5' in text, text)
+        ok, text = c.tool('call', {'method': 'state.time', 'params': {'scale': 9}})
+        check('state.time out of range: refused', not ok and '0..8' in text, text)
+        c.tool('call', {'method': 'state.time', 'params': {'scale': 1}})
         check('the instructions tell of the kit', all(w in c.info.get('instructions', '') for w in ('draw.text', 'config.set', 'new_mod.py')))
         check('the instructions tell of the HUD', all(w in c.info.get('instructions', '') for w in ('hud.marker', 'hud.console', 'draw.picture')))
         two_games(c)

@@ -38,6 +38,10 @@ pub struct Module {
     pub names10: Vec<Name>,
     /// 1.0's functions paired with their 1.2 twins (knowledge/<module>/twins_10.csv), (1.0, 1.2) by 1.0 address
     pub twins10: Vec<(u32, u32)>,
+    /// Every function's (start, size) as the Ghidra projects have them (knowledge/<module>/bounds.csv, bounds_10.csv:
+    /// `ghidra_cli.py bounds`), by start: an address is named only by the function that holds it
+    pub bounds: Vec<(u32, u32)>,
+    pub bounds10: Vec<(u32, u32)>,
     pub callers: HashMap<u32, Vec<u32>>,
     pub callees: HashMap<u32, Vec<u32>>,
 }
@@ -119,7 +123,18 @@ fn load_module(dir: &PathBuf, name: &'static str, base: u32, source: &'static st
         }
     }
     twins10.sort();
-    Ok(Module { name, base, source, funcs, names, names10, twins10, callers, callees })
+    let bounds_of = |file: &str| {
+        let mut v = vec![];
+        if let Ok(mut rd) = csv::Reader::from_path(d.join(file)) {
+            for r in rd.records().flatten() {
+                if let (Some(s), Some(n)) = (hex(&r[0]), hex(&r[1])) { v.push((s, n)); }
+            }
+        }
+        v.sort();
+        v
+    };
+    let (bounds, bounds10) = (bounds_of("bounds.csv"), bounds_of("bounds_10.csv"));
+    Ok(Module { name, base, source, funcs, names, names10, twins10, bounds, bounds10, callers, callees })
 }
 
 pub fn get() -> Result<&'static Kb, String> {
@@ -138,6 +153,12 @@ pub fn get() -> Result<&'static Kb, String> {
 }
 
 impl Module {
+    /// The start of the function holding `addr` by `bounds` (its start and size), when one does.
+    pub fn bounded(bounds: &[(u32, u32)], addr: u32) -> Option<u32> {
+        let i = bounds.partition_point(|b| b.0 <= addr);
+        let (s, n) = *bounds.get(i.checked_sub(1)?)?;
+        (addr < s + n.max(1)).then_some(s)
+    }
     /// The function holding an address of this module's image (its decompile's base).
     pub fn containing(&self, addr: u32) -> Option<&Func> {
         let i = self.funcs.partition_point(|f| f.addr <= addr);
@@ -339,6 +360,20 @@ fn name_for(kb: &Kb, module: &str, addr: u32) -> Option<String> {
 /// A 1.0 address's name: 1.0's own (names_10.csv) of the function starting nearest below when it is nearer than the
 /// start of the nearest twin (or an exact label of its own), else the 1.2 twin's name with the offset kept inside it.
 fn name_10(m: &Module, twins10: &[(u32, u32)], addr: u32) -> Option<String> {
+    // with the 1.0 project's functions known: the name of the function holding the address, else none (a name below
+    // it belongs to another function)
+    if !m.bounds10.is_empty() {
+        if let Some(n) = m.names10.iter().find(|n| n.addr == addr && n.kind != "function") {
+            return Some(format!(" ({}+0x0, 1.0)", n.name));   // (a label of ours exactly there)
+        }
+        let start = Module::bounded(&m.bounds10, addr)?;
+        if let Some(n) = m.names10.iter().find(|n| n.addr == start && n.kind == "function") {
+            return Some(format!(" ({}+0x{:X}, 1.0)", n.name, addr - start));
+        }
+        let t = twins10.binary_search_by_key(&start, |t| t.0).ok().map(|i| twins10[i])?;
+        let f = m.at(t.1)?;
+        return m.best_name(f).map(|n| format!(" ({}+0x{:X}, 1.0; 1.2 twin {:08X})", n, addr - start, t.1));
+    }
     let own = {
         let i = m.names10.partition_point(|n| n.addr <= addr);
         (i > 0).then(|| &m.names10[i - 1]).filter(|n| n.addr == addr || (n.kind == "function" && addr - n.addr < 0x10000))
@@ -378,6 +413,38 @@ pub fn annotate_tap(text: &str) -> String {
     }).collect::<Vec<_>>().join("\n")
 }
 
+/// Where the function holding `off` in a game module starts (an offset in the module, the running build's): 1.2's
+/// from its functions; 1.0's the nearest start below of its own named functions and its twins'.
+pub fn function_start(module: &str, off: u32) -> Option<u32> {
+    let kb = get().ok()?;
+    let m = kb.modules.iter().find(|m| m.name == module)?;
+    let addr = m.base + off;
+    let start = if crate::game::current_build() != "1.0" {
+        if m.bounds.is_empty() { m.containing(addr)?.addr } else { Module::bounded(&m.bounds, addr)? }
+    } else if !m.bounds10.is_empty() {
+        Module::bounded(&m.bounds10, addr)?
+    } else {
+        let own = { let i = m.names10.partition_point(|n| n.addr <= addr); m.names10[..i].iter().rev().find(|n| n.kind == "function").map(|n| n.addr) };
+        let twin = { let i = m.twins10.partition_point(|t| t.0 <= addr); (i > 0).then(|| m.twins10[i - 1].0) };
+        own.into_iter().chain(twin).max()?
+    };
+    (addr - start < 0x10000).then(|| start - m.base)
+}
+
+/// The function holding `off` in a game module ("game.exe", "ls3df.dll"), by its name alone (the build's: 1.0's
+/// through its own names or its twin's), for adding samples up by function.
+pub fn function_key(module: &str, off: u32) -> Option<String> {
+    let kb = get().ok()?;
+    let base = kb.modules.iter().find(|m| m.name == module)?.base;
+    match name_for(kb, module, base + off) {
+        Some(s) => {
+            let s = s.trim().trim_start_matches('(').trim_end_matches(')');
+            Some(s.split("+0x").next()?.to_string())
+        }
+        None => function_start(module, off).map(|s| format!("FUN_{:08X}", base + s)),
+    }
+}
+
 /// "Game.exe+0x7AD00" and "LS3DF.dll+0x5AC2E" in a text get the function's name after them, when known.
 pub fn annotate(text: &str) -> String {
     let Ok(kb) = get() else { return text.to_string() };
@@ -408,7 +475,7 @@ mod tests {
         let m = Module {
             name: "game.exe", base: 0x400000, source: "", funcs: vec![func(0x500000, "C_x::A"), func(0x500100, "C_x::B")],
             names: vec![], names10: vec![name(0x600050, "function", "C_y::Own"), name(0x600400, "label", "aSite")],
-            twins10: vec![], callers: HashMap::new(), callees: HashMap::new(),
+            twins10: vec![], bounds: vec![], bounds10: vec![], callers: HashMap::new(), callees: HashMap::new(),
         };
         let twins = [(0x600000, 0x500000), (0x600300, 0x500100)];
         // inside the twin, before the own name: the twin's
@@ -421,5 +488,22 @@ mod tests {
         assert_eq!(name_10(&m, &twins, 0x600400).as_deref(), Some(" (aSite+0x0, 1.0)"));
         // LS3DF (no twins), no own name: none
         assert_eq!(name_10(&m, &[], 0x400000), None);
+    }
+
+    #[test]
+    fn with_the_bounds_a_1_0_address_is_named_only_by_the_function_holding_it() {
+        let m = Module {
+            name: "game.exe", base: 0x400000, source: "", funcs: vec![func(0x500000, "C_x::A")],
+            names: vec![], names10: vec![name(0x600050, "function", "C_y::Own")],
+            twins10: vec![], bounds: vec![], bounds10: vec![(0x600000, 0x40), (0x600050, 0x20), (0x600100, 0x80)],
+            callers: HashMap::new(), callees: HashMap::new(),
+        };
+        let twins = [(0x600000, 0x500000)];
+        assert_eq!(name_10(&m, &twins, 0x600010).as_deref(), Some(" (C_x::A+0x10, 1.0; 1.2 twin 00500000)"));
+        assert_eq!(name_10(&m, &twins, 0x600060).as_deref(), Some(" (C_y::Own+0x10, 1.0)"));
+        // a function of no name past the own name (the old rule gave it C_y::Own+0xC0): none
+        assert_eq!(name_10(&m, &twins, 0x600110), None);
+        // between functions: none
+        assert_eq!(name_10(&m, &twins, 0x600045), None);
     }
 }

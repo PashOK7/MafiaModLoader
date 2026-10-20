@@ -406,6 +406,38 @@ NOT_CALLED = {'mods.rescan', 'mod.reload', 'mod.load', 'mod.unload', 'gfx.reset'
               'input.release', 'draw.clear', 'mem.write', 'geom.show', 'camera.release'}
 
 
+def frames_tests(b):
+    # each frame's record (the harness's stand-in Present blocks 1 ms a frame): a label after its settling frames
+    r = b.call('prof.mark', {'label': 'A', 'settle': 5})
+    check('prof.mark: the label from a frame after its settling ones', r['ok'] and r['result']['from_seq'] == r['result']['seq'] + 5, r)
+    seq = r['result']['seq'] if r['ok'] else 0
+    time.sleep(1.0)
+    r = b.call('prof.frames', {'since': seq - 1})
+    res = r.get('result') or {}
+    f = res.get('frames') or {}
+    labels = res.get('labels') or []
+    a = labels.index('A') if 'A' in labels else -1
+    seqs, lab, flags = f.get('seq', []), f.get('label', []), f.get('flags', [])
+    settling = [s for s, fl in zip(seqs, flags) if fl & 1]
+    check('prof.frames: the 5 settling frames flagged, the rest labelled A, in order',
+          r['ok'] and seqs[:1] == [seq] and settling == list(range(seq, seq + 5))
+          and all(l == a for s, l in zip(seqs, lab) if s >= seq + 5) and len(seqs) > 20, {k: f.get(k) for k in ('seq', 'label', 'flags')})
+    present = [x for x in f.get('present_ms', []) if x is not None]
+    wall = [x for x in f.get('wall_ms', []) if x is not None]
+    cpu = [x for x in f.get('cpu_ms', []) if x is not None]
+    check('prof.frames: each frame its time, the time Present blocked (1 ms), the game thread\'s CPU time below the frame\'s',
+          present and min(present) >= 0.9 and wall and min(wall) > min(present) and cpu and all(c < w for c, w in zip(f['cpu_ms'], f['wall_ms']) if c is not None)
+          and res.get('tsc_per_ms', 0) > 100000 and 'd3d' not in f, {k: f.get(k) for k in ('wall_ms', 'present_ms', 'cpu_ms')})
+    r = b.call('prof.frames', {'since': res.get('next', 0)})
+    check('prof.frames since the last one read: only the newer ones', r['ok'] and all(s > res.get('next', 0) for s in r['result']['frames']['seq']), r)
+    b.call('prof.mark', {'label': ''})
+    r = b.call('prof.counters', {'on': True})
+    check('prof.counters with no game: refused, saying why', not r['ok'] and 'Direct3D 9' in str(r), r)
+    r = b.call('prof.state')
+    check('prof.state: the frame\'s record\'s state (no label, not counting, the GPU off)',
+          r['ok'] and r['result']['label'] == '' and r['result']['counters'] is False and r['result']['gpu'] != 'measured', r)
+
+
 def methods_tests(b):
     gen = subprocess.run([sys.executable, os.path.join(ROOT, 'tools', 'gen_methods.py'), '--check'], capture_output=True, text=True)
     check('host/methods.inc is what docs/PROTOCOL.md gives (tools/gen_methods.py --check)', gen.returncode == 0, gen.stdout)
@@ -1488,6 +1520,7 @@ def main():
         check('prof.sample: the game thread sampled (samples, modules, phases)',
               r['ok'] and res.get('done') and res.get('samples', 0) > 100 and res['by_module']   # (the harness's thread sleeps between frames: ntdll)
               and 'game' in res['phases'], {k: res.get(k) for k in ('done', 'samples', 'by_module')})
+        frames_tests(b)
         kit_tests(b)
         native_tests(b)
         # people with no game: none, refused; the bridge says so

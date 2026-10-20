@@ -1671,15 +1671,51 @@ if (MML_HAS(H, frame_stats) && H->frame_stats(M, &fs) && fs.p95_ms > 11.1f)
 - `call prof.state`: the frame's average, median, 95th percentile and worst (the last 600 frames), each mod's time
   a frame by site with its worst frame and its calls a frame, the hitches (a frame 2.5 times the median and 8 ms
   longer: what took its time); `prof.reset` starts them over.
-- **The game thread sampled** (`prof.sample {"seconds"}`, then `{"id"}`; MCP: `profile {seconds}`, which waits and
-  names the game's functions from the knowledge base): every half millisecond its address, its phase (the game's
-  own work, LS3D drawing the frame, the scene views, the graphics bridge) and the mod whose call it is in; by
-  module, by mod, by phase, the hot spots, and for samples in Direct3D or the driver the game's code that called
-  them. In the 1.2 lab, the city's freeride with `river_water`: the views 41 % of the game thread, the frame's
-  drawing 26 %, LS3D's visibility recursion (`I3D_frame::SetVisibleRecMainPass`) the hottest function in both.
+- **The game thread sampled** (`prof.sample {"seconds", "interval_ms"}`, then `{"id"}`; MCP: `profile {seconds}`,
+  which waits and makes the stacks functions): every millisecond (a timer: no core kept busy; down to 0.25 ms by a
+  wait on the clock) its address, its phase (the game's own work, LS3D drawing the frame, the scene views, the
+  graphics bridge), the mod whose call it is in, and the return addresses into the game's, the loader's and the
+  mods' code on its stack (the top 16 KB, copied while it is stopped: `stopped_percent`, about 1.5 %, is the
+  measure's own cost). `profile`'s `functions`: each function's `self` (the thread in it), `calls_out` (in Direct3D,
+  the driver or the system, called by it: a draw's or a lock's cost) and `total` (on the stack), the game's named by
+  the knowledge base (1.0's only by the function that holds the address: `knowledge/<module>/bounds_10.csv`), the
+  loader's and the mods' by their PDBs. A stack holds stale return addresses too (left in a frame's unwritten
+  locals); they are told apart: the system's and the loader's frames are walked by their frame pointers (the loader
+  is built with /Oy-) up to the first frame of the game's, and above it a return address is kept only where its
+  call's target (a direct call, or one through a pointer at a fixed place: an import, a hook's original) is the
+  function of the frame below; a call through a vtable cannot be checked and is kept (`stale_left_out_percent`).
 - What the mods hook themselves (a hook's detour inside the game's function) is the game's time in these
   measures, not the mod's: it shows in the sampler under the mod's DLL.
 - `river_water.status` shows the frame's numbers as the mod sees them.
+
+#### Each frame's record, and two configurations compared
+
+- **The frame's anatomy** (`prof.frames {since}`): a frame is from one return of the game's Present to the next;
+  each has its time (`wall_ms`), the time Present blocked (`present_ms`: the GPU or the display ahead of the game),
+  the game thread's own CPU time from its cycles (`cpu_ms`: what it lacks of the time outside Present it was not
+  running, preempted by other processes or waiting), and the GPU's span between the frame's start and its Present
+  (`gpu_ms`, timestamp queries read a few frames later). A frame is CPU-bound when Present hardly blocks and
+  `cpu_ms` fills it.
+- **The device's calls** (`prof.counters {on}`): every call of the game's Direct3D 9 counted and timed a frame by
+  kind (draws, render states, textures, transforms, locks, gets...) and by caller (`game`: its Direct3D 8 through
+  the wrapper; `host`: the loader), the time in the driver under the draws, the draws by pipeline (fixed, shaders)
+  and the switches between them; and the loader's own costly sites (`hot_ms`: people's skinning, its `.game` share
+  LS3D's own function). Their cost, measured: some 35 ns a call, 2 % of a 2.8 ms frame (off by default).
+- **A comparison** (MCP `bench {a, b}`: each a list of calls that make the configuration, e.g.
+  `[{"method": "skin.gpu", "params": {"on": true}}]`): the configurations take turns in one run, in blocks ABBA
+  then BAAB (a drift of the machine or the scene falls on both alike), segments of `frames` frames (100) after
+  `settle` let pass (30), each segment's median; B less A is the mean over the blocks (10) with its 95 % interval,
+  `noise` the spread of one configuration measured twice in a block. Without `b`, A against itself: the check of
+  the measure (no difference should be found; a 95 % interval finds one in about one figure of twenty by chance).
+  Measured in the labs: 1.2's freeride, 2.8 ms frames: ±0.02 ms (0.6 %) with the machine quiet; ±0.07 ms when other
+  processes kept 12 to 17 % of it busy. The run's `conditions` name what disturbs it: other games, the machine's
+  other load, frames whose Present failed (an occluded window), the sampler meanwhile.
+- **A still world** (`call state.time {"scale": 0}`): the step LS3D's frame limiter gives every system of the game,
+  scaled; a frame whose step is 0 does not tick the mission at all, as the game's pause (a car's physics takes a
+  step of 0 as 1 ms: the traffic would roll on). Every frame then draws the same scene: what the drawing costs, free
+  of what moves (people's skinning does not run: compare it with the time going). Slower or faster: 0.25, 2.
+- `tools/mcp_call.py <tool> '<json>'` calls a tool of the MCP server just built, from a terminal (a session keeps
+  the server it started with).
 
 ### A heavy mod: its own libraries, its threads, a clean unload
 

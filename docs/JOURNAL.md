@@ -2947,3 +2947,46 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   names_10.csv all agree. `sync` run on a copy of both projects (not the shared ones): 1.0's LS3DF 1990 named, 1535
   prototypes; 1.2's 1674 named; a second sync changes nothing. The shared projects get them after a merge: `python
   tools/ghidra_cli.py sync` and `--build 1.0 sync`.
+
+## 2026-10-20: measuring without guessing: each frame's record, the device's calls, comparisons, a still world
+
+- **Asked** (the owner, before item 29 and a GPU skinning that costs more than it saves): the tools for measuring
+  conveniently and without errors, the missing ones made.
+- **Made**: each frame's record (prof.cpp, `prof.frames`): a frame from one return of the game's Present to the
+  next, its time, Present's blocking, the game thread's own CPU time from its cycles, the GPU's span (timestamp
+  queries, host/d3dstats.cpp); `prof.counters`: every call of the game's Direct3D 9 counted and timed by kind and by
+  caller (the game, the loader: an outer link kept outermost in the hook chains, hooks.cpp HookAddOuter, sees the
+  caller's own return address), the driver's time under the draws (an inner link kept innermost), the draws by
+  pipeline and the switches between them, the loader's skinning hooks timed (`hot_ms`); `prof.mark` labels frames;
+  MCP `bench {a, b}`: two configurations taking turns in ABBA/BAAB blocks, medians, B less A with a 95 % interval
+  and the noise of one configuration measured twice, the run's conditions (other games, the machine's load, frames
+  not presented); `state.time {scale}`: the game's step scaled, 0 a still world; `tools/mcp_call.py` (a tool of the
+  server just built, from a terminal).
+- **The sampler made right** (prof.cpp, mcp/src/stacks.rs, syms.rs): a timer between samples (no core kept busy;
+  1 ms is the least the timer gives), the top of the stack copied while stopped (`stopped_percent` 1.3 to 1.7 %),
+  the return addresses on it with their direct calls' targets, `profile`'s functions self, calls out and total. The
+  first try counted every return address on the stack: `std::vector::_Tidy` "on 72 % of the stacks", a stale address
+  in a frame's unwritten locals. Now the system's and the loader's frames are walked by their frame pointers (the
+  loader built /Oy-) up to the game's first frame, and above it a return address is kept only where its call leads
+  to the frame below (calls through a pointer at a fixed place resolved too). The loader's `Camera` seemed to spend
+  14 % of the frame in Direct3D: a stale address in d3d9's frames, gone with the walk. The loader's and mods'
+  functions named from their PDBs (the `pdb` crate).
+- **Three faults of the tools found and fixed** on the way: 1.0's addresses were named by the nearest name below
+  within 64 KB (kb.rs name_10: `I3D_projector::ProcessRecList` for 1.0's main loop): the Ghidra projects' function
+  bounds are now in `knowledge/<module>/bounds.csv` and `bounds_10.csv` (`ghidra_cli.py bounds`), and an address is
+  named only by the function that holds it; MCP's work moved to `spawn_blocking` lost the call's `game` (a task-local:
+  1.0's samples named as 1.2's): `game::with_game_sync`; the frame's record first read the process's cycles each
+  frame (QueryProcessCycleTime walks every thread: 2 % of a 2.8 ms frame): dropped, `bench` takes the process's
+  CPU over the run.
+- **A still world, twice**: the first `state.time 0` only gave every system a step of 0; the owner saw the traffic
+  roll on. C_Vehicle::Tick takes 0 ms as 1 (knowledge/notes/vehicle_physics.md): at 250 frames a second the cars
+  went at a quarter of their speed (6 cars of the traffic found through `C_driver::Tick`'s `tap`: 4 to 14 m in 2 s).
+  Now a frame whose step comes out 0 does not tick the mission at all (the game's caller reads no result, as in its
+  pause): the same cars 0.0000 m in 2 s, and 4 to 39 m with the time back, in 1.2 and 1.0.
+- **Seen**, both labs: `bench` A against itself finds nothing (1.2: +0.007 ± 0.018 ms on 2.8 ms frames, the machine
+  quiet; 1.0: -0.02 ± 0.08 ms on 5 ms frames, 11 % of the machine busy elsewhere); the counters' own cost +0.05 ms a
+  frame (some 35 ns a call); a still world's frame 2.09 ms against 2.8 with the mission ticking. The shares the
+  sampler gives: 1.2's freeride, LS3D's visibility (the portals' walk, `SetVisibleRecMainPass` 14 % self), the tram
+  (`C_railway::Update` 15 %), Present 15 %; 1.0's portal culling and its vertex buffers' Lock
+  14 %. The loader's own `EnsureCrashFilter` (SetUnhandledExceptionFilter every frame) 1.2 to 2.2 % of the frame:
+  ROADMAP Known gaps.

@@ -630,7 +630,13 @@ GpuLod *GpuOfLod(void *mesh, int lod) {
     return it->second.gpu[lod]->ok ? it->second.gpu[lod].get() : nullptr;
 }
 
-void __fastcall hkUpdateLod(void *mesh, void *edx, int lod) {
+// LS3D's own functions called from the hooks, timed for the frame's record (ProfHotScope: no __try beside it)
+void LodGame(void *mesh, void *edx, int lod) {
+    ProfHotScope t(kHotSkinLodGame);
+    oUpdateLod(mesh, edx, lod);
+}
+
+void UpdateLodHooked(void *mesh, void *edx, int lod) {
     g_calls++;
     Vis *v = nullptr;
     bool instance = true;
@@ -642,15 +648,15 @@ void __fastcall hkUpdateLod(void *mesh, void *edx, int lod) {
         v = nullptr;
     }
     // (an instance's PoseLod calls its mesh's through the vtable: here again)
-    if (!v) { oUpdateLod(mesh, edx, lod); return; }
+    if (!v) { LodGame(mesh, edx, lod); return; }
     const bool gpu = GpuWanted() && g_gpuWhy.empty();
-    if (!gpu && !HasSkin(*v)) { oUpdateLod(mesh, edx, lod); return; }
+    if (!gpu && !HasSkin(*v)) { LodGame(mesh, edx, lod); return; }
     double t0 = NowMs();
     bool done = false, onGpu = false;
     __try {
         void *rec = lod >= 0 && lod < kMaxLods ? F<void *>(mesh, kSmLods + 4 * lod) : nullptr;
         // (the first time LS3D binds the joints and makes the cache: its own PoseLod does it)
-        if (rec && (!F<void *>(mesh, kSmBones) || !F<void *>(rec, kLodCache))) oUpdateLod(mesh, edx, lod);
+        if (rec && (!F<void *>(mesh, kSmBones) || !F<void *>(rec, kLodCache))) LodGame(mesh, edx, lod);
         if (gpu) done = onGpu = GpuUpdateLod(mesh, *v, lod);
         if (!done && HasSkin(*v)) done = SkinLod(mesh, *v, lod);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
@@ -659,21 +665,29 @@ void __fastcall hkUpdateLod(void *mesh, void *edx, int lod) {
     }
     if (!done) {
         if (gpu) g_gpuFallback++;
-        oUpdateLod(mesh, edx, lod);
+        LodGame(mesh, edx, lod);
         return;
     }
     v->skinned++;
     if (onGpu) g_gpuSkins++, g_gpuMs += NowMs() - t0;
     else g_ours++, g_ms += NowMs() - t0;
 }
+void __fastcall hkUpdateLod(void *mesh, void *edx, int lod) {
+    ProfHotScope t(kHotSkinLod);
+    UpdateLodHooked(mesh, edx, lod);
+}
 
 // The rigid vertices' positions into the drawn buffer: from the cache for a mesh whose skin moves them too; none for a
 // LOD the GPU draws (its drawn buffer is not drawn).
-void *__fastcall hkVbPos0(void *mesh, void *edx, uint8_t *dest, int stride, int lod) {
+void *VbPos0Game(void *mesh, void *edx, uint8_t *dest, int stride, int lod) {
+    ProfHotScope t(kHotSkinCopyGame);
+    return oVbPos0(mesh, edx, dest, stride, lod);
+}
+void *VbPos0Hooked(void *mesh, void *edx, uint8_t *dest, int stride, int lod) {
     bool gpu = false;
     __try { gpu = !g_vis.empty() && GpuOfLod(mesh, lod); } __except (EXCEPTION_EXECUTE_HANDLER) { g_faults++; }
     if (gpu) return nullptr;
-    void *r = oVbPos0(mesh, edx, dest, stride, lod);
+    void *r = VbPos0Game(mesh, edx, dest, stride, lod);
     __try {
         void *m = mesh;
         for (int i = 0; i < 8 && (F<uint32_t>(m, kSmFlags) & kSmInstance); i++) m = F<void *>(m, 0x08);
@@ -696,14 +710,22 @@ void *__fastcall hkVbPos0(void *mesh, void *edx, uint8_t *dest, int stride, int 
     }
     return r;
 }
+void *__fastcall hkVbPos0(void *mesh, void *edx, uint8_t *dest, int stride, int lod) {
+    ProfHotScope t(kHotSkinCopy);
+    return VbPos0Hooked(mesh, edx, dest, stride, lod);
+}
 
 // The skinned vertices' positions into the drawn buffer (CopySkinnedPositions: motion.cpp keeps them too): none for a LOD the
 // GPU draws.
 VbPosFn oVbPos;
+bool GpuDrawsLod(void *mesh, int lod) {
+    __try { return !g_vis.empty() && GpuOfLod(mesh, lod); } __except (EXCEPTION_EXECUTE_HANDLER) { g_faults++; return false; }
+}
 void *__fastcall hkVbPos(void *mesh, void *edx, uint8_t *dest, int stride, int lod) {
-    bool gpu = false;
-    __try { gpu = !g_vis.empty() && GpuOfLod(mesh, lod); } __except (EXCEPTION_EXECUTE_HANDLER) { g_faults++; }
-    return gpu ? nullptr : oVbPos(mesh, edx, dest, stride, lod);
+    ProfHotScope t(kHotSkinCopy);
+    if (GpuDrawsLod(mesh, lod)) return nullptr;
+    ProfHotScope g(kHotSkinCopyGame);
+    return oVbPos(mesh, edx, dest, stride, lod);
 }
 
 // LightVertices for a LOD the GPU draws: LS3D's own choice of the lights, run on one vertex of our own; what it chose
@@ -734,8 +756,13 @@ void CaptureLights(GpuLod &g) {
     }
     g.lit = true;
 }
-uint32_t __fastcall hkLighting(void *dest, int destStride, void *level, void *posNorm, int stride, void *visual, void *invWorld,
-                               uint32_t mask, uint32_t changed, void *lodRec) {
+uint32_t LightingGame(void *dest, int destStride, void *level, void *posNorm, int stride, void *visual, void *invWorld,
+                      uint32_t mask, uint32_t changed, void *lodRec) {
+    ProfHotScope t(kHotSkinLightGame);
+    return oLighting(dest, destStride, level, posNorm, stride, visual, invWorld, mask, changed, lodRec);
+}
+uint32_t LightingHooked(void *dest, int destStride, void *level, void *posNorm, int stride, void *visual, void *invWorld,
+                        uint32_t mask, uint32_t changed, void *lodRec) {
     GpuLod *g = nullptr;
     int lod = -1;
     __try {
@@ -746,7 +773,7 @@ uint32_t __fastcall hkLighting(void *dest, int destStride, void *level, void *po
         g_faults++;
         g = nullptr;
     }
-    if (!g) return oLighting(dest, destStride, level, posNorm, stride, visual, invWorld, mask, changed, lodRec);
+    if (!g) return LightingGame(dest, destStride, level, posNorm, stride, visual, invWorld, mask, changed, lodRec);
     // one vertex: a copy of the LOD's level with a count of 1, a vertex at the origin with no normal
     double t0 = NowMs();
     uint8_t fake[0x80];
@@ -756,13 +783,18 @@ uint32_t __fastcall hkLighting(void *dest, int destStride, void *level, void *po
     __try {
         memcpy(fake, level, sizeof fake);
         *reinterpret_cast<uint32_t *>(fake + kLevelVerts) = 1;
-        r = oLighting(color, 4, fake, pn, 0x18, visual, invWorld, mask, changed, lodRec);
+        r = LightingGame(color, 4, fake, pn, 0x18, visual, invWorld, mask, changed, lodRec);
         if (color[0] != 0xA5A5A5A5u) CaptureLights(*g), g_gpuLights++;   // (lit again: else what it chose before stands)
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         g_faults++;
     }
     g_gpuMs += NowMs() - t0;
     return r;
+}
+uint32_t __fastcall hkLighting(void *dest, int destStride, void *level, void *posNorm, int stride, void *visual, void *invWorld,
+                               uint32_t mask, uint32_t changed, void *lodRec) {
+    ProfHotScope t(kHotSkinLight);
+    return LightingHooked(dest, destStride, level, posNorm, stride, visual, invWorld, mask, changed, lodRec);
 }
 
 bool g_hookTried, g_hooked;

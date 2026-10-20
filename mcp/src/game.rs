@@ -41,6 +41,12 @@ pub async fn with_game<F: std::future::Future>(dir: Option<PathBuf>, f: F) -> F:
     }
 }
 
+/// Runs `f` for the game in `dir` on this thread: work moved off the call's task (spawn_blocking) does not see its
+/// `game` otherwise, and would read the default game's build, log and files.
+pub fn with_game_sync<R>(dir: PathBuf, f: impl FnOnce() -> R) -> R {
+    GAME.sync_scope(dir, f)
+}
+
 fn config() -> Result<Value, String> {
     let root = repo_root().ok_or("cannot find the repository (set MML_REPO or MML_GAME_DIR)")?;
     let cfg = root.join("mml.config.json");

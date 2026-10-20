@@ -991,6 +991,11 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
     models listed are in Known gaps.)* **Orders for the people made** (A, for test scenes). Walk or drive to a
     place, follow, attack, flee: the AI's own jobs and the mission commands that give them, as `world.*`; the
     scripts' events (`setplayerfireevent`...) to a program of the loader's; people's models listed.
+30. *(Done 2026-10-20: the journal; MODDING "Measuring the frame".)* **Measuring without guessing** (A; the owner,
+    before item 29): each frame's record (Present's blocking, the game thread's CPU, the GPU's span), the device's
+    calls counted by kind and caller with the driver's time under the draws, the sampler's stacks checked frame by
+    frame and made functions (the loader's by its PDB, 1.0's by the projects' function bounds), two configurations
+    compared in one run with an interval (`bench`), a still world (`state.time`).
 
 ## Later
 
@@ -1057,6 +1062,15 @@ merged, sorted by importance):
 
 ## Known gaps
 
+- **Measuring** (item 30, 2026-10-20): (1) the loader's `EnsureCrashFilter` calls SetUnhandledExceptionFilter every
+  frame (it puts its filter back in front): 1.2 to 2.2 % of the frame in the sampler; checking the filter less
+  often, or only when another may have been set, not done. (2) A return address after a call through a vtable is
+  kept unchecked: a stale one there still counts in a function's total. (3) The GPU's span includes its waits for
+  the CPU's commands; a frame's GPU work alone is not measured. (4) The machine's other load moves frames by up to
+  0.3 ms between segments: `bench`'s interval holds it, but a quiet machine narrows it tenfold; the power plan and
+  the CPU's clock are not read. (5) `bounds.csv`, `bounds_10.csv` are the Ghidra projects': `ghidra_cli.py bounds`
+  again after functions are made there. (6) The sampler's least interval on a timer is 1 ms (Windows' high
+  resolution timer); shorter ones keep a core busy.
 - **People skinned on the GPU** (item 28b, 2026-10-20): (1) it does not speed up the plain game: each person's draw
   switches the device from the fixed pipeline to shaders and back (measured with 48 people, about 300 draws: +0.9 ms
   a frame in 1.2, +1.3 ms in 1.0, the CPU's own part down to 0.2 ms); keeping the shaders bound across consecutive

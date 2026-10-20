@@ -15,7 +15,8 @@ namespace host {
 const char *ModIdOf(const MmlMod *mod);   // mods.cpp
 
 namespace {
-struct Link { MmlMod *owner; void *detour; void **original; };
+enum Place { kMiddle, kOuter, kInner };   // kept outermost or innermost, or among the others
+struct Link { MmlMod *owner; void *detour; void **original; Place place = kMiddle; };
 struct Chain {
     uintptr_t target = 0;
     uint8_t *thunk = nullptr;          // jmp dword ptr [&head]
@@ -60,7 +61,8 @@ bool EnsureMinHook(std::string *err) {
 }
 } // namespace
 
-bool HookAdd(MmlMod *owner, uintptr_t target, void *detour, void **original, std::string *err) {
+namespace {
+bool AddLink(MmlMod *owner, uintptr_t target, void *detour, void **original, Place place, std::string *err) {
     std::lock_guard<std::recursive_mutex> lk(g_mx);
     if (!target || !detour || !original) { if (err) *err = "null target, detour or original"; return false; }
     if (!EnsureMinHook(err)) return false;
@@ -94,9 +96,24 @@ bool HookAdd(MmlMod *owner, uintptr_t target, void *detour, void **original, std
     }
     for (const Link &l : c->links)
         if (l.owner == owner && l.detour == detour) { if (err) *err = "already hooked by this owner"; return false; }
-    c->links.insert(c->links.begin(), Link{owner, detour, original});
+    // outermost first, after the links kept outermost (an outer one goes before them all, an inner one after them)
+    size_t at = 0;
+    if (place == kInner) at = c->links.size();
+    else if (place == kMiddle) while (at < c->links.size() && c->links[at].place == kOuter) at++;
+    c->links.insert(c->links.begin() + at, Link{owner, detour, original, place});
     Relink(c);
     return true;
+}
+} // namespace
+
+bool HookAdd(MmlMod *owner, uintptr_t target, void *detour, void **original, std::string *err) {
+    return AddLink(owner, target, detour, original, kMiddle, err);
+}
+bool HookAddOuter(uintptr_t target, void *detour, void **original, std::string *err) {
+    return AddLink(nullptr, target, detour, original, kOuter, err);
+}
+bool HookAddInner(uintptr_t target, void *detour, void **original, std::string *err) {
+    return AddLink(nullptr, target, detour, original, kInner, err);
 }
 
 namespace {

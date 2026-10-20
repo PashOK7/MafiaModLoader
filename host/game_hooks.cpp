@@ -44,11 +44,34 @@ MmlEvent Event(MmlEventType type) {
 }
 
 // LS3DF's frame limiter: the game's main loop calls it once a frame in every state (intro, menus, loading, missions).
+// Its answer, whole milliseconds, is the step every system of the game is given (the mission's tick, the scene's
+// animations, the physics): scaled by state.time (0: the world stands still while it is drawn), the fraction carried
+// to the next frame.
+double g_timeScale = 1, g_timeCarry;
+int g_lastStep, g_lastRealStep;
 int __stdcall hkFrameLimit(void *driver, int a, int b) {
     int r = oFrameLimit(driver, a, b);
+    g_lastRealStep = r;
+    if (g_timeScale != 1) {
+        g_timeCarry += r * g_timeScale;
+        r = static_cast<int>(g_timeCarry);
+        g_timeCarry -= r;
+    }
+    g_lastStep = r;
     Frame();
     return r;
 }
+} // namespace
+void GameTimeScaleSet(double scale) {
+    g_timeScale = scale;
+    g_timeCarry = 0;
+}
+double GameTimeScale(int *step, int *real) {
+    if (step) *step = g_lastStep;
+    if (real) *real = g_lastRealStep;
+    return g_timeScale;
+}
+namespace {
 void SendNamed(MmlEventType type) {
     std::string name = g_missionName;   // (a handler may open a mission)
     MmlEvent ev = Event(type);
@@ -80,6 +103,10 @@ int __fastcall hkMissionOpen(void *self, void *edx, const char *name, int a, uns
     return r;
 }
 int __fastcall hkMissionTick(void *self, void *edx, int ms) {
+    // a step of 0 (state.time below 1: the world held, or a slowed frame's whole millisecond not yet made) is no tick
+    // at all, as in the game's pause: a car's physics takes 0 ms as 1 (C_Vehicle::Tick), so the traffic would roll on
+    // at 1 ms a frame. Its time comes with the next step (the fraction carried). The game's loop reads no result.
+    if (ms == 0 && g_timeScale != 1) return 0;
     int r = oMissionTick(self, edx, ms);
     g_ticks++;
     if (!g_missionLoaded && !g_missionName.empty()) {

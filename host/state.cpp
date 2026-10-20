@@ -188,6 +188,20 @@ void StateModGone(MmlMod *mod) {
 }
 
 bool StateMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok) {
+    if (method == "state.time") {
+        // the game's time scaled: a world held still while drawn (a measure's frames alike), slowed, sped up
+        json p = json::parse(paramsJson.empty() ? "null" : paramsJson, nullptr, false);
+        if (p.is_object() && p.contains("scale")) {
+            double s = p["scale"].is_number() ? p["scale"].get<double>() : -1;
+            if (!(s >= 0 && s <= 8)) { *ok = false; *reply = "state.time: scale 0..8"; return true; }
+            GameTimeScaleSet(s);
+        }
+        int step = 0, real = 0;
+        double s = GameTimeScale(&step, &real);
+        *ok = true;
+        *reply = json({{"scale", s}, {"step_ms", step}, {"real_step_ms", real}}).dump(-1, ' ', false, json::error_handler_t::replace);
+        return true;
+    }
     if (method != "state.money" && method != "human.health" && method != "human.items" && method != "human.ammo" && method != "human.take" &&
         method != "human.invulnerable")
         return false;

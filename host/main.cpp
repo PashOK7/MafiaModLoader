@@ -108,6 +108,14 @@ void Init() {
 
 // For the offline tests (tests/harness): no game frame limiter there, the harness pumps the loader's frames itself.
 extern "C" __declspec(dllexport) void mml_host_pump() { host::Frame(); }
+// ... and stands in for the game's Present (no device there): a frame's record closed after `ms` blocked in it (a
+// wait on the clock: Sleep's grain may be 15.6 ms, which would slow the harness's frames)
+extern "C" __declspec(dllexport) void mml_host_present(unsigned ms) {
+    host::ProfPresentBegin();
+    const double t0 = host::ProfNow();
+    while (host::ProfNow() - t0 < ms) YieldProcessor();
+    host::ProfPresentEnd(0);
+}
 
 BOOL WINAPI DllMain(HINSTANCE, DWORD reason, LPVOID reserved) {
     if (reason == DLL_PROCESS_ATTACH) host::Init();

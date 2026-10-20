@@ -26,7 +26,7 @@ POSITIONAL = {
     'xrefs': ['at'], 'vtable': ['at', 'count'], 'bytes': ['at', 'count'], 'twin': ['at'],
     'imm': ['value'], 'string': ['regex'], 'find': ['what'], 'names': [], 'functions': ['regex'],
     'rename': ['at', 'name'], 'comment': ['at', 'text'], 'proto': ['at', 'proto'], 'make_function': ['at'],
-    'unfunction': ['at'], 'forget': ['at'], 'sync': [], 'orphans': [], 'status': [], 'help': [], 'stop': [],
+    'unfunction': ['at'], 'forget': ['at'], 'sync': [], 'bounds': [], 'orphans': [], 'status': [], 'help': [], 'stop': [],
 }
 OPS_READ = ('decompile', 'asm', 'function', 'callers', 'callees', 'xrefs', 'vtable', 'bytes', 'twin')
 OPS_FIND = ('imm', 'string', 'find', 'names', 'functions')
@@ -739,6 +739,28 @@ class Server:
                 if made == 0:
                     break
             self.imm_index.pop(prog, None)
+        return '\n'.join(out) + '\n'
+
+    def op_bounds(self, a):
+        """Every function's start and size into knowledge/<module>/bounds.csv (1.2) or bounds_10.csv (1.0): where
+        each function of the project is, its names aside (addresses only: committed). The MCP server names an
+        address by the function that holds it (a profile's samples, a crash's stack), never by the name of another
+        function below it."""
+        out = []
+        for prog in (self.game, self.ls3d):
+            module = self.module_of(prog).lower()
+            path = os.path.join(kbn.KB, module, 'bounds.csv' if self.build == '1.2' else 'bounds_10.csv')
+            rows = []
+            for f in prog.getFunctionManager().getFunctions(True):
+                e = f.getEntryPoint()
+                r = f.getBody().getRangeContaining(e)   # (the entry's own range: a function in chunks keeps its first)
+                rows.append((e.getOffset(), r.getLength() if r is not None else 1))
+            with open(path, 'w', encoding='utf-8', newline='') as fh:
+                fh.write('start,size\n')
+                for s, n in rows:
+                    fh.write('%08X,%X\n' % (s, n))
+            out.append('%s %s: %d functions -> knowledge/%s/%s' % (self.build, prog.getName(), len(rows), module,
+                                                                   os.path.basename(path)))
         return '\n'.join(out) + '\n'
 
     def op_status(self, a):

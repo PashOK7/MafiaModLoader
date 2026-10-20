@@ -224,7 +224,10 @@ HRESULT __stdcall PresentHook(void *dev, const RECT *src, const RECT *dst, HWND 
         g_results.push_back({id, err.empty(), MmlDir() + "shots\\" + std::to_string(id) + ".bgra", err, w, h});
         if (g_results.size() > 16) g_results.erase(g_results.begin());
     }
-    return g_present(dev, src, dst, wnd, dirty);
+    ProfPresentBegin();   // (the frame's record: its end, the time Present blocks)
+    HRESULT hr = g_present(dev, src, dst, wnd, dirty);
+    ProfPresentEnd(hr);
+    return hr;
 }
 
 bool EnsureHooked(std::string *err) {

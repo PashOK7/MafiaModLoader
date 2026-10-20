@@ -56,6 +56,56 @@ float g_ring[kRing];
 size_t g_ringN, g_ringAt;
 double g_lastPresent;
 
+// ---- each frame's record (prof.frames): a frame is from one return of the game's Present to the next
+// The time stamp counter is the clock of the costly sites and the device's calls (a few cycles a read); its rate is
+// measured against QueryPerformanceCounter over the first half second and kept up to date after.
+uint64_t g_tsc0;
+double g_tscMs0, g_tscPerMs;
+void TscTrack() {
+    uint64_t t = __rdtsc();
+    double ms = NowMs();
+    if (!g_tsc0) { g_tsc0 = t, g_tscMs0 = ms; return; }
+    if (ms - g_tscMs0 >= 500) g_tscPerMs = static_cast<double>(t - g_tsc0) / (ms - g_tscMs0);
+}
+// The game thread's own cycles (a call into the kernel, about a microsecond: twice a frame). The process's, each frame,
+// cost 2 % of a 2.8 ms frame (QueryProcessCycleTime walks every thread): MCP's `bench` takes the process's over a run.
+uint64_t ThreadCycles() {
+    ULONG64 c = 0;
+    QueryThreadCycleTime(GetCurrentThread(), &c);
+    return c;
+}
+
+enum FrameFlag : uint8_t {
+    kFlagSettling = 1,        // after a mark: the frames let pass before the label's own
+    kFlagPresentNotOk = 2,    // Present did not answer S_OK (occluded: S_PRESENT_OCCLUDED, a lost device...)
+    kFlagCounted = 4,         // the device's calls were counted (prof.counters)
+    kFlagSampled = 8,         // the sampler stopped the game thread meanwhile (prof.sample)
+};
+struct FrameRec {
+    uint32_t seq;
+    uint16_t label;           // g_labels' index (0: none)
+    uint8_t flags;
+    float wallMs, presentMs, presentCpuMs, cpuMs, gpuMs;   // gpuMs NaN until known
+    float hotMs[kHotCount];
+    D3dFrameCounts d3d;
+};
+constexpr size_t kFrames = 4096;
+FrameRec *g_frameRing;        // (allocated at the first frame: 4096 records)
+uint32_t g_seq = 1;           // the frame being made
+double g_frameStartMs, g_presentStartMs;
+uint64_t g_frameThreadC, g_presentStartC;
+float g_presentMs, g_presentCpuMs;
+long g_presentHr;
+std::vector<std::string> g_labels{""};
+uint16_t g_label, g_nextLabel;
+int g_settleLeft;
+std::atomic<bool> g_profHadSample{false};
+FrameRec *RecOf(uint32_t seq) {
+    if (!g_frameRing || !seq || seq >= g_seq || g_seq - seq > kFrames) return nullptr;
+    FrameRec *r = &g_frameRing[seq % kFrames];
+    return r->seq == seq ? r : nullptr;
+}
+
 struct Hitch { double atS, ms, median; json parts; };
 std::vector<Hitch> g_hitches;
 
@@ -90,74 +140,194 @@ const char *EventName(int type) {
 // ---- the sampler
 const char *kPhaseNames[] = {"game", "frame drawing", "scene views", "graphics bridge"};
 constexpr int kPhases = 4;
-struct Sample { uint32_t eip, caller; int16_t mod; uint8_t phase; };
+// A sample: where the game thread was (EIP), the game's code that called the system or driver module it was in
+// (caller), the host's or a mod's code that did (host: the first of theirs above the game's on the stack), and the
+// chain of return addresses into the game's, the host's and the mods' code found on its stack (g_chain[chainAt..]).
+struct Sample { uint32_t eip, caller, host, chainAt; uint16_t chainN; int16_t mod; uint8_t phase; };
 std::vector<Sample> g_samples;
+std::vector<uint32_t> g_chain;
 std::atomic<bool> g_sampling{false};
 int g_sampleId, g_nextSampleId = 1;
 double g_sampleSeconds;
 std::mutex g_reportMx;
 json g_report;                  // the last finished run's (with its id)
 
-struct Mod { uintptr_t base, end; std::string name; bool game; };
+enum ModKind : uint8_t { kModOther, kModGame, kModOurs };   // ours: the loader and the mods (mml\live)
+struct Mod { uintptr_t base, end; std::string name; ModKind kind; };
 std::vector<Mod> g_modules;     // read before a run: no module is looked up while the game thread is stopped
+std::vector<const Mod *> g_codeMods;   // the game's and ours: the return addresses a chain is made of
 
 void ReadModules() {
     g_modules.clear();
+    g_codeMods.clear();
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, GetCurrentProcessId());
     if (snap == INVALID_HANDLE_VALUE) return;
     MODULEENTRY32 me{};
     me.dwSize = sizeof me;
     for (BOOL ok = Module32First(snap, &me); ok; ok = Module32Next(snap, &me)) {
-        std::string n = me.szModule;
-        std::string l = n;
+        std::string n = me.szModule;   // ansi-ok: a module's name for the report (the system's code page)
+        std::string l = n, path = me.szExePath;   // ansi-ok: only searched for "\mml\live\"
         for (char &c : l) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
-        bool game = l == "game.exe" || l == "ls3df.dll";
+        for (char &c : path) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+        ModKind kind = l == "game.exe" || l == "ls3df.dll" ? kModGame
+                     : l == "mafiamodloader.asi" || path.find("\\mml\\live\\") != std::string::npos ? kModOurs : kModOther;
         uintptr_t b = reinterpret_cast<uintptr_t>(me.modBaseAddr);
-        g_modules.push_back({b, b + me.modBaseSize, n, game});
+        g_modules.push_back({b, b + me.modBaseSize, n, kind});
     }
     CloseHandle(snap);
+    for (const Mod &m : g_modules) if (m.kind != kModOther) g_codeMods.push_back(&m);
 }
 const Mod *ModuleAt(uintptr_t a) {
     for (const Mod &m : g_modules) if (a >= m.base && a < m.end) return &m;
     return nullptr;
 }
+const Mod *CodeModAt(uintptr_t a) {
+    for (const Mod *m : g_codeMods) if (a >= m->base && a < m->end) return m;
+    return nullptr;
+}
 
-// A return address: inside a game module, right after a call instruction.
+// A return address: right after a call instruction.
 bool AfterCall(uintptr_t a) {
-    const uint8_t *p = reinterpret_cast<const uint8_t *>(a);
-    return p[-5] == 0xE8 || (p[-6] == 0xFF && (p[-5] & 0x38) == 0x10) || (p[-2] == 0xFF && (p[-1] & 0xF8) == 0xD0) ||
-           (p[-3] == 0xFF && (p[-2] & 0x38) == 0x10);
-}
-uint32_t CallerOf(const CONTEXT &c) {
-    // the first return address into Game.exe / LS3DF.dll on the stack, within 2 KB of its top
-    const uint32_t *sp = reinterpret_cast<const uint32_t *>(static_cast<uintptr_t>(c.Esp));
     __try {
-        for (int i = 0; i < 512; i++) {
-            uint32_t v = sp[i];
-            const Mod *m = ModuleAt(v);
-            if (m && m->game && v - m->base > 0x1000 && AfterCall(v)) return v;
-        }
-    } __except (EXCEPTION_EXECUTE_HANDLER) {}
-    return 0;
+        const uint8_t *p = reinterpret_cast<const uint8_t *>(a);
+        return p[-5] == 0xE8 || (p[-6] == 0xFF && (p[-5] & 0x38) == 0x10) || (p[-2] == 0xFF && (p[-1] & 0xF8) == 0xD0) ||
+               (p[-3] == 0xFF && (p[-2] & 0x38) == 0x10);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
 }
 
-void Run(HANDLE target, double seconds) {
-    double t0 = NowMs();
+// The top of the stack copied while the thread is stopped (16 KB at most, to its base), read after it goes on.
+constexpr size_t kStackCopy = 16384 / 4;
+size_t CopyStack(uint32_t esp, uintptr_t base, uint32_t *out) {
+    if (!esp || esp >= base) return 0;
+    size_t n = std::min<size_t>(kStackCopy, (base - esp) / 4);
+    __try {
+        memcpy(out, reinterpret_cast<const void *>(static_cast<uintptr_t>(esp)), n * 4);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+    return n;
+}
+
+// Where a call before a return address went, when it is a direct one (`call rel32`) or through a pointer at a fixed
+// place (`call [abs]`: an import, a hook's original): its target now, followed through jumps (an import's thunk,
+// MinHook's patch and the host's chain's `jmp [head]`) to the code that runs; 0 for a call through a register or an
+// object (a vtable's). MCP's `profile` keeps a return address only when this target is where the
+// frame below it is (a stale return address, left in a frame's unwritten locals by a call that returned, is not).
+uint32_t CallTarget(uint32_t ret) {
+    __try {
+        const uint8_t *p = reinterpret_cast<const uint8_t *>(static_cast<uintptr_t>(ret));
+        uint32_t t;
+        if (p[-5] == 0xE8) t = ret + *reinterpret_cast<const int32_t *>(p - 4);
+        else if (p[-6] == 0xFF && p[-5] == 0x15) t = **reinterpret_cast<uint32_t *const *>(p - 4);   // call [abs]: an import, a pointer
+        else return 0;
+        for (int hop = 0; hop < 4; hop++) {
+            const uint8_t *q = reinterpret_cast<const uint8_t *>(static_cast<uintptr_t>(t));
+            if (q[0] == 0xE9) t = t + 5 + *reinterpret_cast<const int32_t *>(q + 1);
+            else if (q[0] == 0xFF && q[1] == 0x25) t = **reinterpret_cast<uint32_t *const *>(q + 2);
+            else break;
+        }
+        return t;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+}
+
+// A thread stopped in the system's or the driver's code, or in ours, is walked up by its frame pointers first (Windows'
+// own x86 code keeps them, the loader is built with /Oy-): each frame's return address at [EBP + 4], the next frame at
+// [EBP]. The first return address into the game's code so found is certain (kAnchored in place of its call's target),
+// and the chain goes on from there: what lies in the frames walked over (their locals, stale return addresses among
+// them) is passed. A frame pointer that does not lead up the stack ends the walk (a function of the driver that uses
+// EBP otherwise): the chain is then the stack's whole, from its top.
+constexpr uint32_t kAnchored = 0xFFFFFFFEu;
+size_t AnchorOf(uint32_t eip, uint32_t esp, uint32_t ebp, const uint32_t *stack, size_t n) {
+    const Mod *at = ModuleAt(eip);
+    if (at && at->kind == kModGame) return SIZE_MAX;
+    for (int depth = 0; depth < 64; depth++) {
+        if (ebp < esp || ebp & 3) return SIZE_MAX;
+        size_t i = (ebp - esp) / 4;
+        if (i + 1 >= n) return SIZE_MAX;
+        const uint32_t ret = stack[i + 1], next = stack[i];
+        const Mod *m = ModuleAt(ret);
+        if (m && m->kind == kModGame) return AfterCall(ret) ? i + 1 : SIZE_MAX;
+        if (next <= ebp) return SIZE_MAX;
+        ebp = next;
+    }
+    return SIZE_MAX;
+}
+
+// The chain of a sample: every return address into the game's or our code on the copied stack, top first, each with
+// its call's target (CallTarget): pairs in g_chain.
+constexpr int kChainMax = 48;
+void Analyze(Sample &s, uint32_t esp, uint32_t ebp, const uint32_t *stack, size_t n) {
+    const Mod *at = ModuleAt(s.eip);
+    s.chainAt = static_cast<uint32_t>(g_chain.size());
+    bool gameSeen = false;
+    const size_t anchor = AnchorOf(s.eip, esp, ebp, stack, n);
+    // (walked by its frame pointers: the frames of ours on the way are in the chain, read from the walk itself)
+    if (anchor != SIZE_MAX) {
+        uint32_t e = ebp;
+        while (e >= esp && (e - esp) / 4 + 1 < anchor) {
+            const size_t i = (e - esp) / 4;
+            const uint32_t ret = stack[i + 1];
+            const Mod *m = CodeModAt(ret);
+            if (m && s.chainN < kChainMax) {
+                g_chain.push_back(ret);
+                g_chain.push_back(kAnchored);
+                s.chainN++;
+                if (!s.host && (!at || at->kind == kModOther)) s.host = ret;
+            }
+            e = stack[i];
+        }
+    }
+    for (size_t i = anchor == SIZE_MAX ? 0 : anchor; i < n && s.chainN < kChainMax; i++) {
+        uint32_t v = stack[i];
+        const Mod *m = CodeModAt(v);
+        if (!m || v - m->base <= 0x1000 || !AfterCall(v)) continue;
+        if (s.chainN && g_chain[g_chain.size() - 2] == v) continue;
+        g_chain.push_back(v);
+        g_chain.push_back(i == anchor ? kAnchored : CallTarget(v));
+        s.chainN++;
+        if (m->kind == kModGame) {
+            if (!gameSeen && (!at || at->kind == kModOther)) s.caller = v;
+            gameSeen = true;
+        } else if (!gameSeen && !s.host && (!at || at->kind == kModOther)) {
+            s.host = v;
+        }
+    }
+}
+
+void Run(HANDLE target, uintptr_t stackBase, double seconds, double intervalMs) {
+    // a timer of high resolution between samples (Windows 10 1803 and later; measured: 1 ms is its least), a wait on
+    // the clock for a shorter interval (a core kept busy) or without the timer
+    HANDLE timer = CreateWaitableTimerExW(nullptr, nullptr, 0x2 /*CREATE_WAITABLE_TIMER_HIGH_RESOLUTION*/, TIMER_ALL_ACCESS);
+    std::vector<uint32_t> stack(kStackCopy);
+    double t0 = NowMs(), stoppedMs = 0;
     while (NowMs() - t0 < seconds * 1000 && g_samples.size() < g_samples.capacity()) {
+        double s0 = NowMs();
         if (SuspendThread(target) != static_cast<DWORD>(-1)) {
             CONTEXT c{};
             c.ContextFlags = CONTEXT_CONTROL;
-            if (GetThreadContext(target, &c)) {
-                const Mod *m = ModuleAt(c.Eip);
-                uint32_t caller = (m && m->game) ? 0 : CallerOf(c);
-                g_samples.push_back({c.Eip, caller, static_cast<int16_t>(g_curMod.load()), static_cast<uint8_t>(g_phase.load())});
-            }
+            g_profHadSample = true;
+            bool got = GetThreadContext(target, &c) != 0;
+            size_t n = got ? CopyStack(c.Esp, stackBase, stack.data()) : 0;
+            const int mod = g_curMod.load(), phase = g_phase.load();
             ResumeThread(target);
+            stoppedMs += NowMs() - s0;
+            if (got) {
+                Sample s{c.Eip, 0, 0, 0, 0, static_cast<int16_t>(mod), static_cast<uint8_t>(phase)};
+                Analyze(s, c.Esp, c.Ebp, stack.data(), n);
+                g_samples.push_back(s);
+            }
         }
-        double w0 = NowMs();
-        while (NowMs() - w0 < 0.5) YieldProcessor();
+        LARGE_INTEGER due;
+        due.QuadPart = -static_cast<LONGLONG>(intervalMs * 10000);
+        if (intervalMs >= 1 && timer && SetWaitableTimer(timer, &due, 0, nullptr, nullptr, FALSE)) WaitForSingleObject(timer, 100);
+        else for (double w0 = NowMs(); NowMs() - w0 < intervalMs;) YieldProcessor();
     }
     double took = (NowMs() - t0) / 1000;
+    if (timer) CloseHandle(timer);
     CloseHandle(target);
     // the report (this thread: the game thread is not needed)
     auto at = [](uint32_t a) {
@@ -169,16 +339,38 @@ void Run(HANDLE target, double seconds) {
     };
     size_t n = g_samples.size();
     auto pct = [&](size_t k) { return std::round(1000.0 * k / std::max<size_t>(n, 1)) / 10; };
-    std::map<std::string, size_t> byModule, byMod, byCaller;
+    std::map<std::string, size_t> byModule, byMod, byCaller, byHost;
     std::map<std::pair<uint32_t, int>, size_t> spots;
+    std::map<std::vector<uint32_t>, size_t> chains;   // [where, the chain's addresses...] as indices: samples
+    std::map<uint32_t, uint32_t> index;              // an address: its place in `addresses`
+    json addresses = json::array();
+    auto indexOf = [&](uint32_t a) {
+        auto it = index.find(a);
+        if (it != index.end()) return it->second;
+        uint32_t i = static_cast<uint32_t>(addresses.size());
+        index[a] = i;
+        addresses.push_back(at(a));
+        return i;
+    };
     size_t phases[kPhases] = {};
+    std::vector<uint32_t> key;
     for (const Sample &s : g_samples) {
         const Mod *m = ModuleAt(s.eip);
         byModule[m ? m->name : "?"]++;
         byMod[s.mod >= 0 && s.mod < static_cast<int>(g_names.size()) ? g_names[s.mod] : "(no mod's call)"]++;
         if (s.caller) byCaller[at(s.caller)]++;
+        if (s.host) byHost[at(s.host)]++;
         spots[{s.eip & ~0xFu, s.phase}]++;
         phases[s.phase < kPhases ? s.phase : 0]++;
+        // the samples' stacks, alike ones together: MCP's `profile` makes them functions, each once a sample however
+        // often it is on the stack (recursion)
+        key.assign(1, indexOf(s.eip));
+        for (uint32_t i = 0; i < s.chainN; i++) {
+            const uint32_t target = g_chain[s.chainAt + 2 * i + 1];
+            key.push_back(indexOf(g_chain[s.chainAt + 2 * i]));
+            key.push_back(target == kAnchored ? kAnchored : target ? indexOf(target) : 0xFFFFFFFFu);
+        }
+        chains[key]++;
     }
     auto sorted = [&](const std::map<std::string, size_t> &m, size_t limit) {
         std::vector<std::pair<size_t, std::string>> v;
@@ -188,6 +380,12 @@ void Run(HANDLE target, double seconds) {
         for (size_t i = 0; i < v.size() && i < limit; i++) out.push_back({{"name", v[i].second}, {"percent", pct(v[i].first)}});
         return out;
     };
+    json chainList = json::array();
+    for (auto &c : chains) {
+        json row = json::array({c.second});
+        for (uint32_t x : c.first) row.push_back(x);
+        chainList.push_back(row);
+    }
     json ph = json::object();
     for (int p = 0; p < kPhases; p++) ph[kPhaseNames[p]] = pct(phases[p]);
     std::vector<std::pair<size_t, std::pair<uint32_t, int>>> sv;
@@ -197,14 +395,24 @@ void Run(HANDLE target, double seconds) {
     for (size_t i = 0; i < sv.size() && i < 40; i++)
         top.push_back({{"at", at(sv[i].second.first)}, {"percent", pct(sv[i].first)}, {"phase", kPhaseNames[sv[i].second.second < kPhases ? sv[i].second.second : 0]}});
     json r = {{"id", g_sampleId}, {"done", true}, {"samples", n}, {"seconds", std::round(took * 100) / 100},
+              {"interval_ms", n ? std::round(took * 1000.0 / n * 1000) / 1000 : 0.0},
+              {"stopped_percent", std::round(stoppedMs / (took * 10.0) * 100) / 100},
               {"phases", ph}, {"by_module", sorted(byModule, 20)}, {"by_mod", sorted(byMod, 20)},
-              {"spots", top}, {"callers", sorted(byCaller, 25)},
+              {"spots", top}, {"callers", sorted(byCaller, 25)}, {"host_callers", sorted(byHost, 25)},
+              {"addresses", addresses}, {"chains", chainList},
               {"note", "callers: for samples in a module not the game's (Direct3D, the driver, the system), the first return "
-                       "address into Game.exe or LS3DF.dll on the stack"}};
+                       "address into Game.exe or LS3DF.dll on the stack; host_callers: the loader's or a mod's code above it "
+                       "(the host's own calls into Direct3D); chains: [samples, where the thread was, then for each return address "
+                       "into the game's and our code on its stack, top first: it and its direct call's target (4294967295: "
+                       "an indirect call; 4294967294: found by the frame pointers, certain)] (`addresses`' indices): MCP's `profile` makes them functions, self and total; "
+                       "stopped_percent: the game thread's time the sampler held it"}};
     {
         std::lock_guard<std::mutex> lk(g_reportMx);
         g_report = r;
     }
+    g_samples.clear();
+    g_chain.clear();
+    g_chain.shrink_to_fit();
     g_sampling = false;
 }
 
@@ -241,9 +449,74 @@ void ProfPhase(int phase) {   // 0 restores the phase before the matching call w
     }
 }
 
-// (render.cpp) a frame is complete: Present.
-void ProfFrame() {
+bool g_profHotOn;
+uint64_t g_profHotTicks[kHotCount];
+uint32_t g_profHotCalls[kHotCount];
+
+uint32_t ProfFrameSeq() { return g_seq; }
+double ProfTscPerMs() { return g_tscPerMs; }
+void ProfGpuOf(uint32_t seq, float ms) {
+    if (FrameRec *r = RecOf(seq)) r->gpuMs = ms;
+}
+
+namespace {
+void FrameTimes(double now);
+
+// The frame's record closed (the game's Present has returned), the next one begun.
+void CloseFrame(double now, uint64_t tc) {
+    TscTrack();
+    if (!g_frameRing) g_frameRing = new FrameRec[kFrames]();
+    if (g_frameStartMs > 0) {
+        FrameRec &r = g_frameRing[g_seq % kFrames];
+        r = FrameRec{};
+        r.seq = g_seq;
+        const double perMs = g_tscPerMs > 0 ? g_tscPerMs : 0;
+        auto ms = [&](uint64_t ticks) { return perMs ? static_cast<float>(ticks / perMs) : NAN; };
+        r.wallMs = static_cast<float>(now - g_frameStartMs);
+        r.presentMs = g_presentMs;
+        r.presentCpuMs = g_presentCpuMs;
+        r.cpuMs = ms(tc - g_frameThreadC);
+        r.gpuMs = NAN;
+        if (g_settleLeft > 0) { r.flags |= kFlagSettling; g_settleLeft--; }
+        else r.label = g_label;
+        if (g_presentHr != 0) r.flags |= kFlagPresentNotOk;
+        if (g_profHadSample.exchange(false)) r.flags |= kFlagSampled;
+        if (D3dStatsOn()) {
+            r.flags |= kFlagCounted;
+            D3dStatsTake(&r.d3d);
+        }
+        for (int i = 0; i < kHotCount; i++) {
+            r.hotMs[i] = g_profHotOn ? ms(g_profHotTicks[i]) : 0;
+            g_profHotTicks[i] = 0;
+        }
+        g_seq++;
+    }
+    g_frameStartMs = now;
+    g_frameThreadC = tc;
+    g_presentMs = g_presentCpuMs = 0;
+    g_presentHr = 0;
+}
+} // namespace
+
+void ProfPresentBegin() {
+    g_presentStartMs = NowMs();
+    g_presentStartC = ThreadCycles();
+    D3dStatsFrameEnd(g_seq);
+}
+void ProfPresentEnd(long hr) {
     double now = NowMs();
+    g_presentMs += static_cast<float>(now - g_presentStartMs);
+    const uint64_t tc = ThreadCycles();
+    if (g_tscPerMs > 0) g_presentCpuMs += static_cast<float>((tc - g_presentStartC) / g_tscPerMs);
+    if (hr != 0) g_presentHr = hr;
+    FrameTimes(now);
+    CloseFrame(now, tc);
+    D3dStatsFrameStart();
+}
+
+namespace {
+// the frames' times (prof.state's `frame`, the hitches, the mods' sites' averages)
+void FrameTimes(double now) {
     if (g_lastPresent > 0) {
         float ms = static_cast<float>(now - g_lastPresent);
         g_ring[g_ringAt] = ms;
@@ -281,6 +554,7 @@ void ProfFrame() {
     }
     g_lastPresent = now;
 }
+} // namespace
 
 bool ProfFrameStats(const MmlMod *mod, MmlFrameStats *out) {
     if (!out || out->size < sizeof(uint32_t)) return false;
@@ -360,9 +634,99 @@ bool ProfMethod(const std::string &method, const std::string &paramsJson, std::s
         json hitches = json::array();
         for (const Hitch &h : g_hitches)
             hitches.push_back({{"at_s", r2(h.atS)}, {"ms", r2(h.ms)}, {"median_ms", r2(h.median)}, {"parts", h.parts}});
+        DWORD fgPid = 0;
+        HWND fg = GetForegroundWindow();
+        const bool inFront = fg && GetWindowThreadProcessId(fg, &fgPid) && fgPid == GetCurrentProcessId();
         json res = {{"frame", frame}, {"since_reset_s", r2((NowMs() - g_resetAt) / 1000)}, {"mods", out}, {"hitches", hitches},
-                    {"sampling", g_sampling.load()}};
+                    {"sampling", g_sampling.load()}, {"seq", g_seq}, {"label", g_labels[g_label]}, {"settling", g_settleLeft},
+                    {"counters", D3dStatsOn()}, {"gpu", D3dStatsWhyGpu().empty() ? json("measured") : json(D3dStatsWhyGpu())},
+                    {"tsc_per_ms", r2(g_tscPerMs)}, {"in_front", inFront}};
         *reply = res.dump(-1, ' ', false, json::error_handler_t::replace);
+        return true;
+    }
+    if (method == "prof.mark") {
+        // the frames from now on carry this label, after `settle` frames let pass (a switch's own frames: shaders
+        // made, caches filled)
+        std::string label = p.value("label", std::string());
+        int settle = std::min(std::max(p.value("settle", 30), 0), 1000);
+        uint16_t idx = 0;
+        if (!label.empty()) {
+            auto it = std::find(g_labels.begin(), g_labels.end(), label);
+            if (it == g_labels.end()) {
+                if (g_labels.size() >= 1000) { *ok = false; *reply = "prof.mark: 1000 labels at most"; return true; }
+                g_labels.push_back(label);
+                it = g_labels.end() - 1;
+            }
+            idx = static_cast<uint16_t>(it - g_labels.begin());
+        }
+        g_label = idx;
+        g_settleLeft = idx ? settle : 0;
+        *reply = json({{"label", label}, {"from_seq", g_seq + static_cast<uint32_t>(g_settleLeft)}, {"seq", g_seq}})
+                     .dump(-1, ' ', false, json::error_handler_t::replace);
+        return true;
+    }
+    if (method == "prof.counters") {
+        bool on = p.value("on", true);
+        bool gpu = p.value("gpu", on);
+        std::string why;
+        bool done = D3dStatsSet(on, gpu, &why);
+        g_profHotOn = on && done;
+        for (int i = 0; i < kHotCount; i++) g_profHotTicks[i] = 0, g_profHotCalls[i] = 0;
+        json r = {{"on", D3dStatsOn()}, {"gpu", D3dStatsWhyGpu().empty() ? json("measured") : json(D3dStatsWhyGpu())}};
+        if (!why.empty()) r["why"] = why;
+        if (on && !done) { *ok = false; *reply = "prof.counters: " + why; return true; }
+        *reply = r.dump(-1, ' ', false, json::error_handler_t::replace);
+        return true;
+    }
+    if (method == "prof.frames") {
+        // the frames after `since` (a seq), columns of numbers
+        uint32_t since = p.value("since", 0u);
+        size_t limit = std::min<size_t>(std::max(p.value("limit", 1000), 1), kFrames);
+        uint32_t from = std::max<uint32_t>(since + 1, g_seq > kFrames ? g_seq - static_cast<uint32_t>(kFrames) + 1 : 1);
+        std::vector<const FrameRec *> rs;
+        for (uint32_t s = from; s < g_seq && rs.size() < limit; s++)
+            if (const FrameRec *r = RecOf(s)) rs.push_back(r);
+        auto num = [](float v) { return std::isnan(v) ? json(nullptr) : json(std::round(v * 1000.0) / 1000.0); };
+        auto col = [&](auto get) { json a = json::array(); for (const FrameRec *r : rs) a.push_back(get(r)); return a; };
+        json f = {{"seq", col([](const FrameRec *r) { return r->seq; })},
+                  {"label", col([](const FrameRec *r) { return r->label; })},
+                  {"flags", col([](const FrameRec *r) { return r->flags; })},
+                  {"wall_ms", col([&](const FrameRec *r) { return num(r->wallMs); })},
+                  {"present_ms", col([&](const FrameRec *r) { return num(r->presentMs); })},
+                  {"present_cpu_ms", col([&](const FrameRec *r) { return num(r->presentCpuMs); })},
+                  {"cpu_ms", col([&](const FrameRec *r) { return num(r->cpuMs); })},
+                  {"gpu_ms", col([&](const FrameRec *r) { return num(r->gpuMs); })}};
+        bool counted = std::any_of(rs.begin(), rs.end(), [](const FrameRec *r) { return r->flags & kFlagCounted; });
+        if (counted) {
+            static const char *hot[kHotCount] = {"skin.update_lod", "skin.update_lod.game", "skin.copy", "skin.copy.game",
+                                                 "skin.lighting", "skin.lighting.game"};
+            json h = json::object();
+            for (int i = 0; i < kHotCount; i++)
+                if (std::any_of(rs.begin(), rs.end(), [&](const FrameRec *r) { return r->hotMs[i] > 0; }))
+                    h[hot[i]] = col([&](const FrameRec *r) { return num(r->hotMs[i]); });
+            f["hot_ms"] = h;
+            const double perMs = g_tscPerMs > 0 ? g_tscPerMs : 1;
+            auto tms = [&](uint64_t t) { return std::round(t / perMs * 1000.0) / 1000.0; };
+            json d = json::object();
+            const char *who[kWhoCount] = {"game", "host"};
+            for (int k = 0; k < kKindCount; k++)
+                for (int w = 0; w < kWhoCount; w++) {
+                    if (!std::any_of(rs.begin(), rs.end(), [&](const FrameRec *r) { return r->d3d.calls[k][w] > 0; })) continue;
+                    d[D3dKindName(k)][who[w]] = {{"calls", col([&](const FrameRec *r) { return r->d3d.calls[k][w]; })},
+                                                 {"ms", col([&](const FrameRec *r) { return tms(r->d3d.ticks[k][w]); })}};
+                }
+            for (int w = 0; w < kWhoCount; w++) {
+                d["primitives"][who[w]] = col([&](const FrameRec *r) { return r->d3d.prims[w]; });
+                d["driver_ms"][who[w]] = col([&](const FrameRec *r) { return tms(r->d3d.driverTicks[w]); });
+            }
+            d["driver_draws"] = {{"fixed", col([](const FrameRec *r) { return r->d3d.driverDraws[0]; })},
+                                 {"shaders", col([](const FrameRec *r) { return r->d3d.driverDraws[1]; })}};
+            d["switches"] = col([](const FrameRec *r) { return r->d3d.switches; });
+            f["d3d"] = d;
+        }
+        json r = {{"frames", f}, {"count", rs.size()}, {"next", rs.empty() ? since : rs.back()->seq},
+                  {"now", g_seq}, {"labels", g_labels}, {"tsc_per_ms", g_tscPerMs}};
+        *reply = r.dump(-1, ' ', false, json::error_handler_t::replace);
         return true;
     }
     if (method == "prof.sample") {
@@ -375,20 +739,23 @@ bool ProfMethod(const std::string &method, const std::string &paramsJson, std::s
         }
         if (g_sampling) { *ok = false; *reply = "prof.sample: a run is going on (prof.sample {id})"; return true; }
         double seconds = std::min(std::max(p.value("seconds", 3.0), 0.5), 30.0);
+        double interval = std::min(std::max(p.value("interval_ms", 1.0), 0.25), 10.0);
         HANDLE me = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE, GetCurrentThreadId());
         if (!me) { *ok = false; *reply = "prof.sample: the game thread could not be opened"; return true; }
         ReadModules();
         g_samples.clear();
-        g_samples.reserve(static_cast<size_t>(seconds * 2200) + 16);
+        g_samples.reserve(static_cast<size_t>(seconds * 1100 / interval) + 16);
+        g_chain.reserve(static_cast<size_t>(seconds * 1100 / interval) * 32);
         g_sampleId = g_nextSampleId++;
         g_sampleSeconds = seconds;
         g_sampling = true;
-        std::thread(Run, me, seconds).detach();   // (it ends by itself after `seconds`; nothing waits for it)
+        const uintptr_t stackBase = __readfsdword(4);   // (this is the game thread: its stack's base, NT_TIB)
+        std::thread(Run, me, stackBase, seconds, interval).detach();   // (it ends by itself after `seconds`; nothing waits for it)
         *reply = json({{"id", g_sampleId}, {"seconds", seconds}, {"next", "prof.sample {id} once it ran"}}).dump(-1, ' ', false, json::error_handler_t::replace);
         return true;
     }
     *ok = false;
-    *reply = "unknown prof method (prof.state, prof.reset, prof.sample)";
+    *reply = "unknown prof method (prof.state, prof.reset, prof.sample, prof.mark, prof.frames, prof.counters)";
     return true;
 }
 

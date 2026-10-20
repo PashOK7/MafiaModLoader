@@ -23,6 +23,8 @@ builds are asked at once; the MCP server's ghidra_* tools talk to the same serve
   write: rename <at> <name> [note=]   comment <at> <text>   proto <at> <C prototype>   make_function <at>
          unfunction <at>   forget <at> (ours taken back: the repository's rows, the project's name, the
          repository's other names and prototype again)   sync (the repository onto the project)   orphans [fix=1]
+         bounds (every function's start and size into knowledge/<module>/bounds.csv, bounds_10.csv: the MCP server
+         names an address only by the function that holds it)
 
 `setup` imports and analyses what a project lacks (Game.exe about 4 minutes, LS3DF.dll 1), makes functions of the
 code the analysis left outside them (reached only through pointers: `orphans fix=1`), then `sync`s: the names, the

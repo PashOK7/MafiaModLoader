@@ -97,8 +97,9 @@ pub fn offline(host: Host) -> Value {
     let item = host.menu_item("gamemenu", 108, "kit_rs (Rust)", |_| ());
     c.check("menu_item: an item asked for the pause menu, its text and place changed", item.as_ref().is_some_and(|i| i.set(103, "kit_rs again")),
         json!(item.map(|i| i.handle())));
-    // (frames are measured Present to Present: the harness presents none)
-    c.check("frame_stats: filled, no frame presented", host.frame_stats().is_some_and(|s| s.frames == 0), json!(host.frame_stats().map(|s| s.frames)));
+    // (frames are measured Present to Present: the harness's stand-in Present ends each of its frames)
+    c.check("frame_stats: filled, the harness's frames counted", host.frame_stats().is_some_and(|s| s.frames > 0 && s.avg_ms > 0.0),
+            json!(host.frame_stats().map(|s| s.frames)));
     c.check("profile_saves with no game: none", host.profile_saves().is_empty(), json!(null));
     c.done()
 }
