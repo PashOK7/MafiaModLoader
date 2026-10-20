@@ -417,6 +417,16 @@ int ModelMaterials(int model, MmlModelMaterial *out, int max);
 void ModelClose(MmlMod *mod, int model);
 void ModelsModGone(MmlMod *mod);          // (its unload) its models closed
 bool ModelsMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+// A single mesh's LODs as its .4ds keeps them (skin.cpp): the vertices, the triangles, LS3D's own skin (the vertices
+// weighted by no bone, the last `rigid`; a record per bone, in the joints' ids' order, with its joint's name).
+struct ModelSkinLod {
+    uint32_t vertices = 0, rigid = 0;
+    std::vector<float> pos, nrm, uv;
+    std::vector<uint16_t> idx;
+    struct Bone { std::string joint; float bind[16]; uint32_t one, blended, other; std::vector<float> weights; };
+    std::vector<Bone> bones;
+};
+bool ModelSkin(const char *file, const char *mesh, std::vector<ModelSkinLod> *out, std::string *meshName, std::string *err);
 // the meshes the game draws (meshes.cpp): the scene's around the mods' boxes, an actor's
 bool SceneFocus(MmlMod *mod, const float *lo, const float *hi);   // null lo: none
 int ScenePieces(MmlMod *mod, MmlMeshPiece *out, int max);
@@ -437,6 +447,14 @@ bool ShaderRemove(MmlMod *mod, int handle);   // handle 0: every one of the mod'
 void ShadersModGone(MmlMod *mod);
 void ShadersFrameEnd();                   // (render.cpp) the frame drawn: the survey done
 bool ShadersMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+
+// ---- people's skinning (skin.cpp)
+void SkinStart();                         // (game_hooks.cpp, the builds known) PoseLod hooked
+void SkinMissionClose();                  // the single meshes forgotten
+void SkinModGone(MmlMod *mod);            // its skins dropped
+int SkinSet(MmlMod *mod, const char *model, const char *mesh, const MmlSkinLod *lods, int count, std::string *err);   // mml.h skin_set
+int SkinGet(MmlMod *mod, const char *model, const char *mesh, int lod, MmlSkinMesh *out, std::string *err);           // mml.h skin_get
+bool SkinMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 // the shadow map from the sun and the game's lights near a draw (shadows.cpp)
 bool ShaderShadows(MmlMod *mod, const MmlShadowSettings *s);   // null s: the mod no longer wants it
 bool ShadowsWanted();

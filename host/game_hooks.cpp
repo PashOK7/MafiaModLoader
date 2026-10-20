@@ -103,6 +103,7 @@ int __fastcall hkMissionClose(void *self, void *edx) {
     WorldMissionClose();
     PropsMissionClose();    // (the props unlinked and released while their scene is there)
     MeshesMissionClose();   // (the scene's frames and meshes forgotten)
+    SkinMissionClose();     // (the single meshes bound to the mods' skins)
     ShadowsMissionClose();  // (the shadow pass's buffers of those meshes)
     GameCameraMissionClose();   // (a held field of view: the next mission's camera is the game's)
     SoundMissionClose();    // (the 3D sounds, likewise)
@@ -250,6 +251,7 @@ bool GameHooksInstall() {
     Hook(x.humanCtor, (void *)hkHumanCtor, (void **)&oHumanCtor, "HumanCtor");
     Hook(x.humanHit, (void *)hkHumanHit, (void **)&oHumanHit, "HumanHit");
     HappenInit();   // (happen.cpp: shots, explosions, cars blown up)
+    SkinStart();    // (skin.cpp: the single meshes' skinning, LS3D's own unless a mod gives a model's)
     return true;
 }
 

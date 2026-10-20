@@ -50,6 +50,7 @@ pub const MML_SHADE_ALPHATEST: u32 = 2;
 pub const MML_SHADE_TRANSLUCENT: u32 = 4;
 pub const MML_SHADE_ADDITIVE: u32 = 8;
 pub const MML_SHADE_ALL_PASSES: u32 = 1;
+pub const MML_SKIN_INFLUENCES: u32 = 8;
 pub const MML_WEB_LINKS: u32 = 8;
 pub const MML_WEB_ONE_WAY: u32 = 128;
 pub const MML_EXHAUST_PIPES: u32 = 8;
@@ -1391,6 +1392,97 @@ const _: () = {
         [::core::mem::offset_of!(MmlShaderRule, ps_size) - 56usize];
 };
 impl Default for MmlShaderRule {
+    fn default() -> Self {
+        let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::core::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct MmlSkinBone {
+    pub joint: *const ::core::ffi::c_char,
+    pub bind: [f32; 16usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of MmlSkinBone"][::core::mem::size_of::<MmlSkinBone>() - 68usize];
+    ["Alignment of MmlSkinBone"][::core::mem::align_of::<MmlSkinBone>() - 4usize];
+    ["Offset of field: MmlSkinBone::joint"][::core::mem::offset_of!(MmlSkinBone, joint) - 0usize];
+    ["Offset of field: MmlSkinBone::bind"][::core::mem::offset_of!(MmlSkinBone, bind) - 4usize];
+};
+impl Default for MmlSkinBone {
+    fn default() -> Self {
+        let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::core::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct MmlSkinLod {
+    pub vertices: u32,
+    pub bones: u32,
+    pub bone: *const MmlSkinBone,
+    pub count: *const u8,
+    pub index: *const u16,
+    pub weight: *const f32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of MmlSkinLod"][::core::mem::size_of::<MmlSkinLod>() - 24usize];
+    ["Alignment of MmlSkinLod"][::core::mem::align_of::<MmlSkinLod>() - 4usize];
+    ["Offset of field: MmlSkinLod::vertices"]
+        [::core::mem::offset_of!(MmlSkinLod, vertices) - 0usize];
+    ["Offset of field: MmlSkinLod::bones"][::core::mem::offset_of!(MmlSkinLod, bones) - 4usize];
+    ["Offset of field: MmlSkinLod::bone"][::core::mem::offset_of!(MmlSkinLod, bone) - 8usize];
+    ["Offset of field: MmlSkinLod::count"][::core::mem::offset_of!(MmlSkinLod, count) - 12usize];
+    ["Offset of field: MmlSkinLod::index"][::core::mem::offset_of!(MmlSkinLod, index) - 16usize];
+    ["Offset of field: MmlSkinLod::weight"][::core::mem::offset_of!(MmlSkinLod, weight) - 20usize];
+};
+impl Default for MmlSkinLod {
+    fn default() -> Self {
+        let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::core::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct MmlSkinMesh {
+    pub mesh: [::core::ffi::c_char; 64usize],
+    pub lods: ::core::ffi::c_int,
+    pub skin: MmlSkinLod,
+    pub rigid: u32,
+    pub pos: *const f32,
+    pub normal: *const f32,
+    pub uv: *const f32,
+    pub index: *const u16,
+    pub triangles: ::core::ffi::c_int,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of MmlSkinMesh"][::core::mem::size_of::<MmlSkinMesh>() - 116usize];
+    ["Alignment of MmlSkinMesh"][::core::mem::align_of::<MmlSkinMesh>() - 4usize];
+    ["Offset of field: MmlSkinMesh::mesh"][::core::mem::offset_of!(MmlSkinMesh, mesh) - 0usize];
+    ["Offset of field: MmlSkinMesh::lods"][::core::mem::offset_of!(MmlSkinMesh, lods) - 64usize];
+    ["Offset of field: MmlSkinMesh::skin"][::core::mem::offset_of!(MmlSkinMesh, skin) - 68usize];
+    ["Offset of field: MmlSkinMesh::rigid"][::core::mem::offset_of!(MmlSkinMesh, rigid) - 92usize];
+    ["Offset of field: MmlSkinMesh::pos"][::core::mem::offset_of!(MmlSkinMesh, pos) - 96usize];
+    ["Offset of field: MmlSkinMesh::normal"]
+        [::core::mem::offset_of!(MmlSkinMesh, normal) - 100usize];
+    ["Offset of field: MmlSkinMesh::uv"][::core::mem::offset_of!(MmlSkinMesh, uv) - 104usize];
+    ["Offset of field: MmlSkinMesh::index"][::core::mem::offset_of!(MmlSkinMesh, index) - 108usize];
+    ["Offset of field: MmlSkinMesh::triangles"]
+        [::core::mem::offset_of!(MmlSkinMesh, triangles) - 112usize];
+};
+impl Default for MmlSkinMesh {
     fn default() -> Self {
         let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
         unsafe {
@@ -3288,10 +3380,30 @@ pub struct MmlHost {
     pub gfx_motion: ::core::option::Option<
         unsafe extern "C" fn(mod_: *mut MmlMod, on: ::core::ffi::c_int) -> ::core::ffi::c_int,
     >,
+    pub skin_set: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            model: *const ::core::ffi::c_char,
+            mesh: *const ::core::ffi::c_char,
+            lods: *const MmlSkinLod,
+            count: ::core::ffi::c_int,
+            error: *mut ::core::ffi::c_char,
+            cap: ::core::ffi::c_int,
+        ) -> ::core::ffi::c_int,
+    >,
+    pub skin_get: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            model: *const ::core::ffi::c_char,
+            mesh: *const ::core::ffi::c_char,
+            lod: ::core::ffi::c_int,
+            out: *mut MmlSkinMesh,
+        ) -> ::core::ffi::c_int,
+    >,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 740usize];
+    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 748usize];
     ["Alignment of MmlHost"][::core::mem::align_of::<MmlHost>() - 4usize];
     ["Offset of field: MmlHost::size"][::core::mem::offset_of!(MmlHost, size) - 0usize];
     ["Offset of field: MmlHost::api_version"]
@@ -3609,6 +3721,8 @@ const _: () = {
     ["Offset of field: MmlHost::gfx_state"][::core::mem::offset_of!(MmlHost, gfx_state) - 732usize];
     ["Offset of field: MmlHost::gfx_motion"]
         [::core::mem::offset_of!(MmlHost, gfx_motion) - 736usize];
+    ["Offset of field: MmlHost::skin_set"][::core::mem::offset_of!(MmlHost, skin_set) - 740usize];
+    ["Offset of field: MmlHost::skin_get"][::core::mem::offset_of!(MmlHost, skin_get) - 744usize];
 };
 pub type MmlModLoadFn = ::core::option::Option<
     unsafe extern "C" fn(host: *const MmlHost, mod_: *mut MmlMod) -> ::core::ffi::c_int,

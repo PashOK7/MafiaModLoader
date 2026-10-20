@@ -1,5 +1,5 @@
-//! People: skeletons and poses, animations and getting up, the inventory's rounds, a mod's own items
-//! (docs/MODDING.md "People, skeletons, poses", "Animations, getting up", "A mod's own items").
+//! People: skeletons and poses, animations and getting up, the inventory's rounds, a mod's own items, their skinning
+//! (docs/MODDING.md "People, skeletons, poses", "Animations, getting up", "A mod's own items", "People's skinning").
 use crate::{cstring, sys, text, Actor, Frame, Host};
 use core::ffi::c_int;
 use core::ptr;
@@ -32,6 +32,37 @@ pub struct HumanAnim {
     pub lying: i32,
     pub time_ms: i32,
     pub length_ms: i32,
+}
+
+/// A bone of a skin (skin_set): a joint under the mesh by its name in the .4ds ("" the mesh's own space) and the
+/// mesh's space at rest to the joint's (row vectors).
+#[derive(Clone, Debug)]
+pub struct SkinBone {
+    pub joint: String,
+    pub bind: [f32; 16],
+}
+
+/// A LOD's skin (skin_set, skin_get): up to 8 bones a vertex (`count` each, `index` and `weight` 8 a vertex).
+#[derive(Clone, Debug, Default)]
+pub struct SkinLod {
+    pub bones: Vec<SkinBone>,
+    pub count: Vec<u8>,
+    pub index: Vec<u16>,
+    pub weight: Vec<f32>,
+}
+
+/// LS3D's own skin of a model's mesh with its rest mesh (skin_get).
+#[derive(Clone, Debug, Default)]
+pub struct SkinMesh {
+    pub mesh: String,
+    pub lods: i32,
+    pub skin: SkinLod,
+    /// the vertices weighted by no bone (the last ones)
+    pub rigid: u32,
+    pub pos: Vec<f32>,
+    pub normal: Vec<f32>,
+    pub uv: Vec<f32>,
+    pub index: Vec<u16>,
 }
 
 /// A mod's own item (item_define).
@@ -190,5 +221,74 @@ impl Host {
         let n = cstring(name);
         let id = unsafe { f!(self, item_find)(self.module, n.as_ptr()) };
         if id > 0 { Some(id) } else { None }
+    }
+
+    // ---- skinning
+    /// A model's single mesh ("Tommy", "base") skinned with these LODs (LOD i the mesh's LOD i), every person of the
+    /// model alike, from its next skinning; an empty list takes the mod's skin of it away. Err: why it was refused.
+    pub fn skin_set(&self, model: &str, mesh: &str, lods: &[SkinLod]) -> Result<(), String> {
+        let (m, me) = (cstring(model), cstring(mesh));
+        let names: Vec<Vec<std::ffi::CString>> = lods.iter().map(|l| l.bones.iter().map(|b| cstring(&b.joint)).collect()).collect();
+        let bones: Vec<Vec<sys::MmlSkinBone>> = lods
+            .iter()
+            .zip(&names)
+            .map(|(l, n)| l.bones.iter().zip(n).map(|(b, c)| sys::MmlSkinBone { joint: c.as_ptr(), bind: b.bind }).collect())
+            .collect();
+        let raw: Vec<sys::MmlSkinLod> = lods
+            .iter()
+            .zip(&bones)
+            .map(|(l, b)| sys::MmlSkinLod {
+                vertices: l.count.len() as u32,
+                bones: b.len() as u32,
+                bone: b.as_ptr(),
+                count: l.count.as_ptr(),
+                index: l.index.as_ptr(),
+                weight: l.weight.as_ptr(),
+            })
+            .collect();
+        for l in lods {
+            let v = l.count.len() * sys::MML_SKIN_INFLUENCES as usize;
+            if l.index.len() < v || l.weight.len() < v {
+                return Err("index and weight: 8 a vertex".into());
+            }
+        }
+        let mut err = [0 as core::ffi::c_char; 512];
+        let r = unsafe {
+            f!(self, skin_set)(self.module, m.as_ptr(), me.as_ptr(), raw.as_ptr(), raw.len() as c_int, err.as_mut_ptr(), err.len() as c_int)
+        };
+        if r != 0 { Ok(()) } else { Err(unsafe { text(err.as_ptr()) }) }
+    }
+    /// LS3D's own skin of a model's mesh (None: its first single mesh) and LOD, from its .4ds, with its rest mesh
+    pub fn skin_get(&self, model: &str, mesh: Option<&str>, lod: i32) -> Option<SkinMesh> {
+        let m = cstring(model);
+        let me = mesh.map(cstring);
+        let mut o: sys::MmlSkinMesh = unsafe { core::mem::zeroed() };
+        if unsafe { f!(self, skin_get)(self.module, m.as_ptr(), me.as_ref().map_or(ptr::null(), |c| c.as_ptr()), lod, &mut o) } == 0 {
+            return None;
+        }
+        let v = o.skin.vertices as usize;
+        let k = sys::MML_SKIN_INFLUENCES as usize;
+        unsafe {
+            let sl = |p: *const f32, n: usize| if p.is_null() { Vec::new() } else { core::slice::from_raw_parts(p, n).to_vec() };
+            let bones = core::slice::from_raw_parts(o.skin.bone, o.skin.bones as usize)
+                .iter()
+                .map(|b| SkinBone { joint: text(b.joint), bind: b.bind })
+                .collect();
+            Some(SkinMesh {
+                mesh: text(o.mesh.as_ptr()),
+                lods: o.lods,
+                skin: SkinLod {
+                    bones,
+                    count: core::slice::from_raw_parts(o.skin.count, v).to_vec(),
+                    index: core::slice::from_raw_parts(o.skin.index, v * k).to_vec(),
+                    weight: core::slice::from_raw_parts(o.skin.weight, v * k).to_vec(),
+                },
+                rigid: o.rigid,
+                pos: sl(o.pos, v * 3),
+                normal: sl(o.normal, v * 3),
+                uv: sl(o.uv, v * 2),
+                index: if o.index.is_null() { Vec::new() } else { core::slice::from_raw_parts(o.index, o.triangles as usize * 3).to_vec() },
+            })
+        }
     }
 }

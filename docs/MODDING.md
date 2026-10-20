@@ -1076,6 +1076,62 @@ H->human_get_up(M, paulie, 600);          /* a body the mod posed handed back to
 - `call human.anim {"actor", "play" | "stop" | "replace" with "with"}`, `human.anim_state {"actor"}`,
   `human.get_up {"actor", "blend_ms"}`.
 
+### People's skinning (more than two bones a vertex)
+
+LS3D skins a person on the CPU with two bones a vertex at most (the .4ds holds no more): a joint bent far (a knee,
+an elbow, a ragdoll's limbs) folds the mesh along a hard crease. A mod gives a model's single mesh a skin of its own:
+up to 8 bones a vertex, any joint under the mesh (not only the 64 LS3D binds), each bone with its own matrix at rest.
+Every person of that model takes it from the next frame; every other model keeps LS3D's own code. The host skins into
+LS3D's own cache of the mesh, so the game's lighting, its drawing and whatever reads the cache take the result as
+they took LS3D's (both builds, any renderer, plain Direct3D 8 too).
+
+Without code: a file `models\<model>.skin.json` among the mod's files (beside `models\Tommy.4ds`: the .4ds stays as
+it is, readable by every tool):
+
+```json
+{"format": "mml-skin", "version": 1, "model": "models\\tommy.4ds",
+ "meshes": [{"mesh": "base", "lods": [
+   {"vertices": 778,
+    "bones": [{"joint": ""}, {"joint": "r_thigh", "bind": [16 numbers]}, ...],
+    "influences": [[1, 0.6, 2, 0.3, 3, 0.1], ...]}]}]}
+```
+
+- `mesh`: the single mesh's name in the .4ds (`call model.info {"file": "Tommy"}` lists the nodes; people's is `base`).
+  `lods`: LOD 0 the finest; a LOD not given keeps LS3D's skin.
+- `vertices`: the LOD's count, in the .4ds's order (checked against the game's mesh: a mismatch keeps LS3D's skin and
+  says so in the log and `skin.state`).
+- `bones`: `joint` a joint's name in the .4ds (`""`: the mesh's own space, the bone that never moves); `bind` the
+  mesh's space at rest to the joint's (row vectors: a point times it), as the .4ds's own bone records hold it.
+- `influences`: a list a vertex of bone, weight pairs, 8 at most (the weights are made to sum to 1). Only the LOD's
+  last vertices, the ones the .4ds weights by no bone, may have none (they stay where they are).
+- The normals go through each bone's matrix with its columns normalised, as LS3D's own do.
+
+**A starting point**: `call skin.export {"model": "Tommy"}` writes LS3D's own skin of a model in this form, with its
+rest mesh (`"rest"`: positions, normals, uvs, triangles) to `<game>\mml\skin\tommy.skin.json`; given back unchanged
+(`skin.set {"file"}`, then `skin.check {"mesh"}`) it comes out as LS3D's to the float's last bit. An exporter writes
+the file from its own weights (Blender's painted ones); `python tools/skin_smooth.py in.skin.json out.skin.json
+--rings 3 --max 4` spreads an exported skin over more bones (each vertex's weights averaged with its neighbours'
+along the mesh, the uv map's seams kept closed): a joint's crease becomes a band of 3 or 4 bones.
+
+From code (the arrays the mod's; LOD `i` of `lods` is the mesh's LOD `i`; `count` 0 takes the mod's skin away):
+
+```c
+MmlSkinMesh m;
+if (H->skin_get(M, "Tommy", "base", 0, &m)) {   /* LS3D's own, from the .4ds: bone 0 the mesh's space, then its records */
+    /* m.skin: bones, count, index, weight (8 a vertex); m.pos, m.normal, m.uv, m.index (triangles): the rest mesh */
+    ... change m.skin's weights (copy the arrays first: the host's until the next skin_get) ...
+    char err[256];
+    H->skin_set(M, "Tommy", "base", &mine, 1, err, sizeof err);
+}
+```
+
+- A mod's skin replaces a file's for the same mesh while the mod holds it; the bridge's (`skin.set`) replaces both
+  until `skin.reload`. A mod's go at its unload.
+- `call skin.state` (the skins, the files read and their errors, the meshes bound, the time), `skin.export`,
+  `skin.set {"file"}` or `{"model", "mesh", "lods"}`, `skin.check {"mesh", "lod"}`, `skin.reload`.
+- Cost (Tommy, 778 vertices, measured): LS3D's own two bones 0.017 ms a skinning, the host's with the same weights
+  0.023 ms, with 4 bones a vertex 0.04 ms.
+
 ### Shaders on the game's own drawing (per-object shading)
 
 ```c

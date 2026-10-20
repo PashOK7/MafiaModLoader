@@ -589,6 +589,37 @@ typedef struct MmlShaderRule {
 #define MML_SHADE_TRANSLUCENT 0x4u
 #define MML_SHADE_ADDITIVE    0x8u
 #define MML_SHADE_ALL_PASSES  0x1u
+/* people's skinning (skin_set, skin_get): a single mesh's LOD skinned with up to 8 bones a vertex */
+#define MML_SKIN_INFLUENCES 8
+typedef struct MmlSkinBone {
+    const char *joint;      /* the joint's name in the .4ds ("r_elbow": any joint under the mesh); NULL or "": the
+                               mesh's own space (the bone that never moves) */
+    float bind[16];         /* the mesh's space at rest to the joint's (row vectors: a point times it; the .4ds's bone
+                               records hold LS3D's own); ignored for the mesh's own space */
+} MmlSkinBone;
+typedef struct MmlSkinLod {
+    uint32_t vertices;      /* the LOD's vertices, in the .4ds's order (LS3D's: checked against the game's mesh) */
+    uint32_t bones;
+    const MmlSkinBone *bone;
+    const uint8_t *count;   /* a vertex: its bones, 0..8 (0: weighted by no bone; only the LOD's last vertices may
+                               be, the ones the .4ds weights by none: they stay where they are) */
+    const uint16_t *index;  /* 8 a vertex: into bone */
+    const float *weight;    /* 8 a vertex (the host makes each vertex's sum 1) */
+} MmlSkinLod;
+/* skin_get: LS3D's own skin of a model's single mesh, read from its .4ds (two bones a vertex at most), with its rest
+   mesh: the starting point of a mod's own. The arrays are the host's until the mod's next skin_get. */
+typedef struct MmlSkinMesh {
+    char mesh[64];          /* the single mesh's name in the .4ds */
+    int lods;               /* the mesh's LODs */
+    MmlSkinLod skin;        /* this LOD's: bone 0 the mesh's own space, then the .4ds's records, their joints named */
+    uint32_t rigid;         /* the vertices weighted by no bone (the last ones) */
+    const float *pos;       /* 3 a vertex, the mesh's space at rest */
+    const float *normal;    /* 3 a vertex */
+    const float *uv;        /* 2 a vertex */
+    const uint16_t *index;  /* 3 a triangle */
+    int triangles;
+} MmlSkinMesh;
+
 /* shader_shadows: the shadow map from the sun the rules' shaders sample (game.hlsli mml_Shadow) */
 typedef struct MmlShadowSettings {
     int size;               /* its texels a side: 512, 1024, 2048 (the default), 4096 */
@@ -1534,6 +1565,17 @@ typedef struct MmlHost {
      * frame of the mission's world while any mod wants them (their cost, the moving objects drawn again, is paid
      * only then). Returns 1; 0 when the game's drawing cannot be followed (no wrapper's Direct3D 9). Game thread. */
     int (*gfx_motion)(MmlMod *mod, int on);
+    /* ---- people's skinning (both builds; docs/MODDING.md "People's skinning").
+     * skin_set: a model's single mesh ("Tommy" or "models\\Tommy.4ds", the mesh's name in it: "base") skinned with
+     * these LODs from its next skinning on, every person of that model alike: up to 8 bones a vertex, any joint under
+     * the mesh, each bone with its own matrix at rest; LOD `i` of lods is the mesh's LOD i (count of them; a LOD the
+     * mod does not give keeps LS3D's own skin). The same cache LS3D skins into: its lighting, its drawing and whatever
+     * reads the cache take the result as before. count 0: the mod's skin of that mesh taken away (also at its unload).
+     * A mod's file models\<name>.skin.json among its files gives the same without code (the format in MODDING.md).
+     * Returns 1; 0 refused (error, cap bytes, says why). skin_get: LS3D's own skin of a model's mesh (mesh NULL: its
+     * first single mesh) and LOD from its .4ds, in skin_set's form with the rest mesh; 1 filled, 0 none. Game thread. */
+    int (*skin_set)(MmlMod *mod, const char *model, const char *mesh, const MmlSkinLod *lods, int count, char *error, int cap);
+    int (*skin_get)(MmlMod *mod, const char *model, const char *mesh, int lod, MmlSkinMesh *out);
 } MmlHost;
 
 #define MML_ZONE_PLAYER 0x1u

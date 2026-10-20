@@ -2836,3 +2836,38 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   (to see the round trip at a glance) was tried in the labs and taken out again: the released mod shows DLSS-NR's
   picture only.
 - The player's update: `tools/pack.py dlss_nr --since` the archive he has (Discord takes 20 MB at most).
+
+## 2026-10-20: the Mafia demo's LS3D.dll carries the engine's names
+
+- **Asked** (the owner): whether the demo (one mission, the full game's 12, "Great Deal!") makes the engine easier
+  to reverse. Downloaded from the Internet Archive (`Mafia_201405/Mafia.exe`, a RAR, not run: unpacked with 7-Zip
+  into `re/demo/`, ignored by git).
+- **Found**: its LS3DF.dll is byte for byte the 1.0 lab's (3.84.5, 31.7.2002); beside it an `LS3D.dll` of 2002-07-04
+  with CodeView NB11 debug information: 9892 public symbols with their C++ signatures (3109 functions of `.text`,
+  2294 globals, the vtables by class), no types (5 records). The code is the same as LS3DF's (I3D_singlemesh::
+  m_AddFGroups 3232 bytes against 1.0's 3083, PoseLod about 2000 against 1954). Its Game.exe (2002-10-31) has no
+  SafeDisc sections and no symbols; `prog_dbg.bin` the demo mission script's names.
+- **Used at once** (item 28): PoseLod, CopyRigidPositions, CopySkinnedPositions, LightVertices (with its parameters' types),
+  LightsOfSector, EnvMapCoords, SkinOneBone(W), I3D_singlemorph::PoseLod named in both builds' Ghidra and
+  `knowledge/ls3df.dll/names*.csv`. The whole import (matching the demo's functions to 1.0's LS3DF, carrying them to
+  1.2) is a session of its own (`re/demo/cv_publics.py` dumps the publics).
+
+## 2026-10-20: people's skinning with up to 8 bones a vertex (item 28a)
+
+- **Asked** (the owner): item 28 whole. Read in both builds (knowledge/notes/skinning.md): I3D_singlemesh::PoseLod
+  skins a LOD into its cache with two bones a vertex at most (the .4ds holds no more), the joints' matrices built in
+  the mesh's space and kept at `+0x1C4`; m_AddFGroups copies the cache's positions into the drawn buffer and lights
+  the vertices from its normals.
+- **Made** (host/skin.cpp, mml.h skin_set and skin_get, the Rust crate's): PoseLod hooked; a model's single mesh a
+  mod gives a skin (`models\<name>.skin.json` among its files, skin_set, the bridge's `skin.set`) is skinned by the
+  host into LS3D's own cache: up to 8 bones a vertex, any joint of the mesh's subtree, each bone with its own matrix
+  at rest; the joints' matrices are built as PoseLod builds them (I3D_frame::UpdateMatrix called on the way), the
+  normals through each matrix's columns normalised (S_matrix::SetRot), the buffers locked as LS3D locks them (1.2's
+  list of locked buffers, 1.0's NOSYSLOCK). CopyRigidPositions hooked for a skin that moves the rigid vertices too. Every
+  other model goes straight to LS3D's code (a mesh's skin is looked up once until a skin comes or goes).
+  `skin.export` writes a model's own skin from its .4ds (models.cpp now keeps the bone records and the joints' ids);
+  `tools/skin_smooth.py` spreads one over more bones along the mesh (the uv seams welded by position).
+- **Seen**, both labs at once: Tommy's own skin exported and given back skins as LS3D does to 1.2e-7 m (normals
+  exact; `skin.check`: LS3D 0.017 ms, the host 0.023 ms for 778 vertices); smoothed to 4 bones a vertex (492 of 778
+  vertices with more than two) a copy of Tommy with a knee bent 100 degrees: the hard fold of the trousers behind the
+  knee becomes a rounded bend in both builds (0.04 ms a skinning).

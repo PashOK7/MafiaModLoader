@@ -1,0 +1,11 @@
+address,kind,name,source,note
+1001A4A0,function,I3D_frame::UpdateMatrix,mml,"1.2's I3D_frame::UpdateMatrix 0x1A6E0, the same code; called by I3D_singlemesh::PoseLod at 0x52951"
+100526A0,function,I3D_singlemesh::PoseLod,mml,"vtable +0x98 (SNGM): skins a LOD into its cache: the joints' matrices, then each vertex's position and normal (two bones at most)"
+10052EA0,function,I3D_singlemesh::CopyRigidPositions,mml,the rigid vertices' positions into the drawn buffer
+10052F70,function,I3D_singlemesh::CopySkinnedPositions,mml,the skinned vertices' positions from the cache into the drawn buffer; game_build.h smCopySkinned
+100546B0,function,I3D_singlemorph::PoseLod,mml,"SMMR: the morph (the face) first, then I3D_singlemesh::PoseLod"
+10062630,function,LightsOfSector,mml,"the sector's lights taken for the vertex lighting that follows (fastcall, the sector)"
+10062640,function,LightVertices,mml,"a LOD's vertex colours from its normals and up to 8 of the sector's lights (fastcall, 8 stack arguments, ret 0x20; knowledge/notes/skinning.md)"
+100648F0,function,EnvMapCoords,mml,the environment map's uv from the normals (material flag 8)
+10064F10,function,SkinOneBone,mml,positions and normals through one bone's matrix and rotation
+10064FE0,function,SkinTwoBones,mml,positions and normals blended between two bones by a weight each

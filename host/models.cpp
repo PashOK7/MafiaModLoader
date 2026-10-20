@@ -175,9 +175,23 @@ struct Mesh {
     std::vector<float> pos, nrm, uv;
     std::vector<uint16_t> idx, mat;
 };
+// A single mesh's LOD as the .4ds keeps its skin: the vertices weighted by no bone (the last ones), then a record per
+// bone in the order of the joints' ids (the vertices wholly the bone's, then those blended with `other`, 1-based, 0
+// the mesh's own space, by a weight each), the vertices sorted so (skin.cpp reads it).
+struct SkinRecord {
+    float bind[16];
+    uint32_t one = 0, blended = 0, other = 0;
+    std::vector<float> weights;
+};
+struct SkinData {
+    uint32_t rigid = 0;
+    std::vector<SkinRecord> bones;
+};
 struct Node {
     MmlModelNode info{};
     std::vector<Mesh> lods;
+    std::vector<SkinData> skin;   // (single meshes and single morphs: one a LOD)
+    int jointId = -1;             // (a joint: its id, the record of a single mesh's LOD it moves)
 };
 struct Model {
     MmlMod *mod = nullptr;
@@ -269,15 +283,24 @@ void ReadObject(Reader &r, Node &n) {
     }
 }
 
-void ReadSingleMesh(Reader &r, int lods) {
-    for (int l = 0; l < lods && r.ok; l++) {
+void ReadSingleMesh(Reader &r, Node &n) {
+    n.skin.resize(n.info.lods);
+    for (int l = 0; l < n.info.lods && r.ok; l++) {
+        SkinData &s = n.skin[l];
         uint8_t bones = r.Get<uint8_t>();
-        r.Skip(4 + 24);   // (the vertices weighted by no bone, the bounds)
+        s.rigid = r.Get<uint32_t>();
+        r.Skip(24);   // (the bounds)
+        s.bones.resize(bones);
         for (uint8_t b = 0; b < bones && r.ok; b++) {
-            r.Skip(64 + 4);
-            uint32_t weighted = r.Get<uint32_t>();
-            r.Skip(4 + 24);
-            r.Skip(static_cast<size_t>(weighted) * 4);
+            SkinRecord &rec = s.bones[b];
+            for (float &v : rec.bind) v = r.Get<float>();
+            rec.one = r.Get<uint32_t>();
+            rec.blended = r.Get<uint32_t>();
+            rec.other = r.Get<uint32_t>();
+            r.Skip(24);   // (the bone's bounds)
+            if (!r.Need(static_cast<size_t>(rec.blended) * 4)) break;
+            rec.weights.resize(rec.blended);
+            for (float &w : rec.weights) w = r.Get<float>();
         }
     }
 }
@@ -324,8 +347,8 @@ bool Parse(const uint8_t *data, size_t size, Model *m, std::string *err) {
         case kVisual:
             switch (n.info.visual_type) {
             case kObject: case kLitObject: ReadObject(r, n); break;
-            case kSingleMesh: ReadObject(r, n); ReadSingleMesh(r, n.info.lods); break;
-            case kSingleMorph: ReadObject(r, n); ReadSingleMesh(r, n.info.lods); ReadMorph(r); break;
+            case kSingleMesh: ReadObject(r, n); ReadSingleMesh(r, n); break;
+            case kSingleMorph: ReadObject(r, n); ReadSingleMesh(r, n); ReadMorph(r); break;
             case kBillboard: ReadObject(r, n); r.Skip(5); break;
             case kMorph: ReadObject(r, n); ReadMorph(r); break;
             case kLens: { uint8_t g = r.Get<uint8_t>(); r.Skip(static_cast<size_t>(g) * 6); break; }
@@ -354,7 +377,7 @@ bool Parse(const uint8_t *data, size_t size, Model *m, std::string *err) {
         }
         case kDummy: r.Skip(24); break;
         case kTarget: { r.Skip(2); uint8_t l = r.Get<uint8_t>(); r.Skip(static_cast<size_t>(l) * 2); break; }
-        case kJoint: r.Skip(64 + 4); break;
+        case kJoint: r.Skip(64); n.jointId = static_cast<int>(r.Get<uint32_t>()); break;
         case kOccluder: {
             uint32_t nv = r.Get<uint32_t>(), nf = r.Get<uint32_t>();
             r.Skip(static_cast<size_t>(nv) * 12 + static_cast<size_t>(nf) * 6);
@@ -397,6 +420,61 @@ const Mesh *MeshOf(const Model &m, int node, int lod) {
 }
 
 } // namespace
+
+bool ModelSkin(const char *file, const char *mesh, std::vector<ModelSkinLod> *out, std::string *meshName, std::string *err) {
+    out->clear();
+    int id = ModelOpen(nullptr, file, err);
+    if (!id) return false;
+    std::unique_ptr<Model> m = std::move(g_models[id]);
+    g_models.erase(id);
+    const std::string want = Lower(mesh ? mesh : "");
+    int at = -1;
+    for (size_t i = 0; i < m->nodes.size() && at < 0; i++) {
+        const Node &n = m->nodes[i];
+        bool skinned = n.info.frame_type == kVisual && (n.info.visual_type == kSingleMesh || n.info.visual_type == kSingleMorph);
+        if (skinned && (want.empty() || Lower(n.info.name) == want)) at = static_cast<int>(i);
+    }
+    if (at < 0) { *err = m->file + ": no single mesh" + (want.empty() ? std::string() : " \"" + std::string(mesh) + "\""); return false; }
+    const Node &sm = m->nodes[at];
+    *meshName = sm.info.name;
+    // the joints under it (LS3D binds a single mesh to the joints in its subtree: a record's bone is the joint whose id
+    // is the record's place)
+    auto under = [&](int i) {
+        for (int hops = 0, p = m->nodes[i].info.parent; p >= 0 && hops < 256; hops++, p = m->nodes[p].info.parent)
+            if (p == at) return true;
+        return false;
+    };
+    std::map<int, std::string> joints;
+    for (size_t i = 0; i < m->nodes.size(); i++)
+        if (m->nodes[i].info.frame_type == kJoint && m->nodes[i].jointId >= 0 && under(static_cast<int>(i)))
+            joints.emplace(m->nodes[i].jointId, m->nodes[i].info.name);
+    for (int l = 0; l < sm.info.lods; l++) {
+        const Mesh *me = MeshOf(*m, at, l);
+        if (!me || l >= static_cast<int>(sm.skin.size())) break;
+        ModelSkinLod o;
+        o.vertices = static_cast<uint32_t>(me->pos.size() / 3);
+        o.rigid = sm.skin[l].rigid;
+        o.pos = me->pos;
+        o.nrm = me->nrm;
+        o.uv = me->uv;
+        o.idx = me->idx;
+        for (size_t b = 0; b < sm.skin[l].bones.size(); b++) {
+            const SkinRecord &r = sm.skin[l].bones[b];
+            ModelSkinLod::Bone bo;
+            auto j = joints.find(static_cast<int>(b));
+            bo.joint = j != joints.end() ? j->second : std::string();
+            memcpy(bo.bind, r.bind, sizeof bo.bind);
+            bo.one = r.one;
+            bo.blended = r.blended;
+            bo.other = r.other;
+            bo.weights = r.weights;
+            o.bones.push_back(std::move(bo));
+        }
+        out->push_back(std::move(o));
+    }
+    if (out->empty()) { *err = m->file + ": " + *meshName + " has no LODs"; return false; }
+    return true;
+}
 
 int GameFiles(const char *pattern, MmlFileFn fn, void *user) {
     Scan();

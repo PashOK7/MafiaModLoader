@@ -484,6 +484,35 @@ def main(a):
             calls = add is not None and any(i.mnemonic == 'call' and i.op_str == f'{gls.base + at:#x}'
                                             for i in gls.md.disasm(gls.at(add, 0x1000), gls.base + add))
             check(calls, f"{name} LS3DF smCopySkinned: called by the m_AddFGroups at +0x68 of the {kind.decode()} vtable")
+            # (host/skin.cpp) PoseLod: the 'SNGM' vtable's slot (+0x9C in 1.2, +0x98 in 1.0) and called by the
+            # 'SMMR' one's slot; CopyRigidPositions called by the same m_AddFGroups
+            slot = 0x9C if name == '1.2' else 0x98
+            ul = struct.unpack('<I', gls.at(vt + slot, 4))[0] - gls.base if vt is not None else None
+            if kind == b'SNGM':
+                check(ul == ls['smUpdateLod'], f"{name} LS3DF smUpdateLod: the SNGM vtable's +{slot:#x}")
+            else:
+                body = list(gls.md.disasm(gls.at(ul, 0x40), gls.base + ul)) if ul is not None else []
+                check(any(i.mnemonic in ('call', 'jmp') and i.op_str == f"{gls.base + ls['smUpdateLod']:#x}" for i in body),
+                      f"{name} LS3DF smUpdateLod: called by the SMMR vtable's +{slot:#x} (the morph first)")
+            calls0 = add is not None and any(i.mnemonic == 'call' and i.op_str == f"{gls.base + ls['smUpdateVBPos0']:#x}"
+                                             for i in gls.md.disasm(gls.at(add, 0x1000), gls.base + add))
+            check(calls0, f"{name} LS3DF smUpdateVBPos0: called by the m_AddFGroups of the {kind.decode()} vtable")
+        ul = ls['smUpdateLod']
+        body = [f'{i.mnemonic} {i.op_str}' for i in gls.md.disasm(gls.at(ul, 0x800), gls.base + ul)]
+        check(next((b for b in body if b.startswith('ret')), '') == 'ret 4' and any('+ 0x224]' in b for b in body) and
+              any(b == f"call {gls.base + ls['frameUpdateMatrix']:#x}" for b in body),
+              f"{name} LS3DF smUpdateLod: reads the bones' stamp (+0x224), calls frameUpdateMatrix, ret 4")
+        um = [f'{i.mnemonic} {i.op_str}' for i in gls.md.disasm(gls.at(ls['frameUpdateMatrix'], 0x30), gls.base + ls['frameUpdateMatrix'])]
+        check(any('+ 0xac]' in b for b in um[:4]), f"{name} LS3DF frameUpdateMatrix: tests the frame's flags (+0xac) first")
+        v0 = [f'{i.mnemonic} {i.op_str}' for i in gls.md.disasm(gls.at(ls['smUpdateVBPos0'], 0x200), gls.base + ls['smUpdateVBPos0'])]
+        check(next((b for b in v0 if b.startswith('ret')), '') == 'ret 0xc' and any('+ 0x30]' in b for b in v0),
+              f"{name} LS3DF smUpdateVBPos0: the LOD's rigid part (+0x30), ret 0xc")
+        if ls['lockList']:
+            lst = f"ecx, {gls.base + ls['lockList']:#x}"
+            check(any(b == f'mov {lst}' for b in v0) or any(b == f'mov {lst}' for b in body),
+                  f"{name} LS3DF lockList: the locked buffers' list CopyRigidPositions or PoseLod appends to")
+            ap = [f'{i.mnemonic} {i.op_str}' for i in gls.md.disasm(gls.at(ls['lockAppend'], 0x80), gls.base + ls['lockAppend'])]
+            check(next((b for b in ap if b.startswith('ret')), '') == 'ret 4', f"{name} LS3DF lockAppend: thiscall(list, &item), ret 4")
     for name, (exe, ls, gexe, gls) in builds.items():
         ins =[f'{i.mnemonic} {i.op_str}' for i in gexe.md.disasm(gexe.at(exe['cityMusicPaused'] - 0x400000, 0x20), exe['cityMusicPaused'])]
         check('mov byte ptr [ecx + 0x2fc0], al' in ins and 'ret 4' in ins, f'{name} cityMusicPaused writes C_game +0x2FC0, ret 4')

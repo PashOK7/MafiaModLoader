@@ -323,6 +323,25 @@ void H_GfxPassRemove(MmlMod *m, int handle) { if (m && handle > 0) GfxPassRemove
 void H_GfxUi(MmlMod *m, int mode) { if (Alive(m)) GfxUiAsk(m, mode); }
 int H_GfxPassViews(MmlMod *m, int pass, int on) { return Alive(m) && GfxPassViews(m, pass, on != 0) ? 1 : 0; }
 int H_GfxMotion(MmlMod *m, int on) { return Alive(m) ? MotionAsk(m, on != 0) : 0; }
+int H_SkinSet(MmlMod *m, const char *model, const char *mesh, const MmlSkinLod *lods, int count, char *error, int cap) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    int r = SkinSet(m, model, mesh, lods, count, &err);
+    if (!r) Log(MML_LOG_WARN, Who(m), "skin_set: %s", err.c_str());
+    if (error && cap > 0) {
+        size_t k = std::min<size_t>(err.size(), static_cast<size_t>(cap - 1));
+        memcpy(error, err.data(), k);
+        error[k] = 0;
+    }
+    return r;
+}
+int H_SkinGet(MmlMod *m, const char *model, const char *mesh, int lod, MmlSkinMesh *out) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    int r = SkinGet(m, model, mesh, lod, out, &err);
+    if (!r) Log(MML_LOG_WARN, Who(m), "skin_get: %s", err.c_str());
+    return r;
+}
 int H_GfxState(MmlMod *, char *why, int cap) {
     std::string w;
     int s = GfxStateNow(&w);
@@ -868,6 +887,7 @@ bool UnloadMod(ModEntry *e, const char *why) {
     ModelsModGone(m);
     MeshesModGone(m);
     ShadersModGone(m);
+    SkinModGone(m);
     ShadowsModGone(m);
     GameCameraModGone(m);
     SoundModGone(m);
@@ -1250,6 +1270,8 @@ void ModsInit() {
     g_host.material_name = H_MaterialName;
     g_host.gfx_state = H_GfxState;
     g_host.gfx_motion = H_GfxMotion;
+    g_host.skin_set = H_SkinSet;
+    g_host.skin_get = H_SkinGet;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();
@@ -1354,6 +1376,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (ModelsMethod(method, paramsJson, reply, &ok)) return ok;
     if (MeshesMethod(method, paramsJson, reply, &ok)) return ok;
     if (ShadersMethod(method, paramsJson, reply, &ok)) return ok;
+    if (SkinMethod(method, paramsJson, reply, &ok)) return ok;
     if (SoundMethod(method, paramsJson, reply, &ok)) return ok;
     if (ControlMethod(method, paramsJson, reply, &ok)) return ok;
     if (InteractMethod(method, paramsJson, reply, &ok)) return ok;

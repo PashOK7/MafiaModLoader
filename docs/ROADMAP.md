@@ -837,12 +837,14 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
     root) by a weight each (`+0x64`): two influences at most, in the data itself. It writes position and normal
     (0x18 bytes a vertex) into a cache; `ls3d+65A70` then lights the vertices on the CPU from those normals, and the
     draw gets position, colour and UVs (FVF 0x142): no normals or bones reach the GPU. Two steps:
-    - **28a, N weights on the CPU**: slot 0x9C replaced for marked models only (a model's flag the format leaves
-      unused, as the community suggested; every other model keeps LS3D's own code), skinning with up to 8 weights
-      into the same cache, so the lighting, the drawing and whatever else reads the cache go on unchanged: both
-      builds, plain Direct3D 8 too. The weights come from a file beside the model (a mod's `files\`), so the .4ds
-      stays readable by every existing tool. Tested on weights generated for Tommy (3 or 4 bones at the joints),
-      screenshots before and after; an exporter (Blender) is a separate piece of work.
+    - **28a, N weights on the CPU** *(done 2026-10-20: host/skin.cpp, mml.h skin_set and skin_get; the journal,
+      MODDING "People's skinning", knowledge/notes/skinning.md)*: PoseLod hooked; a model a mod gives a skin (a
+      file `models\<name>.skin.json` among its files: the marker is the file, not a flag in the .4ds, so the .4ds
+      stays as every tool reads it; or skin_set) is skinned with up to 8 bones a vertex into the same cache, any
+      joint of the mesh's subtree (past LS3D's 64), each bone with its own matrix at rest; every other model keeps
+      LS3D's own code. Both builds, plain Direct3D 8 too. Seen on Tommy's weights smoothed to 4 bones a vertex
+      (`tools/skin_smooth.py`): a bent knee's crease rounded in both labs. An exporter (Blender) is a separate piece
+      of work.
     - **28b, on the GPU**, with item 27: for marked models a vertex shader skins (the bones' matrices in a vertex
       texture: vs_3_0's 256 registers hold about 50 beside the contract's), lights (the game's lights are in
       game.hlsli's registers already) and carries normals and MikkTSpace tangents (normal maps); LS3D's CPU skinning

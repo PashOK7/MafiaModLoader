@@ -563,6 +563,18 @@ struct Ls3dBuild {
     // vertex buffer (pooled; FVF 0x142), +0x18 the LOD's first vertex in it (the draw's BaseVertexIndex), +0x30 its
     // rigid part (+0x0C the count), +0x34 the cache, +0x3C its first vertex there.
     uintptr_t smCopySkinned;
+    // People's skinning (host/skin.cpp; the names are the demo's LS3D.dll's CodeView publics, the code read in both
+    // builds). smUpdateLod: I3D_singlemesh::PoseLod, thiscall(mesh, lod) ret 4, the vtable slot (+0x9C in 1.2, +0x98
+    // in 1.0) m_AddFGroups calls when the bones' stamp (mesh +0x224) is not the LOD's (+0x40): it skins the LOD's
+    // vertices into its cache (POS_NORM, 0x18 bytes) through each bone record's matrix times its joint's matrix in the
+    // mesh's space (joint +0x1C4, built from +0x50 up its parents while +0x204 bit 0x10 is clear); I3D_singlemorph's
+    // PoseLod morphs the faces first and calls it. smUpdateVBPos0: CopyRigidPositions, the same arguments as
+    // smCopySkinned, the rigid vertices' positions from the mesh's own buffer. frameUpdateMatrix: I3D_frame::
+    // UpdateMatrix, thiscall(frame), the local matrix (+0x50) from the position, rotation and scale. lockList,
+    // lockAppend: 1.2's list of the vertex buffers LS3D keeps locked (a vector: +0 data, +4 its room, +8 count; the
+    // buffer's +0x48 its place in it, -1 none), appended by thiscall(list, &buffer); 1.0 locks with D3DLOCK_NOSYSLOCK
+    // and keeps no list (0 both).
+    uintptr_t smUpdateLod, smUpdateVBPos0, frameUpdateMatrix, lockList, lockAppend;
 };
 
 inline const ExeBuild kExe12 = {
@@ -812,7 +824,10 @@ inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1
                                   0x9BC88,   // (I3D_light's vtable: its constructor 0x201F0 writes it at 0x2027D)
                                   0x9C660, 0x9C5B8,   // (written at 0x3FA3B and 0x406D8, PRTE's at 0x3FB72)
                                   0x9CE78,   // (I3D_sound's: written at 0x5774F and 0x57802)
-                                  0x557C0};  // (called by m_AddFGroups 0x55930 at 0x55D3E)
+                                  0x557C0,   // (called by m_AddFGroups 0x55930 at 0x55D3E)
+                                  // (2026-10-20: SNGM's vtable +0x9C, SMMR's PoseLod 0x57590 calls it; m_AddFGroups'
+                                  // call at 0x55D0B; PoseLod's calls at 0x553C5; the lock in CopyRigidPositions 0x55640)
+                                  0x54F60, 0x55640, 0x1A6E0, 0x1C5014, 0x41700};
 // LS3D 3.84.5 (31.7.2002): the vertex buffer has no flags word, everything after +0x04 sits 4 bytes lower.
 inline const Ls3dBuild kLs3d10 = {"1.0", 0x5ED80, 0x1A8A0, 0x305B0, 0x5D070, 0x1C350, 0x6E580, 0, 0,
                                   0x1AE00, 0x1BD60, 0x1C030, 0x2B540, 0x04, 0x14, 0x18,
@@ -829,7 +844,10 @@ inline const Ls3dBuild kLs3d10 = {"1.0", 0x5ED80, 0x1A8A0, 0x305B0, 0x5D070, 0x1
                                   0x97C28,   // (I3D_light's vtable: its slots' code the same as 1.2's, written at 0x2002D)
                                   0x98600, 0x98558,   // (written at 0x3DDFB and 0x3EB08, PRTE's at 0x3DF22)
                                   0x98E10,   // (I3D_sound's: its slots' code the same as 1.2's, written at 0x5486F)
-                                  0x52F70};  // (2026-10-20: m_AddFGroups 0x53030 at 0x533CE, the same code as 1.2's)
+                                  0x52F70,   // (2026-10-20: m_AddFGroups 0x53030 at 0x533CE, the same code as 1.2's)
+                                  // (2026-10-20: SNGM's vtable +0x98, SMMR's PoseLod 0x546B0 calls it; m_AddFGroups'
+                                  // call at 0x5339B; PoseLod's call of UpdateMatrix at 0x52951)
+                                  0x526A0, 0x52EA0, 0x1A4A0, 0, 0};
 
 // The builds found (null until Detect succeeds).
 inline const ExeBuild *g_exe;
