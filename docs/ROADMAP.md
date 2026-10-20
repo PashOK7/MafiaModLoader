@@ -1062,9 +1062,8 @@ merged, sorted by importance):
 
 ## Known gaps
 
-- **Measuring** (item 30, 2026-10-20): (1) the loader's `EnsureCrashFilter` calls SetUnhandledExceptionFilter every
-  frame (it puts its filter back in front): 1.2 to 2.2 % of the frame in the sampler; checking the filter less
-  often, or only when another may have been set, not done. (2) A return address after a call through a vtable is
+- **Measuring** (item 30, 2026-10-20): (1) *(fixed 2026-10-20: the journal)* the loader's crash filter was set
+  again every frame. (2) A return address after a call through a vtable is
   kept unchecked: a stale one there still counts in a function's total. (3) The GPU's span includes its waits for
   the CPU's commands; a frame's GPU work alone is not measured. (4) The machine's other load moves frames by up to
   0.3 ms between segments: `bench`'s interval holds it, but a quiet machine narrows it tenfold; the power plan and

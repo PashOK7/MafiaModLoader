@@ -2990,3 +2990,20 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   (`C_railway::Update` 15 %), Present 15 %; 1.0's portal culling and its vertex buffers' Lock
   14 %. The loader's own `EnsureCrashFilter` (SetUnhandledExceptionFilter every frame) 1.2 to 2.2 % of the frame:
   ROADMAP Known gaps.
+
+## 2026-10-20: the crash filter no longer set again every frame
+
+- **Seen** (item 30's sampler): the loader's `EnsureCrashFilter`, called each frame to put its filter back in front
+  of any other program's, spent 1.2 to 2.2 % of the frame inside KernelBase's SetUnhandledExceptionFilter. Not
+  hooked by anything (its first bytes the system's own prologue), but on Windows 10 it does far more than swap a
+  pointer (a 0x224-byte frame).
+- **Made** (host/crash.cpp): SetUnhandledExceptionFilter hooked at the start (KernelBase's: kernel32's jumps there).
+  A filter another sets goes after ours, its caller given what came before it (what it would chain to): ours stays
+  first without being set again. The hook runs on any thread (no TLS, no log: the frame logs what it counted).
+  Without the hook, ours is set every frame as before. `crash.filter`: the state (`hooked`, `others_set`,
+  `chained_to`), and `every_frame` to bring the old way back for a comparison. Offline: the harness sets a filter of
+  its own after the loader; the loader's dump is written, then the harness's filter called, and it was given its own
+  runtime's, not ours.
+- **Measured** with MCP `bench` (every frame against hooked, 12 blocks, the counters off): 1.2 -0.056 ± 0.020 ms a
+  frame of 2.68 (the game thread's CPU -0.061 ms), 1.0 -0.062 ± 0.032 ms of 2.68. Both games set their own filter after
+  the loader starts (1.2 once, Game.exe+0x218D64; 1.0 twice): now chained after ours.

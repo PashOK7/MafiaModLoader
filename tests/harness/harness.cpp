@@ -22,6 +22,14 @@ extern "C" __declspec(dllexport) __declspec(noinline) void harness_crash(volatil
     *p = 1;
 }
 
+// A filter of the harness's own, set after the loader's (as a wrapper or an overlay sets one): the loader's runs
+// first and chains to it.
+LONG WINAPI HarnessFilter(EXCEPTION_POINTERS *) {
+    printf("harness: its own filter called\n");
+    fflush(stdout);
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
 // A thread made as injectors and overlays make theirs (NtCreateThreadEx with SkipThreadAttach): no DllMain, no TLS
 // vector. One of those faulted in a player's game, and the loader's crash filter faulted again on its thread_local.
 LONG NTAPI NoTlsThread(void *) {
@@ -104,6 +112,17 @@ int main(int argc, char **argv) {
         if (GetFileAttributesW((dir + L"crash").c_str()) != INVALID_FILE_ATTRIBUTES) {
             DeleteFileW((dir + L"crash").c_str());
             harness_crash(nullptr);
+        }
+        if (GetFileAttributesW((dir + L"setfilter").c_str()) != INVALID_FILE_ATTRIBUTES) {
+            DeleteFileW((dir + L"setfilter").c_str());
+            LPTOP_LEVEL_EXCEPTION_FILTER before = SetUnhandledExceptionFilter(HarnessFilter);
+            HMODULE of = nullptr;
+            wchar_t name[MAX_PATH] = L"none";
+            if (before && GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                             reinterpret_cast<LPCWSTR>(before), &of))
+                GetModuleFileNameW(of, name, MAX_PATH);
+            printf("harness: its own filter set (it was given %p in %ls)\n", reinterpret_cast<void *>(before), name);
+            fflush(stdout);
         }
         if (GetFileAttributesW((dir + L"crash_notls").c_str()) != INVALID_FILE_ATTRIBUTES) {
             DeleteFileW((dir + L"crash_notls").c_str());

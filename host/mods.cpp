@@ -1415,6 +1415,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (ViewMethod(method, paramsJson, reply, &ok)) return ok;
     if (GeomMethod(method, paramsJson, reply, &ok)) return ok;
     if (ProfMethod(method, paramsJson, reply, &ok)) return ok;
+    if (CrashMethod(method, paramsJson, reply, &ok)) return ok;
     if (NativeMethod(method, paramsJson, reply, &ok)) return ok;
     if (HumansMethod(method, paramsJson, reply, &ok)) return ok;
     if (OrdersMethod(method, paramsJson, reply, &ok)) return ok;

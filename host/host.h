@@ -84,7 +84,10 @@ std::string DescribeAddress(uintptr_t addr);   // "Game.exe+0x1762A0", "LS3DF.dl
 bool PatchImport(HMODULE module, const char *dll, const char *fn, void *replacement, void **old);
 
 // ---- crash reports and the main thread (crash.cpp)
-void EnsureCrashFilter();      // ours first; called at start and every frame (others may install theirs later)
+void EnsureCrashFilter();      // ours set first (chaining to what was there)
+void CrashFilterStart();       // at start: ours set, SetUnhandledExceptionFilter hooked (another's goes after ours)
+void CrashFrame();             // each frame: ours set again only without the hook; another's set, logged
+bool CrashMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);   // crash.filter
 // The game's time scaled (game_hooks.cpp, the frame limiter's step: every system's): 0 the world stands still while
 // it is drawn; `step` and `real` the last frame's given and real steps (ms). state.time.
 void GameTimeScaleSet(double scale);

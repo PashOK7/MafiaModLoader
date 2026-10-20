@@ -665,8 +665,9 @@ def export_rva(path, name):
     return None
 
 
-def run_crash(trigger, tap_crash=False):
-    """The harness started, a tap and a call made, then crashed by its `trigger` file; (its output, the report or None)."""
+def run_crash(trigger, tap_crash=False, setup=None):
+    """The harness started, a tap and a call made (and `setup(bridge)`), then crashed by its `trigger` file; (its
+    output, the report or None)."""
     crash_dir = os.path.join(HARNESS, 'mml', 'crash')
     shutil.rmtree(crash_dir, ignore_errors=True)
     info_path = os.path.join(HARNESS, 'mml', 'bridge.json')
@@ -689,6 +690,8 @@ def run_crash(trigger, tap_crash=False):
         r = b.call('tap', {'cmd': 'mml_harness.exe+%X n=2 ret' % rva})
         check('a tap with its return on harness_crash', r.get('ok') and not str(r.get('result')).startswith('error'), r)
     b.call('hook_a.call', {'a': 2, 'b': 3})
+    if setup:
+        setup(b)
     open(os.path.join(HARNESS, trigger), 'w').close()
     try:
         out = proc.communicate(timeout=20)[0].decode(errors='replace')
@@ -726,6 +729,25 @@ def crash_tests():
     check('the report: the address space (free, its largest piece, Large Address Aware or not)',
           a.get('total_mb', 0) >= 2000 and 0 < a.get('largest_mb', 0) <= a.get('free_mb', 0) < a.get('total_mb', 0)
           and isinstance(a.get('large_address_aware'), bool), a)
+
+    def another_filter(b):
+        r = b.call('crash.filter')
+        check('crash.filter: SetUnhandledExceptionFilter hooked, ours not set again each frame',
+              r['ok'] and r['result']['hooked'] is True and r['result']['every_frame'] is False, r)
+        open(os.path.join(HARNESS, 'setfilter'), 'w').close()
+        time.sleep(0.3)
+        r = b.call('crash.filter')
+        check("crash.filter: another's filter set later goes after ours (chained to the harness's)",
+              r['ok'] and r['result']['others_set'] == 1 and r['result']['chained_to'].startswith('mml_harness.exe+0x'), r)
+        r = b.call('log.tail', {'lines': 40})
+        check('the log: another one was set, ours stays first', any('another one was set' in l for l in r['result']), r['result'][-5:])
+        r = b.call('crash.filter', {'every_frame': True})
+        check("crash.filter every_frame: ours set again each frame (a comparison's other side)", r['ok'] and r['result']['every_frame'] is True, r)
+        b.call('crash.filter', {'every_frame': False})
+    out, r = run_crash('crash', setup=another_filter)
+    given = out.split('its own filter set (it was given')[1].split(')')[0] if 'its own filter set (it was given' in out else ''
+    check("another's filter after ours: the dump written, then its filter called; it was given what came before it, not ours",
+          'its own filter called' in out and given and r is not None and 'MafiaModLoader.asi' not in given, out[-800:])
 
     out, r = run_crash('crash_notls', tap_crash=True)
     check('a thread without TLS: the harness made it (fs:[0x2C] 0)', 'fs:[0x2C] = 00000000' in out, out[-600:])

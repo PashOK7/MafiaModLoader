@@ -87,7 +87,7 @@ void Init() {
              a.largeAddressAware ? " (Game.exe is Large Address Aware)" :
              " (Game.exe is not Large Address Aware: the 4 GB patch would double it, for texture packs, DXVK, ReShade)");
     }
-    EnsureCrashFilter();
+    CrashFilterStart();
     if (GameHooksInstall()) {
         HLOG("game: Mafia %s", GameBuild());
         StartInit();

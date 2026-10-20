@@ -6,8 +6,8 @@
 // can be looked at afterwards; beside it Game_<pid>_<time>.json, what dies with the process: the stack with the mods
 // named, the log's last lines, the taps' last calls, the last events, the mods and the mission (mcp: crash_triage,
 // crash_list, crash_inspect). Exceptions caught by __try never get here (a mod's fault: mods.cpp, with its stack too).
-// The game or a wrapper may install a filter later: EnsureCrashFilter, every frame, puts ours back in front and
-// chains to theirs.
+// The game or a wrapper may install a filter later: SetUnhandledExceptionFilter is hooked, theirs goes after ours
+// (CrashFilterStart; without the hook, ours is set again every frame).
 #include "host.h"
 #include <cstdio>
 #include <cstring>
@@ -191,6 +191,27 @@ LONG WINAPI CrashFilter(EXCEPTION_POINTERS *ep) {
     if (slot >= 0) InterlockedExchange(&g_inside[slot], 0);
     return r;
 }
+
+// Ours kept first. The game's runtime, a wrapper or an overlay may set a filter of its own at any time; ours must run
+// first and chain to it. SetUnhandledExceptionFilter is hooked (KernelBase's: kernel32's jumps there): a filter set by
+// another goes after ours, and its caller is given what came before it (what it would chain to); ours stays set.
+// The hook runs on whichever thread calls it: no TLS, no log (the frame logs what it counted). Without the hook (it
+// could not be made), ours is set again every frame, as it once always was: KernelBase's SetUnhandledExceptionFilter
+// does far more than swap a pointer on Windows 10, 1.2 to 2.2 % of a frame in the sampler (crash.filter
+// {every_frame: true} brings that back, for a comparison).
+using SetFilterFn = LPTOP_LEVEL_EXCEPTION_FILTER(WINAPI *)(LPTOP_LEVEL_EXCEPTION_FILTER);
+SetFilterFn oSetFilter;
+volatile LONG g_othersSet, g_othersLogged;
+bool g_filterHooked, g_everyFrame;
+std::string g_filterWhy;
+
+LPTOP_LEVEL_EXCEPTION_FILTER WINAPI hkSetFilter(LPTOP_LEVEL_EXCEPTION_FILTER f) {
+    if (f == CrashFilter) return oSetFilter(f);
+    auto before = static_cast<LPTOP_LEVEL_EXCEPTION_FILTER>(
+        InterlockedExchangePointer(reinterpret_cast<PVOID volatile *>(&g_prevFilter), reinterpret_cast<PVOID>(f)));
+    InterlockedIncrement(&g_othersSet);
+    return before;
+}
 } // namespace
 
 void EnsureCrashFilter() {
@@ -198,6 +219,54 @@ void EnsureCrashFilter() {
     if (prev == CrashFilter) return;
     if (prev) HLOG("crash filter: another one (%p) was installed; ours runs first and chains to it", reinterpret_cast<void *>(prev));
     g_prevFilter = prev;
+}
+
+void CrashFilterStart() {
+    EnsureCrashFilter();
+    HMODULE kb = GetModuleHandleA("KernelBase.dll");
+    FARPROC at = kb ? GetProcAddress(kb, "SetUnhandledExceptionFilter") : nullptr;
+    if (!at) at = GetProcAddress(GetModuleHandleA("kernel32.dll"), "SetUnhandledExceptionFilter");
+    std::string err = at ? "" : "SetUnhandledExceptionFilter not found";
+    if (at && HookAdd(nullptr, reinterpret_cast<uintptr_t>(at), reinterpret_cast<void *>(&hkSetFilter),
+                      reinterpret_cast<void **>(&oSetFilter), &err)) {
+        g_filterHooked = true;
+        HLOG("crash filter: SetUnhandledExceptionFilter hooked at %s (another's filter goes after ours)",
+             DescribeAddress(reinterpret_cast<uintptr_t>(at)).c_str());
+    } else {
+        g_everyFrame = true;
+        g_filterWhy = err;
+        HWARN("crash filter: SetUnhandledExceptionFilter not hooked (%s): ours set again every frame", err.c_str());
+    }
+}
+
+void CrashFrame() {
+    if (g_everyFrame) EnsureCrashFilter();
+    const LONG n = g_othersSet;
+    if (n != g_othersLogged) {
+        g_othersLogged = n;
+        HLOG("crash filter: another one was set (%s); ours stays first and chains to it",
+             DescribeAddress(reinterpret_cast<uintptr_t>(g_prevFilter)).c_str());
+    }
+}
+
+bool CrashMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok) {
+    if (method != "crash.filter") return false;
+    json p = json::parse(paramsJson.empty() ? "null" : paramsJson, nullptr, false);
+    if (p.is_object() && p.contains("every_frame")) {
+        bool every = p["every_frame"].is_boolean() && p["every_frame"].get<bool>();
+        if (!every && !g_filterHooked) {
+            *ok = false;
+            *reply = "crash.filter: SetUnhandledExceptionFilter is not hooked (" + g_filterWhy + "): ours is set every frame";
+            return true;
+        }
+        g_everyFrame = every;
+    }
+    *ok = true;
+    json r = {{"hooked", g_filterHooked}, {"every_frame", g_everyFrame}, {"others_set", static_cast<long>(g_othersSet)},
+              {"chained_to", g_prevFilter ? json(DescribeAddress(reinterpret_cast<uintptr_t>(g_prevFilter))) : json(nullptr)}};
+    if (!g_filterWhy.empty()) r["why"] = g_filterWhy;
+    *reply = r.dump(-1, ' ', false, json::error_handler_t::replace);
+    return true;
 }
 
 namespace {
