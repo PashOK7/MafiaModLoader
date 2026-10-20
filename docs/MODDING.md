@@ -399,7 +399,7 @@ float3 history = g_myHistory.SampleLevel(g_linear, before * g_size.zw, 0).rgb;
 
 - **The camera's** part, for everything: the frame's linear depth reprojected through the last frame's camera (the
   sky by its direction alone).
-- **What moves by itself** (cars, their wheels, doors, props, people as wholes): LS3D draws every face group through
+- **What moves by itself** (cars, their wheels, doors, props, people): LS3D draws every face group through
   m_RenderFGroup (`host/geom.cpp`), which knows the visual it draws; a draw whose world transform is not the one it
   had the frame before is drawn again right after LS3D's own draw (its buffers are LS3D's at that moment: it refills
   dynamic buffers as it goes), into a target of the objects' motion, every vertex through this frame's and the last
@@ -407,12 +407,17 @@ float3 history = g_myHistory.SampleLevel(g_linear, before * g_size.zw, 0).rgb;
   frame's stage 1, PsMotionAll takes an object's motion where the object is what is finally seen (its depth is the
   frame's) and the camera's elsewhere. Each draw is known by its visual, its face group, the how-many-th time that
   pair is drawn this frame (one visual draws a car's four wheels) and its place in the call.
-- **Not**: a person's limbs (LS3D skins people on the CPU: he moves as a whole, his arms and legs as his body does),
-  billboards (as the camera), what writes no depth (a car's shadow decal, glass, smoke: the motion of what is behind;
+- **A person's limbs**: LS3D skins people on the CPU and copies the positions into the vertex buffer it draws
+  (`game_build.h` smCopySkinned). The host keeps each copy (from the skinning's cache and the mesh's own buffer,
+  system memory: the drawn buffer is video memory, which the CPU reads uncached) and the one the world drew the frame
+  before; a person's draw goes again from a buffer of the host's with both positions for each vertex (VsMotionSkin),
+  so a planted foot is still and a swinging arm moves by its own.
+- **Not**: billboards (as the camera), what writes no depth (a car's shadow decal, glass, smoke: the motion of what is behind;
   the edge of a shadow that moves with its car mismatches either way), the scene views (`f->motion` is NULL there).
 - **Its cost**: only while a mod wants them; the moving draws again (in the freeride's traffic 15 to 90 of them,
-  0.2 to 0.4 ms of the game thread at 1280x960 on an RTX 3070) and one full-screen pass. `gfx.state`'s `motion`:
-  who asked, the draws known, moved and drawn again, their time. Under DXVK the vectors go to Direct3D 11 with the
+  0.2 to 0.4 ms of the game thread at 1280x960 on an RTX 3070; a walking person's copies 0.005 ms) and one
+  full-screen pass. `gfx.state`'s `motion`: who asked, the draws known, moved and drawn again, the people's
+  (`skinned_known`, `skinned_again`, `limbs_moving`, `limbs_most_m`), their time (`ms`, `ms_copies`). Under DXVK the vectors go to Direct3D 11 with the
   other shared textures.
 - `dlss_nr`'s debug views show them: `1` as colours (grey still; red to the right, green down), `5` the frame before
   moved by them against this one (black where they are right), `6` the same without them.

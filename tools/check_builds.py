@@ -464,8 +464,28 @@ def main(a):
         for o, off in ((0x68, '0x18c'), (0x74, '0x194')):
             code = ' '.join(f'{i.mnemonic} {i.op_str}' for i in gls.md.disasm(gls.at(sl(gls, vt, o), 0x40), 0))
             check(f'+ {off}]' in code, f'{name} LS3DF soundVtable+{o:#x} writes {off}')
+    # A single mesh's skinned vertices (host/motion.cpp): smCopySkinned walks an instance up to the mesh it shares (+0x1D8,
+    # +0x08), reads the LOD's record (+0x1E4), its rigid part (+0x30), the cache (+0x34, +0x3C) and the I3D_mesh's LOD
+    # (+0x1E0), ends with ret 0xC, and is called by the m_AddFGroups at +0x68 of the vtables the 'SNGM' (single meshes)
+    # and 'SMMR' (single morphs: the people, their faces morphed) constructors write.
     for name, (exe, ls, gexe, gls) in builds.items():
-        ins = [f'{i.mnemonic} {i.op_str}' for i in gexe.md.disasm(gexe.at(exe['cityMusicPaused'] - 0x400000, 0x20), exe['cityMusicPaused'])]
+        at = ls['smCopySkinned']
+        body = [f'{i.mnemonic} {i.op_str}' for i in gls.md.disasm(gls.at(at, 0x200), gls.base + at)]
+        rets = [b for b in body if b.startswith('ret')]
+        joined = ' '.join(body)
+        check(rets[:1] == ['ret 0xc'] and all(f'+ {o}]' in joined for o in ('0x1d8', '0x1e4', '0x1e0', '0x30', '0x34', '0x3c')),
+              f"{name} LS3DF smCopySkinned: the LOD's record, its rigid part and cache, ret 0xc")
+        for kind in (b'SNGM', b'SMMR'):
+            ctor = bytes(gls.mem).find(bytes([0xC7, 0x86, 0xD4, 0x01, 0, 0]) + kind)   # (mov dword ptr [esi + 0x1d4], kind)
+            before = gls.at(ctor - 0x20, 0x20) if ctor > 0 else b''
+            w = before.rfind(bytes([0xC7, 0x06]))   # (the vtable written just before: mov dword ptr [esi], imm32)
+            vt = struct.unpack('<I', before[w + 2:w + 6])[0] - gls.base if w >= 0 else None
+            add = struct.unpack('<I', gls.at(vt + 0x68, 4))[0] - gls.base if vt is not None else None
+            calls = add is not None and any(i.mnemonic == 'call' and i.op_str == f'{gls.base + at:#x}'
+                                            for i in gls.md.disasm(gls.at(add, 0x1000), gls.base + add))
+            check(calls, f"{name} LS3DF smCopySkinned: called by the m_AddFGroups at +0x68 of the {kind.decode()} vtable")
+    for name, (exe, ls, gexe, gls) in builds.items():
+        ins =[f'{i.mnemonic} {i.op_str}' for i in gexe.md.disasm(gexe.at(exe['cityMusicPaused'] - 0x400000, 0x20), exe['cityMusicPaused'])]
         check('mov byte ptr [ecx + 0x2fc0], al' in ins and 'ret 4' in ins, f'{name} cityMusicPaused writes C_game +0x2FC0, ret 4')
         imm = b'\xd9\x05' + exe['musicVolume'].to_bytes(4, 'little') + b'\xd8\x4c'
         check(bytes(gexe.mem).count(imm) >= 1, f'{name} musicVolume: loaded and multiplied (IShowSetVolume)')

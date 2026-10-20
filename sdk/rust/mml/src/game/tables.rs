@@ -303,6 +303,7 @@ pub struct Ls3d {
     pub prtbVtable: usize,
     pub prteVtable: usize,
     pub soundVtable: usize,
+    pub smCopySkinned: usize,
 }
 
 /// The race of mission 6: racing.h RacingLayout.
@@ -868,6 +869,7 @@ pub static LS3D_12: Ls3d = Ls3d {
     prtbVtable: 0x9C660,
     prteVtable: 0x9C5B8,
     soundVtable: 0x9CE78,
+    smCopySkinned: 0x557C0,
 };
 
 pub static LS3D_10: Ls3d = Ls3d {
@@ -915,6 +917,7 @@ pub static LS3D_10: Ls3d = Ls3d {
     prtbVtable: 0x98600,
     prteVtable: 0x98558,
     soundVtable: 0x98E10,
+    smCopySkinned: 0x52F70,
 };
 
 pub static RACING_12: Racing = Racing {

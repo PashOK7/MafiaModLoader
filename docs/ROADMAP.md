@@ -1063,12 +1063,13 @@ merged, sorted by importance):
   player's setup; it is installed system-wide, not tried in the labs), a DXVK older than 3.x (its interop interfaces
   are from 2.1; `gfx.state` says what is missing), DXVK's own `d3d8.dll` instead of dxwrapper's (the bridge needs a
   9Ex device underneath: off, and it says so).
-- **The motion vectors** (host/motion.cpp, 2026-10-20): a person's limbs move as his body does (LS3D skins people on
-  the CPU, ls3d+54F60, into a buffer of positions and normals that its lighting, ls3d+65A70, turns into the drawn
-  vertices: their last positions kept per mesh and drawn as a second stream would give each vertex its own motion:
-  the next block); a wheel's spokes spinning show at their edges in the check view; billboards move as the camera;
-  translucent draws keep what is behind them (a car's shadow decal mismatches at its edge either way). Seen in both
-  labs, 9Ex and DXVK (the freeride's traffic, the player's car driven, `dlss_nr` debug 1, 5, 6).
+- **The motion vectors** (host/motion.cpp, 2026-10-20): a wheel's spokes spinning show at their edges in the check
+  view; billboards move as the camera; translucent draws keep what is behind them (a car's shadow decal mismatches at
+  its edge either way); where a person's arm passes close over his body a few pixels hatch (two surfaces at nearly
+  one depth: the draw again's LESSEQUAL picks either). People's limbs have their own motion since the same day
+  (smCopySkinned's copies; seen in both labs, a walking copy of Tommy, `dlss_nr` debug 1 and 5); not yet seen under
+  DXVK nor with a crowd's distant LODs looked at closely. Seen in both labs, 9Ex and DXVK (the freeride's traffic,
+  the player's car driven, `dlss_nr` debug 1, 5, 6).
 - **The developer tools' block** (2026-10-19): seen in both labs, but not yet the distances `triggers` draws (a
   mission waiting on a GETACTORSDIST) nor the `names` and `web` views looked at closely in 1.0.
 - **Wireframe** (2026-10-18, from PR 2): not made. The proper way is LS3D's own driver state (Insanity3D's

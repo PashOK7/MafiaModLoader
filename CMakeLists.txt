@@ -130,7 +130,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     # the loader's own shaders (host/gfx.cpp: the graphics bridge)
     mml_shaders(MafiaModLoader host ${CMAKE_SOURCE_DIR}/host/shaders
         bridge9.hlsl:VsQuad:vs_3_0 bridge9.hlsl:PsDepth:ps_3_0 bridge9.hlsl:PsComposite:ps_3_0
-        bridge9.hlsl:VsMotion:vs_3_0 bridge9.hlsl:PsMotion:ps_3_0 bridge9.hlsl:PsMotionAll:ps_3_0
+        bridge9.hlsl:VsMotion:vs_3_0 bridge9.hlsl:VsMotionSkin:vs_3_0 bridge9.hlsl:PsMotion:ps_3_0 bridge9.hlsl:PsMotionAll:ps_3_0
         bridge11.hlsl:VsFullScreen:vs_5_0)
 
     # mml_add_mod(<id> <dir> <sources...> [SHADERS <file>:<entry>:<profile>[:<name>] ...]): a native mod:

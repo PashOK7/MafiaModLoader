@@ -2767,3 +2767,28 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   and 1.0 on DXVK, the player's taxi driven into the freeride's traffic: the passing cars' bodies dark (debug 6,
   without vectors: bright), the taxi dark while the camera follows it, the background dark; left bright: people's
   limbs (next block), spokes' edges, the taxi's shadow's edge. 15 to 90 draws again a frame, 0.17 to 0.42 ms.
+
+## 2026-10-20: the motion vectors of people's limbs
+
+- **Asked**: the block after the motion vectors (the owner's item 4): a person's arms and legs with their own motion.
+- **Found**: LS3D skins people on the CPU. The m_AddFGroups that single meshes ('SNGM') and single morphs ('SMMR':
+  the people, their faces morphed; ls3d+55930 in 1.2, +53030 in 1.0) share skins the LOD it draws into a cache of
+  positions and normals (its vtable +0x9C in 1.2, +0x98 in 1.0) when the bones changed, then copies the positions
+  into the LOD's drawn buffer (a pooled FVF 0x142 buffer of some 5461 vertices): the rigid vertices from the mesh's
+  own buffer (ls3d+55640, +52EA0) and then the skinned ones from the cache (smCopySkinned: ls3d+557C0, +52F70). Its
+  draw (I3D_object's m_RenderFGroup) gives the LOD's first vertex in the pool as SetIndices' base vertex: the draw
+  and the copy are matched by it. The hardware path (ProcessVertices into pretransformed vertices) is not taken in
+  either lab (ls3d+1C563C bit 0 set: 0xE9). The layouts are the same in both builds.
+- **Made**: smCopySkinned hooked (game_build.h, checked by check_builds.py through both constructors' vtables);
+  each copy kept per mesh and LOD, with the one the world drew the frame before (by versions, not frame numbers:
+  the sun's shadow pass and the scene views may skin a LOD before the frame's own drawing does). A person's draw
+  that moved goes again from a ring of the host's (a dynamic buffer, 24 bytes a vertex: the position now and
+  before; VsMotionSkin), its base vertex moved to the LOD's place in the ring.
+- **Its cost**, measured: read from the drawn buffer the copies took 1.5 to 1.8 ms a person (video memory, read
+  uncached by the CPU; SSE4.1's streaming loads made it 3.6 ms for two meshes against 3.1 without: no help, so it
+  is most likely not write-combined). Read where the copies read (the skinning's cache and the mesh's own buffer,
+  system memory the game's lighting reads too): 0.005 ms for a walking person, the whole motion 0.15 ms. The
+  streamed read is kept for a source that is not locked (`copies_streamed` counts them: none seen).
+- **Seen**: a copy of Tommy walking across a held camera, both labs at once: 1.2's debug 1 shows the planted foot
+  still and the swinging leg at twice the body's motion; 1.0's debug 5 dark over the body and the limbs, the edges of
+  what he uncovers bright (no history there: no vector can help). Not yet: DXVK, a crowd's distant LODs.

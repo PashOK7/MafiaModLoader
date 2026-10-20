@@ -552,6 +552,17 @@ struct Ls3dBuild {
     // SetOutVol, +0x68 SetVolume, +0x6C SetLoop(bool), +0x70 SetCurrTime(ms), +0x74 SetFrequency(factor), +0x80
     // GetCurrTime, +0x84 GetPlayTime (ms), +0x88 SetOn2(bool, bool) (the scripts' STOPSOUND: off, at once).
     uintptr_t soundVtable;
+    // A single mesh's skinned vertices (host/motion.cpp: a person's limbs in the motion vectors). LS3D skins a person
+    // on the CPU: the m_AddFGroups (vtable +0x68) that single meshes ('SNGM') and single morphs ('SMMR', the people:
+    // their faces morphed) share skins the LOD it draws into the LOD's cache (its
+    // vtable +0x9C in 1.2, +0x98 in 1.0) when the bones changed, then copies the positions into the LOD's drawn vertex
+    // buffer: first its rigid vertices (the last ones, from the mesh's own buffer), then smCopySkinned, thiscall(mesh,
+    // dest, stride, lod) ret 0xC, the skinned ones (the first ones, from the cache). The layouts, the same in both
+    // builds: the mesh +0x1D8 flags (0x10000: an instance, its +0x08 the mesh it shares), +0x1E0 its I3D_mesh (+0x0C
+    // + 4 * lod: the LOD's data, whose +0x08 is the vertex count), +0x1E4 + 4 * lod the LOD's record: +0x10 the drawn
+    // vertex buffer (pooled; FVF 0x142), +0x18 the LOD's first vertex in it (the draw's BaseVertexIndex), +0x30 its
+    // rigid part (+0x0C the count), +0x34 the cache, +0x3C its first vertex there.
+    uintptr_t smCopySkinned;
 };
 
 inline const ExeBuild kExe12 = {
@@ -800,7 +811,8 @@ inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1
                                   0x39280, 0x28D40, 0x083B0,
                                   0x9BC88,   // (I3D_light's vtable: its constructor 0x201F0 writes it at 0x2027D)
                                   0x9C660, 0x9C5B8,   // (written at 0x3FA3B and 0x406D8, PRTE's at 0x3FB72)
-                                  0x9CE78};   // (I3D_sound's: written at 0x5774F and 0x57802)
+                                  0x9CE78,   // (I3D_sound's: written at 0x5774F and 0x57802)
+                                  0x557C0};  // (called by m_AddFGroups 0x55930 at 0x55D3E)
 // LS3D 3.84.5 (31.7.2002): the vertex buffer has no flags word, everything after +0x04 sits 4 bytes lower.
 inline const Ls3dBuild kLs3d10 = {"1.0", 0x5ED80, 0x1A8A0, 0x305B0, 0x5D070, 0x1C350, 0x6E580, 0, 0,
                                   0x1AE00, 0x1BD60, 0x1C030, 0x2B540, 0x04, 0x14, 0x18,
@@ -816,7 +828,8 @@ inline const Ls3dBuild kLs3d10 = {"1.0", 0x5ED80, 0x1A8A0, 0x305B0, 0x5D070, 0x1
                                   0x37940, 0x28670, 0x07E50,   // (the vtables +0x6C of OBJ_, LMAP, billboards)
                                   0x97C28,   // (I3D_light's vtable: its slots' code the same as 1.2's, written at 0x2002D)
                                   0x98600, 0x98558,   // (written at 0x3DDFB and 0x3EB08, PRTE's at 0x3DF22)
-                                  0x98E10};   // (I3D_sound's: its slots' code the same as 1.2's, written at 0x5486F)
+                                  0x98E10,   // (I3D_sound's: its slots' code the same as 1.2's, written at 0x5486F)
+                                  0x52F70};  // (2026-10-20: m_AddFGroups 0x53030 at 0x533CE, the same code as 1.2's)
 
 // The builds found (null until Detect succeeds).
 inline const ExeBuild *g_exe;

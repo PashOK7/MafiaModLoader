@@ -4,6 +4,8 @@
 //   PsComposite  ps_3_0  the effects target (premultiplied RGBA16F) over the frame (blend ONE, INVSRCALPHA)
 //   VsMotion     vs_3_0  a moving object's draw again (host/motion.cpp): its vertices through this frame's and the
 //   PsMotion     ps_3_0  last frame's world, view and projection; each pixel's motion (pixels), its view depth, 1
+//   VsMotionSkin vs_3_0  the same for a skinned mesh (a person): each vertex where it is now and where it was
+//                        drawn the frame before (motion.cpp's copy of LS3D's skinned positions)
 //   PsMotionAll  ps_3_0  the frame's motion vectors (G16R16F): the objects' where they are what is seen, else the
 //                        camera's (the linear depth reprojected through the last frame's camera)
 // Pixels come from VPOS (a pixel's top-left corner): texels and pixels match one to one, without Direct3D 9's
@@ -41,6 +43,15 @@ MotionV VsMotion(float3 pos : POSITION) {
     o.pos = mul(float4(pos, 1), g_now);
     o.now = o.pos;
     o.before = mul(float4(pos, 1), g_before);
+    return o;
+}
+
+// a skinned mesh: LS3D skins on the CPU, so each vertex has its own last position (POSITION1), drawn the frame before
+MotionV VsMotionSkin(float3 pos : POSITION0, float3 was : POSITION1) {
+    MotionV o;
+    o.pos = mul(float4(pos, 1), g_now);
+    o.now = o.pos;
+    o.before = mul(float4(was, 1), g_before);
     return o;
 }
 

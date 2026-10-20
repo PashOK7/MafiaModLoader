@@ -15,9 +15,14 @@
 // group): each draw is known by the visual, the group, the how-many-th time this frame that pair is drawn and the
 // draw's place in that call. What writes no depth (a car's shadow decal, glass) keeps the motion of what is behind it.
 //
-// A compromise, said plainly: a skinned person moves as a whole (his visual's transform); his limbs' own motion
-// (LS3D skins on the CPU into a cache: knowledge of item 28) is not drawn yet. Billboards (sprites that turn to the
-// camera) move with the camera's motion. Only the frame's world drawing: scene views get none.
+// A person's limbs: LS3D skins a single mesh on the CPU and copies the positions into the LOD's drawn vertex buffer
+// (game_build.h smCopySkinned, hooked here): the copy just made is kept for each mesh and LOD, and so is the one the
+// frame's world drew the frame before. A skinned draw that moved goes again from a ring of our own, each vertex with
+// both positions (VsMotionSkin), its BaseVertexIndex moved to the LOD's place in the ring (LS3D's draw gives the LOD's
+// first vertex as its base: that is how the draw and the copy are matched).
+//
+// A compromise, said plainly: billboards (sprites that turn to the camera) move with the camera's motion. Only the
+// frame's world drawing: scene views get none.
 #include "host.h"
 #include <d3d9.h>
 #include <algorithm>
@@ -25,7 +30,11 @@
 #include <cstring>
 #include <unordered_map>
 #include <vector>
+#include <intrin.h>
+#include <smmintrin.h>
+#include "mml/game/game_build.h"
 #include "shaders/VsMotion.h"
+#include "shaders/VsMotionSkin.h"
 #include "shaders/PsMotion.h"
 
 namespace host {
@@ -76,32 +85,78 @@ struct PairHash {
 struct Count { unsigned frame = 0, n = 0; };
 std::unordered_map<Pair, Count, PairHash> g_counts;
 
+// A single mesh's LOD as LS3D last copied its skinned positions into the drawn buffer (cur), and as the frame's world
+// drew it the last time (drawn: cur until a copy comes after that draw). Its vertices keep their order whatever place
+// the LOD has in the pooled buffer (first: the draw's BaseVertexIndex).
+struct SkinKey {
+    const void *mesh;
+    int lod;
+    bool operator==(const SkinKey &o) const { return mesh == o.mesh && lod == o.lod; }
+};
+struct SkinKeyHash {
+    size_t operator()(const SkinKey &k) const { return reinterpret_cast<size_t>(k.mesh) * 0x9E3779B1u ^ static_cast<size_t>(k.lod); }
+};
+struct Skin {
+    unsigned first = 0, count = 0;
+    std::vector<float> cur, drawn;     // xyz each
+    unsigned curVersion = 0, drawnVersion = 0;
+    unsigned drawnFrame = 0;           // the frame (g_frame) the world drew it last
+    unsigned ringFrame = 0;            // this frame's copy in the ring: where, and whether its limbs moved
+    UINT ringAt = 0;
+    bool ringed = false, limbs = false;
+    unsigned seen = 0;                 // copied or drawn last (g_frame): an entry not seen for a while goes
+};
+std::unordered_map<SkinKey, Skin, SkinKeyHash> g_skins;
+constexpr int kSmFlags = 0x1D8, kSmMesh = 0x1E0, kSmLods = 0x1E4;
+constexpr int kLodFirst = 0x18, kLodRigid = 0x30, kLodCache = 0x34, kLodCacheFirst = 0x3C;   // a LOD's record
+constexpr int kMeshLods = 0x0C, kMeshLodCount = 0x08, kMeshLodBuffer = 0x0C, kMeshLodFirst = 0x14;   // the I3D_mesh's
+constexpr int kMaxLods = 8;
+using CopyFn = void(__fastcall *)(void *mesh, void *edx, uint8_t *dest, int stride, int lod);
+CopyFn oCopySkinned;
+bool g_skinHookTried, g_skinHooked;
+std::string g_skinHookWhy;
+
 // Direct3D 9 objects
-IDirect3DVertexShader9 *g_vs;
+IDirect3DVertexShader9 *g_vs, *g_vsSkin;
 IDirect3DPixelShader9 *g_ps;
-IDirect3DVertexDeclaration9 *g_decl;
+IDirect3DVertexDeclaration9 *g_decl, *g_declSkin;
 IDirect3DStateBlock9 *g_block;
 IDirect3DDevice9 *g_madeOn;
+// the skinned draws' vertices, this frame's position and the last frame's (24 bytes), appended through the frames
+IDirect3DVertexBuffer9 *g_ring;
+constexpr UINT kRingVerts = 1u << 17, kRingStride = 24;
+UINT g_ringAt;
+bool g_ringFresh = true;
 
 // statistics
-unsigned g_visualsMoving, g_drawsAgain, g_skipped;
-unsigned g_lastVisuals, g_lastDraws, g_lastSkipped;
+unsigned g_visualsMoving, g_drawsAgain, g_skipped, g_skinnedAgain;
+unsigned g_lastVisuals, g_lastDraws, g_lastSkipped, g_lastSkinned;
+unsigned g_copiesStreamed;          // copies read from the drawn buffer (a source not locked)
+double g_msCopies, g_msCopiesLast; // the skinned copies kept since the last frame began
+unsigned g_limbLods, g_lastLimbLods;  // skinned LODs whose limbs moved
+float g_limbMax, g_lastLimbMax;      // the most a vertex moved in its mesh (metres; every 8th vertex looked at)
 double g_msNow, g_msLast;
 LARGE_INTEGER g_freq;
 double NowMs() { LARGE_INTEGER t; QueryPerformanceCounter(&t); return 1000.0 * t.QuadPart / g_freq.QuadPart; }
 
 void Release() {
-    SafeRelease(g_vs); SafeRelease(g_ps); SafeRelease(g_decl); SafeRelease(g_block);
+    SafeRelease(g_vs); SafeRelease(g_vsSkin); SafeRelease(g_ps); SafeRelease(g_decl); SafeRelease(g_declSkin);
+    SafeRelease(g_block); SafeRelease(g_ring);
     g_madeOn = nullptr;
+    g_ringFresh = true;
 }
 
 bool Make(IDirect3DDevice9 *d) {
     if (g_madeOn == d && g_vs) return true;
     Release();
     const D3DVERTEXELEMENT9 el[] = {{0, 0, D3DDECLTYPE_FLOAT3, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_POSITION, 0}, D3DDECL_END()};
+    const D3DVERTEXELEMENT9 skin[] = {{0, 0, D3DDECLTYPE_FLOAT3, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_POSITION, 0},
+                                      {0, 12, D3DDECLTYPE_FLOAT3, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_POSITION, 1}, D3DDECL_END()};
     if (FAILED(d->CreateVertexShader(reinterpret_cast<const DWORD *>(kVsMotion), &g_vs)) ||
+        FAILED(d->CreateVertexShader(reinterpret_cast<const DWORD *>(kVsMotionSkin), &g_vsSkin)) ||
         FAILED(d->CreatePixelShader(reinterpret_cast<const DWORD *>(kPsMotion), &g_ps)) ||
-        FAILED(d->CreateVertexDeclaration(el, &g_decl))) {
+        FAILED(d->CreateVertexDeclaration(el, &g_decl)) || FAILED(d->CreateVertexDeclaration(skin, &g_declSkin)) ||
+        FAILED(d->CreateVertexBuffer(kRingVerts * kRingStride, D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, 0, D3DPOOL_DEFAULT, &g_ring, nullptr))) {
         Release();
         return false;
     }
@@ -141,6 +196,140 @@ bool PositionFirst(IDirect3DDevice9 *d) {
     return p == D3DFVF_XYZ || (p >= D3DFVF_XYZB1 && p <= D3DFVF_XYZB5);
 }
 
+template <class T> T At(const void *p, int off) { return *reinterpret_cast<const T *>(static_cast<const uint8_t *>(p) + off); }
+
+// The drawn buffer, read only when a copy's sources are not locked: it is video memory the CPU reads uncached (a
+// person's LOD took 1.5 to 1.8 ms). SSE4.1's streaming loads read it whole lines at once where the memory is
+// write-combined (they did not help on the lab's RTX 3070); the range is read 16-byte aligned (an aligned block
+// never crosses a page) into a buffer of our own.
+std::vector<__m128i> g_wc;
+int g_sse41 = -1;
+const uint8_t *ReadLocked(const uint8_t *src, size_t n) {
+    if (g_sse41 < 0) {
+        int r[4];
+        __cpuid(r, 1);
+        g_sse41 = (r[2] >> 19) & 1;
+    }
+    uintptr_t from = reinterpret_cast<uintptr_t>(src) & ~uintptr_t(15), to = (reinterpret_cast<uintptr_t>(src) + n + 15) & ~uintptr_t(15);
+    size_t blocks = (to - from) / 16;
+    if (g_wc.size() < blocks) g_wc.resize(blocks);
+    auto *in = reinterpret_cast<__m128i *>(from);
+    if (g_sse41)
+        for (size_t i = 0; i < blocks; i++) g_wc[i] = _mm_stream_load_si128(in + i);
+    else
+        memcpy(g_wc.data(), in, blocks * 16);
+    return reinterpret_cast<const uint8_t *>(g_wc.data()) + (reinterpret_cast<uintptr_t>(src) - from);
+}
+
+// smCopySkinned has just copied a LOD's skinned positions (its rigid ones were copied just before): the LOD's whole
+// range in the drawn buffer is what will be drawn, kept here (the cur before it, if the world drew that one, as drawn).
+void KeepCopy(const void *mesh, const uint8_t *dest, int stride, int lod) {
+    if (lod < 0 || lod >= kMaxLods || stride < 12 || !dest) return;
+    const void *m = mesh;   // (an instance shares its mesh's LODs: walked up as the copy does)
+    for (int i = 0; i < 8 && (At<uint32_t>(m, kSmFlags) & 0x10000); i++) m = At<const void *>(m, 0x08);
+    const void *rec = At<const void *>(m, kSmLods + 4 * lod), *data = At<const void *>(m, kSmMesh);
+    const void *lodData = data ? At<const void *>(data, kMeshLods + 4 * lod) : nullptr;
+    if (!rec || !lodData) return;
+    unsigned count = At<uint32_t>(lodData, kMeshLodCount);
+    if (!count || count > kRingVerts) return;
+    Skin &s = g_skins[SkinKey{mesh, lod}];
+    if (s.count != count) s = Skin{};   // (another mesh at a freed address)
+    s.count = count;
+    s.first = At<uint32_t>(rec, kLodFirst);
+    if (s.curVersion == s.drawnVersion && s.drawnFrame) std::swap(s.cur, s.drawn);   // (what the world drew stays)
+    s.cur.resize(count * 3);
+    // read where the copies read (the cache the CPU skinned into, the mesh's own buffer: both system memory the game
+    // reads itself), not the drawn buffer (video memory the CPU reads uncached: 1.8 ms a person)
+    const int vbStride = game::Ls3d().vbStride;
+    const void *rigidPart = At<const void *>(rec, kLodRigid), *cache = At<const void *>(rec, kLodCache);
+    const void *own = At<const void *>(lodData, kMeshLodBuffer);
+    unsigned rigid = rigidPart ? At<uint32_t>(rigidPart, 0x0C) : 0, skinned = count - std::min(rigid, count);
+    const uint8_t *cacheAt = cache ? At<const uint8_t *>(cache, 0) : nullptr, *ownAt = own ? At<const uint8_t *>(own, 0) : nullptr;
+    int cacheStride = cache ? At<int>(cache, vbStride) : 0, ownStride = own ? At<int>(own, vbStride) : 0;
+    if (rigid <= count && (!skinned || (cacheAt && cacheStride >= 12)) && (!rigid || (ownAt && ownStride >= 12))) {
+        const uint8_t *from = skinned ? cacheAt + size_t(At<uint32_t>(rec, kLodCacheFirst)) * cacheStride : nullptr;
+        for (unsigned i = 0; i < skinned; i++) memcpy(&s.cur[i * 3], from + size_t(i) * cacheStride, 12);
+        from = rigid ? ownAt + size_t(At<uint32_t>(lodData, kMeshLodFirst) + skinned) * ownStride : nullptr;
+        for (unsigned i = 0; i < rigid; i++) memcpy(&s.cur[(skinned + i) * 3], from + size_t(i) * ownStride, 12);
+    } else {   // (a source not locked: the drawn copy, streamed)
+        const uint8_t *v = ReadLocked(dest, size_t(count - 1) * stride + 12);
+        for (unsigned i = 0; i < count; i++) memcpy(&s.cur[i * 3], v + size_t(i) * stride, 12);
+        g_copiesStreamed++;
+    }
+    s.curVersion++;
+    s.seen = g_frame;
+}
+
+void __fastcall hkCopySkinned(void *mesh, void *edx, uint8_t *dest, int stride, int lod) {
+    oCopySkinned(mesh, edx, dest, stride, lod);
+    if (g_asks.empty()) return;
+    double t0 = NowMs();
+    __try {
+        KeepCopy(mesh, dest, stride, lod);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        g_skipped++;
+    }
+    g_msCopies += NowMs() - t0;
+}
+
+bool EnsureSkinHook() {
+    if (g_skinHookTried) return g_skinHooked;
+    if (!game::g_ls3d) { g_skinHookWhy = "no game known"; return false; }
+    g_skinHookTried = true;
+    if (!game::Ls3d().smCopySkinned) { g_skinHookWhy = "not known for this LS3DF.dll"; return false; }
+    std::string err;
+    if (!HookAdd(nullptr, ModuleBase("LS3DF.dll") + game::Ls3d().smCopySkinned, reinterpret_cast<void *>(&hkCopySkinned),
+                 reinterpret_cast<void **>(&oCopySkinned), &err)) {
+        g_skinHookWhy = "smCopySkinned not hooked: " + err;
+        HLOG("motion: %s (people's limbs move with them as wholes)", g_skinHookWhy.c_str());
+        return false;
+    }
+    g_skinHooked = true;
+    return true;
+}
+
+// The skinned LOD a draw of the visual is (LS3D's draw gives the LOD's first vertex as its base), its positions now and
+// as drawn the frame before put in the ring once a frame when the draw moved (`moved`: its transform did). Null: not one.
+Skin *SkinOf(INT base, bool moved) {
+    if (g_skins.empty()) return nullptr;   // (only single meshes are there: 'SNGM', and 'SMMR' the people, morphed faces)
+    Skin *s = nullptr;
+    for (int lod = 0; lod < kMaxLods && !s; lod++) {
+        auto it = g_skins.find(SkinKey{g_visual, lod});
+        if (it != g_skins.end() && it->second.first == static_cast<unsigned>(base) && it->second.cur.size()) s = &it->second;
+    }
+    if (!s) return nullptr;
+    if (s->ringFrame != g_frame) {   // (its first draw this frame)
+        s->ringFrame = g_frame;
+        s->ringed = false;
+        bool before = s->drawnFrame && s->drawnFrame + 1 == g_frame && s->curVersion != s->drawnVersion;
+        const std::vector<float> &now = s->cur, &was = before && s->drawn.size() == s->cur.size() ? s->drawn : s->cur;
+        s->limbs = &was != &now;
+        if (s->limbs) {
+            g_limbLods++;
+            for (unsigned i = 0; i < s->count; i += 8) {
+                float dx = now[i * 3] - was[i * 3], dy = now[i * 3 + 1] - was[i * 3 + 1], dz = now[i * 3 + 2] - was[i * 3 + 2];
+                g_limbMax = std::max(g_limbMax, std::sqrt(dx * dx + dy * dy + dz * dz));
+            }
+        }
+        s->drawnFrame = g_frame;
+        s->drawnVersion = s->curVersion;
+        s->seen = g_frame;
+        if ((s->limbs || moved) && g_ring) {
+            DWORD flags = D3DLOCK_NOOVERWRITE;
+            if (g_ringFresh || g_ringAt + s->count > kRingVerts) g_ringAt = 0, flags = D3DLOCK_DISCARD, g_ringFresh = false;
+            float *p = nullptr;
+            if (SUCCEEDED(g_ring->Lock(g_ringAt * kRingStride, s->count * kRingStride, reinterpret_cast<void **>(&p), flags)) && p) {
+                for (unsigned i = 0; i < s->count; i++) memcpy(p + i * 6, &now[i * 3], 12), memcpy(p + i * 6 + 3, &was[i * 3], 12);
+                g_ring->Unlock();
+                s->ringAt = g_ringAt;
+                s->ringed = true;
+                g_ringAt += s->count;
+            }
+        }
+    }
+    return s;
+}
+
 void DrawAgain(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex, UINT verts, UINT start, UINT n, DipFn dip) {
     D3DMATRIX world{};
     if (FAILED(d->GetTransform(D3DTS_WORLD, &world))) return;
@@ -155,7 +344,11 @@ void DrawAgain(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex,
         s->frame = g_frame;
         if (s->haveBefore && !Same(s->now, s->before)) g_visualsMoving++;   // (draws that moved, counted once a frame)
     }
-    if (!s->haveBefore || Same(world, s->before)) return;   // still (or new: its motion is not known)
+    if (!s->haveBefore) return;   // new: its motion is not known
+    bool moved = !Same(world, s->before);
+    Skin *skin = SkinOf(base, moved);   // (a person: his limbs' own motion)
+    if (skin && !skin->ringed) skin = nullptr;
+    if (!moved && !skin) return;   // still
     // what writes no depth (a car's shadow on the road, glass, smoke): translucent over what is behind it, whose motion
     // is the one to keep (a shadow's own would move the road under it with the car)
     DWORD zwrite = TRUE;
@@ -174,8 +367,11 @@ void DrawAgain(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex,
     IDirect3DVertexShader9 *vs = nullptr;
     IDirect3DPixelShader9 *ps = nullptr;
     IDirect3DVertexDeclaration9 *decl = nullptr;
+    IDirect3DVertexBuffer9 *vb = nullptr;
+    UINT vbOff = 0, vbStride = 0;
     DWORD fvf = 0;
     D3DVIEWPORT9 vp{};
+    if (skin) d->GetStreamSource(0, &vb, &vbOff, &vbStride);
     d->GetRenderTarget(0, &rt);
     d->GetViewport(&vp);
     d->GetVertexShader(&vs);
@@ -198,17 +394,19 @@ void DrawAgain(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex,
     d->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
     d->SetRenderState(D3DRS_CLIPPLANEENABLE, 0);
     d->SetRenderState(D3DRS_FILLMODE, D3DFILL_SOLID);
-    d->SetVertexShader(g_vs);
+    d->SetVertexShader(skin ? g_vsSkin : g_vs);
     d->SetPixelShader(g_ps);
-    d->SetVertexDeclaration(g_decl);
+    d->SetVertexDeclaration(skin ? g_declSkin : g_decl);
+    if (skin) d->SetStreamSource(0, g_ring, 0, kRingStride);
     D3DSURFACE_DESC td{};
     g_target->GetDesc(&td);
     const float size[4] = {float(td.Width), float(td.Height), 1.0f / td.Width, 1.0f / td.Height};
     d->SetVertexShaderConstantF(4, &now._11, 4);
     d->SetVertexShaderConstantF(8, &before._11, 4);
     d->SetPixelShaderConstantF(0, size, 1);
-    dip(d, t, base, minIndex, verts, start, n);
+    dip(d, t, skin ? static_cast<INT>(skin->ringAt) : base, minIndex, verts, start, n);   // (the LOD's vertices in the ring)
     g_drawsAgain++;
+    if (skin) g_skinnedAgain++;
     d->SetRenderTarget(0, rt);
     d->SetViewport(&vp);
     g_block->Apply();
@@ -216,7 +414,8 @@ void DrawAgain(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex,
     d->SetPixelShader(ps);
     if (fvf) d->SetFVF(fvf);
     else d->SetVertexDeclaration(decl);
-    SafeRelease(rt); SafeRelease(vs); SafeRelease(ps); SafeRelease(decl);
+    if (skin) d->SetStreamSource(0, vb, vbOff, vbStride);
+    SafeRelease(rt); SafeRelease(vs); SafeRelease(ps); SafeRelease(decl); SafeRelease(vb);
 }
 } // namespace
 
@@ -229,6 +428,7 @@ int MotionAsk(MmlMod *mod, bool on) {
     g_asks.erase(std::remove(g_asks.begin(), g_asks.end(), mod), g_asks.end());
     if (on) g_asks.push_back(mod);
     std::string why;   // (LS3D's face groups and the device's draws: geom.cpp; again at each frame while they are not)
+    if (on) EnsureSkinHook();
     return on && !(GeomEnsureHooks(&why) && GeomEnsureDip(&why)) ? 0 : 1;
 }
 
@@ -237,14 +437,19 @@ void MotionRemove(MmlMod *mod) { MotionAsk(mod, false); }
 // gfx.cpp, before the frame's world: the objects' target (cleared by gfx.cpp), the last frame's camera.
 void MotionFrameBegin(void *dev9, void *target, const float *viewBefore, const float *projBefore) {
     if (!g_freq.QuadPart) QueryPerformanceFrequency(&g_freq);
-    g_lastVisuals = g_visualsMoving, g_lastDraws = g_drawsAgain, g_lastSkipped = g_skipped, g_msLast = g_msNow;
-    g_visualsMoving = g_drawsAgain = g_skipped = 0;
-    g_msNow = 0;
+    g_lastVisuals = g_visualsMoving, g_lastDraws = g_drawsAgain, g_lastSkipped = g_skipped, g_lastSkinned = g_skinnedAgain;
+    g_msLast = g_msNow + g_msCopies, g_msCopiesLast = g_msCopies;
+    g_lastLimbLods = g_limbLods, g_lastLimbMax = g_limbMax, g_limbLods = 0, g_limbMax = 0;
+    g_visualsMoving = g_drawsAgain = g_skipped = g_skinnedAgain = 0;
+    g_msNow = g_msCopies = 0;
     g_frame++;
+    if (!g_skinHookTried) EnsureSkinHook();   // (a mod that asked before the game was known)
     if (g_frame % 120 == 0)   // (the visuals gone: not seen for two seconds or so)
         for (auto it = g_seen.begin(); it != g_seen.end();) it = g_frame - it->second.frame > 120 ? g_seen.erase(it) : std::next(it);
     if (g_frame % 120 == 0)
         for (auto it = g_counts.begin(); it != g_counts.end();) it = g_frame - it->second.frame > 120 ? g_counts.erase(it) : std::next(it);
+    if (g_frame % 120 == 0)
+        for (auto it = g_skins.begin(); it != g_skins.end();) it = g_frame - it->second.seen > 120 ? g_skins.erase(it) : std::next(it);
     auto *d = static_cast<IDirect3DDevice9 *>(dev9);
     g_on = d && target && Make(d);
     g_dev = d;
@@ -259,7 +464,7 @@ void MotionFrameBegin(void *dev9, void *target, const float *viewBefore, const f
 
 void MotionFrameEnd() { g_on = false; g_target = nullptr; }
 
-void MotionDeviceGone() { Release(); g_seen.clear(); g_counts.clear(); g_on = false; }
+void MotionDeviceGone() { Release(); g_seen.clear(); g_counts.clear(); g_skins.clear(); g_on = false; }
 
 // geom.cpp: the face group LS3D draws now (kind 1 an object, 2 lightmapped, 3 a billboard), in the frame or not.
 void MotionGroupBegin(int kind, const void *visual, const void *group, bool inFrame) {
@@ -291,11 +496,16 @@ void MotionAfterDraw(void *dev, int type, int base, unsigned minIndex, unsigned 
 }
 
 std::string MotionState() {
-    char b[256];
+    char b[512];
     std::string mods;
     for (MmlMod *m : g_asks) if (ModAlive(m)) mods += std::string(mods.empty() ? "" : ", ") + ModIdOf(m);
-    snprintf(b, sizeof b, "{\"asked_by\": \"%s\", \"visuals_known\": %u, \"moving\": %u, \"drawn_again\": %u, \"left_out\": %u, \"ms\": %.3f}",
-             mods.c_str(), static_cast<unsigned>(g_seen.size()), g_lastVisuals, g_lastDraws, g_lastSkipped, g_msLast);
+    snprintf(b, sizeof b,
+             "{\"asked_by\": \"%s\", \"visuals_known\": %u, \"moving\": %u, \"drawn_again\": %u, \"skinned_again\": %u, "
+             "\"skinned_known\": %u, \"limbs_moving\": %u, \"limbs_most_m\": %.3f, \"skin_hook\": \"%s\", \"left_out\": %u, "
+             "\"ms\": %.3f, \"ms_copies\": %.3f, \"copies_streamed\": %u}",
+             mods.c_str(), static_cast<unsigned>(g_seen.size()), g_lastVisuals, g_lastDraws, g_lastSkinned,
+             static_cast<unsigned>(g_skins.size()), g_lastLimbLods, g_lastLimbMax, g_skinHooked ? "on" : g_skinHookWhy.c_str(),
+             g_lastSkipped, g_msLast, g_msCopiesLast, g_copiesStreamed);
     return b;
 }
 
