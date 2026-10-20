@@ -6,17 +6,20 @@ name has a rank; at one address the highest is the primary name:
   1 other projects'   knowledge/<module>/external.local.csv (made on this machine, never committed)
   2 st0rm94's         knowledge/<module>/external.csv (his 1.0 names carried to 1.2)
   3 the SDK's         game_build.h's tables (1.2's rows also in names.csv, source game_build.h, from kb_import.py)
-  4 MafiaReverse's    knowledge/<module>/functions.csv (the decompile's own names, with their classes)
+  4 MafiaReverse's    knowledge/<module>/functions.csv (the decompile's own names, with their classes); over
+                      them the Mafia demo's (LS3DF.dll: knowledge/ls3df.dll/demo.local.csv, demo_10.local.csv, made
+                      on this machine by tools/kb_demo.py from the demo's LS3D.dll, never committed)
   5 ours              knowledge/<module>/names.csv (1.2), names_10.csv (1.0), but the SDK's names among them
                       (the game_build.h rows, and any that is one of its fields: mafia-ragdoll's)
 
 The SDK's names are the loader's vocabulary, not better names: one that is not the primary is kept as a second
 name at its address (an alias: `at=humanHit` still finds C_human::Hit). 1.0 takes every 1.2 name of a function that
-has a twin (knowledge/game.exe/twins_10.csv) at the twin's address, at the rank it has in 1.2, then its own:
-st0rm94's at his 1.0 addresses (external_10.csv, rank 2: the twinless functions too), the SDK's 1.0 tables and
-names_10.csv. Prototypes: MafiaReverse's signatures (functions.csv), turned into C Ghidra parses,
-where they are plain enough (`c_signature`); ours in knowledge/<module>/annotations.csv (`build,address,kind,text,
-source`, kind proto or comment) over them.
+has a twin (knowledge/<module>/twins_10.csv) at the twin's address, at the rank it has in 1.2, then its own:
+st0rm94's at his 1.0 addresses (external_10.csv, rank 2: the twinless functions too), the demo's (demo_10.local.csv),
+the SDK's 1.0 tables and names_10.csv. Prototypes: MafiaReverse's signatures (functions.csv), turned into C Ghidra
+parses, where they are plain enough (`c_signature`); the demo's own (`demo_signature`: the mangled names' types)
+over them in 1.0, beside them in 1.2; ours in knowledge/<module>/annotations.csv (`build,address,kind,text,source`, kind proto or comment)
+over all.
 """
 import csv
 import os
@@ -29,6 +32,7 @@ MODULE_DIRS = {'Game.exe': 'game.exe', 'LS3DF.dll': 'ls3df.dll'}
 NAME_COLUMNS = ['address', 'kind', 'name', 'source', 'note']
 NOTE_COLUMNS = ['build', 'address', 'kind', 'text', 'source']
 SDK = 'game_build.h'
+DEMO = {'1.2': 'demo.local.csv', '1.0': 'demo_10.local.csv'}   # tools/kb_demo.py's names (LS3DF.dll)
 
 
 def path(module, file):
@@ -124,14 +128,17 @@ def names_12(module):
     for r in rows(path(module, 'functions.csv')):
         if r['name']:
             ns.put(Name(int(r['address'], 16), 'function', r['name'], 'MafiaReverse', 4))
+    for r in rows(path(module, DEMO['1.2'])):   # (after MafiaReverse's: at one rank the later wins)
+        ns.put(Name(int(r['address'], 16), r['kind'], r['name'], r['source'], 4))
     for r in rows(names_file(module, '1.2')):
         ns.put(Name(int(r['address'], 16), r['kind'], r['name'], r['source'], ours(r)))
     return ns.done()
 
 
-def twins():
-    """1.2 address -> 1.0 address of the Game.exe functions paired by their code."""
-    return {int(r['va12'], 16): int(r['va10'], 16) for r in rows(path('Game.exe', 'twins_10.csv'))}
+def twins(module='Game.exe'):
+    """1.2 address -> 1.0 address of a module's functions paired by their code (Game.exe: tools/kb_external.py,
+    LS3DF.dll: tools/kb_demo.py)."""
+    return {int(r['va12'], 16): int(r['va10'], 16) for r in rows(path(module, 'twins_10.csv'))}
 
 
 def names(module, build):
@@ -139,14 +146,16 @@ def names(module, build):
     if build == '1.2':
         return names_12(module)
     ns = Names()
-    if module == 'Game.exe':
-        tw, n12 = twins(), names_12(module)
-        for at12, n in n12.best.items():
-            if at12 in tw and n.kind in ('function', 'sdk'):
-                ns.put(Name(tw[at12], 'function', n.name, n.source + ' (1.2 %08X)' % at12, n.rank))
-        # st0rm94's own names at their 1.0 addresses (external_10.csv): every function of his, the twinless too
-        for r in rows(path(module, 'external_10.csv')):
-            ns.put(Name(int(r['address'], 16), r['kind'], r['name'], r['source'], 2))
+    tw, n12 = twins(module), names_12(module)
+    for at12, n in n12.best.items():
+        if at12 in tw and n.kind in ('function', 'sdk'):
+            ns.put(Name(tw[at12], 'function', n.name, n.source + ' (1.2 %08X)' % at12, n.rank))
+    # st0rm94's own names at their 1.0 addresses (external_10.csv): every function of his, the twinless too
+    for r in rows(path(module, 'external_10.csv')):
+        ns.put(Name(int(r['address'], 16), r['kind'], r['name'], r['source'], 2))
+    # the demo's at their own 1.0 addresses: its globals, and the functions with no 1.2 twin
+    for r in rows(path(module, DEMO['1.0'])):
+        ns.put(Name(int(r['address'], 16), r['kind'], r['name'], r['source'], 4))
     for at, field in sdk_tables('1.0'):
         if (at >= 0x10000000) == (module == 'LS3DF.dll'):
             ns.put(Name(at, 'sdk', field, SDK, 3))
@@ -215,19 +224,75 @@ def c_signature(sig):
     return '%s %sf(%s)' % (ret, (conv + ' ') if conv else '', ', '.join(out) or 'void')
 
 
+def demo_signature(sig):
+    """A demangled signature of the demo's ("public: virtual bool __stdcall C_x::IsOn(void)") as a C
+    prototype Ghidra's parser takes, or None: a struct by value (in or out: its size is not known here), varargs, a
+    function pointer's. A member's `this`: __thiscall's in ECX (Ghidra's own), any other convention's the first
+    argument on the stack."""
+    m = re.fullmatch(r'\s*(?:(?:public|protected|private): )?((?:virtual |static )*)(.*?)\s*\b(__thiscall|__stdcall|'
+                     r'__fastcall|__cdecl)\s+([^(]+)\((.*)\)\s*(const)?\s*', sig or '')
+    if not m or '(' in m.group(5) or '...' in m.group(5):
+        return None
+    flags, ret, conv, name, params = m.groups()[:5]
+    # (only a member is demangled with its access; a static one has no this)
+    member = bool(re.match(r'\s*(public|protected|private):', sig)) and 'static' not in flags
+    if not ret:   # a constructor or a destructor
+        ret = 'void'
+
+    def ty(t):
+        t = t.strip().replace('class ', '').replace('struct ', '').replace('enum ', 'enum:')
+        if t.startswith('enum:'):
+            return 'int' if '*' not in t and '&' not in t else 'void *'
+        if '&' in t or '*' in t:
+            base = t.replace('&', '').replace('*', '').replace('const', '').strip()
+            stars = max(1, t.count('*') + t.count('&'))
+            return (c_type(base) or 'void') + ' ' + '*' * stars if c_type(base) else 'void ' + '*' * stars
+        return c_type(t.replace('const', ''))
+    r = ty(ret)
+    if r is None:
+        return None
+    out = []
+    for i, p in enumerate(x for x in params.split(',') if x.strip() and x.strip() != 'void'):
+        t = ty(p)
+        if t is None:
+            return None
+        out.append('%s a%d' % (t, i + 1))
+    if member and conv != '__thiscall':
+        out.insert(0, 'void * this')
+    return '%s %s f(%s)' % (r, conv, ', '.join(out) or 'void')
+
+
+def demo_signatures(module, build):
+    """{address: C prototype} of the demo's names' signatures (the names file's note: "confidence; how score; demo
+    address[ via 1.0 address]; signature[; ...]")."""
+    out = {}
+    if module != 'LS3DF.dll':
+        return out
+    for r in rows(path(module, DEMO[build])):
+        parts = r['note'].split('; ')
+        if r['kind'] == 'function' and len(parts) >= 4 and parts[0] == 'high':
+            c = demo_signature(parts[3])
+            if c:
+                out[int(r['address'], 16)] = c
+    return out
+
+
 def signatures(module, build):
-    """{address: C prototype} of MafiaReverse's signatures (1.2, and 1.0 through the twins)."""
+    """{address: C prototype} of MafiaReverse's signatures (1.2, and 1.0 through the twins) and the demo's: in 1.0
+    (four weeks after the demo's LS3D.dll) the demo's over 1.2's, in 1.2 (a year and a half after it: a method's
+    arguments may have changed) only where MafiaReverse has none."""
     out = {}
     for r in rows(path(module, 'functions.csv')):
         c = c_signature(r['signature'])
         if c:
             out[int(r['address'], 16)] = c
-    if build == '1.2':
-        return out
-    if module != 'Game.exe':
-        return {}
-    tw = twins()
-    return {tw[a]: c for a, c in out.items() if a in tw}
+    if build == '1.0':
+        tw = twins(module)
+        out = {tw[a]: c for a, c in out.items() if a in tw}
+    for a, c in demo_signatures(module, build).items():
+        if build == '1.0' or a not in out:
+            out[a] = c
+    return out
 
 
 def annotations(module, build):

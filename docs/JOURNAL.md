@@ -2836,3 +2836,33 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   (to see the round trip at a glance) was tried in the labs and taken out again: the released mod shows DLSS-NR's
   picture only.
 - The player's update: `tools/pack.py dlss_nr --since` the archive he has (Discord takes 20 MB at most).
+
+## 2026-10-20: the Mafia demo's own names for LS3D, on both builds' LS3DF
+
+- **Found**: the Mafia demo's `LS3D.dll` (linked 2002-07-04, engine 3.76) still carries the linker's CodeView NB11
+  publics: 3109 functions with their mangled signatures, 406 globals, 106 vtables. Its LS3DF.dll is the 1.0 lab's,
+  byte for byte; its code is the same engine, plus qhull, DirectShow's base classes and the editor's code, linked
+  without identical-code folding.
+- **Made**: `tools/kb_demo.py` reads the publics, finds the functions of the three DLLs itself (exports, the code
+  reached from them, switch tables, relocated pointers), pairs demo -> 1.0 -> 1.2 by their code (the exports, the
+  SDK's tables, the names we gave alike in both builds, exact and loose shapes, strings, calls, callers, vtable
+  slots, the link order) and demo -> 1.2 straight as a check, then the globals by the addresses the paired
+  instructions use. The demo's names stay on this machine (`demo.local.csv`, `demo_10.local.csv`: its licence lets
+  nothing of it be copied); `knowledge/ls3df.dll/twins_10.csv` (1.0's twin of 2279 1.2 LS3DF functions) is
+  committed and gives 1.0's LS3DF 1.2's names too. `ghidra_names` ranks the demo's names over MafiaReverse's, under
+  ours; the demo's signatures are 1.0's prototypes (`demo_signature`: a stdcall method's `this` on the stack). MCP
+  `kb_search` finds them in both builds; `ghidra_read twin` answers for LS3DF.
+- **Two traps met**: the vtables' slots moved between the demo and 1.0 (methods added), and three IGraph keyboard
+  methods, the same code but for one byte of the keyboard's state each, came out shifted by one: a slot is now
+  paired by its place only beside a slot paired in the same place, and a pair whose writable data moves against the
+  other pairs' is refuted (the read-only literals are placed in no order: not used). 1.0 folds identical functions
+  (two classes' alike getters) that 1.2 keeps apart: where the two ways differ the straight one wins.
+- **A tool's fault fixed** (ghidra_server.py): applying a prototype (`... f(...)`) renamed an unnamed function "f"
+  (Ghidra's ApplyFunctionSignatureCmd renames a default-named function by default): 947 Game.exe and 1179 LS3DF
+  functions of the 1.2 project were called "f". set_proto keeps the name now (FunctionRenameOption.NO_CHANGE), and
+  `sync` gives those back their default names.
+- **Seen**: 1798 of the demo's functions in 1.0, 1803 in 1.2, 1638 high in both, 1622 found both ways alike, 1
+  differs; the 74 functions whose messages name their method all right; the hand-checked names of names.csv and
+  names_10.csv all agree. `sync` run on a copy of both projects (not the shared ones): 1.0's LS3DF 1990 named, 1535
+  prototypes; 1.2's 1674 named; a second sync changes nothing. The shared projects get them after a merge: `python
+  tools/ghidra_cli.py sync` and `--build 1.0 sync`.

@@ -45,6 +45,42 @@ it learned from a project (an address first seen there) was checked in the game'
   17/18 SetState/GetState, 22 DrawPrimitiveList, 38 UpdateKeyboardData, 39 ReadKey, 40 ReadChar, 50 TranslateKey,
   55 UpdateMouseData, 56-58 Mouse_rx/ry/rz, 62 GetMouseButtons (1.0's vtable differs: its keyboard read is slot 37, its mouse read 51).
 
+## The Mafia demo's own names for LS3D (`tools/kb_demo.py`, 2026-10-20)
+
+The demo (one mission, 2002-11) ships beside its LS3DF.dll (byte for byte the 1.0 lab's) an `LS3D.dll` linked
+2002-07-04 (engine 3.76; 1.0's is 3.84) that still carries the linker's CodeView NB11 block: 9892 public symbols,
+3109 of them functions with their mangled C++ signatures (the real classes, methods, argument types and calling
+conventions), 406 globals and 106 vtables besides the string literals and constants. Its .text is 1.7 times 1.0's:
+it also links qhull (349 functions), DirectShow's base classes and the editor's code (its debug drawing, image saving), and was
+linked without identical-code folding. The rest is the same code: `tools/kb_demo.py` finds its functions in 1.0's
+LS3DF and 1.0's in 1.2's (its docstring says how: exports, the SDK's tables, exact and loose shapes, strings, calls
+and callers, vtable slots beside paired ones, the link order between pairs; pairs whose writable data moves against
+what the other pairs say are refuted and the pairing made again), and the demo's functions in 1.2 straight as a
+check of the two steps.
+
+- **Matched** (2026-10-20): of the 3109 functions, 1798 in 1.0 and 1803 in 1.2, 122 more found folded into another
+  of the same code (a second name in the note); 1638 high in both builds. Demo -> 1.0 -> 1.2 and demo -> 1.2 straight
+  agree for 1622 and differ for 1 (two classes' alike getters 1.0 folded into one, apart again in 1.2: the straight
+  pair is taken). Of the 1255 left, 349 are qhull's and most others DirectShow's, the editor's or tiny
+  methods (AddRef, empty destructors). Globals and vtables: 382 placed in 1.0, 378 in 1.2 (the votes of the paired
+  instructions' addresses). 1.0's LS3DF had about 20 names before (the SDK's); `ghidra_names` now gives it 2052.
+- **Checked**: the 74 1.0 functions whose own messages name a method all carry it (15 differ only as copied
+  messages do, or as a name windows.h turns into its `...A` form by a macro, which the demo's symbols carry too);
+  every hand-verified name of `names.csv` and `names_10.csv` (PoseLod, CopySkinnedPositions, LightVertices, the
+  m_AddFGroups and m_RenderFGroups...) agrees. Where another name says otherwise (`demo_conflicts.local.csv`: 54,
+  most of them the SDK's own vocabulary, frameSlotNN, frameLimit, AntiCulling's visibility names) ours stay the
+  primary name (rank 5 over the demo's 4) and the SDK's become aliases.
+- **Where it goes**: the demo's licence forbids copying any part of it, so its names stay on the machine that has the
+  demo: `knowledge/ls3df.dll/demo.local.csv` (1.2), `demo_10.local.csv` (1.0), `demo_matches.local.csv` (every
+  symbol: its addresses, how it was paired, its score and confidence), `demo_conflicts.local.csv`. Committed:
+  `knowledge/ls3df.dll/twins_10.csv`, the 1.0 twin of each 1.2 LS3DF function (2279; our own files' addresses only),
+  through which 1.0 also takes 1.2's other names. The demo's signatures are the projects' prototypes in 1.0 (over
+  1.2's carried), in 1.2 only where MafiaReverse has none (its methods may have changed in a year and a half).
+- **Again on another machine**: the demo (`Mafia_demo_setup`, 188 MB) unpacked into `re/demo/` (its `LS3D.dll`
+  only is read), then `python tools/kb_demo.py` (the labs of `mml.config.json`, or `--ls3d10`, `--ls3d12`; about a
+  minute), then `python tools/ghidra_cli.py sync` and `--build 1.0 sync`. The demo's `Game.exe` (2002-10-31, not
+  protected) has no symbols; `prog_dbg.bin` holds its mission script's debug names.
+
 ## Where to read, by topic
 
 - **The engine's commands (spawn, teleport, weapons, time, weather)**: `script_commands.csv` for the handler of

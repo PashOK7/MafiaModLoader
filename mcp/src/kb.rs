@@ -36,14 +36,14 @@ pub struct Module {
     pub names: Vec<Name>,        // by address
     /// 1.0's own names (names_10.csv: what agents named in the 1.0 Ghidra project), by 1.0 address
     pub names10: Vec<Name>,
+    /// 1.0's functions paired with their 1.2 twins (knowledge/<module>/twins_10.csv), (1.0, 1.2) by 1.0 address
+    pub twins10: Vec<(u32, u32)>,
     pub callers: HashMap<u32, Vec<u32>>,
     pub callees: HashMap<u32, Vec<u32>>,
 }
 
 pub struct Kb {
     pub modules: Vec<Module>,
-    /// 1.0's Game.exe functions paired with their 1.2 twins (knowledge/game.exe/twins_10.csv), by 1.0 address.
-    pub twins10: Vec<(u32, u32)>,
 }
 
 static KB: OnceLock<Result<Kb, String>> = OnceLock::new();
@@ -89,10 +89,11 @@ fn load_module(dir: &PathBuf, name: &'static str, base: u32, source: &'static st
             }
         }
     }
-    // ours (names.csv), then other projects' (tools/kb_external.py, each checked against the files): external.csv the
-    // ones the repository carries, external.local.csv the ones made on this machine from its clones
+    // ours (names.csv), the Mafia demo's LS3D.dll's own names carried here (tools/kb_demo.py: made on this machine, the
+    // demo's licence lets nothing of it be copied), then other projects' (tools/kb_external.py, each checked against
+    // the files): external.csv the ones the repository carries, external.local.csv the ones made from their clones
     let mut names = vec![];
-    for file in ["names.csv", "external.csv", "external.local.csv"] {
+    for file in ["names.csv", "demo.local.csv", "external.csv", "external.local.csv"] {
         let Ok(mut rd) = csv::Reader::from_path(d.join(file)) else { continue };
         for r in rd.records().flatten() {
             let Some(addr) = hex(&r[0]) else { continue };
@@ -100,9 +101,10 @@ fn load_module(dir: &PathBuf, name: &'static str, base: u32, source: &'static st
         }
     }
     names.sort_by_key(|n| n.addr);
-    // 1.0's own: st0rm94's at his addresses (external_10.csv), ours (names_10.csv) over them at one address
+    // 1.0's own: the demo's (demo_10.local.csv), st0rm94's at his addresses (external_10.csv), ours (names_10.csv)
+    // over them at one address
     let mut by_addr = std::collections::BTreeMap::new();
-    for file in ["external_10.csv", "names_10.csv"] {
+    for file in ["demo_10.local.csv", "external_10.csv", "names_10.csv"] {
         let Ok(mut rd) = csv::Reader::from_path(d.join(file)) else { continue };
         for r in rd.records().flatten() {
             let Some(addr) = hex(&r[0]) else { continue };
@@ -110,26 +112,25 @@ fn load_module(dir: &PathBuf, name: &'static str, base: u32, source: &'static st
         }
     }
     let names10: Vec<Name> = by_addr.into_values().collect();
-    Ok(Module { name, base, source, funcs, names, names10, callers, callees })
+    let mut twins10 = vec![];
+    if let Ok(mut rd) = csv::Reader::from_path(d.join("twins_10.csv")) {
+        for r in rd.records().flatten() {
+            if let (Some(a12), Some(a10)) = (hex(&r[0]), hex(&r[1])) { twins10.push((a10, a12)); }
+        }
+    }
+    twins10.sort();
+    Ok(Module { name, base, source, funcs, names, names10, twins10, callers, callees })
 }
 
 pub fn get() -> Result<&'static Kb, String> {
     KB.get_or_init(|| {
         let root = crate::game::repo_root().ok_or("cannot find the repository")?;
         let dir = root.join("knowledge");
-        let mut twins10 = vec![];
-        if let Ok(mut rd) = csv::Reader::from_path(dir.join("game.exe").join("twins_10.csv")) {
-            for r in rd.records().flatten() {
-                if let (Some(a12), Some(a10)) = (hex(&r[0]), hex(&r[1])) { twins10.push((a10, a12)); }
-            }
-        }
-        twins10.sort();
         Ok(Kb {
             modules: vec![
                 load_module(&dir, "game.exe", 0x400000, "Game.c")?,
                 load_module(&dir, "ls3df.dll", 0x10000000, "LS3DF_dll.c")?,
             ],
-            twins10,
         })
     })
     .as_ref()
@@ -324,15 +325,15 @@ pub fn function(key: &str, with_code: bool, max_lines: usize) -> Result<Value, S
 }
 
 /// A name for an address of the running build's image. The knowledge base is 1.2's: in 1.0 an address takes the 1.0 name
-/// agents gave its function (names_10.csv, the 1.0 Ghidra project's), else a Game.exe address is
-/// named through its function's 1.2 twin (twins_10.csv) and marked so, an LS3DF address or an unpaired function's
-/// not at all (a 1.2 name on a 1.0 address would be a wrong name).
+/// agents gave its function (names_10.csv, the 1.0 Ghidra project's; st0rm94's, the demo's), else it is named
+/// through its function's 1.2 twin (<module>/twins_10.csv) and marked so, an unpaired function's not at all (a 1.2
+/// name on a 1.0 address would be a wrong name).
 fn name_for(kb: &Kb, module: &str, addr: u32) -> Option<String> {
     let m = kb.modules.iter().find(|m| m.name == module)?;
     if crate::game::current_build() != "1.0" {
         return m.containing(addr).and_then(|f| m.best_name(f).map(|n| format!(" ({}+0x{:X})", n, addr - f.addr)));
     }
-    name_10(m, if module == "game.exe" { &kb.twins10 } else { &[] }, addr)
+    name_10(m, &m.twins10, addr)
 }
 
 /// A 1.0 address's name: 1.0's own (names_10.csv) of the function starting nearest below when it is nearer than the
@@ -407,7 +408,7 @@ mod tests {
         let m = Module {
             name: "game.exe", base: 0x400000, source: "", funcs: vec![func(0x500000, "C_x::A"), func(0x500100, "C_x::B")],
             names: vec![], names10: vec![name(0x600050, "function", "C_y::Own"), name(0x600400, "label", "aSite")],
-            callers: HashMap::new(), callees: HashMap::new(),
+            twins10: vec![], callers: HashMap::new(), callees: HashMap::new(),
         };
         let twins = [(0x600000, 0x500000), (0x600300, 0x500100)];
         // inside the twin, before the own name: the twin's

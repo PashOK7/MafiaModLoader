@@ -1258,6 +1258,31 @@ def ghidra_names_tests():
           sig('int __userpurge sub_430142@<eax>(int a1@<edi>, int a2)') is None and sig('int __cdecl f(S_vector v)') is None
           and sig('void sub_401030()') == 'void f(void)')
     check('ghidra names: a namespace split outside templates', g.split_name('std::vector<a::b>::push_back') == (['std', 'vector<a::b>'], 'push_back'))
+    # LS3DF: 1.0 named through its own twins (tools/kb_demo.py's twins_10.csv), the SDK's pairs among them
+    tw = g.twins('LS3DF.dll')
+    l10 = g.names('LS3DF.dll', '1.0')
+    check('ghidra names: LS3DF 1.0 twins (2000 at least, frameUpdateWMatrix 1C7D0 -> 1C570), the 1.2 name carried',
+          len(tw) > 2000 and tw.get(0x1001C7D0) == 0x1001C570
+          and l10.best[0x1001C570].name == g.names('LS3DF.dll', '1.2').best[0x1001C7D0].name, (len(tw), l10.best.get(0x1001C570)))
+    ds = g.demo_signature
+    check('ghidra prototypes: the demo\'s signatures (a stdcall method\'s this on the stack, thiscall\'s in ECX, '
+          'references as pointers, a struct by value refused)',
+          ds('public: virtual bool __stdcall C_x::IsOn(void)') == 'bool __stdcall f(void * this)'
+          and ds('public: void __thiscall C_x::Move(struct S_vector const &)') == 'void __thiscall f(void * a1)'
+          and ds('bool __fastcall Clip(char const *,int,struct T *,bool)') == 'bool __fastcall f(char * a1, int a2, void * a3, bool a4)'
+          and ds('public: static void __cdecl C_x::f(unsigned int,float)') == 'void __cdecl f(unsigned int a1, float a2)'
+          and ds('public: struct S_vector __thiscall S_vector::operator*(float const &)const ') is None
+          and ds('enum R __fastcall Read(char const *)') == 'int __fastcall f(char * a1)',
+          ds('public: virtual bool __stdcall C_x::IsOn(void)'))
+    import kb_demo as kd
+    check('kb_demo: C names undecorated, vtables named for Ghidra, the compiler\'s literals not named',
+          kd.demangle('_c_alloc', 0) == 'c_alloc' and kd.demangle('_RandFloat@8', 0) == 'RandFloat'
+          and kd.clean_name("C_x::`vftable'") == 'C_x::vftable'
+          and kd.clean_name("C::`vftable'{for `B::I'}") == 'C::vftable_for_B_I'
+          and not kd.worth_naming('??_C@_0BA@abc@', '.rdata') and not kd.worth_naming('__real@4@3f800000', '.rdata')
+          and kd.worth_naming('?g_x@@3MA', '.data'))
+    check('kb_demo: names agree by their last part (ours UpdateWMatrix, the export\'s I3D_frame::UpdateWMatrixProc)',
+          kd.agrees('UpdateWMatrix', 'I3D_frame::UpdateWMatrixProc') and not kd.agrees('frameSlot18', 'C_x::Move'))
     with tempfile.TemporaryDirectory() as tmp:
         kb = g.KB
         try:

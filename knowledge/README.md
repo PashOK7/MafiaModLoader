@@ -15,6 +15,8 @@ server (`kb_search`, `kb_function`) and the loader uses to name addresses (`cras
 | `<module>/external.local.csv` | **made on your machine**, not committed: the other projects' names (MafiaOnline, Oakwood, reM, mafia-re, IGraph's methods from mEdit), from your own clones of them in `re/ext/` (their terms do not let us redistribute them) | `tools/kb_external.py` |
 | `game.exe/external_10.csv` | st0rm94's names at **their own 1.0 addresses**, every one of his functions (the twinless too: 1.0's own code); the 1.0 Ghidra project, `where`, `crash_triage` and `kb_search` (`functions_10`) in 1.0 | `tools/kb_external.py` |
 | `game.exe/twins_10.csv` | the 1.0 twin of each 1.2 function that could be paired by its code (va12, va10, how) | `tools/kb_external.py` |
+| `ls3df.dll/twins_10.csv` | the same for LS3DF.dll (va12, va10, how, score) | `tools/kb_demo.py` |
+| `ls3df.dll/demo.local.csv`, `demo_10.local.csv` | **made on your machine**, not committed: the Mafia demo's own names for LS3D's functions, globals and vtables (its `LS3D.dll` kept its CodeView publics), found in 1.2's and 1.0's LS3DF by their code; the note: confidence, how, score, the demo's address, the full signature; `demo_matches.local.csv` every symbol's pairing, `demo_conflicts.local.csv` where another name says otherwise (notes/external.md) | `tools/kb_demo.py` |
 | `game.exe/script_commands.csv` | the mission scripts' commands: opcode, name, handler in 1.2; opcode, handler in 1.0 (read from the binaries) | `tools/kb_external.py` |
 | `notes/*.md` | findings that do not fit a table: formats, layouts, how things work (`notes/external.md`: the other projects and where to read them by topic) | by hand |
 | `structs/structs.csv` | the game's classes and structures: base, size, vtable and actor kind, each build's (`struct,base,size,size_10,vtable,vtable_10,kind,source,note`) | `tools/kb_structs.py` |
@@ -49,8 +51,9 @@ The knowledge base is also every build's Ghidra project's source (`re/ghidra/`, 
 `python tools/deps.py ghidra` once (Ghidra 12.1.4 pinned, its PyGhidra venv; a JDK 21 or later), then `python
 tools/ghidra_cli.py setup` imports both labs' Game.exe and LS3DF.dll, analyses them, makes functions of the code
 reached only through pointers, and puts on them what this folder says: the names by rank (`tools/ghidra_names.py`:
-other projects' < st0rm94's < the SDK's < MafiaReverse's < ours; the SDK's names that lose kept as aliases), 1.0's
-through `twins_10.csv`, MafiaReverse's signatures as prototypes, our annotations. Agents ask with MCP `ghidra_read`
+other projects' < st0rm94's < the SDK's < MafiaReverse's < the Mafia demo's (LS3DF) < ours; the SDK's names that
+lose kept as aliases), 1.0's through `twins_10.csv` (each module's), MafiaReverse's and the demo's signatures as
+prototypes, our annotations. Agents ask with MCP `ghidra_read`
 (decompile, asm, callers, xrefs, vtable, twin...), `ghidra_find` (who uses a field's offset, strings, pointers,
 names) and `ghidra_write` (rename, comment, proto: saved into the project and into this folder at once; `forget`
 takes ours back), `build` "1.2" or "1.0"; `tools/ghidra_cli.py` is the same from a terminal.

@@ -320,19 +320,19 @@ class Server:
         return '\n'.join('  %-9s %s' % (self.tag(prog, ad.add(i)), b[i:i + 16].hex(' ')) for i in range(0, n, 16)) + '\n'
 
     def op_twin(self, a):
-        """The other build's function paired with this one by its code (knowledge/game.exe/twins_10.csv)."""
+        """The other build's function paired with this one by its code (knowledge/<module>/twins_10.csv)."""
         prog, ad = self.at(a.get('at'))
-        if prog is not self.game:
-            raise Fail('twins are known for Game.exe only')
+        module = self.module_of(prog)
         f = self.func(prog, ad, create=False)
         off = (f.getEntryPoint() if f is not None else ad).getOffset()
         other = '1.0' if self.build == '1.2' else '1.2'
-        pairs = [(int(r['va12'], 16), int(r['va10'], 16), r['how']) for r in kbn.rows(kbn.path('Game.exe', 'twins_10.csv'))]
+        pairs = [(int(r['va12'], 16), int(r['va10'], 16), r['how']) for r in kbn.rows(kbn.path(module, 'twins_10.csv'))]
         found = [(v10 if self.build == '1.2' else v12, how) for v12, v10, how in pairs
                  if (v12 if self.build == '1.2' else v10) == off]
         if not found:
-            return '%X in %s: no twin known in %s (knowledge/game.exe/twins_10.csv)\n' % (off, self.build, other)
-        theirs = kbn.names('Game.exe', other)
+            return '%X in %s: no twin known in %s (knowledge/%s/twins_10.csv)\n' % (off, self.build, other,
+                                                                                  kbn.MODULE_DIRS[module])
+        theirs = kbn.names(module, other)
         return ''.join('%s %X -> %s %X  %s  (paired by %s)\n' % (self.build, off, other, t, theirs.best[t].name if t in theirs.best else '', how)
                        for t, how in found)
 
@@ -527,7 +527,10 @@ class Server:
             raise Fail('the prototype could not be parsed: ' + text)
         if conv:
             sig.setCallingConvention(conv)
-        ApplyFunctionSignatureCmd(f.getEntryPoint(), sig, source).applyTo(prog, self.monitor)
+        # the name stays (the prototype's is a placeholder: "f"; the command's default renames an unnamed function
+        # to it, which once named 1179 of 1.2's LS3DF functions "f")
+        from ghidra.app.cmd.function import FunctionRenameOption
+        ApplyFunctionSignatureCmd(f.getEntryPoint(), sig, source, False, FunctionRenameOption.NO_CHANGE).applyTo(prog, self.monitor)
 
     def op_proto(self, a):
         from ghidra.program.model.symbol import SourceType
@@ -606,10 +609,16 @@ class Server:
             ns, sigs = names.best, kbn.signatures(module, self.build)
             fm, st, mem = prog.getFunctionManager(), prog.getSymbolTable(), prog.getMemory()
             stats = {'named': 0, 'kept': 0, 'same': 0, 'outside': 0, 'made': 0, 'failed': 0, 'aliases': 0,
-                     'protos': 0, 'protos_kept': 0}
+                     'protos': 0, 'protos_kept': 0, 'unnamed': 0}
             failures = []
 
             def do():
+                # the "f" an older set_proto gave unnamed functions (the prototypes' placeholder name): default again
+                for f in list(fm.getFunctions(True)):
+                    if (f.getName() == 'f' and f.getSymbol().getSource() == SourceType.IMPORTED
+                            and f.getEntryPoint().getOffset() not in ns):
+                        f.setName(None, SourceType.DEFAULT)
+                        stats['unnamed'] += 1
                 for off in sorted(ns):
                     n = ns[off]
                     ad = self.addr(prog, off)
@@ -679,10 +688,11 @@ class Server:
             self.imm_index.pop(prog, None)
             out.append('%s %s: %d names in the repository: %d named, %d the same, %d kept (named here), %d SDK aliases '
                        'added, %d functions made, %d outside the image; %d prototypes set, %d kept; %d failed; %d '
-                       'functions in all' % (
+                       'functions in all%s' % (
                            self.build, module, len(ns), stats['named'], stats['same'], stats['kept'], stats['aliases'],
                            stats['made'], stats['outside'], stats['protos'], stats['protos_kept'], stats['failed'],
-                           fm.getFunctionCount()))
+                           fm.getFunctionCount(),
+                           '; %d named "f" by an older prototype made unnamed again' % stats['unnamed'] if stats['unnamed'] else ''))
             out.extend(failures[:20])
         return '\n'.join(out) + '\n'
 
