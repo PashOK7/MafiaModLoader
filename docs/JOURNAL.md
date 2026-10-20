@@ -2792,3 +2792,22 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Seen**: a copy of Tommy walking across a held camera, both labs at once: 1.2's debug 1 shows the planted foot
   still and the swinging leg at twice the body's motion; 1.0's debug 5 dark over the body and the limbs, the edges of
   what he uncovers bright (no history there: no vector can help). Not yet: DXVK, a crowd's distant LODs.
+- **Then under DXVK** (1.0 with DXVK 3.1.1): the same, a walking copy and the city freeride's crowd at 30 to 40 m
+  (21 LODs known, 16 with limbs moving, 80 draws again, 0.011 ms of copies, the whole motion 0.9 ms with the
+  traffic's 192 moving draws); debug 5 dark over them. People who stand without an animation are not skinned again,
+  so they have no copies (and need none). DXVK taken out of the lab after.
+
+## 2026-10-20: a game in the background no longer comes up over the user's windows
+
+- **Seen** (the owner: "why do you start the game in front?"): the start's background mode kept the game from being
+  activated, but its window still came up over the user's: a window shown goes on top of the order even when it is
+  not activated. Measured with a script polling the foreground window and the order every 100 ms through a launch:
+  LS3D's "LS3D engine" window (later "Mafia") was second under the topmost overlays, over the user's window in
+  front, the focus still the user's; the same with and without DXVK.
+- **Made** (host/start.cpp): while the game is not in front, its top-level windows are shown at the bottom of the
+  order (LS3D makes its window with WS_VISIBLE: made hidden, then shown at the bottom; ShowWindow the same) and
+  SetWindowPos keeps their place (SWP_NOZORDER); a click brings them up as before. user32's CreateWindowExA could not
+  be hooked (MinHook: unsupported function): its first bytes are already a hot-patch jump, `EB F9` back to a `jmp`
+  into dxwrapper.dll+189E40, dxwrapper's own hook; LS3DF.dll's import of it is taken instead.
+- **Seen**: 1.0, with DXVK and without: the game's window never above the user's through the launch, at the bottom
+  after it; screenshots from the background as before. Not yet in the 1.2 lab (the owner was playing there).

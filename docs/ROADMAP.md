@@ -1067,8 +1067,8 @@ merged, sorted by importance):
   view; billboards move as the camera; translucent draws keep what is behind them (a car's shadow decal mismatches at
   its edge either way); where a person's arm passes close over his body a few pixels hatch (two surfaces at nearly
   one depth: the draw again's LESSEQUAL picks either). People's limbs have their own motion since the same day
-  (smCopySkinned's copies; seen in both labs, a walking copy of Tommy, `dlss_nr` debug 1 and 5); not yet seen under
-  DXVK nor with a crowd's distant LODs looked at closely. Seen in both labs, 9Ex and DXVK (the freeride's traffic,
+  (smCopySkinned's copies; seen in both labs, a walking copy of Tommy, `dlss_nr` debug 1 and 5, and under DXVK in
+  1.0 with the city freeride's crowd at 30 to 40 m: 21 LODs known, 80 draws again, 0.011 ms of copies). Seen in both labs, 9Ex and DXVK (the freeride's traffic,
   the player's car driven, `dlss_nr` debug 1, 5, 6).
 - **The developer tools' block** (2026-10-19): seen in both labs, but not yet the distances `triggers` draws (a
   mission waiting on a GETACTORSDIST) nor the `names` and `web` views looked at closely in 1.0.

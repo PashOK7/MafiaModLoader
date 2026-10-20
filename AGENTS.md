@@ -62,8 +62,8 @@ Then, through MCP (`.mcp.json` registers the server as `mafia`): `game_launch` â
 `log_tail`. The loader itself (`MafiaModLoader.asi`) changes only with the game closed (`game_close`, `deploy`,
 `game_launch`).
 
-**Into the game in seconds** (both builds; in the background by default: the game's window is not activated, the
-user keeps working in front): `game_launch {"profile": 4, "go": "freeride", "police": 0}` (or `"go": "menu"`) skips
+**Into the game in seconds** (both builds; in the background by default: the game's window is not activated and
+comes up under the others, the user keeps working in front): `game_launch {"profile": 4, "go": "freeride", "police": 0}` (or `"go": "menu"`) skips
 the logos and takes the game through its own menus; it returns once the player exists. `"police": 0` is the freeride
 menu's slider: a city without patrols (the player starts with a Thompson in his hands, and patrols shoot at that).
 The other freerides (`"kind": "city-night"`, `"countryside"`... with `"place": "Hoboken"`: the game has no time of day,

@@ -248,4 +248,4 @@ camera has its own code, not measured yet.
 "go": "menu" | "freeride" | "load" | "new" | "extreme", "kind": "city-small" | "city-night" | "countryside-night" |
 "city" | "countryside", "place": 1.. | "Hoboken", "save": 465 | "Old Prison", "traffic": 0..1, "pedestrians": 0..1,
 "police": 0..1, "background": true}`
-(`background`: the game never activates its own window; `game_launch` asks for it by default).
+(`background`: the game never activates its own window, and while it is not in front its window is shown at the bottom of the windows' order and kept there: it comes up under the user's; `game_launch` asks for it by default).

@@ -28,6 +28,8 @@
 // - background: the game never makes its own window the active one (the user keeps working in the window in front):
 //   user32's ShowWindow shows the game's windows without activating them, SetForegroundWindow, SetActiveWindow and BringWindowToTop are answered
 //   as done for them, SetWindowPos gets SWP_NOACTIVATE; while the game's window is not the one in front, its
+//   top-level windows are shown at the bottom of the windows' order (CreateWindowEx with WS_VISIBLE, ShowWindow:
+//   a window shown goes on top even unactivated) and SetWindowPos keeps their place there (SWP_NOZORDER), and its
 //   SetFocus, ClipCursor and SetCursorPos do nothing (LS3D would take the focus, keep the user's cursor in its
 //   window, put it in its middle). A click on the game's window activates it as usual (that does not go through
 //   these calls), and in front the game has the mouse as before. The game runs and draws behind other windows;
@@ -129,10 +131,22 @@ ShowWindowFn oShowWindow;
 HwndFn oSetForeground, oBringToTop;
 ActiveFn oSetActive;
 SetPosFn oSetWindowPos;
+// A window shown is put on top of the others even when it is not activated (measured: LS3D's window came up over
+// the user's in front, without the focus): while the game is not in front, its top-level windows are shown at the
+// bottom of the order and keep their place there; a click on one brings it up as usual.
+bool TopLevel(HWND h) { return Own(h) && !(GetWindowLongW(h, GWL_STYLE) & WS_CHILD); }
+void ShowAtBottom(HWND h) {
+    (oSetWindowPos ? oSetWindowPos : SetWindowPos)(h, HWND_BOTTOM, 0, 0, 0, 0,
+                                                   SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW);
+}
 BOOL WINAPI hkShowWindow(HWND h, int cmd) {
     if (Own(h)) {
         if (cmd == SW_SHOWNORMAL || cmd == SW_RESTORE || cmd == SW_SHOWDEFAULT) cmd = SW_SHOWNOACTIVATE;
         else if (cmd == SW_SHOW || cmd == SW_SHOWMAXIMIZED) cmd = SW_SHOWNA;
+        if ((cmd == SW_SHOWNOACTIVATE || cmd == SW_SHOWNA) && TopLevel(h) && !IsWindowVisible(h) && !IsIconic(h) && !GameInFront()) {
+            ShowAtBottom(h);   // (shown where it is, at its size)
+            return FALSE;      // (it was hidden)
+        }
     }
     return oShowWindow(h, cmd);
 }
@@ -140,7 +154,23 @@ BOOL WINAPI hkSetForeground(HWND h) { return Own(h) ? TRUE : oSetForeground(h); 
 BOOL WINAPI hkBringToTop(HWND h) { return Own(h) ? TRUE : oBringToTop(h); }
 HWND WINAPI hkSetActive(HWND h) { return Own(h) ? GetActiveWindow() : oSetActive(h); }
 BOOL WINAPI hkSetWindowPos(HWND h, HWND after, int x, int y, int cx, int cy, UINT flags) {
-    return oSetWindowPos(h, after, x, y, cx, cy, Own(h) ? flags | SWP_NOACTIVATE : flags);
+    if (Own(h)) {
+        flags |= SWP_NOACTIVATE;
+        if (TopLevel(h) && after != HWND_BOTTOM && !GameInFront()) flags |= SWP_NOZORDER;   // (not raised, nor made topmost)
+    }
+    return oSetWindowPos(h, after, x, y, cx, cy, flags);
+}
+// LS3D makes the game's window visible at once (WS_VISIBLE), so it goes on top as it is made: made hidden, then shown
+// at the bottom. Taken in LS3DF.dll's imports (user32's own CreateWindowExA is not hooked: a wrapper's hook already
+// sits on its first bytes, MinHook refuses it).
+using CreateAFn = HWND(WINAPI *)(DWORD, LPCSTR, LPCSTR, DWORD, int, int, int, int, HWND, HMENU, HINSTANCE, LPVOID);
+CreateAFn oCreateA;
+HWND WINAPI hkCreateA(DWORD ex, LPCSTR cls, LPCSTR name, DWORD style, int x, int y, int w, int h, HWND parent, HMENU menu,
+                      HINSTANCE inst, LPVOID param) {
+    bool hide = (style & WS_VISIBLE) && !(style & WS_CHILD) && !GameInFront();
+    HWND r = oCreateA(ex, cls, name, hide ? style & ~WS_VISIBLE : style, x, y, w, h, parent, menu, inst, param);
+    if (r && hide) ShowAtBottom(r);
+    return r;
 }
 void KeepInBackground() {
     HMODULE u = GetModuleHandleA("user32.dll");   // (the game imports it; no LoadLibrary under the loader lock)
@@ -159,6 +189,12 @@ void KeepInBackground() {
         uintptr_t at = u ? reinterpret_cast<uintptr_t>(GetProcAddress(u, h.name)) : 0;
         if (!at || !HookAdd(nullptr, at, h.detour, h.orig, &err)) HWARN("start: background: cannot hook %s: %s", h.name, err.c_str());
     }
+    HMODULE ls3d = GetModuleHandleA("LS3DF.dll");
+    void *old = nullptr;
+    if (ls3d && PatchImport(ls3d, "user32.dll", "CreateWindowExA", reinterpret_cast<void *>(&hkCreateA), &old))
+        oCreateA = reinterpret_cast<CreateAFn>(old);
+    else
+        HWARN("start: background: LS3DF.dll's CreateWindowExA not taken: its window will come up over the others");
     HLOG("start: the game's window is kept in the background (the game does not activate it)");
 }
 
