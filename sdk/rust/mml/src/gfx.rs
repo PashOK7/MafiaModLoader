@@ -215,7 +215,7 @@ pub struct ShaderRule<'a> {
     pub classes: u32,
     /// sys::MML_GEOM_FRAME | MML_GEOM_VIEWS; 0 both
     pub where_: u32,
-    /// sys::MML_SHADE_ALL_PASSES
+    /// sys::MML_SHADE_ALL_PASSES, sys::MML_SHADE_SKINNED
     pub flags: u32,
     /// HLSL the host compiles (with its entry points), or None
     pub source: Option<&'a str>,

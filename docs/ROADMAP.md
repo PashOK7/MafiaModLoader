@@ -845,10 +845,13 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
       LS3D's own code. Both builds, plain Direct3D 8 too. Seen on Tommy's weights smoothed to 4 bones a vertex
       (`tools/skin_smooth.py`): a bent knee's crease rounded in both labs. An exporter (Blender) is a separate piece
       of work.
-    - **28b, on the GPU**, with item 27: for marked models a vertex shader skins (the bones' matrices in a vertex
-      texture: vs_3_0's 256 registers hold about 50 beside the contract's), lights (the game's lights are in
-      game.hlsli's registers already) and carries normals and MikkTSpace tangents (normal maps); LS3D's CPU skinning
-      and lighting are skipped for them. Needs the second vertex stream below; under a Direct3D 9 wrapper only.
+    - **28b, on the GPU** *(done 2026-10-20: mml.h skin_gpu, MML_SHADE_SKINNED, mml/skin.hlsli; the journal; what it
+      costs: Known gaps)*: while a mod asks, every person (a mod's skin or LS3D's own) is skinned by a vertex shader
+      (the palette in a float texture the vertex shader reads, 8 bones a vertex) and lit as LS3D's CPU lit him (LS3D's
+      own LightVertices choosing the lights, its sum repeated), the rest pose with the face's morph, MikkTSpace
+      tangents; LS3D's CPU skinning, copies and lighting skipped. A rule's pixel shader gets the normal and the
+      tangent, a rule's vertex shader the skinned inputs; the sun's map and the motion vectors take them. Both
+      builds, the same picture; under a Direct3D 9 wrapper only.
     The same block answers the Discord's other asks for item 27: **a mod's own constants** (a register range of the
     mod's, set per rule or per frame) and **its own vertex data** (a second stream per face group, in LS3D's vertex
     order, made from the meshes block 6d reads: normals, tangents, a mod's attributes).
@@ -1043,6 +1046,19 @@ merged, sorted by importance):
 
 ## Known gaps
 
+- **People skinned on the GPU** (item 28b, 2026-10-20): (1) it does not speed up the plain game: each person's draw
+  switches the device from the fixed pipeline to shaders and back (measured with 48 people, about 300 draws: +0.9 ms
+  a frame in 1.2, +1.3 ms in 1.0, the CPU's own part down to 0.2 ms); keeping the shaders bound across consecutive
+  people's draws and putting the fixed pipeline back only before the next other draw (every draw entry of the device
+  hooked) would cut it, not done. (2) A LOD with an environment map of modes 2 to 5 or lit flat stays LS3D's
+  (`why_cpu`). (3) `geom.capture` of a person the GPU skins reads the drawn buffer, which is no longer filled (the
+  rest pose instead). (4) The lights' places in the mesh's space are taken when LS3D would light again (bones or the
+  sector's lights changed), as LS3D's own colours are.
+- **The shader rules' constants** (item 27, measured 2026-10-20): each draw a rule takes asks the device for about 60
+  states (the transforms, the fog, the stages, the eight Direct3D lights, the material); over every object (about 750
+  draws, reference.hlsl) that is some 4 ms a frame in 1.0. The states that change once a frame (the view, the
+  projection, the fog) or once a visual could be kept; a person's draw without a rule already reads 25 (CoreConstants).
+  For item 29 too.
 - **dlss_nr** (2026-10-19): DLSS 5 NR's own picture has been seen once, on a player's RTX 5060, far too dark: the
   mod gave the model linear values where it takes gamma ones (fixed, as RTX Remix does; not yet seen again).
   NVIDIA's `nvngx_dlssnr.dll` refuses every GPU but an RTX 50 (Blackwell), and the labs have an RTX 3070. Everything up to NGX's answer is seen in both labs (the

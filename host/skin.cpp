@@ -20,18 +20,25 @@
 // Bridge methods: skin.state, skin.export, skin.set, skin.reload.
 #include "host.h"
 #include <windows.h>
+#include <d3d9.h>
 #include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstring>
 #include <functional>
 #include <map>
+#include <tuple>
 #include <memory>
 #include <unordered_map>
 #include <vector>
 #include "json.hpp"
 #include "mml/game/game_build.h"
 #include "mml/game/game.h"
+#include "mikktspace.h"
+#include "shaders/VsSkin.h"
+#include "shaders/PsSkin.h"
+#include "shaders/VsSkinDepth.h"
+#include "shaders/VsSkinMotion.h"
 
 using json = nlohmann::json;
 
@@ -291,6 +298,33 @@ void ReadFileOf(const std::string &modelKey) {
     else HLOG("skin: %s read (%s)", path.c_str(), state.c_str());
 }
 
+// ---- a LOD of a single mesh skinned on the GPU (skin_gpu): the influences it uses (a mod's skin, or LS3D's own read
+// from its bone records), the bones' palette now and as last drawn, the rest pose (the morph's: a face's expression),
+// the lights LightVertices chose for it, the Direct3D 9 objects it is drawn from
+template <class T> void SafeRelease(T *&p) { if (p) { p->Release(); p = nullptr; } }
+struct GpuLod {
+    bool ok = false;
+    std::string why;                   // (not on the GPU: why)
+    std::shared_ptr<Lod> own;          // LS3D's own skin as influences (a mesh without a mod's)
+    const Lod *L = nullptr;            // what it uses: the mod's LOD or own
+    std::vector<void *> joints;        // a bone each (null: the mesh's own space)
+    uint32_t verts = 0;
+    std::vector<float> pal, palDrawn;  // 24 floats a bone: the position's matrix's columns, then the normal's
+    unsigned palVersion = 0, drawnFrame = 0;
+    std::vector<float> texData[2];     // what the palette textures hold (now, before)
+    std::vector<float> rest;           // 6 floats a vertex: the rest pose's position and normal
+    unsigned restVersion = 0, restUploaded = 0;
+    float light[36 * 4] = {};          // c120..c155 (skin.hlsli)
+    bool lit = false;
+    int env = -1;                      // the environment map's mode (EnvMapCoords), -1 none
+    float envScale = 1, envU = 0, envV = 0;
+    IDirect3DDevice9 *dev = nullptr;
+    IDirect3DVertexBuffer9 *restVb = nullptr;
+    IDirect3DTexture9 *tex[2] = {};
+    void *attrKeyMesh = nullptr;       // (the attributes' buffer is the mesh's, shared: g_attrs)
+    ~GpuLod() { SafeRelease(restVb); SafeRelease(tex[0]); SafeRelease(tex[1]); }
+};
+
 // ---- the single meshes seen, each bound to its skin
 struct Vis {
     void *vtable = nullptr, *mesh = nullptr, *bones = nullptr;   // (what it was when bound: another object at the address differs)
@@ -301,6 +335,7 @@ struct Vis {
     std::string error;
     unsigned skinned = 0;
     unsigned looked = 0;   // (g_defsGen when its skin was looked up: none is looked for again until a skin comes or goes)
+    std::vector<std::unique_ptr<GpuLod>> gpu;   // a LOD each, skinned on the GPU (skin_gpu)
 };
 std::unordered_map<void *, Vis> g_vis;
 unsigned g_calls, g_ours, g_faults;
@@ -329,7 +364,9 @@ void *FindJoint(void *root, const std::string &name, int depth = 0) {
     return nullptr;
 }
 
-// The skin this mesh takes, bound to its joints (null: LS3D's own).
+bool HasSkin(const Vis &v) { return v.def && v.error.empty(); }
+
+// The mesh tracked, its skin (a mod's) bound to its joints when it has one (HasSkin).
 Vis *Bind(void *mesh) {
     auto it = g_vis.find(mesh);
     void *vt = *reinterpret_cast<void **>(mesh), *m = F<void *>(mesh, kSmMesh), *b = F<void *>(mesh, kSmBones);
@@ -344,19 +381,20 @@ Vis *Bind(void *mesh) {
         it = g_vis.emplace(mesh, std::move(v)).first;
     }
     Vis &v = it->second;
-    if (v.looked == g_defsGen) return v.def && v.error.empty() ? &v : nullptr;   // (LS3D's own models: this alone a call)
+    if (v.looked == g_defsGen) return &v;   // (LS3D's own models: this alone a call)
     v.looked = g_defsGen;
-    if (v.model.empty()) return nullptr;
+    if (v.model.empty()) return &v;
     ReadFileOf(v.model);
     v.looked = g_defsGen;   // (a file just read added its skins)
     auto d = g_defs.find(v.model + "|" + Lower(v.name));
-    if (d == g_defs.end() || d->second.empty()) { v.def.reset(); return nullptr; }
+    if (d == g_defs.end() || d->second.empty()) { v.def.reset(); v.gpu.clear(); return &v; }
     const std::shared_ptr<Def> &use = d->second.back();
     if (v.def != use || v.gen != use->gen) {   // (bound again: a new skin)
         v.def = use;
         v.gen = v.def->gen;
         v.error.clear();
         v.joints.clear();
+        v.gpu.clear();   // (the GPU's data made again from the new skin)
         for (const Lod &l : v.def->lods) {
             std::vector<void *> js;
             for (const Bone &bo : l.bones) {
@@ -368,7 +406,7 @@ Vis *Bind(void *mesh) {
         }
         if (!v.error.empty()) HWARN("skin: %s %s: %s (LS3D's own skin kept)", v.model.c_str(), v.name.c_str(), v.error.c_str());
     }
-    return v.error.empty() ? &v : nullptr;
+    return &v;
 }
 
 using UpdateLodFn = void(__fastcall *)(void *mesh, void *edx, int lod);
@@ -438,6 +476,161 @@ bool SkinLod(void *mesh, Vis &v, int lod) {
     return true;
 }
 
+// ---- people skinned on the GPU (skin_gpu): every single mesh's LOD that can be, while a mod (or the bridge) asks
+std::vector<MmlMod *> g_gpuAsks;
+bool g_gpuBridge;
+unsigned g_frame = 1;          // SkinFrameBegin's count (the frames of the mission's world)
+unsigned g_gpuSkins, g_gpuLights, g_gpuDraws, g_gpuDrawsLast, g_gpuFallback;
+double g_gpuMs, g_gpuMsLast;   // the CPU's part: palettes, lights, uploads
+std::string g_gpuWhy;          // (off: why, once the device was looked at)
+
+bool GpuWanted() {
+    if (g_gpuBridge) return true;
+    for (MmlMod *m : g_gpuAsks) if (ModAlive(m)) return true;
+    return false;
+}
+constexpr uint32_t kSingleMorph = 0x524D4D53;   // 'SMMR' at the visual's +0x1D4 (a single mesh's 'SNGM')
+constexpr int kVisualType = 0x1D4, kSmMorph = 0x22C, kSmFlat = 0x80;
+constexpr int kLevelGroups = 0x1C, kLevelFlags = 0x3C, kLevelEnvScale = 0x40, kLodEnvU = 0x24, kLodEnvV = 0x28;
+constexpr int kLodDrawFirst = 0x18;
+
+// LS3D's own skin of a mesh's LOD as influences, read from its bone records (the joints by their place in +0x220)
+std::shared_ptr<Lod> OwnLod(void *mesh, int lod, std::vector<void *> *joints, std::string *why) {
+    void *rec = F<void *>(mesh, kSmLods + 4 * lod), *level = F<void *>(F<void *>(mesh, kSmMesh), kMeshLevels + 4 * lod);
+    void *skin = F<void *>(rec, kLodSkin);
+    if (!skin) { *why = "no skin"; return nullptr; }
+    uint32_t verts = F<uint32_t>(level, kLevelVerts), rigid = F<uint32_t>(skin, kSkinRigid);
+    int bones = F<int>(mesh, kSmBoneCount);
+    uint8_t *records = F<uint8_t *>(skin, kSkinRecords);
+    void **frames = F<void **>(mesh, kSmBones);
+    if (bones < 0 || bones > 255 || !records || !frames) { *why = "no bones bound"; return nullptr; }
+    auto L = std::make_shared<Lod>();
+    L->vertices = verts;
+    Bone root{};
+    memcpy(root.bind, kIdentity, sizeof root.bind);
+    L->bones.push_back(root);
+    joints->assign(1, nullptr);
+    for (int b = 0; b < bones; b++) {
+        Bone bo{};
+        memcpy(bo.bind, records + b * kRecSize, 64);
+        L->bones.push_back(bo);
+        joints->push_back(frames[b]);
+    }
+    L->n.assign(verts, 0);
+    L->idx.assign(size_t(verts) * kMaxInfluences, 0);
+    L->w.assign(size_t(verts) * kMaxInfluences, 0.0f);
+    uint32_t v = 0;
+    for (int b = 0; b < bones; b++) {
+        const uint8_t *r = records + b * kRecSize;
+        uint32_t one = *reinterpret_cast<const uint32_t *>(r + 0x40), blended = *reinterpret_cast<const uint32_t *>(r + 0x44);
+        uint32_t other = *reinterpret_cast<const uint32_t *>(r + 0x48);
+        const float *weights = *reinterpret_cast<float *const *>(r + 0x64);
+        if (v + one + blended > verts || other > static_cast<uint32_t>(bones)) { *why = "the bone records do not fit the vertices"; return nullptr; }
+        for (uint32_t k = 0; k < one; k++, v++) L->n[v] = 1, L->idx[v * kMaxInfluences] = static_cast<uint16_t>(b + 1), L->w[v * kMaxInfluences] = 1;
+        for (uint32_t k = 0; k < blended; k++, v++) {
+            float w = weights ? weights[k] : 1.0f;
+            L->idx[v * kMaxInfluences] = static_cast<uint16_t>(b + 1), L->w[v * kMaxInfluences] = w;
+            L->idx[v * kMaxInfluences + 1] = static_cast<uint16_t>(other), L->w[v * kMaxInfluences + 1] = 1.0f - w;
+            L->n[v] = w < 1.0f ? 2 : 1;
+        }
+    }
+    if (v + rigid != verts) { *why = "the bone records cover " + std::to_string(v) + " of " + std::to_string(verts - rigid) + " vertices"; return nullptr; }
+    for (; v < verts; v++) L->n[v] = 1, L->idx[v * kMaxInfluences] = 0, L->w[v * kMaxInfluences] = 1;   // (the rigid ones: the mesh's space)
+    return L;
+}
+
+// Whether this LOD can be drawn by the GPU: what it would need of LS3D's CPU path that the vertex shader does not do.
+GpuLod *GpuFor(void *mesh, Vis &v, int lod) {
+    if (lod < 0 || lod >= kMaxLods) return nullptr;
+    if (v.gpu.size() <= static_cast<size_t>(lod)) v.gpu.resize(lod + 1);
+    if (v.gpu[lod]) return v.gpu[lod]->ok ? v.gpu[lod].get() : nullptr;
+    v.gpu[lod].reset(new GpuLod);
+    GpuLod &g = *v.gpu[lod];
+    void *rec = F<void *>(mesh, kSmLods + 4 * lod), *data = F<void *>(mesh, kSmMesh);
+    void *level = data ? F<void *>(data, kMeshLevels + 4 * lod) : nullptr;
+    if (!rec || !level) { g.why = "no LOD"; return nullptr; }
+    if (!(*reinterpret_cast<uint32_t *>(ModuleBase("LS3DF.dll") + game::Ls3d().vertexPath) & 1)) { g.why = "LS3D transforms through Direct3D here"; return nullptr; }
+    if (F<uint32_t>(mesh, kSmFlags) & kSmFlat) { g.why = "lit flat (one colour a LOD)"; return nullptr; }
+    uint32_t flags = F<uint32_t>(level, kLevelFlags);
+    if (flags & 8) {
+        g.env = static_cast<int>(flags & 7);
+        if (g.env > 1) { g.why = "an environment map of mode " + std::to_string(g.env); return nullptr; }
+        g.envScale = F<float>(level, kLevelEnvScale);
+        g.envU = F<float>(rec, kLodEnvU);
+        g.envV = F<float>(rec, kLodEnvV);
+    }
+    g.verts = F<uint32_t>(level, kLevelVerts);
+    if (HasSkin(v) && lod < static_cast<int>(v.def->lods.size())) {
+        g.L = &v.def->lods[lod];
+        g.joints = v.joints[lod];
+        if (g.L->vertices != g.verts) { g.why = "the mod's skin has another count of vertices"; return nullptr; }
+        void *skin = F<void *>(rec, kLodSkin);
+        uint32_t firstRigid = g.verts - std::min(skin ? F<uint32_t>(skin, kSkinRigid) : 0u, g.verts);
+        for (uint32_t i = 0; i < firstRigid; i++)
+            if (!g.L->n[i]) { g.why = "the mod's skin leaves vertex " + std::to_string(i) + " without a bone"; return nullptr; }
+    } else {
+        g.own = OwnLod(mesh, lod, &g.joints, &g.why);
+        if (!g.own) return nullptr;
+        g.L = g.own.get();
+    }
+    g.ok = true;
+    return &g;
+}
+
+// The bones' palette now: each bone's matrix (its record's at rest times the joint's in the mesh's space) as three
+// columns, then its normals' (SetRot) as three.
+void Palette(GpuLod &g) {
+    const Lod &L = *g.L;
+    g.pal.resize(L.bones.size() * 24);
+    for (size_t b = 0; b < L.bones.size(); b++) {
+        M44 s, r;
+        if (!g.joints[b]) memcpy(s.m, kIdentity, 64), memcpy(r.m, kIdentity, 64);
+        else s = Mul(L.bones[b].bind, JointMatrix(g.joints[b])), r = SetRot(s);
+        float *o = &g.pal[b * 24];
+        for (int j = 0; j < 3; j++) {
+            o[j * 4 + 0] = s.m[0 * 4 + j], o[j * 4 + 1] = s.m[1 * 4 + j], o[j * 4 + 2] = s.m[2 * 4 + j], o[j * 4 + 3] = s.m[3 * 4 + j];
+            o[12 + j * 4 + 0] = r.m[0 * 4 + j], o[12 + j * 4 + 1] = r.m[1 * 4 + j], o[12 + j * 4 + 2] = r.m[2 * 4 + j], o[12 + j * 4 + 3] = 0;
+        }
+    }
+    g.palVersion++;
+}
+
+// The LOD's rest pose from the mesh's own vertices (a single morph's after its morph: they move with the face)
+bool RestPose(void *mesh, GpuLod &g, int lod) {
+    void *level = F<void *>(F<void *>(mesh, kSmMesh), kMeshLevels + 4 * lod);
+    uint8_t *src = Locked(F<void *>(level, kLevelVb));
+    if (!src) return false;
+    int ss = StrideOf(F<void *>(level, kLevelVb));
+    src += size_t(F<uint32_t>(level, kLevelFirst)) * ss;
+    g.rest.resize(size_t(g.verts) * 6);
+    for (uint32_t i = 0; i < g.verts; i++) memcpy(&g.rest[i * 6], src + size_t(i) * ss, 24);
+    g.restVersion++;
+    return true;
+}
+
+// PoseLod for a LOD the GPU skins: what LS3D marks, the palette, the rest pose when the face moved. False: not.
+bool GpuUpdateLod(void *mesh, Vis &v, int lod) {
+    GpuLod *g = GpuFor(mesh, v, lod);
+    if (!g) return false;
+    void *rec = F<void *>(mesh, kSmLods + 4 * lod);
+    if (!F<void *>(rec, kLodCache) || !F<void *>(mesh, kSmBones)) return false;   // (LS3D's first call makes them)
+    F<int>(rec, kLodLight) = -700;
+    F<int>(rec, kLodLight2) = -600;
+    F<uint32_t>(rec, kLodStamp) = F<uint32_t>(mesh, kSmStamp);
+    Palette(*g);
+    bool morph = F<uint32_t>(mesh, kVisualType) == kSingleMorph && (F<uint8_t>(mesh, kSmMorph) & 1);
+    if ((morph || g->rest.empty()) && !RestPose(mesh, *g, lod)) return false;
+    return true;
+}
+
+// The GPU's LOD of a drawn mesh (an instance's: its mesh's), null when it is not drawn by the GPU
+GpuLod *GpuOfLod(void *mesh, int lod) {
+    for (int i = 0; i < 8 && (F<uint32_t>(mesh, kSmFlags) & kSmInstance); i++) mesh = F<void *>(mesh, 0x08);
+    auto it = g_vis.find(mesh);
+    if (it == g_vis.end() || lod < 0 || static_cast<size_t>(lod) >= it->second.gpu.size() || !it->second.gpu[lod]) return nullptr;
+    return it->second.gpu[lod]->ok ? it->second.gpu[lod].get() : nullptr;
+}
+
 void __fastcall hkUpdateLod(void *mesh, void *edx, int lod) {
     g_calls++;
     Vis *v = nullptr;
@@ -451,32 +644,42 @@ void __fastcall hkUpdateLod(void *mesh, void *edx, int lod) {
     }
     // (an instance's PoseLod calls its mesh's through the vtable: here again)
     if (!v) { oUpdateLod(mesh, edx, lod); return; }
+    const bool gpu = GpuWanted() && g_gpuWhy.empty();
+    if (!gpu && !HasSkin(*v)) { oUpdateLod(mesh, edx, lod); return; }
     double t0 = NowMs();
-    bool done = false;
+    bool done = false, onGpu = false;
     __try {
         void *rec = lod >= 0 && lod < kMaxLods ? F<void *>(mesh, kSmLods + 4 * lod) : nullptr;
         // (the first time LS3D binds the joints and makes the cache: its own PoseLod does it)
         if (rec && (!F<void *>(mesh, kSmBones) || !F<void *>(rec, kLodCache))) oUpdateLod(mesh, edx, lod);
-        done = SkinLod(mesh, *v, lod);
+        if (gpu) done = onGpu = GpuUpdateLod(mesh, *v, lod);
+        if (!done && HasSkin(*v)) done = SkinLod(mesh, *v, lod);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         g_faults++;
         done = false;
     }
-    if (!done) { oUpdateLod(mesh, edx, lod); return; }
+    if (!done) {
+        if (gpu) g_gpuFallback++;
+        oUpdateLod(mesh, edx, lod);
+        return;
+    }
     v->skinned++;
-    g_ours++;
-    g_ms += NowMs() - t0;
+    if (onGpu) g_gpuSkins++, g_gpuMs += NowMs() - t0;
+    else g_ours++, g_ms += NowMs() - t0;
 }
 
-// The rigid vertices' positions into the drawn buffer: from the cache for a mesh whose skin moves them too.
+// The rigid vertices' positions into the drawn buffer: from the cache for a mesh whose skin moves them too; none for a
+// LOD the GPU draws (its drawn buffer is not drawn).
 void *__fastcall hkVbPos0(void *mesh, void *edx, uint8_t *dest, int stride, int lod) {
+    bool gpu = false;
+    __try { gpu = !g_vis.empty() && GpuOfLod(mesh, lod); } __except (EXCEPTION_EXECUTE_HANDLER) { g_faults++; }
+    if (gpu) return nullptr;
     void *r = oVbPos0(mesh, edx, dest, stride, lod);
     __try {
         void *m = mesh;
         for (int i = 0; i < 8 && (F<uint32_t>(m, kSmFlags) & kSmInstance); i++) m = F<void *>(m, 0x08);
         auto it = g_vis.find(m);
-        if (it == g_vis.end() || !it->second.def || !it->second.error.empty() || lod < 0 || lod >= static_cast<int>(it->second.def->lods.size()))
-            return r;
+        if (it == g_vis.end() || !HasSkin(it->second) || lod < 0 || lod >= static_cast<int>(it->second.def->lods.size())) return r;
         const Lod &L = it->second.def->lods[lod];
         void *rec = F<void *>(m, kSmLods + 4 * lod);
         void *skin = rec ? F<void *>(rec, kLodSkin) : nullptr;
@@ -495,6 +698,74 @@ void *__fastcall hkVbPos0(void *mesh, void *edx, uint8_t *dest, int stride, int 
     return r;
 }
 
+// The skinned vertices' positions into the drawn buffer (CopySkinnedPositions: motion.cpp keeps them too): none for a LOD the
+// GPU draws.
+VbPosFn oVbPos;
+void *__fastcall hkVbPos(void *mesh, void *edx, uint8_t *dest, int stride, int lod) {
+    bool gpu = false;
+    __try { gpu = !g_vis.empty() && GpuOfLod(mesh, lod); } __except (EXCEPTION_EXECUTE_HANDLER) { g_faults++; }
+    return gpu ? nullptr : oVbPos(mesh, edx, dest, stride, lod);
+}
+
+// LightVertices for a LOD the GPU draws: LS3D's own choice of the lights, run on one vertex of our own; what it chose
+// (its globals) becomes the vertex shader's constants. LS3D lights again only when the bones or the sector's lights
+// changed, and so do we.
+using LightFn = uint32_t(__fastcall *)(void *dest, int destStride, void *level, void *posNorm, int stride, void *visual,
+                                       void *invWorld, uint32_t mask, uint32_t changed, void *lodRec);
+LightFn oLighting;
+void CaptureLights(GpuLod &g) {
+    const game::Ls3dBuild &l = game::Ls3d();
+    const uintptr_t base = ModuleBase("LS3DF.dll");
+    const float *amb = reinterpret_cast<const float *>(base + l.lightAmbient);
+    int count = std::min(8, *reinterpret_cast<const int *>(base + l.lightCount));
+    float *c = g.light;
+    memset(c, 0, sizeof g.light);
+    c[0] = amb[0], c[1] = amb[1], c[2] = amb[2], c[3] = static_cast<float>(count);   // c120
+    for (int i = 0; i < count; i++) {
+        const float *s = reinterpret_cast<const float *>(base + l.lightSlots + i * 0x50);
+        uint8_t *light = *reinterpret_cast<uint8_t *const *>(s + 0x10);
+        float *o = c + (124 - 120) * 4 + i * 16;
+        int type = light ? *reinterpret_cast<const uint8_t *>(light + 0x154) : 1;
+        o[0] = s[0], o[1] = s[1], o[2] = s[2], o[3] = static_cast<float>(type);
+        o[4] = s[4], o[5] = s[5], o[6] = s[6], o[7] = s[0xC];
+        o[8] = s[8], o[9] = s[9], o[10] = s[10], o[11] = s[0xD];
+        o[12] = s[0xF];
+        if (light && type == 2) o[13] = *reinterpret_cast<float *>(light + 0x1A0), o[14] = *reinterpret_cast<float *>(light + 0x1B0),
+                                 o[15] = *reinterpret_cast<float *>(light + 0x1C0);
+    }
+    g.lit = true;
+}
+uint32_t __fastcall hkLighting(void *dest, int destStride, void *level, void *posNorm, int stride, void *visual, void *invWorld,
+                               uint32_t mask, uint32_t changed, void *lodRec) {
+    GpuLod *g = nullptr;
+    int lod = -1;
+    __try {
+        if (!g_vis.empty() && visual && lodRec)
+            for (int i = 0; i < kMaxLods && !g; i++)
+                if (F<void *>(visual, kSmLods + 4 * i) == lodRec) lod = i, g = GpuOfLod(visual, i);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        g_faults++;
+        g = nullptr;
+    }
+    if (!g) return oLighting(dest, destStride, level, posNorm, stride, visual, invWorld, mask, changed, lodRec);
+    // one vertex: a copy of the LOD's level with a count of 1, a vertex at the origin with no normal
+    double t0 = NowMs();
+    uint8_t fake[0x80];
+    uint32_t color[2] = {0xA5A5A5A5u, 0};
+    float pn[8] = {};
+    uint32_t r = 0;
+    __try {
+        memcpy(fake, level, sizeof fake);
+        *reinterpret_cast<uint32_t *>(fake + kLevelVerts) = 1;
+        r = oLighting(color, 4, fake, pn, 0x18, visual, invWorld, mask, changed, lodRec);
+        if (color[0] != 0xA5A5A5A5u) CaptureLights(*g), g_gpuLights++;   // (lit again: else what it chose before stands)
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        g_faults++;
+    }
+    g_gpuMs += NowMs() - t0;
+    return r;
+}
+
 bool g_hookTried, g_hooked;
 std::string g_hookWhy;
 bool EnsureHooks() {
@@ -502,20 +773,26 @@ bool EnsureHooks() {
     if (!game::g_ls3d) { g_hookWhy = "no game known"; return false; }
     g_hookTried = true;
     const game::Ls3dBuild &l = game::Ls3d();
-    if (!l.smUpdateLod || !l.smUpdateVBPos0 || !l.frameUpdateMatrix) { g_hookWhy = "not known for this LS3DF.dll"; return false; }
-    uintptr_t base = ModuleBase("LS3DF.dll");
-    std::string err;
-    if (!HookAdd(nullptr, base + l.smUpdateLod, reinterpret_cast<void *>(&hkUpdateLod), reinterpret_cast<void **>(&oUpdateLod), &err)) {
-        g_hookWhy = "PoseLod not hooked: " + err;
+    if (!l.smUpdateLod || !l.smUpdateVBPos0 || !l.smCopySkinned || !l.frameUpdateMatrix || !l.lightingProcess) {
+        g_hookWhy = "not known for this LS3DF.dll";
         return false;
     }
-    if (!HookAdd(nullptr, base + l.smUpdateVBPos0, reinterpret_cast<void *>(&hkVbPos0), reinterpret_cast<void **>(&oVbPos0), &err)) {
-        HookRemoveLink(nullptr, base + l.smUpdateLod, reinterpret_cast<void *>(&hkUpdateLod));
-        g_hookWhy = "CopyRigidPositions not hooked: " + err;
+    uintptr_t base = ModuleBase("LS3DF.dll");
+    struct { uintptr_t at; void *detour; void **orig; const char *name; } hooks[] = {
+        {base + l.smUpdateLod, reinterpret_cast<void *>(&hkUpdateLod), reinterpret_cast<void **>(&oUpdateLod), "PoseLod"},
+        {base + l.smUpdateVBPos0, reinterpret_cast<void *>(&hkVbPos0), reinterpret_cast<void **>(&oVbPos0), "CopyRigidPositions"},
+        {base + l.smCopySkinned, reinterpret_cast<void *>(&hkVbPos), reinterpret_cast<void **>(&oVbPos), "CopySkinnedPositions"},
+        {base + l.lightingProcess, reinterpret_cast<void *>(&hkLighting), reinterpret_cast<void **>(&oLighting), "LightVertices"},
+    };
+    std::string err;
+    for (auto &h : hooks) {
+        if (HookAdd(nullptr, h.at, h.detour, h.orig, &err)) continue;
+        for (auto &u : hooks) if (*u.orig) HookRemoveLink(nullptr, u.at, u.detour);
+        g_hookWhy = std::string(h.name) + " not hooked: " + err;
         return false;
     }
     g_hooked = true;
-    HLOG("skin: I3D_singlemesh::PoseLod and CopyRigidPositions hooked (models with a skin of a mod's)");
+    HLOG("skin: I3D_singlemesh::PoseLod, CopyRigidPositions, CopySkinnedPositions and LightVertices hooked (a mod's skins, the GPU's)");
     return true;
 }
 
@@ -632,12 +909,389 @@ bool Export(const std::string &model, const std::string &mesh, bool rest, json *
     return true;
 }
 
+// ---- the GPU's drawing: the device's objects (the vertex layout, the shaders, a LOD's buffers and palettes)
+IDirect3DDevice9 *g_shDev;
+IDirect3DVertexDeclaration9 *g_decl;
+IDirect3DVertexShader9 *g_vsSkin, *g_vsDepth, *g_vsMotion;
+IDirect3DPixelShader9 *g_psSkin;
+bool g_gpuChecked;
+
+// The mesh's attributes that do not move (uv, tangent, bones, weights: 72 bytes a vertex), shared by its instances
+struct Attrs { IDirect3DDevice9 *dev = nullptr; IDirect3DVertexBuffer9 *vb = nullptr; uint32_t verts = 0; unsigned frame = 0; };
+std::map<std::tuple<const void *, int, const void *>, Attrs> g_attrs;
+std::map<std::string, std::vector<ModelSkinLod>> g_rests;   // the .4ds's LODs (their triangles), by model|mesh
+constexpr UINT kRestStride = 24, kAttrStride = 72;
+
+void ReleaseDevice() {
+    SafeRelease(g_decl); SafeRelease(g_vsSkin); SafeRelease(g_vsDepth); SafeRelease(g_vsMotion); SafeRelease(g_psSkin);
+    for (auto &kv : g_attrs) SafeRelease(kv.second.vb);
+    g_attrs.clear();
+    for (auto &kv : g_vis) for (auto &g : kv.second.gpu) if (g) { SafeRelease(g->restVb); SafeRelease(g->tex[0]); SafeRelease(g->tex[1]); g->dev = nullptr; }
+    g_shDev = nullptr;
+}
+
+bool MakeDevice(IDirect3DDevice9 *d) {
+    if (g_shDev == d && g_decl) return true;
+    ReleaseDevice();
+    const D3DVERTEXELEMENT9 el[] = {
+        {0, 0, D3DDECLTYPE_FLOAT3, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_POSITION, 0},
+        {0, 12, D3DDECLTYPE_FLOAT3, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_NORMAL, 0},
+        {1, 0, D3DDECLTYPE_FLOAT2, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_TEXCOORD, 0},
+        {1, 8, D3DDECLTYPE_FLOAT4, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_TANGENT, 0},
+        {1, 24, D3DDECLTYPE_SHORT4, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_BLENDINDICES, 0},
+        {1, 32, D3DDECLTYPE_SHORT4, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_BLENDINDICES, 1},
+        {1, 40, D3DDECLTYPE_FLOAT4, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_BLENDWEIGHT, 0},
+        {1, 56, D3DDECLTYPE_FLOAT4, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_BLENDWEIGHT, 1},
+        D3DDECL_END()};
+    if (FAILED(d->CreateVertexDeclaration(el, &g_decl)) ||
+        FAILED(d->CreateVertexShader(reinterpret_cast<const DWORD *>(kVsSkin), &g_vsSkin)) ||
+        FAILED(d->CreateVertexShader(reinterpret_cast<const DWORD *>(kVsSkinDepth), &g_vsDepth)) ||
+        FAILED(d->CreateVertexShader(reinterpret_cast<const DWORD *>(kVsSkinMotion), &g_vsMotion)) ||
+        FAILED(d->CreatePixelShader(reinterpret_cast<const DWORD *>(kPsSkin), &g_psSkin))) {
+        ReleaseDevice();
+        return false;
+    }
+    g_shDev = d;
+    return true;
+}
+
+// Whether the device takes what the GPU's skinning needs: shader model 3 and float textures in the vertex shader.
+std::string CheckDevice(IDirect3DDevice9 *d) {
+    D3DCAPS9 caps{};
+    if (FAILED(d->GetDeviceCaps(&caps)) || caps.VertexShaderVersion < D3DVS_VERSION(3, 0) || caps.PixelShaderVersion < D3DPS_VERSION(3, 0))
+        return "the device has no shader model 3";
+    IDirect3D9 *d3d = nullptr;
+    D3DDEVICE_CREATION_PARAMETERS cp{};
+    D3DDISPLAYMODE mode{};
+    if (FAILED(d->GetDirect3D(&d3d)) || !d3d) return "no Direct3D 9 interface";
+    d->GetCreationParameters(&cp);
+    d->GetDisplayMode(0, &mode);
+    HRESULT hr = d3d->CheckDeviceFormat(cp.AdapterOrdinal, cp.DeviceType, mode.Format ? mode.Format : D3DFMT_X8R8G8B8,
+                                        D3DUSAGE_QUERY_VERTEXTEXTURE, D3DRTYPE_TEXTURE, D3DFMT_A32B32G32R32F);
+    d3d->Release();
+    if (FAILED(hr)) return "the device reads no float texture in a vertex shader";
+    if (!MakeDevice(d)) return "the device refused the skinning's shaders";
+    return "";
+}
+
+// MikkTSpace over one LOD: its rest pose, uvs and triangles (the .4ds's, in LS3D's vertex order)
+struct MikkData { const float *rest; const float *uv; const uint16_t *idx; int faces; std::vector<float> *tan; std::vector<int> *count; };
+int MkFaces(const SMikkTSpaceContext *c) { return static_cast<MikkData *>(c->m_pUserData)->faces; }
+int MkVerts(const SMikkTSpaceContext *, const int) { return 3; }
+void MkPos(const SMikkTSpaceContext *c, float o[], const int f, const int v) {
+    auto *m = static_cast<MikkData *>(c->m_pUserData);
+    memcpy(o, m->rest + m->idx[f * 3 + v] * 6, 12);
+}
+void MkNrm(const SMikkTSpaceContext *c, float o[], const int f, const int v) {
+    auto *m = static_cast<MikkData *>(c->m_pUserData);
+    memcpy(o, m->rest + m->idx[f * 3 + v] * 6 + 3, 12);
+}
+void MkUv(const SMikkTSpaceContext *c, float o[], const int f, const int v) {
+    auto *m = static_cast<MikkData *>(c->m_pUserData);
+    memcpy(o, m->uv + m->idx[f * 3 + v] * 2, 8);
+}
+void MkSet(const SMikkTSpaceContext *c, const float t[], const float sign, const int f, const int v) {
+    auto *m = static_cast<MikkData *>(c->m_pUserData);
+    int i = m->idx[f * 3 + v];
+    float *o = &(*m->tan)[i * 4];
+    o[0] += t[0], o[1] += t[1], o[2] += t[2], o[3] += sign;
+    (*m->count)[i]++;
+}
+
+// The attributes' buffer of a LOD: the uvs from the mesh's own vertices, the tangents from MikkTSpace, the bones.
+Attrs *AttrsFor(IDirect3DDevice9 *d, void *mesh, const Vis &v, GpuLod &g, int lod) {
+    void *data = F<void *>(mesh, kSmMesh);
+    auto key = std::make_tuple(static_cast<const void *>(data), lod, static_cast<const void *>(g.own ? nullptr : g.L));
+    Attrs &a = g_attrs[key];
+    if (a.vb && a.dev == d && a.verts == g.verts) return &a;
+    SafeRelease(a.vb);
+    a.dev = d;
+    a.verts = g.verts;
+    void *level = F<void *>(data, kMeshLevels + 4 * lod);
+    uint8_t *src = Locked(F<void *>(level, kLevelVb));
+    if (!src || g.rest.size() < size_t(g.verts) * 6) return nullptr;
+    int ss = StrideOf(F<void *>(level, kLevelVb));
+    src += size_t(F<uint32_t>(level, kLevelFirst)) * ss;
+    std::vector<float> uv(size_t(g.verts) * 2), tan(size_t(g.verts) * 4, 0.0f);
+    for (uint32_t i = 0; i < g.verts; i++) memcpy(&uv[i * 2], src + size_t(i) * ss + 24, 8);
+    // the triangles: the .4ds's (the drawn index buffers hold the same, split by material)
+    std::string rk = v.model + "|" + Lower(v.name);
+    auto it = g_rests.find(rk);
+    if (it == g_rests.end()) {
+        std::vector<ModelSkinLod> lods;
+        std::string name, err;
+        if (!ModelSkin(v.model.c_str(), v.name.c_str(), &lods, &name, &err)) HWARN("skin: %s %s: no triangles for the tangents (%s)", v.model.c_str(), v.name.c_str(), err.c_str());
+        it = g_rests.emplace(rk, std::move(lods)).first;
+    }
+    std::vector<int> count(g.verts, 0);
+    if (lod < static_cast<int>(it->second.size()) && it->second[lod].vertices == g.verts && !it->second[lod].idx.empty()) {
+        const ModelSkinLod &r = it->second[lod];
+        MikkData md{g.rest.data(), uv.data(), r.idx.data(), static_cast<int>(r.idx.size() / 3), &tan, &count};
+        SMikkTSpaceInterface mi{};
+        mi.m_getNumFaces = MkFaces;
+        mi.m_getNumVerticesOfFace = MkVerts;
+        mi.m_getPosition = MkPos;
+        mi.m_getNormal = MkNrm;
+        mi.m_getTexCoord = MkUv;
+        mi.m_setTSpaceBasic = MkSet;
+        SMikkTSpaceContext mc{&mi, &md};
+        genTangSpaceDefault(&mc);
+    }
+    if (FAILED(d->CreateVertexBuffer(g.verts * kAttrStride, D3DUSAGE_WRITEONLY, 0, D3DPOOL_DEFAULT, &a.vb, nullptr))) return nullptr;
+    uint8_t *p = nullptr;
+    if (FAILED(a.vb->Lock(0, 0, reinterpret_cast<void **>(&p), 0)) || !p) { SafeRelease(a.vb); return nullptr; }
+    const Lod &L = *g.L;
+    for (uint32_t i = 0; i < g.verts; i++) {
+        uint8_t *o = p + size_t(i) * kAttrStride;
+        float t[4] = {1, 0, 0, 1};
+        if (count[i]) {
+            float *s = &tan[i * 4];
+            float l = std::sqrt(s[0] * s[0] + s[1] * s[1] + s[2] * s[2]);
+            if (l > 1e-12f) t[0] = s[0] / l, t[1] = s[1] / l, t[2] = s[2] / l;
+            t[3] = s[3] < 0 ? -1.0f : 1.0f;
+        }
+        int16_t b[8] = {};
+        float w[8] = {};
+        for (int k = 0; k < L.n[i] && k < kMaxInfluences; k++) b[k] = static_cast<int16_t>(L.idx[i * kMaxInfluences + k]), w[k] = L.w[i * kMaxInfluences + k];
+        memcpy(o, &uv[i * 2], 8);
+        memcpy(o + 8, t, 16);
+        memcpy(o + 24, b, 16);
+        memcpy(o + 40, w, 32);
+    }
+    a.vb->Unlock();
+    return &a;
+}
+
+// The palettes and the rest pose into the LOD's textures and buffer (the palette as last drawn becomes "before" at
+// the frame's first draw: the motion vectors')
+bool Upload(IDirect3DDevice9 *d, GpuLod &g) {
+    const UINT width = static_cast<UINT>(g.pal.size() / 4);
+    if (g.dev != d) {
+        SafeRelease(g.restVb); SafeRelease(g.tex[0]); SafeRelease(g.tex[1]);
+        g.texData[0].clear(), g.texData[1].clear();
+        g.restUploaded = 0;
+        g.dev = d;
+    }
+    if (!g.restVb && FAILED(d->CreateVertexBuffer(g.verts * kRestStride, D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, 0, D3DPOOL_DEFAULT, &g.restVb, nullptr)))
+        return false;
+    for (int t = 0; t < 2; t++) {
+        D3DSURFACE_DESC desc{};
+        if (g.tex[t] && (FAILED(g.tex[t]->GetLevelDesc(0, &desc)) || desc.Width != width)) { SafeRelease(g.tex[t]); g.texData[t].clear(); }
+        if (!g.tex[t] && FAILED(d->CreateTexture(width, 1, 1, D3DUSAGE_DYNAMIC, D3DFMT_A32B32G32R32F, D3DPOOL_DEFAULT, &g.tex[t], nullptr))) return false;
+    }
+    if (g.drawnFrame != g_frame) {
+        const std::vector<float> &before = g.drawnFrame + 1 == g_frame && g.palDrawn.size() == g.pal.size() ? g.palDrawn : g.pal;
+        const std::vector<float> *want[2] = {&g.pal, &before};
+        for (int t = 1; t >= 0; t--) {   // (before first: it may be the one about to be replaced)
+            if (g.texData[t] == *want[t]) continue;
+            D3DLOCKED_RECT r{};
+            if (FAILED(g.tex[t]->LockRect(0, &r, nullptr, D3DLOCK_DISCARD))) return false;
+            memcpy(r.pBits, want[t]->data(), want[t]->size() * sizeof(float));
+            g.tex[t]->UnlockRect(0);
+            g.texData[t] = *want[t];
+        }
+        g.palDrawn = g.pal;
+        g.drawnFrame = g_frame;
+    } else if (g.texData[0] != g.pal) {   // (skinned again within the frame: a scene view's)
+        D3DLOCKED_RECT r{};
+        if (FAILED(g.tex[0]->LockRect(0, &r, nullptr, D3DLOCK_DISCARD))) return false;
+        memcpy(r.pBits, g.pal.data(), g.pal.size() * sizeof(float));
+        g.tex[0]->UnlockRect(0);
+        g.texData[0] = g.pal;
+        g.palDrawn = g.pal;
+    }
+    if (g.restUploaded != g.restVersion) {
+        void *p = nullptr;
+        if (FAILED(g.restVb->Lock(0, 0, &p, D3DLOCK_DISCARD)) || !p) return false;
+        memcpy(p, g.rest.data(), g.rest.size() * sizeof(float));
+        g.restVb->Unlock();
+        g.restUploaded = g.restVersion;
+    }
+    return true;
+}
+
 } // namespace
 
-void SkinMissionClose() { g_vis.clear(); }
+bool SkinGpuWanted() { return GpuWanted() && g_gpuChecked && g_gpuWhy.empty(); }
+
+double g_gpuDrawMs, g_gpuDrawMsLast;
+long long SkinGpuTimeBegin() {
+    if (!g_gpuChecked || !g_gpuWhy.empty()) return 0;
+    LARGE_INTEGER t;
+    QueryPerformanceCounter(&t);
+    return t.QuadPart;
+}
+void SkinGpuTimeEnd(long long t0) {
+    if (!t0) return;
+    LARGE_INTEGER t;
+    QueryPerformanceCounter(&t);
+    if (!g_freq.QuadPart) QueryPerformanceFrequency(&g_freq);
+    g_gpuDrawMs += 1000.0 * (t.QuadPart - t0) / g_freq.QuadPart;
+}
+
+// (render.cpp, a frame of the mission's world begins) the frame's count; the device looked at while a mod asks
+void SkinFrameBegin() {
+    g_frame++;
+    g_gpuDrawsLast = g_gpuDraws, g_gpuDraws = 0;
+    g_gpuMsLast = g_gpuMs, g_gpuMs = 0;
+    g_gpuDrawMsLast = g_gpuDrawMs, g_gpuDrawMs = 0;
+    if (!GpuWanted() || g_gpuChecked) return;
+    auto *d = static_cast<IDirect3DDevice9 *>(RenderDevice(9));
+    if (!d) { g_gpuWhy = "no Direct3D 9 device (the GPU's skinning needs a wrapper's Direct3D 9: dxwrapper, DXVK)"; g_gpuChecked = true; return; }
+    std::string why;
+    g_gpuWhy = !EnsureHooks() ? g_hookWhy : !GeomEnsureHooks(&why) || !GeomEnsureDip(&why) ? why : CheckDevice(d);
+    g_gpuChecked = true;
+    if (g_gpuWhy.empty()) HLOG("skin: people skinned on the GPU from this frame");
+    else HWARN("skin: the GPU's skinning is off: %s", g_gpuWhy.c_str());
+}
+
+// What a draw of a mesh skinned on the GPU binds (geom.cpp's visual, its draw's BaseVertexIndex: its LOD).
+bool SkinGpuFor(void *dev9, const void *visual, int base, SkinGpuDraw *out) {
+    if (!SkinGpuWanted() || !visual || g_vis.empty()) return false;
+    auto *d = static_cast<IDirect3DDevice9 *>(dev9);
+    __try {
+        void *mesh = const_cast<void *>(visual);
+        for (int i = 0; i < 8 && (F<uint32_t>(mesh, kSmFlags) & kSmInstance); i++) mesh = F<void *>(mesh, 0x08);
+        auto it = g_vis.find(mesh);
+        if (it == g_vis.end()) return false;
+        Vis &v = it->second;
+        int lod = -1;
+        for (size_t i = 0; i < v.gpu.size() && lod < 0; i++) {
+            void *rec = F<void *>(mesh, kSmLods + 4 * static_cast<int>(i));
+            if (v.gpu[i] && v.gpu[i]->ok && rec && F<int>(rec, kLodDrawFirst) == base) lod = static_cast<int>(i);
+        }
+        if (lod < 0) return false;
+        GpuLod &g = *v.gpu[lod];
+        if (g.pal.empty() || g.rest.empty() || !MakeDevice(d) || !Upload(d, g)) return false;
+        Attrs *a = AttrsFor(d, mesh, v, g, lod);
+        if (!a) return false;
+        a->frame = g_frame;
+        out->decl = g_decl;
+        out->rest = g.restVb;
+        out->attrs = a->vb;
+        out->palette = g.tex[0];
+        out->paletteBefore = g.tex[1];
+        out->restStride = kRestStride;
+        out->attrStride = kAttrStride;
+        memcpy(out->c, g.light, sizeof g.light);
+        // c121: the vertices' alpha (LightVertices's: the first material's opacity times the fading), the
+        // environment map's mode, the palette's width
+        void *level = F<void *>(F<void *>(mesh, kSmMesh), kMeshLevels + 4 * lod);
+        void *group = F<void *>(level, kLevelGroups);
+        void *mat = group ? F<void *>(group, 4) : nullptr;
+        float alpha = F<float>(mesh, 0x218) * F<float>(mesh, 0x214) * (mat ? F<float>(mat, 0x38) : 1.0f);
+        alpha = static_cast<float>(static_cast<int>(alpha * 255.0f + 0.5f) & 0xFF) / 255.0f;
+        float width = static_cast<float>(g.pal.size() / 4);
+        float *c = out->c;
+        c[4] = alpha, c[5] = static_cast<float>(g.env), c[6] = width, c[7] = 1.0f / width;
+        c[8] = g.envScale, c[9] = g.envU, c[10] = g.envV, c[11] = 0;
+        g_gpuDraws++;
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        g_faults++;
+        return false;
+    }
+}
+
+bool SkinGpuDrawsLod(void *mesh, int lod) {
+    if (g_vis.empty()) return false;
+    __try { return GpuOfLod(mesh, lod) != nullptr; } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
+
+void *SkinGpuShader(int which) {
+    switch (which) {
+    case 0: return g_vsSkin;
+    case 1: return g_psSkin;
+    case 2: return g_vsDepth;
+    case 3: return g_vsMotion;
+    }
+    return nullptr;
+}
+
+// The skinned draw's streams, layout, palettes (vertex samplers 0, 1) and constants (c120..c155) set. Only what LS3D
+// keeps a cache of is put back after (SkinGpuUnbind: stream 0, the FVF): the vertex samplers, their textures and stream 1
+// are no one else's (the game's fixed pipeline reads none of them), so they stay as set, the samplers' point filtering
+// and clamping set once a frame. There are hundreds of these draws a frame: each call to the device counts.
+unsigned g_samplersFrame;
+void SkinGpuBind(void *dev9, const SkinGpuDraw &s, SkinGpuSaved *k) {
+    auto *d = static_cast<IDirect3DDevice9 *>(dev9);
+    IDirect3DVertexBuffer9 *vb = nullptr;
+    d->GetStreamSource(0, &vb, &k->off[0], &k->stride[0]);
+    k->vb[0] = vb;
+    k->decl = nullptr;
+    d->GetFVF(&k->fvf);
+    if (!k->fvf) {
+        IDirect3DVertexDeclaration9 *decl = nullptr;
+        d->GetVertexDeclaration(&decl);
+        k->decl = decl;
+    }
+    if (g_samplersFrame != g_frame) {
+        g_samplersFrame = g_frame;
+        for (UINT i = 0; i < 2; i++) {
+            d->SetSamplerState(D3DVERTEXTEXTURESAMPLER0 + i, D3DSAMP_MINFILTER, D3DTEXF_POINT);
+            d->SetSamplerState(D3DVERTEXTEXTURESAMPLER0 + i, D3DSAMP_MAGFILTER, D3DTEXF_POINT);
+            d->SetSamplerState(D3DVERTEXTEXTURESAMPLER0 + i, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
+            d->SetSamplerState(D3DVERTEXTEXTURESAMPLER0 + i, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+            d->SetSamplerState(D3DVERTEXTEXTURESAMPLER0 + i, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+        }
+    }
+    d->SetVertexDeclaration(static_cast<IDirect3DVertexDeclaration9 *>(s.decl));
+    d->SetStreamSource(0, static_cast<IDirect3DVertexBuffer9 *>(s.rest), 0, s.restStride);
+    d->SetStreamSource(1, static_cast<IDirect3DVertexBuffer9 *>(s.attrs), 0, s.attrStride);
+    d->SetTexture(D3DVERTEXTEXTURESAMPLER0, static_cast<IDirect3DBaseTexture9 *>(s.palette));
+    d->SetTexture(D3DVERTEXTEXTURESAMPLER1, static_cast<IDirect3DBaseTexture9 *>(s.paletteBefore));
+    d->SetVertexShaderConstantF(120, s.c, 36);
+}
+void SkinGpuUnbind(void *dev9, SkinGpuSaved &k) {
+    auto *d = static_cast<IDirect3DDevice9 *>(dev9);
+    d->SetStreamSource(0, static_cast<IDirect3DVertexBuffer9 *>(k.vb[0]), k.off[0], k.stride[0]);
+    if (k.vb[0]) static_cast<IDirect3DVertexBuffer9 *>(k.vb[0])->Release();
+    if (k.fvf) d->SetFVF(k.fvf);
+    else d->SetVertexDeclaration(static_cast<IDirect3DVertexDeclaration9 *>(k.decl));
+    if (k.decl) static_cast<IDirect3DVertexDeclaration9 *>(k.decl)->Release();
+}
+
+// skin_gpu: the mod wants every person skinned on the GPU (on) or no more; 1, 0 when the device cannot.
+int SkinGpuAsk(MmlMod *mod, bool on) {
+    g_gpuAsks.erase(std::remove(g_gpuAsks.begin(), g_gpuAsks.end(), mod), g_gpuAsks.end());
+    if (on) g_gpuAsks.push_back(mod);
+    SkinGpuChanged();
+    return !g_gpuChecked || g_gpuWhy.empty() ? 1 : 0;
+}
+
+// The GPU's skinning switched: every LOD skinned and lit again by whoever does it now (the stamps made stale).
+void SkinGpuChanged() {
+    const bool want = GpuWanted();
+    if (!want) g_gpuChecked = false, g_gpuWhy.clear();
+    if (want) EnsureHooks();
+    for (auto &kv : g_vis) {
+        __try {
+            for (int lod = 0; lod < kMaxLods; lod++) {
+                void *rec = F<void *>(kv.first, kSmLods + 4 * lod);
+                if (!rec) continue;
+                F<uint32_t>(rec, kLodStamp) = 0xFFFFFFFFu;
+                F<int>(rec, kLodLight) = -700;
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            g_faults++;
+        }
+        if (!want) kv.second.gpu.clear();
+    }
+}
+
+namespace {
+} // namespace
+
+void SkinMissionClose() {
+    g_vis.clear();
+    for (auto &kv : g_attrs) SafeRelease(kv.second.vb);
+    g_attrs.clear();
+    g_rests.clear();
+}
 
 void SkinModGone(MmlMod *mod) {
     if (mod) DropDefs([&](const Def &d) { return d.mod == mod; });
+    if (std::find(g_gpuAsks.begin(), g_gpuAsks.end(), mod) != g_gpuAsks.end()) SkinGpuAsk(mod, false);
     auto it = g_got.find(mod);
     if (it != g_got.end()) g_got.erase(it);
 }
@@ -718,7 +1372,27 @@ bool SkinMethod(const std::string &method, const std::string &paramsJson, std::s
                 }
             json files = json::object();
             for (auto &kv : g_files) if (!kv.second.empty()) files[SkinFileOf(kv.first)] = kv.second;
-            *reply = dump({{"hooked", g_hooked ? json("on") : json(g_hookWhy)}, {"skins", defs}, {"files", files}, {"meshes", vis},
+            unsigned onGpu = 0, offGpu = 0;
+            std::map<std::string, unsigned> whyNot;
+            for (auto &kv : g_vis)
+                for (auto &g : kv.second.gpu)
+                    if (g && g->ok) onGpu++;
+                    else if (g) offGpu++, whyNot[g->why]++;
+            // the palettes drawn now and before differ by this much at most (a moving person's limbs: not 0)
+            float most = 0;
+            for (auto &kv : g_vis)
+                for (auto &g : kv.second.gpu)
+                    if (g && g->ok && g->texData[0].size() == g->texData[1].size())
+                        for (size_t i = 0; i < g->texData[0].size(); i++) most = std::max(most, std::fabs(g->texData[0][i] - g->texData[1][i]));
+            json gpu = {{"palette_motion_most", most}, {"frame", g_frame}, {"wanted", GpuWanted()}, {"on", SkinGpuWanted()}, {"why", g_gpuWhy}, {"lods", onGpu}, {"lods_cpu", offGpu},
+                        {"why_cpu", whyNot}, {"skinned", g_gpuSkins}, {"lit", g_gpuLights}, {"fallbacks", g_gpuFallback},
+                        {"draws_last_frame", g_gpuDrawsLast}, {"ms_last_frame", g_gpuMsLast}, {"draw_ms_last_frame", g_gpuDrawMsLast},
+                        {"meshes_attrs", g_attrs.size()}};
+            std::string asked;
+            for (MmlMod *m : g_gpuAsks) if (ModAlive(m)) asked += std::string(asked.empty() ? "" : ", ") + ModIdOf(m);
+            if (g_gpuBridge) asked += std::string(asked.empty() ? "" : ", ") + "bridge";
+            gpu["asked_by"] = asked;
+            *reply = dump({{"hooked", g_hooked ? json("on") : json(g_hookWhy)}, {"gpu", gpu}, {"skins", defs}, {"files", files}, {"meshes", vis},
                            {"meshes_seen", g_vis.size()}, {"calls", g_calls}, {"ours", g_ours}, {"ms_ours", g_ms}, {"faults", g_faults}});
         } else if (method == "skin.export") {
             json out;
@@ -801,6 +1475,10 @@ bool SkinMethod(const std::string &method, const std::string &paramsJson, std::s
             }
             *reply = dump({{"vertices", verts}, {"most_position_m", dp}, {"most_normal", dn}, {"worst_vertex", worst},
                            {"ms_ls3d", tLs3d}, {"ms_ours", tOurs}});
+        } else if (method == "skin.gpu") {
+            g_gpuBridge = p.value("on", true);
+            SkinGpuChanged();
+            *reply = dump({{"wanted", GpuWanted()}, {"note", "from the next frame; skin.state's gpu tells whether the device takes it"}});
         } else if (method == "skin.reload") {
             unsigned n = 0;
             DropDefs([&](const Def &d) { return !d.mod && ++n; });
@@ -808,7 +1486,7 @@ bool SkinMethod(const std::string &method, const std::string &paramsJson, std::s
             g_vis.clear();
             *reply = dump({{"forgotten", n}});
         } else {
-            *reply = "unknown skin method (skin.state, skin.export, skin.set, skin.reload)";
+            *reply = "unknown skin method (skin.state, skin.export, skin.set, skin.check, skin.gpu, skin.reload)";
             return true;
         }
         *ok = true;

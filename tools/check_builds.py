@@ -507,6 +507,24 @@ def main(a):
         v0 = [f'{i.mnemonic} {i.op_str}' for i in gls.md.disasm(gls.at(ls['smUpdateVBPos0'], 0x200), gls.base + ls['smUpdateVBPos0'])]
         check(next((b for b in v0 if b.startswith('ret')), '') == 'ret 0xc' and any('+ 0x30]' in b for b in v0),
               f"{name} LS3DF smUpdateVBPos0: the LOD's rigid part (+0x30), ret 0xc")
+        # (host/skin.cpp, the GPU's skinning) LightVertices: fastcall with 8 stack arguments (ret 0x20), its globals
+        # (the slots, their count, the ambient) written in it; vertexPath tested by the same m_AddFGroups
+        lp = ls['lightingProcess']
+        lb = [f'{i.mnemonic} {i.op_str}' for i in gls.md.disasm(gls.at(lp, 0x1100), gls.base + lp)]
+        check('ret 0x20' in lb, f"{name} LS3DF lightingProcess: ret 0x20 (fastcall, 8 on the stack)")
+        lj = ' '.join(lb)
+        for g in ('lightCount', 'lightAmbient'):
+            check(f"{gls.base + ls[g]:#x}" in lj, f"{name} LS3DF {g}: used by LightVertices")
+        check(f"{gls.base + ls['lightSlots'] + 0x40:#x}" in lj, f"{name} LS3DF lightSlots: +0x40 (a slot's light) written by LightVertices")
+        for kind in (b'SNGM',):
+            ctor = bytes(gls.mem).find(bytes([0xC7, 0x86, 0xD4, 0x01, 0, 0]) + kind)
+            before = gls.at(ctor - 0x20, 0x20) if ctor > 0 else b''
+            w = before.rfind(bytes([0xC7, 0x06]))
+            vt = struct.unpack('<I', before[w + 2:w + 6])[0] - gls.base if w >= 0 else None
+            add = struct.unpack('<I', gls.at(vt + 0x68, 4))[0] - gls.base if vt is not None else None
+            ab = ' '.join(f'{i.mnemonic} {i.op_str}' for i in gls.md.disasm(gls.at(add, 0x1000), gls.base + add)) if add is not None else ''
+            check(f"call {gls.base + lp:#x}" in ab, f"{name} LS3DF lightingProcess: called by the SNGM m_AddFGroups")
+            check(f"{gls.base + ls['vertexPath']:#x}" in ab, f"{name} LS3DF vertexPath: tested by the SNGM m_AddFGroups")
         if ls['lockList']:
             lst = f"ecx, {gls.base + ls['lockList']:#x}"
             check(any(b == f'mov {lst}' for b in v0) or any(b == f'mov {lst}' for b in body),

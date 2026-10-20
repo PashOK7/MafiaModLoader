@@ -454,6 +454,24 @@ void SkinMissionClose();                  // the single meshes forgotten
 void SkinModGone(MmlMod *mod);            // its skins dropped
 int SkinSet(MmlMod *mod, const char *model, const char *mesh, const MmlSkinLod *lods, int count, std::string *err);   // mml.h skin_set
 int SkinGet(MmlMod *mod, const char *model, const char *mesh, int lod, MmlSkinMesh *out, std::string *err);           // mml.h skin_get
+// people skinned on the GPU (skin.cpp; drawn by shaders.cpp, motion.cpp)
+int SkinGpuAsk(MmlMod *mod, bool on);     // mml.h skin_gpu (null mod: the bridge's wish is kept apart: skin.gpu)
+void SkinGpuChanged();                    // every LOD skinned and lit again by whoever does it now
+bool SkinGpuWanted();                     // asked for, and the device takes it
+void SkinFrameBegin();                    // (render.cpp) a frame of the mission's world
+struct SkinGpuDraw {                      // what a GPU-skinned draw binds
+    void *decl, *rest, *attrs, *palette, *paletteBefore;   // IDirect3D9 objects (the skin's)
+    unsigned restStride, attrStride;
+    float c[36 * 4];                      // the vertex shader's c120..c155 (mml/skin.hlsli)
+};
+struct SkinGpuSaved { void *vb[2]; unsigned off[2], stride[2]; void *tex[2]; unsigned long samp[2][5]; void *decl; unsigned long fvf; };
+bool SkinGpuFor(void *dev9, const void *visual, int base, SkinGpuDraw *out);   // a draw of a mesh the GPU skins
+bool SkinGpuDrawsLod(void *mesh, int lod);   // a single mesh's LOD the GPU skins (its copies into the drawn buffer: none)
+void *SkinGpuShader(int which);           // 0 VsSkin, 1 PsSkin, 2 VsSkinDepth, 3 VsSkinMotion (on the device SkinGpuFor used)
+void SkinGpuBind(void *dev9, const SkinGpuDraw &d, SkinGpuSaved *saved);
+void SkinGpuUnbind(void *dev9, SkinGpuSaved &saved);
+long long SkinGpuTimeBegin();             // the draws' own time while the GPU skins (0: not measured)
+void SkinGpuTimeEnd(long long t0);
 bool SkinMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 // the shadow map from the sun and the game's lights near a draw (shadows.cpp)
 bool ShaderShadows(MmlMod *mod, const MmlShadowSettings *s);   // null s: the mod no longer wants it

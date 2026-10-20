@@ -309,6 +309,11 @@ pub struct Ls3d {
     pub frameUpdateMatrix: usize,
     pub lockList: usize,
     pub lockAppend: usize,
+    pub lightingProcess: usize,
+    pub lightSlots: usize,
+    pub lightCount: usize,
+    pub lightAmbient: usize,
+    pub vertexPath: usize,
 }
 
 /// The race of mission 6: racing.h RacingLayout.
@@ -880,6 +885,11 @@ pub static LS3D_12: Ls3d = Ls3d {
     frameUpdateMatrix: 0x1A6E0,
     lockList: 0x1C5014,
     lockAppend: 0x41700,
+    lightingProcess: 0x65A70,
+    lightSlots: 0x1C4D80,
+    lightCount: 0x1C5000,
+    lightAmbient: 0x1C4D30,
+    vertexPath: 0x1C563C,
 };
 
 pub static LS3D_10: Ls3d = Ls3d {
@@ -933,6 +943,11 @@ pub static LS3D_10: Ls3d = Ls3d {
     frameUpdateMatrix: 0x1A4A0,
     lockList: 0,
     lockAppend: 0,
+    lightingProcess: 0x62640,
+    lightSlots: 0x1C0D30,
+    lightCount: 0x1C0FB0,
+    lightAmbient: 0x1C0CE0,
+    vertexPath: 0x1C15DC,
 };
 
 pub static RACING_12: Racing = Racing {

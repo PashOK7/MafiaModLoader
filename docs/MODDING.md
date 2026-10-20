@@ -1132,6 +1132,32 @@ if (H->skin_get(M, "Tommy", "base", 0, &m)) {   /* LS3D's own, from the .4ds: bo
 - Cost (Tommy, 778 vertices, measured): LS3D's own two bones 0.017 ms a skinning, the host's with the same weights
   0.023 ms, with 4 bones a vertex 0.04 ms.
 
+**On the GPU** (`H->skin_gpu(M, 1)`, `call skin.gpu {"on": true}`; under a Direct3D 9 wrapper with shader model 3:
+dxwrapper, DXVK): every person's draw (LS3D's single meshes, a mod's skin or LS3D's own) goes through a vertex shader
+that skins his rest pose (the face's morph in it) with his bones' palette and lights him as LS3D's CPU did: LS3D's own
+`LightVertices` still chooses his 8 lights, run on one vertex, and its choice becomes the shader's constants; the
+same 128 scale, the material's alpha and the fading, the environment map's uv (modes 0 and 1). The picture is the
+same (measured: 0.16 of 255 on average over a person). LS3D's skinning into the cache, its copies into the drawn
+buffer and its lighting of the vertices are skipped. What a mod gets:
+
+- A rule's pixel shader (shader_add) on a person's draw reads the world's normal and MikkTSpace tangent (Blender's and
+  the bakers' convention) besides reference.hlsl's outputs: `float3 normal : TEXCOORD2; float4 tangent : TEXCOORD3`
+  (w the bitangent's sign). Normal maps and per-pixel light on people.
+- With `MML_SHADE_SKINNED` in the rule's flags (`"skinned": true` from the bridge) its own vertex shader takes the
+  person's draws too: `#include "mml/skin.hlsli"`, `MmlSkinIn` its input, `mml_Skin(i)` the skinned place, normal and
+  tangent, `mml_SkinLight(pos, normal)` LS3D's colour, `mml_SkinEnvUv`; host/shaders/skin9.hlsl's VsSkin is the
+  reference to copy.
+- Motion vectors (gfx_motion) and the sun's shadow map (shader_shadows) take people the GPU skins from the same
+  palettes (the last frame's kept for the motion).
+- `skin.state`'s `gpu`: `lods` drawn by the GPU, `lods_cpu` and `why_cpu` the ones left to LS3D (an environment map of
+  modes 2 to 5, a mesh lit flat), `draws_last_frame`, `ms_last_frame` (the CPU's part), `draw_ms_last_frame`.
+- **Cost, measured** (RTX 3070, 48 people in view, about 300 of their draws a frame, one game alone, fps_unlock): the
+  CPU's part falls to 0.2 to 0.3 ms, but each of those draws now switches the device from the fixed pipeline to
+  shaders and back: 1.2 7.3 ms a frame with LS3D's skinning, 8.2 ms on the GPU; 1.0 7.7 and 9.0. With a rule already
+  shading every object (reference.hlsl over all) the two are even (1.0: 11.2 to 11.9 ms against 11.5 to 12.1). It
+  does not make the plain game faster: it is for mods that shade people (normals, tangents) and for models of many
+  bones or weights, and it stays off until a mod asks.
+
 ### Shaders on the game's own drawing (per-object shading)
 
 ```c
@@ -1182,9 +1208,14 @@ int h = H->shader_add(M, &r, err, sizeof err);   /* 0: refused, err says why (th
   mml_SunDir)`). `call shader.shadows {"size", "extent", "bias"}` tries it (`"on": false` stops it).
 - Shaders compiled in a mod's build: `mml_shaders()` (fxc, `vs_3_0` / `ps_3_0`), the bytecode in `vs_code` /
   `ps_code`; `sdk/include` on fxc's include path (`#include "mml/shaders/game.hlsli"`).
-- `call shader.add {"source", "vs", "ps", "pattern", "kinds", "classes", "where", "all_passes"}` (an agent tries a
-  shader in the running game without building anything), `shader.remove`, `shader.state` (each rule's draws in the
-  last frame), `shader.survey`.
+- **People** skinned on the GPU (`skin_gpu`, "People's skinning" above) reach a rule's pixel shader with the world's
+  normal (`TEXCOORD2`) and tangent (`TEXCOORD3`); its vertex shader takes them only with `MML_SHADE_SKINNED`
+  (`mml/skin.hlsli`).
+- **Cost**: each draw a rule takes reads the device's states for the constants (some 60 calls): measured, a rule
+  over every object (about 750 draws) cost 1.0 some 4 ms a frame (ROADMAP Known gaps).
+- `call shader.add {"source", "vs", "ps", "pattern", "kinds", "classes", "where", "all_passes", "skinned"}` (an agent
+  tries a shader in the running game without building anything), `shader.remove`, `shader.state` (each rule's draws
+  in the last frame), `shader.survey`.
 
 ### The game's own geometry hidden or replaced (water, by its texture)
 

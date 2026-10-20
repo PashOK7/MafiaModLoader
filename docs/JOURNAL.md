@@ -2871,3 +2871,31 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   exact; `skin.check`: LS3D 0.017 ms, the host 0.023 ms for 778 vertices); smoothed to 4 bones a vertex (492 of 778
   vertices with more than two) a copy of Tommy with a knee bent 100 degrees: the hard fold of the trousers behind the
   knee becomes a rounded bend in both builds (0.04 ms a skinning).
+
+## 2026-10-20: people skinned on the GPU (item 28b)
+
+- **Made** (host/skin.cpp, host/shaders/skin9.hlsl, sdk/include/mml/shaders/skin.hlsli, mml.h skin_gpu and
+  MML_SHADE_SKINNED, the bridge's `skin.gpu`): while a mod asks, every single mesh's LOD that can be is drawn by a
+  vertex shader of shader model 3. The palette (6 texels a bone: the position's matrix's columns, the normal's, a
+  float texture read by the vertex shader), the rest pose (a single morph's after its morph: the face moves) and a
+  buffer of what does not move (uv, a MikkTSpace tangent from the .4ds's triangles: third_party/mikktspace, the bones
+  and weights, 8 a vertex) are the host's; PoseLod only builds the palette, CopyRigidPositions and CopySkinnedPositions copy
+  nothing. LightVertices is LS3D's own still: run on one vertex of a copy of the LOD's level, its choice of the 8
+  lights (the slots it keeps in its globals: their place and direction in the mesh's space, colours times the
+  material, near and far, the spot's cone) becomes the vertex shader's constants; mml_SkinLight repeats its sum (the
+  128 scale found at ls3d+A9470: the stage's modulate2x doubles it back), mml_SkinEnvUv EnvMapCoords's modes 0 and 1.
+  shaders.cpp draws a person with VsSkin and PsSkin (reference.hlsl's mml_ps), or a rule's pixel shader with the
+  normal and tangent among its inputs, or a rule's own vertex shader with MML_SHADE_SKINNED; the sun's map with
+  VsSkinDepth; motion.cpp's pass with VsSkinMotion and the last frame's palette.
+- **Seen**, both labs: a posed Tommy drawn by LS3D and by the GPU differ by 0.16 of 255 on average (1.2 and 1.0); with
+  a mod's 4-bone skin the GPU and the CPU path the same (0.16); a rule's pixel shader showing the normals and the
+  tangents on a crowd of 96; the motion vectors (dlss_nr's debug 5): a walking Paulie disappears with them, stands
+  out without them. The motion pass first used one matrix where VsSkin uses three: its depth test against the draw's
+  own depth then failed on parts of a swinging arm; now the same three.
+- **Measured** (fps_unlock on; the owner's point: one game at a time, the two labs at once add to each other's
+  times): 48 people, about 300 draws: 1.2 7.3 ms a frame with LS3D's skinning, 8.2 ms on the GPU; 1.0 7.7 and 9.0.
+  The CPU's part falls to 0.2 ms; the switch of the device between the fixed pipeline and shaders at each person's
+  draw costs more (the driver: nvd3dum 6 % of the samples against 1.4). With a rule shading every object both are
+  even. A first version read all of game.hlsli's registers and saved every sampler at each draw: +3.5 ms; now 25
+  calls (CoreConstants) and only stream 0 and the FVF put back. Not the plain game's speed-up, then: what it is for
+  is in MODDING ("People's skinning", "On the GPU") and the costs in ROADMAP Known gaps.

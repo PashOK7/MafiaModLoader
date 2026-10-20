@@ -258,6 +258,11 @@ impl Host {
         };
         if r != 0 { Ok(()) } else { Err(unsafe { text(err.as_ptr()) }) }
     }
+    /// Every person skinned on the GPU from the next frame while any mod wants it (false: no more); false when the
+    /// device cannot (skin.state's gpu tells why)
+    pub fn skin_gpu(&self, on: bool) -> bool {
+        unsafe { f!(self, skin_gpu)(self.module, on as c_int) != 0 }
+    }
     /// LS3D's own skin of a model's mesh (None: its first single mesh) and LOD, from its .4ds, with its rest mesh
     pub fn skin_get(&self, model: &str, mesh: Option<&str>, lod: i32) -> Option<SkinMesh> {
         let m = cstring(model);

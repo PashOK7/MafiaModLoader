@@ -335,6 +335,7 @@ int H_SkinSet(MmlMod *m, const char *model, const char *mesh, const MmlSkinLod *
     }
     return r;
 }
+int H_SkinGpu(MmlMod *m, int on) { return Alive(m) ? SkinGpuAsk(m, on != 0) : 0; }
 int H_SkinGet(MmlMod *m, const char *model, const char *mesh, int lod, MmlSkinMesh *out) {
     if (!Alive(m)) return 0;
     std::string err;
@@ -1272,6 +1273,7 @@ void ModsInit() {
     g_host.gfx_motion = H_GfxMotion;
     g_host.skin_set = H_SkinSet;
     g_host.skin_get = H_SkinGet;
+    g_host.skin_gpu = H_SkinGpu;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();

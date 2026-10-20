@@ -262,7 +262,7 @@ void KeepCopy(const void *mesh, const uint8_t *dest, int stride, int lod) {
 
 void __fastcall hkCopySkinned(void *mesh, void *edx, uint8_t *dest, int stride, int lod) {
     oCopySkinned(mesh, edx, dest, stride, lod);
-    if (g_asks.empty()) return;
+    if (g_asks.empty() || SkinGpuDrawsLod(mesh, lod)) return;   // (a LOD the GPU skins: its draw has both palettes)
     double t0 = NowMs();
     __try {
         KeepCopy(mesh, dest, stride, lod);
@@ -346,9 +346,11 @@ void DrawAgain(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex,
     }
     if (!s->haveBefore) return;   // new: its motion is not known
     bool moved = !Same(world, s->before);
-    Skin *skin = SkinOf(base, moved);   // (a person: his limbs' own motion)
+    SkinGpuDraw gpu;
+    const bool gpuSkin = SkinGpuFor(d, g_visual, base, &gpu);   // (a person the GPU skins: both palettes in his shader)
+    Skin *skin = gpuSkin ? nullptr : SkinOf(base, moved);   // (a person: his limbs' own motion)
     if (skin && !skin->ringed) skin = nullptr;
-    if (!moved && !skin) return;   // still
+    if (!moved && !skin && !gpuSkin) return;   // still
     // what writes no depth (a car's shadow on the road, glass, smoke): translucent over what is behind it, whose motion
     // is the one to keep (a shadow's own would move the road under it with the car)
     DWORD zwrite = TRUE;
@@ -404,7 +406,21 @@ void DrawAgain(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex,
     d->SetVertexShaderConstantF(4, &now._11, 4);
     d->SetVertexShaderConstantF(8, &before._11, 4);
     d->SetPixelShaderConstantF(0, size, 1);
-    dip(d, t, skin ? static_cast<INT>(skin->ringAt) : base, minIndex, verts, start, n);   // (the LOD's vertices in the ring)
+    if (gpuSkin) {
+        SkinGpuSaved k{};
+        SkinGpuBind(d, gpu, &k);
+        d->SetVertexShader(static_cast<IDirect3DVertexShader9 *>(SkinGpuShader(3)));
+        // (now: the world, view and projection one by one at c0..c11, as VsSkin drew them; c4 and c8 above are VsMotion's)
+        d->SetVertexShaderConstantF(0, &world._11, 4);
+        d->SetVertexShaderConstantF(4, &view._11, 4);
+        d->SetVertexShaderConstantF(8, &proj._11, 4);
+        d->SetVertexShaderConstantF(164, &before._11, 4);
+        dip(d, t, 0, minIndex, verts, start, n);   // (the LOD's vertices from 0 in the skin's buffers)
+        SkinGpuUnbind(d, k);
+        g_skinnedAgain++;
+    } else {
+        dip(d, t, skin ? static_cast<INT>(skin->ringAt) : base, minIndex, verts, start, n);   // (the LOD's vertices in the ring)
+    }
     g_drawsAgain++;
     if (skin) g_skinnedAgain++;
     d->SetRenderTarget(0, rt);

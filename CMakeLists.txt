@@ -19,6 +19,9 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
         third_party/minhook/src/buffer.c third_party/minhook/src/hook.c third_party/minhook/src/trampoline.c
         third_party/minhook/src/hde/hde32.c third_party/minhook/src/hde/hde64.c)
     target_include_directories(minhook PUBLIC third_party/minhook/include)
+    # MikkTSpace (Morten S. Mikkelsen's reference, zlib licence): the tangents of people skinned on the GPU (host/skin.cpp)
+    add_library(mikktspace STATIC third_party/mikktspace/mikktspace.c)
+    target_include_directories(mikktspace PUBLIC third_party/mikktspace)
 
     # ---- the SDK: headers only (mml/mml.h, the game knowledge in mml/game/)
     add_library(mml_sdk INTERFACE)
@@ -33,9 +36,11 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     target_include_directories(MafiaModLoader PRIVATE third_party/json host ${CMAKE_BINARY_DIR}/gen)
     # the shaders' contract (sdk/include/mml/shaders/game.hlsli) inside the host, for the HLSL it compiles
     file(READ ${CMAKE_SOURCE_DIR}/sdk/include/mml/shaders/game.hlsli MML_GAME_HLSLI)
+    file(READ ${CMAKE_SOURCE_DIR}/sdk/include/mml/shaders/skin.hlsli MML_SKIN_HLSLI)
     configure_file(host/gen/shaders_hlsli.inc.in ${CMAKE_BINARY_DIR}/gen/shaders_hlsli.inc @ONLY)
-    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/sdk/include/mml/shaders/game.hlsli)
-    target_link_libraries(MafiaModLoader PRIVATE minhook mml_sdk ws2_32 psapi user32)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/sdk/include/mml/shaders/game.hlsli
+                 ${CMAKE_SOURCE_DIR}/sdk/include/mml/shaders/skin.hlsli)
+    target_link_libraries(MafiaModLoader PRIVATE minhook mikktspace mml_sdk ws2_32 psapi user32)
 
     # ---- third-party libraries for mods: pinned by tools/deps.py (downloaded at the first configure, hash checked),
     # built here for x86 with the mods' runtime (/MT). A mod links the target: target_link_libraries(mod_<id> PRIVATE Jolt)
@@ -105,7 +110,8 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
             endif()
             cmake_path(ABSOLUTE_PATH file BASE_DIRECTORY ${dir} NORMALIZE OUTPUT_VARIABLE src)
             cmake_path(GET src PARENT_PATH srcdir)
-            file(GLOB includes ${srcdir}/*.hlsli ${CMAKE_SOURCE_DIR}/sdk/include/mml/gfx/*.hlsli)
+            file(GLOB includes ${srcdir}/*.hlsli ${CMAKE_SOURCE_DIR}/sdk/include/mml/gfx/*.hlsli
+                 ${CMAKE_SOURCE_DIR}/sdk/include/mml/shaders/*.hlsli ${CMAKE_SOURCE_DIR}/sdk/include/mml/shaders/*.hlsl)
             set(out ${gen}/shaders/${name}.h)
             set(sdkinc ${CMAKE_SOURCE_DIR}/sdk/include)
             if(profile MATCHES "_6_")
@@ -131,7 +137,8 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     mml_shaders(MafiaModLoader host ${CMAKE_SOURCE_DIR}/host/shaders
         bridge9.hlsl:VsQuad:vs_3_0 bridge9.hlsl:PsDepth:ps_3_0 bridge9.hlsl:PsComposite:ps_3_0
         bridge9.hlsl:VsMotion:vs_3_0 bridge9.hlsl:VsMotionSkin:vs_3_0 bridge9.hlsl:PsMotion:ps_3_0 bridge9.hlsl:PsMotionAll:ps_3_0
-        bridge11.hlsl:VsFullScreen:vs_5_0)
+        bridge11.hlsl:VsFullScreen:vs_5_0
+        skin9.hlsl:VsSkin:vs_3_0 skin9.hlsl:PsSkin:ps_3_0 skin9.hlsl:VsSkinDepth:vs_3_0 skin9.hlsl:VsSkinMotion:vs_3_0)
 
     # mml_add_mod(<id> <dir> <sources...> [SHADERS <file>:<entry>:<profile>[:<name>] ...]): a native mod:
     # <out>/mml/mods/<id>/<id>.dll, its mod.json and, when it has them, its config.json (the defaults of its settings)

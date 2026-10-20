@@ -575,6 +575,12 @@ struct Ls3dBuild {
     // buffer's +0x48 its place in it, -1 none), appended by thiscall(list, &buffer); 1.0 locks with D3DLOCK_NOSYSLOCK
     // and keeps no list (0 both).
     uintptr_t smUpdateLod, smUpdateVBPos0, frameUpdateMatrix, lockList, lockAppend;
+    // People skinned on the GPU (host/skin.cpp): LightVertices, bool fastcall(dest, destStride; MeshLevel *,
+    // posNorm, stride, I3D_object *, invWorld &, mask, changed, lod *) ret 0x20, lights a LOD's vertices from its
+    // cache; what it chose stays in its globals: lightSlots (8 slots of 0x50 bytes: position, direction, colour, near,
+    // far, far squared, 1 / (far - near), the light), lightCount, lightAmbient (rgb). vertexPath: the global whose bit 0
+    // set means LS3D lights and transforms on the CPU (clear: through Direct3D's ProcessVertices), read by m_AddFGroups.
+    uintptr_t lightingProcess, lightSlots, lightCount, lightAmbient, vertexPath;
 };
 
 inline const ExeBuild kExe12 = {
@@ -827,7 +833,9 @@ inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1
                                   0x557C0,   // (called by m_AddFGroups 0x55930 at 0x55D3E)
                                   // (2026-10-20: SNGM's vtable +0x9C, SMMR's PoseLod 0x57590 calls it; m_AddFGroups'
                                   // call at 0x55D0B; PoseLod's calls at 0x553C5; the lock in CopyRigidPositions 0x55640)
-                                  0x54F60, 0x55640, 0x1A6E0, 0x1C5014, 0x41700};
+                                  0x54F60, 0x55640, 0x1A6E0, 0x1C5014, 0x41700,
+                                  // (2026-10-20: m_AddFGroups' call at 0x56025; its globals read in it)
+                                  0x65A70, 0x1C4D80, 0x1C5000, 0x1C4D30, 0x1C563C};
 // LS3D 3.84.5 (31.7.2002): the vertex buffer has no flags word, everything after +0x04 sits 4 bytes lower.
 inline const Ls3dBuild kLs3d10 = {"1.0", 0x5ED80, 0x1A8A0, 0x305B0, 0x5D070, 0x1C350, 0x6E580, 0, 0,
                                   0x1AE00, 0x1BD60, 0x1C030, 0x2B540, 0x04, 0x14, 0x18,
@@ -847,7 +855,9 @@ inline const Ls3dBuild kLs3d10 = {"1.0", 0x5ED80, 0x1A8A0, 0x305B0, 0x5D070, 0x1
                                   0x52F70,   // (2026-10-20: m_AddFGroups 0x53030 at 0x533CE, the same code as 1.2's)
                                   // (2026-10-20: SNGM's vtable +0x98, SMMR's PoseLod 0x546B0 calls it; m_AddFGroups'
                                   // call at 0x5339B; PoseLod's call of UpdateMatrix at 0x52951)
-                                  0x526A0, 0x52EA0, 0x1A4A0, 0, 0};
+                                  0x526A0, 0x52EA0, 0x1A4A0, 0, 0,
+                                  // (2026-10-20: m_AddFGroups' call at 0x53639; its globals read in it)
+                                  0x62640, 0x1C0D30, 0x1C0FB0, 0x1C0CE0, 0x1C15DC};
 
 // The builds found (null until Detect succeeds).
 inline const ExeBuild *g_exe;

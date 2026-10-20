@@ -286,6 +286,69 @@ void Constants(IDirect3DDevice9 *d, float *c) {
     ShadowsConstants(g_group.visual, c);
 }
 
+// What the host's own skinned shaders read of game.hlsli (VsSkin, PsSkin: the transforms, the eye, the fog, the
+// draw, the stages, the viewport, the texture factor), c0..c26 and c75: a person's draw no rule takes asks the device
+// for these alone (some 25 calls, not the 60 of every register; there are hundreds of such draws a frame).
+void CoreConstants(IDirect3DDevice9 *d, float *c) {
+    memset(c, 0, 27 * 16);
+    D3DMATRIX w{}, v{}, p{}, vp, wvp;
+    d->GetTransform(D3DTS_WORLD, &w);
+    d->GetTransform(D3DTS_VIEW, &v);
+    d->GetTransform(D3DTS_PROJECTION, &p);
+    Mul(v, p, &vp);
+    Mul(w, vp, &wvp);
+    memcpy(c + 0, &w, 64);
+    memcpy(c + 16, &v, 64);
+    memcpy(c + 32, &p, 64);
+    memcpy(c + 48, &wvp, 64);
+    float tx = v._41, ty = v._42, tz = v._43;
+    c[64] = -(tx * v._11 + ty * v._12 + tz * v._13);
+    c[65] = -(tx * v._21 + ty * v._22 + tz * v._23);
+    c[66] = -(tx * v._31 + ty * v._32 + tz * v._33);
+    c[67] = static_cast<float>((GetTickCount64() % 3600000ull) / 1000.0);
+    DWORD fog = 0, table = 0, vert = 0, fogColor = 0, ref = 0, test = 0, range = 0, tf = 0;
+    float fs = 0, fe = 0, fd = 0;
+    d->GetRenderState(D3DRS_FOGENABLE, &fog);
+    if (fog) {
+        d->GetRenderState(D3DRS_FOGTABLEMODE, &table);
+        d->GetRenderState(D3DRS_FOGVERTEXMODE, &vert);
+        d->GetRenderState(D3DRS_FOGSTART, reinterpret_cast<DWORD *>(&fs));
+        d->GetRenderState(D3DRS_FOGEND, reinterpret_cast<DWORD *>(&fe));
+        d->GetRenderState(D3DRS_FOGDENSITY, reinterpret_cast<DWORD *>(&fd));
+        d->GetRenderState(D3DRS_FOGCOLOR, &fogColor);
+        d->GetRenderState(D3DRS_RANGEFOGENABLE, &range);
+    }
+    d->GetRenderState(D3DRS_ALPHATESTENABLE, &test);
+    if (test) d->GetRenderState(D3DRS_ALPHAREF, &ref);
+    DWORD mode = table != D3DFOG_NONE ? table : vert;
+    c[68] = fs; c[69] = fe; c[70] = fd; c[71] = fog ? static_cast<float>(mode) : 0.0f;
+    c[72] = ((fogColor >> 16) & 0xFF) / 255.0f; c[73] = ((fogColor >> 8) & 0xFF) / 255.0f; c[74] = (fogColor & 0xFF) / 255.0f;
+    c[75] = fog ? 1.0f : 0.0f;
+    c[92] = static_cast<float>(g_group.kind);
+    c[94] = test ? (ref & 0xFF) / 255.0f : -1.0f;
+    c[95] = static_cast<float>(g_group.pass);
+    for (DWORD s = 0; s < 2; s++) {
+        DWORD cop = 0, aop = 0, tci = 0;
+        d->GetTextureStageState(s, D3DTSS_COLOROP, &cop);
+        float *o = c + 96 + s * 4;
+        o[0] = static_cast<float>(cop);
+        if (cop == D3DTOP_DISABLE) continue;   // (a stage off: nothing more of it is read)
+        d->GetTextureStageState(s, D3DTSS_ALPHAOP, &aop);
+        d->GetTextureStageState(s, D3DTSS_TEXCOORDINDEX, &tci);
+        IDirect3DBaseTexture9 *t = nullptr;
+        d->GetTexture(s, &t);
+        o[1] = static_cast<float>(aop); o[2] = static_cast<float>(tci & 0xFFFF); o[3] = t ? 1.0f : 0.0f;
+        if (t) t->Release();
+        if (cop == D3DTOP_BLENDFACTORALPHA || aop == D3DTOP_BLENDFACTORALPHA) d->GetRenderState(D3DRS_TEXTUREFACTOR, &tf);
+    }
+    D3DVIEWPORT9 vpo{};
+    d->GetViewport(&vpo);
+    c[105] = range ? 1.0f : 0.0f;
+    c[106] = static_cast<float>(vpo.Width);
+    c[107] = static_cast<float>(vpo.Height);
+    c[300] = ((tf >> 16) & 0xFF) / 255.0f; c[301] = ((tf >> 8) & 0xFF) / 255.0f; c[302] = (tf & 0xFF) / 255.0f; c[303] = ((tf >> 24) & 0xFF) / 255.0f;
+}
+
 bool Make(Rule &r, IDirect3DDevice9 *d) {
     if (r.device == d && (r.vs || r.vsCode.empty()) && (r.ps || r.psCode.empty())) return true;
     if (r.vs) { r.vs->Release(); r.vs = nullptr; }
@@ -374,6 +437,18 @@ bool MakeShadowShaders(IDirect3DDevice9 *d) {
     return true;
 }
 
+// a person skinned on the GPU (skin.cpp): its vertex shader in place of the draw's vertices; the pixel shader as given
+HRESULT SkinnedDip(IDirect3DDevice9 *d, const SkinGpuDraw &s, IDirect3DVertexShader9 *vs, IDirect3DPixelShader9 *ps, D3DPRIMITIVETYPE t,
+                   UINT minIndex, UINT verts, UINT start, UINT n, DipFn dip) {
+    SkinGpuSaved k{};
+    SkinGpuBind(d, s, &k);
+    d->SetVertexShader(vs);
+    d->SetPixelShader(ps);
+    HRESULT hr = dip(d, t, 0, minIndex, verts, start, n);   // (the LOD's vertices from 0 in the skin's buffers)
+    SkinGpuUnbind(d, k);
+    return hr;
+}
+
 bool ShadowDraw(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex, UINT verts, UINT start, UINT n, DipFn dip, HRESULT *hr) {
     DWORD blend = 0, test = 0, dst = 0;
     d->GetRenderState(D3DRS_ALPHABLENDENABLE, &blend);
@@ -398,10 +473,15 @@ bool ShadowDraw(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex
     d->GetPixelShader(&oldPs);
     d->SetVertexShaderConstantF(0, c, kRegs);
     d->SetPixelShaderConstantF(0, c, kRegs);
+    SkinGpuDraw skin;
+    const bool skinned = SkinGpuFor(d, g_group.visual, base, &skin);
     d->SetVertexShader(g_shadowVs);
     d->SetPixelShader(g_shadowPs);
     if (blend) { d->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE); g_shadowCut++; }   // (a fence's cut-outs: tested, not blended)
-    *hr = dip(d, t, base, minIndex, verts, start, n);
+    if (skinned)
+        *hr = SkinnedDip(d, skin, static_cast<IDirect3DVertexShader9 *>(SkinGpuShader(2)), g_shadowPs, t, minIndex, verts, start, n, dip);
+    else
+        *hr = dip(d, t, base, minIndex, verts, start, n);
     if (blend) d->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);   // (as LS3D left it: its own cache of the states holds)
     d->SetVertexShader(oldVs);
     d->SetPixelShader(oldPs);
@@ -415,21 +495,31 @@ bool ShadowDraw(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex
 bool Draw(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex, UINT verts, UINT start, UINT n, DipFn dip, HRESULT *hr) {
     if (ShadowViewNow()) return ShadowDraw(d, t, base, minIndex, verts, start, n, dip, hr);
     if (g_surveyWanted && g_group.where == MML_GEOM_FRAME) Survey(d, n);
-    if (g_rules.empty()) return false;
-    Rule *r = RuleFor(d);
-    if (!r || !Make(*r, d)) return false;
+    SkinGpuDraw skin;
+    const bool skinned = g_group.kind == 1 && SkinGpuFor(d, g_group.visual, base, &skin);
+    if (g_rules.empty() && !skinned) return false;
+    Rule *r = g_rules.empty() || !g_group.where ? nullptr : RuleFor(d);   // (the rules: the frame's and the views' draws)
+    if (r && !Make(*r, d)) r = nullptr;
+    if (!r && !skinned) return false;
     float c[kRegs * 4];
-    Constants(d, c);
+    if (r) Constants(d, c);
+    else CoreConstants(d, c);   // (a person no rule takes: the host's shaders read these alone)
     IDirect3DVertexShader9 *oldVs = nullptr;
     IDirect3DPixelShader9 *oldPs = nullptr;
     d->GetVertexShader(&oldVs);
     d->GetPixelShader(&oldPs);
-    d->SetVertexShaderConstantF(0, c, kRegs);
-    d->SetPixelShaderConstantF(0, c, kRegs);
-    if (r->vs) d->SetVertexShader(r->vs);
-    if (r->ps) d->SetPixelShader(r->ps);
+    if (r) {
+        d->SetVertexShaderConstantF(0, c, kRegs);
+        d->SetPixelShaderConstantF(0, c, kRegs);
+    } else {
+        d->SetVertexShaderConstantF(0, c, 27);
+        d->SetPixelShaderConstantF(0, c, 27);
+        d->SetPixelShaderConstantF(75, c + 300, 1);
+    }
+    if (!skinned && r->vs) d->SetVertexShader(r->vs);
+    if (!skinned && r->ps) d->SetPixelShader(r->ps);
     // the shadow map at sampler 2 (shadows.cpp), the sampler's state put back after
-    IDirect3DBaseTexture9 *map = ShadowsTexture(), *oldTex = nullptr;
+    IDirect3DBaseTexture9 *map = r ? ShadowsTexture() : nullptr, *oldTex = nullptr;
     DWORD ss[5] = {};
     const D3DSAMPLERSTATETYPE kSs[5] = {D3DSAMP_MINFILTER, D3DSAMP_MAGFILTER, D3DSAMP_MIPFILTER, D3DSAMP_ADDRESSU, D3DSAMP_ADDRESSV};
     if (map) {
@@ -443,7 +533,13 @@ bool Draw(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex, UINT
         d->SetSamplerState(2, D3DSAMP_ADDRESSV, D3DTADDRESS_BORDER);
         d->SetSamplerState(2, D3DSAMP_BORDERCOLOR, 0xFFFFFFFF);
     }
-    *hr = dip(d, t, base, minIndex, verts, start, n);
+    if (skinned) {   // (a rule's vertex shader only when it reads the skin's inputs: MML_SHADE_SKINNED)
+        auto *vs = r && r->vs && (r->flags & MML_SHADE_SKINNED) ? r->vs : static_cast<IDirect3DVertexShader9 *>(SkinGpuShader(0));
+        auto *ps = r && r->ps ? r->ps : static_cast<IDirect3DPixelShader9 *>(SkinGpuShader(1));
+        *hr = SkinnedDip(d, skin, vs, ps, t, minIndex, verts, start, n, dip);
+    } else {
+        *hr = dip(d, t, base, minIndex, verts, start, n);
+    }
     if (map) {
         d->SetTexture(2, oldTex);
         if (oldTex) oldTex->Release();
@@ -453,7 +549,7 @@ bool Draw(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex, UINT
     d->SetPixelShader(oldPs);
     if (oldVs) oldVs->Release();
     if (oldPs) oldPs->Release();
-    r->drawsNow++;
+    if (r) r->drawsNow++;
     return true;
 }
 
@@ -466,6 +562,11 @@ struct Includes : ID3DInclude {
         if (n == "mml/game.hlsli" || n == "game.hlsli" || n == "mml/shaders/game.hlsli") {
             *data = kGameHlsli;
             *bytes = static_cast<UINT>(strlen(kGameHlsli));
+            return S_OK;
+        }
+        if (n == "mml/skin.hlsli" || n == "skin.hlsli" || n == "mml/shaders/skin.hlsli") {
+            *data = kSkinHlsli;
+            *bytes = static_cast<UINT>(strlen(kSkinHlsli));
             return S_OK;
         }
         return E_FAIL;
@@ -501,7 +602,7 @@ void Release(Rule &r) {
 
 } // namespace
 
-bool ShadersWanted() { return !g_rules.empty() || g_surveyWanted || ShadowViewNow(); }
+bool ShadersWanted() { return !g_rules.empty() || g_surveyWanted || ShadowViewNow() || SkinGpuWanted(); }
 
 void ShadersShadowBegin(const float backView[16]) {
     memcpy(g_shadowBack, backView, sizeof g_shadowBack);
@@ -519,7 +620,8 @@ void ShadersShadowStats(unsigned *draws, unsigned *faces, unsigned *skipped, uns
 
 void ShadersGroupBegin(int kind, void *visual, uint8_t *entry, int where) {
     g_group = Group{};
-    if (!where && !ShadowViewNow()) return;   // (the drawing from the sun is neither the frame nor a mod's view)
+    // (the drawing from the sun is neither the frame nor a mod's view; a person the GPU skins is drawn by it anywhere)
+    if (!where && !ShadowViewNow() && !(kind == 1 && SkinGpuWanted())) return;
     const void *group = At<const void *>(entry, kEntryGroup);
     const void *mat = group ? At<const void *>(group, kGroupMaterial) : nullptr;
     g_group.active = true;
@@ -537,6 +639,7 @@ void ShadersGroupEnd() { g_group.active = false; }
 bool ShadersDraw(void *dev, int type, int base, unsigned minIndex, unsigned verts, unsigned start, unsigned n, void *dip, HRESULT *hr) {
     if (!g_group.active) return false;
     bool done = false;
+    const long long t0 = SkinGpuTimeBegin();   // (the draws' time while the GPU skins: skin.state's gpu)
     auto *d = static_cast<IDirect3DDevice9 *>(dev);
     __try {
         done = Draw(d, static_cast<D3DPRIMITIVETYPE>(type), base, minIndex, verts, start, n, reinterpret_cast<DipFn>(dip), hr);
@@ -545,6 +648,7 @@ bool ShadersDraw(void *dev, int type, int base, unsigned minIndex, unsigned vert
         done = false;
     }
     g_group.pass++;
+    SkinGpuTimeEnd(t0);
     return done;
 }
 
@@ -636,7 +740,7 @@ bool ShadersMethod(const std::string &method, const std::string &paramsJson, std
             r.classes = mask("classes", {{"opaque", MML_SHADE_OPAQUE}, {"alphatest", MML_SHADE_ALPHATEST}, {"translucent", MML_SHADE_TRANSLUCENT},
                                          {"additive", MML_SHADE_ADDITIVE}});
             r.where = mask("where", {{"frame", MML_GEOM_FRAME}, {"views", MML_GEOM_VIEWS}});
-            r.flags = p.value("all_passes", false) ? MML_SHADE_ALL_PASSES : 0;
+            r.flags = (p.value("all_passes", false) ? MML_SHADE_ALL_PASSES : 0) | (p.value("skinned", false) ? MML_SHADE_SKINNED : 0);
             r.source = src.c_str();
             r.vs_entry = vse.empty() ? nullptr : vse.c_str();
             r.ps_entry = pse.empty() ? nullptr : pse.c_str();

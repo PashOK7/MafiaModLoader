@@ -589,6 +589,9 @@ typedef struct MmlShaderRule {
 #define MML_SHADE_TRANSLUCENT 0x4u
 #define MML_SHADE_ADDITIVE    0x8u
 #define MML_SHADE_ALL_PASSES  0x1u
+#define MML_SHADE_SKINNED     0x2u   /* its vertex shader also takes the people skinned on the GPU (skin_gpu): it reads
+                                        mml/skin.hlsli's MmlSkinIn; without it a person's draw keeps the rule's pixel
+                                        shader with the host's vertex shader (mml/skin.hlsli) */
 /* people's skinning (skin_set, skin_get): a single mesh's LOD skinned with up to 8 bones a vertex */
 #define MML_SKIN_INFLUENCES 8
 typedef struct MmlSkinBone {
@@ -1576,6 +1579,15 @@ typedef struct MmlHost {
      * first single mesh) and LOD from its .4ds, in skin_set's form with the rest mesh; 1 filled, 0 none. Game thread. */
     int (*skin_set)(MmlMod *mod, const char *model, const char *mesh, const MmlSkinLod *lods, int count, char *error, int cap);
     int (*skin_get)(MmlMod *mod, const char *model, const char *mesh, int lod, MmlSkinMesh *out);
+    /* skin_gpu: the mod wants every person skinned on the GPU (on 1) or no more (0), from the next frame of the
+     * mission's world while any mod wants it (under a Direct3D 9 wrapper with shader model 3: dxwrapper, DXVK). A
+     * person's draw then goes through a vertex shader that skins his rest pose with his bones' matrices (a mod's
+     * skin's 8 bones a vertex, or LS3D's own two) and lights it as LS3D's CPU did (the same picture); the CPU's
+     * skinning, its copies into the game's buffers and its lighting of the vertices are skipped. A rule (shader_add)
+     * on a person's draw gets the world's normal and MikkTSpace tangent in its pixel shader's inputs, or, with
+     * MML_SHADE_SKINNED, does the skinning in its own vertex shader (mml/skin.hlsli). Returns 1; 0 when the device
+     * cannot (skin.state's gpu tells why). A mod's wish goes at its unload. Game thread. */
+    int (*skin_gpu)(MmlMod *mod, int on);
 } MmlHost;
 
 #define MML_ZONE_PLAYER 0x1u

@@ -50,6 +50,7 @@ pub const MML_SHADE_ALPHATEST: u32 = 2;
 pub const MML_SHADE_TRANSLUCENT: u32 = 4;
 pub const MML_SHADE_ADDITIVE: u32 = 8;
 pub const MML_SHADE_ALL_PASSES: u32 = 1;
+pub const MML_SHADE_SKINNED: u32 = 2;
 pub const MML_SKIN_INFLUENCES: u32 = 8;
 pub const MML_WEB_LINKS: u32 = 8;
 pub const MML_WEB_ONE_WAY: u32 = 128;
@@ -3400,10 +3401,13 @@ pub struct MmlHost {
             out: *mut MmlSkinMesh,
         ) -> ::core::ffi::c_int,
     >,
+    pub skin_gpu: ::core::option::Option<
+        unsafe extern "C" fn(mod_: *mut MmlMod, on: ::core::ffi::c_int) -> ::core::ffi::c_int,
+    >,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 748usize];
+    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 752usize];
     ["Alignment of MmlHost"][::core::mem::align_of::<MmlHost>() - 4usize];
     ["Offset of field: MmlHost::size"][::core::mem::offset_of!(MmlHost, size) - 0usize];
     ["Offset of field: MmlHost::api_version"]
@@ -3723,6 +3727,7 @@ const _: () = {
         [::core::mem::offset_of!(MmlHost, gfx_motion) - 736usize];
     ["Offset of field: MmlHost::skin_set"][::core::mem::offset_of!(MmlHost, skin_set) - 740usize];
     ["Offset of field: MmlHost::skin_get"][::core::mem::offset_of!(MmlHost, skin_get) - 744usize];
+    ["Offset of field: MmlHost::skin_gpu"][::core::mem::offset_of!(MmlHost, skin_gpu) - 748usize];
 };
 pub type MmlModLoadFn = ::core::option::Option<
     unsafe extern "C" fn(host: *const MmlHost, mod_: *mut MmlMod) -> ::core::ffi::c_int,

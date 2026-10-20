@@ -139,6 +139,7 @@ int __stdcall hkRender(void *driver, void *scene) {
     if (Subscribed(MML_EVENT_RENDER_BEGIN)) Dispatch(Ev(MML_EVENT_RENDER_BEGIN, dev));
     if (g_world) HumansFlushPoses();
     if (g_world) {
+        SkinFrameBegin();   // (skin.cpp: the frame's count, for the palettes drawn before)
         GeomFrameBegin();   // (geom.cpp: the game's geometry hidden, surveyed, captured)
         GameCameraFrame();   // (gamecam.cpp: a mod's field of view held on the game's camera)
         FrameCameraBegin(scene);   // (view.cpp: the frame drawn from a mod's camera; the views start from it)
