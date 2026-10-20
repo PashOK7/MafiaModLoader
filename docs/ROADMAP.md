@@ -852,9 +852,11 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
       tangents; LS3D's CPU skinning, copies and lighting skipped. A rule's pixel shader gets the normal and the
       tangent, a rule's vertex shader the skinned inputs; the sun's map and the motion vectors take them. Both
       builds, the same picture; under a Direct3D 9 wrapper only.
-    The same block answers the Discord's other asks for item 27: **a mod's own constants** (a register range of the
-    mod's, set per rule or per frame) and **its own vertex data** (a second stream per face group, in LS3D's vertex
-    order, made from the meshes block 6d reads: normals, tangents, a mod's attributes).
+    - **28c** *(done 2026-10-20: mml.h shader_constants, shader_vertex_data, MML_SHADE_VERTEX_DATA; host/vdata.cpp)*:
+      the Discord's other asks for item 27: **a mod's own constants** (c160..c223 of both stages, per rule or every
+      rule of the mod) and **its own vertex data** (a second stream mirroring each of LS3D's vertex pools: the mesh's
+      normal, its MikkTSpace tangent, a float4 of the mod's, in LS3D's vertex order). Both builds; a lightmapped object
+      drawn from a vertex set of its own is left out (Known gaps).
 29. **The renderer's bottleneck at long view distances** (the owner, 2026-10-19: the whole city in view runs at
     about 30 fps on any machine, on two or three cores, though its triangles are few for a modern GPU). Not measured
     yet; the leads, from what is known of LS3D: one game thread does everything; every face group is a draw call of
@@ -999,6 +1001,15 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
 - *(Done 2026-10-18; see "Done".)* **The knowledge base for 1.0**.
 - *(Done 2026-10-18; see "Done".)* **Ghidra behind MCP**.
 - **Publishing**: CI for the offline tests.
+- **Every format of models, textures and animations** (the owner, 2026-10-20: if it costs no speed; not now). The
+  loader already answers the game's own file opening from the mods' `files\` (files.cpp, dtaOpen): a texture of
+  another format (PNG, TGA, DDS with its mipmaps and block compression), a model (glTF, FBX, OBJ) or an animation
+  (glTF's, FBX's, BVH) converted once, when the game opens it, into what LS3D reads (its BMP and TGA, .4ds, .5ds),
+  and kept converted in the mod's data folder: nothing changes in the frame, the cost is the first load's. What LS3D
+  cannot hold (more bones a vertex, normal maps) goes through items 27 and 28.
+- **Motion vectors without a mod** (the owner, 2026-10-20): a bridge method that asks for them and draws dlss_nr's
+  check view (the frame before moved by them against this one) over the frame, so an agent checks them with no mod
+  enabled (today only dlss_nr asks for them and shows them).
 
 ## Taken out or changed
 
@@ -1054,6 +1065,10 @@ merged, sorted by importance):
   (`why_cpu`). (3) `geom.capture` of a person the GPU skins reads the drawn buffer, which is no longer filled (the
   rest pose instead). (4) The lights' places in the mesh's space are taken when LS3D would light again (bones or the
   sector's lights changed), as LS3D's own colours are.
+- **A rule's vertex data on lightmapped objects** (item 28c, 2026-10-20): some I3D_lit_object draws come from a
+  vertex set of their own, split for the lightmap (in the city: no LOD record, BaseVertexIndex 387 against the mesh's
+  1992, 134 vertices against 133): their order is the lit object's, not yet read, so their second stream stays zeros
+  (`why_left_out`, 13 of some 460 draws in the city's view). A LOD of the same count of vertices is taken as the same.
 - **The shader rules' constants** (item 27, measured 2026-10-20): each draw a rule takes asks the device for about 60
   states (the transforms, the fog, the stages, the eight Direct3D lights, the material); over every object (about 750
   draws, reference.hlsl) that is some 4 ms a frame in 1.0. The states that change once a frame (the view, the

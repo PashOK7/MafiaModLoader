@@ -77,6 +77,8 @@ struct Rule {
     IDirect3DDevice9 *device = nullptr;   // what vs and ps were made on
     std::string error;
     unsigned drawsNow = 0, drawsLast = 0;
+    float consts[64 * 4] = {};       // the mod's own registers c160..c223 (shader_constants), set at each draw it takes
+    int constLo = 0, constHi = 0;    // (the registers given: [lo, hi) of 0..64)
 };
 std::vector<std::unique_ptr<Rule>> g_rules;
 int g_nextHandle = 1;
@@ -516,6 +518,10 @@ bool Draw(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex, UINT
         d->SetPixelShaderConstantF(0, c, 27);
         d->SetPixelShaderConstantF(75, c + 300, 1);
     }
+    if (r && r->constHi > r->constLo) {   // (the mod's own registers)
+        d->SetVertexShaderConstantF(160 + r->constLo, r->consts + r->constLo * 4, r->constHi - r->constLo);
+        d->SetPixelShaderConstantF(160 + r->constLo, r->consts + r->constLo * 4, r->constHi - r->constLo);
+    }
     if (!skinned && r->vs) d->SetVertexShader(r->vs);
     if (!skinned && r->ps) d->SetPixelShader(r->ps);
     // the shadow map at sampler 2 (shadows.cpp), the sampler's state put back after
@@ -538,7 +544,10 @@ bool Draw(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex, UINT
         auto *ps = r && r->ps ? r->ps : static_cast<IDirect3DPixelShader9 *>(SkinGpuShader(1));
         *hr = SkinnedDip(d, skin, vs, ps, t, minIndex, verts, start, n, dip);
     } else {
+        VdataSaved vs{};   // (the rule's second stream: the normals, tangents and the mod's attributes)
+        const bool vdata = (r->flags & MML_SHADE_VERTEX_DATA) && VdataBind(d, g_group.visual, base, verts, &vs);
         *hr = dip(d, t, base, minIndex, verts, start, n);
+        if (vdata) VdataUnbind(d, vs);
     }
     if (map) {
         d->SetTexture(2, oldTex);
@@ -691,9 +700,25 @@ bool ShaderRemove(MmlMod *mod, int handle) {
     }
     return any;
 }
-void ShadersModGone(MmlMod *mod) { ShaderRemove(mod, 0); }
+void ShadersModGone(MmlMod *mod) { ShaderRemove(mod, 0); VdataModGone(mod); }
+
+int ShaderConstants(MmlMod *mod, int handle, int reg, const float *values, int count, std::string *err) {
+    if (!values || count <= 0 || reg < 160 || reg + count > 224) { *err = "registers c160..c223 (reg 160, count up to 64)"; return 0; }
+    int n = 0;
+    for (auto &r : g_rules) {
+        if (r->mod != mod || (handle && r->handle != handle)) continue;
+        int lo = reg - 160, hi = lo + count;
+        memcpy(r->consts + lo * 4, values, size_t(count) * 16);
+        if (r->constHi <= r->constLo) r->constLo = lo, r->constHi = hi;
+        else r->constLo = std::min(r->constLo, lo), r->constHi = std::max(r->constHi, hi);
+        n++;
+    }
+    if (!n) { *err = handle ? "no such rule of the mod's" : "the mod has no rules"; return 0; }
+    return n;
+}
 
 void ShadersFrameEnd() {   // (render.cpp, after the frame's own drawing)
+    VdataFrameEnd();
     for (auto &r : g_rules) { r->drawsLast = r->drawsNow; r->drawsNow = 0; }
     if (g_surveyWanted) {
         std::vector<const Combo *> list;
@@ -740,13 +765,29 @@ bool ShadersMethod(const std::string &method, const std::string &paramsJson, std
             r.classes = mask("classes", {{"opaque", MML_SHADE_OPAQUE}, {"alphatest", MML_SHADE_ALPHATEST}, {"translucent", MML_SHADE_TRANSLUCENT},
                                          {"additive", MML_SHADE_ADDITIVE}});
             r.where = mask("where", {{"frame", MML_GEOM_FRAME}, {"views", MML_GEOM_VIEWS}});
-            r.flags = (p.value("all_passes", false) ? MML_SHADE_ALL_PASSES : 0) | (p.value("skinned", false) ? MML_SHADE_SKINNED : 0);
+            r.flags = (p.value("all_passes", false) ? MML_SHADE_ALL_PASSES : 0) | (p.value("skinned", false) ? MML_SHADE_SKINNED : 0) |
+                      (p.value("vertex_data", false) ? MML_SHADE_VERTEX_DATA : 0);
             r.source = src.c_str();
             r.vs_entry = vse.empty() ? nullptr : vse.c_str();
             r.ps_entry = pse.empty() ? nullptr : pse.c_str();
             int h = ShaderAdd(nullptr, &r, &err);
             if (!h) { *reply = "shader.add: " + err; return true; }
             *reply = dump({{"handle", h}});
+        } else if (method == "shader.constants") {
+            std::vector<float> v;
+            for (auto &x : p.value("values", json::array())) v.push_back(x.get<float>());
+            int reg = p.value("reg", 160), n = static_cast<int>(v.size() / 4);
+            int done = ShaderConstants(nullptr, p.value("handle", 0), reg, v.data(), n, &err);
+            if (!done) { *reply = "shader.constants: " + err + " (values: 4 numbers a register)"; return true; }
+            *reply = dump({{"rules", done}, {"registers", n}});
+        } else if (method == "shader.vertex_data") {
+            std::vector<float> v;
+            for (auto &x : p.value("values", json::array())) v.push_back(x.get<float>());
+            if (!VdataSet(nullptr, p.value("visual", "").c_str(), p.value("lod", 0), v.empty() ? nullptr : v.data(), static_cast<int>(v.size() / 4), &err)) {
+                *reply = "shader.vertex_data: " + err;
+                return true;
+            }
+            *reply = dump({{"vertices", v.size() / 4}});
         } else if (method == "shader.remove") {
             bool all = p.value("all", false);
             ShaderRemove(nullptr, all ? 0 : p.value("handle", -1));
@@ -773,7 +814,8 @@ bool ShadersMethod(const std::string &method, const std::string &paramsJson, std
             }
             std::string sh;
             ShadowsState(&sh);
-            *reply = dump({{"rules", rules}, {"faults", g_faults}, {"shadows", json::parse(sh, nullptr, false)}});
+            *reply = dump({{"rules", rules}, {"faults", g_faults}, {"shadows", json::parse(sh, nullptr, false)},
+                           {"vertex_data", json::parse(VdataState(), nullptr, false)}});
         } else if (method == "shader.survey") {
             int id = p.value("id", 0);
             if (!id) {
@@ -786,7 +828,7 @@ bool ShadersMethod(const std::string &method, const std::string &paramsJson, std
                 *reply = dump(out);
             }
         } else {
-            *reply = "unknown shader method (shader.add, shader.remove, shader.state, shader.survey, shader.shadows)";
+            *reply = "unknown shader method (shader.add, shader.remove, shader.state, shader.survey, shader.shadows, shader.constants, shader.vertex_data)";
             return true;
         }
         *ok = true;

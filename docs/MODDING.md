@@ -1208,14 +1208,25 @@ int h = H->shader_add(M, &r, err, sizeof err);   /* 0: refused, err says why (th
   mml_SunDir)`). `call shader.shadows {"size", "extent", "bias"}` tries it (`"on": false` stops it).
 - Shaders compiled in a mod's build: `mml_shaders()` (fxc, `vs_3_0` / `ps_3_0`), the bytecode in `vs_code` /
   `ps_code`; `sdk/include` on fxc's include path (`#include "mml/shaders/game.hlsli"`).
+- **Registers of the mod's own** (`H->shader_constants(M, handle, 160, values, count, err, cap)`; handle 0: every
+  rule of the mod): c160..c223 in both stages (`mml_Mod[64]` in game.hlsli), set at each draw the rule takes, kept
+  until set again: a mod's parameters (a wetness, a tint, a time of its own) without a shader made again.
+- **Vertex data** (`MML_SHADE_VERTEX_DATA`): the rule's draws of objects carry a second stream its vertex shader
+  adds to its input: `float3 normal : TEXCOORD5` (the mesh's own, at rest, the object's space), `float4 tangent :
+  TEXCOORD6` (MikkTSpace's, w the bitangent's sign), `float4 attr : TEXCOORD7` (the mod's: `H->shader_vertex_data(M,
+  "TomyhoAuto.Object04", lod, attr, vertices)`, a float4 a vertex in LS3D's order, the .4ds's; 0 where none is given).
+  The game's draws come from pools LS3D refills on the CPU; the second stream is a mirror of each pool, a LOD's
+  vertices at the same place (written when the place gets a new owner). Not for people (their single meshes: the GPU
+  skinning gives them normals and tangents) nor for a lightmapped object drawn from a vertex set of its own (zeros:
+  ROADMAP Known gaps). `shader.state`'s `vertex_data` counts them, `why_left_out` says why.
 - **People** skinned on the GPU (`skin_gpu`, "People's skinning" above) reach a rule's pixel shader with the world's
   normal (`TEXCOORD2`) and tangent (`TEXCOORD3`); its vertex shader takes them only with `MML_SHADE_SKINNED`
   (`mml/skin.hlsli`).
 - **Cost**: each draw a rule takes reads the device's states for the constants (some 60 calls): measured, a rule
   over every object (about 750 draws) cost 1.0 some 4 ms a frame (ROADMAP Known gaps).
-- `call shader.add {"source", "vs", "ps", "pattern", "kinds", "classes", "where", "all_passes", "skinned"}` (an agent
+- `call shader.add {"source", "vs", "ps", "pattern", "kinds", "classes", "where", "all_passes", "skinned", "vertex_data"}` (an agent
   tries a shader in the running game without building anything), `shader.remove`, `shader.state` (each rule's draws
-  in the last frame), `shader.survey`.
+  in the last frame), `shader.survey`, `shader.constants {"handle", "reg", "values"}`, `shader.vertex_data {"visual", "lod", "values"}`.
 
 ### The game's own geometry hidden or replaced (water, by its texture)
 

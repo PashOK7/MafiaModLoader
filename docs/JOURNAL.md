@@ -2899,3 +2899,21 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   even. A first version read all of game.hlsli's registers and saved every sampler at each draw: +3.5 ms; now 25
   calls (CoreConstants) and only stream 0 and the FVF put back. Not the plain game's speed-up, then: what it is for
   is in MODDING ("People's skinning", "On the GPU") and the costs in ROADMAP Known gaps.
+
+## 2026-10-20: a mod's own registers and vertex data for the shader rules (item 28c)
+
+- **Made** (host/vdata.cpp, shaders.cpp, mml.h shader_constants, shader_vertex_data, MML_SHADE_VERTEX_DATA,
+  game.hlsli mml_Mod and the stream's semantics; the bridge's `shader.constants`, `shader.vertex_data`): a rule's
+  registers c160..c223 set at each draw it takes; with MML_SHADE_VERTEX_DATA its draws of objects carry a second
+  stream (TEXCOORD5 the mesh's normal, TEXCOORD6 its MikkTSpace tangent, TEXCOORD7 the mod's float4). LS3D draws its
+  objects from pools it refills on the CPU (a LOD's record +0x10, +0x18 its place: the draw's BaseVertexIndex, which
+  Direct3D adds to every stream), so the stream is a mirror of each pool, a LOD's vertices at the same place, written
+  when the place changes hands; the vertex layout is the draw's FVF with the three elements after it. The normals
+  and uvs are the LOD's own vertex buffer's (LS3D keeps some locked: read there), the triangles its face groups'
+  index buffers; MikkTSpace is now one function (vdata.cpp) for people and objects.
+- **Seen**, 1.2 and 1.0 alone each: the city's objects shaded by their normals (buildings, cars, trees, the
+  pavement), a register's tint changed live, a mod's float4 a vertex on the player's car body (bands of 40 vertices).
+  Found on the way: a lightmapped object's draw may come from a vertex set of its own (no LOD record, another base,
+  one more vertex): left with zeros (ROADMAP Known gaps); the people's single meshes are left to skin_gpu.
+- The owner's asks for later: every format of models, textures and animations (converted at the first load: ROADMAP
+  Later); motion vectors checked without a mod (ROADMAP Later).

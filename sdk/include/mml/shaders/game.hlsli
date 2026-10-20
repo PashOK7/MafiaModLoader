@@ -58,6 +58,15 @@ struct MmlGameLight {   // LS3D's point and spot lights (lights.cpp), the neares
 };
 MmlGameLight mml_GameLights[8] : register(c85);
 
+// c120..c155: people skinned on the GPU (mml/skin.hlsli). c160..c223: the mod's own (mml.h shader_constants), the same in
+// both stages, set at each draw the rule takes.
+float4 mml_Mod[64] : register(c160);
+
+// A rule with MML_SHADE_VERTEX_DATA: its vertex shader's draws of objects also carry these (a second stream, the
+// vertices in LS3D's order): the mesh's own normal at rest and its MikkTSpace tangent (the object's space: through
+// mml_World), and the mod's float4 (shader_vertex_data; 0 none). Add them to the shader's input struct.
+//   float3 normal : TEXCOORD5;   float4 tangent : TEXCOORD6;   float4 attr : TEXCOORD7;
+
 sampler2D mml_Tex0 : register(s0);   // the textures the game set: stage 0 the surface's, stage 1 a lightmap or a reflection
 sampler2D mml_Tex1 : register(s1);
 sampler2D mml_ShadowMap : register(s2);   // R32F: the sun's depth (1 nothing); point sampling, white past its edges

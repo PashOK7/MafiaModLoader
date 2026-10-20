@@ -472,6 +472,19 @@ void SkinGpuBind(void *dev9, const SkinGpuDraw &d, SkinGpuSaved *saved);
 void SkinGpuUnbind(void *dev9, SkinGpuSaved &saved);
 long long SkinGpuTimeBegin();             // the draws' own time while the GPU skins (0: not measured)
 void SkinGpuTimeEnd(long long t0);
+// a rule's vertex data (vdata.cpp: the second stream of normals, tangents, the mods' attributes; shaders.cpp binds it)
+struct VdataSaved { unsigned long fvf; void *vb1; unsigned off1, stride1; };
+bool VdataBind(void *dev9, const void *visual, int base, unsigned verts, VdataSaved *saved);
+void VdataUnbind(void *dev9, VdataSaved &saved);
+int VdataSet(MmlMod *mod, const char *visual, int lod, const float *attr, int vertices, std::string *err);   // mml.h shader_vertex_data
+void VdataModGone(MmlMod *mod);
+void VdataMissionClose();
+void VdataFrameEnd();
+std::string VdataState();                 // shader.state's vertex_data (json)
+int ShaderConstants(MmlMod *mod, int handle, int reg, const float *values, int count, std::string *err);   // mml.h shader_constants
+// MikkTSpace's tangents (vdata.cpp): xyz and the bitangent's sign a vertex (strides in floats)
+void MikkTangents(uint32_t verts, const float *pos, int posStride, const float *nrm, int nrmStride, const float *uv, int uvStride,
+                  const uint32_t *idx, uint32_t faces, float *tan);
 bool SkinMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 // the shadow map from the sun and the game's lights near a draw (shadows.cpp)
 bool ShaderShadows(MmlMod *mod, const MmlShadowSettings *s);   // null s: the mod no longer wants it

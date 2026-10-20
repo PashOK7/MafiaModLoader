@@ -592,6 +592,9 @@ typedef struct MmlShaderRule {
 #define MML_SHADE_SKINNED     0x2u   /* its vertex shader also takes the people skinned on the GPU (skin_gpu): it reads
                                         mml/skin.hlsli's MmlSkinIn; without it a person's draw keeps the rule's pixel
                                         shader with the host's vertex shader (mml/skin.hlsli) */
+#define MML_SHADE_VERTEX_DATA 0x4u   /* its draws of objects get a second stream: each vertex's normal (TEXCOORD5), its
+                                        MikkTSpace tangent (TEXCOORD6) and the mod's float4 (TEXCOORD7,
+                                        shader_vertex_data; 0 none): game.hlsli MmlVertexData */
 /* people's skinning (skin_set, skin_get): a single mesh's LOD skinned with up to 8 bones a vertex */
 #define MML_SKIN_INFLUENCES 8
 typedef struct MmlSkinBone {
@@ -1588,6 +1591,16 @@ typedef struct MmlHost {
      * MML_SHADE_SKINNED, does the skinning in its own vertex shader (mml/skin.hlsli). Returns 1; 0 when the device
      * cannot (skin.state's gpu tells why). A mod's wish goes at its unload. Game thread. */
     int (*skin_gpu)(MmlMod *mod, int on);
+    /* ---- shaders on the game's own drawing, further (docs/MODDING.md "Shaders on the game's own drawing").
+     * shader_constants: registers of the mod's own, c160..c223 of both stages (game.hlsli mml_Mod), set at each draw
+     * the rule takes (handle; 0: every rule of the mod): `count` registers (4 floats each) from `reg`; they stay until
+     * set again or the rule goes. Returns the rules it set, 0 refused (error, cap bytes, says why).
+     * shader_vertex_data: a float4 a vertex of the mod's own for a visual's LOD (the frame's name: "Tommy.base", or the
+     * .4ds's node name "base"; the scene's own frames by theirs), given to the rules with MML_SHADE_VERTEX_DATA as
+     * TEXCOORD7 (the vertices in LS3D's order: the .4ds's); NULL or 0 vertices takes it away. 1, 0 refused. Game
+     * thread. */
+    int (*shader_constants)(MmlMod *mod, int handle, int reg, const float *values, int count, char *error, int cap);
+    int (*shader_vertex_data)(MmlMod *mod, const char *visual, int lod, const float *attr, int vertices);
 } MmlHost;
 
 #define MML_ZONE_PLAYER 0x1u

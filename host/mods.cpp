@@ -336,6 +336,25 @@ int H_SkinSet(MmlMod *m, const char *model, const char *mesh, const MmlSkinLod *
     return r;
 }
 int H_SkinGpu(MmlMod *m, int on) { return Alive(m) ? SkinGpuAsk(m, on != 0) : 0; }
+int H_ShaderConstants(MmlMod *m, int handle, int reg, const float *values, int count, char *error, int cap) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    int r = ShaderConstants(m, handle, reg, values, count, &err);
+    if (!r) Log(MML_LOG_WARN, Who(m), "shader_constants: %s", err.c_str());
+    if (error && cap > 0) {
+        size_t k = std::min<size_t>(err.size(), static_cast<size_t>(cap - 1));
+        memcpy(error, err.data(), k);
+        error[k] = 0;
+    }
+    return r;
+}
+int H_ShaderVertexData(MmlMod *m, const char *visual, int lod, const float *attr, int vertices) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    int r = VdataSet(m, visual, lod, attr, vertices, &err);
+    if (!r) Log(MML_LOG_WARN, Who(m), "shader_vertex_data: %s", err.c_str());
+    return r;
+}
 int H_SkinGet(MmlMod *m, const char *model, const char *mesh, int lod, MmlSkinMesh *out) {
     if (!Alive(m)) return 0;
     std::string err;
@@ -1274,6 +1293,8 @@ void ModsInit() {
     g_host.skin_set = H_SkinSet;
     g_host.skin_get = H_SkinGet;
     g_host.skin_gpu = H_SkinGpu;
+    g_host.shader_constants = H_ShaderConstants;
+    g_host.shader_vertex_data = H_ShaderVertexData;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();

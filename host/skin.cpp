@@ -34,7 +34,6 @@
 #include "json.hpp"
 #include "mml/game/game_build.h"
 #include "mml/game/game.h"
-#include "mikktspace.h"
 #include "shaders/VsSkin.h"
 #include "shaders/PsSkin.h"
 #include "shaders/VsSkinDepth.h"
@@ -974,30 +973,6 @@ std::string CheckDevice(IDirect3DDevice9 *d) {
     return "";
 }
 
-// MikkTSpace over one LOD: its rest pose, uvs and triangles (the .4ds's, in LS3D's vertex order)
-struct MikkData { const float *rest; const float *uv; const uint16_t *idx; int faces; std::vector<float> *tan; std::vector<int> *count; };
-int MkFaces(const SMikkTSpaceContext *c) { return static_cast<MikkData *>(c->m_pUserData)->faces; }
-int MkVerts(const SMikkTSpaceContext *, const int) { return 3; }
-void MkPos(const SMikkTSpaceContext *c, float o[], const int f, const int v) {
-    auto *m = static_cast<MikkData *>(c->m_pUserData);
-    memcpy(o, m->rest + m->idx[f * 3 + v] * 6, 12);
-}
-void MkNrm(const SMikkTSpaceContext *c, float o[], const int f, const int v) {
-    auto *m = static_cast<MikkData *>(c->m_pUserData);
-    memcpy(o, m->rest + m->idx[f * 3 + v] * 6 + 3, 12);
-}
-void MkUv(const SMikkTSpaceContext *c, float o[], const int f, const int v) {
-    auto *m = static_cast<MikkData *>(c->m_pUserData);
-    memcpy(o, m->uv + m->idx[f * 3 + v] * 2, 8);
-}
-void MkSet(const SMikkTSpaceContext *c, const float t[], const float sign, const int f, const int v) {
-    auto *m = static_cast<MikkData *>(c->m_pUserData);
-    int i = m->idx[f * 3 + v];
-    float *o = &(*m->tan)[i * 4];
-    o[0] += t[0], o[1] += t[1], o[2] += t[2], o[3] += sign;
-    (*m->count)[i]++;
-}
-
 // The attributes' buffer of a LOD: the uvs from the mesh's own vertices, the tangents from MikkTSpace, the bones.
 Attrs *AttrsFor(IDirect3DDevice9 *d, void *mesh, const Vis &v, GpuLod &g, int lod) {
     void *data = F<void *>(mesh, kSmMesh);
@@ -1023,19 +998,12 @@ Attrs *AttrsFor(IDirect3DDevice9 *d, void *mesh, const Vis &v, GpuLod &g, int lo
         if (!ModelSkin(v.model.c_str(), v.name.c_str(), &lods, &name, &err)) HWARN("skin: %s %s: no triangles for the tangents (%s)", v.model.c_str(), v.name.c_str(), err.c_str());
         it = g_rests.emplace(rk, std::move(lods)).first;
     }
-    std::vector<int> count(g.verts, 0);
     if (lod < static_cast<int>(it->second.size()) && it->second[lod].vertices == g.verts && !it->second[lod].idx.empty()) {
         const ModelSkinLod &r = it->second[lod];
-        MikkData md{g.rest.data(), uv.data(), r.idx.data(), static_cast<int>(r.idx.size() / 3), &tan, &count};
-        SMikkTSpaceInterface mi{};
-        mi.m_getNumFaces = MkFaces;
-        mi.m_getNumVerticesOfFace = MkVerts;
-        mi.m_getPosition = MkPos;
-        mi.m_getNormal = MkNrm;
-        mi.m_getTexCoord = MkUv;
-        mi.m_setTSpaceBasic = MkSet;
-        SMikkTSpaceContext mc{&mi, &md};
-        genTangSpaceDefault(&mc);
+        std::vector<uint32_t> idx(r.idx.begin(), r.idx.end());
+        MikkTangents(g.verts, g.rest.data(), 6, g.rest.data() + 3, 6, uv.data(), 2, idx.data(), static_cast<uint32_t>(idx.size() / 3), tan.data());
+    } else {
+        for (uint32_t i = 0; i < g.verts; i++) tan[i * 4] = 1, tan[i * 4 + 3] = 1;
     }
     if (FAILED(d->CreateVertexBuffer(g.verts * kAttrStride, D3DUSAGE_WRITEONLY, 0, D3DPOOL_DEFAULT, &a.vb, nullptr))) return nullptr;
     uint8_t *p = nullptr;
@@ -1043,13 +1011,7 @@ Attrs *AttrsFor(IDirect3DDevice9 *d, void *mesh, const Vis &v, GpuLod &g, int lo
     const Lod &L = *g.L;
     for (uint32_t i = 0; i < g.verts; i++) {
         uint8_t *o = p + size_t(i) * kAttrStride;
-        float t[4] = {1, 0, 0, 1};
-        if (count[i]) {
-            float *s = &tan[i * 4];
-            float l = std::sqrt(s[0] * s[0] + s[1] * s[1] + s[2] * s[2]);
-            if (l > 1e-12f) t[0] = s[0] / l, t[1] = s[1] / l, t[2] = s[2] / l;
-            t[3] = s[3] < 0 ? -1.0f : 1.0f;
-        }
+        const float *t = &tan[i * 4];
         int16_t b[8] = {};
         float w[8] = {};
         for (int k = 0; k < L.n[i] && k < kMaxInfluences; k++) b[k] = static_cast<int16_t>(L.idx[i * kMaxInfluences + k]), w[k] = L.w[i * kMaxInfluences + k];

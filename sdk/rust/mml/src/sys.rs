@@ -51,6 +51,7 @@ pub const MML_SHADE_TRANSLUCENT: u32 = 4;
 pub const MML_SHADE_ADDITIVE: u32 = 8;
 pub const MML_SHADE_ALL_PASSES: u32 = 1;
 pub const MML_SHADE_SKINNED: u32 = 2;
+pub const MML_SHADE_VERTEX_DATA: u32 = 4;
 pub const MML_SKIN_INFLUENCES: u32 = 8;
 pub const MML_WEB_LINKS: u32 = 8;
 pub const MML_WEB_ONE_WAY: u32 = 128;
@@ -3404,10 +3405,30 @@ pub struct MmlHost {
     pub skin_gpu: ::core::option::Option<
         unsafe extern "C" fn(mod_: *mut MmlMod, on: ::core::ffi::c_int) -> ::core::ffi::c_int,
     >,
+    pub shader_constants: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            handle: ::core::ffi::c_int,
+            reg: ::core::ffi::c_int,
+            values: *const f32,
+            count: ::core::ffi::c_int,
+            error: *mut ::core::ffi::c_char,
+            cap: ::core::ffi::c_int,
+        ) -> ::core::ffi::c_int,
+    >,
+    pub shader_vertex_data: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            visual: *const ::core::ffi::c_char,
+            lod: ::core::ffi::c_int,
+            attr: *const f32,
+            vertices: ::core::ffi::c_int,
+        ) -> ::core::ffi::c_int,
+    >,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 752usize];
+    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 760usize];
     ["Alignment of MmlHost"][::core::mem::align_of::<MmlHost>() - 4usize];
     ["Offset of field: MmlHost::size"][::core::mem::offset_of!(MmlHost, size) - 0usize];
     ["Offset of field: MmlHost::api_version"]
@@ -3728,6 +3749,10 @@ const _: () = {
     ["Offset of field: MmlHost::skin_set"][::core::mem::offset_of!(MmlHost, skin_set) - 740usize];
     ["Offset of field: MmlHost::skin_get"][::core::mem::offset_of!(MmlHost, skin_get) - 744usize];
     ["Offset of field: MmlHost::skin_gpu"][::core::mem::offset_of!(MmlHost, skin_gpu) - 748usize];
+    ["Offset of field: MmlHost::shader_constants"]
+        [::core::mem::offset_of!(MmlHost, shader_constants) - 752usize];
+    ["Offset of field: MmlHost::shader_vertex_data"]
+        [::core::mem::offset_of!(MmlHost, shader_vertex_data) - 756usize];
 };
 pub type MmlModLoadFn = ::core::option::Option<
     unsafe extern "C" fn(host: *const MmlHost, mod_: *mut MmlMod) -> ::core::ffi::c_int,

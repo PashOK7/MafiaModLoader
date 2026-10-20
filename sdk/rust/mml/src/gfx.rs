@@ -215,7 +215,7 @@ pub struct ShaderRule<'a> {
     pub classes: u32,
     /// sys::MML_GEOM_FRAME | MML_GEOM_VIEWS; 0 both
     pub where_: u32,
-    /// sys::MML_SHADE_ALL_PASSES, sys::MML_SHADE_SKINNED
+    /// sys::MML_SHADE_ALL_PASSES, sys::MML_SHADE_SKINNED, sys::MML_SHADE_VERTEX_DATA
     pub flags: u32,
     /// HLSL the host compiles (with its entry points), or None
     pub source: Option<&'a str>,
@@ -417,6 +417,23 @@ impl Host {
     /// one taken back (0: every one of the mod's)
     pub fn shader_remove(&self, handle: i32) -> bool {
         unsafe { f!(self, shader_remove)(self.module, handle) != 0 }
+    }
+    /// The rule's own registers c160..c223 (handle 0: every rule of the mod's), 4 floats a register from `reg`;
+    /// Ok(the rules set)
+    pub fn shader_constants(&self, handle: i32, reg: i32, values: &[[f32; 4]]) -> Result<i32, String> {
+        let mut err = [0 as c_char; 256];
+        let n = unsafe {
+            f!(self, shader_constants)(self.module, handle, reg, values.as_ptr() as *const f32, values.len() as c_int, err.as_mut_ptr(),
+                                       err.len() as c_int)
+        };
+        if n > 0 { Ok(n) } else { Err(unsafe { core::ffi::CStr::from_ptr(err.as_ptr()) }.to_string_lossy().into_owned()) }
+    }
+    /// A float4 a vertex of the mod's for a visual's LOD (the rules with MML_SHADE_VERTEX_DATA: TEXCOORD7); empty takes
+    /// it away
+    pub fn shader_vertex_data(&self, visual: &str, lod: i32, attr: &[[f32; 4]]) -> bool {
+        let v = cstring(visual);
+        let p = if attr.is_empty() { ptr::null() } else { attr.as_ptr() as *const f32 };
+        unsafe { f!(self, shader_vertex_data)(self.module, v.as_ptr(), lod, p, attr.len() as c_int) != 0 }
     }
     /// The sun's shadow map for the rules' shaders (None: no longer wanted)
     pub fn shader_shadows(&self, settings: Option<ShadowSettings>) -> bool {
