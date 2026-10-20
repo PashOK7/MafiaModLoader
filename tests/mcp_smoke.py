@@ -232,7 +232,7 @@ def main():
     ok, text = c.tool('game_status')
     check('game_status after the game is gone: not running', ok and '"running": false' in text, text)
     ok, text = c.tool('log_tail', {'lines': 20})
-    check('log_tail from the file when the game is gone', ok and 'process detaching' in text, text)
+    check('log_tail from the file when the game is gone', ok and 'process exiting (ExitProcess' in text, text)
     # deploy: a mod's folder with its subfolders (a mod of files alone: its files\), what did not change left alone
     pic = os.path.join(HARNESS, 'mml', 'mods', 'freeride_picture')
     shutil.rmtree(pic, ignore_errors=True)
