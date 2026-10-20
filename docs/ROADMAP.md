@@ -867,6 +867,65 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
     camera's far plane pushed (`I3D_camera::SetRange`, `ls3d+B7B0`), to know which of them it is; then the fix that
     fits: lighting in the shaders of item 27 (static buffers, no CPU lighting), draws batched or instanced, work moved
     off the game thread where LS3D's data allows. A 64-bit process does not help a CPU-bound draw loop by itself.
+    The way there is item 31.
+31. **Everything on the GPU** (the owner, 2026-10-20: GPU skinning cost more than it saved, +0.9 ms a frame in 1.2
+    and +1.3 in 1.0 with 48 people, because each skinned draw switched the device from the fixed pipeline to
+    shaders and back and read its state with Get*; a rule shading every object cost some 4 ms a frame in 1.0 the same
+    way). The fixed pipeline is left behind: every draw of the frame through shaders that stay bound, the state the
+    game sets followed instead of asked, then the CPU's work moved to the GPU (skinning, lighting, vertex data that
+    stays put) and the draws made fewer. What is known (knowledge/notes/game.md "How the game's world reaches
+    Direct3D"): LS3D draws one face group a draw (362 to 497 a frame at the freeride's start), Direct3D's lighting
+    off, the vertices lit on the CPU (FVF 0x142 or 0x242: position, colour, one or two uv), vertex fog, a handful of
+    stage set-ups; objects drawn from vertex pools written when a place changes hands (host/vdata.cpp); people skinned
+    and lit on the CPU when their bones or the sector's lights change (knowledge/notes/skinning.md). The sampler's
+    first look (item 30): LS3D's visibility (`SetVisibleRecMainPass`, the portals) about 15 % of 1.2's game thread,
+    the draws' calls into Direct3D 10 %, 1.0's vertex buffers' Lock 14 %.
+    **How each step is measured** (item 30's tools, both builds, every step): MCP `bench` against the step before
+    (and against the game's own drawing, A), in three still scenes (`state.time 0`) and one moving; `prof.counters`
+    for the device's calls (draws, state calls by caller, Get*, locks, switches, the driver's time); `profile` for
+    where the game thread goes; the picture against the game's (a difference per channel: mean, the worst, the
+    image). A step is done when its picture is the game's and its own target is met in both labs.
+    - **31a, the ground to measure on.** (1) Standard scenes, made by one call and alike in both builds: the
+      freeride's start (near), the city with the far plane pushed to 1000 m and beyond (`I3D_camera::SetRange`,
+      ls3d+B7B0: a call to set it, held while measured), the city by night (1053 lights), and a crowd of 48 walking
+      people (the time going). (2) The picture compared: `bench` with `picture: true` takes each configuration's
+      frame of the still world and gives the difference (mean and worst per channel, the pixels over a threshold,
+      the difference as an image). (3) The CPU's work LS3D does per frame measured for every visual, not only
+      people: LightVertices, the vertex pools' copies, PoseLod (`hot_ms` widened). (4) The baselines, recorded in
+      the journal: each scene's frame, its game thread, Present, the GPU, the counters, the profile's top functions;
+      and `bench` of the reference shaders (item 27) on every draw against the game's own drawing: the price of
+      today's way, the number the next steps must beat.
+    - **31b, the state followed, not asked.** The device's Set* calls (the outer links of item 30's counters, made
+      a mirror) keep a copy of the state the game set: transforms, lights, material, fog, stages, samplers, streams,
+      the vertex format. The shaders' constants come from it, each block written only when it changed (the view and
+      the projection once a frame, the fog once, a draw's world). Measure: the host's Get* calls a frame 0; the
+      constants' calls a draw; `bench` of the reference on every draw against 31a's (the 4 ms of 1.0 should mostly
+      go); the picture unchanged.
+    - **31c, shaders that stay bound.** With the GPU path on, every draw of the frame goes through shaders (the
+      reference for each kind of draw the game makes, or a mod's rule); the fixed pipeline is not put back between
+      draws, a shader or a constant set only when it differs from the bound one; the game's own fixed-pipeline state
+      is still followed (31b) and becomes the shaders' inputs. The 2D pass (the HUD, the menus) and what the game
+      draws outside the world keep the fixed pipeline, switched once at their start. Measure: `switches` near 0 a
+      frame; the driver's time a draw; `bench` against the game's own drawing: equal or faster (the target: no
+      price for being programmable); the picture the game's (mean under 0.5 of 255).
+    - **31d, people skinned on the GPU, on that base.** Item 28b's palette and lighting in the bound shaders (no
+      switch a person); LS3D's skinning, copies and lighting skipped. Measure: the crowd scene, CPU skinning
+      against GPU: the GPU's faster (28b's +0.9 / +1.3 ms becomes a gain); `hot_ms` skin.* (LS3D's share gone).
+    - **31e, objects lit on the GPU.** The normals from 31's vertex data (item 28c's second stream), LS3D's choice of
+      lights for a visual taken as for people (its LightVertices run on one vertex, or the sector's lights read),
+      LS3D's lighting of objects skipped. Measure: LightVertices's time a frame (31a's widened `hot_ms`) to 0; the
+      night scene (the most lights); the picture.
+    - **31f, vertex data that stays put.** Each LOD's vertices uploaded once into buffers of the host's (positions,
+      uv, normals: what the GPU needs, lit or skinned there) and drawn from them; LS3D's pools and their copies left
+      unused for those draws. Measure: locks a frame and their time (1.0's 14 % of the game thread), the far scene.
+    - **31g, fewer draws.** What stays the same from frame to frame merged: a sector's static face groups by
+      material into one buffer and one draw, repeated models (lamps, trees, cars of one model) instanced. Measure:
+      draws a frame, the driver's time, the far scene's frame (item 29's 30 fps).
+    - **31h, the visibility.** Not the GPU's work but the far scene's other bottleneck: LS3D's portals and frame
+      walk on the CPU. After 31a's numbers: cached per camera cell, made cheaper, or occlusion moved to the GPU
+      (queries, a depth pyramid). Measure: the profile's share of `SetVisibleRecMainPass` and the portals at 1000 m.
+    Under a Direct3D 9 wrapper only (dxwrapper, DXVK), as items 27 and 28; plain Direct3D 8 keeps the game's own
+    drawing. The order may change with 31a's numbers: a step whose share is small waits.
 
 ### Tier 2: the game's world as data, read and changed
 
@@ -1072,9 +1131,8 @@ merged, sorted by importance):
   resolution timer); shorter ones keep a core busy.
 - **People skinned on the GPU** (item 28b, 2026-10-20): (1) it does not speed up the plain game: each person's draw
   switches the device from the fixed pipeline to shaders and back (measured with 48 people, about 300 draws: +0.9 ms
-  a frame in 1.2, +1.3 ms in 1.0, the CPU's own part down to 0.2 ms); keeping the shaders bound across consecutive
-  people's draws and putting the fixed pipeline back only before the next other draw (every draw entry of the device
-  hooked) would cut it, not done. (2) A LOD with an environment map of modes 2 to 5 or lit flat stays LS3D's
+  a frame in 1.2, +1.3 ms in 1.0, the CPU's own part down to 0.2 ms): item 31 (every draw through shaders that stay
+  bound, the state followed, not asked; 31d). (2) A LOD with an environment map of modes 2 to 5 or lit flat stays LS3D's
   (`why_cpu`). (3) `geom.capture` of a person the GPU skins reads the drawn buffer, which is no longer filled (the
   rest pose instead). (4) The lights' places in the mesh's space are taken when LS3D would light again (bones or the
   sector's lights changed), as LS3D's own colours are.
@@ -1086,7 +1144,7 @@ merged, sorted by importance):
   states (the transforms, the fog, the stages, the eight Direct3D lights, the material); over every object (about 750
   draws, reference.hlsl) that is some 4 ms a frame in 1.0. The states that change once a frame (the view, the
   projection, the fog) or once a visual could be kept; a person's draw without a rule already reads 25 (CoreConstants).
-  For item 29 too.
+  Item 31b.
 - **The demo's LS3D names** (2026-10-20, `tools/kb_demo.py`, knowledge/notes/external.md): 1255 of the demo's 3109
   functions have no place in LS3DF (qhull, DirectShow, the editor's code, tiny ones folded away); a function 1.2
   rewrote much (I3D_singlemesh::PoseLod, 47 % like 1.0's) pairs only through a hand-checked name of both builds
