@@ -322,6 +322,7 @@ int H_GfxPass(MmlMod *m, int order, MmlGfxPassFn fn, void *user) {
 void H_GfxPassRemove(MmlMod *m, int handle) { if (m && handle > 0) GfxPassRemove(m, handle); }
 void H_GfxUi(MmlMod *m, int mode) { if (Alive(m)) GfxUiAsk(m, mode); }
 int H_GfxPassViews(MmlMod *m, int pass, int on) { return Alive(m) && GfxPassViews(m, pass, on != 0) ? 1 : 0; }
+int H_GfxMotion(MmlMod *m, int on) { return Alive(m) ? MotionAsk(m, on != 0) : 0; }
 int H_GfxState(MmlMod *, char *why, int cap) {
     std::string w;
     int s = GfxStateNow(&w);
@@ -1248,6 +1249,7 @@ void ModsInit() {
     g_host.web_nodes = H_WebNodes;
     g_host.material_name = H_MaterialName;
     g_host.gfx_state = H_GfxState;
+    g_host.gfx_motion = H_GfxMotion;
     g_host.gfx_pass_views = H_GfxPassViews;
     LiveCleanAll();
     Scan();

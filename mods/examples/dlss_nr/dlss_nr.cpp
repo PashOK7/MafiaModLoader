@@ -171,6 +171,7 @@ template <class X> void SafeRelease(X *&p) {
 struct Consts {   // dlss_nr.hlsl's DlssNr (b1)
     float prevEye[4], prevRight[4], prevUp[4], prevFwd[4], prevProj[4];
     float opts[4];
+    float opts2[4];   // x: 1 when the bridge's motion vectors are bound (t3: the objects' motion too)
 };
 struct Gfx {
     unsigned generation = 0;
@@ -218,6 +219,7 @@ struct Camera {
     uint32_t model = UINT32_MAX, preset = UINT32_MAX;
 } g_prev;
 bool g_resetNext = true;
+bool g_bridgeMotion;   // this frame's MmlGfxFrame has the bridge's motion vectors (t3)
 
 bool Cut(const MmlGfxConstants *k, const MmlGfxFrame *f) {
     if (!g_prev.have || g_prev.width != f->width || g_prev.height != f->height || g_prev.model != S.model || g_prev.preset != S.preset)
@@ -247,6 +249,7 @@ void Constants(ID3D11DeviceContext *c, const MmlGfxConstants *k, bool havePrev, 
     memcpy(x.prevFwd, havePrev ? p.fwd : k->fwd, sizeof x.prevFwd);
     memcpy(x.prevProj, havePrev ? p.proj : k->proj, sizeof x.prevProj);
     x.opts[0] = S.sky, x.opts[1] = havePrev ? 1.f : 0.f, x.opts[2] = split, x.opts[3] = float(S.debug);
+    x.opts2[0] = g_bridgeMotion ? 1.f : 0.f;
     D3D11_MAPPED_SUBRESOURCE m;
     if (SUCCEEDED(c->Map(G.cb, 0, D3D11_MAP_WRITE_DISCARD, 0, &m))) {
         memcpy(m.pData, &x, sizeof x);
@@ -278,6 +281,7 @@ void Pass(const MmlGfxFrame *f, void *) {
         G.generation = f->generation;
     }
     const MmlGfxConstants *k = f->k;
+    g_bridgeMotion = MML_GFX_HAS(f, motion) && f->motion;
     const bool camera = Cut(k, f);
     const bool cut = g_resetNext || camera;
     const bool havePrev = !cut;
@@ -297,12 +301,12 @@ void Pass(const MmlGfxFrame *f, void *) {
                 if (SUCCEEDED(d->CreateTexture2D(&td, nullptr, &G.prev))) d->CreateShaderResourceView(G.prev, nullptr, &G.prevSrv);
                 if (G.prev) c->CopyResource(G.prev, color);
             }
-            c->PSSetShaderResources(4, 1, &G.prevSrv);
+            c->PSSetShaderResources(6, 1, &G.prevSrv);
         }
         FullScreen(c, f, G.debug);
         if (S.debug >= 5 && color && G.prev) {
             ID3D11ShaderResourceView *none = nullptr;
-            c->PSSetShaderResources(4, 1, &none);
+            c->PSSetShaderResources(6, 1, &none);
             c->CopyResource(G.prev, color);
         }
         if (color) color->Release();
@@ -389,10 +393,10 @@ void Pass(const MmlGfxFrame *f, void *) {
     Constants(c, k, false, S.split ? S.splitAt : 0);
     auto *out = static_cast<ID3D11ShaderResourceView *>(t[dnr::kColorOut].srv);
     c->PSSetShaderResources(0, 2, base);
-    c->PSSetShaderResources(3, 1, &out);
+    c->PSSetShaderResources(5, 1, &out);
     FullScreen(c, f, G.composite);
     ID3D11ShaderResourceView *none = nullptr;
-    c->PSSetShaderResources(3, 1, &none);
+    c->PSSetShaderResources(5, 1, &none);
 }
 
 // ---- keys, events, commands
@@ -484,6 +488,8 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     g_statusCh = H->channel_open(mod, "status", sizeof(dnr::Status));
     if (!g_viewCh || !g_doneCh || !g_statusCh) return 1;
     ReadSettings();
+    // the bridge's motion vectors (the moving cars' and people's motion besides the camera's), where the loader has them
+    if (MML_HAS(H, gfx_motion) && !H->gfx_motion(mod, 1)) H->log(mod, MML_LOG_WARN, "no motion vectors from the bridge: the camera's alone");
     for (MmlEventType t : {MML_EVENT_CONFIG_CHANGED, MML_EVENT_MISSION_LOADED, MML_EVENT_RENDER_END, MML_EVENT_MISSION_CLOSE}) H->subscribe(mod, t, OnEvent, nullptr);
     // (first among the passes: its picture is the whole frame, so the other mods' effects are laid over it)
     if (H->gfx_pass(mod, 10, Pass, nullptr) <= 0) {

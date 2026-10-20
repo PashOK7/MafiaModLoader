@@ -351,6 +351,12 @@ typedef struct MmlGfxFrame {
                                NULL. Its matrix and size: k->sun_shadow_view_proj, k->sun_shadow_info (frame.hlsli
                                SunShadow, SunLit). The same map in a scene view's passes (drawn around the frame's
                                camera) */
+    /* (MML_GFX_HAS(frame, motion)) */
+    void *motion;           /* ID3D11ShaderResourceView*: each pixel's motion in pixels (R16G16_FLOAT): this pixel plus
+                               its motion is where the surface it shows was the frame before (DLSS's and TAA's
+                               convention), the camera's motion and what moved by itself (cars, their wheels, doors,
+                               props, people as wholes); bound to t3 (frame.hlsli g_motion), while a mod wants them
+                               (gfx_motion) and the frame before was drawn; else NULL (and in the scene views) */
 } MmlGfxFrame;
 #define MML_GFX_HAS(f, member) ((size_t)(f)->size >= offsetof(MmlGfxFrame, member) + sizeof((f)->member))
 #define MML_GFX_UI_OFF 0     /* gfx_ui: the 2D pass as the game draws it */
@@ -1523,6 +1529,11 @@ typedef struct MmlHost {
      * registered, or no frame of the mission's world drawn since). A mod tells its player why its effect is missing.
      * Game thread. */
     int (*gfx_state)(MmlMod *mod, char *why, int cap);
+    /* ---- motion vectors (both builds, under a Direct3D 9 wrapper; docs/MODDING.md "Motion vectors").
+     * gfx_motion: the mod wants each frame's motion vectors (on 1) or no more (0): MmlGfxFrame's motion from the next
+     * frame of the mission's world while any mod wants them (their cost, the moving objects drawn again, is paid
+     * only then). Returns 1; 0 when the game's drawing cannot be followed (no wrapper's Direct3D 9). Game thread. */
+    int (*gfx_motion)(MmlMod *mod, int on);
 } MmlHost;
 
 #define MML_ZONE_PLAYER 0x1u

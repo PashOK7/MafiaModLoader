@@ -186,7 +186,11 @@ HRESULT DrawOn(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex,
 
 HRESULT STDMETHODCALLTYPE hkDip(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex, UINT verts, UINT start, UINT n) {
     Now *now = g_now;
-    if (!now) return DrawOn(d, t, base, minIndex, verts, start, n);
+    if (!now) {
+        HRESULT hr = DrawOn(d, t, base, minIndex, verts, start, n);
+        MotionAfterDraw(d, t, base, minIndex, verts, start, n, reinterpret_cast<void *>(oDip));   // (motion.cpp: a moving object's)
+        return hr;
+    }
     if (!now->read) {   // (its first draw: a group's further passes draw the same triangles)
         now->read = true;
         std::vector<float> tris;
@@ -201,7 +205,10 @@ HRESULT STDMETHODCALLTYPE hkDip(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT bas
             c->tris.insert(c->tris.end(), tris.begin(), tris.end());
         }
     }
-    return now->suppress ? D3D_OK : DrawOn(d, t, base, minIndex, verts, start, n);
+    if (now->suppress) return D3D_OK;
+    HRESULT hr = DrawOn(d, t, base, minIndex, verts, start, n);
+    MotionAfterDraw(d, t, base, minIndex, verts, start, n, reinterpret_cast<void *>(oDip));
+    return hr;
 }
 
 bool EnsureDip() {
@@ -274,15 +281,18 @@ DWORD SafeDecide(void *visual, uint8_t *entry, Now *now, bool *hide) {
 }
 
 unsigned g_faults;
-// The group drawn through LS3D, the mods' shaders told which it is (shaders.cpp): kind 1 an object (objects, morphs,
-// single meshes), 2 a lightmapped object, 3 a billboard.
+// The group drawn through LS3D, the mods' shaders told which it is (shaders.cpp), and the motion vectors (motion.cpp):
+// kind 1 an object (objects, morphs, single meshes), 2 a lightmapped object, 3 a billboard.
 template <RenderFgFn *orig, int kind>
 void DrawGroup(void *visual, void *edx, uint8_t *entry) {
-    if (!ShadersWanted()) { (*orig)(visual, edx, entry); return; }
+    const bool shaders = ShadersWanted(), motion = MotionWanted();
+    if (!shaders && !motion) { (*orig)(visual, edx, entry); return; }
     int view = ViewDrawingNow();
-    ShadersGroupBegin(kind, visual, entry, view ? MML_GEOM_VIEWS : (g_inFrame ? MML_GEOM_FRAME : 0));
+    if (motion) MotionGroupBegin(kind, visual, At<uint8_t *>(entry, kEntryGroup), !view && g_inFrame);
+    if (shaders) ShadersGroupBegin(kind, visual, entry, view ? MML_GEOM_VIEWS : (g_inFrame ? MML_GEOM_FRAME : 0));
     (*orig)(visual, edx, entry);
-    ShadersGroupEnd();
+    if (shaders) ShadersGroupEnd();
+    if (motion) MotionGroupEnd();
 }
 
 template <RenderFgFn *orig, int kind>

@@ -43,6 +43,7 @@
 #include "shaders/PsDepth.h"
 #include "shaders/PsComposite.h"
 #include "shaders/VsFullScreen.h"
+#include "shaders/PsMotionAll.h"
 
 using json = nlohmann::json;
 
@@ -136,6 +137,21 @@ IDirect3DTexture9 *g_ui9; IDirect3DSurface9 *g_uiSurf9;
 ID3D11Texture2D *g_ui11;
 ID3D11ShaderResourceView *g_uiSRV;
 gfxvk::Link *g_uiLink;
+// the motion vectors (motion.cpp; made while a mod wants them): the moving objects' target (A16B16G16R16F: motion,
+// view depth, 1), the frame's vectors (G16R16F, shared), the camera the frame before was drawn with
+IDirect3DTexture9 *g_motionObj9; IDirect3DSurface9 *g_motionObjSurf9;
+IDirect3DTexture9 *g_motion9; IDirect3DSurface9 *g_motionSurf9;
+ID3D11Texture2D *g_motion11;
+ID3D11ShaderResourceView *g_motionSRV;
+gfxvk::Link *g_motionLink;
+IDirect3DPixelShader9 *g_psMotionAll;
+bool g_motionThisFrame;            // MotionFrameBegin had a camera before: the objects drawn again this frame
+bool g_cameraBefore;               // g_viewBefore, g_projBefore hold the last stage 1's camera
+float g_viewBefore[16], g_projBefore[16];
+unsigned g_motionFrames;
+std::string g_motionError;
+bool g_motionTried;
+bool g_motionReady;                // this frame's vectors drawn and handed over: the passes get them
 unsigned g_uiFrames;
 IDirect3DSurface9 *g_uiGameRT;     // the frame's target while the 2D pass draws into ours
 D3DVIEWPORT9 g_uiViewport;
@@ -460,6 +476,12 @@ void ReleaseView(ViewTargets &v) {
 
 void ReleaseSized() {
     gfxvk::Free(g_colorLink); gfxvk::Free(g_depthLink); gfxvk::Free(g_fxLink); gfxvk::Free(g_uiLink); gfxvk::Free(g_sunLink);
+    gfxvk::Free(g_motionLink);
+    SafeRelease(g_motionSRV); SafeRelease(g_motion11); SafeRelease(g_motionSurf9); SafeRelease(g_motion9);
+    SafeRelease(g_motionObjSurf9); SafeRelease(g_motionObj9);
+    g_cameraBefore = false;
+    g_motionTried = false;
+    g_motionReady = false;
     SafeRelease(g_colorSRV); SafeRelease(g_depthSRV); SafeRelease(g_fxRTV);
     SafeRelease(g_color11); SafeRelease(g_depth11); SafeRelease(g_fx11);
     SafeRelease(g_intzSurf); SafeRelease(g_intz);
@@ -489,7 +511,8 @@ void ReleaseAll() {
     for (auto &t : g_sideTex) ReleaseSideTex(t);
     g_sideTex.clear();
     SafeRelease(g_vsQuad); SafeRelease(g_psDepth); SafeRelease(g_psComposite);
-    SafeRelease(g_decl); SafeRelease(g_quad); SafeRelease(g_event9); SafeRelease(g_block);
+    SafeRelease(g_decl); SafeRelease(g_quad); SafeRelease(g_event9); SafeRelease(g_block); SafeRelease(g_psMotionAll);
+    MotionDeviceGone();
     SafeRelease(g_frameCB); SafeRelease(g_point); SafeRelease(g_linear); SafeRelease(g_vsFull); SafeRelease(g_over);
     SafeRelease(g_event11);
     if (g_ctx) { g_ctx->ClearState(); g_ctx->Flush(); }
@@ -663,6 +686,95 @@ bool MakePair(UINT w, UINT h, D3DFORMAT f9, IDirect3DTexture9 **t9, ID3D11Textur
 bool MakeShared(D3DFORMAT f9, IDirect3DTexture9 **t9, ID3D11Texture2D **t11, gfxvk::Link **link, const char *what) {
     std::string why;
     if (!MakePair(g_w, g_h, f9, t9, t11, link, &why)) return Fail(Fmt("the shared %s texture: %s", what, why.c_str()));
+    return true;
+}
+
+// The motion vectors' targets at the frame's size, made at the first frame a mod wants them (motion.cpp); a failure is
+// said once a size (gfx.state's motion.error) and not tried again until the size changes.
+void FullScreen9(IDirect3DPixelShader9 *ps, IDirect3DBaseTexture9 *tex, const float c[8]);
+bool EnsureMotion() {
+    if (g_motionObj9 && g_motion9 && g_motionSRV && g_psMotionAll) return true;
+    if (g_motionTried) return false;
+    g_motionTried = true;
+    std::string why;
+    if (!g_psMotionAll && FAILED(g_dev9->CreatePixelShader(reinterpret_cast<const DWORD *>(kPsMotionAll), &g_psMotionAll))) why = "PsMotionAll";
+    else if (FAILED(g_dev9->CreateTexture(g_w, g_h, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A16B16G16R16F, D3DPOOL_DEFAULT, &g_motionObj9, nullptr)))
+        why = "the moving objects' target";
+    else if (!MakePair(g_w, g_h, D3DFMT_G16R16F, &g_motion9, &g_motion11, &g_motionLink, &why))
+        why = "the shared motion vectors: " + why;
+    else if (FAILED(g_dev11->CreateShaderResourceView(g_motion11, nullptr, &g_motionSRV)))
+        why = "the motion vectors' view";
+    if (!why.empty()) {
+        g_motionError = why;
+        HWARN("gfx: no motion vectors: %s", why.c_str());
+        gfxvk::Free(g_motionLink);
+        SafeRelease(g_motionSRV); SafeRelease(g_motion11); SafeRelease(g_motion9); SafeRelease(g_motionObj9);
+        return false;
+    }
+    g_motionObj9->GetSurfaceLevel(0, &g_motionObjSurf9);
+    g_motion9->GetSurfaceLevel(0, &g_motionSurf9);
+    g_motionError.clear();
+    HLOG("gfx: motion vectors %ux%u (the camera's and the moving objects')", g_w, g_h);
+    return true;
+}
+
+bool Invert(const D3DMATRIX &a, D3DMATRIX &out) {   // (a 4x4 by Gauss-Jordan, partial pivoting)
+    double m[4][8];
+    for (int i = 0; i < 4; i++)
+        for (int j = 0; j < 8; j++) m[i][j] = j < 4 ? a.m[i][j] : (j - 4 == i ? 1 : 0);
+    for (int c = 0; c < 4; c++) {
+        int p = c;
+        for (int r = c + 1; r < 4; r++) if (std::fabs(m[r][c]) > std::fabs(m[p][c])) p = r;
+        if (std::fabs(m[p][c]) < 1e-12) return false;
+        for (int j = 0; j < 8; j++) std::swap(m[c][j], m[p][j]);
+        double inv = 1 / m[c][c];
+        for (int j = 0; j < 8; j++) m[c][j] *= inv;
+        for (int r = 0; r < 4; r++)
+            if (r != c) {
+                double f = m[r][c];
+                for (int j = 0; j < 8; j++) m[r][j] -= f * m[c][j];
+            }
+    }
+    for (int i = 0; i < 4; i++)
+        for (int j = 0; j < 4; j++) out.m[i][j] = static_cast<float>(m[i][j + 4]);
+    return true;
+}
+void MulM(const D3DMATRIX &a, const D3DMATRIX &b, D3DMATRIX &out) {
+    D3DMATRIX r;
+    for (int i = 0; i < 4; i++)
+        for (int j = 0; j < 4; j++) r.m[i][j] = a.m[i][0] * b.m[0][j] + a.m[i][1] * b.m[1][j] + a.m[i][2] * b.m[2][j] + a.m[i][3] * b.m[3][j];
+    out = r;
+}
+
+// The frame's motion vectors (PsMotionAll, inside DoStage1: the bridge's states saved): the moving objects' where they
+// are what is seen, the camera's elsewhere (this frame's view space through the last frame's camera).
+bool MotionCombine(const D3DMATRIX &proj) {
+    D3DMATRIX view{}, inv, before, viewBefore, projBefore;
+    g_dev9->GetTransform(D3DTS_VIEW, &view);
+    if (!Invert(view, inv)) return false;
+    memcpy(&viewBefore, g_viewBefore, sizeof viewBefore);
+    memcpy(&projBefore, g_projBefore, sizeof projBefore);
+    MulM(inv, viewBefore, before);
+    MulM(before, projBefore, before);
+    // s1, the linear depth (written just before), with its states kept: the bridge's block holds stage 0's only
+    IDirect3DBaseTexture9 *tex1 = nullptr;
+    DWORD smp[5] = {};
+    const D3DSAMPLERSTATETYPE ss[5] = {D3DSAMP_MINFILTER, D3DSAMP_MAGFILTER, D3DSAMP_MIPFILTER, D3DSAMP_ADDRESSU, D3DSAMP_ADDRESSV};
+    g_dev9->GetTexture(1, &tex1);
+    for (int i = 0; i < 5; i++) g_dev9->GetSamplerState(1, ss[i], &smp[i]);
+    g_dev9->SetTexture(1, g_depth9);
+    const DWORD want[5] = {D3DTEXF_POINT, D3DTEXF_POINT, D3DTEXF_NONE, D3DTADDRESS_CLAMP, D3DTADDRESS_CLAMP};
+    for (int i = 0; i < 5; i++) g_dev9->SetSamplerState(1, ss[i], want[i]);
+    g_dev9->SetRenderTarget(0, g_motionSurf9);
+    const float c[8] = {static_cast<float>(g_w), static_cast<float>(g_h), 1.0f / g_w, 1.0f / g_h, proj._33, proj._43, kFarDepth, 0};
+    const float p[4] = {proj._11, proj._22, proj._31, proj._32};
+    g_dev9->SetPixelShaderConstantF(8, &before._11, 4);
+    g_dev9->SetPixelShaderConstantF(12, p, 1);
+    FullScreen9(g_psMotionAll, g_motionObj9, c);
+    g_dev9->SetTexture(1, tex1);
+    for (int i = 0; i < 5; i++) g_dev9->SetSamplerState(1, ss[i], smp[i]);
+    SafeRelease(tex1);
+    g_motionFrames++;
     return true;
 }
 
@@ -906,6 +1018,8 @@ bool RunPasses(MmlGfxConstants &k, const PassTarget &t) {
     f.view_count = static_cast<unsigned>(views.size());
     f.in_view = t.view;
     f.sun_shadow = sun;
+    ID3D11ShaderResourceView *motion = frame && g_motionReady ? g_motionSRV : nullptr;   // (t3: the frame's only)
+    f.motion = motion;
     TimerFrame *tf = frame ? BeginTimers() : nullptr;
     if (tf) Mark(tf, 0);
     std::vector<Pass> passes = g_passes;   // (a pass may add or take back passes)
@@ -918,12 +1032,12 @@ bool RunPasses(MmlGfxConstants &k, const PassTarget &t) {
         g_ctx->OMSetBlendState(g_over, nullptr, 0xFFFFFFFFu);   // (a pass's 0 leaves the passes before it as they are)
         g_ctx->OMSetDepthStencilState(nullptr, 0);
         g_ctx->RSSetState(nullptr);
-        ID3D11ShaderResourceView *srv[3] = {t.depth, t.color, sun};
+        ID3D11ShaderResourceView *srv[4] = {t.depth, t.color, sun, motion};
         ID3D11SamplerState *smp[2] = {g_point, g_linear};
-        g_ctx->PSSetShaderResources(0, 3, srv);
+        g_ctx->PSSetShaderResources(0, 4, srv);
         g_ctx->PSSetSamplers(0, 2, smp);
         g_ctx->PSSetConstantBuffers(0, 1, &g_frameCB);
-        g_ctx->CSSetShaderResources(0, 3, srv);
+        g_ctx->CSSetShaderResources(0, 4, srv);
         g_ctx->CSSetSamplers(0, 2, smp);
         g_ctx->CSSetConstantBuffers(0, 1, &g_frameCB);
         g_ctx->VSSetConstantBuffers(0, 1, &g_frameCB);
@@ -1022,9 +1136,22 @@ bool DoStage1() {
     g_dev9->SetRenderTarget(0, g_depthSurf9);
     g_dev9->SetDepthStencilSurface(nullptr);   // the INTZ texture is read now: not bound for writing
     FullScreen9(g_psDepth, g_intz, c);
+    // the motion vectors, when the moving objects were drawn again this frame (motion.cpp)
+    g_motionReady = false;
+    bool motion = g_motionThisFrame && g_motionSurf9 && g_psMotionAll && MotionCombine(proj);
+    MotionFrameEnd();
+    g_motionThisFrame = false;
+    {   // this frame's camera, for the next frame's motion
+        D3DMATRIX v{};
+        g_dev9->GetTransform(D3DTS_VIEW, &v);
+        memcpy(g_viewBefore, &v, sizeof g_viewBefore);
+        memcpy(g_projBefore, &proj, sizeof g_projBefore);
+        g_cameraBefore = true;
+    }
     ok = ok && Wait9();
     if (ok && gfxvk::On()) {   // (on DXVK: the pictures copied to Direct3D 11's halves, the 2D pass's and the views' too)
         std::vector<gfxvk::Link *> to11{g_colorLink, g_depthLink};
+        if (motion) to11.push_back(g_motionLink);
         if (UiMode() != MML_GFX_UI_OFF && g_uiFrames) to11.push_back(g_uiLink);
         for (auto &v : g_views)
             if (v->info.fresh) { to11.push_back(v->colorLink); to11.push_back(v->depthLink); }
@@ -1032,6 +1159,7 @@ bool DoStage1() {
         ok = gfxvk::To11(to11.data(), static_cast<int>(to11.size()), &why);
         if (!ok) g_frameError = "the textures' copy on DXVK's queue: " + why;
     }
+    g_motionReady = ok && motion;
     double t1 = NowMs();
     // 2. the passes
     if (ok) {
@@ -1170,6 +1298,7 @@ void GfxPassRemove(MmlMod *mod, int handle) {
 }
 void GfxRemove(MmlMod *mod) {
     GfxPassRemove(mod, 0);
+    MotionRemove(mod);
     GfxUiAsk(mod, MML_GFX_UI_OFF);
     for (auto &t : g_sideTex) if (t.mod == mod) ReleaseSideTex(t);
     g_sideTex.erase(std::remove_if(g_sideTex.begin(), g_sideTex.end(), [&](const SideTex &t) { return t.mod == mod; }), g_sideTex.end());
@@ -1314,6 +1443,25 @@ void GfxBeforeWorld() {
     if (FAILED(g_dev9->SetDepthStencilSurface(g_intzSurf))) { SafeRelease(ds); g_skipped++; return; }
     g_gameDS = ds;   // its reference kept until GfxAfterWorld
     g_swapped = true;
+    g_motionThisFrame = false;
+    if (MotionWanted() && EnsureMotion()) {   // (motion.cpp draws the moving objects again into the cleared target)
+        std::string why;
+        GeomEnsureHooks(&why);   // (a mod that asked before the game's device was there)
+        GeomEnsureDip(&why);
+        g_quiet++;
+        IDirect3DSurface9 *rt = nullptr;   // (cleared as a target: ColorFill takes no float format everywhere)
+        D3DVIEWPORT9 vp{};
+        g_dev9->GetRenderTarget(0, &rt);
+        g_dev9->GetViewport(&vp);
+        g_dev9->SetRenderTarget(0, g_motionObjSurf9);
+        g_dev9->Clear(0, nullptr, D3DCLEAR_TARGET, 0, 1.0f, 0);
+        g_dev9->SetRenderTarget(0, rt);
+        g_dev9->SetViewport(&vp);
+        SafeRelease(rt);
+        g_quiet--;
+        MotionFrameBegin(g_dev9, g_motionObjSurf9, g_cameraBefore ? g_viewBefore : nullptr, g_cameraBefore ? g_projBefore : nullptr);
+        g_motionThisFrame = g_cameraBefore;
+    }
 }
 
 void GfxTakeWorldLight() { if (g_stateHooked) TakeWorldLight(); }
@@ -1571,6 +1719,15 @@ bool GfxMethod(const std::string &method, const std::string &, std::string *repl
                          {"pass_runs", v->passRuns}, {"pass_fails", v->passFails}});
     out["views"] = views;
     out["view_sky_sets"] = g_viewSkySets;
+    {
+        json m = json::parse(MotionState(), nullptr, false);
+        if (m.is_object()) {
+            m["frames"] = g_motionFrames;
+            m["ready"] = g_motionReady;
+            if (!g_motionError.empty()) m["error"] = g_motionError;
+            out["motion"] = m;
+        }
+    }
     out["d3d9"] = gfxvk::On() ? gfxvk::Describe() : g_dev9 ? "Direct3D 9Ex: textures shared by handle" : "";
     out["sun_shadow"] = {{"bound", g_sunSRV != nullptr && g_k.sun_shadow_info[0] > 0.5f}, {"size", g_k.sun_shadow_info[3]}};
     if (!g_sunError.empty()) out["sun_shadow"]["error"] = g_sunError;

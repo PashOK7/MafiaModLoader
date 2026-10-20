@@ -718,10 +718,11 @@ pub struct MmlGfxFrame {
     pub view_count: ::core::ffi::c_uint,
     pub in_view: ::core::ffi::c_int,
     pub sun_shadow: *mut ::core::ffi::c_void,
+    pub motion: *mut ::core::ffi::c_void,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of MmlGfxFrame"][::core::mem::size_of::<MmlGfxFrame>() - 208usize];
+    ["Size of MmlGfxFrame"][::core::mem::size_of::<MmlGfxFrame>() - 212usize];
     ["Alignment of MmlGfxFrame"][::core::mem::align_of::<MmlGfxFrame>() - 4usize];
     ["Offset of field: MmlGfxFrame::size"][::core::mem::offset_of!(MmlGfxFrame, size) - 0usize];
     ["Offset of field: MmlGfxFrame::device"][::core::mem::offset_of!(MmlGfxFrame, device) - 4usize];
@@ -756,6 +757,8 @@ const _: () = {
         [::core::mem::offset_of!(MmlGfxFrame, in_view) - 200usize];
     ["Offset of field: MmlGfxFrame::sun_shadow"]
         [::core::mem::offset_of!(MmlGfxFrame, sun_shadow) - 204usize];
+    ["Offset of field: MmlGfxFrame::motion"]
+        [::core::mem::offset_of!(MmlGfxFrame, motion) - 208usize];
 };
 impl Default for MmlGfxFrame {
     fn default() -> Self {
@@ -3282,10 +3285,13 @@ pub struct MmlHost {
             cap: ::core::ffi::c_int,
         ) -> ::core::ffi::c_int,
     >,
+    pub gfx_motion: ::core::option::Option<
+        unsafe extern "C" fn(mod_: *mut MmlMod, on: ::core::ffi::c_int) -> ::core::ffi::c_int,
+    >,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 736usize];
+    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 740usize];
     ["Alignment of MmlHost"][::core::mem::align_of::<MmlHost>() - 4usize];
     ["Offset of field: MmlHost::size"][::core::mem::offset_of!(MmlHost, size) - 0usize];
     ["Offset of field: MmlHost::api_version"]
@@ -3601,6 +3607,8 @@ const _: () = {
     ["Offset of field: MmlHost::material_name"]
         [::core::mem::offset_of!(MmlHost, material_name) - 728usize];
     ["Offset of field: MmlHost::gfx_state"][::core::mem::offset_of!(MmlHost, gfx_state) - 732usize];
+    ["Offset of field: MmlHost::gfx_motion"]
+        [::core::mem::offset_of!(MmlHost, gfx_motion) - 736usize];
 };
 pub type MmlModLoadFn = ::core::option::Option<
     unsafe extern "C" fn(host: *const MmlHost, mod_: *mut MmlMod) -> ::core::ffi::c_int,

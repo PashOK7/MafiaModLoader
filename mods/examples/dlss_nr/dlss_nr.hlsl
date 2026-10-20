@@ -11,10 +11,11 @@ cbuffer DlssNr : register(b1) {
     float4 g_prevProj;    // its projection's _11, _22, _31, _32
     float4 g_opts;        // x: the mask on the sky (0..1), y: 1 when there is a frame before, z: the split's place
                           // (0..1 of the width, 0: none), w: the debug view (1 motion, 2 depth, 3 mask)
+    float4 g_opts2;       // x: 1 when the bridge's motion vectors are bound (frame.hlsli g_motion, t3)
 };
 
-Texture2D<float4> g_nrOut : register(t3);   // "color_out": DLSS-NR's picture, in the display's gamma (as it was given)
-Texture2D<float4> g_prevColor : register(t4);   // the frame before (the debug views' reprojection check)
+Texture2D<float4> g_nrOut : register(t5);   // "color_out": DLSS-NR's picture, in the display's gamma (as it was given)
+Texture2D<float4> g_prevColor : register(t6);   // the frame before (the debug views' reprojection check)
 
 // Where a world direction or point was on the screen the frame before (pixels). A point at infinity (the sky): its
 // direction alone, the camera's turn without its move.
@@ -25,10 +26,11 @@ float2 PrevScreen(float3 d) {
 }
 
 // This pixel's motion, in pixels, from where it is now to where it was the frame before (DLSS's convention: the
-// current place plus the vector is the last place). The camera's motion only: the depth reprojected through the last
-// frame's camera (the game's moving actors move as the world behind them would).
+// current place plus the vector is the last place). The bridge's when it gives them (the camera's and the moving
+// cars' and people's own: gfx_motion); else the camera's alone: the depth reprojected through the last frame's camera.
 float2 Motion(float2 pixel) {
     if (g_opts.y < 0.5) return 0;
+    if (g_opts2.x > 0.5) return g_motion.Load(int3(pixel, 0));
     float z = SceneDepth(pixel);
     float3 ray = ViewRay(pixel);
     float3 d = IsSky(z) ? ray : g_eye.xyz + ray * z - g_prevEye.xyz;

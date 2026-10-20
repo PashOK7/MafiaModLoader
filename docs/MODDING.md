@@ -385,6 +385,38 @@ int view = H->scene_view(M, 640, 200, PlaceMirror, NULL);   /* 0, 0: the frame's
   `"check"` (the left half of the frame drawn again and compared: black when equal). `depth_pulse` runs its pass in
   the views: its wave is seen in the mirror.
 
+### Motion vectors
+
+What a temporal effect needs (TAA, motion blur, an upscaler, DLSS): each pixel's motion, in pixels, to where the
+surface it shows was the frame before. A mod asks once, `H->gfx_motion(M, 1)` (Rust `host.gfx_motion(true)`), and
+from the next frame of the mission's world its passes get them: `f->motion` (`MML_GFX_HAS(f, motion)`; an
+`ID3D11ShaderResourceView*`, R16G16_FLOAT), bound to t3, `g_motion` and `PixelBefore(pixel)` in `frame.hlsli`:
+
+```hlsl
+float2 before = PixelBefore(pos.xy);                         // pos.xy plus its motion
+float3 history = g_myHistory.SampleLevel(g_linear, before * g_size.zw, 0).rgb;
+```
+
+- **The camera's** part, for everything: the frame's linear depth reprojected through the last frame's camera (the
+  sky by its direction alone).
+- **What moves by itself** (cars, their wheels, doors, props, people as wholes): LS3D draws every face group through
+  m_RenderFGroup (`host/geom.cpp`), which knows the visual it draws; a draw whose world transform is not the one it
+  had the frame before is drawn again right after LS3D's own draw (its buffers are LS3D's at that moment: it refills
+  dynamic buffers as it goes), into a target of the objects' motion, every vertex through this frame's and the last
+  frame's world, view and projection (`host/motion.cpp`, `host/shaders/bridge9.hlsl` VsMotion, PsMotion). At the
+  frame's stage 1, PsMotionAll takes an object's motion where the object is what is finally seen (its depth is the
+  frame's) and the camera's elsewhere. Each draw is known by its visual, its face group, the how-many-th time that
+  pair is drawn this frame (one visual draws a car's four wheels) and its place in the call.
+- **Not**: a person's limbs (LS3D skins people on the CPU: he moves as a whole, his arms and legs as his body does),
+  billboards (as the camera), what writes no depth (a car's shadow decal, glass, smoke: the motion of what is behind;
+  the edge of a shadow that moves with its car mismatches either way), the scene views (`f->motion` is NULL there).
+- **Its cost**: only while a mod wants them; the moving draws again (in the freeride's traffic 15 to 90 of them,
+  0.2 to 0.4 ms of the game thread at 1280x960 on an RTX 3070) and one full-screen pass. `gfx.state`'s `motion`:
+  who asked, the draws known, moved and drawn again, their time. Under DXVK the vectors go to Direct3D 11 with the
+  other shared textures.
+- `dlss_nr`'s debug views show them: `1` as colours (grey still; red to the right, green down), `5` the frame before
+  moved by them against this one (black where they are right), `6` the same without them.
+
 ### The camera: the frame drawn from a mod's, a world point on the screen
 
 ```c

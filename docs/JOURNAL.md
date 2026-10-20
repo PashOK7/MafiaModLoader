@@ -2742,3 +2742,28 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Open**: what "horrible" is. Candidates: the motion vectors are the camera's only (moving cars and people smear),
   the model's own look on the old game, a Steam screenshot on F12 switching dlss_nr each time. The next log and a
   split-screen pair of screenshots tell.
+
+## 2026-10-20: motion vectors for the graphics passes (the camera's and what moves by itself)
+
+- **Asked** (the owner): item 4 of the list offered, per-object motion vectors in the bridge (DLSS's smearing of cars
+  and people, and any temporal effect: TAA, motion blur).
+- **Made**: `mml.h` gfx_motion (a mod asks), MmlGfxFrame `motion` (R16G16_FLOAT, pixels, bound to t3; `frame.hlsli`
+  `g_motion`, `PixelBefore`; Rust `gfx_motion()`, `GfxFrame::motion()`). `host/motion.cpp`: geom.cpp's m_RenderFGroup
+  hooks tell which visual and face group LS3D draws; at each of its DrawIndexedPrimitive calls the world transform is
+  compared with the same draw's of the frame before (keyed by the visual, the group, the how-many-th time this frame
+  that pair is drawn, the draw's place in the call); a draw that moved is drawn again at once (LS3D refills dynamic
+  buffers as it goes, so later would read other vertices) into an A16B16G16R16F target with VsMotion and PsMotion
+  (this frame's and the last frame's world * view * projection; motion, view depth, 1), depth-tested LESSEQUAL
+  against the depth it just wrote; what writes no depth is left out. At stage 1 PsMotionAll (G16R16F, shared like
+  the rest, DXVK's path too) takes an object's motion where its depth is the frame's, else reprojects the linear
+  depth through the last frame's camera (inverse(view) * view before * projection before; the sky as a direction).
+  dlss_nr asks for them and gives them to DLSS-NR (its own textures moved to t5, t6).
+- **Found on the way**: a car's four wheels are one visual and one face group drawn four times a frame (keyed by the
+  visual alone, three wheels were compared with the first one's last place: their spokes lit up in the check view);
+  a car's shadow decal writes no depth, so its object motion was taken for the road under it (left out now).
+  `vehicle.move` on a car just spawned does not move it (it sleeps): the test drove the player's taxi into the
+  traffic instead.
+- **Seen** (dlss_nr debug 5: the frame before moved by the vectors against this one, black where right): 1.2 on 9Ex
+  and 1.0 on DXVK, the player's taxi driven into the freeride's traffic: the passing cars' bodies dark (debug 6,
+  without vectors: bright), the taxi dark while the camera follows it, the background dark; left bright: people's
+  limbs (next block), spokes' edges, the taxi's shadow's edge. 15 to 90 draws again a frame, 0.17 to 0.42 ms.

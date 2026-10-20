@@ -1046,9 +1046,9 @@ merged, sorted by importance):
   NVIDIA's `nvngx_dlssnr.dll` refuses every GPU but an RTX 50 (Blackwell), and the labs have an RTX 3070. Everything up to NGX's answer is seen in both labs (the
   Vulkan device on the game's adapter, NGX started, its verdict, the round trip of the frame, the inputs as debug
   views); the feature's creation and evaluation, their image layouts and the picture's look wait for an RTX 50 (the
-  owner's friend's 5060). The motion vectors are the camera's (the game's moving actors get the world's behind them:
-  per-object motion would take each drawn object's last matrix); the frame waits for DLSS-NR each frame (no
-  pipelining a frame behind). Stage `other_gpu` (the game on a CPU's own graphics beside the GeForce, as a player's
+  owner's friend's 5060). The motion vectors are the bridge's (2026-10-20: the camera's and what moves by itself,
+  people as wholes; see "The motion vectors" below); the frame waits for DLSS-NR each frame (no pipelining a frame
+  behind). Stage `other_gpu` (the game on a CPU's own graphics beside the GeForce, as a player's
   RTX 5060 machine ran it) is not seen: the labs' machine has NVIDIA GPUs only.
 - **A thread without TLS in a player's game** (2026-10-19): the Mafia 1.2 of a player's mod pack (Freeride Deluxe,
   the 4 GB patch, a Czech retail release; Windows 11 24H2, the game on "AMD Radeon(TM) Graphics") had a thread made
@@ -1063,6 +1063,12 @@ merged, sorted by importance):
   player's setup; it is installed system-wide, not tried in the labs), a DXVK older than 3.x (its interop interfaces
   are from 2.1; `gfx.state` says what is missing), DXVK's own `d3d8.dll` instead of dxwrapper's (the bridge needs a
   9Ex device underneath: off, and it says so).
+- **The motion vectors** (host/motion.cpp, 2026-10-20): a person's limbs move as his body does (LS3D skins people on
+  the CPU, ls3d+54F60, into a buffer of positions and normals that its lighting, ls3d+65A70, turns into the drawn
+  vertices: their last positions kept per mesh and drawn as a second stream would give each vertex its own motion:
+  the next block); a wheel's spokes spinning show at their edges in the check view; billboards move as the camera;
+  translucent draws keep what is behind them (a car's shadow decal mismatches at its edge either way). Seen in both
+  labs, 9Ex and DXVK (the freeride's traffic, the player's car driven, `dlss_nr` debug 1, 5, 6).
 - **The developer tools' block** (2026-10-19): seen in both labs, but not yet the distances `triggers` draws (a
   mission waiting on a GETACTORSDIST) nor the `names` and `web` views looked at closely in 1.0.
 - **Wireframe** (2026-10-18, from PR 2): not made. The proper way is LS3D's own driver state (Insanity3D's

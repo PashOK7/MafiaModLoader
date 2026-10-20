@@ -29,8 +29,15 @@ cbuffer MmlFrame : register(b0) {
 Texture2D<float> g_sceneDepth : register(t0);    // linear view depth, metres (the sky: g_depthProj.z)
 Texture2D<float4> g_sceneColor : register(t1);   // the frame as drawn so far (the world, no HUD)
 Texture2D<float> g_sunShadow : register(t2);     // the sun's depth (1 nothing); unbound when g_sunShadowInfo.x is 0
+// Each pixel's motion in pixels: this pixel plus it is where the surface it shows was the frame before (the camera's
+// and what moved by itself); bound while a mod asked for it (mml.h gfx_motion) and the frame before was drawn, else
+// unbound (it reads 0: no motion). Not in a scene view's passes.
+Texture2D<float2> g_motion : register(t3);
 SamplerState g_point : register(s0);
 SamplerState g_linear : register(s1);
+
+// Where the surface at this pixel was on the screen the frame before (pixels; the motion vectors).
+float2 PixelBefore(float2 pixel) { return pixel + g_motion.Load(int3(pixel, 0)); }
 
 // A full-screen triangle: Draw(3), no buffers (the bridge binds it as the vertex shader before each pass).
 float4 VsFullScreen(uint id : SV_VertexID) : SV_Position {

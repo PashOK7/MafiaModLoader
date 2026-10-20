@@ -586,6 +586,20 @@ bool GfxPassViews(MmlMod *mod, int handle, bool on);   // mml.h gfx_pass_views
 int GfxStateNow(std::string *why);        // mml.h gfx_state: 1 on, 0 off (why), -1 not yet
 void GfxRemove(MmlMod *mod);              // its mod unloads: its passes go
 void GfxQuiet(bool on);                   // drawing that is not the game's (not tallied as the world's light)
+// ---- motion vectors (motion.cpp; mml.h gfx_motion, MmlGfxFrame motion)
+bool MotionWanted();                      // a mod wants them
+int MotionAsk(MmlMod *mod, bool on);      // mml.h gfx_motion
+void MotionRemove(MmlMod *mod);           // its mod unloads
+// gfx.cpp, the frame's world about to be drawn: the objects' target (IDirect3DSurface9*, cleared), the last frame's
+// camera (null: none); MotionFrameEnd at its stage 1; MotionDeviceGone when the device goes
+void MotionFrameBegin(void *dev9, void *target, const float *viewBefore, const float *projBefore);
+void MotionFrameEnd();
+void MotionDeviceGone();
+// geom.cpp: the face group LS3D draws (kind 1 object, 2 lightmapped, 3 billboard) and its draws, after the game's
+void MotionGroupBegin(int kind, const void *visual, const void *group, bool inFrame);
+void MotionGroupEnd();
+void MotionAfterDraw(void *dev9, int type, int base, unsigned minIndex, unsigned verts, unsigned start, unsigned n, void *dip);
+std::string MotionState();                // gfx.state's motion (json)
 void GfxBeforeWorld();                    // (render.cpp) the world's Render begins: the readable depth buffer in
 void GfxTakeWorldLight();                 // stage 1: the fog and sun the world was drawn with
 void GfxStage1();                         // stage 1, after the mods' RENDER_WORLD: copies, passes, composite

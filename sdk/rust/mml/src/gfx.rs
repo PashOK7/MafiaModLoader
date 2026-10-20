@@ -97,6 +97,11 @@ impl<'a> GfxFrame<'a> {
     pub fn sun_shadow(&self) -> Option<*mut c_void> {
         if gfx_has!(self, sun_shadow) && !self.0.sun_shadow.is_null() { Some(self.0.sun_shadow) } else { None }
     }
+    /// ID3D11ShaderResourceView*: each pixel's motion in pixels (R16G16_FLOAT, t3: this pixel plus it is where the
+    /// surface was the frame before), while a mod wants them (Host::gfx_motion)
+    pub fn motion(&self) -> Option<*mut c_void> {
+        if gfx_has!(self, motion) && !self.0.motion.is_null() { Some(self.0.motion) } else { None }
+    }
 }
 
 #[cfg(feature = "windows")]
@@ -269,6 +274,11 @@ impl Host {
     /// A pass also run over every scene view's picture (its effect in mirrors and reflections)
     pub fn gfx_pass_views(&self, pass: i32, on: bool) -> bool {
         unsafe { f!(self, gfx_pass_views)(self.module, pass, on as c_int) != 0 }
+    }
+    /// Each frame's motion vectors wanted (GfxFrame::motion, t3) or no more; false when the game's drawing cannot be
+    /// followed (no wrapper's Direct3D 9)
+    pub fn gfx_motion(&self, on: bool) -> bool {
+        unsafe { f!(self, gfx_motion)(self.module, on as c_int) != 0 }
     }
     /// The graphics bridge's state: Some(Ok(())) on (the passes run), Some(Err(why)) off and why (the log's reason),
     /// None not yet (no pass, or no frame of the mission's world drawn since)
