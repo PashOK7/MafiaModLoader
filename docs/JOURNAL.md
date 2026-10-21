@@ -3120,3 +3120,14 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   hook_a's Detour (by its PDB), main..., no loader's leftovers, the dropped counted; `crash_mod` (a fault in hook_b's
   detour: a mod's hook runs unguarded) gets the verdict "in mod_hook_b_... (mod hook_b: ...Detour+0x..)". Not yet
   seen on a lab crash: the labs were in another session's use.
+
+## 2026-10-21: the crash stacks seen in both labs (after the merges)
+
+- **Merged** into main: the settings watched and new_mod.py's test (claude/gifted-germain-f1d806), the crash stacks
+  checked and named (claude/quizzical-chatelet-f5c5e4); offline tests and mcp_smoke ALL PASSED on the result.
+- **Seen**, both labs at once: a crash provoked in each (the player's model frame pointer, actor +0x68, written
+  0x10: the game reads it next tick). 1.2: `C_game::Tick+0x328` (a read of 0xBC), `C_mission::Tick+0x8F`, the
+  loader's `hkMissionTick+0x39`, `GameLoopSingle1+0x19F`, `MafiaEntryPoint+0x628` and the runtime's start; 14
+  leftover return addresses dropped. 1.0: the same chain by 1.0's names (`C_game::Tick+0x302`, `GameLoopSingle`,
+  `main`, `winmain`, `crt_startup`), 12 dropped. Every frame named, none left over between the game's and the
+  loader's.
