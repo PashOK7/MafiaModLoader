@@ -18,9 +18,13 @@
 // name as before (the log says so). The game's file search (cdFind, cd_find_game_file) is answered "found" for a
 // video name the loader can play from somewhere else (a mod's MP4 where the game's folder has no file of that name).
 //
-// The playing: a thread demuxes and decodes (FFmpeg's own threads under it), turns the pictures into BGRA (swscale)
-// and the sound into 16-bit stereo (swresample); the game thread, in the hooked loop, shows each picture when the
-// clock reaches it (QueryPerformanceCounter from the first picture; a picture already late is dropped) on the
+// The playing: a thread demuxes and decodes. The GPU decodes when it has a decoder for the stream (video_hw.cpp:
+// D3D11VA, else DXVA2; the driver asked for the codec, its bit depth and the size), and turns each picture into BGRA
+// at its size on the screen into a texture shared with the game's device (or copied through the CPU where the game's
+// device cannot share one: DXVK's); otherwise FFmpeg's decoder on all cores and swscale on all cores, scaled to the
+// size on the screen at most. A picture the clock has already passed by a quarter of a second is left out before any
+// work. The sound becomes 16-bit stereo (swresample). The game thread, in the hooked loop, shows each picture when the
+// clock reaches it (QueryPerformanceCounter from the first picture; an older picture still waiting is dropped) on the
 // game's Direct3D 9 device (under dxwrapper's d3d8to9: QueryInterface; plain Direct3D 8 is left to the game's
 // player), through IGraph's Clear, BeginScene, EndScene and Present (the loader's Present hook, screenshots, see
 // it), the device's state kept in a state block around the loader's drawing (LS3D shadows the states it sets). The
@@ -46,6 +50,7 @@
 #include <vector>
 #include "json.hpp"
 #include "mml/game/game_build.h"
+#include "video_hw.h"
 
 #ifndef MML_NO_FFMPEG
 extern "C" {
@@ -53,7 +58,9 @@ extern "C" {
 #include <libavformat/avformat.h>
 #include <libavutil/avutil.h>
 #include <libavutil/channel_layout.h>
+#include <libavutil/hwcontext.h>
 #include <libavutil/imgutils.h>
+#include <libavutil/pixdesc.h>
 #include <libswresample/swresample.h>
 #include <libswscale/swscale.h>
 }
@@ -139,7 +146,7 @@ std::vector<Candidate> Candidates(const std::string &name) {
 }
 
 // What was played (or refused) lately, for video.state.
-struct Record { std::string name, file, from, video, audio, result; int frames = 0, dropped = 0; double ms = 0; bool skipped = false; };
+struct Record { std::string name, file, from, video, audio, result, path; int frames = 0, dropped = 0; double ms = 0; bool skipped = false; json timing; };
 std::deque<Record> g_records;
 void Remember(const Record &r) {
     g_records.push_back(r);
@@ -150,6 +157,7 @@ struct Video;
 Video *g_playing;                       // the video being played (the hooked loop runs)
 bool g_skipAsked;                       // video.skip: it ends at the loop's next turn
 std::string g_pendingPlay;              // video.play's name, played at the next frame
+std::string g_pendingDecode;            // and its `decode`
 
 #ifndef MML_NO_FFMPEG
 
@@ -216,19 +224,32 @@ std::string FfError(int err) {
 }
 
 // ---- one video: the file opened, its decoders, the decoding thread and what it made
-struct Pic { std::vector<uint8_t> bgra; double pts; };
+// A picture on its way to the screen: its BGRA pixels (decoded in software, or the GPU's copied through the CPU) or the
+// GPU slot it is in (a texture shared with the game's device), and its time.
+struct Pic { std::vector<uint8_t> bgra; int slot = -1; double pts = 0; };
 struct Chunk { std::vector<int16_t> s; size_t at = 0; double pts; };   // stereo samples, the first one's time
+
+std::string g_forceDecode;              // video.play's `decode` for the video it plays ("": the GPU when it can)
+constexpr int kSlots = 4;               // GPU pictures on their way at once (in the queue, on the screen, retiring)
 
 struct Video {
     std::string name, file, from, desc, adesc;
     AVFormatContext *fmt = nullptr;
     AVCodecContext *vdec = nullptr, *adec = nullptr;
     int vs = -1, as = -1;
-    int w = 0, h = 0, tw = 0, th = 0;   // the picture's size, and the size it is scaled to (the texture's limit)
+    int w = 0, h = 0, tw = 0, th = 0;   // the picture's size, and the size it is turned to (its size on the screen at most)
     double aspect = 1;                  // the picture's shape on the screen (its pixels' aspect included)
     double origin = 0;                  // the time of the file's start (the first picture's)
     double duration = 0;
     int rate = 0;                       // the sound's samples a second (0: none)
+    // the GPU (video_hw.cpp)
+    videohw::Api api = videohw::kSoftware;   // what the decoder was opened with
+    std::string hwWhy;                  // why not the GPU (or not the first of its APIs)
+    videohw::Session *gpu = nullptr;    // the shared slots or the copy (made and ended by the game thread)
+    std::vector<int> freeSlots;         // (under mx)
+    bool gpuFailed = false;             // a GPU conversion failed: its pictures go through the CPU from then on
+    bool hwSeen = false, swSeen = false;   // the decoder gave GPU pictures, CPU pictures
+    std::atomic<double> clockStart{0};  // Now() when the first picture was shown (0 before): the decoding thread's clock
     // made by the thread
     std::thread worker;
     std::atomic<bool> stop{false};
@@ -242,8 +263,14 @@ struct Video {
     bool ended = false;                 // the file read to its end, the decoders drained
     std::string error;                  // the thread stopped on this
     double lastPts = 0, audioEnd = 0;
+    // where the time goes (ms, summed; read once the thread has ended): the decoder's calls and the conversion on
+    // the decoding thread, the upload and the frame (Clear to Present) on the game thread
+    double tDecode = 0, tConvert = 0, tUpload = 0, tPresent = 0, maxConvert = 0, maxUpload = 0, maxPresent = 0;
+    int decoded = 0, late = 0, uploads = 0;
 };
 std::map<void *, Video *> g_videos;     // IShow* -> the loader's video
+
+double Now();
 
 void Free(Video *v) {
     if (!v) return;
@@ -258,34 +285,137 @@ void Free(Video *v) {
 
 double Seconds(int64_t ts, AVRational tb) { return ts == AV_NOPTS_VALUE ? -1 : ts * av_q2d(tb); }
 
+std::string CodecName(const AVCodecContext *c) {
+    const AVCodecDescriptor *d = avcodec_descriptor_get(c->codec_id);
+    return d ? d->name : "?";
+}
+
+// The decoder's choice of picture format: the GPU's when FFmpeg offers it, else the first of the CPU's.
+AVPixelFormat GetFormat(AVCodecContext *c, const AVPixelFormat *fmts) {
+    const Video *v = static_cast<const Video *>(c->opaque);
+    int want = videohw::PixelFormat(v->api);
+    for (const AVPixelFormat *p = fmts; *p != AV_PIX_FMT_NONE; p++)
+        if (*p == want) return *p;
+    for (const AVPixelFormat *p = fmts; *p != AV_PIX_FMT_NONE; p++) {
+        const AVPixFmtDescriptor *d = av_pix_fmt_desc_get(*p);
+        if (d && !(d->flags & AV_PIX_FMT_FLAG_HWACCEL)) return *p;
+    }
+    return AV_PIX_FMT_NONE;
+}
+
+// The video's decoder, for the GPU (`device`: FFmpeg's device, taken) or the CPU. AV1 has two: FFmpeg's own decodes
+// only on a GPU, dav1d only on the CPU.
+bool OpenVideoDecoder(Video *v, videohw::Api api, AVBufferRef *device, std::string *why) {
+    AVStream *st = v->fmt->streams[v->vs];
+    const AVCodec *dc = nullptr;
+    if (st->codecpar->codec_id == AV_CODEC_ID_AV1) dc = avcodec_find_decoder_by_name(api != videohw::kSoftware ? "av1" : "libdav1d");
+    if (!dc) dc = avcodec_find_decoder(st->codecpar->codec_id);
+    if (!dc) {
+        av_buffer_unref(&device);
+        *why = "no decoder for its video";
+        return false;
+    }
+    avcodec_free_context(&v->vdec);
+    v->vdec = avcodec_alloc_context3(dc);
+    avcodec_parameters_to_context(v->vdec, st->codecpar);
+    v->api = api;
+    if (api != videohw::kSoftware) {
+        v->vdec->hw_device_ctx = device;   // (the context's reference now)
+        v->vdec->opaque = v;
+        v->vdec->get_format = GetFormat;
+        v->vdec->thread_count = 1;         // (the GPU decodes; a thread a frame would only hold more of its surfaces)
+    } else {
+        av_buffer_unref(&device);
+        v->vdec->thread_count = 0;         // (as many as the machine has)
+        v->vdec->thread_type = FF_THREAD_FRAME | FF_THREAD_SLICE;
+    }
+    int r = avcodec_open2(v->vdec, dc, nullptr);
+    if (r < 0) {
+        *why = std::string("its ") + dc->name + " decoder refused it (" + FfError(r) + ")";
+        return false;
+    }
+    return true;
+}
+
 void Decode(Video *v) {
     AVPacket *pkt = av_packet_alloc();
-    AVFrame *fr = av_frame_alloc();
-    SwsContext *sws = nullptr;
+    AVFrame *fr = av_frame_alloc(), *cpu = av_frame_alloc(), *dst = av_frame_alloc();
+    SwsContext *sws = sws_alloc_context();
+    if (sws) {
+        sws->threads = 0;   // (as many as the machine has)
+        sws->flags = SWS_BICUBIC;
+    }
     SwrContext *swr = nullptr;
     AVChannelLayout stereo = AV_CHANNEL_LAYOUT_STEREO;
     double nextVideo = 0, nextAudio = 0;
-    auto picture = [&]() -> bool {   // fr into a BGRA picture on the queue; false: stopped
+    bool anyPicture = false;
+    int errors = 0;
+    const bool shared = videohw::Shared(v->gpu);
+    // A picture into BGRA through the CPU (swscale on all cores: the picture's colours, scaled to tw x th)
+    auto toBgra = [&](const AVFrame *src, std::vector<uint8_t> *buf) -> bool {
+        buf->resize(static_cast<size_t>(v->tw) * v->th * 4);
+        av_frame_unref(dst);
+        dst->format = AV_PIX_FMT_BGRA;
+        dst->width = v->tw;
+        dst->height = v->th;
+        dst->data[0] = buf->data();
+        dst->linesize[0] = v->tw * 4;
+        return sws && sws_scale_frame(sws, dst, src) >= 0;
+    };
+    auto picture = [&]() -> bool {   // fr onto the queue, turned for the screen; false: stopped
         double pts = Seconds(fr->best_effort_timestamp, v->fmt->streams[v->vs]->time_base);
         pts = pts < 0 ? nextVideo : pts - v->origin;
         AVRational fps = v->fmt->streams[v->vs]->avg_frame_rate;
         nextVideo = pts + (fps.num > 0 ? 1.0 / av_q2d(fps) : 0.04);
-        sws = sws_getCachedContext(sws, fr->width, fr->height, static_cast<AVPixelFormat>(fr->format), v->tw, v->th,
-                                   AV_PIX_FMT_BGRA, SWS_BICUBIC, nullptr, nullptr, nullptr);
-        if (!sws) { v->error = "swscale cannot turn its pictures into BGRA"; return false; }
-        std::vector<uint8_t> buf;
+        anyPicture = true;
+        // a picture the clock has passed by a quarter of a second is left out before any work on it
+        double cs = v->clockStart.load();
+        if (cs > 0 && pts < Now() - cs - 0.25) { v->late++; return true; }
+        const bool hw = v->api != videohw::kSoftware && fr->format == videohw::PixelFormat(v->api);
+        (hw ? v->hwSeen : v->swSeen) = true;
+        // a stream that does not say its colours: BT.709 from 720 lines up, BT.601 below (as the GPU paths take it, as
+        // players do; swscale alone would take BT.601 for all)
+        if (fr->colorspace == AVCOL_SPC_UNSPECIFIED) fr->colorspace = fr->height >= 720 ? AVCOL_SPC_BT709 : AVCOL_SPC_BT470BG;
+        Pic pic;
+        pic.pts = pts;
+        const bool gpu = hw && v->gpu && !v->gpuFailed;
         {
             std::unique_lock<std::mutex> lk(v->mx);
-            v->cv.wait(lk, [&] { return v->stop || v->pics.size() < v->maxPics; });
+            v->cv.wait(lk, [&] { return v->stop || (v->pics.size() < v->maxPics && (!gpu || !shared || !v->freeSlots.empty())); });
             if (v->stop) return false;
-            if (!v->spare.empty()) { buf.swap(v->spare.back()); v->spare.pop_back(); }
+            if (gpu && shared) { pic.slot = v->freeSlots.back(); v->freeSlots.pop_back(); }
+            else if (!v->spare.empty()) { pic.bgra.swap(v->spare.back()); v->spare.pop_back(); }
         }
-        buf.resize(static_cast<size_t>(v->tw) * v->th * 4);
-        uint8_t *dst[4] = {buf.data(), nullptr, nullptr, nullptr};
-        int stride[4] = {v->tw * 4, 0, 0, 0};
-        sws_scale(sws, fr->data, fr->linesize, 0, fr->height, dst, stride);
+        double t0 = Now();
+        bool ok = false;
+        if (gpu) {
+            std::string err;
+            ok = videohw::Convert(v->gpu, fr, pic.slot, &pic.bgra, &err);
+            if (!ok) {
+                VWARN("'%s': the GPU could not turn a picture for the screen (%s): its pictures go through the CPU from now",
+                      AcpToUtf8(v->name.c_str()).c_str(), err.c_str());
+                v->gpuFailed = true;
+                std::lock_guard<std::mutex> lk(v->mx);
+                if (pic.slot >= 0) v->freeSlots.push_back(pic.slot);
+                pic.slot = -1;
+            }
+        }
+        if (!ok) {
+            const AVFrame *src = fr;
+            if (hw) {   // the GPU's picture brought to the CPU
+                av_frame_unref(cpu);
+                if (av_hwframe_transfer_data(cpu, fr, 0) < 0) { v->error = "a GPU picture could not be read back"; return false; }
+                av_frame_copy_props(cpu, fr);
+                src = cpu;
+            }
+            if (!toBgra(src, &pic.bgra)) { v->error = "swscale cannot turn its pictures into BGRA"; return false; }
+        }
+        double ms = (Now() - t0) * 1000.0;
+        v->tConvert += ms;
+        v->maxConvert = std::max(v->maxConvert, ms);
+        v->decoded++;
         std::lock_guard<std::mutex> lk(v->mx);
-        v->pics.push_back({std::move(buf), pts});
+        v->pics.push_back(std::move(pic));
         v->lastPts = std::max(v->lastPts, pts);
         return true;
     };
@@ -319,15 +449,29 @@ void Decode(Video *v) {
     };
     auto receive = [&](AVCodecContext *dec, bool video) -> bool {
         for (;;) {
+            double t0 = Now();
             int r = avcodec_receive_frame(dec, fr);
+            if (video) v->tDecode += (Now() - t0) * 1000.0;
             if (r == AVERROR(EAGAIN) || r == AVERROR_EOF) return true;
-            if (r < 0) return true;   // (a broken frame: the next one)
+            if (r < 0) { if (video) errors++; return true; }   // (a broken frame: the next one)
             bool ok = video ? picture() : sound();
             av_frame_unref(fr);
             if (!ok) return false;
         }
     };
     while (!v->stop) {
+        // the GPU's decoder failing from the start (a driver that took the stream and then refused it): the CPU's,
+        // from the file's start
+        if (v->api != videohw::kSoftware && !anyPicture && errors >= 3) {
+            std::string why;
+            VWARN("'%s': the GPU's %s decoder failed on its first pictures: decoded in software", AcpToUtf8(v->name.c_str()).c_str(),
+                  videohw::ApiName(v->api));
+            v->hwWhy = std::string("the GPU's ") + videohw::ApiName(v->api) + " decoder failed on its first pictures";
+            if (!OpenVideoDecoder(v, videohw::kSoftware, nullptr, &why)) { v->error = why; break; }
+            av_seek_frame(v->fmt, -1, 0, AVSEEK_FLAG_BACKWARD);
+            if (v->adec) avcodec_flush_buffers(v->adec);
+            errors = 0;
+        }
         int r = av_read_frame(v->fmt, pkt);
         if (r < 0) {   // the end: the decoders drained
             if (v->vdec) { avcodec_send_packet(v->vdec, nullptr); if (!receive(v->vdec, true)) break; }
@@ -337,7 +481,10 @@ void Decode(Video *v) {
         // (each packet's pictures and sound taken out at once: the decoder never refuses the next packet as full)
         bool go = true;
         if (pkt->stream_index == v->vs) {
-            avcodec_send_packet(v->vdec, pkt);
+            double t0 = Now();
+            int s = avcodec_send_packet(v->vdec, pkt);
+            v->tDecode += (Now() - t0) * 1000.0;
+            if (s < 0 && s != AVERROR(EAGAIN)) errors++;
             go = receive(v->vdec, true);
         } else if (pkt->stream_index == v->as && v->adec && v->rate) {
             avcodec_send_packet(v->adec, pkt);
@@ -346,18 +493,15 @@ void Decode(Video *v) {
         av_packet_unref(pkt);
         if (!go) break;
     }
-    sws_freeContext(sws);
+    sws_free_context(&sws);
     swr_free(&swr);
+    av_frame_free(&dst);
+    av_frame_free(&cpu);
     av_frame_free(&fr);
     av_packet_free(&pkt);
     std::lock_guard<std::mutex> lk(v->mx);
     v->ended = true;
     v->cv.notify_all();
-}
-
-std::string CodecName(const AVCodecContext *c) {
-    const AVCodecDescriptor *d = avcodec_descriptor_get(c->codec_id);
-    return d ? d->name : "?";
 }
 
 // The file opened, its streams' decoders ready; null and *why when FFmpeg cannot play it.
@@ -379,31 +523,30 @@ Video *Prepare(const std::string &name, const Candidate &c, std::string *why) {
     int r = avformat_open_input(&v->fmt, c.path.c_str(), nullptr, nullptr);
     if (r < 0) { *why = "not a container FFmpeg reads (" + FfError(r) + ")"; Free(v); return nullptr; }
     avformat_find_stream_info(v->fmt, nullptr);
-    const AVCodec *vc = nullptr, *ac = nullptr;
-    v->vs = av_find_best_stream(v->fmt, AVMEDIA_TYPE_VIDEO, -1, -1, &vc, 0);
-    if (v->vs < 0) {
-        if (v->vs == AVERROR_DECODER_NOT_FOUND) {
-            int i = av_find_best_stream(v->fmt, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
-            const AVCodecDescriptor *d = i >= 0 ? avcodec_descriptor_get(v->fmt->streams[i]->codecpar->codec_id) : nullptr;
-            *why = std::string("its video's codec (") + (d ? d->name : "?") + ") is not one this FFmpeg decodes";
-        } else {
-            *why = "no video in it";
-        }
+    const AVCodec *ac = nullptr;
+    v->vs = av_find_best_stream(v->fmt, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
+    if (v->vs < 0) { *why = "no video in it"; Free(v); return nullptr; }
+    AVStream *st = v->fmt->streams[v->vs];
+    if (!avcodec_find_decoder(st->codecpar->codec_id)) {
+        const AVCodecDescriptor *d = avcodec_descriptor_get(st->codecpar->codec_id);
+        *why = std::string("its video's codec (") + (d ? d->name : "?") + ") is not one this FFmpeg decodes";
         Free(v);
         return nullptr;
     }
-    AVStream *st = v->fmt->streams[v->vs];
     if (st->codecpar->codec_id == AV_CODEC_ID_BINKVIDEO && st->codecpar->codec_tag >> 24 &&
         (st->codecpar->codec_tag & 0xFFFFFF) == ('B' | 'I' << 8 | 'K' << 16)) {
         char rev = static_cast<char>(st->codecpar->codec_tag >> 24);
         v->desc = std::string("Bink 1 (BIK") + rev + ")";
     }
-    v->vdec = avcodec_alloc_context3(vc);
-    avcodec_parameters_to_context(v->vdec, st->codecpar);
-    v->vdec->thread_count = 0;   // (as many as the machine has)
-    v->vdec->thread_type = FF_THREAD_FRAME | FF_THREAD_SLICE;
-    r = avcodec_open2(v->vdec, vc, nullptr);
-    if (r < 0) { *why = "its " + CodecName(v->vdec) + " decoder refused it (" + FfError(r) + ")"; Free(v); return nullptr; }
+    // the GPU's decoder when it has one for this stream (video_hw.cpp asks the driver), else the CPU's
+    AVBufferRef *device = nullptr;
+    videohw::Api api = videohw::Choose(st->codecpar, g_forceDecode, &device, &v->hwWhy);
+    std::string whyHw;
+    if (!OpenVideoDecoder(v, api, device, api != videohw::kSoftware ? &whyHw : why)) {
+        if (api == videohw::kSoftware) { Free(v); return nullptr; }
+        v->hwWhy = std::string(videohw::ApiName(api)) + ": " + whyHw;
+        if (!OpenVideoDecoder(v, videohw::kSoftware, nullptr, why)) { Free(v); return nullptr; }
+    }
     v->w = v->vdec->width;
     v->h = v->vdec->height;
     if (v->w <= 0 || v->h <= 0) { *why = "its pictures have no size"; Free(v); return nullptr; }
@@ -413,8 +556,10 @@ Video *Prepare(const std::string &name, const Candidate &c, std::string *why) {
     v->origin = start > 0 ? start : 0;
     v->duration = v->fmt->duration > 0 ? v->fmt->duration / static_cast<double>(AV_TIME_BASE) : Seconds(st->duration, st->time_base);
     AVRational fps = st->avg_frame_rate;
+    const AVPixFmtDescriptor *pd = av_pix_fmt_desc_get(static_cast<AVPixelFormat>(st->codecpar->format));
     char b[160];
-    snprintf(b, sizeof b, "%s%s%dx%d, %.3g fps", v->desc.c_str(), v->desc.empty() ? "" : ", ", v->w, v->h, fps.num > 0 ? av_q2d(fps) : 0.0);
+    snprintf(b, sizeof b, "%s%s%dx%d, %.3g fps%s", v->desc.c_str(), v->desc.empty() ? "" : ", ", v->w, v->h, fps.num > 0 ? av_q2d(fps) : 0.0,
+             pd && pd->comp[0].depth > 8 ? ", 10-bit" : "");
     v->desc = (v->desc.empty() ? CodecName(v->vdec) + " " : "") + b;
     v->as = av_find_best_stream(v->fmt, AVMEDIA_TYPE_AUDIO, -1, v->vs, &ac, 0);
     if (v->as >= 0) {
@@ -483,11 +628,22 @@ void WaitMs(double ms) {
 // ---- the playing (the game thread, inside the hooked loop)
 struct Screen {
     IDirect3DDevice9 *d9 = nullptr;
-    IDirect3DTexture9 *tex = nullptr;
+    IDirect3DTexture9 *tex = nullptr;   // the CPU's pictures' (software decoding, the copy path), made at the first one
     IDirect3DStateBlock9 *saved = nullptr;
     UINT bw = 0, bh = 0;
+    UINT texW = 0, texH = 0;            // its size (a power of two where the device asks for one)
     float u1 = 1, v1 = 1;
 };
+
+// The picture's place on the screen: fitted to the back buffer, its aspect kept
+void FitRect(const Screen *s, double aspect, float *x, float *y, float *w, float *h) {
+    float sw = static_cast<float>(s->bw), sh = static_cast<float>(s->bh);
+    *w = sw;
+    *h = static_cast<float>(sw / aspect);
+    if (*h > sh) { *h = sh; *w = static_cast<float>(sh * aspect); }
+    *x = (sw - *w) / 2;
+    *y = (sh - *h) / 2;
+}
 
 bool ScreenOpen(Screen *s, Video *v, std::string *why) {
     s->d9 = Device9();
@@ -497,26 +653,26 @@ bool ScreenOpen(Screen *s, Video *v, std::string *why) {
     if (SUCCEEDED(s->d9->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &bb))) { bb->GetDesc(&d); bb->Release(); }
     s->bw = d.Width;
     s->bh = d.Height;
+    if (!s->bw || !s->bh) { *why = "the game's back buffer has no size"; return false; }
     D3DCAPS9 caps{};
     s->d9->GetDeviceCaps(&caps);
-    // the picture at its own size, but never larger than the device's largest texture
-    double k = std::min({1.0, static_cast<double>(caps.MaxTextureWidth) / v->w, static_cast<double>(caps.MaxTextureHeight) / v->h});
-    v->tw = std::max(2, static_cast<int>(v->w * k) & ~1);
-    v->th = std::max(2, static_cast<int>(v->h * k) & ~1);
-    UINT tw = v->tw, th = v->th;
+    // The size a picture is turned to: its size on the screen (the GPU's pictures are scaled to it, up or down, by the
+    // GPU), a CPU picture never larger than its own size (the device's filter makes it larger), never larger than
+    // the device's largest texture.
+    float x, y, fw, fh;
+    FitRect(s, v->aspect, &x, &y, &fw, &fh);
+    double k = v->api != videohw::kSoftware ? fw / v->w : std::min(1.0, static_cast<double>(fw) / v->w);
+    k = std::min({k, static_cast<double>(caps.MaxTextureWidth) / v->w, static_cast<double>(caps.MaxTextureHeight) / v->h});
+    v->tw = std::max(2, static_cast<int>(v->w * k + 0.5) & ~1);
+    v->th = std::max(2, static_cast<int>(v->h * k + 0.5) & ~1);
+    s->texW = v->tw;
+    s->texH = v->th;
     if ((caps.TextureCaps & D3DPTEXTURECAPS_POW2) && !(caps.TextureCaps & D3DPTEXTURECAPS_NONPOW2CONDITIONAL)) {
-        tw = 1; while (tw < static_cast<UINT>(v->tw)) tw <<= 1;
-        th = 1; while (th < static_cast<UINT>(v->th)) th <<= 1;
+        s->texW = 1; while (s->texW < static_cast<UINT>(v->tw)) s->texW <<= 1;
+        s->texH = 1; while (s->texH < static_cast<UINT>(v->th)) s->texH <<= 1;
     }
-    s->u1 = static_cast<float>(v->tw) / tw;
-    s->v1 = static_cast<float>(v->th) / th;
-    HRESULT hr = s->d9->CreateTexture(tw, th, 1, D3DUSAGE_DYNAMIC, D3DFMT_X8R8G8B8, D3DPOOL_DEFAULT, &s->tex, nullptr);
-    if (FAILED(hr)) {
-        char b[96];
-        snprintf(b, sizeof b, "a %ux%u texture could not be made (0x%08lX)", tw, th, hr);
-        *why = b;
-        return false;
-    }
+    s->u1 = static_cast<float>(v->tw) / s->texW;
+    s->v1 = static_cast<float>(v->th) / s->texH;
     s->d9->CreateStateBlock(D3DSBT_ALL, &s->saved);
     return true;
 }
@@ -528,24 +684,34 @@ void ScreenClose(Screen *s) {
     *s = Screen{};
 }
 
-void Upload(Screen *s, const Pic &p, int w, int h) {
+bool Upload(Screen *s, const Pic &p, int w, int h, std::string *why) {
+    if (!s->tex) {
+        HRESULT hr = s->d9->CreateTexture(s->texW, s->texH, 1, D3DUSAGE_DYNAMIC, D3DFMT_X8R8G8B8, D3DPOOL_DEFAULT, &s->tex, nullptr);
+        if (FAILED(hr)) {
+            char b[96];
+            snprintf(b, sizeof b, "a %ux%u texture could not be made (0x%08lX)", s->texW, s->texH, hr);
+            *why = b;
+            return false;
+        }
+    }
     D3DLOCKED_RECT lr{};
-    if (FAILED(s->tex->LockRect(0, &lr, nullptr, D3DLOCK_DISCARD))) return;
+    if (FAILED(s->tex->LockRect(0, &lr, nullptr, D3DLOCK_DISCARD))) return true;
     for (int y = 0; y < h; y++)
         memcpy(static_cast<uint8_t *>(lr.pBits) + static_cast<size_t>(lr.Pitch) * y, p.bgra.data() + static_cast<size_t>(w) * 4 * y, static_cast<size_t>(w) * 4);
     s->tex->UnlockRect(0);
+    return true;
 }
 
-// The picture drawn fitted to the back buffer, its aspect kept (black around it: IGraph's Clear before)
-void Draw(Screen *s, double aspect) {
+// A picture drawn in its place on the screen (black around it: IGraph's Clear before): the CPU's texture, or a GPU
+// slot's (already at its size on the screen: drawn 1:1)
+void Draw(Screen *s, double aspect, IDirect3DTexture9 *tex, float u1, float v1) {
     IDirect3DDevice9 *d = s->d9;
     if (s->saved) s->saved->Capture();
-    float sw = static_cast<float>(s->bw), sh = static_cast<float>(s->bh);
-    float w = sw, h = static_cast<float>(sw / aspect);
-    if (h > sh) { h = sh; w = static_cast<float>(sh * aspect); }
-    float x0 = (sw - w) / 2 - 0.5f, y0 = (sh - h) / 2 - 0.5f;
+    float x, y, w, h;
+    FitRect(s, aspect, &x, &y, &w, &h);
+    float x0 = x - 0.5f, y0 = y - 0.5f;
     struct V { float x, y, z, rhw, u, v; } q[4] = {
-        {x0, y0, 0, 1, 0, 0}, {x0 + w, y0, 0, 1, s->u1, 0}, {x0, y0 + h, 0, 1, 0, s->v1}, {x0 + w, y0 + h, 0, 1, s->u1, s->v1}};
+        {x0, y0, 0, 1, 0, 0}, {x0 + w, y0, 0, 1, u1, 0}, {x0, y0 + h, 0, 1, 0, v1}, {x0 + w, y0 + h, 0, 1, u1, v1}};
     D3DVIEWPORT9 vp = {0, 0, s->bw, s->bh, 0, 1};
     d->SetViewport(&vp);
     d->SetVertexShader(nullptr);
@@ -562,7 +728,7 @@ void Draw(Screen *s, double aspect) {
     d->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
     d->SetRenderState(D3DRS_SRGBWRITEENABLE, FALSE);
     d->SetRenderState(D3DRS_COLORWRITEENABLE, 0xF);
-    d->SetTexture(0, s->tex);
+    d->SetTexture(0, tex);
     d->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
     d->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
     d->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
@@ -679,9 +845,18 @@ double Now() {
     return static_cast<double>(t.QuadPart) / static_cast<double>(f.QuadPart);
 }
 
+// How the video's pictures were decoded and reached the screen ("D3D11VA, a shared texture", "software"...)
+std::string PathOf(const Video *v) {
+    if (v->api == videohw::kSoftware || !v->hwSeen) return "software";
+    if (v->gpuFailed || !v->gpu) return std::string(videohw::ApiName(v->api)) + ", turned for the screen by the CPU";
+    return videohw::Path(v->gpu);
+}
+
 json Describe(const Video *v) {
-    return {{"name", AcpToUtf8(v->name.c_str())}, {"file", v->file}, {"from", v->from}, {"video", v->desc}, {"audio", v->adesc},
-            {"width", v->w}, {"height", v->h}, {"duration", v->duration}};
+    json j = {{"name", AcpToUtf8(v->name.c_str())}, {"file", v->file}, {"from", v->from}, {"video", v->desc}, {"audio", v->adesc},
+              {"width", v->w}, {"height", v->h}, {"duration", v->duration}, {"decode", videohw::ApiName(v->api)}};
+    if (!v->hwWhy.empty()) j["decode_why"] = v->hwWhy;
+    return j;
 }
 
 // The whole video, as the game's own loop plays it (to its end, a key or video.skip).
@@ -697,8 +872,19 @@ void Play(Video *v) {
         Remember(rec);
         return;
     }
+    // the GPU's slots (or its copy), at the picture's size on the screen
+    if (v->api != videohw::kSoftware) {
+        std::string whyGpu;
+        v->gpu = videohw::Begin(v->api, scr.d9, v->tw, v->th, kSlots, &whyGpu);
+        if (!v->gpu) {
+            VWARN("'%s': %s decodes, but its pictures go through the CPU: %s", rec.name.c_str(), videohw::ApiName(v->api), whyGpu.c_str());
+            v->gpuFailed = true;
+        } else if (videohw::Shared(v->gpu)) {
+            for (int i = 0; i < kSlots; i++) v->freeSlots.push_back(i);
+        }
+    }
     size_t picBytes = static_cast<size_t>(v->tw) * v->th * 4;
-    v->maxPics = std::clamp<size_t>((48u << 20) / std::max<size_t>(picBytes, 1), 2, 6);
+    v->maxPics = videohw::Shared(v->gpu) ? kSlots - 1 : std::clamp<size_t>((48u << 20) / std::max<size_t>(picBytes, 1), 2, 6);
     Speaker sp;
     bool sound = v->rate && SpeakerOpen(&sp, v->rate);
     if (!sound) v->rate = 0;   // (no sound decoded: nothing would take it)
@@ -708,8 +894,9 @@ void Play(Video *v) {
     g_skipAsked = false;
     json ev = Describe(v);
     EventsRecord("VIDEO_STARTED", ev.dump(-1, ' ', false, json::error_handler_t::replace));
-    VLOG("'%s': playing %s (%s): %s%s%s", rec.name.c_str(), v->file.c_str(), v->from.c_str(), v->desc.c_str(),
-         v->adesc.empty() ? "" : "; ", v->adesc.c_str());
+    VLOG("'%s': playing %s (%s): %s%s%s; decoded by %s%s%s, shown at %dx%d", rec.name.c_str(), v->file.c_str(), v->from.c_str(),
+         v->desc.c_str(), v->adesc.empty() ? "" : "; ", v->adesc.c_str(), videohw::ApiName(v->api), v->hwWhy.empty() ? "" : " (",
+         v->hwWhy.empty() ? "" : (v->hwWhy + ")").c_str(), v->tw, v->th);
 
     // the first picture (up to 5 s for it), then the clock starts with the sound
     double begin = Now(), start = 0;
@@ -717,6 +904,12 @@ void Play(Video *v) {
     int shown = 0, dropped = 0;
     double lastShown = -1;
     bool skipped = false;
+    std::deque<int> retiring;   // GPU slots the game's device may still be drawing from
+    auto freeSlot = [&](int slot) {
+        std::lock_guard<std::mutex> lk(v->mx);
+        v->freeSlots.push_back(slot);
+        v->cv.notify_all();
+    };
     for (;;) {
         // what the game's loop does every turn: its window's messages, the keyboard, any key ends the video
         auto turn = [&] {
@@ -727,10 +920,14 @@ void Play(Video *v) {
         if (Guarded(turn)) { why = "the game's input faulted"; break; }
         BridgeFrame();   // (screenshot, video.state, video.skip meanwhile)
         if (skipped || g_skipAsked) { skipped = true; break; }
+        while (!retiring.empty() && videohw::Retired(v->gpu, retiring.front())) {
+            freeSlot(retiring.front());
+            retiring.pop_front();
+        }
         if (first) {
             std::lock_guard<std::mutex> lk(v->mx);
             if (v->pics.empty() && !v->ended && Now() - begin < 5) { /* waiting for the first picture */ }
-            else { first = false; start = Now(); }
+            else { first = false; start = Now(); v->clockStart = start; }
         }
         if (first) { WaitMs(2); continue; }
         double clock = Now() - start;
@@ -739,14 +936,20 @@ void Play(Video *v) {
         Pic pick;
         bool have = false, done = false;
         double next = clock + 0.005;
+        std::vector<int> passed;   // GPU slots of pictures dropped (never drawn)
         {
             std::lock_guard<std::mutex> lk(v->mx);
             while (!v->pics.empty() && v->pics.front().pts <= clock) {
-                if (have) { dropped++; v->spare.push_back(std::move(pick.bgra)); }
+                if (have) {
+                    dropped++;
+                    if (pick.slot >= 0) passed.push_back(pick.slot);
+                    else v->spare.push_back(std::move(pick.bgra));
+                }
                 pick = std::move(v->pics.front());
                 v->pics.pop_front();
                 have = true;
             }
+            for (int slot : passed) v->freeSlots.push_back(slot);
             if (!v->pics.empty()) next = v->pics.front().pts;
             if (have) v->cv.notify_all();
             double end = std::max(v->lastPts + 0.04, sound ? v->audioEnd : 0.0);
@@ -754,11 +957,23 @@ void Play(Video *v) {
             if (v->ended && v->pics.empty() && !v->error.empty()) { why = v->error; done = true; }
         }
         if (have) {
-            Upload(&scr, pick, v->tw, v->th);
+            double t0 = Now();
+            IDirect3DTexture9 *tex = scr.tex;
+            float u1 = scr.u1, v1 = scr.v1;
+            if (pick.slot >= 0) {
+                tex = videohw::SlotTexture(v->gpu, pick.slot);
+                u1 = v1 = 1;
+            } else {
+                if (!Upload(&scr, pick, v->tw, v->th, &why)) break;
+                tex = scr.tex;
+                v->uploads++;
+            }
+            double t1 = Now();
             auto frame = [&] {
                 reinterpret_cast<IgClearFn>(Vt(ig, 0x30))(ig, 0, 1.0f, 3);
                 reinterpret_cast<IgFn>(Vt(ig, 0x34))(ig);
-                Draw(&scr, v->aspect);
+                Draw(&scr, v->aspect, tex, u1, v1);
+                if (pick.slot >= 0) videohw::Drawn(v->gpu, pick.slot);
                 reinterpret_cast<IgFn>(Vt(ig, 0x38))(ig);
                 reinterpret_cast<IgFn>(Vt(ig, 0x3C))(ig);
             };
@@ -768,10 +983,20 @@ void Play(Video *v) {
                 why = b;
                 break;
             }
+            double t2 = Now();
+            if (pick.slot < 0) {
+                v->tUpload += (t1 - t0) * 1000.0;
+                v->maxUpload = std::max(v->maxUpload, (t1 - t0) * 1000.0);
+            }
+            v->tPresent += (t2 - t1) * 1000.0;
+            v->maxPresent = std::max(v->maxPresent, (t2 - t1) * 1000.0);
             shown++;
             lastShown = pick.pts;
-            std::lock_guard<std::mutex> lk(v->mx);
-            v->spare.push_back(std::move(pick.bgra));
+            if (pick.slot >= 0) retiring.push_back(pick.slot);
+            else {
+                std::lock_guard<std::mutex> lk(v->mx);
+                v->spare.push_back(std::move(pick.bgra));
+            }
         }
         if (done) break;
         if (clock > v->duration + 10 && v->duration > 0) { why = "it ran past its length"; break; }
@@ -783,9 +1008,20 @@ void Play(Video *v) {
     v->stop = true;
     v->cv.notify_all();
     if (v->worker.joinable()) v->worker.join();
+    std::string path = PathOf(v);
+    videohw::End(v->gpu);   // (after the thread: it converts into the slots)
+    v->gpu = nullptr;
     ScreenClose(&scr);
     rec.frames = shown;
-    rec.dropped = dropped;
+    rec.dropped = dropped + v->late;
+    {   // per picture: the decoder's and the conversion's (every picture decoded), the upload's (the CPU's) and the frame's
+        auto avg = [](double sum, int n) { return n ? sum / n : 0.0; };
+        rec.timing = {{"decoded", v->decoded}, {"late", v->late}, {"decode_ms", avg(v->tDecode, v->decoded)},
+                      {"convert_ms", avg(v->tConvert, v->decoded)}, {"convert_max_ms", v->maxConvert}, {"uploads", v->uploads},
+                      {"upload_ms", avg(v->tUpload, v->uploads)}, {"upload_max_ms", v->maxUpload},
+                      {"present_ms", avg(v->tPresent, shown)}, {"present_max_ms", v->maxPresent}};
+    }
+    rec.path = path;
     rec.ms = ms;
     rec.skipped = skipped;
     if (!why.empty()) rec.result = why;
@@ -793,13 +1029,17 @@ void Play(Video *v) {
     Remember(rec);
     json end = Describe(v);
     end["frames"] = shown;
-    end["dropped"] = dropped;
+    end["dropped"] = rec.dropped;
     end["ms"] = static_cast<int>(ms);
     end["skipped"] = skipped;
     end["result"] = rec.result;
+    end["path"] = path;
+    end["timing"] = rec.timing;
     EventsRecord("VIDEO_ENDED", end.dump(-1, ' ', false, json::error_handler_t::replace));
-    VLOG("'%s': %s after %.1f s, %d pictures shown, %d dropped (the last at %.2f s)", rec.name.c_str(), rec.result.c_str(),
-         ms / 1000.0, shown, dropped, lastShown);
+    VLOG("'%s': %s after %.1f s, %d pictures shown, %d dropped (%d of them late, left out by the decoding thread; the last at "
+         "%.2f s), %s; a picture: decode %.2f ms, convert %.2f, upload %.2f, frame %.2f", rec.name.c_str(), rec.result.c_str(),
+         ms / 1000.0, shown, rec.dropped, v->late, lastShown, path.c_str(), rec.timing["decode_ms"].get<double>(),
+         rec.timing["convert_ms"].get<double>(), rec.timing["upload_ms"].get<double>(), rec.timing["present_ms"].get<double>());
 }
 
 // The loader's video for a name, or null (and the reasons) when the game's own player is to get it.
@@ -921,6 +1161,7 @@ void VideoFrame() {
 #ifndef MML_NO_FFMPEG
     void *ig = Igraph();
     if (!ig) return;
+    g_forceDecode = g_pendingDecode;   // (for the Open below; the game's own videos choose for themselves)
     auto f = [&] {
         void *show = reinterpret_cast<void *(__stdcall *)(void *)>(Vt(ig, 0x00))(ig);
         if (!show) return;
@@ -932,6 +1173,7 @@ void VideoFrame() {
         reinterpret_cast<ShowFn>(Vt(show, 0x04))(show);
     };
     if (DWORD ex = Guarded(f)) VWARN("video.play '%s' faulted (0x%08lX)", name.c_str(), ex);
+    g_forceDecode.clear();
 #endif
 }
 
@@ -958,7 +1200,8 @@ bool VideoMethod(const std::string &method, const std::string &paramsJson, std::
         json last = json::array();
         for (const Record &x : g_records)
             last.push_back({{"name", x.name}, {"file", x.file}, {"from", x.from}, {"video", x.video}, {"audio", x.audio},
-                            {"result", x.result}, {"frames", x.frames}, {"dropped", x.dropped}, {"ms", static_cast<int>(x.ms)}, {"skipped", x.skipped}});
+                            {"result", x.result}, {"path", x.path}, {"frames", x.frames}, {"dropped", x.dropped}, {"ms", static_cast<int>(x.ms)},
+                            {"skipped", x.skipped}, {"timing", x.timing}});
         r["last"] = last;
         *reply = dump(r);
         *ok = true;
@@ -978,6 +1221,12 @@ bool VideoMethod(const std::string &method, const std::string &paramsJson, std::
     if (name.empty()) { *reply = "name: the video's name as the game asks for it (\"logo1.avi\", \"intro\")"; return true; }
     if (name.find('.') == std::string::npos) name += ".avi";   // (a bare name, as 1.2's PlayVideo first asks)
     std::string acp = AcpOf(name);
+    std::string decode = p.value("decode", "");
+    if (!decode.empty() && decode != "auto" && decode != "d3d11va" && decode != "dxva2" && decode != "software") {
+        *reply = "decode: auto, d3d11va, dxva2 or software";
+        return true;
+    }
+    if (decode == "auto") decode.clear();
     if (method == "video.find") {
         json r = {{"name", name}, {"extensions", order}};
         json list = json::array();
@@ -985,9 +1234,14 @@ bool VideoMethod(const std::string &method, const std::string &paramsJson, std::
             json e = {{"file", c.path}, {"from", c.from}};
 #ifndef MML_NO_FFMPEG
             std::string why;
+            g_forceDecode = decode;
+            Video *v = FfLoad() ? Prepare(acp, c, &why) : nullptr;
+            g_forceDecode.clear();
             if (!FfLoad()) e["playable"] = false, e["why"] = "FFmpeg is not there: " + g_ffWhy;
-            else if (Video *v = Prepare(acp, c, &why)) {
+            else if (v) {
                 e["playable"] = true;
+                e["decode"] = videohw::ApiName(v->api);
+                if (!v->hwWhy.empty()) e["decode_why"] = v->hwWhy;
                 e["video"] = v->desc;
                 e["audio"] = v->adesc;
                 e["width"] = v->w;
@@ -1010,6 +1264,7 @@ bool VideoMethod(const std::string &method, const std::string &paramsJson, std::
         if (!g_hooked) { *reply = "the game's videos are not hooked (no game, or not a known build)"; return true; }
         if (g_playing) { *reply = "a video is playing"; return true; }
         g_pendingPlay = acp;
+        g_pendingDecode = decode;
         *reply = dump({{"queued", name}, {"note", "played at the next frame; wait for VIDEO_ENDED (or VIDEO_REFUSED)"}});
         *ok = true;
         return true;

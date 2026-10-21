@@ -1191,6 +1191,16 @@ def video_tests(b):
     r = b.call('video.state')
     check('video.state: FFmpeg loaded (LGPL), from mml\\ffmpeg', r['ok'] and r['result']['ffmpeg']['state'] == 'loaded'
           and 'LGPL' in r['result']['ffmpeg'].get('license', '') and r['result']['ffmpeg'].get('version'), r['result'].get('ffmpeg'))
+    # who decodes it: the GPU when the driver says it has the decoder (the harness has no game device: the first adapter),
+    # else the CPU with the reason; asked for, the CPU; a way that is no way, refused
+    check('video.find: the decoder chosen and said (D3D11VA, DXVA2 or software with its reason)',
+          len(c) == 2 and c[1].get('decode') in ('D3D11VA', 'DXVA2', 'software') and (c[1]['decode'] != 'software' or c[1].get('decode_why')), c[1:])
+    r = b.call('video.find', {'name': 'clip', 'decode': 'software'})
+    c = r['result']['candidates'] if r['ok'] else []
+    check('video.find decode software: decoded by the CPU, as asked', len(c) == 2 and c[1].get('decode') == 'software'
+          and c[1].get('decode_why') == 'software asked for', c[1:])
+    r = b.call('video.find', {'name': 'clip', 'decode': 'gpu'})
+    check('video.find decode: an unknown way refused', not r['ok'] and 'decode' in str(r.get('error', '')), r)
     r = b.call('video.play', {'name': 'clip'})
     check('video.play: refused without a game', not r['ok'] and 'not hooked' in str(r.get('error', '')), r)
     r = b.call('video.find', {'name': 'none_such.avi'})

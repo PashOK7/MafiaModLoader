@@ -30,7 +30,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     # ---- the loader
     add_library(MafiaModLoader SHARED
         host/main.cpp host/paths.cpp host/log.cpp host/memory.cpp host/crash.cpp host/stack.cpp host/hooks.cpp host/mods.cpp host/game_hooks.cpp
-        host/bridge.cpp host/tap.cpp host/start.cpp host/input.cpp host/screenshot.cpp host/draw.cpp host/config.cpp host/menus.cpp host/menus10.cpp host/script.cpp host/orders.cpp host/world.cpp host/lifecycle.cpp host/files.cpp host/render.cpp host/gfx.cpp host/gfx_vk.cpp host/motion.cpp host/view.cpp host/geom.cpp host/prof.cpp host/d3dstats.cpp host/events.cpp host/native.cpp host/humans.cpp host/watch.cpp host/happen.cpp host/collide.cpp host/state.cpp host/lights.cpp host/effects.cpp host/props.cpp host/sound.cpp host/control.cpp host/interact.cpp host/hud.cpp host/saves.cpp host/anims.cpp host/items.cpp host/stats.cpp host/models.cpp host/meshes.cpp host/shaders.cpp host/skin.cpp host/vdata.cpp host/shadows.cpp host/panel.cpp host/fpu.cpp host/gamecam.cpp host/sidecar.cpp host/video.cpp)
+        host/bridge.cpp host/tap.cpp host/start.cpp host/input.cpp host/screenshot.cpp host/draw.cpp host/config.cpp host/menus.cpp host/menus10.cpp host/script.cpp host/orders.cpp host/world.cpp host/lifecycle.cpp host/files.cpp host/render.cpp host/gfx.cpp host/gfx_vk.cpp host/motion.cpp host/view.cpp host/geom.cpp host/prof.cpp host/d3dstats.cpp host/events.cpp host/native.cpp host/humans.cpp host/watch.cpp host/happen.cpp host/collide.cpp host/state.cpp host/lights.cpp host/effects.cpp host/props.cpp host/sound.cpp host/control.cpp host/interact.cpp host/hud.cpp host/saves.cpp host/anims.cpp host/items.cpp host/stats.cpp host/models.cpp host/meshes.cpp host/shaders.cpp host/skin.cpp host/vdata.cpp host/shadows.cpp host/panel.cpp host/fpu.cpp host/gamecam.cpp host/sidecar.cpp host/video.cpp host/video_hw.cpp)
     # ($<0:> keeps Visual Studio from adding a per-configuration folder)
     set_target_properties(MafiaModLoader PROPERTIES SUFFIX ".asi" RUNTIME_OUTPUT_DIRECTORY ${MML_OUT}/$<0:>)
     target_include_directories(MafiaModLoader PRIVATE third_party/json host ${CMAKE_BINARY_DIR}/gen)
@@ -40,7 +40,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     configure_file(host/gen/shaders_hlsli.inc.in ${CMAKE_BINARY_DIR}/gen/shaders_hlsli.inc @ONLY)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/sdk/include/mml/shaders/game.hlsli
                  ${CMAKE_SOURCE_DIR}/sdk/include/mml/shaders/skin.hlsli)
-    target_link_libraries(MafiaModLoader PRIVATE minhook mikktspace mml_sdk ws2_32 psapi user32)
+    target_link_libraries(MafiaModLoader PRIVATE minhook mikktspace mml_sdk ws2_32 psapi user32 ole32)
     # frame pointers kept (/Oy-): the sampler (prof.cpp) walks the loader's frames by EBP as it walks the system's
     target_compile_options(MafiaModLoader PRIVATE /Oy-)
 

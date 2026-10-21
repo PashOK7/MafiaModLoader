@@ -761,6 +761,14 @@ What is done, what comes next and later, and what is known to be missing or wron
   1.2's intro by the new game's script command (a mod's AV1), 1.0's by `video.play` (VP9), a Bink 2 file passed
   over, `video.skip`, the game's own Bink without FFmpeg. Offline: `tests/run_tests.py` video_tests. Not seen yet:
   a real `BIKk` file (Known gaps).
+- **The videos decoded by the GPU** (2026-10-21; the owner: "a 4K 60 fps intro?"): host/video_hw.cpp, FFmpeg with
+  D3D11VA and DXVA2 (and its own AV1 decoder): the driver asked for the codec's profile, bit depth and size; D3D11VA on
+  the loader's Direct3D 11 device on the game's adapter, else DXVA2 on its own 9Ex device (the real one under
+  dxwrapper's wrapper); each picture turned for the screen by the GPU's video processor into a texture shared with
+  the game's device (copied through the CPU under DXVK); the CPU's path on all cores, scaled to the screen; late
+  pictures left out. Measured, both labs, six 4K60 clips (H.264, HEVC, VP9, AV1, 8 and 10-bit): before, 10-bit at
+  12 to 14 pictures a second and the 8-bit ones costing the game thread 7 to 8 ms a picture of upload; after, 600 of
+  600 for all six, the game thread 0.5 ms a picture (the journal).
 - **A crash's stack as exact as a profile's** (2026-10-21; Known gaps "Crash triage"): one reader of a thread's calls
   for the sampler and the crash filter (host/stack.cpp): walked by the frame pointers through the system's and the
   loader's frames to the first of the game's, then each return address with its call's target, read through jumps,
@@ -1152,7 +1160,11 @@ merged, sorted by importance):
   source, the public samples are BIKb, BIKf and BIKi). (2) The sound's start is not corrected for DirectSound's
   output latency (some tens of ms). (3) A device lost during a video (plain Direct3D 9's exclusive full screen left)
   is not handled: the frames are not drawn until it comes back. (4) Plain Direct3D 8 (no dxwrapper) leaves the videos
-  to the game's own players. (5) The options' volume is not applied (the game's Bink path does not either).
+  to the game's own players. (5) The options' volume is not applied (the game's Bink path does not either). (6) HDR
+  (PQ or HLG) streams are not tone-mapped: the GPU's video processor gets their matrix and range, not their transfer,
+  so they show flat; none was tested. (7) The DXVA2 path and the copy path are seen only on a GeForce (RTX 3070) and
+  under DXVK's d3d9.dll; another vendor's driver may refuse a shared texture or a P010 surface (the CPU's path then,
+  logged).
 - **Measuring** (item 30, 2026-10-20): (1) *(fixed 2026-10-20: the journal)* the loader's crash filter was set
   again every frame. (2) A return address after a call through a vtable is
   kept unchecked: a stale one there still counts in a function's total. (3) The GPU's span includes its waits for

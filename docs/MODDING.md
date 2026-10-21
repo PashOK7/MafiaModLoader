@@ -1643,16 +1643,30 @@ mod of files alone: `"type": "files"`).
   where the game's own Bink 1.9c reads only BIKf..BIKi), Indeo, Cinepak, WMV; sound AAC, MP3, Opus, Vorbis, FLAC,
   AC-3, E-AC-3, Bink audio, WMA, PCM and ADPCM. **Not Bink 2** (`KB2…`: no open decoder exists; the log says so).
   The easy choice: **MP4 with H.264 and AAC**, at any size and frame rate.
-- **How it looks**: at the file's own size (up to the device's largest texture) in 32-bit colour, fitted to the
-  screen with its aspect kept (black bars), its sound through the game's own DirectSound. Any key skips it, as in the
-  game. The game's own players (1.2's Bink, DirectShow for AVI) show 16-bit colour and refuse what they cannot read
-  without a word; the loader logs every video it plays or passes over (`[video]` lines).
+- **How it looks**: in 32-bit colour, fitted to the screen with its aspect kept (black bars), its sound through the
+  game's own DirectSound. Any key skips it, as in the game. The game's own players (1.2's Bink, DirectShow for AVI)
+  show 16-bit colour and refuse what they cannot read without a word; the loader logs every video it plays or passes
+  over (`[video]` lines: the file, the codec, who decoded it and why, at the end the pictures shown and dropped and
+  where the time went).
+- **Who decodes it**: the GPU, when its driver has a decoder for the codec, its bit depth and its size (H.264,
+  HEVC Main and Main 10, VP9 profiles 0 and 2, AV1 8 and 10-bit, MPEG-2, VC-1): through Direct3D 11 (D3D11VA), else
+  DXVA2. The GPU also turns each picture into RGB at its size on the screen and hands it to the game's device in a
+  shared texture: a 4K 60 fps video costs the game's thread about half a millisecond a picture (measured on a
+  GeForce RTX 3070, every codec above: 600 pictures of 600). With DXVK's Direct3D 9 the picture is copied through the
+  CPU at its size on the screen (still decoded and scaled by the GPU). Everything else is decoded by FFmpeg on all
+  the CPU's cores (Bink, Indeo, a codec or a size the GPU lacks), scaled to its size on the screen on all cores; a
+  4K 60 fps H.264 still plays so on that machine (10-bit 4K drops a few pictures). A picture already late is left
+  out rather than shown late.
+- **What to ship**: MP4 with H.264 (8-bit) and AAC plays on the GPU on any machine of the last ten years. Larger
+  than the screen buys nothing: the picture is scaled to the game's resolution. HEVC, VP9 and AV1 make smaller files,
+  decoded by newer GPUs (AV1: GeForce RTX 30, Radeon RX 6000, Intel Xe and later), by the CPU elsewhere.
 - **Without FFmpeg** (no `mml\ffmpeg\` beside the game: a package without it) the game's own players play the
   videos as they always did; the log says why once a video.
 - **Try one** without restarting: `call video.play {"name": "logo1"}` plays it as the game would (from the menus;
-  `wait {"types": "VIDEO_ENDED"}`), `call video.find {"name": "intro"}` lists the files found in order and what
-  FFmpeg says of each, `video.state` tells FFmpeg's version and the last videos played, `video.skip` ends the one
-  playing. A `screenshot` works while a video plays.
+  `wait {"types": "VIDEO_ENDED"}`; `"decode": "software"`, `"d3d11va"` or `"dxva2"` to compare), `call video.find
+  {"name": "intro"}` lists the files found in order, what FFmpeg says of each and who would decode it, `video.state`
+  tells FFmpeg's version and the last videos played with their timings, `video.skip` ends the one playing. A
+  `screenshot` works while a video plays.
 
 ### Commands, the log, state, hooks, services
 

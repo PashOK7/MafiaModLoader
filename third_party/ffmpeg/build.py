@@ -18,7 +18,9 @@ and modders use (H.264, HEVC, VP8, VP9, AV1 through dav1d, MPEG-1/2/4, MJPEG, Th
 revision FFmpeg reads, Smacker, Indeo 3/4/5, Cinepak, the old Windows codecs, WMV; AAC, MP3, Vorbis, Opus, FLAC, AC-3,
 E-AC-3, Bink audio, WMA, PCM and ADPCM), the demuxers of their containers (MP4/MOV, Matroska/WebM, AVI, Bink,
 Smacker, Ogg, MPEG-PS/TS, FLV, IVF, ASF, WAV, MP3, AAC), their parsers, files only (no network), and swscale and
-swresample to turn the frames into 32-bit pixels and the sound into 16-bit stereo.
+swresample to turn the frames into 32-bit pixels and the sound into 16-bit stereo. The GPU's decoders through
+Direct3D 11 (D3D11VA) and DXVA2 for H.264, HEVC, VP9, AV1 (FFmpeg's own AV1 decoder, which decodes only on a GPU:
+dav1d decodes in software), MPEG-2 and VC-1/WMV3 (Windows' own d3d11.dll and dxva2.dll, loaded by FFmpeg at run time).
 """
 import hashlib
 import os
@@ -36,7 +38,7 @@ DECODERS = [
     'h264', 'hevc', 'vp8', 'vp9', 'libdav1d', 'mpeg1video', 'mpeg2video', 'mpeg4', 'msmpeg4v1', 'msmpeg4v2',
     'msmpeg4v3', 'mjpeg', 'theora', 'prores', 'dnxhd', 'huffyuv', 'ffvhuff', 'utvideo', 'ffv1', 'rawvideo',
     'bink', 'binkaudio_dct', 'binkaudio_rdft', 'smacker', 'smackaud', 'indeo3', 'indeo4', 'indeo5', 'cinepak',
-    'msvideo1', 'msrle', 'wmv1', 'wmv2', 'wmv3', 'vc1',
+    'msvideo1', 'msrle', 'wmv1', 'wmv2', 'wmv3', 'vc1', 'av1',
     'aac', 'mp3float', 'mp2float', 'vorbis', 'opus', 'flac', 'ac3', 'eac3', 'alac', 'wmav1', 'wmav2',
     'pcm_s16le', 'pcm_s16be', 'pcm_s24le', 'pcm_s32le', 'pcm_f32le', 'pcm_u8', 'pcm_alaw', 'pcm_mulaw',
     'adpcm_ms', 'adpcm_ima_wav', 'adpcm_ima_qt']
@@ -45,14 +47,17 @@ DEMUXERS = ['mov', 'matroska', 'avi', 'bink', 'smacker', 'ogg', 'mpegps', 'mpegt
 PARSERS = ['h264', 'hevc', 'vp8', 'vp9', 'av1', 'mpeg4video', 'mpegvideo', 'mpegaudio', 'aac', 'ac3', 'vorbis', 'opus',
            'flac', 'mjpeg', 'vc1']
 
+HWACCELS = [c + '_' + api for c in ('h264', 'hevc', 'vp9', 'av1', 'mpeg2', 'vc1', 'wmv3')
+            for api in ('d3d11va', 'd3d11va2', 'dxva2')]
+
 FFMPEG_FLAGS = [
     '--toolchain=msvc', '--arch=x86', '--target-os=win32', '--enable-shared', '--disable-static',
     '--disable-programs', '--disable-doc', '--disable-network', '--disable-autodetect', '--enable-w32threads',
     '--disable-avdevice', '--disable-avfilter', '--disable-everything', '--enable-swscale', '--enable-swresample',
     '--enable-libdav1d', '--enable-protocol=file', '--extra-cflags=-MT', '--extra-ldflags=-DEBUG',
-    '--enable-debug', '--disable-stripping',
+    '--enable-debug', '--disable-stripping', '--enable-d3d11va', '--enable-dxva2',
 ] + ['--enable-decoder=' + d for d in DECODERS] + ['--enable-demuxer=' + d for d in DEMUXERS] \
-  + ['--enable-parser=' + p for p in PARSERS]
+  + ['--enable-parser=' + p for p in PARSERS] + ['--enable-hwaccel=' + h for h in HWACCELS]
 DAV1D_FLAGS = ['--buildtype=release', '--default-library=static', '-Denable_tools=false', '-Denable_tests=false',
                '-Denable_examples=false', '-Db_vscrt=mt', '-Db_ndebug=true']
 

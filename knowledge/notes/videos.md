@@ -135,3 +135,23 @@ In order of likelihood, each a silent failure:
   1.0 `+0x4C`), and IGraph's slots from `+0x64` on are 4 bytes lower in 1.0 (no GetResInitDesc): keyboardUpdate and
   ReadKey are `+0x98`, `+0x9C` in 1.2, `+0x94`, `+0x98` in 1.0. The loader calls them by their addresses
   (game_build.h keyboardUpdate, readKey).
+
+## The GPU's decoding (2026-10-21, host/video_hw.cpp)
+
+- The loader asks the driver before it opens a decoder: D3D11 `GetVideoDecoderConfigCount` for the codec's profile
+  GUID at the stream's size and output format (NV12, P010 for 10 bits), DXVA2 the service's GUIDs, render target
+  formats and `GetDecoderConfigurations`. The D3D11 decoder profiles and DXVA2's modes are the same GUIDs.
+- dxwrapper (`D3d9to9Ex = 1` in the labs' dxwrapper.ini) wraps every Direct3D 9 device of the process, one made from
+  System32's d3d9.dll by full path too (its Present in dxwrapper.dll). DXVA2's device manager takes the wrapper, and
+  `GetDecoderDeviceGuids` then fails (E_FAIL, 0 decoders). dxwrapper's wrappers answer their own IID
+  `IID_GetRealInterface` {00000000-1c77-4d40-b0cf-98fefdffffff} with the real interface, without a reference (its
+  IClassFactory.h): the loader gives DXVA2 that one and keeps the wrapper. Direct3D 11 is not wrapped.
+- A texture made by the game's 9Ex device with a shared handle (D3DUSAGE_RENDERTARGET, A8R8G8B8) is opened by a
+  Direct3D 11 device as B8G8R8A8 with the render target binding the video processor's output view needs, and by
+  another 9Ex device by passing the handle to CreateTexture; under DXVK's d3d9.dll, OpenSharedResource refuses it
+  (0x80070057, as the graphics bridge saw).
+- DXVA2's `VideoProcessBlt` refuses (E_INVALIDARG) a `DXVA2_VideoProcessBltParams` with its ProcAmp left at zero:
+  contrast and saturation must be 1. `StretchRect` from a decoder's NV12 or P010 surface to an RGB target works on a
+  GeForce but leaves the studio range unexpanded (red at about 240 instead of 255).
+- FFmpeg's own AV1 decoder (`av1`) decodes only through a GPU's hwaccel; `libdav1d` only on the CPU: the loader opens
+  one or the other by name.

@@ -3131,3 +3131,33 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   leftover return addresses dropped. 1.0: the same chain by 1.0's names (`C_game::Tick+0x302`, `GameLoopSingle`,
   `main`, `winmain`, `crt_startup`), 12 dropped. Every frame named, none left over between the game's and the
   loader's.
+
+## 2026-10-21: the videos decoded by the GPU
+
+- **Asked** (the owner, after asking whether a 4K 60 fps intro would play): hardware decoding in the loader's player.
+- **Measured first** (six 10-second 4K60 clips, 600 pictures each: H.264, HEVC, HEVC 10-bit, VP9, AV1, AV1 10-bit, a
+  hard picture: testsrc2 with moving noise; `video.play` from the menu, both labs one after the other; the machine a
+  GeForce RTX 3070): the software path showed 595 to 600 pictures of the 8-bit ones, each costing swscale 8.9 to
+  10.4 ms (4K to 4K BGRA) and the game thread 7 to 8 ms of upload (33 MB, peaks 36 ms); the 10-bit ones only 246 to
+  292 pictures in 20 s (swscale 67 to 80 ms a picture), cut by the length guard, the picture behind the sound.
+- **Made** (host/video_hw.cpp; FFmpeg rebuilt with D3D11VA and DXVA2 and its own AV1 decoder, which decodes only on a
+  GPU): the driver asked before the decoder is opened whether it has the codec's profile at the stream's bit depth and
+  size (D3D11: GetVideoDecoderConfigCount; DXVA2: the service's GUIDs, formats and configurations); D3D11VA on a
+  Direct3D 11 device of the loader's on the game's adapter (its LUID), else DXVA2 on a Direct3D 9Ex device of its own;
+  each picture turned into BGRA at its size on the screen by the GPU's video processor (D3D11 VideoProcessorBlt,
+  DXVA2 VideoProcessBlt: the matrix and range from the stream) into a texture the game's 9Ex device made and shares,
+  waited for with an event query; the game draws it and the slot is used again once an event query after the draw
+  is done. Where sharing fails (DXVK) the small picture is copied through the CPU. A GPU failure mid-way (or a decoder
+  failing on its first pictures) falls back to the CPU, logged. The software path got swscale on all cores
+  (sws_scale_frame) and scaling to the size on the screen; late pictures are left out by the decoding thread.
+  Untagged HD streams are BT.709 in every path (swscale alone took BT.601). `decode` for video.play and video.find,
+  `path` and `timing` in VIDEO_ENDED and video.state.
+- **Found on the way**: dxwrapper (D3d9to9Ex) wraps every Direct3D 9 device of the process, System32's too, and DXVA2
+  cannot use its wrapper (GetDecoderDeviceGuids: E_FAIL, 0 decoders); dxwrapper's own IID_GetRealInterface gives the
+  real device under it. DXVA2's VideoProcessBlt refuses (E_INVALIDARG) a ProcAmp of zeros: contrast and saturation 1.
+  StretchRect from a decoder's surface works but leaves the studio range unexpanded (washed-out colours).
+- **Seen** (both labs, the same clips): auto (D3D11VA, a shared texture) 600 of 600 for all six, the GPU's work and
+  wait 0.9 to 1.5 ms a picture, no upload, the frame 0.5 ms; DXVA2 forced 599 to 600 (convert 0.7 to 1.0 ms); software
+  forced 584 to 600 (convert 4.8 to 7.4 ms, upload 0.8 to 2.3); with DXVK's d3d9.dll in the 1.2 lab (taken out after)
+  the copy path, 600 of 600 through D3D11VA (2.6 to 4.0 ms) and DXVA2 (5.2 to 5.5 ms). Screenshots of each path: the
+  same colours.
