@@ -183,16 +183,28 @@ int __fastcall hkHumanHit(void *self, void *edx, int type, MmlVec3 *dir, MmlVec3
     if (StateInvulnerable(self)) return 0;
     uint8_t before = 0, after = 0;
     MemRead(reinterpret_cast<uintptr_t>(self) + game::kActorAlive, &before, 1);
-    int r = oHumanHit(self, edx, type, dir, pos, normal, dmg, attacker, part, frame);
-    MemRead(reinterpret_cast<uintptr_t>(self) + game::kActorAlive, &after, 1);
     MmlHumanHit hit{};
     hit.type = type;
     if (dir) hit.dir = *dir;
     if (pos) hit.pos = *pos;
     hit.damage = dmg;
     hit.attacker = attacker;
-    hit.was_alive = before != 0;
+    hit.part = static_cast<int>(part);
+    hit.was_alive = hit.alive = before != 0;
+    // the mods' filters first (hits.cpp): one may take the hit (the game's Hit then does not run) or change it
+    if (HitsFilter(self, 0, &hit)) {
+        MmlEvent ev = Event(MML_EVENT_HUMAN_HIT);
+        ev.actor = self;
+        ev.hit = &hit;
+        Dispatch(ev);
+        return 0;
+    }
+    MmlVec3 d = hit.dir, at = hit.pos;
+    int r = oHumanHit(self, edx, hit.type, dir ? &d : nullptr, pos ? &at : nullptr, normal, hit.damage, hit.attacker,
+                      static_cast<unsigned>(hit.part), frame);
+    MemRead(reinterpret_cast<uintptr_t>(self) + game::kActorAlive, &after, 1);
     hit.alive = after != 0;
+    attacker = hit.attacker;
     HappenHit(self, attacker);
     MmlEvent ev = Event(MML_EVENT_HUMAN_HIT);
     ev.actor = self;

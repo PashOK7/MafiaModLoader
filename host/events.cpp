@@ -85,6 +85,9 @@ void EventsFromDispatch(const MmlEvent &ev) {
         d["was_alive"] = h.was_alive != 0;
         d["alive"] = h.alive != 0;
         d["killed"] = h.was_alive && !h.alive;
+        d["part"] = h.part;
+        if (h.taken) d["taken"] = true;
+        if (h.shape) d["shape"] = h.shape - 1;
     }
     if (ev.type == MML_EVENT_SHOT && ev.shot) {
         const MmlShot &s = *ev.shot;

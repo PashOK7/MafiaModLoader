@@ -720,6 +720,24 @@ int H_HumanGetUp(MmlMod *m, void *human, int blend_ms) {
     if (!r) Log(MML_LOG_WARN, Who(m), "human_get_up: %s", err.c_str());
     return r ? 1 : 0;
 }
+int H_HitFilter(MmlMod *m, MmlHitFilterFn fn, void *user) { return Alive(m) ? HitFilterSet(m, fn, user) : 0; }
+int H_HumanHit(MmlMod *m, void *person, const MmlHumanHit *hit) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    int r = HumanHitCall(person, hit, &err);
+    if (!r) Log(MML_LOG_WARN, Who(m), "human_hit: %s", err.c_str());
+    return r;
+}
+int H_PedestriansList(MmlMod *m, MmlPedestrian *out, int max) {
+    if (!Alive(m)) return 0;
+    std::vector<MmlPedestrian> v;
+    for (void *e : PedestrianElements()) {
+        MmlPedestrian p{};
+        if (PedestrianRead(e, &p)) v.push_back(p);
+    }
+    for (int i = 0; out && i < max && i < static_cast<int>(v.size()); i++) out[i] = v[i];
+    return static_cast<int>(v.size());
+}
 int H_WorldShapes(MmlMod *m, const float lo[3], const float hi[3], uint32_t what, MmlShape *out, int max) {
     return Alive(m) && lo && hi ? WorldShapes(lo, hi, what, out, out ? max : 0) : 0;
 }
@@ -916,6 +934,7 @@ bool UnloadMod(ModEntry *e, const char *why) {
     HudModGone(m);
     StateModGone(m);
     AnimsModGone(m);
+    HitsModGone(m);
     CapturesRemove(m);
     SidecarChannelsForget(m);
     ConfigForget(m);
@@ -1296,6 +1315,9 @@ void ModsInit() {
     g_host.shader_constants = H_ShaderConstants;
     g_host.shader_vertex_data = H_ShaderVertexData;
     g_host.gfx_pass_views = H_GfxPassViews;
+    g_host.hit_filter = H_HitFilter;
+    g_host.human_hit = H_HumanHit;
+    g_host.pedestrians_list = H_PedestriansList;
     LiveCleanAll();
     Scan();
     LoadEnabled();
@@ -1407,6 +1429,8 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (HudMethod(method, paramsJson, reply, &ok)) return ok;
     if (SavesMethod(method, paramsJson, reply, &ok)) return ok;
     if (AnimsMethod(method, paramsJson, reply, &ok)) return ok;
+    if (HitsMethod(method, paramsJson, reply, &ok)) return ok;
+    if (PedestriansMethod(method, paramsJson, reply, &ok)) return ok;
     if (ItemsMethod(method, paramsJson, reply, &ok)) return ok;
     if (StatsMethod(method, paramsJson, reply, &ok)) return ok;
     if (WorldMethod(method, paramsJson, reply, &ok)) return ok;

@@ -223,8 +223,28 @@ typedef struct MmlHumanHit {
     MmlVec3 dir, pos;       /* as the game passed them (may be zero) */
     float damage;
     void *attacker;         /* the actor that caused it, or null */
-    int was_alive, alive;   /* the human's alive flag before and after the game's Hit */
+    int was_alive, alive;   /* the human's alive flag before and after the game's Hit (a hit_filter: both before) */
+    int part;               /* the body part the game was given (C_human::Hit's, pedHit's; a pedestrian's bullet: 0) */
+    int taken;              /* HUMAN_HIT, PEDESTRIAN_HIT: 1 when a mod's hit_filter took it (the game's Hit did not run) */
+    int shape;              /* a bullet on a mod's shapes (bullet_shape): 1 + the index of the capsule it struck, 0 none */
 } MmlHumanHit;
+
+/* hit_filter's answer */
+#define MML_HIT_GAME  0     /* the game's Hit runs, with the hit as the filter left it */
+#define MML_HIT_TAKEN 1     /* the game's Hit does not run: the mod took the hit */
+/* person: a C_human, or a traffic pedestrian's element (pedestrian 1); hit: type, dir, pos, damage, attacker, part may
+ * be changed for the game */
+typedef int (*MmlHitFilterFn)(void *person, int pedestrian, MmlHumanHit *hit, void *user);
+
+typedef struct MmlPedestrian {
+    uint32_t size;          /* set by the host */
+    void *element;          /* the traffic's element: what human_hit, human_skeleton, bone_set and human_get_up take */
+    void *model;            /* its model frame */
+    MmlVec3 pos;            /* its place (the world's) */
+    float health;           /* at or below 0: dead (the manager later gives the element to a new pedestrian) */
+    int alive;              /* health above 0 */
+    int spawned;            /* walking in the world now (the element's +0x0C) */
+} MmlPedestrian;
 
 typedef struct MmlShot {
     void *shooter;          /* the actor that fired */
@@ -1601,6 +1621,22 @@ typedef struct MmlHost {
      * thread. */
     int (*shader_constants)(MmlMod *mod, int handle, int reg, const float *values, int count, char *error, int cap);
     int (*shader_vertex_data)(MmlMod *mod, const char *visual, int lod, const float *attr, int vertices);
+
+    /* ---- what strikes people, before the game (both builds; docs/MODDING.md "Hits before the game").
+     * hit_filter: fn is asked about every hit a person (a C_human) or a traffic pedestrian takes, before the game
+     * reacts (C_human::Hit, the pedestrians' Hit; a bullet on a pedestrian before the game wakes the element): it may
+     * change the hit (type, dir, pos, damage, attacker, part) and return MML_HIT_GAME, or MML_HIT_TAKEN (the game's
+     * Hit does not run: HUMAN_HIT or PEDESTRIAN_HIT then tells it with `taken`). The mods' filters run in the order
+     * they were set, until one takes it; one filter a mod (fn NULL removes it; its unload too). A hit the filter's own
+     * code makes (human_hit) passes the filters by. Returns 1.
+     * human_hit: the game's own Hit given to a person (his vtable's, C_human::Hit) or a pedestrian (pedHit): its fall,
+     * its death, its get-up as the game plays them (a knock-down: a C_human's type 8 with the speed of the blow as dir,
+     * over 3 m/s; a pedestrian's type 5 with damage over 16, no attacker: no health taken). 1 done, 0 refused (the
+     * log says why). pedestrians_list: the traffic's walkers (their elements are not actors: humans_list does not
+     * hold them) into out (the host sets each one's size), up to max; returns how many there are. Game thread. */
+    int (*hit_filter)(MmlMod *mod, MmlHitFilterFn fn, void *user);
+    int (*human_hit)(MmlMod *mod, void *person, const MmlHumanHit *hit);
+    int (*pedestrians_list)(MmlMod *mod, MmlPedestrian *out, int max);
 } MmlHost;
 
 #define MML_ZONE_PLAYER 0x1u

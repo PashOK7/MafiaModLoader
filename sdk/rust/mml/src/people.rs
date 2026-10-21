@@ -1,8 +1,24 @@
 //! People: skeletons and poses, animations and getting up, the inventory's rounds, a mod's own items, their skinning
 //! (docs/MODDING.md "People, skeletons, poses", "Animations, getting up", "A mod's own items", "People's skinning").
-use crate::{cstring, sys, text, Actor, Frame, Host};
-use core::ffi::c_int;
+use crate::{cstring, guard, keep, release, slot, sys, text, Actor, Frame, Host, HumanHit};
+use core::ffi::{c_int, c_void};
 use core::ptr;
+
+/// A traffic pedestrian (pedestrians_list): its `element` is what human_hit, human_skeleton, bone_set and
+/// human_get_up take (an Actor made from it with Actor::from_ptr).
+pub use sys::MmlPedestrian as Pedestrian;
+
+unsafe extern "C-unwind" fn on_hit<F: Fn(Actor, bool, &mut HumanHit) -> bool>(
+    person: *mut c_void,
+    pedestrian: c_int,
+    hit: *mut sys::MmlHumanHit,
+    user: *mut c_void,
+) -> c_int {
+    guard("a hit filter", || match Actor::from_ptr(person) {
+        Some(a) if (*(user as *const F))(a, pedestrian != 0, &mut *hit) => sys::MML_HIT_TAKEN as c_int,
+        _ => sys::MML_HIT_GAME as c_int,
+    })
+}
 
 /// A bone of a person's skeleton (human_skeleton), in sys::MML_BONE_* order.
 #[derive(Clone, Debug)]
@@ -188,6 +204,35 @@ impl Host {
     /// A body the mod posed handed back to the game: he gets up from where and how it lies (blend_ms from the pose)
     pub fn human_get_up(&self, human: Actor, blend_ms: i32) -> bool {
         unsafe { f!(self, human_get_up)(self.module, human.as_ptr(), blend_ms) > 0 }
+    }
+
+    // ---- what strikes people, before the game (docs/MODDING.md "Hits before the game")
+    /// Every hit a person or a traffic pedestrian (the bool) takes, before the game reacts: the closure may change it
+    /// and returns true to take it (the game's Hit does not run), false to let the game have it.
+    pub fn hit_filter<F: Fn(Actor, bool, &mut HumanHit) -> bool + 'static>(&self, f: F) -> bool {
+        let user = keep(f);
+        let ok = unsafe {
+            f!(self, hit_filter)(self.module, as_c!(on_hit::<F>, *mut c_void, c_int, *mut sys::MmlHumanHit, *mut c_void; c_int), user) != 0
+        };
+        if ok { slot("hit_filter", user) } else { release(user) }
+        ok
+    }
+    pub fn hit_filter_remove(&self) -> bool {
+        let ok = unsafe { f!(self, hit_filter)(self.module, None, ptr::null_mut()) != 0 };
+        slot("hit_filter", ptr::null_mut());
+        ok
+    }
+    /// The game's own Hit given to a person or a traffic pedestrian's element (type, dir, pos, damage, attacker, part)
+    pub fn human_hit(&self, person: Actor, hit: &HumanHit) -> bool {
+        unsafe { f!(self, human_hit)(self.module, person.as_ptr(), hit) != 0 }
+    }
+    /// The traffic's walkers (not actors: humans_list does not hold them)
+    pub fn pedestrians_list(&self) -> Vec<Pedestrian> {
+        let n = unsafe { f!(self, pedestrians_list)(self.module, ptr::null_mut(), 0) };
+        let mut v: Vec<Pedestrian> = (0..n.max(0)).map(|_| unsafe { core::mem::zeroed() }).collect();
+        let got = unsafe { f!(self, pedestrians_list)(self.module, v.as_mut_ptr(), v.len() as c_int) };
+        v.truncate(got.max(0).min(v.len() as c_int) as usize);
+        v
     }
 
     // ---- the inventory

@@ -170,17 +170,24 @@ int __fastcall hkPedHit(void *element, void *edx, int type, const V3 *dir, int p
     float before = 0;
     auto rb = [&] { before = game::at<float>(element, kPedHealth); };
     Guarded(rb);
-    int r = oPedHit(element, edx, type, dir, part, attacker, damage);
     MmlHumanHit h{};
+    h.type = type;
+    if (dir) h.dir = {dir->x, dir->y, dir->z};
+    h.damage = damage;
+    h.attacker = attacker;
+    h.part = part;
+    h.was_alive = h.alive = before > 0;
+    auto rp = [&] { const V3 &p = game::at<V3>(element, kPedPos); h.pos = {p.x, p.y, p.z}; };
+    Guarded(rp);
+    // the mods' filters first (hits.cpp), unless pedBulletHit has filtered this bullet already
+    bool taken = !HitsInPedBullet(element) && HitsFilter(element, 1, &h);
+    int r = 0;
+    if (!taken) {
+        V3 d{h.dir.x, h.dir.y, h.dir.z};
+        r = oPedHit(element, edx, h.type, dir ? &d : nullptr, h.part, h.attacker, h.damage);
+    }
     MmlEvent ev{};
     auto f = [&] {
-        h.type = type;
-        if (dir) h.dir = {dir->x, dir->y, dir->z};
-        const V3 &p = game::at<V3>(element, kPedPos);
-        h.pos = {p.x, p.y, p.z};
-        h.damage = damage;
-        h.attacker = attacker;
-        h.was_alive = before > 0;
         h.alive = game::at<float>(element, kPedHealth) > 0;
         void *coll = static_cast<uint8_t *>(element) + kPedColl;
         ev.other = game::at<void *>(coll, 4);

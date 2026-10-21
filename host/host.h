@@ -638,6 +638,22 @@ bool ItemsMethod(const std::string &method, const std::string &paramsJson, std::
 bool HumanBones(void *human, void **frames);   // (humans.cpp) the skeleton's frames of a person the host keeps
 bool HumanKnown(void *human);
 bool HumanLastPose(void *human, float world[][16], unsigned maxAgeMs);   // the bones' world matrices last drawn by a mod or the bridge
+// what strikes people, before the game (hits.cpp): the mods' hit filters, the game's Hit called, the pedestrians'
+// bullet Hit hooked; hits.state, human.hit
+void HitsInit();                          // (after AnimsInit) the pedestrian system's bullet Hit
+bool HitsFilter(void *person, int pedestrian, MmlHumanHit *hit);   // true: a mod took it (the game's Hit must not run)
+bool HitsInPedBullet(void *element);      // pedBulletHit filtered this element and runs (pedHit's filter passes it by)
+int HitFilterSet(MmlMod *mod, MmlHitFilterFn fn, void *user);
+int HumanHitCall(void *person, const MmlHumanHit *hit, std::string *err);
+void HitsModGone(MmlMod *mod);
+bool HitsMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+// the traffic's pedestrians (pedestrians.cpp): their elements, from the managers' arrays and the game's list
+std::vector<void *> PedestrianElements();
+bool PedestrianKnown(void *element);
+void *PedestrianOfFrame(void *model);     // the element whose model frame it is, or null
+bool PedestrianRead(void *element, MmlPedestrian *out);
+float PedestrianHealth(void *element);
+bool PedestriansMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 void AnimsInit();                         // (after the game's hooks) the pedestrians' Hit
 int HumanAnimPlay(void *human, const char *anim, int flags, std::string *err);   // its length (ms), -1 refused
 int HumanAnimStop(void *human, std::string *err);

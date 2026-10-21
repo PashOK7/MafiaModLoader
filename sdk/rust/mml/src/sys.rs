@@ -21,6 +21,8 @@ pub const MML_SCRIPT_RUNNING: u32 = 0;
 pub const MML_SCRIPT_DONE: u32 = 1;
 pub const MML_SCRIPT_FAILED: u32 = 2;
 pub const MML_SCRIPT_STOPPED: u32 = 3;
+pub const MML_HIT_GAME: u32 = 0;
+pub const MML_HIT_TAKEN: u32 = 1;
 pub const MML_GFX_UI_OFF: u32 = 0;
 pub const MML_GFX_UI_TAKE: u32 = 1;
 pub const MML_GFX_UI_HIDE: u32 = 2;
@@ -367,10 +369,13 @@ pub struct MmlHumanHit {
     pub attacker: *mut ::core::ffi::c_void,
     pub was_alive: ::core::ffi::c_int,
     pub alive: ::core::ffi::c_int,
+    pub part: ::core::ffi::c_int,
+    pub taken: ::core::ffi::c_int,
+    pub shape: ::core::ffi::c_int,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of MmlHumanHit"][::core::mem::size_of::<MmlHumanHit>() - 44usize];
+    ["Size of MmlHumanHit"][::core::mem::size_of::<MmlHumanHit>() - 56usize];
     ["Alignment of MmlHumanHit"][::core::mem::align_of::<MmlHumanHit>() - 4usize];
     ["Offset of field: MmlHumanHit::type_"][::core::mem::offset_of!(MmlHumanHit, type_) - 0usize];
     ["Offset of field: MmlHumanHit::dir"][::core::mem::offset_of!(MmlHumanHit, dir) - 4usize];
@@ -382,8 +387,56 @@ const _: () = {
     ["Offset of field: MmlHumanHit::was_alive"]
         [::core::mem::offset_of!(MmlHumanHit, was_alive) - 36usize];
     ["Offset of field: MmlHumanHit::alive"][::core::mem::offset_of!(MmlHumanHit, alive) - 40usize];
+    ["Offset of field: MmlHumanHit::part"][::core::mem::offset_of!(MmlHumanHit, part) - 44usize];
+    ["Offset of field: MmlHumanHit::taken"][::core::mem::offset_of!(MmlHumanHit, taken) - 48usize];
+    ["Offset of field: MmlHumanHit::shape"][::core::mem::offset_of!(MmlHumanHit, shape) - 52usize];
 };
 impl Default for MmlHumanHit {
+    fn default() -> Self {
+        let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::core::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+pub type MmlHitFilterFn = ::core::option::Option<
+    unsafe extern "C" fn(
+        person: *mut ::core::ffi::c_void,
+        pedestrian: ::core::ffi::c_int,
+        hit: *mut MmlHumanHit,
+        user: *mut ::core::ffi::c_void,
+    ) -> ::core::ffi::c_int,
+>;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct MmlPedestrian {
+    pub size: u32,
+    pub element: *mut ::core::ffi::c_void,
+    pub model: *mut ::core::ffi::c_void,
+    pub pos: MmlVec3,
+    pub health: f32,
+    pub alive: ::core::ffi::c_int,
+    pub spawned: ::core::ffi::c_int,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of MmlPedestrian"][::core::mem::size_of::<MmlPedestrian>() - 36usize];
+    ["Alignment of MmlPedestrian"][::core::mem::align_of::<MmlPedestrian>() - 4usize];
+    ["Offset of field: MmlPedestrian::size"][::core::mem::offset_of!(MmlPedestrian, size) - 0usize];
+    ["Offset of field: MmlPedestrian::element"]
+        [::core::mem::offset_of!(MmlPedestrian, element) - 4usize];
+    ["Offset of field: MmlPedestrian::model"]
+        [::core::mem::offset_of!(MmlPedestrian, model) - 8usize];
+    ["Offset of field: MmlPedestrian::pos"][::core::mem::offset_of!(MmlPedestrian, pos) - 12usize];
+    ["Offset of field: MmlPedestrian::health"]
+        [::core::mem::offset_of!(MmlPedestrian, health) - 24usize];
+    ["Offset of field: MmlPedestrian::alive"]
+        [::core::mem::offset_of!(MmlPedestrian, alive) - 28usize];
+    ["Offset of field: MmlPedestrian::spawned"]
+        [::core::mem::offset_of!(MmlPedestrian, spawned) - 32usize];
+};
+impl Default for MmlPedestrian {
     fn default() -> Self {
         let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
         unsafe {
@@ -3425,10 +3478,31 @@ pub struct MmlHost {
             vertices: ::core::ffi::c_int,
         ) -> ::core::ffi::c_int,
     >,
+    pub hit_filter: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            fn_: MmlHitFilterFn,
+            user: *mut ::core::ffi::c_void,
+        ) -> ::core::ffi::c_int,
+    >,
+    pub human_hit: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            person: *mut ::core::ffi::c_void,
+            hit: *const MmlHumanHit,
+        ) -> ::core::ffi::c_int,
+    >,
+    pub pedestrians_list: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            out: *mut MmlPedestrian,
+            max: ::core::ffi::c_int,
+        ) -> ::core::ffi::c_int,
+    >,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 760usize];
+    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 772usize];
     ["Alignment of MmlHost"][::core::mem::align_of::<MmlHost>() - 4usize];
     ["Offset of field: MmlHost::size"][::core::mem::offset_of!(MmlHost, size) - 0usize];
     ["Offset of field: MmlHost::api_version"]
@@ -3753,6 +3827,11 @@ const _: () = {
         [::core::mem::offset_of!(MmlHost, shader_constants) - 752usize];
     ["Offset of field: MmlHost::shader_vertex_data"]
         [::core::mem::offset_of!(MmlHost, shader_vertex_data) - 756usize];
+    ["Offset of field: MmlHost::hit_filter"]
+        [::core::mem::offset_of!(MmlHost, hit_filter) - 760usize];
+    ["Offset of field: MmlHost::human_hit"][::core::mem::offset_of!(MmlHost, human_hit) - 764usize];
+    ["Offset of field: MmlHost::pedestrians_list"]
+        [::core::mem::offset_of!(MmlHost, pedestrians_list) - 768usize];
 };
 pub type MmlModLoadFn = ::core::option::Option<
     unsafe extern "C" fn(host: *const MmlHost, mod_: *mut MmlMod) -> ::core::ffi::c_int,

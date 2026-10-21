@@ -1076,6 +1076,45 @@ H->human_get_up(M, paulie, 600);          /* a body the mod posed handed back to
 - `call human.anim {"actor", "play" | "stop" | "replace" with "with"}`, `human.anim_state {"actor"}`,
   `human.get_up {"actor", "blend_ms"}`.
 
+### Hits before the game
+
+```c
+static int OnHit(void *person, int pedestrian, MmlHumanHit *hit, void *user) {
+    if (IsMyCorpse(person)) { KickBody(person, hit); return MML_HIT_TAKEN; }   /* the game's Hit does not run */
+    hit->damage *= 0.5f;                                                      /* changed for the game */
+    return MML_HIT_GAME;
+}
+H->hit_filter(M, OnHit, NULL);                       /* NULL takes it away (the unload does too) */
+
+MmlHumanHit knock = {0};                             /* a knock-down, the game's own: its fall, its get-up */
+knock.type = 8; knock.dir = blowVelocity;            /* a person: type 8, faster than 3 m/s */
+H->human_hit(M, paulie, &knock);
+MmlPedestrian peds[64];
+int n = H->pedestrians_list(M, peds, 64);            /* the traffic's walkers: elements, not actors */
+MmlHumanHit push = {0};
+push.type = 5; push.dir = away; push.damage = 20;    /* a pedestrian: type 5 over 16, no attacker: no health taken */
+H->human_hit(M, peds[0].element, &push);
+```
+
+- **The filter** sees every hit a person (`C_human::Hit`) or a traffic pedestrian (its own Hit, `pedHit`) takes,
+  before the game reacts: bullets, explosions, cars, falls, the scripts'. It may change the hit's `type`, `dir`,
+  `pos`, `damage`, `attacker` and `part`, which the game then gets, and return `MML_HIT_GAME`; or return
+  `MML_HIT_TAKEN`: the game's Hit does not run (no damage, no blood, no reaction), and `HUMAN_HIT` /
+  `PEDESTRIAN_HIT` tell the hit with `taken` set. The mods' filters run in the order they were set until one takes
+  it; a hit the filter's own code makes (`human_hit`) passes the filters by. A bullet on a pedestrian is filtered
+  before the game wakes the element (a dead one would cry out at its next tick): its `pos` is the point struck,
+  its `part` 0.
+- **`human_hit`** is the game's own Hit, so what the game does with such a hit follows: a person's car hit (type 8)
+  with `dir` the blow's velocity knocks him down when faster than 3 m/s (`human_anim_state` shows his fall, then he
+  gets up); a pedestrian's car hit (type 5) with a `damage` over 16 knocks it down, and with no attacker (no car of
+  the player's) takes no health. Other types: 0 a bullet (`part` 1 the head...), 3 an explosion, 6 a fall.
+- **Pedestrians** are the traffic's elements, not actors: `humans_list` does not hold them. `pedestrians_list`
+  gives each one's `element`, `model`, `pos`, `health` (at or below 0: dead; the traffic later gives the element to
+  a new pedestrian) and `spawned`.
+- `call human.hit {"actor" | "pedestrian", "type", "dir", "pos", "damage", "attacker", "part"}`, `pedestrians.list`;
+  `hits.take {"actor" | "pedestrian" | "all": true, "ms"}` is the bridge's own filter (after the mods'): an agent
+  takes a person's hits from the game for a time, as a mod's filter would; `hits.state` lists the filters.
+
 ### People's skinning (more than two bones a vertex)
 
 LS3D skins a person on the CPU with two bones a vertex at most (the .4ds holds no more): a joint bent far (a knee,

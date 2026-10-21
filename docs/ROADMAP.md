@@ -26,7 +26,9 @@ What is done, what comes next and later, and what is known to be missing or wron
   show what every such mod had to build for itself, and so what the loader must give instead.
 - The toolkit is built for whatever mod a user can think of, written by another agent (2026-10-14); its measuring
   cases: a ragdoll, shader water, realistic smoke, VR, fishing, skateboarding, a working airplane, achievements.
-  Those mods are not written here; mafia-ragdoll is not ported (its code is the reference).
+  Those mods are not written here. The ragdoll (the owner, 2026-10-21) becomes a loader mod in a private repository
+  of its own, made from mafia-ragdoll: the loader first gets every service it needs to be written and run (item 32);
+  mafia-ragdoll's code stays the reference.
 - **The stages** (the owner, 2026-10-19): now, the original game: reversed, and made better with its style kept
   (fixes, speed, the toolkit), until neither the game nor the loader can be made better. Only then the next stage:
   **NVIDIA RTX Remix through its own API** (`remix_c.h` in dxvk-remix: the engine hands Remix its meshes, materials,
@@ -959,6 +961,32 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
       (queries, a depth pyramid). Measure: the profile's share of `SetVisibleRecMainPass` and the portals at 1000 m.
     Under a Direct3D 9 wrapper only (dxwrapper, DXVK), as items 27 and 28; plain Direct3D 8 keeps the game's own
     drawing. The order may change with 31a's numbers: a step whose share is small waits.
+32. **The ragdoll's toolkit** (R; the owner, 2026-10-21: the ragdoll becomes a loader mod in a private repository of
+    its own, and the loader gives it everything it needs first). What mafia-ragdoll's host and core do with raw hooks
+    and addresses (its `hits.cpp`, `knock.cpp`, `getup.cpp`, `frame_life.cpp`, core.cpp's pedestrians) becomes host
+    services for any mod, both builds, each with its bridge method, its offline test, MODDING and the Rust crate:
+    - **32a, a person's hit before the game's.** A mod's filter on every hit a person takes, before the game reacts:
+      C_human::Hit, the pedestrians' Hit, and a bullet on a pedestrian before the system's Hit wakes the element (a
+      dead one would cry out). It sees the hit (type, dir, pos, damage, attacker, the part) and lets the game have
+      it, changed or not, or takes it (the game's Hit does not run: a corpse's hit is the mod's). HUMAN_HIT and
+      PEDESTRIAN_HIT tell a taken one as taken. And `human_hit`: the game's own Hit called on a person or a
+      pedestrian (a knock-down by a body is the game's car hit with no car and no damage: its fall, its get-up).
+    - **32b, bullets on a mod's shapes for a person.** A mod gives a person's body as capsules (a ragdoll's parts,
+      wherever the body lies); the bullets' ray (collRayTest from the bullets' tick) tests them too, and the nearest
+      nearer than the game's hit is given to the game as a hit on that person (his own collision object, the game's
+      part test for a C_human: the blood, the part, the Hit, then 32a's filter). The exclusion list the bullets'
+      tick keeps and a guard against the same stretch given again are the host's (mafia-ragdoll hung the game so).
+    - **32c, a frame's release told.** A mod watches the frames it keeps (a model, its bones); the host tells it
+      before LS3D frees one (I3D_frame's and the meshes' Release reaching zero), so nothing is used after free.
+    - **32d, traffic pedestrians as people.** Their elements listed (with their model, place, health), their
+      skeleton read and posed (human_skeleton, bone_set), handed back by human_get_up (getup.cpp's way: out of the
+      wait, the collision back in the grid, pedAnimStart), and hit (32a's human_hit, pedHit).
+    - **32e, drawing in the world.** Lines, boxes, spheres and capsules in the world's space, tested against the
+      frame's depth or over it, from mods (each frame or held for a time) and from the bridge (`draw.world`): what a
+      physics mod draws to see its bodies, joints and contacts.
+    - **32f, seen in the game.** Whether a dead person's skin follows bones a mod writes after his death animation
+      ends; what the traffic does with a dead pedestrian's element (kept, recycled: 32c tells it); a corpse hit by
+      a bullet where the body lies, in both labs.
 
 ### Tier 2: the game's world as data, read and changed
 
@@ -1690,8 +1718,9 @@ merged, sorted by importance):
   set). One page a mod at a time; a page closed by Esc lives until the game deletes it, so a `menu_open` in the
   same frame as the close is refused. An item copies its neighbour's text id: a language change re-reading texts
   by id was not looked at.
-- **1.0's bullets, getting up and trams** (`game_build.h`'s mafia-ragdoll fields) are zeros for 1.0: the loader does
-  not use them; mafia-ragdoll's own port has them.
+- **1.0's bullets, getting up and trams** (`game_build.h`'s mafia-ragdoll fields): filled for 1.0 on 2026-10-16
+  (the twins of 1.2's functions, checked by check_builds.py), not yet run in a 1.0 game by the loader (item 32 runs
+  them); mafia-ragdoll's own copy of the table still has zeros there.
 - **`menu.command` sends any integer**: a command the active menu does not expect may do anything that menu's
   handler does with it. Read the handler first (`menu.state` names it; `kb_function`).
 - **The profile list exists only while the profile menu is open** (the game releases it when the menu closes):

@@ -376,6 +376,24 @@ int Anims(const char *, MmlReply *r, void *) {
     return 0;
 }
 
+// Hits before the game with no game: the filter set (taken away with {"off": true}), the game's Hit refused, no
+// pedestrians.
+int KitHitFilter(void *, int, MmlHumanHit *, void *) { return MML_HIT_GAME; }
+int Hits(const char *args, MmlReply *r, void *) {
+    if (!MML_HAS(H, pedestrians_list)) { H->reply_error(r, "the loader has no hit_filter"); return 1; }
+    bool off = args && strstr(args, "off");
+    int filter = H->hit_filter(M, off ? nullptr : KitHitFilter, nullptr);
+    void *nobody = reinterpret_cast<void *>(static_cast<uintptr_t>(0x1000));
+    MmlHumanHit h{};
+    h.type = 8;
+    MmlPedestrian peds[4];
+    int hit = H->human_hit(M, nobody, &h), nullHit = H->human_hit(M, nobody, nullptr), pedestrians = H->pedestrians_list(M, peds, 4);
+    char out[160];
+    snprintf(out, sizeof out, "{\"filter\":%d,\"hit\":%d,\"null_hit\":%d,\"pedestrians\":%d}", filter, hit, nullHit, pedestrians);
+    H->reply_append(r, out, static_cast<size_t>(-1));
+    return 0;
+}
+
 // A mod's items with no game: refused (no table), none found.
 int Items(const char *, MmlReply *r, void *) {
     if (!MML_HAS(H, item_find)) { H->reply_error(r, "the loader has no item_define"); return 1; }
@@ -570,7 +588,8 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->command(mod, "models", "the game's files and models with no game", Models, nullptr);
     host->command(mod, "fpu", "the x87's precision in a mod's callback: 1/3 divided on the x87", Fpu, nullptr);
     host->command(mod, "gamecam", "the game's camera with no game: none, refused", GameCam, nullptr);
-    host->command(mod, "control", "key_capture, action_capture, player_lock, vehicle_hook, vehicle_body with no game", Control, nullptr);
+    host->command(mod, "hits", "hit_filter ({\"off\": true}: taken away), human_hit, pedestrians_list with no game", Hits, nullptr);
+    host->command(mod, "control","key_capture, action_capture, player_lock, vehicle_hook, vehicle_body with no game", Control, nullptr);
     host->command(mod, "sound", "sound_play and the rest, music_play and the rest with no game", Sound, nullptr);
     host->command(mod, "effects","car_exhaust, exhaust_hook, particle_def(_set) with no game", Effects, nullptr);
     host->command(mod, "lights","scene_lights, light_set, scene_sun with no game", Lights, nullptr);

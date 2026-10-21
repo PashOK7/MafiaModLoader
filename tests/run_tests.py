@@ -1867,6 +1867,28 @@ def main():
         r = b.call('kit.anims')
         check('human_anim_play, _stop, _replace, _state, human_get_up with no game: refused, nothing faults',
               r['ok'] and r['result'] == {'play': -1, 'stop': 0, 'replace': 0, 'state': 0, 'untouched': 1, 'get_up': 0}, r)
+        r = b.call('kit.hits')
+        check('hit_filter set, human_hit and pedestrians_list with no game: refused, none',
+              r['ok'] and r['result'] == {'filter': 1, 'hit': 0, 'null_hit': 0, 'pedestrians': 0}, r)
+        r = b.call('hits.state')
+        check("hits.state: the kit's filter listed, nothing seen", r['ok'] and r['result']['filters'] == ['kit'] and r['result']['seen'] == 0, r)
+        r = b.call('human.hit', {'type': 8})
+        check('human.hit with no game: refused, saying why', not r['ok'] and 'human.hit' in str(r.get('error', '')), r)
+        r = b.call('pedestrians.list')
+        check('pedestrians.list with no game: none', r['ok'] and r['result'] == {'count': 0, 'pedestrians': []}, r)
+        b.call('kit.hits', {'off': True})
+        r = b.call('hits.state')
+        check("hits.state: the kit's filter taken away", r['ok'] and r['result']['filters'] == [], r)
+        r = b.call('hits.take', {'all': True, 'ms': 5000})
+        r2 = b.call('hits.state')
+        check("hits.take all: the bridge's filter takes everyone's hits for a time (hits.state lists it)",
+              r['ok'] and r['result']['who'] == 'everyone' and r2['ok'] and len(r2['result']['bridge_takes']) == 1
+              and r2['result']['bridge_takes'][0]['who'] == 'everyone', (r, r2))
+        r = b.call('hits.take', {'actor': 'player'})
+        check('hits.take of the player with no game: refused, saying why', not r['ok'] and 'no such person' in str(r.get('error', '')), r)
+        b.call('hits.take', {'clear': True})
+        r = b.call('hits.state')
+        check("hits.take clear: the bridge's filter gone", r['ok'] and r['result']['bridge_takes'] == [], r)
         r = b.call('kit.items')
         check('item_define, item_find with no game: refused, none found',
               r['ok'] and r['result'] == {'define': 0, 'bad_name': 0, 'null': 0, 'find': 0, 'find_other': 0}, r)
