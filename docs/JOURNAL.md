@@ -3230,4 +3230,15 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   of the process's pool ending meanwhile made it -0.05 (44 to 43) twice in a row: a mod's thread left behind makes it
   positive, so it is `<= 0` now. And a lab install during the offline tests had taken new_mod.py's test mods from
   the build's output into both labs (taken out): the labs are installed with no build or test running.
+- **Made** (32d): a traffic pedestrian's element is taken by human_skeleton, bone_set's poses (its model updated
+  after RENDER_BEGIN as a person's), human_get_up and human_anim_state (humans.cpp's Posable: a person or an element;
+  HumanKnown stays the C_humans'). Its get-up is mafia-ragdoll's way: put where the body lies and turned as a person
+  is, its model placed by its own SetWorldPos and SetDir and updated, out of the wait by a car it left, its collision
+  object at the body back into the grid (collGridMove, else collGridAdd), its sequence at the game's get-up (111 from
+  the back, 338 from the front), pedAnimStart. The bridge's human.skeleton, human.pose, human.anim_state and
+  human.get_up take `pedestrian`.
+- **Seen** (both labs, a scratch script beside tests/game: the tests' start has no pedestrians): a pedestrian's 20
+  bones read; knocked down by human_hit (type 5, 20), its pelvis posed 1.5 m away (its head with it), handed back:
+  the get-up (111 or 338) played in its sequence where the body lay, then walking again (state 0) 0.87 m on, alive;
+  7 of 7 in each build.
 

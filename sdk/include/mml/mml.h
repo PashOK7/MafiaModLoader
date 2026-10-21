@@ -1201,7 +1201,9 @@ typedef struct MmlHost {
 
     /* ---- people and their skeletons (both builds; docs/MODDING.md "People, skeletons, poses").
      * humans_list: every person the game made and has not destroyed (C_human: the player, the mission's people, those
-     * spawned), up to `max` into out; returns how many there are. human_skeleton: his bones (MML_BONE_COUNT of them,
+     * spawned), up to `max` into out; returns how many there are (the traffic's walkers: pedestrians_list; their
+     * elements are taken by human_skeleton, bone_set's poses, human_get_up and human_anim_state as people are).
+     * human_skeleton: his bones (MML_BONE_COUNT of them,
      * in MML_BONE_* order) into out (max at least MML_BONE_COUNT); 0: not a person known, or no skeleton.
      * bone_set: a bone's local rotation (w x y z; NULL: as it is) and position (NULL: as it is) written, its world
      * matrix and its children's made again. The game's animation sets the bones every frame: a pose a mod wants drawn

@@ -981,7 +981,8 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
     - **32c, a frame's release told** *(done 2026-10-21: mml.h frame_watch; host/framelife.cpp; MODDING "A
       frame's release")*. A mod watches the frames it keeps (a model, its bones); the host tells it
       before LS3D frees one (I3D_frame's and the meshes' Release reaching zero), so nothing is used after free.
-    - **32d, traffic pedestrians as people.** Their elements listed (with their model, place, health), their
+    - **32d, traffic pedestrians as people** *(done 2026-10-21: humans.cpp and anims.cpp take an element; MODDING "Hits
+      before the game")*. Their elements listed (with their model, place, health), their
       skeleton read and posed (human_skeleton, bone_set), handed back by human_get_up (getup.cpp's way: out of the
       wait, the collision back in the grid, pedAnimStart), and hit (32a's human_hit, pedHit).
     - **32e, drawing in the world.** Lines, boxes, spheres and capsules in the world's space, tested against the
@@ -1573,7 +1574,7 @@ merged, sorted by importance):
   only for an animation with a track (.tck) of its own. A mod's own animation file in `files\anims\` was not tried
   (the game opens it by name as it opens its own). Getting up was tried on people posed by the bridge, not on a body
   the game itself knocked down (its own queue then plays: the mod's call replaces it). Traffic pedestrians cannot be
-  handed a get-up (they are not C_humans: mafia-ragdoll's getup.cpp shows their way, pedAnimStart), and they are not
+  handed a get-up (done 2026-10-21, item 32d: human_get_up takes an element), and they are not
   listed (only their hits are told). `world.ray` with MML_WORLD_MOVING did not hit a walking pedestrian's box that
   `world.shapes` showed (not looked into).
 - **People** (host/humans.cpp): a freeride lists 36 people besides the player with the model name `road_bl_E` at

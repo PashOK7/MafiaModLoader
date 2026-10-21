@@ -11,7 +11,12 @@
 // animation set the bones for this frame and before LS3D draws them), it is what is drawn. The bridge's human.pose
 // holds a pose for a time (applied at every RENDER_BEGIN until then): an agent's test of a pose.
 //
-// Bridge methods (game thread): humans.list, human.skeleton {actor}, human.pose {actor, bones, ms}.
+// A traffic pedestrian (pedestrians.cpp: an element, not a C_human) has the same skeleton under its model frame
+// (element + 0x40): human_skeleton, bone_set and the poses take an element as they take a person; humans_list and
+// HumanKnown stay the C_humans'.
+//
+// Bridge methods (game thread): humans.list, human.skeleton {actor | pedestrian}, human.pose {actor | pedestrian,
+// bones, ms}.
 #include "host.h"
 #include <algorithm>
 #include <cmath>
@@ -44,9 +49,13 @@ bool Readable(const void *p, size_t n) {
     return static_cast<const uint8_t *>(p) + n <= static_cast<const uint8_t *>(mi.BaseAddress) + mi.RegionSize;
 }
 
+bool Alive(void *h);
+constexpr int kPedModel = 0x40;
 void *ModelOf(void *human) {
     void *m = nullptr;
-    __try { m = game::at<void *>(human, game::kActorFrame); } __except (EXCEPTION_EXECUTE_HANDLER) { m = nullptr; }
+    int at = Alive(human) ? game::kActorFrame : PedestrianKnown(human) ? kPedModel : -1;
+    if (at < 0) return nullptr;
+    __try { m = game::at<void *>(human, at); } __except (EXCEPTION_EXECUTE_HANDLER) { m = nullptr; }
     return m;
 }
 
@@ -113,14 +122,20 @@ bool UpdateModel(void *model) {
         return false;
     }
 }
-// The model a bone belongs to: a person's model frame among its parents.
+void *ParentOf(void *f) {
+    void *parent = nullptr;
+    __try { parent = game::at<void *>(f, game::kFrameParent); } __except (EXCEPTION_EXECUTE_HANDLER) { parent = nullptr; }
+    return parent;
+}
+// The model a bone belongs to: a person's (or a pedestrian's) model frame among its parents.
 void *ModelOfBone(void *frame) {
+    std::vector<void *> models;
+    for (void *h : g_humans) models.push_back(ModelOf(h));
+    for (void *e : PedestrianElements()) models.push_back(ModelOf(e));
     void *f = frame;
     for (int i = 0; i < 16 && f; i++) {
-        for (void *h : g_humans) if (ModelOf(h) == f) return f;
-        void *parent = nullptr;
-        __try { parent = game::at<void *>(f, game::kFrameParent); } __except (EXCEPTION_EXECUTE_HANDLER) { parent = nullptr; }
-        f = parent;
+        if (std::find(models.begin(), models.end(), f) != models.end()) return f;
+        f = ParentOf(f);
     }
     return nullptr;
 }
@@ -135,6 +150,7 @@ struct Held { void *human; void *frame; float rot[4]; float pos[3]; bool hasRot,
 std::vector<Held> g_held;
 
 bool Alive(void *h) { return std::find(g_humans.begin(), g_humans.end(), h) != g_humans.end(); }
+bool Posable(void *h) { return Alive(h) || PedestrianKnown(h); }   // a person, or a traffic pedestrian's element
 
 struct Info { bool alive; float health; uint32_t type; char model[64]; bool hasPos; float pos[3]; void *vehicle; };
 bool ReadInfo(void *h, Info *o) {
@@ -193,7 +209,7 @@ int HumansList(void **out, int max) {
 }
 
 int HumanSkeleton(void *human, MmlBone *out, int max) {
-    if (!game::g_exe || !Alive(human)) return 0;
+    if (!game::g_exe || !Posable(human)) return 0;
     void *f[MML_BONE_COUNT];
     if (!FindBones(human, f)) return 0;
     for (int i = 0; i < MML_BONE_COUNT && i < max; i++) {
@@ -215,7 +231,8 @@ int BoneSet(void *frame, const float *rot, const float *pos) {
     return 1;
 }
 
-bool HumanBones(void *human, void **frames) { return game::g_exe && Alive(human) && FindBones(human, frames); }
+bool HumanBones(void *human, void **frames) { return game::g_exe && Posable(human) && FindBones(human, frames); }
+bool HumanPosable(void *human) { return game::g_exe && Posable(human); }
 bool HumanLastPose(void *human, float world[][16], unsigned maxAgeMs) {
     for (const LastPose &p : g_lastPoses)
         if (p.human == human && GetTickCount() - p.tick <= maxAgeMs) { memcpy(world, p.w, sizeof p.w); return true; }
@@ -229,6 +246,7 @@ void HumansFlushPoses() {
         UpdateModel(m);
         void *h = nullptr;
         for (void *x : g_humans) if (ModelOf(x) == m) h = x;
+        if (!h) for (void *x : PedestrianElements()) if (ModelOf(x) == m) h = x;
         void *f[MML_BONE_COUNT];
         if (!h || !FindBones(h, f)) continue;
         LastPose p{h, GetTickCount(), {}};
@@ -268,9 +286,14 @@ bool HumansMethod(const std::string &method, const std::string &paramsJson, std:
         *reply = json({{"count", g_humans.size()}, {"humans", out}}).dump(-1, ' ', false, json::error_handler_t::replace);
         return true;
     }
-    std::string a = p.value("actor", "player");
-    void *h = a == "player" ? player : reinterpret_cast<void *>(ParseAddress(a));
-    if (!h || !Alive(h)) { *ok = false; *reply = method + ": no such person (humans.list lists them; \"player\")"; return true; }
+    bool ped = p.contains("pedestrian");
+    std::string a = ped ? p.value("pedestrian", "") : p.value("actor", "player");
+    void *h = a == "player" && !ped ? player : reinterpret_cast<void *>(ParseAddress(a));
+    if (!h || !(ped ? PedestrianKnown(h) : Alive(h))) {
+        *ok = false;
+        *reply = method + (ped ? ": no such pedestrian (pedestrians.list lists them)" : ": no such person (humans.list lists them; \"player\")");
+        return true;
+    }
     if (method == "human.skeleton") {
         MmlBone b[MML_BONE_COUNT];
         if (!HumanSkeleton(h, b, MML_BONE_COUNT)) { *ok = false; *reply = "human.skeleton: his model has no skeleton the loader knows (no thighs?)"; return true; }

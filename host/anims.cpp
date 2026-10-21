@@ -19,13 +19,25 @@
 // hand-over, each bone's rotation relative to its parent blended (the pelvis's relative to the model's root as it is
 // now), the pelvis's world place blended; written in RENDER_BEGIN after the game posed the animation.
 //
+// A traffic pedestrian gets up its own way (mafia-ragdoll's getup.cpp, read in both builds' pedHit and pedAnimStart):
+// its element (pedestrians.cpp) keeps its place +0x10 and facing +0x1C (the world's), a sequence state +0x14C (3: two
+// animations to play, 2: one, 1: playing the last, 0: walking), the animation to play +0x164, the one playing +0x160,
+// the next +0x168, whether the playing one hands over to walking before its end +0x16C (+0x16D the next's). It is
+// put where the body lies and turned as a person is, its model placed by its own SetWorldPos and SetDir (vtable +0x4,
+// +0xC: what pedHit does) and updated (+0x18); out of the wait by a car it left (+0x1B0, +0x190, +0x1AC: a driver hit
+// by his own car's door stood in it after getting up, untouchable); its collision object (+0xC4, its place +0x10:
+// the model's (0, 0.9, 0)) put back into the grid at the body (collGridMove when it is in a cell, +0xC; else
+// collGridAdd; +0x150 set); then the sequence at its last animation, the get-up, and pedAnimStart starts it (as a
+// knock-down's get-up starts). The blend is the person's. human_anim_state of a pedestrian: its sequence state, the
+// animation playing and asked, how it lies.
+//
 // Pedestrians: the traffic system's walkers are elements, not actors; their Hit (game_build.h pedHit,
 // thiscall(element, type, dir, part, attacker, float damage) ret 0x14) is hooked and told as
 // MML_EVENT_PEDESTRIAN_HIT: the element's place +0x10 (the world's), its health +0x15C (below 0: dead), its model
 // frame the +4 of its collision object at +0xC4.
 //
-// Bridge methods (game thread): human.anim {actor, play | stop | replace, with, simple}, human.anim_state {actor},
-// human.get_up {actor, blend_ms}, human.anims {query} (the game's table, read from the game).
+// Bridge methods (game thread): human.anim {actor, play | stop | replace, with, simple}, human.anim_state {actor |
+// pedestrian}, human.get_up {actor | pedestrian, blend_ms}, human.anims {query} (the game's table, read from the game).
 #include "host.h"
 #include <algorithm>
 #include <cmath>
@@ -44,12 +56,46 @@ namespace {
 constexpr int kAnimPlaying = 0x70, kAnimAsked = 0x74;
 constexpr int kGetUpBack = 111, kGetUpFront = 338;
 constexpr int kPedPos = 0x10, kPedHealth = 0x15C, kPedColl = 0xC4;
+constexpr int kPedDir = 0x1C, kPedModel = 0x40, kPedState = 0x14C, kPedInGrid = 0x150, kPedPlaying = 0x160, kPedAnim = 0x164,
+              kPedNext = 0x168, kPedTimed = 0x16C, kPedNextTimed = 0x16D, kPedCarWaitMs = 0x190, kPedOwnCar = 0x1AC,
+              kPedCarWait = 0x1B0, kPedCollPos = kPedColl + 0x10, kPedCollCell = kPedColl + 0x0C;
+constexpr float kPedCollUp = 0.9f;
+constexpr int kVtSetWorldPos = 0x04, kVtSetDir = 0x0C, kVtUpdate = 0x18;
 constexpr int kBones = 19;   // pelvis..l_foot (the root is the 20th)
 
 const game::ExeBuild &E() { return game::Exe(); }
 
 template <class F> DWORD Guarded(F &f) {
     __try { f(); return 0; } __except (EXCEPTION_EXECUTE_HANDLER) { return GetExceptionCode(); }
+}
+
+// A pedestrian handed back where its body lies (at, the ground under the pelvis; facing as a person's), its get-up
+// played by its own sequence (the comment at the top). Inside the caller's guard.
+void PedestrianGetUp(void *element, const V3 &at, const V3 &facing, int anim) {
+    uint8_t *p = static_cast<uint8_t *>(element);
+    void *model = game::at<void *>(p, kPedModel);
+    game::at<V3>(p, kPedPos) = at;
+    game::at<V3>(p, kPedDir) = facing;
+    void **vt = *reinterpret_cast<void ***>(model);
+    V3 pos = at, dir = facing;
+    reinterpret_cast<void(__stdcall *)(void *, const V3 *)>(vt[kVtSetWorldPos / 4])(model, &pos);
+    reinterpret_cast<void(__stdcall *)(void *, const V3 *, int)>(vt[kVtSetDir / 4])(model, &dir, 0);
+    reinterpret_cast<void(__stdcall *)(void *)>(vt[kVtUpdate / 4])(model);
+    game::at<uint8_t>(p, kPedCarWait) = 0;
+    game::at<int>(p, kPedCarWaitMs) = 0;
+    game::at<uint32_t>(p, kPedOwnCar) = 0;
+    game::at<V3>(p, kPedCollPos) = at + V3{0, kPedCollUp, 0};
+    using GridFn = void(__fastcall *)(void *, void *, void *);
+    reinterpret_cast<GridFn>(game::at<uint32_t>(p, kPedCollCell) ? E().collGridMove : E().collGridAdd)(game::Collision(), nullptr,
+                                                                                                        p + kPedColl);
+    game::at<uint8_t>(p, kPedInGrid) = 1;
+    game::at<int>(p, kPedState) = 2;
+    game::at<int>(p, kPedAnim) = anim;
+    game::at<int>(p, kPedNext) = 0;
+    game::at<uint8_t>(p, kPedTimed) = 1;
+    game::at<uint8_t>(p, kPedNextTimed) = 0;
+    game::at<int>(p, kPedPlaying) = -1;   // (its own get-up may be the one playing: started again from its start)
+    reinterpret_cast<void(__fastcall *)(void *)>(E().pedAnimStart)(p);
 }
 
 using PlayFn = int(__fastcall *)(void *human, void *edx, const char *name, int simple, int load);
@@ -139,7 +185,7 @@ Q Slerp(Q a, Q b, float t) {
 
 // one blend's frame: false when it is over or the person gone
 bool BlendStep(Blend &b, DWORD now) {
-    if (!HumanKnown(b.human)) return false;
+    if (!HumanPosable(b.human)) return false;
     float t = b.ms > 0 ? static_cast<float>(now - b.start) / b.ms : 1.0f;
     if (t >= 1.0f) return false;
     t = t * t * (3 - 2 * t);   // (smooth at both ends)
@@ -247,10 +293,17 @@ int HumanAnimReplace(MmlMod *mod, void *human, const char *own, const char *with
 }
 
 int HumanAnimState(void *human, MmlHumanAnim *out) {
-    if (!out || !IsPerson(human)) return 0;
+    bool ped = out && !IsPerson(human) && PedestrianKnown(human);
+    if (!out || (!ped && !IsPerson(human))) return 0;
     uint32_t size = out->size;
     MmlHumanAnim a{};
     auto f = [&] {
+        if (ped) {   // a pedestrian: its sequence (no animations machine of a C_human's)
+            a.playing = game::at<int>(human, kPedPlaying);
+            a.asked = game::at<int>(human, kPedAnim);
+            a.state = game::at<int>(human, kPedState);
+            return;
+        }
         a.playing = game::at<int>(human, kAnimPlaying);
         a.asked = game::at<int>(human, kAnimAsked);
         a.state = E().humanState ? game::at<int>(human, E().humanState) : 0;
@@ -272,14 +325,16 @@ int HumanAnimState(void *human, MmlHumanAnim *out) {
 }
 
 int HumanGetUp(void *human, int blendMs, std::string *err) {
-    if (!IsPerson(human)) { *err = "not a person the loader knows (humans_list)"; return 0; }
-    if (!E().humanActs || !E().humanState) { *err = "the action queue is not known for this build"; return 0; }
+    bool ped = !IsPerson(human) && PedestrianKnown(human);
+    if (!ped && !IsPerson(human)) { *err = "neither a person (humans_list) nor a traffic pedestrian (pedestrians_list)"; return 0; }
+    if (!ped && (!E().humanActs || !E().humanState)) { *err = "the action queue is not known for this build"; return 0; }
+    if (ped && (!E().pedAnimStart || !E().collGridAdd || !E().collGridMove)) { *err = "a pedestrian's get-up is not known for this build"; return 0; }
     Blend b{};
     b.human = human;
     if (!HumanBones(human, b.frames) || !b.frames[MML_BONE_ROOT] || !b.frames[MML_BONE_NECK]) { *err = "no skeleton"; return 0; }
     bool alive = false;
-    auto ra = [&] { alive = game::at<uint8_t>(human, game::kActorAlive) != 0; };
-    if (Guarded(ra) || !alive) { *err = "he is dead (a body does not get up)"; return 0; }
+    auto ra = [&] { alive = ped ? game::at<float>(human, kPedHealth) > 0 : game::at<uint8_t>(human, game::kActorAlive) != 0; };
+    if (Guarded(ra) || !alive) { *err = "dead (a body does not get up)"; return 0; }
     float w[MML_BONE_COUNT][16] = {};
     if (!PoseOf(human, b.frames, w)) { *err = "his bones could not be read"; return 0; }
     int lying = Lying(w);
@@ -295,7 +350,11 @@ int HumanGetUp(void *human, int blendMs, std::string *err) {
         MmlHit hit{};
         hit.size = sizeof hit;
         const float from[3] = {at.x, at.y + 1.0f, at.z}, to[3] = {at.x, at.y - 3.0f, at.z};
-        if (WorldRay(from, to, MML_WORLD_STATIC, human, &hit)) at.y = hit.pos[1];
+        if (WorldRay(from, to, MML_WORLD_STATIC, ped ? nullptr : human, &hit)) at.y = hit.pos[1];
+        if (ped) {
+            PedestrianGetUp(human, at, facing, back ? kGetUpBack : kGetUpFront);
+            return;
+        }
         void *model = game::at<void *>(human, game::kActorFrame);
         game::at<V3>(human, game::kActorPos) = game::ToParentPoint(model, at);
         game::at<V3>(human, game::kActorFacing) = game::ToParentDir(model, facing);
@@ -371,9 +430,15 @@ bool AnimsMethod(const std::string &method, const std::string &paramsJson, std::
         }
         void *h = nullptr;
         std::string err, a = p.value("actor", "player");
-        if (a == "player") h = HumanPlayer();
-        else if (!ParseActor(a, &h, &err)) { *reply = method + ": actor: " + err; return true; }
-        if (!IsPerson(h)) { *reply = method + ": actor: not a person the loader knows (humans.list; \"player\")"; return true; }
+        if (p.contains("pedestrian") && (method == "human.anim_state" || method == "human.get_up")) {
+            std::string e = p.value("pedestrian", "");
+            h = reinterpret_cast<void *>(ParseAddress(e));
+            if (!PedestrianKnown(h)) { *reply = method + ": pedestrian: " + e + " is not a traffic pedestrian (pedestrians.list)"; return true; }
+        } else {
+            if (a == "player") h = HumanPlayer();
+            else if (!ParseActor(a, &h, &err)) { *reply = method + ": actor: " + err; return true; }
+            if (!IsPerson(h)) { *reply = method + ": actor: not a person the loader knows (humans.list; \"player\")"; return true; }
+        }
         if (method == "human.anim_state") {
             MmlHumanAnim s{};
             s.size = sizeof s;

@@ -637,6 +637,7 @@ bool ItemsMethod(const std::string &method, const std::string &paramsJson, std::
 // people's animations, getting up, the traffic pedestrians' hits (anims.cpp)
 bool HumanBones(void *human, void **frames);   // (humans.cpp) the skeleton's frames of a person the host keeps
 bool HumanKnown(void *human);
+bool HumanPosable(void *human);           // a person (humans_list) or a traffic pedestrian's element: a skeleton to pose
 bool HumanLastPose(void *human, float world[][16], unsigned maxAgeMs);   // the bones' world matrices last drawn by a mod or the bridge
 // what strikes people, before the game (hits.cpp): the mods' hit filters, the game's Hit called, the pedestrians'
 // bullet Hit hooked; hits.state, human.hit

@@ -1110,7 +1110,10 @@ H->human_hit(M, peds[0].element, &push);
   the player's) takes no health. Other types: 0 a bullet (`part` 1 the head...), 3 an explosion, 6 a fall.
 - **Pedestrians** are the traffic's elements, not actors: `humans_list` does not hold them. `pedestrians_list`
   gives each one's `element`, `model`, `pos`, `health` (at or below 0: dead; the traffic later gives the element to
-  a new pedestrian) and `spawned`.
+  a new pedestrian) and `spawned`. An element has a person's skeleton: `human_skeleton`, `bone_set` (in
+  RENDER_BEGIN), `human_get_up` and `human_anim_state` take it as they take a person. Its get-up is its own (its
+  sequence at the game's get-up, its collision back in the grid where the body lies, out of the wait by a car it
+  left); `human_anim_state` gives its sequence's `state` (2 to 1 while getting up, 0 walking again) and `playing`.
 - **Bullets on a body the mod moves**: a dead person is no longer in the game's collision world, so the game's
   bullets pass a body lying where a ragdoll put it. `bullet_shape` gives a person's body as capsules in the world's
   space (`MmlCapsule`: a, b, radius; up to 64), given again as it moves (each tick). Each stretch a bullet flies is
