@@ -1130,6 +1130,22 @@ H->human_hit(M, peds[0].element, &push);
   "capsules": [[ax, ay, az, bx, by, bz, r], ...]}` gives a body for the bullets as a mod would; `hits.state` lists
   the filters, the shapes and what the bullets did.
 
+### A frame's release
+
+```c
+static void Gone(void *frame, void *user) { ForgetFrame(frame); }   /* before LS3D frees it */
+H->frame_watch(M, model, Gone, NULL);                               /* each frame the mod keeps */
+H->frame_watch(M, model, NULL, NULL);                               /* no longer kept */
+```
+
+- LS3D frees a frame (a model, a bone, a car's part) when its last reference goes: a mission's close, a pedestrian's
+  element given to a new pedestrian, a car destroyed, the game's own clean-up. A mod that keeps pointers to frames
+  (a ragdoll to a body's model and bones) watches each one: `fn` is called in the Release that frees it, before the
+  memory goes, on the thread that releases it (the game's), and the watch ends there. A model's bones go with it: a
+  mod watching the model and its bones is told of each.
+- `call frame.watch {"frame": "0x..."}` does the same for an agent: the release comes as the event `FRAME_RELEASED`;
+  `frames.watched` lists what is watched.
+
 ### People's skinning (more than two bones a vertex)
 
 LS3D skins a person on the CPU with two bones a vertex at most (the .4ds holds no more): a joint bent far (a knee,

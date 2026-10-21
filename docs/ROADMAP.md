@@ -978,7 +978,8 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
       nearer than the game's hit is given to the game as a hit on that person (his own collision object, the game's
       part test for a C_human: the blood, the part, the Hit, then 32a's filter). The exclusion list the bullets'
       tick keeps and a guard against the same stretch given again are the host's (mafia-ragdoll hung the game so).
-    - **32c, a frame's release told.** A mod watches the frames it keeps (a model, its bones); the host tells it
+    - **32c, a frame's release told** *(done 2026-10-21: mml.h frame_watch; host/framelife.cpp; MODDING "A
+      frame's release")*. A mod watches the frames it keeps (a model, its bones); the host tells it
       before LS3D frees one (I3D_frame's and the meshes' Release reaching zero), so nothing is used after free.
     - **32d, traffic pedestrians as people.** Their elements listed (with their model, place, health), their
       skeleton read and posed (human_skeleton, bone_set), handed back by human_get_up (getup.cpp's way: out of the
@@ -986,7 +987,9 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
     - **32e, drawing in the world.** Lines, boxes, spheres and capsules in the world's space, tested against the
       frame's depth or over it, from mods (each frame or held for a time) and from the bridge (`draw.world`): what a
       physics mod draws to see its bodies, joints and contacts.
-    - **32f, seen in the game.** Whether a dead person's skin follows bones a mod writes after his death animation
+    - **32f, seen in the game** *(2026-10-21, both labs: a corpse's skin follows bones written 8 s after his death;
+      a dead pedestrian's element and model stayed 2 minutes beside the player, not given to a new pedestrian: its
+      recycling not seen yet; bullets on a corpse: 32b)*. Whether a dead person's skin follows bones a mod writes after his death animation
       ends; what the traffic does with a dead pedestrian's element (kept, recycled: 32c tells it); a corpse hit by
       a bullet where the body lies, in both labs.
 
@@ -1720,6 +1723,9 @@ merged, sorted by importance):
   set). One page a mod at a time; a page closed by Esc lives until the game deletes it, so a `menu_open` in the
   same frame as the close is refused. An item copies its neighbour's text id: a language change re-reading texts
   by id was not looked at.
+- **`world.remove` leaves a person's model frame alive** (2026-10-21, both labs): after a spawned person is removed
+  his model keeps one reference (frame.watch saw no release in 5 s; a prop's prop.remove frees its frame at once).
+  Who holds it (the scene, the actor's destructor, the duplicate's source) was not looked for.
 - **1.0's bullets, getting up and trams** (`game_build.h`'s mafia-ragdoll fields): filled for 1.0 on 2026-10-16
   (the twins of 1.2's functions, checked by check_builds.py), not yet run in a 1.0 game by the loader (item 32 runs
   them); mafia-ragdoll's own copy of the table still has zeros there.

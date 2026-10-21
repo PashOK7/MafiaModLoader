@@ -379,6 +379,7 @@ int Anims(const char *, MmlReply *r, void *) {
 // Hits before the game with no game: the filter set (taken away with {"off": true}), the game's Hit refused, no
 // pedestrians.
 int KitHitFilter(void *, int, MmlHumanHit *, void *) { return MML_HIT_GAME; }
+void KitGone(void *, void *) {}
 int Hits(const char *args, MmlReply *r, void *) {
     if (!MML_HAS(H, pedestrians_list)) { H->reply_error(r, "the loader has no hit_filter"); return 1; }
     bool off = args && strstr(args, "off");
@@ -390,9 +391,10 @@ int Hits(const char *args, MmlReply *r, void *) {
     int hit = H->human_hit(M, nobody, &h), nullHit = H->human_hit(M, nobody, nullptr), pedestrians = H->pedestrians_list(M, peds, 4);
     MmlCapsule c = {{0, 0, 0}, {0, 1, 0}, 0.2f};
     int shape = H->bullet_shape(M, nobody, &c, 1);
+    int watch = H->frame_watch(M, nobody, KitGone, nullptr), unwatch = H->frame_watch(M, nobody, nullptr, nullptr);
     char out[200];
-    snprintf(out, sizeof out, "{\"filter\":%d,\"hit\":%d,\"null_hit\":%d,\"pedestrians\":%d,\"shape\":%d}", filter, hit, nullHit,
-             pedestrians, shape);
+    snprintf(out, sizeof out, "{\"filter\":%d,\"hit\":%d,\"null_hit\":%d,\"pedestrians\":%d,\"shape\":%d,\"watch\":%d,\"unwatch\":%d}",
+             filter, hit, nullHit, pedestrians, shape, watch, unwatch);
     H->reply_append(r, out, static_cast<size_t>(-1));
     return 0;
 }

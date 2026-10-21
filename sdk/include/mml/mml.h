@@ -242,6 +242,9 @@ typedef struct MmlCapsule {
     float radius;
 } MmlCapsule;
 
+/* frame_watch: a watched frame (or mesh) about to be freed by LS3D */
+typedef void (*MmlFrameGoneFn)(void *frame, void *user);
+
 typedef struct MmlPedestrian {
     uint32_t size;          /* set by the host */
     void *element;          /* the traffic's element: what human_hit, human_skeleton, bone_set and human_get_up take */
@@ -1651,6 +1654,12 @@ typedef struct MmlHost {
      * capsules takes the mod's away (its unload, the person's destruction and the mission's close too). Up to 64.
      * 1 done, 0 refused (the log says why). Game thread. */
     int (*bullet_shape)(MmlMod *mod, void *person, const MmlCapsule *parts, int count);
+    /* ---- a frame's release (both builds; docs/MODDING.md "A frame's release"). frame_watch: fn(frame, user) when
+     * LS3D is about to free a frame (or a mesh) the mod keeps: its last reference released (the frames' shared
+     * Release, the meshes'), before its memory goes, on the thread that releases it (the game's). The watch ends
+     * there; fn NULL takes the mod's watch on that frame away (its unload, all of them). A mod keeping a model and
+     * its bones watches each frame it reads or writes. 1 done, 0 refused (the log says why). */
+    int (*frame_watch)(MmlMod *mod, void *frame, MmlFrameGoneFn fn, void *user);
 } MmlHost;
 
 #define MML_ZONE_PLAYER 0x1u

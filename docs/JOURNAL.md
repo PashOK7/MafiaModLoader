@@ -3219,3 +3219,15 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   tests/game/test_hits.py (knock_down, hit_taken, bullets_on_moved_body: the pelvis takes its children 2.5 m, the
   bullets strike the moved body) 14 of 14 in each lab with world.car_hits_person; the player's bullets on a dead
   pedestrian's capsule: PEDESTRIAN_HIT with its shape in both builds, with and without a filter taking it.
+- **Made** (32c): frame_watch (host/framelife.cpp): LS3D's frames' and meshes' shared Release hooked once something is
+  watched; a Release that finds the count at 1 calls the frame's watchers before its memory goes (mafia-ragdoll kept
+  the freed ones for a purge at its next tick). `frame.watch` records FRAME_RELEASED for agents; `frames.watched`.
+- **Seen** (both labs): a prop's frame watched, prop.remove: FRAME_RELEASED at once. A spawned person's model after
+  world.remove keeps one reference, not freed (ROADMAP Known gaps). 32f: a corpse posed 8 s after his death (the
+  pelvis 1.2 m, an arm turned): the skin follows in both builds (screenshots); a dead pedestrian's element and model
+  stayed 120 s beside the player, the element not given to a new pedestrian.
+- **Fixed on the way**: run_tests.py's 20 reloads of boxes asked the process's threads per reload to be 0; a thread
+  of the process's pool ending meanwhile made it -0.05 (44 to 43) twice in a row: a mod's thread left behind makes it
+  positive, so it is `<= 0` now. And a lab install during the offline tests had taken new_mod.py's test mods from
+  the build's output into both labs (taken out): the labs are installed with no build or test running.
+

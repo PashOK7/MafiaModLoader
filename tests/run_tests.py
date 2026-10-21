@@ -707,7 +707,9 @@ def boxes_tests(b):
     res = r.get('result', {})
     per = res.get('per_reload', {})
     check('boxes: 20 reloads in a row: no thread, no address space and few handles lost a reload',
-          r['ok'] and len(res['rounds']) == 20 and per['threads'] == 0 and per['free_mb'] > -1 and per['handles'] <= 4, r)
+          # (threads <= 0: a thread of the process's pool ending meanwhile made it -0.05 once, 44 to 43; a thread left
+          # behind by the mod would make it positive)
+          r['ok'] and len(res['rounds']) == 20 and per['threads'] <= 0 and per['free_mb'] > -1 and per['handles'] <= 4, r)
     time.sleep(0.3)
     s2 = status()
     check('boxes: ... after them the device is the 23rd and it draws (frames, pixels), none lost',
@@ -1869,7 +1871,10 @@ def main():
               r['ok'] and r['result'] == {'play': -1, 'stop': 0, 'replace': 0, 'state': 0, 'untouched': 1, 'get_up': 0}, r)
         r = b.call('kit.hits')
         check('hit_filter set, human_hit and pedestrians_list with no game: refused, none',
-              r['ok'] and r['result'] == {'filter': 1, 'hit': 0, 'null_hit': 0, 'pedestrians': 0, 'shape': 0}, r)
+              r['ok'] and r['result'] == {'filter': 1, 'hit': 0, 'null_hit': 0, 'pedestrians': 0, 'shape': 0, 'watch': 0, 'unwatch': 1}, r)
+        r = b.call('frames.watched')
+        check('frames.watched with no game: none, the Release not hooked (no LS3D)', r['ok'] and r['result']['frames'] == []
+              and r['result']['release'] != 'hooked', r)
         r = b.call('hits.shape', {'actor': 'player', 'capsules': [[0, 0, 0, 0, 1, 0, 0.2]]})
         check('hits.shape with no game: refused, saying why', not r['ok'] and 'no such person' in str(r.get('error', '')), r)
         r = b.call('hits.state')

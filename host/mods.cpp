@@ -735,6 +735,13 @@ int H_BulletShape(MmlMod *m, void *person, const MmlCapsule *parts, int count) {
     if (!r) Log(MML_LOG_WARN, Who(m), "bullet_shape: %s", err.c_str());
     return r;
 }
+int H_FrameWatch(MmlMod *m, void *frame, MmlFrameGoneFn fn, void *user) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    int r = FrameWatch(m, frame, fn, user, false, &err);
+    if (!r) Log(MML_LOG_WARN, Who(m), "frame_watch: %s", err.c_str());
+    return r;
+}
 int H_PedestriansList(MmlMod *m, MmlPedestrian *out, int max) {
     if (!Alive(m)) return 0;
     std::vector<MmlPedestrian> v;
@@ -942,6 +949,7 @@ bool UnloadMod(ModEntry *e, const char *why) {
     StateModGone(m);
     AnimsModGone(m);
     HitsModGone(m);
+    FrameLifeModGone(m);
     CapturesRemove(m);
     SidecarChannelsForget(m);
     ConfigForget(m);
@@ -1326,6 +1334,7 @@ void ModsInit() {
     g_host.human_hit = H_HumanHit;
     g_host.pedestrians_list = H_PedestriansList;
     g_host.bullet_shape = H_BulletShape;
+    g_host.frame_watch = H_FrameWatch;
     LiveCleanAll();
     Scan();
     LoadEnabled();
@@ -1439,6 +1448,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (AnimsMethod(method, paramsJson, reply, &ok)) return ok;
     if (HitsMethod(method, paramsJson, reply, &ok)) return ok;
     if (PedestriansMethod(method, paramsJson, reply, &ok)) return ok;
+    if (FrameLifeMethod(method, paramsJson, reply, &ok)) return ok;
     if (ItemsMethod(method, paramsJson, reply, &ok)) return ok;
     if (StatsMethod(method, paramsJson, reply, &ok)) return ok;
     if (WorldMethod(method, paramsJson, reply, &ok)) return ok;

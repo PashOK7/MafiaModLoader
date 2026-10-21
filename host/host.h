@@ -658,6 +658,11 @@ void *PedestrianOfFrame(void *model);     // the element whose model frame it is
 bool PedestrianRead(void *element, MmlPedestrian *out);
 float PedestrianHealth(void *element);
 bool PedestriansMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+// a frame's release told (framelife.cpp): LS3D's frames' and meshes' Release hooked once something is watched
+void FrameLifeInit();
+int FrameWatch(MmlMod *mod, void *frame, MmlFrameGoneFn fn, void *user, bool bridge, std::string *err);
+void FrameLifeModGone(MmlMod *mod);
+bool FrameLifeMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 void AnimsInit();                         // (after the game's hooks) the pedestrians' Hit
 int HumanAnimPlay(void *human, const char *anim, int flags, std::string *err);   // its length (ms), -1 refused
 int HumanAnimStop(void *human, std::string *err);

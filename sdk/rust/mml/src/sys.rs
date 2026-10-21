@@ -423,6 +423,9 @@ const _: () = {
     ["Offset of field: MmlCapsule::b"][::core::mem::offset_of!(MmlCapsule, b) - 12usize];
     ["Offset of field: MmlCapsule::radius"][::core::mem::offset_of!(MmlCapsule, radius) - 24usize];
 };
+pub type MmlFrameGoneFn = ::core::option::Option<
+    unsafe extern "C" fn(frame: *mut ::core::ffi::c_void, user: *mut ::core::ffi::c_void),
+>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct MmlPedestrian {
@@ -3522,10 +3525,18 @@ pub struct MmlHost {
             count: ::core::ffi::c_int,
         ) -> ::core::ffi::c_int,
     >,
+    pub frame_watch: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            frame: *mut ::core::ffi::c_void,
+            fn_: MmlFrameGoneFn,
+            user: *mut ::core::ffi::c_void,
+        ) -> ::core::ffi::c_int,
+    >,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 776usize];
+    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 780usize];
     ["Alignment of MmlHost"][::core::mem::align_of::<MmlHost>() - 4usize];
     ["Offset of field: MmlHost::size"][::core::mem::offset_of!(MmlHost, size) - 0usize];
     ["Offset of field: MmlHost::api_version"]
@@ -3857,6 +3868,8 @@ const _: () = {
         [::core::mem::offset_of!(MmlHost, pedestrians_list) - 768usize];
     ["Offset of field: MmlHost::bullet_shape"]
         [::core::mem::offset_of!(MmlHost, bullet_shape) - 772usize];
+    ["Offset of field: MmlHost::frame_watch"]
+        [::core::mem::offset_of!(MmlHost, frame_watch) - 776usize];
 };
 pub type MmlModLoadFn = ::core::option::Option<
     unsafe extern "C" fn(host: *const MmlHost, mod_: *mut MmlMod) -> ::core::ffi::c_int,

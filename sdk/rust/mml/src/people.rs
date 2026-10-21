@@ -1,6 +1,6 @@
 //! People: skeletons and poses, animations and getting up, the inventory's rounds, a mod's own items, their skinning
 //! (docs/MODDING.md "People, skeletons, poses", "Animations, getting up", "A mod's own items", "People's skinning").
-use crate::{cstring, guard, keep, release, slot, sys, text, Actor, Frame, Host, HumanHit};
+use crate::{cstring, guard, keep, release, slot, sys, text, track, untrack, Actor, Frame, Host, HumanHit, K_FRAME};
 use core::ffi::{c_int, c_void};
 use core::ptr;
 
@@ -19,6 +19,15 @@ unsafe extern "C-unwind" fn on_hit<F: Fn(Actor, bool, &mut HumanHit) -> bool>(
     guard("a hit filter", || match Actor::from_ptr(person) {
         Some(a) if (*(user as *const F))(a, pedestrian != 0, &mut *hit) => sys::MML_HIT_TAKEN as c_int,
         _ => sys::MML_HIT_GAME as c_int,
+    })
+}
+
+unsafe extern "C-unwind" fn on_gone<F: Fn(Frame)>(frame: *mut c_void, user: *mut c_void) {
+    guard("a frame watch", || {
+        if let Some(fr) = Frame::from_ptr(frame) {
+            (*(user as *const F))(fr)
+        }
+        untrack(K_FRAME, frame as usize as c_int);   // the watch ends here (the closure freed once it has returned)
     })
 }
 
@@ -232,6 +241,26 @@ impl Host {
     /// moves); an empty slice takes the mod's away
     pub fn bullet_shape(&self, person: Actor, parts: &[Capsule]) -> bool {
         unsafe { f!(self, bullet_shape)(self.module, person.as_ptr(), parts.as_ptr(), parts.len() as c_int) != 0 }
+    }
+    /// Told (the closure, with the frame) when LS3D is about to free a frame or mesh the mod keeps; the watch ends
+    /// there
+    pub fn frame_watch<F: Fn(Frame) + 'static>(&self, frame: Frame, f: F) -> bool {
+        let user = keep(f);
+        let ok = unsafe { f!(self, frame_watch)(self.module, frame.as_ptr(), as_c!(on_gone::<F>, *mut c_void, *mut c_void), user) != 0 };
+        let id = frame.as_ptr() as usize as c_int;
+        if ok {
+            untrack(K_FRAME, id);   // (the closure of a watch it replaces)
+            track(K_FRAME, user, id);
+        } else {
+            release(user)
+        }
+        ok
+    }
+    /// The mod's watch on a frame taken away
+    pub fn frame_unwatch(&self, frame: Frame) -> bool {
+        let ok = unsafe { f!(self, frame_watch)(self.module, frame.as_ptr(), None, ptr::null_mut()) != 0 };
+        untrack(K_FRAME, frame.as_ptr() as usize as c_int);
+        ok
     }
     /// The traffic's walkers (not actors: humans_list does not hold them)
     pub fn pedestrians_list(&self) -> Vec<Pedestrian> {

@@ -111,6 +111,7 @@ fn release(user: *mut c_void) {
 const K_INTERACT: u8 = 0;
 const K_PASS: u8 = 1;
 const K_VIEW: u8 = 2;
+const K_FRAME: u8 = 3;   // frame_watch: by the frame's address
 
 /// A registration's closure, freed when it is removed (untrack) or refused (id 0: None).
 fn track(kind: u8, user: *mut c_void, id: c_int) -> Option<i32> {
