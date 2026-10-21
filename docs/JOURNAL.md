@@ -3175,3 +3175,22 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   anyone's. Each line's words matched against a set (3.7 s; one regex of 1500 alternatives took 17 s and reported only
   the longest of overlapping names). `kb_demo.py --fetch` downloads the demo (the Internet Archive, SHA-256 pinned)
   into `re/demo/` and reads LS3D.dll out of it with 7-Zip, never installing it: another machine makes its own names.
+- **History**: the 35 commits not yet pushed rewritten (git filter-repo, `origin/main..main`) with the same names, so
+  none carries the demo's: the renaming commits' own hunks first, then word by word, `names*.csv` rows from the final
+  tree; each commit then passed check_demo_names.py, the last tree is byte for byte the one before, 61770d2 kept its
+  hash (check_demo_names.py's BEFORE_DEMO); the videos' renaming commit fell out empty. Pushed.
+
+## 2026-10-21: the game's own intros as 4K60 HEVC, from beside Game.exe
+
+- **Asked** (the owner): the intros in any format, played from the game's usual place, tried with 1.2's own
+  re-encoded to 4K at 60 fps. Nothing to make: video.cpp already looks for each name the game asks for with every
+  extension of kExts (mp4 first) among the mods' files and then loose in the game's folder.
+- **Made** (the 1.2 lab, W:\MafiaLAB, beside the original .avi and .bik): logo1, Logo3, logo2, intro re-encoded from
+  their .bik (ffmpeg: lanczos to fit 3840x2160 and padded to it, fps=60 by repeated frames, hevc_nvenc p5 cq 24, AAC
+  192k; Logo3 silent), `<name>.mp4`: 1.0, 1.7, 83, 773 MB.
+- **Seen** (the game's usual start, then a new game; RTX 3070): every one played from "the game's folder", D3D11VA
+  into a shared texture, shown at 1280x720 in the 1280x960 window. logo1 301 of 302 pictures (1 dropped), Logo3 362
+  of 362, logo2 2011 of 2011, intro 13733 of 13733 in 229.0 s, none late; a picture's decode 0.24 to 0.36 ms,
+  convert 1.2 to 3.2 ms (the worst 14 ms), the frame 0.5 to 0.6 ms, no upload. The game went on to the intro mission's
+  bar. At the intro's end FFmpeg's AAC decoder warned "Could not update timestamps for discarded samples" (the
+  stream's last packet's padding): nothing missing.
