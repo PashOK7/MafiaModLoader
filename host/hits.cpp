@@ -73,6 +73,8 @@ std::vector<Take> g_takes;
 int g_inFilter;              // a filter's own code runs (its human_hit passes the filters by)
 void *g_inBullet;            // the element pedBulletHit filtered, while the game's code under it runs
 bool g_bulletToPedHit;       // ... and the game's code went on to pedHit (its PEDESTRIAN_HIT told there)
+V3 g_inBulletPos;            // ... and the point the bullet struck (pedHit is given no place: the event tells this one)
+bool g_inBulletHasPos;
 unsigned g_seen, g_taken, g_faults, g_called;
 bool g_bulletHooked;
 std::string g_bulletWhy = "not tried";
@@ -298,6 +300,8 @@ int __fastcall hkPedBullet(void *sys, void *edx, int type, V3 *dir, V3 *from, V3
     V3 d{h.dir.x, h.dir.y, h.dir.z}, at{h.pos.x, h.pos.y, h.pos.z};
     g_inBullet = element;
     g_bulletToPedHit = false;
+    g_inBulletHasPos = pos != nullptr;
+    g_inBulletPos = at;
     int r = oPedBullet(sys, edx, h.type, dir ? &d : nullptr, from, pos ? &at : nullptr, h.damage, h.attacker, a7, frame);
     g_inBullet = nullptr;
     // 1.2's system Hit goes no further for a dead element (1.0's calls pedHit, which returns at once): the bullet is
@@ -383,9 +387,10 @@ bool HitsFilter(void *person, int ped, MmlHumanHit *hit) {
     return taken;
 }
 
-bool HitsInPedBullet(void *element) {
+bool HitsInPedBullet(void *element, MmlVec3 *pos) {
     if (!element || element != g_inBullet) return false;
     g_bulletToPedHit = true;
+    if (pos && g_inBulletHasPos) *pos = {g_inBulletPos.x, g_inBulletPos.y, g_inBulletPos.z};
     return true;
 }
 

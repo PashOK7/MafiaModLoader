@@ -463,6 +463,7 @@ struct ModelSkinLod {
 bool ModelSkin(const char *file, const char *mesh, std::vector<ModelSkinLod> *out, std::string *meshName, std::string *err);
 // the meshes the game draws (meshes.cpp): the scene's around the mods' boxes, an actor's
 bool SceneFocus(MmlMod *mod, const float *lo, const float *hi);   // null lo: none
+bool SceneReady(MmlMod *mod, const float *lo, const float *hi);   // every visual of the box is among the pieces
 int ScenePieces(MmlMod *mod, MmlMeshPiece *out, int max);
 int ActorMeshes(void *actor, MmlMeshPiece *out, int max);         // -1: no model
 void MeshesFrame();                       // every frame of a loaded mission: the walk, the scans
@@ -643,7 +644,8 @@ bool HumanLastPose(void *human, float world[][16], unsigned maxAgeMs);   // the 
 // bullet Hit hooked; hits.state, human.hit
 void HitsInit();                          // (after AnimsInit) the pedestrian system's bullet Hit
 bool HitsFilter(void *person, int pedestrian, MmlHumanHit *hit);   // true: a mod took it (the game's Hit must not run)
-bool HitsInPedBullet(void *element);      // pedBulletHit filtered this element and runs (pedHit's filter passes it by)
+bool HitsInPedBullet(void *element, MmlVec3 *pos = nullptr);   // pedBulletHit filtered this element and runs (pedHit's filter
+                                                               // passes it by); pos: the point the bullet struck
 int HitFilterSet(MmlMod *mod, MmlHitFilterFn fn, void *user);
 int HumanHitCall(void *person, const MmlHumanHit *hit, std::string *err);
 void HitsModGone(MmlMod *mod);

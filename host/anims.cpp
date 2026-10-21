@@ -33,7 +33,8 @@
 //
 // Pedestrians: the traffic system's walkers are elements, not actors; their Hit (game_build.h pedHit,
 // thiscall(element, type, dir, part, attacker, float damage) ret 0x14) is hooked and told as
-// MML_EVENT_PEDESTRIAN_HIT: the element's place +0x10 (the world's), its health +0x15C (below 0: dead), its model
+// MML_EVENT_PEDESTRIAN_HIT: the element's place +0x10 (the world's; a bullet's hit: the point it struck), its health
+// +0x15C (below 0: dead), its model
 // frame the +4 of its collision object at +0xC4.
 //
 // Bridge methods (game thread): human.anim {actor, play | stop | replace, with, simple}, human.anim_state {actor |
@@ -227,7 +228,7 @@ int __fastcall hkPedHit(void *element, void *edx, int type, const V3 *dir, int p
     auto rp = [&] { const V3 &p = game::at<V3>(element, kPedPos); h.pos = {p.x, p.y, p.z}; };
     Guarded(rp);
     // the mods' filters first (hits.cpp), unless pedBulletHit has filtered this bullet already
-    bool taken = !HitsInPedBullet(element) && HitsFilter(element, 1, &h);
+    bool taken = !HitsInPedBullet(element, &h.pos) && HitsFilter(element, 1, &h);   // (a bullet's: its point)
     int r = 0;
     if (!taken) {
         V3 d{h.dir.x, h.dir.y, h.dir.z};

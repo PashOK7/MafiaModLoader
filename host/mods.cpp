@@ -742,6 +742,7 @@ int H_FrameWatch(MmlMod *m, void *frame, MmlFrameGoneFn fn, void *user) {
     if (!r) Log(MML_LOG_WARN, Who(m), "frame_watch: %s", err.c_str());
     return r;
 }
+int H_SceneReady(MmlMod *m, const float lo[3], const float hi[3]) { return Alive(m) && SceneReady(m, lo, hi) ? 1 : 0; }
 int H_DrawWorld(MmlMod *m, const MmlDrawShape *shape) {
     if (!Alive(m)) return 0;
     std::string err;
@@ -1344,6 +1345,7 @@ void ModsInit() {
     g_host.bullet_shape = H_BulletShape;
     g_host.frame_watch = H_FrameWatch;
     g_host.draw_world = H_DrawWorld;
+    g_host.scene_ready = H_SceneReady;
     LiveCleanAll();
     Scan();
     LoadEnabled();

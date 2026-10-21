@@ -399,9 +399,11 @@ int Hits(const char *args, MmlReply *r, void *) {
     MmlDrawShape bad = ds;
     bad.radius = -1;
     int drawn = H->draw_world(M, &ds), badDrawn = H->draw_world(M, &bad);
+    const float lo[3] = {0, 0, 0}, hi[3] = {1, 1, 1};
+    int ready = H->scene_ready(M, lo, hi);
     char out[260];
-    snprintf(out, sizeof out, "{\"filter\":%d,\"hit\":%d,\"null_hit\":%d,\"pedestrians\":%d,\"shape\":%d,\"watch\":%d,\"unwatch\":%d,\"draw\":%d,\"bad_draw\":%d}",
-             filter, hit, nullHit, pedestrians, shape, watch, unwatch, drawn, badDrawn);
+    snprintf(out, sizeof out, "{\"filter\":%d,\"hit\":%d,\"null_hit\":%d,\"pedestrians\":%d,\"shape\":%d,\"watch\":%d,\"unwatch\":%d,\"draw\":%d,\"bad_draw\":%d,\"ready\":%d}",
+             filter, hit, nullHit, pedestrians, shape, watch, unwatch, drawn, badDrawn, ready);
     H->reply_append(r, out, static_cast<size_t>(-1));
     return 0;
 }

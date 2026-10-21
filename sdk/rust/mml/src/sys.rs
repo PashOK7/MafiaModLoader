@@ -3571,10 +3571,17 @@ pub struct MmlHost {
     pub draw_world: ::core::option::Option<
         unsafe extern "C" fn(mod_: *mut MmlMod, shape: *const MmlDrawShape) -> ::core::ffi::c_int,
     >,
+    pub scene_ready: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            lo: *const f32,
+            hi: *const f32,
+        ) -> ::core::ffi::c_int,
+    >,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 784usize];
+    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 788usize];
     ["Alignment of MmlHost"][::core::mem::align_of::<MmlHost>() - 4usize];
     ["Offset of field: MmlHost::size"][::core::mem::offset_of!(MmlHost, size) - 0usize];
     ["Offset of field: MmlHost::api_version"]
@@ -3910,6 +3917,8 @@ const _: () = {
         [::core::mem::offset_of!(MmlHost, frame_watch) - 776usize];
     ["Offset of field: MmlHost::draw_world"]
         [::core::mem::offset_of!(MmlHost, draw_world) - 780usize];
+    ["Offset of field: MmlHost::scene_ready"]
+        [::core::mem::offset_of!(MmlHost, scene_ready) - 784usize];
 };
 pub type MmlModLoadFn = ::core::option::Option<
     unsafe extern "C" fn(host: *const MmlHost, mod_: *mut MmlMod) -> ::core::ffi::c_int,

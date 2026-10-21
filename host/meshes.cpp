@@ -18,6 +18,11 @@
 // buffers are locked read-only through their Direct3D 8 vtables (Lock 11, Unlock 12, GetDesc 13): a wrapper's
 // (dxwrapper's) objects answer them as Direct3D 8's.
 //
+// A box is ready (scene_ready) once a scan that left nothing for later (no mesh deferred by its budget), over a
+// complete walk of the scene, had a focus of the mod's holding it, and its focus holds it still (the pieces that
+// touch a focus are kept): a body put there finds every visual of it among the pieces (mafia-ragdoll's scenery
+// Covers: a body dropped before the street was there fell through it).
+//
 // Bridge methods: scene.focus, scene.pieces, actor.meshes.
 #include "host.h"
 #include <windows.h>
@@ -258,6 +263,7 @@ void Walk(double budgetMs) {
 // ---- the pieces
 struct Focus { V3 lo, hi; };
 std::map<MmlMod *, Focus> g_focus;   // (null: the bridge's)
+std::map<MmlMod *, Focus> g_ready;   // each mod's focus at the last scan that left nothing for later
 struct Piece {
     const void *mesh = nullptr;
     int space = 0;
@@ -343,6 +349,7 @@ void Scan() {
     for (auto it = g_pieces.begin(); it != g_pieces.end();) it = it->second.seen == g_scans ? std::next(it) : g_pieces.erase(it);
     if (g_scans % 40 == 0)
         for (auto it = g_meshes.begin(); it != g_meshes.end();) it = it->second.used + kKeepScans >= g_scans ? std::next(it) : g_meshes.erase(it);
+    if (!g_deferred && g_walks) g_ready = g_focus;   // (everything of the walked scene in the boxes is a piece)
     if (g_first) HLOG("scene meshes: %zu pieces at the first scan (%u hidden, %u of actors, %u unreadable, %u out of place)", g_pieces.size(),
                       g_hidden, g_ofActors, g_unreadable, g_misplaced);
     g_first = false;
@@ -469,10 +476,22 @@ void MeshesMissionClose() {
     g_walking = false;
     g_pieces.clear();
     g_meshes.clear();
+    g_ready.clear();
     g_first = true;
 }
 
-void MeshesModGone(MmlMod *mod) { g_focus.erase(mod); }
+bool SceneReady(MmlMod *mod, const float *lo, const float *hi) {
+    auto in = [&](const std::map<MmlMod *, Focus> &m) {
+        auto it = m.find(mod);
+        if (it == m.end()) return false;
+        for (int k = 0; k < 3; k++)
+            if (std::min(lo[k], hi[k]) < (&it->second.lo.x)[k] || std::max(lo[k], hi[k]) > (&it->second.hi.x)[k]) return false;
+        return true;
+    };
+    return lo && hi && in(g_ready) && in(g_focus);
+}
+
+void MeshesModGone(MmlMod *mod) { g_focus.erase(mod); g_ready.erase(mod); }
 
 bool MeshesMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok) {
     if (method != "scene.focus" && method != "scene.pieces" && method != "actor.meshes") return false;

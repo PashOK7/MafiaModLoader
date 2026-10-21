@@ -270,6 +270,10 @@ impl Host {
         s.size = core::mem::size_of::<DrawShape>() as u32;
         unsafe { f!(self, draw_world)(self.module, &s) != 0 }
     }
+    /// Every visual of the box (world) is among scene_pieces now (a body put there finds its ground)
+    pub fn scene_ready(&self, lo: [f32; 3], hi: [f32; 3]) -> bool {
+        unsafe { f!(self, scene_ready)(self.module, lo.as_ptr(), hi.as_ptr()) != 0 }
+    }
     /// The mod's shapes in the world taken away
     pub fn draw_world_clear(&self) -> bool {
         unsafe { f!(self, draw_world)(self.module, ptr::null()) != 0 }

@@ -127,11 +127,22 @@ void *ParentOf(void *f) {
     __try { parent = game::at<void *>(f, game::kFrameParent); } __except (EXCEPTION_EXECUTE_HANDLER) { parent = nullptr; }
     return parent;
 }
+// The people's and pedestrians' model frames, gathered once a frame (bone_set asks for each bone it writes: a
+// ragdoll's twenty a frame), dropped when the frame's poses are flushed and at the mission's close.
+std::vector<void *> g_models;
+bool g_modelsKnown;
+const std::vector<void *> &Models() {
+    if (!g_modelsKnown) {
+        g_models.clear();
+        for (void *h : g_humans) g_models.push_back(ModelOf(h));
+        for (void *e : PedestrianElements()) g_models.push_back(ModelOf(e));
+        g_modelsKnown = true;
+    }
+    return g_models;
+}
 // The model a bone belongs to: a person's (or a pedestrian's) model frame among its parents.
 void *ModelOfBone(void *frame) {
-    std::vector<void *> models;
-    for (void *h : g_humans) models.push_back(ModelOf(h));
-    for (void *e : PedestrianElements()) models.push_back(ModelOf(e));
+    const std::vector<void *> &models = Models();
     void *f = frame;
     for (int i = 0; i < 16 && f; i++) {
         if (std::find(models.begin(), models.end(), f) != models.end()) return f;
@@ -187,13 +198,13 @@ json HumanJson(void *h, void *player) {
 
 } // namespace
 
-void HumansCreated(void *h) { if (h && !Alive(h)) g_humans.push_back(h); }
+void HumansCreated(void *h) { if (h && !Alive(h)) { g_humans.push_back(h); g_modelsKnown = false; } }
 void HumansGone(void *actor) {
     g_humans.erase(std::remove(g_humans.begin(), g_humans.end(), actor), g_humans.end());
     g_held.erase(std::remove_if(g_held.begin(), g_held.end(), [&](const Held &x) { return x.human == actor; }), g_held.end());
     g_lastPoses.erase(std::remove_if(g_lastPoses.begin(), g_lastPoses.end(), [&](const LastPose &x) { return x.human == actor; }), g_lastPoses.end());
 }
-void HumansMissionClosed() { g_humans.clear(); g_held.clear(); g_dirty.clear(); g_lastPoses.clear(); }
+void HumansMissionClosed() { g_humans.clear(); g_held.clear(); g_dirty.clear(); g_lastPoses.clear(); g_modelsKnown = false; }
 
 void *HumanPlayer() {
     if (!game::g_exe) return nullptr;
@@ -262,6 +273,7 @@ void HumansFlushPoses() {
         g_lastPoses.push_back(p);
     }
     g_dirty.clear();
+    g_modelsKnown = false;   // (the next frame's people and pedestrians gathered anew)
 }
 
 // (render.cpp) RENDER_BEGIN of the mission's world, before the mods': the poses the bridge holds.

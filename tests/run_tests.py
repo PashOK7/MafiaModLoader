@@ -1872,7 +1872,7 @@ def main():
         r = b.call('kit.hits')
         check('hit_filter set, human_hit and pedestrians_list with no game: refused, none',
               r['ok'] and r['result'] == {'filter': 1, 'hit': 0, 'null_hit': 0, 'pedestrians': 0, 'shape': 0, 'watch': 0, 'unwatch': 1, 'draw': 1,
-                                         'bad_draw': 0}, r)
+                                         'bad_draw': 0, 'ready': 0}, r)
         r = b.call('draw.world_state')
         check("draw.world_state: the kit's sphere held, the bad one refused", r['ok'] and r['result']['shapes'] == 1
               and r['result']['refused'] == 1, r)

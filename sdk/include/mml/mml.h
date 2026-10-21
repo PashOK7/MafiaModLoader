@@ -100,7 +100,8 @@ typedef enum MmlEventType {
                                         save_get (MML_SAVE_SLOT) gives that save's state now */
     MML_EVENT_PEDESTRIAN_HIT = 28,   /* a traffic pedestrian took a hit (after the game's): actor its element (the
                                         traffic system's walker, not a C_actor), other its model frame, hit (pos
-                                        where it stands, was_alive / alive by its health) */
+                                        where it stands, a bullet's: the point it struck; was_alive / alive by its
+                                        health) */
     MML_EVENT_BULLET_HIT = 29,       /* a bullet struck something that is not a person (people: HUMAN_HIT,
                                         PEDESTRIAN_HIT): the static world, a car, a door...: actor the shooter, bullet */
     MML_EVENT_CAR_CRASH = 30,        /* a car struck the world or another car (each car of the two is told): actor the
@@ -1685,6 +1686,10 @@ typedef struct MmlHost {
      * frame (ms 0: give it each frame, from any event) or held for ms. NULL takes the mod's shapes away (its unload
      * too). Up to 20000 shapes at once. 1 done, 0 refused (the log says why). Game thread. */
     int (*draw_world)(MmlMod *mod, const MmlDrawShape *shape);
+    /* scene_ready: 1 when every visual of the box (world) is among scene_pieces: a scan that left nothing for later
+     * (the scans read new meshes within a budget) had the mod's focus holding the box, and its focus holds it still.
+     * A body put there before it is ready may fall through what is not there yet. Game thread. */
+    int (*scene_ready)(MmlMod *mod, const float lo[3], const float hi[3]);
 } MmlHost;
 
 #define MML_ZONE_PLAYER 0x1u
