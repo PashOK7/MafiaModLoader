@@ -3161,3 +3161,17 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   forced 584 to 600 (convert 4.8 to 7.4 ms, upload 0.8 to 2.3); with DXVK's d3d9.dll in the 1.2 lab (taken out after)
   the copy path, 600 of 600 through D3D11VA (2.6 to 4.0 ms) and DXVA2 (5.2 to 5.5 ms). Screenshots of each path: the
   same colours.
+
+## 2026-10-21: names of our own for the demo's
+
+- **Why**: the Mafia demo's licence lets nothing of it be copied, its LS3D.dll's CodeView symbols included; the names
+  taken from them on 2026-10-20 (item 28, the videos' lines) went into the repository. They stay on this machine now
+  (`knowledge/ls3df.dll/demo*.local.csv`) and the repository says its own: I3D_singlemesh::PoseLod,
+  CopyRigidPositions, CopySkinnedPositions, I3D_singlemorph::PoseLod, LightVertices, LightsOfSector, EnvMapCoords,
+  SkinOneBone, SkinTwoBones (names.csv, names_10.csv, the notes, the hooks' names in host/skin.cpp, the docs).
+- **Made**: `tools/check_demo_names.py` (in the offline tests): every name of the demo's that no other source gives,
+  looked for in each file git tracks; names the repository had before the demo was read, and the names the Windows
+  SDK's headers that the sources include declare (dxva2api.h's ResetDevice, the demo's LS3D has one too), are
+  anyone's. Each line's words matched against a set (3.7 s; one regex of 1500 alternatives took 17 s and reported only
+  the longest of overlapping names). `kb_demo.py --fetch` downloads the demo (the Internet Archive, SHA-256 pinned)
+  into `re/demo/` and reads LS3D.dll out of it with 7-Zip, never installing it: another machine makes its own names.

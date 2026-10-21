@@ -1,6 +1,12 @@
 """kb_demo.py: the Mafia demo's own names for LS3D's code, carried onto LS3DF.dll of both builds.
 
+    python tools/kb_demo.py --fetch     # a machine without the demo: it is downloaded (the Internet Archive, its
+                                        # SHA-256 pinned) into re/demo/, read with 7-Zip, never installed; then as below
     python tools/kb_demo.py [--demo <demo LS3D.dll>] [--ls3d10 <1.0 LS3DF.dll>] [--ls3d12 <1.2 LS3DF.dll>]
+    python tools/ghidra_cli.py sync && python tools/ghidra_cli.py --build 1.0 sync   # the names into the projects
+
+Whoever runs it accepts the demo's own licence (re/demo/license.txt) for their copy; the repository carries nothing
+of the demo, its names included (tools/check_demo_names.py, in the offline tests, refuses one that leaked).
 
 The demo (2002-11, one mission of the full game) ships beside its LS3DF.dll (byte for byte the 1.0 lab's) an LS3D.dll
 linked 2002-07-04 that still carries the linker's CodeView NB11 block: 9892 public symbols, among them 3109 functions
@@ -45,8 +51,11 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import struct
+import subprocess
 import sys
+import urllib.request
 from bisect import bisect_right
 from collections import Counter, defaultdict
 
@@ -745,13 +754,53 @@ def write_csv(path, header, data):
         w.writerows(data)
 
 
+DEMO_URL = 'https://archive.org/download/Mafia_201405/Mafia.exe'
+DEMO_SHA = '54cacf5deb5883f9511fee64c5d47a4f853dc5301c1d6ac8b71474dc1d7eafd7'   # 196686681 bytes, a RAR self-extractor
+DEMO_FILES = ('LS3D.dll', 'license.txt', 'readme.txt')
+
+
+def seven_zip():
+    for p in (os.path.join(os.environ.get('ProgramFiles', r'C:\Program Files'), '7-Zip', '7z.exe'),
+              os.path.join(os.environ.get('ProgramFiles(x86)', r'C:\Program Files (x86)'), '7-Zip', '7z.exe')):
+        if os.path.exists(p):
+            return p
+    return shutil.which('7z')
+
+
+def fetch_demo(dest):
+    """The demo's installer from the Internet Archive into re/demo/ (git ignores it), its SHA-256 checked, and the
+    three files read from it (LS3D.dll, its licence, its readme) taken out with 7-Zip (a RAR: 7-Zip reads it; the
+    installer itself is never run). On this machine only: nothing of it goes into the repository."""
+    os.makedirs(dest, exist_ok=True)
+    setup = os.path.join(dest, 'Mafia_demo_setup.rar.exe')
+    if not (os.path.exists(setup) and hashlib.sha256(open(setup, 'rb').read()).hexdigest() == DEMO_SHA):
+        print('the demo: %s (188 MB)' % DEMO_URL, flush=True)
+        part = setup + '.part'
+        with urllib.request.urlopen(DEMO_URL) as r, open(part, 'wb') as f:
+            shutil.copyfileobj(r, f, 1 << 20)
+        got = hashlib.sha256(open(part, 'rb').read()).hexdigest()
+        if got != DEMO_SHA:
+            os.remove(part)
+            sys.exit('the demo: SHA-256 %s, expected %s: not used' % (got, DEMO_SHA))
+        os.replace(part, setup)
+    z = seven_zip()
+    if not z:
+        sys.exit('the demo: 7-Zip is needed to read its installer (https://www.7-zip.org; then run this again)')
+    subprocess.run([z, 'e', '-y', '-o' + dest, setup] + list(DEMO_FILES), check=True, stdout=subprocess.DEVNULL)
+    print('the demo: %s in %s (its licence: license.txt there)' % (', '.join(DEMO_FILES), dest), flush=True)
+    return os.path.join(dest, 'LS3D.dll')
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('--demo', default=os.path.join(ROOT, 're', 'demo', 'LS3D.dll'))
     ap.add_argument('--ls3d10', default=config_lab('1.0'))
     ap.add_argument('--ls3d12', default=config_lab('1.2'))
     ap.add_argument('--out', default=KB, help='where the tables go (knowledge/ls3df.dll)')
+    ap.add_argument('--fetch', action='store_true', help="the demo downloaded first (re/demo/, this machine's only)")
     a = ap.parse_args()
+    if a.fetch:
+        a.demo = fetch_demo(os.path.dirname(a.demo))
     os.makedirs(a.out, exist_ok=True)
     for k in ('demo', 'ls3d10', 'ls3d12'):
         if not getattr(a, k) or not os.path.exists(getattr(a, k)):

@@ -528,6 +528,9 @@ def methods_tests(b):
     check('sdk script_commands.h is what script_commands.csv gives (tools/gen_script_commands.py --check)', gen.returncode == 0, gen.stdout)
     gen = subprocess.run([sys.executable, os.path.join(ROOT, 'tools', 'check_paths.py')], capture_output=True, text=True)
     check('no ANSI path and no strict json dump in the sources (tools/check_paths.py)', gen.returncode == 0, gen.stdout)
+    gen = subprocess.run([sys.executable, os.path.join(ROOT, 'tools', 'check_demo_names.py')], capture_output=True, text=True)
+    check("none of the Mafia demo's own names in the repository (tools/check_demo_names.py: its licence)", gen.returncode == 0,
+          gen.stdout + gen.stderr)
     sys.path.insert(0, os.path.join(ROOT, 'tools'))
     import gen_methods
     documented = {name: thread for name, thread, _, _ in gen_methods.rows()}
@@ -1188,9 +1191,6 @@ def video_tests(b):
     check('video.find: a Bink 2 file refused as such', len(c) == 2 and c[0]['playable'] is False and 'Bink 2 (KB2j)' in c[0].get('why', ''), c[:1])
     check('video.find: the H.264 clip opened, its size and its sound told', len(c) == 2 and c[1]['playable'] is True
           and c[1]['width'] == 64 and c[1]['height'] == 48 and c[1]['video'].startswith('h264') and c[1]['audio'].startswith('aac'), c[1:])
-    r = b.call('video.state')
-    check('video.state: FFmpeg loaded (LGPL), from mml\\ffmpeg', r['ok'] and r['result']['ffmpeg']['state'] == 'loaded'
-          and 'LGPL' in r['result']['ffmpeg'].get('license', '') and r['result']['ffmpeg'].get('version'), r['result'].get('ffmpeg'))
     # who decodes it: the GPU when the driver says it has the decoder (the harness has no game device: the first adapter),
     # else the CPU with the reason; asked for, the CPU; a way that is no way, refused
     check('video.find: the decoder chosen and said (D3D11VA, DXVA2 or software with its reason)',
@@ -1201,6 +1201,9 @@ def video_tests(b):
           and c[1].get('decode_why') == 'software asked for', c[1:])
     r = b.call('video.find', {'name': 'clip', 'decode': 'gpu'})
     check('video.find decode: an unknown way refused', not r['ok'] and 'decode' in str(r.get('error', '')), r)
+    r = b.call('video.state')
+    check('video.state: FFmpeg loaded (LGPL), from mml\\ffmpeg', r['ok'] and r['result']['ffmpeg']['state'] == 'loaded'
+          and 'LGPL' in r['result']['ffmpeg'].get('license', '') and r['result']['ffmpeg'].get('version'), r['result'].get('ffmpeg'))
     r = b.call('video.play', {'name': 'clip'})
     check('video.play: refused without a game', not r['ok'] and 'not hooked' in str(r.get('error', '')), r)
     r = b.call('video.find', {'name': 'none_such.avi'})
