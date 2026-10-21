@@ -9,7 +9,8 @@ From the builds' outputs (cmake --build --preset x86-release and x64-release: th
 third-party files (tools/deps.py): Ultimate ASI Loader as dinput8.dll, MafiaModLoader.asi, our dxwrapper build
 (d3d8.dll, dxwrapper.dll, dxwrapper.ini: third_party/dxwrapper/patch.py), the mods (their 64-bit halves and the
 sidecar when one has a half; switched on in the archive's manifests: a graphics mod must be on when the game starts),
-the pack's own files, its README (tools/pack/<pack>.txt) and every license. No PDBs (players send logs and dumps).
+the pack's own files, FFmpeg (the loader's video player: mml/ffmpeg, its BUILD.txt and licences), its README
+(tools/pack/<pack>.txt) and every license. No PDBs (players send logs and dumps).
 """
 import os
 import re
@@ -105,6 +106,14 @@ def main():
         put(dest, 'mml/sidecar/mml-sidecar64.exe', os.path.join(OUT64, 'mml', 'sidecar', 'mml-sidecar64.exe'))
     for rel, src in pack['files'].items():
         put(dest, rel, src)
+    # FFmpeg, the loader's video player: its DLLs, how it was built and from what (the LGPL's terms), its licences
+    ff = need(os.path.join(OUT86, 'mml', 'ffmpeg'))
+    ff_version = open(os.path.join(ff, 'BUILD.txt'), encoding='utf-8').readline().split(' (')[0]
+    for name in os.listdir(ff):
+        if name.lower().endswith(('.dll', '.txt')):
+            put(dest, 'mml/ffmpeg/' + name, os.path.join(ff, name))
+    for name in os.listdir(os.path.join(ff, 'licenses')):
+        put(dest, 'licenses/' + name, os.path.join(ff, 'licenses', name))
     # the licenses
     put(dest, 'licenses/MafiaModLoader-LICENSE.txt', os.path.join(ROOT, 'LICENSE'))
     put(dest, 'licenses/UltimateASILoader-LICENSE.txt', os.path.join(DEPS, 'ual', 'license'))
@@ -114,7 +123,9 @@ def main():
                                                        's' if len(pack['mods']) > 2 else ''),
               'Ultimate ASI Loader v9.7.4 (dinput8.dll, MIT),',
               'dxwrapper %s built with MafiaModLoader\'s patch: its hooks safe on' % file_version(os.path.join(dest, 'dxwrapper.dll')),
-              'threads without TLS (d3d8.dll, dxwrapper.dll; zlib),'] + pack['inside']
+              'threads without TLS (d3d8.dll, dxwrapper.dll; zlib),',
+              '%s with dav1d, the loader\'s video player (mml\\ffmpeg; LGPL 2.1 or later and' % ff_version,
+              'BSD 2-Clause: its sources and how it was built in mml\\ffmpeg\\BUILD.txt),'] + pack['inside']
     readme = open(os.path.join(ROOT, 'tools', 'pack', sys.argv[1] + '.txt'), encoding='utf-8').read()
     open(os.path.join(dest, 'README.txt'), 'w', encoding='utf-8', newline='\r\n').write(readme.replace('{inside}', '\n'.join(inside)))
     # the archive

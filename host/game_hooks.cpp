@@ -232,6 +232,7 @@ void Frame() {
     ConfigFrame();
     FilesFrame();
     SoundFrame();
+    VideoFrame();     // (video.cpp: video.play's video, played from the frame's own call)
     // a pause: a frame went by without the mission's tick while a menu is open over a loaded mission
     bool ticked = g_ticks != g_ticksSeen;
     g_ticksSeen = g_ticks;

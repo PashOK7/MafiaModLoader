@@ -1401,6 +1401,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (ShadersMethod(method, paramsJson, reply, &ok)) return ok;
     if (SkinMethod(method, paramsJson, reply, &ok)) return ok;
     if (SoundMethod(method, paramsJson, reply, &ok)) return ok;
+    if (VideoMethod(method, paramsJson, reply, &ok)) return ok;
     if (ControlMethod(method, paramsJson, reply, &ok)) return ok;
     if (InteractMethod(method, paramsJson, reply, &ok)) return ok;
     if (HudMethod(method, paramsJson, reply, &ok)) return ok;

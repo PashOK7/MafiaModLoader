@@ -1127,6 +1127,34 @@ def main(a):
         shapes.append([norm(gexe.insn(i.address - 0x400000)) for i in body[:12]])
     if len(shapes) == 2:
         check(shapes[0] == shapes[1], 'roadsNearNode: the same first instructions in both builds')
+
+    # The videos (host/video.cpp): cdFind is cd_find_game_file (CreateFileA, the drives' "X:\MafiaGame\%s"; 1.2's
+    # PlayVideo calls it, 1.0's is m10CdFind); IShow's vtable holds showOpen at +0x0C, showClose at +0x10 and
+    # showRenderUntilKey at +0x50 (1.0: +0x4C); Open reads sndDriver (mov eax, [pISndDriver]) and ends with ret 0xC; the loop
+    # calls IGraph's keyboardUpdate and ReadKey and ends with ret 4.
+    for name, (exe, ls, gexe, gls) in builds.items():
+        if not exe.get('cdFind') or not ls.get('showOpen'):
+            continue
+        if exe['playVideo']:
+            pv = list(gexe.md.disasm(gexe.at(exe['playVideo'] - 0x400000, 0x200), exe['playVideo']))
+            check(sum(1 for i in pv if i.mnemonic == 'call' and i.op_str == hex(exe['cdFind'])) == 3,
+                  f'{name} cdFind: PlayVideo calls it three times')
+        if exe['m10CdFind']:
+            check(exe['m10CdFind'] == exe['cdFind'], f'{name} cdFind is m10CdFind')
+        va = lambda f: (gls.base + ls[f]).to_bytes(4, 'little')
+        found = [m.start() - 0x0C for m in re.finditer(re.escape(va('showOpen')), gls.mem)]
+        until = {'1.2': 0x50, '1.0': 0x4C}[name]   # (1.0's IShow has one slot fewer before it)
+        check(any(gls.at(vt + 0x10, 4) == va('showClose') and gls.at(vt + until, 4) == va('showRenderUntilKey') for vt in found),
+              f'{name} LS3DF IShow vtable: open +0x0C, close +0x10, the full-screen loop +{until:#x}')
+        pair = gls.mem.find(va('keyboardUpdate') + va('readKey'))   # IGraph's vtable: keyboardUpdate, then ReadKey
+        op = list(gls.md.disasm(gls.at(ls['showOpen'], 0x460), gls.base + ls['showOpen']))
+        check(any(i.mnemonic == 'mov' and i.op_str == f'eax, dword ptr [{gls.base + ls["sndDriver"]:#x}]' for i in op),
+              f"{name} LS3DF sndDriver read by IShow's open")
+        check(any(i.mnemonic == 'ret' and i.op_str == '0xc' for i in op), f"{name} LS3DF IShow's open: ret 0xC")
+        lp = ' | '.join('%s %s' % (i.mnemonic, i.op_str) for i in gls.md.disasm(gls.at(ls['showRenderUntilKey'], 0x1D0), gls.base + ls['showRenderUntilKey']))
+        slot = {'1.2': 0x98, '1.0': 0x94}[name]   # (IGraph's slots from +0x64 on are 4 bytes lower in 1.0)
+        check(pair > 0 and f'+ {slot:#x}]' in lp and f'+ {slot + 4:#x}]' in lp and 'ret 4' in lp,
+              f'{name} LS3DF the video loop: IGraph +{slot:#x} keyboardUpdate, +{slot + 4:#x} ReadKey (side by side in the vtable), ret 4')
     print('ALL PASSED' if not fails else f'{fails} FAILED')
     return 1 if fails else 0
 

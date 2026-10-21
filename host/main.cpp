@@ -91,6 +91,7 @@ void Init() {
     if (GameHooksInstall()) {
         HLOG("game: Mafia %s", GameBuild());
         StartInit();
+        VideoInit();    // (after the start's: its logo skip stays in front of the loader's player)
         InputInit();
         DrawInit();
         MenusInit();

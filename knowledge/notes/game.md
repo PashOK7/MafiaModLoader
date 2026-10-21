@@ -10,8 +10,9 @@ any of them up with `kb_function`.
   folder name: `missions\<name>\scene.i3d`, `cache.bin`, `road.bin`, `check.bin`. The main menu is the mission
   `00menu`.
 - **code** The start-up path (0x5BEBE0) plays `intro`, then `tutorial`, then opens `00menu`.
-- **game** The intro videos (Bink, `binkw32.dll`) run before the frame loop: no frames meanwhile (the loader's mods
-  load after them).
+- **game** The intro videos (1.2: Bink, `binkw32.dll`, or an AVI through DirectShow; 1.0: AVI only) run before the
+  frame loop: no frames meanwhile (the loader's mods load after them). Which files, the order, the limits:
+  `knowledge/notes/videos.md`.
 - **code** Profiles are `savegame\mafia%03d.sav`, saves `savegame\mafia%03d.%03d` (code 0x605260..0x606150,
   `G_LoadSaveClass`). The freeride menu's image is `freeride0.bmp` (0x5E1920). Racing records: `savegame\mr%03u.sav`,
   `savegame\mrtimes.sav`, `records\%s`.

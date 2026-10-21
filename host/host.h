@@ -530,6 +530,11 @@ void SoundFrame();                        // every frame: sounds that follow fra
 void SoundModGone(MmlMod *mod);           // (its unload) its sounds and music stopped, the city's music given back
 void SoundMissionClose();                 // (before the mission closes) the 3D sounds released
 bool SoundMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+
+// ---- the game's videos played with FFmpeg (video.cpp): IShow's Open, Close and full-screen loop hooked
+void VideoInit();                         // after the game's hooks and the start's
+void VideoFrame();                        // every frame: video.play's video
+bool VideoMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 // control handed to mods: keys and binding slots kept from the game (input.cpp), the player locked, a car's physics
 // replaced (control.cpp)
 // (the owner of what the loader itself takes, a capture: not a mod, not the bridge)

@@ -254,6 +254,7 @@ pub struct Exe {
     pub humanJump: usize,
     pub materials: usize,
     pub materialCount: usize,
+    pub cdFind: usize,
 }
 
 /// LS3DF.dll's, as RVAs (add the module's base; the int members are offsets): game_build.h Ls3dBuild.
@@ -314,6 +315,11 @@ pub struct Ls3d {
     pub lightCount: usize,
     pub lightAmbient: usize,
     pub vertexPath: usize,
+    pub showOpen: usize,
+    pub showClose: usize,
+    pub showRenderUntilKey: usize,
+    pub sndDriver: usize,
+    pub readKey: usize,
 }
 
 /// The race of mission 6: racing.h RacingLayout.
@@ -581,6 +587,7 @@ pub static EXE_12: Exe = Exe {
     humanJump: 0x586190,
     materials: 0x6D4C24,
     materialCount: 0x6D4C28,
+    cdFind: 0x5662E0,
 };
 
 pub static EXE_10: Exe = Exe {
@@ -832,6 +839,7 @@ pub static EXE_10: Exe = Exe {
     humanJump: 0x4A6700,
     materials: 0x6EFBA4,
     materialCount: 0x6EFBA8,
+    cdFind: 0x623FC0,
 };
 
 pub static LS3D_12: Ls3d = Ls3d {
@@ -890,6 +898,11 @@ pub static LS3D_12: Ls3d = Ls3d {
     lightCount: 0x1C5000,
     lightAmbient: 0x1C4D30,
     vertexPath: 0x1C563C,
+    showOpen: 0x73BA0,
+    showClose: 0x740F0,
+    showRenderUntilKey: 0x74D70,
+    sndDriver: 0x1C529C,
+    readKey: 0x71960,
 };
 
 pub static LS3D_10: Ls3d = Ls3d {
@@ -948,6 +961,11 @@ pub static LS3D_10: Ls3d = Ls3d {
     lightCount: 0x1C0FB0,
     lightAmbient: 0x1C0CE0,
     vertexPath: 0x1C15DC,
+    showOpen: 0x6FB70,
+    showClose: 0x70050,
+    showRenderUntilKey: 0x70A10,
+    sndDriver: 0x1C123C,
+    readKey: 0x6DE40,
 };
 
 pub static RACING_12: Racing = Racing {

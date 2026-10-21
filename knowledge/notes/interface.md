@@ -219,7 +219,8 @@ known here: **pet1kk** (his notes only), **game** (also checked in our running 1
   `Present` (in the game). Text as a glyph atlas (GDI into a DIB, one A8R8G8B8 texture), quads by `DrawPrimitiveUP`
   (`XYZRHW | DIFFUSE | TEX1`). Every render and texture-stage state touched must be saved and put back, or the
   game's own rendering breaks. Textures die at a device reset or alt-tab: make them again when the device pointer
-  changes. Game.exe does not import `binkw32.dll`; LS3DF.dll does.
+  changes. Game.exe does not import `binkw32.dll`; 1.2's LS3DF.dll does (1.0's
+  has no Bink: `knowledge/notes/videos.md`).
 
 ## The HUD
 

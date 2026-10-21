@@ -1623,6 +1623,34 @@ if (H->file_source("maps\\crate.bmp", who, sizeof who)) { /* a mod's file answer
   for changes once a second. Names outside the game's folder and files that do not exist are refused (0).
 - Agents: `files.list {mod, name}`, `files.which {name}`, `files.read {name, game, offset, size}` (`docs/PROTOCOL.md`).
 
+### Videos: the logos and the intro replaced
+
+The loader plays the game's videos itself, with FFmpeg (`host/video.cpp`, `knowledge/notes/videos.md`), in both
+builds: the three logos before the profile menu (`logo1`, `logo3` (1.2 only), `logo2`) and the new game's intro
+(`intro`). A mod replaces one by shipping a file of that base name in its `files\` folder; nothing else is needed (a
+mod of files alone: `"type": "files"`).
+
+- **Where**: `files\logo1.mp4` (any of the extensions below), loose at the top of `files\`. For each video the game
+  asks for, its base name is looked for with each extension in this order: `mp4`, `mkv`, `webm`, `mov`, `bik`,
+  `avi`; first in the loaded mods' files (the later mod in load order wins a name), then loose in the game's folder
+  (where 1.2 keeps its own `.bik` and `.avi`). The first file FFmpeg opens with a video it decodes is played; one it
+  cannot is logged with the reason and the next is tried; none: the game's own player gets the name, as before.
+- **Which formats**: MP4, MKV, WebM, MOV, AVI, Bink, Smacker, Ogg, MPEG-PS/TS, FLV containers; H.264, HEVC
+  (H.265), VP8, VP9, AV1, MPEG-1/2/4, MJPEG, Theora, ProRes, Bink 1 of every revision FFmpeg reads (BIKb, BIKf to BIKk,
+  where the game's own Bink 1.9c reads only BIKf..BIKi), Indeo, Cinepak, WMV; sound AAC, MP3, Opus, Vorbis, FLAC,
+  AC-3, E-AC-3, Bink audio, WMA, PCM and ADPCM. **Not Bink 2** (`KB2…`: no open decoder exists; the log says so).
+  The easy choice: **MP4 with H.264 and AAC**, at any size and frame rate.
+- **How it looks**: at the file's own size (up to the device's largest texture) in 32-bit colour, fitted to the
+  screen with its aspect kept (black bars), its sound through the game's own DirectSound. Any key skips it, as in the
+  game. The game's own players (1.2's Bink, DirectShow for AVI) show 16-bit colour and refuse what they cannot read
+  without a word; the loader logs every video it plays or passes over (`[video]` lines).
+- **Without FFmpeg** (no `mml\ffmpeg\` beside the game: a package without it) the game's own players play the
+  videos as they always did; the log says why once a video.
+- **Try one** without restarting: `call video.play {"name": "logo1"}` plays it as the game would (from the menus;
+  `wait {"types": "VIDEO_ENDED"}`), `call video.find {"name": "intro"}` lists the files found in order and what
+  FFmpeg says of each, `video.state` tells FFmpeg's version and the last videos played, `video.skip` ends the one
+  playing. A `screenshot` works while a video plays.
+
 ### Commands, the log, state, hooks, services
 
 - `H->command(M, "status", "help text", fn, user)`: agents call it as `<id>.status` with JSON params; reply JSON

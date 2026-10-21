@@ -466,6 +466,11 @@ struct ExeBuild {
     // records' count at `materialCount`; a record is kMaterialSize bytes, its name the first 0x20 (the id is the
     // record's index: a static collision face's material, MmlHit's flags >> 24). Read in both builds' code.
     uintptr_t materials, materialCount;
+    // The game's videos (host/video.cpp, knowledge/notes/videos.md): cdFind, cd_find_game_file, fastcall(const char
+    // *name, char *path) -> bool, CreateFileA on the bare name (the game's folder), then X:\MafiaGame\<name> on every
+    // drive; 1.2's PlayVideo asks it for <name>.avi then <name>.bik, 1.0's InitSystem for logo1.avi and logo2.avi
+    // and the intro's script command for intro.avi (the path it fills is what IShow's open is given).
+    uintptr_t cdFind;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -581,6 +586,19 @@ struct Ls3dBuild {
     // far, far squared, 1 / (far - near), the light), lightCount, lightAmbient (rgb). vertexPath: the global whose bit 0
     // set means LS3D lights and transforms on the CPU (clear: through Direct3D's ProcessVertices), read by m_AddFGroups.
     uintptr_t lightingProcess, lightSlots, lightCount, lightAmbient, vertexPath;
+    // The game's videos (host/video.cpp, knowledge/notes/videos.md): LS3D's IShow, made by IGraph slot 0. showOpen:
+    // IShow's open (its vtable +0x0C), LS3D_RESULT stdcall(show, const char *name, unsigned flags) ret 0xC, by the
+    // name's extension: .ogg Vorbis, .bik Bink (1.2 only), .avi a DirectShow graph into LS3D's textures, else
+    // DirectShow's own player. showClose: IShow's close (+0x10), stdcall(show) ret 4 (the open and the release call
+    // it: the video's state dropped). showRenderUntilKey: IShow's full-screen loop (the vtable's +0x50 in 1.2, +0x4C
+    // in 1.0: 1.0's has one slot fewer before it), stdcall(show) ret 4, the loop every video of the game is played
+    // by (IGraph's ProcessWinMessages +0x2C, keyboardUpdate, readKey: any key ends it; Clear
+    // +0x30, BeginScene +0x34, the frame, EndScene +0x38, Present +0x3C). sndDriver: pISndDriver, LS3D's sound driver
+    // (its vtable +0x0C: is it up; its +0x0C field: the IDirectSound Bink and the music play on). readKey:
+    // IGraph::ReadKey, stdcall(IGraph*) -> the key read since the last keyboardUpdate (0: none); IGraph's slots from
+    // +0x64 on are 4 bytes lower in 1.0 (it has no GetResInitDesc): keyboardUpdate and ReadKey +0x98 and +0x9C in
+    // 1.2, +0x94 and +0x98 in 1.0.
+    uintptr_t showOpen, showClose, showRenderUntilKey, sndDriver, readKey;
 };
 
 inline const ExeBuild kExe12 = {
@@ -688,6 +706,8 @@ inline const ExeBuild kExe12 = {
     0x586190,
     // the surfaces' table (2026-10-18: LoadMaterialsFromBin 0x60F5C0 writes both)
     0x6D4C24, 0x6D4C28,
+    // the videos (2026-10-21: called by PlayVideo at 0x55D4CD, 0x55D52D, 0x55D5D9 and by InitSystem at 0x5BF5E7)
+    0x5662E0,
 };
 
 inline const ExeBuild kExe10 = {
@@ -815,6 +835,8 @@ inline const ExeBuild kExe10 = {
     0x4A6700,
     // the surfaces' table (2026-10-18: LoadMaterialsFromBin 0x592080 writes both, the same code as 1.2's)
     0x6EFBA4, 0x6EFBA8,
+    // the videos (2026-10-21: m10CdFind; InitSystem's calls at 0x5FA411, 0x5FB214, 0x5FB25C, the intro's at 0x5C6539)
+    0x623FC0,
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,
@@ -835,7 +857,9 @@ inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1
                                   // call at 0x55D0B; PoseLod's calls at 0x553C5; the lock in CopyRigidPositions 0x55640)
                                   0x54F60, 0x55640, 0x1A6E0, 0x1C5014, 0x41700,
                                   // (2026-10-20: m_AddFGroups' call at 0x56025; its globals read in it)
-                                  0x65A70, 0x1C4D80, 0x1C5000, 0x1C4D30, 0x1C563C};
+                                  0x65A70, 0x1C4D80, 0x1C5000, 0x1C4D30, 0x1C563C,
+                                  // (2026-10-21: IShow's vtable 0x9D670 +0x0C, +0x10, +0x50; the open's reads of pISndDriver)
+                                  0x73BA0, 0x740F0, 0x74D70, 0x1C529C, 0x71960};
 // LS3D 3.84.5 (31.7.2002): the vertex buffer has no flags word, everything after +0x04 sits 4 bytes lower.
 inline const Ls3dBuild kLs3d10 = {"1.0", 0x5ED80, 0x1A8A0, 0x305B0, 0x5D070, 0x1C350, 0x6E580, 0, 0,
                                   0x1AE00, 0x1BD60, 0x1C030, 0x2B540, 0x04, 0x14, 0x18,
@@ -857,7 +881,10 @@ inline const Ls3dBuild kLs3d10 = {"1.0", 0x5ED80, 0x1A8A0, 0x305B0, 0x5D070, 0x1
                                   // call at 0x5339B; PoseLod's call of UpdateMatrix at 0x52951)
                                   0x526A0, 0x52EA0, 0x1A4A0, 0, 0,
                                   // (2026-10-20: m_AddFGroups' call at 0x53639; its globals read in it)
-                                  0x62640, 0x1C0D30, 0x1C0FB0, 0x1C0CE0, 0x1C15DC};
+                                  0x62640, 0x1C0D30, 0x1C0FB0, 0x1C0CE0, 0x1C15DC,
+                                  // (2026-10-21: IShow's vtable 0x995F8 +0x0C, +0x10, +0x4C; the open's reads of
+                                  // pISndDriver)
+                                  0x6FB70, 0x70050, 0x70A10, 0x1C123C, 0x6DE40};
 
 // The builds found (null until Detect succeeds).
 inline const ExeBuild *g_exe;

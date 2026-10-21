@@ -3007,3 +3007,61 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Measured** with MCP `bench` (every frame against hooked, 12 blocks, the counters off): 1.2 -0.056 ± 0.020 ms a
   frame of 2.68 (the game thread's CPU -0.061 ms), 1.0 -0.062 ± 0.032 ms of 2.68. Both games set their own filter after
   the loader starts (1.2 once, Game.exe+0x218D64; 1.0 twice): now chained after ours.
+## 2026-10-20: the game's videos, and why a modder's upscaled intros did not play
+
+- **Asked** (the owner: a modder upscaled the intros, put them in the game, and they do not play, with no visible
+  reason): how the videos are played in both builds, what limits them, why the upscale fails, how to lift it.
+- **Found** (both builds' code, `knowledge/notes/videos.md`): 1.2's `PlayVideo` (`0x55D460`) opens `<name>.avi`
+  first through DirectShow and only then `<name>.bik` through Bink; 1.0's LS3DF has no Bink at all (AVI only; the
+  1.0 lab's `binkw32.dll` 1.5p is a leftover nothing loads). The files are loose (`CreateFileA` in the game's folder,
+  then `X:\MafiaGame\` on every drive): no archive, no `dtaOpen`, so a mod's `files\` does not reach them. LS3D cuts
+  a video into textures of the device's largest size (16384 in both labs): no size limit, but 16-bit colour
+  (`PlayVideo` gives Open no `0x400`). A failure is only a `dbgPrintf`.
+- **The reason**: 1.2's `binkw32.dll` is Bink 1.9c (2008) and its BinkOpen accepts only the revisions `BIKf`..`BIKi`
+  ("Not a Bink file." otherwise). RAD Video Tools 2026.09 (the free tools, downloaded to `W:\tools\radvideo`)
+  writes `BIKi` for "Bink 1" (`/V100`), `BIKk` for "Bink 1.1" (`/V101`) and `KB2*` for Bink 2: an upscale made as
+  Bink 1.1 or Bink 2 is skipped silently. A second way to the same symptom: on a machine whose DirectShow decodes
+  Indeo 5, the original `.avi` beside the new `.bik` plays instead.
+- **Seen**, with `tap` and `native.call` of the game's own players from the main menu: 1.2 at start, `logo2.avi`
+  failed (no Indeo 5 decoder: 0x80000001) and `logo2.bik` played; a 640x480 `BIKi` played (126 frames copied); a
+  1280x960 MJPEG AVI played in 1.2 and in 1.0 (126 frames each, one 1280 x 960 tile); H.264 in AVI and the original
+  Indeo AVI did not open in either (0x80000001).
+- **Not done**: an upscale encoded by RAD's compressor and played in the lab (`BIKi` from `/V100` should play,
+  `BIKk` should not): the compressor's first start shows RAD's licence, which is the owner's to accept.
+- **Next**: ROADMAP "Later", "The game's videos": the loader takes the videos over in both builds (a mod's files,
+  the reason logged, 32-bit textures, MP4 through Media Foundation).
+
+## 2026-10-21: the game's videos played by the loader, with FFmpeg
+
+- **Asked** (the owner, after the investigation above): the loader plays the intro videos itself through FFmpeg
+  (every main codec and old Bink 1 of any revision), in both builds, found in the mods' `files\`, in 32-bit colour,
+  skipped by a key.
+- **FFmpeg**: no 32-bit LGPL build newer than 6.0 (2023) is published, so it is built here: FFmpeg 9.0.2 (its PGP
+  signature checked against the release key) and dav1d 1.5.4 (VideoLAN's published hash), pinned in tools/deps.py,
+  built by third_party/ffmpeg/build.py with MSVC for x86 (dav1d by Meson, FFmpeg's configure and make in MSYS2's
+  shell; MSYS2's pkgconf and Meson installed for it), only the decoders, demuxers and parsers a video needs: avcodec
+  8 MB. LGPL 2.1 or later (no GPL, no nonfree); `BUILD.txt` says where the sources are and how they were configured.
+  The first build failed in the dependency files' awk: Git's awk (another MSYS runtime) came first on PATH and lost
+  the backslashes make gave it; MSYS2's tools now come right after MSVC's.
+- **Made** (host/video.cpp): IShow's open, close and full-screen loop hooked in both builds, and the
+  game's file search (cd_find_game_file) for a video's name; the file looked for by its base name in the mods' files
+  then the game's folder (mp4, mkv, webm, mov, bik, avi); FFmpeg's thread decodes into BGRA and 16-bit stereo; the
+  game thread shows each picture when the clock reaches it on the game's Direct3D 9 device (a state block around the
+  quad: LS3D shadows the states it sets), through IGraph's Clear, BeginScene, EndScene, Present; the sound on LS3D's
+  own IDirectSound, each sample placed on the clock; any key ends it (the game's ReadKey), and the bridge is served
+  meanwhile. `video.state`, `video.find`, `video.play`, `video.skip`; VIDEO_STARTED, VIDEO_ENDED, VIDEO_REFUSED.
+  BridgeFrame no longer runs inside itself (a command that plays a video). game_build.h: cdFind, showOpen,
+  showClose, showRenderUntilKey, sndDriver, readKey (tools/check_builds.py checks them in both builds' files).
+- **Found on the way**: 1.2's IShow has one vtable slot more than 1.0's before the loop (+0x50 against +0x4C), and
+  1.0's IGraph lacks GetResInitDesc, so its slots from +0x64 on are 4 bytes lower (keyboardUpdate and ReadKey +0x94,
+  +0x98 against +0x98, +0x9C): check_builds' new check caught the note's +0x4C for 1.2.
+- **Seen**, both labs at once, the game's usual start: 1.2 played logo1.bik and logo3.bik (BIKi) through FFmpeg
+  (126 and 151 pictures, none dropped) after passing over a mod's fake Bink 2 logo1.bik with its reason; a mod's
+  1920x1080 H.264 logo2.mp4 in both builds (1.2: 837 pictures in 33.6 s, 1 dropped; 1.0: skipped by `video.skip`
+  after 526, none dropped), letterboxed into the 1280x960 frame, screenshots taken while it played; 1.0 showed its
+  logos for the first time on this machine (its own are Indeo AVIs Windows cannot decode). 1.2's intro played by the
+  new game's script command from a mod's AV1 intro.mkv (300 pictures), 1.0's by `video.play` from a VP9 intro.webm.
+  `video.find` opened the game's own intro.bik and its Indeo 5 intro.avi alike. Without mml\ffmpeg: the game's own
+  Bink played the logos, the log said why. Offline: tests/run_tests.py video_tests (the harness: FFmpeg loaded, the
+  order, Bink 2 refused, an H.264 clip opened).
+- **Not seen**: a real `BIKk` (none at hand; RAD's compressor needs its licence accepted: the owner's call).

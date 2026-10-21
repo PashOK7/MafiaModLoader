@@ -30,7 +30,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     # ---- the loader
     add_library(MafiaModLoader SHARED
         host/main.cpp host/paths.cpp host/log.cpp host/memory.cpp host/crash.cpp host/hooks.cpp host/mods.cpp host/game_hooks.cpp
-        host/bridge.cpp host/tap.cpp host/start.cpp host/input.cpp host/screenshot.cpp host/draw.cpp host/config.cpp host/menus.cpp host/menus10.cpp host/script.cpp host/orders.cpp host/world.cpp host/lifecycle.cpp host/files.cpp host/render.cpp host/gfx.cpp host/gfx_vk.cpp host/motion.cpp host/view.cpp host/geom.cpp host/prof.cpp host/d3dstats.cpp host/events.cpp host/native.cpp host/humans.cpp host/watch.cpp host/happen.cpp host/collide.cpp host/state.cpp host/lights.cpp host/effects.cpp host/props.cpp host/sound.cpp host/control.cpp host/interact.cpp host/hud.cpp host/saves.cpp host/anims.cpp host/items.cpp host/stats.cpp host/models.cpp host/meshes.cpp host/shaders.cpp host/skin.cpp host/vdata.cpp host/shadows.cpp host/panel.cpp host/fpu.cpp host/gamecam.cpp host/sidecar.cpp)
+        host/bridge.cpp host/tap.cpp host/start.cpp host/input.cpp host/screenshot.cpp host/draw.cpp host/config.cpp host/menus.cpp host/menus10.cpp host/script.cpp host/orders.cpp host/world.cpp host/lifecycle.cpp host/files.cpp host/render.cpp host/gfx.cpp host/gfx_vk.cpp host/motion.cpp host/view.cpp host/geom.cpp host/prof.cpp host/d3dstats.cpp host/events.cpp host/native.cpp host/humans.cpp host/watch.cpp host/happen.cpp host/collide.cpp host/state.cpp host/lights.cpp host/effects.cpp host/props.cpp host/sound.cpp host/control.cpp host/interact.cpp host/hud.cpp host/saves.cpp host/anims.cpp host/items.cpp host/stats.cpp host/models.cpp host/meshes.cpp host/shaders.cpp host/skin.cpp host/vdata.cpp host/shadows.cpp host/panel.cpp host/fpu.cpp host/gamecam.cpp host/sidecar.cpp host/video.cpp)
     # ($<0:> keeps Visual Studio from adding a per-configuration folder)
     set_target_properties(MafiaModLoader PROPERTIES SUFFIX ".asi" RUNTIME_OUTPUT_DIRECTORY ${MML_OUT}/$<0:>)
     target_include_directories(MafiaModLoader PRIVATE third_party/json host ${CMAKE_BINARY_DIR}/gen)
@@ -57,6 +57,35 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     # the Vulkan headers for the graphics bridge on DXVK (host/gfx_vk.cpp: DXVK's own Vulkan device, its vulkan-1.dll)
     mml_dep(vulkan)
     target_include_directories(MafiaModLoader PRIVATE third_party/_deps/vulkan)
+    # FFmpeg for the game's videos (host/video.cpp): its sources pinned by tools/deps.py ffmpeg, built for x86 once by
+    # third_party/ffmpeg/build.py at the configure (some minutes the first time: MSVC, MSYS2, NASM, Meson), its DLLs
+    # delay-loaded (the loader runs without them: the game's own players then) and put in <out>/mml/ffmpeg/ with their
+    # PDBs, licences and BUILD.txt; tools/lab.py install copies them into a lab.
+    option(MML_FFMPEG "the loader plays the game's videos with FFmpeg (third_party/ffmpeg/build.py)" ON)
+    if(MML_FFMPEG)
+        mml_dep(ffmpeg)
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/third_party/ffmpeg/build.py)
+        execute_process(COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/third_party/ffmpeg/build.py RESULT_VARIABLE rc)
+        if(NOT rc EQUAL 0)
+            message(FATAL_ERROR "third_party/ffmpeg/build.py failed: FFmpeg is not built (MML_FFMPEG=OFF builds without it)")
+        endif()
+        set(ff ${CMAKE_SOURCE_DIR}/third_party/_deps/ffmpeg_build/out)
+        file(GLOB ff_dlls ${ff}/bin/*.dll)
+        file(GLOB ff_pdbs ${ff}/bin/*.pdb)
+        target_include_directories(MafiaModLoader PRIVATE ${ff}/include)
+        target_link_libraries(MafiaModLoader PRIVATE ${ff}/bin/avformat.lib ${ff}/bin/avcodec.lib ${ff}/bin/avutil.lib
+            ${ff}/bin/swscale.lib ${ff}/bin/swresample.lib delayimp)
+        foreach(dll IN LISTS ff_dlls)
+            cmake_path(GET dll FILENAME name)
+            target_link_options(MafiaModLoader PRIVATE /DELAYLOAD:${name})
+        endforeach()
+        add_custom_command(TARGET MafiaModLoader POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${MML_OUT}/mml/ffmpeg/licenses
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${ff_dlls} ${ff_pdbs} ${ff}/BUILD.txt ${MML_OUT}/mml/ffmpeg/
+            COMMAND ${CMAKE_COMMAND} -E copy_directory ${ff}/licenses ${MML_OUT}/mml/ffmpeg/licenses)
+    else()
+        target_compile_definitions(MafiaModLoader PRIVATE MML_NO_FFMPEG)
+    endif()
 
     # Jolt Physics (rigid bodies, joints, ragdolls): upstream's own CMake, as a part of this build. Its 32-bit
     # configuration (SSE2: any x86 CPU), without what mods do not need (the GPU compute back ends, the profiler, the

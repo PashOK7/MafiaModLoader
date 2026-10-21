@@ -746,6 +746,19 @@ What is done, what comes next and later, and what is known to be missing or wron
   (`tests/run_tests.py` ui_tests), tabs as wide as their text, the mods' 2D drawing under the game's menus, the
   collision view a graphics pass. Seen in both labs (1.0: a fall of 16.6 m took 163.8 health, the same fall with
   `human.invulnerable` none).
+- **The game's videos played by the loader** (2026-10-21; from a modder's upscaled intros that did not play, FFmpeg
+  the owner's choice: knowledge/notes/videos.md): IShow's open, close and full-screen loop hooked in both builds
+  (and the game's file search for a video's name), the video played with FFmpeg 9.0.2 and dav1d (an LGPL build from
+  source, third_party/ffmpeg/build.py, delay-loaded from `mml\ffmpeg`): any container and codec built (H.264, HEVC,
+  VP9, AV1, Bink 1 BIKb to BIKk, Indeo...), the mods' `files\` first (mp4, mkv, webm, mov, bik, avi), then the game's
+  folder; 32-bit colour at the file's size, fitted with its aspect; the sound on the game's DirectSound; any key
+  skips; the bridge served meanwhile (screenshots of a video). A file FFmpeg cannot play (Bink 2) is logged with its
+  reason and the next tried; none, or no FFmpeg: the game's own player. `video.state`, `video.find`, `video.play`,
+  `video.skip`; events VIDEO_STARTED, VIDEO_ENDED, VIDEO_REFUSED. Seen in both labs: the logos at the start (1.2's
+  BIKi through FFmpeg, a mod's 1080p H.264 logo2 in both; 1.0 shows its logos for the first time on this machine),
+  1.2's intro by the new game's script command (a mod's AV1), 1.0's by `video.play` (VP9), a Bink 2 file passed
+  over, `video.skip`, the game's own Bink without FFmpeg. Offline: `tests/run_tests.py` video_tests. Not seen yet:
+  a real `BIKk` file (Known gaps).
 
 ## Next, by importance
 
@@ -1071,6 +1084,7 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
   (glTF's, FBX's, BVH) converted once, when the game opens it, into what LS3D reads (its BMP and TGA, .4ds, .5ds),
   and kept converted in the mod's data folder: nothing changes in the frame, the cost is the first load's. What LS3D
   cannot hold (more bones a vertex, normal maps) goes through items 27 and 28.
+- *(Done 2026-10-21; see "Done".)* **The game's videos**.
 - **Motion vectors without a mod** (the owner, 2026-10-20): a bridge method that asks for them and draws dlss_nr's
   check view (the frame before moved by them against this one) over the frame, so an agent checks them with no mod
   enabled (today only dlss_nr asks for them and shows them).
@@ -1121,6 +1135,12 @@ merged, sorted by importance):
 
 ## Known gaps
 
+- **The game's videos** (2026-10-21): (1) a real `BIKk` file is not seen played in a lab (none at hand: RAD's
+  compressor shows its licence at its first start, the owner's to accept; FFmpeg's decoder reads `BIKk` by its
+  source, the public samples are BIKb, BIKf and BIKi). (2) The sound's start is not corrected for DirectSound's
+  output latency (some tens of ms). (3) A device lost during a video (plain Direct3D 9's exclusive full screen left)
+  is not handled: the frames are not drawn until it comes back. (4) Plain Direct3D 8 (no dxwrapper) leaves the videos
+  to the game's own players. (5) The options' volume is not applied (the game's Bink path does not either).
 - **Measuring** (item 30, 2026-10-20): (1) *(fixed 2026-10-20: the journal)* the loader's crash filter was set
   again every frame. (2) A return address after a call through a vtable is
   kept unchecked: a stale one there still counts in a function's total. (3) The GPU's span includes its waits for

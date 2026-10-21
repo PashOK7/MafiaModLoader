@@ -310,6 +310,10 @@ void BridgeStart() {
 }
 
 void BridgeFrame() {
+    // (a command that plays a video runs the video's loop, which serves the bridge too: not from inside a command)
+    static bool running;
+    if (running) return;
+    struct Running { Running() { running = true; } ~Running() { running = false; } } scope;
     g_frames++;
     std::unique_lock<std::mutex> lk(g_mx);
     while (!g_jobs.empty()) {

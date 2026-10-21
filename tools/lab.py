@@ -247,6 +247,13 @@ def install(game):
                     shutil.copy2(os.path.join(folder, f), os.path.join(dst, f))
     print('installed: MafiaModLoader.asi and mods', ', '.join(defined),
           '(and the sidecar)' if os.path.isdir(os.path.join(out64, 'mml', 'sidecar')) else '(no 64-bit build: no sidecar)')
+    # FFmpeg, the loader's video player (host/video.cpp; CMakeLists.txt MML_FFMPEG)
+    ff = os.path.join(OUT, 'mml', 'ffmpeg')
+    if os.path.isdir(ff):
+        shutil.copytree(ff, os.path.join(game, 'mml', 'ffmpeg'), dirs_exist_ok=True)
+        print('ffmpeg: in mml\\ffmpeg (%s)' % open(os.path.join(ff, 'BUILD.txt'), encoding='utf-8').readline().split(' (')[0])
+    else:
+        print('ffmpeg: not built (MML_FFMPEG off?): the game plays its videos with its own players')
     install_dxwrapper(game)
 
 

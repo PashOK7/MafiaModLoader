@@ -8,6 +8,7 @@
     python tools/deps.py ngx vulkan # NVIDIA NGX (DLSS SDK) with DLSS 5 Neural Rendering, the Vulkan headers (x64)
     python tools/deps.py dxwrapper  # dxwrapper's sources (Direct3D 8 on 9Ex), built by the x86 preset with our patch
     python tools/deps.py dxvk       # DXVK's 32-bit d3d9.dll: the graphics bridge's Vulkan path tested in a lab
+    python tools/deps.py ffmpeg     # FFmpeg's and dav1d's sources, built by the x86 preset (the loader's video player)
     python tools/deps.py ghidra     # an optional one: Ghidra and its Python bridge (tools/ghidra_cli.py)
     python tools/deps.py --force    # again, from scratch
 
@@ -137,6 +138,15 @@ PINNED = {
          'cb4bac7802ec442fcce4824db9942f8f0473479682b222bdd04a4e8fcc090b69', 'External/dinputto8'),
         ('https://github.com/ocornut/imgui/archive/f1cc2ae15e53a861a874c3034aae6798fde194ab.zip',
          '008e1f3398e1c6e4d317ae4a05d2dec597bd360f4f3717b1d96e9edb66dba34f', 'External/imgui')],
+    # FFmpeg 9.0.2 (the newest release, ffmpeg.org; its PGP signature checked on 2026-10-21 against the release key
+    # FCF9 86EA 15E6 E293 A564 4F10 B432 2F04 D676 58D8), LGPL 2.1 or later as built here (no --enable-gpl, no
+    # nonfree), and dav1d 1.5.4 (VideoLAN, 2026-07-14; the hash VideoLAN publishes beside it), BSD 2-Clause: the
+    # loader plays the game's videos with them (host/video.cpp). Built for x86 by third_party/ffmpeg/build.py (the x86
+    # preset runs it once: MSVC, MSYS2's make, NASM, Meson), only the decoders, demuxers and parsers a video needs.
+    'ffmpeg': [('https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz',
+                '8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e', 'ffmpeg', '*'),
+               ('https://downloads.videolan.org/pub/videolan/dav1d/1.5.4/dav1d-1.5.4.tar.xz',
+                '686616b7c69eb88d44459391ab25cac13b6647a3b288835c5784e71c1514a5c5', 'dav1d', '*')],
     # DXVK 3.1.1 (doitsujin/dxvk, 2026-09-15), zlib: Direct3D 9 on Vulkan, as players put its d3d9.dll beside the game
     # (under dxwrapper, which loads the game folder's d3d9.dll first; ReShade on Vulkan then). The labs test the
     # graphics bridge's Vulkan path with it (host/gfx_vk.cpp: DXVK's shared handles are Vulkan's own, which Direct3D 11
@@ -157,7 +167,7 @@ PINNED = {
                'ddac49f903da9d5bac833e5cc79395098b9c33cfd3279be5f31bd00387d2d4db'),
 }
 # fetched only when named: not every build needs them
-OPTIONAL = {'ghidra', 'cuda', 'flow', 'ngx', 'vulkan', 'dxwrapper', 'dxvk'}
+OPTIONAL = {'ghidra', 'cuda', 'flow', 'ngx', 'vulkan', 'dxwrapper', 'dxvk', 'ffmpeg'}
 
 
 def download(name, url, sha, archive):
@@ -190,9 +200,24 @@ def fetch_parts(name, parts, force):
     tmp = os.path.join(DEPS, name + '.part')
     for url, sha, *rest in parts:
         sub, pick = (rest + ['', ''])[:2]
-        kind = '.tar.gz' if url.lower().endswith('.tar.gz') else os.path.splitext(url)[1].lower()
-        archive = os.path.join(DEPS, name + (kind if kind in ('.zip', '.7z', '.tar.gz') else '.file'))
+        kind = next((k for k in ('.tar.gz', '.tar.xz') if url.lower().endswith(k)), os.path.splitext(url)[1].lower())
+        archive = os.path.join(DEPS, name + (kind if kind in ('.zip', '.7z', '.tar.gz', '.tar.xz') else '.file'))
         download(name, url, sha, archive)
+        if kind == '.tar.xz' and pick == '*':   # the whole archive, its one top folder's content into the subfolder
+            import tarfile
+            shutil.rmtree(tmp, ignore_errors=True)
+            with tarfile.open(archive, 'r:xz') as t:
+                members = t.getmembers()
+                for m in members:   # (Python before 3.10.12 has no extraction filter: the same checks by hand)
+                    if os.path.isabs(m.name) or '..' in m.name.replace('\\', '/').split('/') or not (m.isfile() or m.isdir()):
+                        sys.exit('%s: the archive holds %s: not used' % (name, m.name))
+                t.extractall(tmp, members)
+            os.remove(archive)
+            entries = os.listdir(tmp)
+            top = os.path.join(tmp, entries[0]) if len(entries) == 1 and os.path.isdir(os.path.join(tmp, entries[0])) else tmp
+            shutil.copytree(top, os.path.join(dest, sub), dirs_exist_ok=True)
+            shutil.rmtree(tmp)
+            continue
         if kind == '.tar.gz':   # (the files its fourth element names: {path in the archive: subfolder})
             import tarfile
             with tarfile.open(archive, 'r:gz') as t:

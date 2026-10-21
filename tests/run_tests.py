@@ -8,6 +8,8 @@ reload, the core mod with no game, the log; the mod author's kit (kit_tests: the
 hotkeys through injected keys, a mod's settings changed by the host, by the bridge and on disk, its data folder);
 a mod's own files in the game (files_tests: a stand-in rw_data.dll's names answered from the mods' `files` folders,
 the order, changes on disk, file_add, a file held open replaced, loads and unloads);
+the game's videos played by the loader (video_tests: FFmpeg loaded from mml/ffmpeg, the search order, a Bink 2 file
+refused, an H.264 clip opened);
 every mod's settings pages in Options > Mods laid out by the loader's own code (ui_tests: nothing over another,
 off its window or cut, no text wider than its button);
 and a heavy mod's lifecycle (heavy_tests: its libraries in each load's folder, threads left in its code, leaks; boxes_tests:
@@ -1071,6 +1073,31 @@ def files_tests(b):
     check('files: files_b back over files_a', opn('tables\\test.txt').get('text') == 'files_b')
 
 
+def video_tests(b):
+    """The loader's video player (host/video.cpp) without a game: FFmpeg loaded from mml\\ffmpeg (delay-loaded), the
+    search order (a mod's files before the game's folder, mp4 before bik), a Bink 2 file refused with its reason, an
+    H.264 clip (tests/videos/clip.mp4: FFmpeg's testsrc, 64x48, with AAC) opened and its streams told. main() puts
+    the files: video_t's files\\clip.bik (a KB2 header) and clip.mp4 in the game's folder."""
+    r = b.call('video.state')
+    check('video.state: built with FFmpeg, not hooked without a game, the extensions in their order',
+          r['ok'] and r['result']['ffmpeg']['built'] and r['result']['hooked'] is False
+          and r['result']['extensions'] == ['mp4', 'mkv', 'webm', 'mov', 'bik', 'avi'], r)
+    r = b.call('video.find', {'name': 'clip.avi'})
+    c = r['result']['candidates'] if r['ok'] else []
+    check('video.find: the mod\'s file first, then the game folder\'s', [x['from'] for x in c] == ['mod video_t', "the game's folder"]
+          and c[0]['file'].lower().endswith('clip.bik') and c[1]['file'].lower().endswith('clip.mp4'), r)
+    check('video.find: a Bink 2 file refused as such', len(c) == 2 and c[0]['playable'] is False and 'Bink 2 (KB2j)' in c[0].get('why', ''), c[:1])
+    check('video.find: the H.264 clip opened, its size and its sound told', len(c) == 2 and c[1]['playable'] is True
+          and c[1]['width'] == 64 and c[1]['height'] == 48 and c[1]['video'].startswith('h264') and c[1]['audio'].startswith('aac'), c[1:])
+    r = b.call('video.state')
+    check('video.state: FFmpeg loaded (LGPL), from mml\\ffmpeg', r['ok'] and r['result']['ffmpeg']['state'] == 'loaded'
+          and 'LGPL' in r['result']['ffmpeg'].get('license', '') and r['result']['ffmpeg'].get('version'), r['result'].get('ffmpeg'))
+    r = b.call('video.play', {'name': 'clip'})
+    check('video.play: refused without a game', not r['ok'] and 'not hooked' in str(r.get('error', '')), r)
+    r = b.call('video.find', {'name': 'none_such.avi'})
+    check('video.find: a name with no file: no candidates', r['ok'] and r['result']['candidates'] == [], r)
+
+
 def rust_tests(b):
     """The Rust mod kit (sdk/rust/mml): kit_rs (tests/mods/kit_rs) and the example hello_rust, through the bridge."""
     if not RUST:
@@ -1377,6 +1404,18 @@ def main():
     shutil.copytree(os.path.join(src, 'files_a'), os.path.join(mods, 'files_a'))
     shutil.rmtree(os.path.join(mods, 'files_b', 'files'), ignore_errors=True)
     shutil.copytree(os.path.join(src, 'files_b', 'files'), os.path.join(mods, 'files_b', 'files'))
+    # the video player's (video_tests): FFmpeg as the build put it, a mod with a Bink 2 file, a clip in the game folder
+    shutil.rmtree(os.path.join(HARNESS, 'mml', 'ffmpeg'), ignore_errors=True)
+    if os.path.isdir(os.path.join(OUT, 'mml', 'ffmpeg')):
+        shutil.copytree(os.path.join(OUT, 'mml', 'ffmpeg'), os.path.join(HARNESS, 'mml', 'ffmpeg'))
+    vt = os.path.join(mods, 'video_t')
+    shutil.rmtree(vt, ignore_errors=True)
+    os.makedirs(os.path.join(vt, 'files'))
+    with open(os.path.join(vt, 'mod.json'), 'w') as f:
+        f.write('{ "id": "video_t", "name": "test: a video", "version": "1", "type": "files", "load_order": 60 }\n')
+    with open(os.path.join(vt, 'files', 'clip.bik'), 'wb') as f:
+        f.write(b'KB2j' + bytes(252))
+    shutil.copy2(os.path.join(ROOT, 'tests', 'videos', 'clip.mp4'), os.path.join(HARNESS, 'clip.mp4'))
     # the sidecar and side_test's 64-bit half (the x64 preset's build) beside its 32-bit half (this build's)
     side_dir = os.path.join(HARNESS, 'mml', 'sidecar')
     shutil.rmtree(side_dir, ignore_errors=True)
@@ -1778,6 +1817,7 @@ def main():
         r = b.call('watch.set', {'addr': '0x00000010'})
         check('watch.set on memory that is not readable: refused', not r['ok'], r)
         files_tests(b)
+        video_tests(b)
         heavy_tests(b)
         boxes_tests(b)
         rust_tests(b)
