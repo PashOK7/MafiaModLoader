@@ -3194,3 +3194,28 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   convert 1.2 to 3.2 ms (the worst 14 ms), the frame 0.5 to 0.6 ms, no upload. The game went on to the intro mission's
   bar. At the intro's end FFmpeg's AAC decoder warned "Could not update timestamps for discarded samples" (the
   stream's last packet's padding): nothing missing.
+
+## 2026-10-21: the ragdoll's toolkit, its first two blocks (item 32a, 32b)
+
+- **Asked** (the owner): the ragdoll becomes a loader mod in a private repository of its own; first the loader gets
+  every service it needs. What mafia-ragdoll does with raw hooks (hits.cpp, knock.cpp, core.cpp's pedestrians) is
+  ported as host services for any mod, both builds (ROADMAP item 32).
+- **Made** (32a): hit_filter (every hit a C_human or a traffic pedestrian takes, before the game: C_human::Hit,
+  pedHit, and a bullet on a pedestrian at the pedestrian system's own Hit, before it wakes the element), human_hit (the
+  game's own Hit: a person's vtable +0x7C, C_human::Hit in both builds; a pedestrian's pedHit), pedestrians_list
+  (host/pedestrians.cpp: the managers' arrays and the game's list), MmlHumanHit's part, taken, shape. The bridge's
+  own filter `hits.take` lets an agent test what a mod's filter would do. (32b) bullet_shape: a person's body as
+  capsules for the bullets (collRayTest hooked outermost for the bullets' call alone, the exclusion list and a repeat
+  guard as mafia-ragdoll's, the point given on the capsule's axis, never past the game's own hit); `hits.shape`.
+- **Found**: game.h SetLocalPosition did not mark the frame changed (0x40000000, as LS3D's SetWorldPos does), so a
+  bone moved by its position alone left its children (a corpse's pelvis moved, its legs not): fixed in game.h and the
+  Rust crate. The bullets' tick asks the part test again with the length to the point given: the capsule's skin put
+  the point before the part and the game dropped the hit; the axis point is taken now. A dead C_human's collision
+  follows his bones (the game strikes a moved corpse itself); a dead pedestrian's is out of the grid (pedHit's
+  collGridRemove), and 1.2's pedBulletHit goes no further for one (1.0's calls pedHit): the host tells the bullet
+  itself, so both builds tell it (knowledge/notes/game.md).
+- **Seen**, both labs: a pedestrian knocked down by human_hit (type 5, 20) with no health taken; a person knocked
+  down (type 8 at 5 m/s: "smrt pad vpravo"); a lethal hit taken by hits.take leaves either alive, told `taken`;
+  tests/game/test_hits.py (knock_down, hit_taken, bullets_on_moved_body: the pelvis takes its children 2.5 m, the
+  bullets strike the moved body) 14 of 14 in each lab with world.car_hits_person; the player's bullets on a dead
+  pedestrian's capsule: PEDESTRIAN_HIT with its shape in both builds, with and without a filter taking it.

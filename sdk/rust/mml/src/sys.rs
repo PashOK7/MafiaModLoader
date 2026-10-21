@@ -409,6 +409,21 @@ pub type MmlHitFilterFn = ::core::option::Option<
     ) -> ::core::ffi::c_int,
 >;
 #[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct MmlCapsule {
+    pub a: [f32; 3usize],
+    pub b: [f32; 3usize],
+    pub radius: f32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of MmlCapsule"][::core::mem::size_of::<MmlCapsule>() - 28usize];
+    ["Alignment of MmlCapsule"][::core::mem::align_of::<MmlCapsule>() - 4usize];
+    ["Offset of field: MmlCapsule::a"][::core::mem::offset_of!(MmlCapsule, a) - 0usize];
+    ["Offset of field: MmlCapsule::b"][::core::mem::offset_of!(MmlCapsule, b) - 12usize];
+    ["Offset of field: MmlCapsule::radius"][::core::mem::offset_of!(MmlCapsule, radius) - 24usize];
+};
+#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct MmlPedestrian {
     pub size: u32,
@@ -3499,10 +3514,18 @@ pub struct MmlHost {
             max: ::core::ffi::c_int,
         ) -> ::core::ffi::c_int,
     >,
+    pub bullet_shape: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            person: *mut ::core::ffi::c_void,
+            parts: *const MmlCapsule,
+            count: ::core::ffi::c_int,
+        ) -> ::core::ffi::c_int,
+    >,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 772usize];
+    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 776usize];
     ["Alignment of MmlHost"][::core::mem::align_of::<MmlHost>() - 4usize];
     ["Offset of field: MmlHost::size"][::core::mem::offset_of!(MmlHost, size) - 0usize];
     ["Offset of field: MmlHost::api_version"]
@@ -3832,6 +3855,8 @@ const _: () = {
     ["Offset of field: MmlHost::human_hit"][::core::mem::offset_of!(MmlHost, human_hit) - 764usize];
     ["Offset of field: MmlHost::pedestrians_list"]
         [::core::mem::offset_of!(MmlHost, pedestrians_list) - 768usize];
+    ["Offset of field: MmlHost::bullet_shape"]
+        [::core::mem::offset_of!(MmlHost, bullet_shape) - 772usize];
 };
 pub type MmlModLoadFn = ::core::option::Option<
     unsafe extern "C" fn(host: *const MmlHost, mod_: *mut MmlMod) -> ::core::ffi::c_int,

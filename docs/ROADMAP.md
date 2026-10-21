@@ -965,13 +965,15 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
     its own, and the loader gives it everything it needs first). What mafia-ragdoll's host and core do with raw hooks
     and addresses (its `hits.cpp`, `knock.cpp`, `getup.cpp`, `frame_life.cpp`, core.cpp's pedestrians) becomes host
     services for any mod, both builds, each with its bridge method, its offline test, MODDING and the Rust crate:
-    - **32a, a person's hit before the game's.** A mod's filter on every hit a person takes, before the game reacts:
+    - **32a, a person's hit before the game's** *(done 2026-10-21: mml.h hit_filter, human_hit, pedestrians_list;
+      host/hits.cpp, host/pedestrians.cpp; MODDING "Hits before the game")*. A mod's filter on every hit a person takes, before the game reacts:
       C_human::Hit, the pedestrians' Hit, and a bullet on a pedestrian before the system's Hit wakes the element (a
       dead one would cry out). It sees the hit (type, dir, pos, damage, attacker, the part) and lets the game have
       it, changed or not, or takes it (the game's Hit does not run: a corpse's hit is the mod's). HUMAN_HIT and
       PEDESTRIAN_HIT tell a taken one as taken. And `human_hit`: the game's own Hit called on a person or a
       pedestrian (a knock-down by a body is the game's car hit with no car and no damage: its fall, its get-up).
-    - **32b, bullets on a mod's shapes for a person.** A mod gives a person's body as capsules (a ragdoll's parts,
+    - **32b, bullets on a mod's shapes for a person** *(done 2026-10-21: mml.h bullet_shape; host/hits.cpp; a dead
+      C_human's own collision follows his bones, a dead pedestrian's is out of the grid: knowledge/notes/game.md)*. A mod gives a person's body as capsules (a ragdoll's parts,
       wherever the body lies); the bullets' ray (collRayTest from the bullets' tick) tests them too, and the nearest
       nearer than the game's hit is given to the game as a hit on that person (his own collision object, the game's
       part test for a C_human: the blood, the part, the Hit, then 32a's filter). The exclusion list the bullets'

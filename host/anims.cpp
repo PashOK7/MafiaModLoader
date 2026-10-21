@@ -176,6 +176,7 @@ int __fastcall hkPedHit(void *element, void *edx, int type, const V3 *dir, int p
     h.damage = damage;
     h.attacker = attacker;
     h.part = part;
+    h.shape = HitsShapeOf(element);
     h.was_alive = h.alive = before > 0;
     auto rp = [&] { const V3 &p = game::at<V3>(element, kPedPos); h.pos = {p.x, p.y, p.z}; };
     Guarded(rp);

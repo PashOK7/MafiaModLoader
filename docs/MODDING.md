@@ -1111,9 +1111,24 @@ H->human_hit(M, peds[0].element, &push);
 - **Pedestrians** are the traffic's elements, not actors: `humans_list` does not hold them. `pedestrians_list`
   gives each one's `element`, `model`, `pos`, `health` (at or below 0: dead; the traffic later gives the element to
   a new pedestrian) and `spawned`.
+- **Bullets on a body the mod moves**: a dead person is no longer in the game's collision world, so the game's
+  bullets pass a body lying where a ragdoll put it. `bullet_shape` gives a person's body as capsules in the world's
+  space (`MmlCapsule`: a, b, radius; up to 64), given again as it moves (each tick). Each stretch a bullet flies is
+  then tested against them too, and the nearest capsule nearer than what the game found strikes that person there
+  as the game strikes a living one: a person's part by the game's own part test (no hit where it finds none), the
+  blood, the Hit, so the hit filter sees it with `shape` (1 + the capsule's index) and may take it. 0 capsules takes
+  the mod's set away (its unload, the person's destruction and the mission's close do too).
+
+  ```c
+  MmlCapsule parts[15];                              /* the ragdoll's parts where they are this tick */
+  FillCapsules(body, parts);
+  H->bullet_shape(M, corpse, parts, 15);
+  ```
 - `call human.hit {"actor" | "pedestrian", "type", "dir", "pos", "damage", "attacker", "part"}`, `pedestrians.list`;
   `hits.take {"actor" | "pedestrian" | "all": true, "ms"}` is the bridge's own filter (after the mods'): an agent
-  takes a person's hits from the game for a time, as a mod's filter would; `hits.state` lists the filters.
+  takes a person's hits from the game for a time, as a mod's filter would; `hits.shape {"actor" | "pedestrian",
+  "capsules": [[ax, ay, az, bx, by, bz, r], ...]}` gives a body for the bullets as a mod would; `hits.state` lists
+  the filters, the shapes and what the bullets did.
 
 ### People's skinning (more than two bones a vertex)
 

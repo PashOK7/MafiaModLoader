@@ -615,6 +615,17 @@ autosplitter; kept outside it, not ported). Checked against the above:
   +0x418 growing by 9.81 t; on landing the state turns 1 and from 8 m/s (18 with the byte +0x41C) he is hurt with a
   Hit of type 6, `(speed - 2) * 10` (12 instead of 2 with +0x41C). A jump is an animation (state 4). A person
   teleported into the air stays there until he moves.
+- **game** Bullets on the dead (2026-10-21, both labs; host/hits.cpp, tests/game/test_hits.py): a dead C_human keeps
+  his collision objects, and they follow his bones: a corpse whose pelvis a mod moved 2.5 m was struck there by the
+  game's own test (a part, the blood, his Hit with was_alive 0), minutes after his death. A traffic pedestrian's
+  corpse is out of the collision grid from pedHit's death on (`collGridRemove(element + 0xC4)`): bullets pass it.
+  The pedestrian system's bullet Hit (pedBulletHit) for a dead element goes no further in 1.2; 1.0's calls pedHit,
+  which returns at once (health below 0). After a hit the bullets' tick asks the person's part test again with the
+  length to the point it was given (`humanBoneRayTest(..., |hit - from|^2)`): a point before the part's volume (a
+  fat capsule's skin) is no hit.
+- **code** LS3D's frames are rebuilt from the "changed" flag 0x40000000 (`I3D_frame::UpdateChildren`, ls3d+1C9A0:
+  a frame with 0x40002000 marks each child 0x2000 and clears its 0x120): `SetWorldPos` (ls3d+1B160) sets it with a
+  position. A position written without it moved the frame and left its children (game.h SetLocalPosition, fixed).
 - **game** A dropped weapon falls as an actor for about 3 s, then is destroyed and becomes a using object to pick up
   (1.2 offered it with the rest in the "Pickup/Use" menu, `itempickup`, which pauses the game; the 1.0 lab took the
   only one at once). Its keys: digit 2 closed the menu here without taking; `menu.click` on the line took it.

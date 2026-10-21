@@ -7,6 +7,8 @@ use core::ptr;
 /// A traffic pedestrian (pedestrians_list): its `element` is what human_hit, human_skeleton, bone_set and
 /// human_get_up take (an Actor made from it with Actor::from_ptr).
 pub use sys::MmlPedestrian as Pedestrian;
+/// A capsule in the world's space: the segment a-b and its radius (bullet_shape)
+pub use sys::MmlCapsule as Capsule;
 
 unsafe extern "C-unwind" fn on_hit<F: Fn(Actor, bool, &mut HumanHit) -> bool>(
     person: *mut c_void,
@@ -225,6 +227,11 @@ impl Host {
     /// The game's own Hit given to a person or a traffic pedestrian's element (type, dir, pos, damage, attacker, part)
     pub fn human_hit(&self, person: Actor, hit: &HumanHit) -> bool {
         unsafe { f!(self, human_hit)(self.module, person.as_ptr(), hit) != 0 }
+    }
+    /// A person's (or a pedestrian's) body for the bullets, as capsules in the world's space (given again as it
+    /// moves); an empty slice takes the mod's away
+    pub fn bullet_shape(&self, person: Actor, parts: &[Capsule]) -> bool {
+        unsafe { f!(self, bullet_shape)(self.module, person.as_ptr(), parts.as_ptr(), parts.len() as c_int) != 0 }
     }
     /// The traffic's walkers (not actors: humans_list does not hold them)
     pub fn pedestrians_list(&self) -> Vec<Pedestrian> {

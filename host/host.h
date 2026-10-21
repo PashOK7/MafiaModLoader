@@ -646,6 +646,10 @@ bool HitsInPedBullet(void *element);      // pedBulletHit filtered this element 
 int HitFilterSet(MmlMod *mod, MmlHitFilterFn fn, void *user);
 int HumanHitCall(void *person, const MmlHumanHit *hit, std::string *err);
 void HitsModGone(MmlMod *mod);
+void HitsActorGone(void *actor);
+void HitsMissionClose();
+int HitsShapeOf(void *person);            // 1 + the capsule the last bullet stretch gave him (0 none)
+int BulletShapeSet(MmlMod *mod, void *person, const MmlCapsule *parts, int count, std::string *err);
 bool HitsMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 // the traffic's pedestrians (pedestrians.cpp): their elements, from the managers' arrays and the game's list
 std::vector<void *> PedestrianElements();

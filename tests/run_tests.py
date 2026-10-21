@@ -1869,7 +1869,9 @@ def main():
               r['ok'] and r['result'] == {'play': -1, 'stop': 0, 'replace': 0, 'state': 0, 'untouched': 1, 'get_up': 0}, r)
         r = b.call('kit.hits')
         check('hit_filter set, human_hit and pedestrians_list with no game: refused, none',
-              r['ok'] and r['result'] == {'filter': 1, 'hit': 0, 'null_hit': 0, 'pedestrians': 0}, r)
+              r['ok'] and r['result'] == {'filter': 1, 'hit': 0, 'null_hit': 0, 'pedestrians': 0, 'shape': 0}, r)
+        r = b.call('hits.shape', {'actor': 'player', 'capsules': [[0, 0, 0, 0, 1, 0, 0.2]]})
+        check('hits.shape with no game: refused, saying why', not r['ok'] and 'no such person' in str(r.get('error', '')), r)
         r = b.call('hits.state')
         check("hits.state: the kit's filter listed, nothing seen", r['ok'] and r['result']['filters'] == ['kit'] and r['result']['seen'] == 0, r)
         r = b.call('human.hit', {'type': 8})

@@ -236,6 +236,12 @@ typedef struct MmlHumanHit {
  * be changed for the game */
 typedef int (*MmlHitFilterFn)(void *person, int pedestrian, MmlHumanHit *hit, void *user);
 
+/* a capsule in the world's space: the segment a-b and its radius (bullet_shape) */
+typedef struct MmlCapsule {
+    float a[3], b[3];
+    float radius;
+} MmlCapsule;
+
 typedef struct MmlPedestrian {
     uint32_t size;          /* set by the host */
     void *element;          /* the traffic's element: what human_hit, human_skeleton, bone_set and human_get_up take */
@@ -1637,6 +1643,14 @@ typedef struct MmlHost {
     int (*hit_filter)(MmlMod *mod, MmlHitFilterFn fn, void *user);
     int (*human_hit)(MmlMod *mod, void *person, const MmlHumanHit *hit);
     int (*pedestrians_list)(MmlMod *mod, MmlPedestrian *out, int max);
+    /* bullet_shape: a person's (or a pedestrian's) body for the bullets, as capsules in the world's space (a
+     * ragdoll's parts, given again as they move: each tick); a bullet's stretch that meets one nearer than what the
+     * game found strikes that person there, as the game strikes a living one (his part by the game's own test, the
+     * blood, the Hit; hit_filter and HUMAN_HIT / PEDESTRIAN_HIT then tell `shape`, the capsule). A dead person is
+     * not in the game's collision world: without this, bullets pass his body. One set a person (the last mod's); 0
+     * capsules takes the mod's away (its unload, the person's destruction and the mission's close too). Up to 64.
+     * 1 done, 0 refused (the log says why). Game thread. */
+    int (*bullet_shape)(MmlMod *mod, void *person, const MmlCapsule *parts, int count);
 } MmlHost;
 
 #define MML_ZONE_PLAYER 0x1u

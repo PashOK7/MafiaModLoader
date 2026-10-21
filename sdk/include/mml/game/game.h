@@ -447,11 +447,16 @@ inline void SetLocalRotation(void *frame, const Q &q) {
     f |= kFlagRotValid | kFlagConstructed;
 }
 
+// The local position written, the frame marked changed as LS3D's own SetPos marks it (I3D_frame::SetWorldPos,
+// ls3d+1B160: flags & ~0x120 | 0x40000000): without kFlagConstructed (0x40000000, "changed") the model's Update
+// (I3D_frame::UpdateChildren, ls3d+1C9A0) does not mark the children, and a bone moved by its position alone left its
+// children's world matrices where they were (seen 2026-10-21: a corpse's pelvis moved 2.6 m, its legs and back not).
 inline void SetLocalPosition(void *frame, const V3 &p) {
     float *m = &at<float>(frame, kFrameLocal);
     m[12] = p.x; m[13] = p.y; m[14] = p.z;
     uint32_t &f = at<uint32_t>(frame, kFrameFlags);
     f &= ~(kFlagLocalBuilt | kFlagWorldValid | kFlagBoundValid);
+    f |= kFlagConstructed;
 }
 
 } // namespace game

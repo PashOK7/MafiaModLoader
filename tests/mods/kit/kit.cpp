@@ -388,8 +388,11 @@ int Hits(const char *args, MmlReply *r, void *) {
     h.type = 8;
     MmlPedestrian peds[4];
     int hit = H->human_hit(M, nobody, &h), nullHit = H->human_hit(M, nobody, nullptr), pedestrians = H->pedestrians_list(M, peds, 4);
-    char out[160];
-    snprintf(out, sizeof out, "{\"filter\":%d,\"hit\":%d,\"null_hit\":%d,\"pedestrians\":%d}", filter, hit, nullHit, pedestrians);
+    MmlCapsule c = {{0, 0, 0}, {0, 1, 0}, 0.2f};
+    int shape = H->bullet_shape(M, nobody, &c, 1);
+    char out[200];
+    snprintf(out, sizeof out, "{\"filter\":%d,\"hit\":%d,\"null_hit\":%d,\"pedestrians\":%d,\"shape\":%d}", filter, hit, nullHit,
+             pedestrians, shape);
     H->reply_append(r, out, static_cast<size_t>(-1));
     return 0;
 }

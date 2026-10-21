@@ -139,7 +139,8 @@ int __fastcall hkMissionClose(void *self, void *edx) {
     InteractMissionClose();
     HudMissionClose();
     StateMissionClose();      // (the invulnerable people go with the mission)
-    AnimsMissionClose();      // (the radar's marks and the compass given back while the HUD knows the mission's frames)
+    AnimsMissionClose();
+    HitsMissionClose();       // (the bullets' shapes, the bridge's takes)      // (the radar's marks and the compass given back while the HUD knows the mission's frames)
     SetPaused(false);
     Dispatch(Event(MML_EVENT_MISSION_CLOSE));
     g_missionLoaded = false;
@@ -166,6 +167,7 @@ void __fastcall hkActorDtor(void *self, void *edx) {
     HudActorGone(self);
     StateActorGone(self);
     AnimsActorGone(self);
+    HitsActorGone(self);
     oActorDtor(self, edx);
 }
 void *__fastcall hkHumanCtor(void *self, void *edx) {
@@ -190,6 +192,7 @@ int __fastcall hkHumanHit(void *self, void *edx, int type, MmlVec3 *dir, MmlVec3
     hit.damage = dmg;
     hit.attacker = attacker;
     hit.part = static_cast<int>(part);
+    hit.shape = HitsShapeOf(self);   // (a bullet the mods' shapes gave him: hits.cpp)
     hit.was_alive = hit.alive = before != 0;
     // the mods' filters first (hits.cpp): one may take the hit (the game's Hit then does not run) or change it
     if (HitsFilter(self, 0, &hit)) {

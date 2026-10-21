@@ -254,7 +254,9 @@ impl Game {
     pub fn set_local_position(&self, frame: Frame, p: [f32; 3]) -> bool {
         let f = frame.as_ptr() as usize;
         let Some(flags) = self.at::<u32>(f, kFrameFlags) else { return false };
-        let flags = flags & !(kFlagLocalBuilt | kFlagWorldValid | kFlagBoundValid);
+        // marked changed as LS3D's own SetPos marks it (game.h SetLocalPosition): else the children keep their world
+        // matrices
+        let flags = (flags & !(kFlagLocalBuilt | kFlagWorldValid | kFlagBoundValid)) | kFlagConstructed;
         self.host.write(f + kFrameLocal as usize + 12 * 4, p) && self.host.write(f + kFrameFlags as usize, flags)
     }
 

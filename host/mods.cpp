@@ -728,6 +728,13 @@ int H_HumanHit(MmlMod *m, void *person, const MmlHumanHit *hit) {
     if (!r) Log(MML_LOG_WARN, Who(m), "human_hit: %s", err.c_str());
     return r;
 }
+int H_BulletShape(MmlMod *m, void *person, const MmlCapsule *parts, int count) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    int r = BulletShapeSet(m, person, parts, count, &err);
+    if (!r) Log(MML_LOG_WARN, Who(m), "bullet_shape: %s", err.c_str());
+    return r;
+}
 int H_PedestriansList(MmlMod *m, MmlPedestrian *out, int max) {
     if (!Alive(m)) return 0;
     std::vector<MmlPedestrian> v;
@@ -1318,6 +1325,7 @@ void ModsInit() {
     g_host.hit_filter = H_HitFilter;
     g_host.human_hit = H_HumanHit;
     g_host.pedestrians_list = H_PedestriansList;
+    g_host.bullet_shape = H_BulletShape;
     LiveCleanAll();
     Scan();
     LoadEnabled();
