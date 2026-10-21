@@ -1504,8 +1504,11 @@ H->config_set(M, "finish", "{\"x\": 1.5, \"z\": -2}");           /* any JSON val
 - `config.json` next to the DLL holds the **defaults** (shipped with the mod, replaced by every deploy). What was
   **changed** is kept in `<data folder>\config.json` (written by `config_set` and by the bridge's `config.set`, or
   by hand): only the changed keys. The mod reads the two merged.
-- Either file changing on disk is noticed within half a second: `MML_EVENT_CONFIG_CHANGED`. Read your settings in
-  one function and call it from `mml_mod_load` and from that event.
+- Either file changing on disk is noticed a frame or two after it was written (both folders are watched; a burst of
+  writes, an editor's save, is one change once the writes stop; a file its writer still holds is read when it lets
+  go): `MML_EVENT_CONFIG_CHANGED`. A file that does not parse leaves the values in use (the log says why); a deleted
+  changes' file brings the defaults back. Read your settings in one function and call it from `mml_mod_load` and
+  from that event.
 - Agents change settings with `call config.set {"mod": "<id>", "key": "units", "value": "mph"}` and read them with
   `config.get`: no settings window is needed.
 - Never write into the mod's own folder: a deploy replaces it.

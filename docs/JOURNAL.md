@@ -3065,3 +3065,32 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   Bink played the logos, the log said why. Offline: tests/run_tests.py video_tests (the harness: FFmpeg loaded, the
   order, Bink 2 refused, an H.264 clip opened).
 - **Not seen**: a real `BIKk` (none at hand; RAD's compressor needs its licence accepted: the owner's call).
+
+
+## 2026-10-21: settings watched, not polled; tools/new_mod.py in the offline tests
+
+- **Settings** (host/config.cpp): the two config.json files were looked at twice a second (two attribute reads a
+  mod a look, a change seen up to 500 ms late). Now each folder that holds one (the mod's folder, its data folder)
+  is watched with ReadDirectoryChangesW, overlapped, and no thread: the game thread looks at each watch's OVERLAPPED
+  every frame (a read of memory; nothing is called while nothing changes), takes the names when it completed and
+  issues the next read. A name that is one of a config's files (or a folder above it, renamed or removed) makes it
+  stale; it is read once no change came for 10 ms (an editor's save, a burst of writes, is one change), so the mod
+  is told at the second frame after the write. A buffer that overflowed or a watch that broke (its folder removed)
+  makes every config of that folder stale; a broken watch is opened again twice a second. Our own writes
+  (config.set, a live change flushed) come back as changes: read, the same, not told.
+- **A file its writer holds**: it was read with ifstream, and one that could not be opened counted as no file (the
+  defaults for a moment, then the values again: two events). Now CreateFile tells: no file (the defaults), held
+  (a sharing or lock violation, a delete pending: the values in use stay, read again at a frame, no warning; after
+  5 s a warning and no more tries until the next change), anything else (logged, the values stay).
+- **Measured offline** (the harness's frames are some 31 ms: Sleep(16) at the default timer): five edits seen by
+  the mod in 122 to 125 ms, 4 frames each counted from the call before the write to the call that saw the event
+  (the event itself at the second frame after the write); a burst of 10 writes in 20 ms one event with the last
+  values; the defaults' file edited and put back; a file held with no sharing not read until let go; the changes'
+  file deleted: the defaults in 93 ms.
+- **tools/new_mod.py in the offline tests** (`new_mod_build`, `new_mod_tests` in tests/run_tests.py): the tool run
+  as an author runs it, a C++ mod and a Rust one (`--rust`, skipped with a note when the build has no Rust mods),
+  their sources in `build/x86/new_mod_test/` (`--dir`), configured and built by the project's build (their targets
+  only), copied into the harness switched off; then the CMake lines taken out again (and any an interrupted run
+  left), the sources removed, the build configured again (so it forgets their targets and removes their output
+  folders) and CMakeLists.txt checked to be what it was. In the harness each loads, answers `<id>.status` and
+  unloads; its folders there are removed after.

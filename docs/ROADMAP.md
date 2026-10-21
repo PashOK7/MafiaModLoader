@@ -69,8 +69,10 @@ What is done, what comes next and later, and what is known to be missing or wron
   - **the mission as events** (`MISSION_OPEN` and `MISSION_LOADED` with the name, `GAME_PAUSED`, `GAME_RESUMED`;
     `mission_name`, `mission_state`, `game::MissionName`);
   - **a mod's files and settings** (`mod_data_dir`; `config.json` defaults with the changes merged over them,
-    read again when a file changes, `CONFIG_CHANGED`; `config_*`; the bridge's `config.get`, `config.set`);
-  - **a complete example and a start**: `mods/examples/telemetry`, `tools/new_mod.py`, `docs/MODDING.md`.
+    read again a frame or two after a file changes: both folders watched, 2026-10-21; `CONFIG_CHANGED`; `config_*`;
+    the bridge's `config.get`, `config.set`);
+  - **a complete example and a start**: `mods/examples/telemetry`, `tools/new_mod.py` (its C++ and Rust mods made,
+    built, loaded and taken away by the offline tests, 2026-10-21), `docs/MODDING.md`.
 - **The game's own menus, extended** (2026-10-13; the owner's direction: an achievements mod, or any like it, must
   put its entry into the game's real interface, not an overlay; the base for such mods, not the mod). `mml.h`
   `menu_item` (an item in one of the game's menus, added by the game's own function for growing its lists),
@@ -1639,7 +1641,7 @@ merged, sorted by importance):
   rest differ too much or are too small to tell apart. A name from another project names what that project
   understood; 3 of 889 checked differ in class from the decompile's. MafiaOnline's contract rows count only where
   their bytes are ours. Field layouts (st0rm94's are 1.0's) are not imported: read in place.
-- **Settings**: no schema (a mod checks its own values); the files are polled twice a second.
+- **Settings**: no schema (a mod checks its own values).
 - **The game's menus on 1.0** (`docs/VERSIONS.md`): 1.2's kinds asked for are 1.0's that do the same, not the
   same: a switch (`bslb`) is a drop-down like the selector (`cmbs`); a button's colour (`MML_MENU_BUTTON_*`) and a
   row's (`MML_MENU_ITEM_RED`) are not 1.0's (its buttons and rows are drawn black, grey when disabled); a text's
@@ -1661,8 +1663,6 @@ merged, sorted by importance):
   by id was not looked at.
 - **1.0's bullets, getting up and trams** (`game_build.h`'s mafia-ragdoll fields) are zeros for 1.0: the loader does
   not use them; mafia-ragdoll's own port has them.
-- **`tools/new_mod.py`** was tried by hand (a mod made, built, loaded and seen in the lab); the offline tests do
-  not run it.
 - **`menu.command` sends any integer**: a command the active menu does not expect may do anything that menu's
   handler does with it. Read the handler first (`menu.state` names it; `kb_function`).
 - **The profile list exists only while the profile menu is open** (the game releases it when the menu closes):

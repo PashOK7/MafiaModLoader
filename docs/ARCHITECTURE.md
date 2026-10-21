@@ -133,8 +133,9 @@ except the intro videos), on the game thread, where `LoadLibrary` is safe.
   mission's tick while a menu is open (the pause menu's loop does not tick the mission; the main menu's does).
 - **A mod's files and settings** (`config.cpp`): `<game>\mml\data\<id>\` for what a mod writes; its settings are
   `config.json` in its own folder (the defaults, shipped) with `config.json` of its data folder merged over them
-  (the changes: `config_set`, `config.set`, a hand). Both files' times are looked at twice a second; a change is
-  read and the mod gets `CONFIG_CHANGED`.
+  (the changes: `config_set`, `config.set`, a hand). Both folders are watched (`ReadDirectoryChangesW`, overlapped,
+  its completion looked at by the game thread each frame: no thread, no call while nothing changes); a change is
+  read once its writes have stopped for 10 ms and the mod gets `CONFIG_CHANGED`.
 - **A mod's own files in the game** (`files.cpp`): `rw_data.dll`'s `dtaOpen` (the one function Game.exe and LS3D
   open every file by) is hooked in `Init`, and every enabled mod's `files\` folder is read there too, before the
   game opens its first table. A name a loaded mod ships is opened by rw_data's own `dtaOpen` from the mod's file
