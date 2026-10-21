@@ -761,6 +761,16 @@ What is done, what comes next and later, and what is known to be missing or wron
   1.2's intro by the new game's script command (a mod's AV1), 1.0's by `video.play` (VP9), a Bink 2 file passed
   over, `video.skip`, the game's own Bink without FFmpeg. Offline: `tests/run_tests.py` video_tests. Not seen yet:
   a real `BIKk` file (Known gaps).
+- **A crash's stack as exact as a profile's** (2026-10-21; Known gaps "Crash triage"): one reader of a thread's calls
+  for the sampler and the crash filter (host/stack.cpp): walked by the frame pointers through the system's and the
+  loader's frames to the first of the game's, then each return address with its call's target, read through jumps,
+  the chains' `jmp [head]`, MinHook's trampolines (a detour's call of the original is the hooked function) and
+  `mov reg, [abs]` / `call reg` (how today's compiler calls a hook's original). The report keeps them (`calls`);
+  `crash_triage` and `crash_inspect` keep a frame only where its call leads to the frame below (a tail call's caller
+  kept once a frame above leads to it: the profile too), count what they drop, and name every frame: the game's by
+  the knowledge base, the loader's, the mods' and the stand-in's by their PDBs when the GUID is the dump's image's;
+  the verdict counts the dump's modules in the Windows folder as the system's. The process's exit line walks the
+  same way. Offline (the stand-in): crashes in the game's code, under two mods' hooks and in a mod's hook, the exit.
 
 ## Next, by importance
 
@@ -1292,12 +1302,19 @@ merged, sorted by importance):
   chase's scripted part or a race was not tried; neither were the extreme freeride and the racing. A point is of its
   build (1.2's will not load in 1.0) and is loaded into the profile selected. 1.0's slot 599 is known free only
   because its missions are 1.2's (its texts do not name the freerides' saves): a save found there stops the points.
-- **Crash triage** (host/crash.cpp, `crash_triage`): the stack is a scan checked by the calls' targets, not an
-  unwind: an indirect call (a vtable's, a pointer's) cannot be checked, so a leftover after one may stay (seen: an
-  LS3DF address between C_game::Tick and C_mission::Tick); a function longer than 32 KiB would lose its caller. The
-  game's own frames are named through the knowledge base (1.0's through their 1.2 twins); LS3DF 1.0's and the mods'
-  are module+offset (no PDB read). A crash on a thread whose stack the filter cannot see (a stack overflow's guard
-  page) has only the faulting address. The full dump fails with a partial copy (0x8007012B) in the stand-in game and
+- **Crash triage** (host/stack.cpp, host/crash.cpp, `crash_triage`): the stack is the sampler's walk and check
+  (2026-10-21), not an unwind. A call through an object or a register loaded otherwise than from a fixed place (a
+  vtable's) cannot be checked: kept, so a leftover of such a call stays when no checked frame above it takes it out.
+  A call that goes back through the system into the game (a window procedure called by DispatchMessage) is not
+  followed: the system's frames above the first frame of the game's are not scanned, and the game's frames past
+  them are held and dropped unless a frame above leads to them. A tap on a function stands first in its hook chain:
+  its callers' calls lead to the tap's thunk (not in a module) and stay unchecked. A frame's name by a PDB needs the
+  PDB of the image that crashed (its GUID is matched against the dump's; without a dump it is trusted); the game's
+  are named by the knowledge base (1.0's by its own names, its twins', else `FUN_<start>` by the bounds). The log's
+  line and a mod's fault (`MOD_FAULTED`) carry the host's rough check (a direct call's target within 32 KiB below a
+  frame kept), not MCP's. Not yet seen on a crash in the labs (offline only, the stand-in game: the labs were busy).
+  A crash on a thread whose stack the filter cannot see (a stack overflow's guard page) has only the faulting
+  address. The full dump fails with a partial copy (0x8007012B) in the stand-in game and
   sometimes in 1.2: it is written again without the heaps, so an object a crash points into may be missing. A hang
   is not a crash: `where` stays the tool for it. A fault that kills the process without an exception (a fast fail)
   writes nothing.

@@ -94,8 +94,27 @@ void GameTimeScaleSet(double scale);
 double GameTimeScale(int *step, int *real);
 std::string Where();           // what the game's main thread is doing (any thread)
 std::string ExitStack();       // who is ending the process: the calls on this thread's stack (DllMain's detach)
-// A thread's call stack from a context of its own (the faulting thread's, in a filter): its eip, then the likely
-// return addresses on its stack (code with a call right before it), at most cap; the count.
+// ---- a thread's calls read from its stack (stack.cpp: the sampler's and the crash report's one walk)
+enum CodeKind : uint8_t { kCodeNone, kCodeOther, kCodeGame, kCodeOurs };   // ours: the loader and the mods (mml\live)
+using CodeKindFn = CodeKind (*)(uintptr_t addr, void *ctx);   // whose code an address is (kCodeNone: not code)
+// A stack as read: the thread's registers and its stack from esp (n dwords: the thread's own, or a copy of it).
+struct StackView { uint32_t eip, esp, ebp; const uint32_t *stack; size_t n; };
+// A return address and its call's target (CallTarget; 0: an indirect call; kCallWalked: found by the frame pointers)
+struct StackCall { uint32_t ret, target; };
+constexpr uint32_t kCallWalked = 0xFFFFFFFEu;
+bool AfterCallAt(uintptr_t a);       // right after a call instruction
+uint32_t CallTarget(uint32_t ret);   // the call's target, followed to the code that runs; 0 when it cannot be read
+// The calls on a stack, top first: walked by the frame pointers through the system's and our frames up to the first
+// of the game's (certain; the system's in `out` only with `others`), then every return address into the game's or our
+// code after it, each with its call's target. The count (at most cap).
+int StackCalls(const StackView &v, CodeKindFn kind, void *ctx, bool others, StackCall *out, int cap);
+// The same for this thread from a context of its own (the faulting thread's, in a filter): its live stack, the
+// modules asked as it goes (no TLS, no snapshot: any thread, any time).
+int StackCallsOf(const CONTEXT *c, bool others, StackCall *out, int cap);
+// The host's rough check of a chain (MCP checks it exactly against the functions' starts: crash_triage, profile):
+// eip, then each return address whose direct call's target is within 32 KiB below a frame kept just before it.
+int LikelyFrames(uint32_t eip, const StackCall *calls, int n, uintptr_t *out, int cap);
+// A thread's likely call stack from a context of its own: StackCallsOf, then LikelyFrames; the count.
 int StackOf(const CONTEXT *c, uintptr_t *out, int cap);
 void SetMainThread(DWORD tid);
 DWORD MainThread();
@@ -114,6 +133,9 @@ bool HookRemove(MmlMod *owner, uintptr_t target);
 bool HookRemoveLink(MmlMod *owner, uintptr_t target, void *detour);   // one link only (the host's taps)
 void HookRemoveAll(MmlMod *owner);
 std::string HookList();        // JSON array
+// The function a MinHook trampoline of a chain begins (a detour's call of the original), 0 for any other address;
+// lock-free (the sampler, a crash's filter)
+uintptr_t HookedByTrampoline(uintptr_t at);
 
 // ---- mods (mods.cpp)
 void ModsInit();                          // the host table, the first scan (on the game thread, first frame)

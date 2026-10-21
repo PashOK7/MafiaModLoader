@@ -9,7 +9,10 @@ const MmlHost *H;
 using AddFn = int (*)(int, int);
 AddFn g_original;
 
-int Detour(int a, int b) { return g_original(a, b) * 2; }
+int Detour(int a, int b) {
+    if (a == -2) *static_cast<volatile int *>(nullptr) = b;   // (the harness's `crash_mod`: a crash in a mod's hook)
+    return g_original(a, b) * 2;
+}
 
 int Crash(const char *, MmlReply *, void *) {
     volatile int *p = nullptr;

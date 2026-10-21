@@ -186,14 +186,24 @@ by address (an address finds the function holding it), the call graph both ways,
 read on demand from `reverse_dir` (`mml.config.json`) by the function's line range. `crash_triage`, `crash_inspect`
 and `where` pass their text through it, so `Game.exe+0x...` and `LS3DF.dll+0x...` get the function's name.
 
-A crash (host/crash.cpp, mcp/src/crash.rs): the host's filter takes the faulting thread's stack (code addresses with
-a call right before them, kept when the call can lead to the frames above: a direct call's target, its jumps
-followed, holds one of them), logs it, writes the minidump (without the heaps when the full one fails) and, on a
-thread of its own with a time limit (the crashing thread may hold a lock), `Game_<pid>_<time>.json` beside it: what
-dies with the process (the stack with the mods named, the log's last lines, the taps' last calls, the last events,
-the mods, the mission). `crash_triage` reads both and the log, names the frames and writes a verdict: what, where,
-and the nearest code that is not the game's (a mod, the loader, another ASI). A mod's fault caught by the host's
-gates gets the same stack in its log line and its `MOD_FAULTED` event.
+A thread's calls are read from its stack one way for the sampler and for crashes (host/stack.cpp): walked by the
+frame pointers through the system's and the loader's frames (the loader is built /Oy-) up to the first frame of the
+game's, then every return address into the game's or our code above it, each with its call's target (a direct call's,
+or one through a pointer at a fixed place), followed through jumps, the hook chains' `jmp [head]` and MinHook's
+trampolines (a detour's call of the original is the hooked function). MCP keeps a return address only where its
+call leads to the function of the frame below (mcp/src/stacks.rs; one that leads to no frame is held, and kept once a
+frame above leads to it: a tail call's caller) and names the frames: the game's by the knowledge base, the loader's
+and the mods' by their PDBs.
+
+A crash (host/crash.cpp, mcp/src/crash.rs): the host's filter reads the faulting thread's calls so (`calls` in the
+report: each with its target, "frame" for the walked ones), logs its rough check of them (a direct call's target
+within 32 KiB below a frame kept), writes the minidump (without the heaps when the full one fails) and, on a thread
+of its own with a time limit (the crashing thread may hold a lock), `Game_<pid>_<time>.json` beside it: what dies
+with the process (the stack with the mods named, its calls, the log's last lines, the taps' last calls, the last
+events, the mods, the mission). `crash_triage` reads both and the log, keeps the checked frames and names them (a
+PDB only when its GUID is the one the dump's image names) and writes a verdict: what, where, and the nearest code
+that is not the game's or the system's (a mod, the loader, another ASI). A mod's fault caught by the host's gates
+gets the rough stack in its log line and its `MOD_FAULTED` event.
 
 ## Files in the game folder
 

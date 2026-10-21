@@ -1,10 +1,11 @@
 // Crash reports and the main thread's whereabouts (see host.h).
 //
 // An exception nobody handles (the game would die) is logged (module and offset, the access, the registers, the call
-// stack: the faulting thread's likely return addresses, code with a call right before it) and written as a minidump
+// stack: the faulting thread's calls, stack.cpp's walk as the sampler's) and written as a minidump
 // to <game>\mml\crash\Game_<pid>_<time>.dmp with the heaps and every region's state, so an object a crash points into
 // can be looked at afterwards; beside it Game_<pid>_<time>.json, what dies with the process: the stack with the mods
-// named, the log's last lines, the taps' last calls, the last events, the mods and the mission (mcp: crash_triage,
+// named and its calls with their targets (`calls`: MCP's crash_triage keeps the checked ones and names them), the
+// log's last lines, the taps' last calls, the last events, the mods and the mission (mcp: crash_triage,
 // crash_list, crash_inspect). Exceptions caught by __try never get here (a mod's fault: mods.cpp, with its stack too).
 // The game or a wrapper may install a filter later: SetUnhandledExceptionFilter is hooked, theirs goes after ours
 // (CrashFilterStart; without the hook, ours is set again every frame).
@@ -40,22 +41,6 @@ bool IsCode(uintptr_t addr) {
     if (!VirtualQuery(reinterpret_cast<const void *>(addr), &mi, sizeof mi) || mi.State != MEM_COMMIT || mi.Type != MEM_IMAGE)
         return false;
     return (mi.Protect & (PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)) != 0;
-}
-
-// A likely return address: code whose bytes right before it are a call (E8 rel32, or FF /2: a register, [reg],
-// [reg+d8], [reg+d32], [abs32], with or without an index byte). Leftovers of finished calls pass too: a stack scan is
-// close to the calls, not exact (the game's code keeps no frame pointers).
-bool AfterCall(uintptr_t v) {
-    if (v < 0x10000 || !IsCode(v) || !IsCode(v - 7)) return false;
-    const uint8_t *p = reinterpret_cast<const uint8_t *>(v);
-    auto reg2 = [](uint8_t modrm) { return (modrm & 0x38) == 0x10; };   // the /2 of FF
-    if (p[-5] == 0xE8) return true;
-    if (p[-2] == 0xFF && reg2(p[-1]) && (p[-1] >> 6 == 3 || (p[-1] >> 6 == 0 && (p[-1] & 7) != 4 && (p[-1] & 7) != 5))) return true;
-    if (p[-3] == 0xFF && reg2(p[-2]) && ((p[-2] >> 6 == 1 && (p[-2] & 7) != 4) || (p[-2] >> 6 == 0 && (p[-2] & 7) == 4))) return true;
-    if (p[-4] == 0xFF && reg2(p[-3]) && p[-3] >> 6 == 1 && (p[-3] & 7) == 4) return true;
-    if (p[-6] == 0xFF && reg2(p[-5]) && ((p[-5] >> 6 == 2 && (p[-5] & 7) != 4) || p[-5] == 0x15)) return true;
-    if (p[-7] == 0xFF && reg2(p[-6]) && p[-6] >> 6 == 2 && (p[-6] & 7) == 4) return true;
-    return false;
 }
 
 std::string Frame(uintptr_t pc) {
@@ -129,8 +114,10 @@ LONG WINAPI CrashFilter(EXCEPTION_POINTERS *ep) {
         AddressSpace as = AddressSpaceNow();
         Log(MML_LOG_ERROR, "crash", "address space: %u MB free of %u (the largest piece %u MB)%s", as.freeMb, as.totalMb, as.largestMb,
             as.largeAddressAware ? "" : ", Game.exe not Large Address Aware");
+        StackCall calls[64];
+        const int ncalls = StackCallsOf(c, true, calls, 64);
         uintptr_t pcs[32];
-        int npc = StackOf(c, pcs, 32);
+        const int npc = LikelyFrames(c->Eip, calls, ncalls, pcs, 32);
         for (int i = 0; i < npc; i++) Log(MML_LOG_ERROR, "crash", "  %s %s", i ? "from" : "at  ", Frame(pcs[i]).c_str());
         std::string dir = MmlDir() + "crash\\";
         MakeDir(dir);
@@ -180,6 +167,14 @@ LONG WINAPI CrashFilter(EXCEPTION_POINTERS *ep) {
         json stack = json::array();
         for (int i = 0; i < npc; i++) stack.push_back(Frame(pcs[i]));
         rep->head["stack"] = stack;
+        // every call found, with its call's target ("frame": walked by the frame pointers, certain; null: an indirect
+        // call): MCP keeps those whose call leads to the frame below and names them
+        json all = json::array();
+        for (int i = 0; i < ncalls; i++) {
+            const uint32_t t = calls[i].target;
+            all.push_back({DescribeAddress(calls[i].ret), t == kCallWalked ? json("frame") : t ? json(DescribeAddress(t)) : json(nullptr)});
+        }
+        rep->head["calls"] = all;
         HANDLE th = CreateThread(nullptr, 0, WriteReport, rep, 0, nullptr);
         if (th) {
             DWORD w = WaitForSingleObject(th, 4000);
@@ -269,56 +264,6 @@ bool CrashMethod(const std::string &method, const std::string &paramsJson, std::
     return true;
 }
 
-namespace {
-uint32_t Read32(uintptr_t a) {
-    uint32_t v = 0;
-    return MemRead(a, &v, 4) ? v : 0;
-}
-// Where a direct call goes (E8 rel32, FF 15 [abs32] read): its target and the jumps it starts with followed (a
-// hooked function's jmp to its detour, an import's thunk), up to four places; 0 places: an indirect call.
-int CallTargets(uintptr_t ret, uintptr_t *t) {
-    const uint8_t *p = reinterpret_cast<const uint8_t *>(ret);
-    uintptr_t g = 0;
-    if (p[-5] == 0xE8) g = ret + static_cast<int32_t>(Read32(ret - 4));
-    else if (p[-6] == 0xFF && p[-5] == 0x15) g = Read32(Read32(ret - 4));
-    int n = 0;
-    while (g && IsCode(g) && n < 4) {
-        t[n++] = g;
-        uint8_t b0 = 0, b1 = 0;
-        if (!MemRead(g, &b0, 1)) break;
-        MemRead(g + 1, &b1, 1);
-        if (b0 == 0xE9) g = g + 5 + static_cast<int32_t>(Read32(g + 1));
-        else if (b0 == 0xEB) g = g + 2 + static_cast<int8_t>(b1);
-        else if (b0 == 0xFF && b1 == 0x25) g = Read32(Read32(g + 2));
-        else break;
-    }
-    return n;
-}
-} // namespace
-
-// The scan keeps a code address with a call before it only when the call can lead to the frames above it: a direct
-// call's target (its jumps followed) must hold one of the last frames kept (within 32 KiB of its start: the game's
-// functions are shorter); an indirect call cannot be checked and is kept. What a finished call left on the stack is
-// dropped so, mostly.
-int StackOf(const CONTEXT *c, uintptr_t *out, int cap) {
-    int n = 0;
-    if (cap > 0) out[n++] = c->Eip;
-    const uintptr_t *sp = reinterpret_cast<const uintptr_t *>(c->Esp);
-    const uintptr_t *top = reinterpret_cast<const uintptr_t *>(reinterpret_cast<NT_TIB *>(NtCurrentTeb())->StackBase);
-    if (sp >= top || top - sp > 0x40000) return n;   // not this thread's stack
-    for (; sp < top && n < cap; sp++) {
-        uintptr_t v = *sp;
-        if (!AfterCall(v) || v == out[n - 1]) continue;
-        uintptr_t t[4];
-        int nt = CallTargets(v, t);
-        bool leads = nt == 0;
-        for (int k = 0; k < nt && !leads; k++)
-            for (int f = n - 1; f >= 0 && f >= n - 4 && !leads; f--) leads = out[f] >= t[k] && out[f] < t[k] + 0x8000;
-        if (leads) out[n++] = v;
-    }
-    return n;
-}
-
 void SetMainThread(DWORD tid) { g_mainTid = tid; }
 DWORD MainThread() { return g_mainTid; }
 
@@ -371,19 +316,16 @@ std::string Where() {
 }
 
 // The process ending without a fault (ExitProcess: DllMain's detach runs on the thread that called it, under it on
-// the stack): the calls that led there, found by a scan of this thread's stack as a crash's report finds them. A
-// player's game once quit by itself in the main menu with no dump and no word: this line names who ended it.
+// the stack): the calls that led there, read from this thread's stack as a crash's report reads them (walked by the
+// frame pointers from here through the system's exit to the game's code that called it). A player's game once quit
+// by itself in the main menu with no dump and no word: this line names who ended it.
 std::string ExitStack() {
-    uintptr_t sp = reinterpret_cast<uintptr_t>(_AddressOfReturnAddress());
-    uintptr_t top = __readfsdword(4);   // NT_TIB's StackBase
+    CONTEXT c{};
+    RtlCaptureContext(&c);
+    uintptr_t pcs[32];
+    const int n = StackOf(&c, pcs, 32);
     std::string out;
-    int found = 0;
-    for (; sp + 4 <= top && found < 32; sp += 4) {
-        uintptr_t v = *reinterpret_cast<const uintptr_t *>(sp);
-        if (!AfterCall(v)) continue;
-        out += (found ? ", " : "") + Frame(v);
-        found++;
-    }
+    for (int i = 1; i < n; i++) out += (i > 1 ? ", " : "") + Frame(pcs[i]);   // (the first: this function)
     return out.empty() ? "(no calls found on the stack)" : out;
 }
 

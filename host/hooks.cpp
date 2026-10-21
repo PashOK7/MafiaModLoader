@@ -28,6 +28,29 @@ std::recursive_mutex g_mx;
 std::vector<Chain *> g_chains;
 std::vector<uint8_t *> g_freeThunks;
 bool g_mhReady;
+// The chains' trampolines and the functions they begin, for the stack's readers (HookedByTrampoline): rows never
+// move, written under g_mx, read without it (a crash's filter on a thread that may hold it, the sampler)
+struct TrampolineRow { void *volatile trampoline; volatile uintptr_t target; };
+TrampolineRow g_trampolines[1024];
+volatile LONG g_trampolineRows;   // the rows ever used
+
+void TrampolineSet(void *trampoline, uintptr_t target) {
+    for (LONG i = 0; i < g_trampolineRows; i++)
+        if (!g_trampolines[i].trampoline) {
+            g_trampolines[i].target = target;
+            InterlockedExchangePointer(&g_trampolines[i].trampoline, trampoline);
+            return;
+        }
+    if (g_trampolineRows < 1024) {
+        g_trampolines[g_trampolineRows].target = target;
+        g_trampolines[g_trampolineRows].trampoline = trampoline;
+        InterlockedIncrement(&g_trampolineRows);
+    }
+}
+void TrampolineClear(void *trampoline) {
+    for (LONG i = 0; i < g_trampolineRows; i++)
+        if (g_trampolines[i].trampoline == trampoline) InterlockedExchangePointer(&g_trampolines[i].trampoline, nullptr);
+}
 
 uint8_t *NewThunk() {
     if (g_freeThunks.empty()) {
@@ -93,6 +116,7 @@ bool AddLink(MmlMod *owner, uintptr_t target, void *detour, void **original, Pla
             return false;
         }
         g_chains.push_back(c);
+        TrampolineSet(c->trampoline, target);
     }
     for (const Link &l : c->links)
         if (l.owner == owner && l.detour == detour) { if (err) *err = "already hooked by this owner"; return false; }
@@ -129,6 +153,7 @@ bool RemoveLinks(MmlMod *owner, uintptr_t target, void *detour) {
     Relink(c);
     if (c->links.empty()) {
         MH_DisableHook(reinterpret_cast<void *>(target));
+        TrampolineClear(c->trampoline);
         MH_RemoveHook(reinterpret_cast<void *>(target));
         g_freeThunks.push_back(c->thunk);
         g_chains.erase(std::find(g_chains.begin(), g_chains.end(), c));
@@ -162,6 +187,13 @@ std::string HookList() {
         out += "]}";
     }
     return out + "]";
+}
+
+uintptr_t HookedByTrampoline(uintptr_t at) {
+    const LONG rows = g_trampolineRows;
+    for (LONG i = 0; i < rows; i++)
+        if (reinterpret_cast<uintptr_t>(g_trampolines[i].trampoline) == at) return g_trampolines[i].target;
+    return 0;
 }
 
 } // namespace host

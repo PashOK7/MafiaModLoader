@@ -318,7 +318,8 @@ def main():
         c.tool('call', {'method': 'hook_b.crash'})
         ok, text = c.tool('crash_triage')
         check('crash_triage: a mod\'s fault in this run, with its stack', ok and '"MOD_FAULTED"' in text and '(mod hook_b)' in text, text[:600])
-        open(os.path.join(HARNESS, 'crash'), 'w').close()
+        # (hook_b is unloaded now: the crash under the hooks goes through hook_a's detour alone)
+        open(os.path.join(HARNESS, 'crash_hooked'), 'w').close()
         harness.wait(timeout=20)
     finally:
         if harness.poll() is None:
@@ -328,6 +329,41 @@ def main():
     check('crash_triage after a crash: the verdict (a write of address 0 in the game\'s own code), the stack, the log, the mods',
           ok and 'an access violation (C0000005) at mml_harness.exe+0x' in text and 'a write of 0x00000000' in text
           and 'a null pointer' in text and '"stack"' in text and 'exception C0000005' in text and 'hook_b' in text, text[:900])
+    try:
+        crash = json.loads(text)['crash']
+    except (ValueError, KeyError, TypeError):
+        crash = {}
+    st = crash.get('stack', [])
+    want = ['(harness_crash+0x', '(harness_add+0x', '(mod hook_a: ', '(main+0x']
+    check("crash_triage's stack: the true chain, checked and named by the PDBs (harness_crash, harness_add, hook_a's "
+          "detour, main), the finished calls' leftovers dropped and counted",
+          len(st) >= 4 and all(w in s for w, s in zip(want, st)) and 'Detour+0x' in st[2]
+          and not any('MafiaModLoader.asi' in s for s in st) and isinstance(crash.get('stack_dropped'), int)
+          and 'dropped' in crash.get('stack_note', ''), {k: crash.get(k) for k in ('stack', 'stack_dropped', 'stack_note')})
+    ok, text = c.tool('crash_inspect')
+    check('crash_inspect: the same checked stack beside the dump\'s scan', ok and '"stack_scan"' in text and '(harness_add+0x' in text
+          and '"stack_dropped"' in text, text[:600])
+    # a crash in a mod's hook (hook_b's detour: the game calls it, nothing guards it)
+    shutil.rmtree(os.path.join(HARNESS, 'mml', 'crash'), ignore_errors=True)
+    harness = subprocess.Popen([os.path.join(HARNESS, 'mml_harness.exe'), '--seconds', '30'], cwd=HARNESS,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        time.sleep(1.0)
+        open(os.path.join(HARNESS, 'crash_mod'), 'w').close()
+        harness.wait(timeout=20)
+    finally:
+        if harness.poll() is None:
+            harness.kill()
+    time.sleep(0.3)
+    ok, text = c.tool('crash_triage')
+    try:
+        crash = json.loads(text)['crash']
+    except (ValueError, KeyError, TypeError):
+        crash = {}
+    st = crash.get('stack', [])
+    check("crash_triage of a crash in a mod's hook: the verdict names the mod and its function, main below it",
+          'in mod_hook_b_' in crash.get('verdict', '') and '(mod hook_b: ' in crash.get('verdict', '') and 'Detour+0x' in crash.get('verdict', '')
+          and len(st) >= 2 and '(main+0x' in st[1], {k: crash.get(k) for k in ('verdict', 'stack')})
     shutil.rmtree(os.path.join(HARNESS, 'mml', 'crash'), ignore_errors=True)
     ghidra_checks(c)   # (last: a Ghidra server's first start takes its time, the harness's games have theirs)
     c.close()

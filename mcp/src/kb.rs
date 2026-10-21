@@ -445,12 +445,27 @@ pub fn function_key(module: &str, off: u32) -> Option<String> {
     }
 }
 
-/// "Game.exe+0x7AD00" and "LS3DF.dll+0x5AC2E" in a text get the function's name after them, when known.
+/// " (C_game::Tick+0x328)" for an offset in a game module ("game.exe", "ls3df.dll"; the running build's): its
+/// function's name (as `annotate` gives it), else, where the function's bounds are known, " (FUN_<start>+0x..)".
+pub fn describe(module: &str, off: u32) -> Option<String> {
+    let kb = get().ok()?;
+    let base = kb.modules.iter().find(|m| m.name == module)?.base;
+    name_for(kb, module, base + off).or_else(|| {
+        let start = function_start(module, off)?;
+        let build = if crate::game::current_build() == "1.0" { ", 1.0" } else { "" };
+        Some(format!(" (FUN_{:08X}+0x{:X}{build})", base + start, off - start))
+    })
+}
+
+/// "Game.exe+0x7AD00" and "LS3DF.dll+0x5AC2E" in a text get the function's name after them, when known (and not
+/// named already: "Game.exe+0x7AD00 (C_game::Tick+0x10)" is left as it is).
 pub fn annotate(text: &str) -> String {
     let Ok(kb) = get() else { return text.to_string() };
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| Regex::new(r"(?i)\b(game\.exe|ls3df\.dll)\+0x([0-9a-f]+)").unwrap());
     re.replace_all(text, |c: &regex::Captures| {
+        let after = &text[c.get(0).map_or(0, |m| m.end())..];
+        if after.starts_with(" (") && after[2..].split(')').next().is_some_and(|n| n.contains("+0x")) { return c[0].to_string(); }
         let module = c[1].to_lowercase();
         let off = u32::from_str_radix(&c[2], 16).unwrap_or(0);
         let base = kb.modules.iter().find(|m| m.name == module).map(|m| m.base).unwrap_or(0);
