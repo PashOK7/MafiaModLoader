@@ -127,25 +127,35 @@ void *ParentOf(void *f) {
     __try { parent = game::at<void *>(f, game::kFrameParent); } __except (EXCEPTION_EXECUTE_HANDLER) { parent = nullptr; }
     return parent;
 }
-// The people's and pedestrians' model frames, gathered once a frame (bone_set asks for each bone it writes: a
-// ragdoll's twenty a frame), dropped when the frame's poses are flushed and at the mission's close.
-std::vector<void *> g_models;
+// The people's and pedestrians' model frames with their owners, gathered once a frame (bone_set asks for each bone
+// it writes: a ragdoll's twenty a frame), dropped when the frame's poses are flushed, a person goes and the mission
+// closes. The pedestrians' elements are read once here: ModelOf on each would gather them all again for each.
+struct Owned { void *model, *owner; };
+std::vector<Owned> g_models;
 bool g_modelsKnown;
-const std::vector<void *> &Models() {
+void *ReadModel(void *owner, int at) {
+    void *m = nullptr;
+    __try { m = game::at<void *>(owner, at); } __except (EXCEPTION_EXECUTE_HANDLER) { m = nullptr; }
+    return m;
+}
+const std::vector<Owned> &Models() {
     if (!g_modelsKnown) {
         g_models.clear();
-        for (void *h : g_humans) g_models.push_back(ModelOf(h));
-        for (void *e : PedestrianElements()) g_models.push_back(ModelOf(e));
+        for (void *h : g_humans) if (void *m = ReadModel(h, game::kActorFrame)) g_models.push_back({m, h});
+        for (void *e : PedestrianElements()) if (void *m = ReadModel(e, kPedModel)) g_models.push_back({m, e});
         g_modelsKnown = true;
     }
     return g_models;
 }
+const Owned *Known(void *f) {
+    for (const Owned &o : Models()) if (o.model == f) return &o;
+    return nullptr;
+}
 // The model a bone belongs to: a person's (or a pedestrian's) model frame among its parents.
 void *ModelOfBone(void *frame) {
-    const std::vector<void *> &models = Models();
     void *f = frame;
     for (int i = 0; i < 16 && f; i++) {
-        if (std::find(models.begin(), models.end(), f) != models.end()) return f;
+        if (Known(f)) return f;
         f = ParentOf(f);
     }
     return nullptr;
@@ -201,6 +211,7 @@ json HumanJson(void *h, void *player) {
 void HumansCreated(void *h) { if (h && !Alive(h)) { g_humans.push_back(h); g_modelsKnown = false; } }
 void HumansGone(void *actor) {
     g_humans.erase(std::remove(g_humans.begin(), g_humans.end(), actor), g_humans.end());
+    g_modelsKnown = false;
     g_held.erase(std::remove_if(g_held.begin(), g_held.end(), [&](const Held &x) { return x.human == actor; }), g_held.end());
     g_lastPoses.erase(std::remove_if(g_lastPoses.begin(), g_lastPoses.end(), [&](const LastPose &x) { return x.human == actor; }), g_lastPoses.end());
 }
@@ -234,9 +245,11 @@ int HumanSkeleton(void *human, MmlBone *out, int max) {
 }
 
 int BoneSet(void *frame, const float *rot, const float *pos) {
-    if (!frame || !game::g_exe || !Readable(frame, 0x130)) return 0;
-    if (!WriteBone(frame, rot, pos)) return 0;
+    if (!frame || !game::g_exe) return 0;
+    // a bone of a known model is a frame (its parents read under a guard); any other is asked of the memory first
     void *model = ModelOfBone(frame);
+    if (!model && !Readable(frame, 0x130)) return 0;
+    if (!WriteBone(frame, rot, pos)) return 0;
     if (model) Dirty(model);
     else UpdateModel(frame);   // (a frame not of a person's model: itself and its children)
     return 1;
@@ -255,9 +268,8 @@ bool HumanKnown(void *human) { return Alive(human); }
 void HumansFlushPoses() {
     for (void *m : g_dirty) {
         UpdateModel(m);
-        void *h = nullptr;
-        for (void *x : g_humans) if (ModelOf(x) == m) h = x;
-        if (!h) for (void *x : PedestrianElements()) if (ModelOf(x) == m) h = x;
+        const Owned *o = Known(m);
+        void *h = o ? o->owner : nullptr;
         void *f[MML_BONE_COUNT];
         if (!h || !FindBones(h, f)) continue;
         LastPose p{h, GetTickCount(), {}};

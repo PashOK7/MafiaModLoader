@@ -543,6 +543,9 @@ struct ProfileArgs {
     reset: Option<bool>,
     /// The time between samples (ms, default 1: a timer, no core kept busy; down to 0.25 by a wait on the clock).
     interval_ms: Option<f64>,
+    /// Also `functions.focus`: every function whose name holds this text (case aside), by total: one mod's own
+    /// (its DLL's name, "mod_ragdoll"), a class ("JPH::"), the ones past the top lists' cut.
+    focus: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -1096,7 +1099,8 @@ impl Server {
         let functions = tokio::task::spawn_blocking({
             let r = report.clone();
             let dir = game::game_dir()?;   // (the call's game: the build that names the addresses, its PDBs)
-            move || game::with_game_sync(dir, || stacks::by_function(&r))
+            let focus = a.focus.clone();
+            move || game::with_game_sync(dir, || stacks::by_function(&r, focus.as_deref()))
         }).await.map_err(|e| e.to_string())?;
         if let Some(o) = report.as_object_mut() { o.remove("addresses"); o.remove("chains"); }
         let mut out = json!({"sample": report, "functions": functions});

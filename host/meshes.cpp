@@ -468,10 +468,13 @@ int ActorMeshes(void *actor, MmlMeshPiece *out, int max) {
 
 void MeshesFrame() {
     if (g_focus.empty()) return;
-    Walk(0.75);
-    if (g_walked.empty()) return;
+    // Only the scans read a walk: the next walk starts when a scan is due, and that scan waits for it (a city's
+    // 25 000 frames are 2 ms of walking over a few frames, once a scan instead of without pause: 0.6 ms a frame).
+    // A focus that grew is scanned at once, from the walk before.
     uint64_t now = GetTickCount64();
-    if (now < g_nextScan) return;
+    bool due = now >= g_nextScan, urgent = g_nextScan == 0;
+    if (g_walking || g_walked.empty() || due) Walk(0.75);
+    if (g_walked.empty() || !due || (g_walking && !urgent)) return;
     g_nextScan = now + kScanEveryMs;
     if (!SafeScan()) g_pieces.clear();   // (a frame went: the next scan starts over)
 }

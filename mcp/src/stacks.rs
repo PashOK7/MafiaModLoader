@@ -82,7 +82,7 @@ fn norm(t: &str) -> Option<String> {
 
 const COUNTERS: &str = "prof.counters' hooks [MafiaModLoader.asi]";
 
-pub fn by_function(report: &Value) -> Value {
+pub fn by_function(report: &Value, focus: Option<&str>) -> Value {
     let addrs: Vec<&str> = report["addresses"].as_array().map(|a| a.iter().map(|x| x.as_str().unwrap_or("?")).collect()).unwrap_or_default();
     let game = |t: &str| {
         let m = t.split("+0x").next().unwrap_or("").to_lowercase();
@@ -133,14 +133,20 @@ pub fn by_function(report: &Value) -> Value {
     let row = |(n, s): &(String, [f64; 3])| json!({"function": n, "self": pct(s[0]), "calls_out": pct(s[1]), "total": pct(s[2])});
     v.sort_by(|a, b| b.1[2].partial_cmp(&a.1[2]).unwrap_or(std::cmp::Ordering::Equal));
     let by_total: Vec<Value> = v.iter().take(60).map(row).collect();
+    let focused: Option<Vec<Value>> = focus.filter(|f| !f.is_empty()).map(|f| {
+        let f = f.to_lowercase();
+        v.iter().filter(|(n, _)| n.to_lowercase().contains(&f)).take(200).map(row).collect()
+    });
     v.sort_by(|a, b| (b.1[0] + b.1[1]).partial_cmp(&(a.1[0] + a.1[1])).unwrap_or(std::cmp::Ordering::Equal));
     let by_self: Vec<Value> = v.iter().take(40).map(row).collect();
-    json!({"by_total": by_total, "by_self": by_self,
+    let mut out = json!({"by_total": by_total, "by_self": by_self,
            "stale_left_out_percent": if found > 0.0 { ((found - kept_n) / found * 1000.0).round() / 10.0 } else { 0.0 },
            "note": "% of the samples: self, the thread in the function; calls_out, in a system or driver module the \
                     function called itself (Direct3D, the driver: its draw calls' cost); total, the function anywhere on \
                     the stack, once a sample. A return address whose direct call leads elsewhere than the frame below \
-                    is a stale one, left out (stale_left_out_percent of those found); one of an indirect call is kept"})
+                    is a stale one, left out (stale_left_out_percent of those found); one of an indirect call is kept"});
+    if let Some(f) = focused { out["focus"] = json!(f); }
+    out
 }
 
 #[cfg(test)]

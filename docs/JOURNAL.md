@@ -3250,3 +3250,19 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Seen** (both labs, the same picture): a capsule, two spheres and a box half hidden by the taxi and the kerb, the
   sphere behind the taxi hidden, the one on top over it; a 0 ms shape drawn once and gone.
 
+
+## 2026-10-22: what a ragdoll mod costs the loader
+
+- **Measured** (`profile` in both labs, the ragdoll mod with six corpses and a dozen people near): the mod 0.84 ms a
+  frame, most of it the loader's own work for it. bone_set (twenty bones a ragdoll, twice a frame) asked each frame's
+  people and pedestrians for their models through ModelOf, which asked PedestrianKnown, which gathered every
+  pedestrian again: a hundred gatherings of the actor list a frame; and each bone was VirtualQuery'd first. The
+  models are read once a frame now with their owners (a person's +0x68, an element's +0x40), a bone of a known model
+  is trusted (its parents read under a guard) and only another frame is asked of the memory. The scene meshes'
+  walk (25 000 frames of the city, 2.3 ms over three or four frames) started over as soon as it ended, while only the
+  scans every 250 ms read it: 0.6 ms a frame for nothing. A walk starts when a scan is due now and that scan waits
+  for it; a focus that grew is scanned at once from the walk before.
+- **Made**: MCP `profile {focus}`: every function whose name holds the text (a mod's DLL, a class), past the top
+  lists' cut of 60 and 40 that left out all but a mod's heaviest four.
+- **Seen**: the mod 0.30 ms a frame in both builds (its own tracking of the people near, the Jolt step, the hits),
+  the loader's part of it out of the profile.
