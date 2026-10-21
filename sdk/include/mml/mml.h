@@ -242,6 +242,23 @@ typedef struct MmlCapsule {
     float radius;
 } MmlCapsule;
 
+/* draw_world: a shape in the world's space, drawn as lines over the 3D world */
+#define MML_DRAW_LINE    1        /* from a to b */
+#define MML_DRAW_BOX     2        /* centre a, half extents b along its axes */
+#define MML_DRAW_SPHERE  3        /* centre a, radius */
+#define MML_DRAW_CAPSULE 4        /* the segment a-b, radius */
+#define MML_DRAW_ON_TOP  0x1u     /* flags: over everything (not hidden by the world in front of it) */
+typedef struct MmlDrawShape {
+    uint32_t size;          /* sizeof(MmlDrawShape) */
+    int kind;               /* MML_DRAW_LINE, _BOX, _SPHERE, _CAPSULE */
+    float a[3], b[3];
+    float radius;
+    float axes[9];          /* a box's x, y and z axes in the world (unit vectors); all zero: the world's */
+    uint32_t color;         /* 0xAARRGGBB (alpha blended) */
+    uint32_t flags;         /* MML_DRAW_ON_TOP */
+    int ms;                 /* 0: the next frame of the world only (give it again each frame); else held this long */
+} MmlDrawShape;
+
 /* frame_watch: a watched frame (or mesh) about to be freed by LS3D */
 typedef void (*MmlFrameGoneFn)(void *frame, void *user);
 
@@ -1662,6 +1679,12 @@ typedef struct MmlHost {
      * there; fn NULL takes the mod's watch on that frame away (its unload, all of them). A mod keeping a model and
      * its bones watches each frame it reads or writes. 1 done, 0 refused (the log says why). */
     int (*frame_watch)(MmlMod *mod, void *frame, MmlFrameGoneFn fn, void *user);
+    /* ---- drawing in the world (docs/MODDING.md "Drawing in the world"; the game on a Direct3D 9 wrapper, as in the
+     * labs). draw_world: a line, box, sphere or capsule in the world's space, drawn as lines over the frame's 3D world
+     * (after RENDER_WORLD's mods): hidden by the world in front of it, or over everything (MML_DRAW_ON_TOP); for one
+     * frame (ms 0: give it each frame, from any event) or held for ms. NULL takes the mod's shapes away (its unload
+     * too). Up to 20000 shapes at once. 1 done, 0 refused (the log says why). Game thread. */
+    int (*draw_world)(MmlMod *mod, const MmlDrawShape *shape);
 } MmlHost;
 
 #define MML_ZONE_PLAYER 0x1u

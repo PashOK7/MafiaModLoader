@@ -961,7 +961,8 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
       (queries, a depth pyramid). Measure: the profile's share of `SetVisibleRecMainPass` and the portals at 1000 m.
     Under a Direct3D 9 wrapper only (dxwrapper, DXVK), as items 27 and 28; plain Direct3D 8 keeps the game's own
     drawing. The order may change with 31a's numbers: a step whose share is small waits.
-32. **The ragdoll's toolkit** (R; the owner, 2026-10-21: the ragdoll becomes a loader mod in a private repository of
+32. *(Done 2026-10-21: 32a to 32f, each seen in both labs; the ragdoll's own repository is next, the owner's.)*
+    **The ragdoll's toolkit** (R; the owner, 2026-10-21: the ragdoll becomes a loader mod in a private repository of
     its own, and the loader gives it everything it needs first). What mafia-ragdoll's host and core do with raw hooks
     and addresses (its `hits.cpp`, `knock.cpp`, `getup.cpp`, `frame_life.cpp`, core.cpp's pedestrians) becomes host
     services for any mod, both builds, each with its bridge method, its offline test, MODDING and the Rust crate:
@@ -985,7 +986,8 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
       before the game")*. Their elements listed (with their model, place, health), their
       skeleton read and posed (human_skeleton, bone_set), handed back by human_get_up (getup.cpp's way: out of the
       wait, the collision back in the grid, pedAnimStart), and hit (32a's human_hit, pedHit).
-    - **32e, drawing in the world.** Lines, boxes, spheres and capsules in the world's space, tested against the
+    - **32e, drawing in the world** *(done 2026-10-21: mml.h draw_world; host/worlddraw.cpp; MODDING "Drawing in
+      the world")*. Lines, boxes, spheres and capsules in the world's space, tested against the
       frame's depth or over it, from mods (each frame or held for a time) and from the bridge (`draw.world`): what a
       physics mod draws to see its bodies, joints and contacts.
     - **32f, seen in the game** *(2026-10-21, both labs: a corpse's skin follows bones written 8 s after his death;

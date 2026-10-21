@@ -1871,7 +1871,20 @@ def main():
               r['ok'] and r['result'] == {'play': -1, 'stop': 0, 'replace': 0, 'state': 0, 'untouched': 1, 'get_up': 0}, r)
         r = b.call('kit.hits')
         check('hit_filter set, human_hit and pedestrians_list with no game: refused, none',
-              r['ok'] and r['result'] == {'filter': 1, 'hit': 0, 'null_hit': 0, 'pedestrians': 0, 'shape': 0, 'watch': 0, 'unwatch': 1}, r)
+              r['ok'] and r['result'] == {'filter': 1, 'hit': 0, 'null_hit': 0, 'pedestrians': 0, 'shape': 0, 'watch': 0, 'unwatch': 1, 'draw': 1,
+                                         'bad_draw': 0}, r)
+        r = b.call('draw.world_state')
+        check("draw.world_state: the kit's sphere held, the bad one refused", r['ok'] and r['result']['shapes'] == 1
+              and r['result']['refused'] == 1, r)
+        r = b.call('draw.world', {'capsule': {'a': [0, 0, 0], 'b': [0, 1, 0], 'radius': 0.2}, 'color': '#C000FF00', 'ms': 2000})
+        r2 = b.call('draw.world', {'sphere': {'centre': [0, 0, 0]}, 'ms': 2000})
+        r3 = b.call('draw.world', {'box': {'centre': [0, 0, 0]}})
+        check('draw.world: a capsule and a sphere held, a box with no half extents refused', r['ok'] and r2['ok']
+              and r2['result']['shapes'] == 3 and not r3['ok'] and 'half' in str(r3.get('error', '')), (r, r2, r3))
+        r = b.call('draw.world', {'clear': True})
+        r2 = b.call('draw.world_state')
+        check("draw.world clear: the bridge's shapes gone, the kit's kept", r['ok'] and r['result']['cleared'] == 2
+              and r2['result']['shapes'] == 1, (r, r2))
         r = b.call('frames.watched')
         check('frames.watched with no game: none, the Release not hooked (no LS3D)', r['ok'] and r['result']['frames'] == []
               and r['result']['release'] != 'hooked', r)

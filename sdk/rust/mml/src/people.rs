@@ -7,6 +7,8 @@ use core::ptr;
 /// A traffic pedestrian (pedestrians_list): its `element` is what human_hit, human_skeleton, bone_set and
 /// human_get_up take (an Actor made from it with Actor::from_ptr).
 pub use sys::MmlPedestrian as Pedestrian;
+/// A shape drawn in the world (draw_world): sys::MML_DRAW_LINE, _BOX, _SPHERE, _CAPSULE
+pub use sys::MmlDrawShape as DrawShape;
 /// A capsule in the world's space: the segment a-b and its radius (bullet_shape)
 pub use sys::MmlCapsule as Capsule;
 
@@ -261,6 +263,16 @@ impl Host {
         let ok = unsafe { f!(self, frame_watch)(self.module, frame.as_ptr(), None, ptr::null_mut()) != 0 };
         untrack(K_FRAME, frame.as_ptr() as usize as c_int);
         ok
+    }
+    /// A shape in the world's space drawn as lines over the 3D world (ms 0: the next frame only)
+    pub fn draw_world(&self, shape: &DrawShape) -> bool {
+        let mut s = *shape;
+        s.size = core::mem::size_of::<DrawShape>() as u32;
+        unsafe { f!(self, draw_world)(self.module, &s) != 0 }
+    }
+    /// The mod's shapes in the world taken away
+    pub fn draw_world_clear(&self) -> bool {
+        unsafe { f!(self, draw_world)(self.module, ptr::null()) != 0 }
     }
     /// The traffic's walkers (not actors: humans_list does not hold them)
     pub fn pedestrians_list(&self) -> Vec<Pedestrian> {

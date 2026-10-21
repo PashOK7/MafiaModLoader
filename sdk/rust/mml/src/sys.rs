@@ -23,6 +23,11 @@ pub const MML_SCRIPT_FAILED: u32 = 2;
 pub const MML_SCRIPT_STOPPED: u32 = 3;
 pub const MML_HIT_GAME: u32 = 0;
 pub const MML_HIT_TAKEN: u32 = 1;
+pub const MML_DRAW_LINE: u32 = 1;
+pub const MML_DRAW_BOX: u32 = 2;
+pub const MML_DRAW_SPHERE: u32 = 3;
+pub const MML_DRAW_CAPSULE: u32 = 4;
+pub const MML_DRAW_ON_TOP: u32 = 1;
 pub const MML_GFX_UI_OFF: u32 = 0;
 pub const MML_GFX_UI_TAKE: u32 = 1;
 pub const MML_GFX_UI_HIDE: u32 = 2;
@@ -422,6 +427,36 @@ const _: () = {
     ["Offset of field: MmlCapsule::a"][::core::mem::offset_of!(MmlCapsule, a) - 0usize];
     ["Offset of field: MmlCapsule::b"][::core::mem::offset_of!(MmlCapsule, b) - 12usize];
     ["Offset of field: MmlCapsule::radius"][::core::mem::offset_of!(MmlCapsule, radius) - 24usize];
+};
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct MmlDrawShape {
+    pub size: u32,
+    pub kind: ::core::ffi::c_int,
+    pub a: [f32; 3usize],
+    pub b: [f32; 3usize],
+    pub radius: f32,
+    pub axes: [f32; 9usize],
+    pub color: u32,
+    pub flags: u32,
+    pub ms: ::core::ffi::c_int,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of MmlDrawShape"][::core::mem::size_of::<MmlDrawShape>() - 84usize];
+    ["Alignment of MmlDrawShape"][::core::mem::align_of::<MmlDrawShape>() - 4usize];
+    ["Offset of field: MmlDrawShape::size"][::core::mem::offset_of!(MmlDrawShape, size) - 0usize];
+    ["Offset of field: MmlDrawShape::kind"][::core::mem::offset_of!(MmlDrawShape, kind) - 4usize];
+    ["Offset of field: MmlDrawShape::a"][::core::mem::offset_of!(MmlDrawShape, a) - 8usize];
+    ["Offset of field: MmlDrawShape::b"][::core::mem::offset_of!(MmlDrawShape, b) - 20usize];
+    ["Offset of field: MmlDrawShape::radius"]
+        [::core::mem::offset_of!(MmlDrawShape, radius) - 32usize];
+    ["Offset of field: MmlDrawShape::axes"][::core::mem::offset_of!(MmlDrawShape, axes) - 36usize];
+    ["Offset of field: MmlDrawShape::color"]
+        [::core::mem::offset_of!(MmlDrawShape, color) - 72usize];
+    ["Offset of field: MmlDrawShape::flags"]
+        [::core::mem::offset_of!(MmlDrawShape, flags) - 76usize];
+    ["Offset of field: MmlDrawShape::ms"][::core::mem::offset_of!(MmlDrawShape, ms) - 80usize];
 };
 pub type MmlFrameGoneFn = ::core::option::Option<
     unsafe extern "C" fn(frame: *mut ::core::ffi::c_void, user: *mut ::core::ffi::c_void),
@@ -3533,10 +3568,13 @@ pub struct MmlHost {
             user: *mut ::core::ffi::c_void,
         ) -> ::core::ffi::c_int,
     >,
+    pub draw_world: ::core::option::Option<
+        unsafe extern "C" fn(mod_: *mut MmlMod, shape: *const MmlDrawShape) -> ::core::ffi::c_int,
+    >,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 780usize];
+    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 784usize];
     ["Alignment of MmlHost"][::core::mem::align_of::<MmlHost>() - 4usize];
     ["Offset of field: MmlHost::size"][::core::mem::offset_of!(MmlHost, size) - 0usize];
     ["Offset of field: MmlHost::api_version"]
@@ -3870,6 +3908,8 @@ const _: () = {
         [::core::mem::offset_of!(MmlHost, bullet_shape) - 772usize];
     ["Offset of field: MmlHost::frame_watch"]
         [::core::mem::offset_of!(MmlHost, frame_watch) - 776usize];
+    ["Offset of field: MmlHost::draw_world"]
+        [::core::mem::offset_of!(MmlHost, draw_world) - 780usize];
 };
 pub type MmlModLoadFn = ::core::option::Option<
     unsafe extern "C" fn(host: *const MmlHost, mod_: *mut MmlMod) -> ::core::ffi::c_int,

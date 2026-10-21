@@ -1174,7 +1174,7 @@ pub use control::{VehicleBody, VehicleStep};
 pub use data::{Model, ModelMesh, Progress, Stats};
 pub use gfx::{GeomCapture, GfxFrame, MeshPiece, ShaderRule, ViewCamera};
 pub use media::{Marker, MenuControl, SoundState};
-pub use people::{Bone, Capsule, HumanAnim, ItemDef, Pedestrian, SkinBone, SkinLod, SkinMesh};
+pub use people::{Bone, Capsule, DrawShape, HumanAnim, ItemDef, Pedestrian, SkinBone, SkinLod, SkinMesh};
 pub use world::{Exhaust, Light, Particle, ParticleDef, Shape, Water, WebNode};
 
 /// The `windows` crate this one is built with (feature "windows"): the typed Direct3D 11 and 9 interfaces.

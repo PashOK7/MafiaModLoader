@@ -661,6 +661,12 @@ float PedestrianHealth(void *element);
 bool PedestriansMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 // a frame's release told (framelife.cpp): LS3D's frames' and meshes' Release hooked once something is watched
 void FrameLifeInit();
+// drawing in the world (worlddraw.cpp): lines, boxes, spheres, capsules over the 3D world at its stage 1
+int DrawWorldAdd(MmlMod *mod, const MmlDrawShape *shape, std::string *err);   // shape null: the mod's taken away
+bool DrawWorldWanted();
+void DrawWorldNow(void *device9);         // (render.cpp: the game's IDirect3DDevice9, its state kept around it)
+void DrawWorldModGone(MmlMod *mod);
+bool DrawWorldMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 int FrameWatch(MmlMod *mod, void *frame, MmlFrameGoneFn fn, void *user, bool bridge, std::string *err);
 void FrameLifeModGone(MmlMod *mod);
 bool FrameLifeMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);

@@ -742,6 +742,13 @@ int H_FrameWatch(MmlMod *m, void *frame, MmlFrameGoneFn fn, void *user) {
     if (!r) Log(MML_LOG_WARN, Who(m), "frame_watch: %s", err.c_str());
     return r;
 }
+int H_DrawWorld(MmlMod *m, const MmlDrawShape *shape) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    int r = DrawWorldAdd(m, shape, &err);
+    if (!r) Log(MML_LOG_WARN, Who(m), "draw_world: %s", err.c_str());
+    return r;
+}
 int H_PedestriansList(MmlMod *m, MmlPedestrian *out, int max) {
     if (!Alive(m)) return 0;
     std::vector<MmlPedestrian> v;
@@ -950,6 +957,7 @@ bool UnloadMod(ModEntry *e, const char *why) {
     AnimsModGone(m);
     HitsModGone(m);
     FrameLifeModGone(m);
+    DrawWorldModGone(m);
     CapturesRemove(m);
     SidecarChannelsForget(m);
     ConfigForget(m);
@@ -1335,6 +1343,7 @@ void ModsInit() {
     g_host.pedestrians_list = H_PedestriansList;
     g_host.bullet_shape = H_BulletShape;
     g_host.frame_watch = H_FrameWatch;
+    g_host.draw_world = H_DrawWorld;
     LiveCleanAll();
     Scan();
     LoadEnabled();
@@ -1423,6 +1432,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (StartMethod(method, paramsJson, reply, &ok)) return ok;
     if (InputMethod(method, paramsJson, reply, &ok)) return ok;
     if (ScreenshotMethod(method, paramsJson, reply, &ok)) return ok;
+    if (DrawWorldMethod(method, paramsJson, reply, &ok)) return ok;
     if (DrawMethod(method, paramsJson, reply, &ok)) return ok;
     if (ConfigMethod(method, paramsJson, reply, &ok)) return ok;
     if (MenusMethod(method, paramsJson, reply, &ok)) return ok;

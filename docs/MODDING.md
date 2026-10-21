@@ -1133,6 +1133,27 @@ H->human_hit(M, peds[0].element, &push);
   "capsules": [[ax, ay, az, bx, by, bz, r], ...]}` gives a body for the bullets as a mod would; `hits.state` lists
   the filters, the shapes and what the bullets did.
 
+### Drawing in the world
+
+```c
+MmlDrawShape s = {sizeof s};
+s.kind = MML_DRAW_CAPSULE;                          /* or _LINE, _BOX (centre a, half extents b, axes), _SPHERE */
+s.a[0] = ...; s.b[0] = ...; s.radius = 0.12f;        /* the world's metres */
+s.color = 0xC000FF00;                               /* 0xAARRGGBB */
+s.ms = 0;                                           /* this frame only: given again each frame (a body's parts) */
+H->draw_world(M, &s);
+s.flags = MML_DRAW_ON_TOP;                          /* seen through walls */
+```
+
+- What a physics mod draws to see its world: its bodies (capsules, boxes), joints (lines), contacts (small spheres),
+  drawn as lines over the frame's 3D world after RENDER_WORLD's mods, tested against the frame's depth (hidden by
+  what is in front of them, not hiding anything) or over everything with `MML_DRAW_ON_TOP`. A shape of 0 ms is
+  drawn in the next frame of the world and dropped: give the moving ones each frame from any event (MISSION_TICK,
+  RENDER_BEGIN); one with `ms` is held that long. `draw_world(M, NULL)` takes the mod's away. The game on a Direct3D 9
+  wrapper (as in the labs); on plain Direct3D 8 nothing is drawn (`draw.world_state` says so).
+- `call draw.world {"capsule": {"a": [x, y, z], "b": [x, y, z], "radius": 0.2}, "color": "#C000FF00", "ms": 10000}`
+  (or `line`, `box`, `sphere`; `on_top`; `clear: true`), `draw.world_state`.
+
 ### A frame's release
 
 ```c

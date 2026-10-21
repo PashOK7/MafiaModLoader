@@ -260,6 +260,12 @@ void RenderStage(int stage) {
     if (g_world) { bool ok = false; SafeCamera(Device8(), &g_frameCamera, &ok); g_haveFrameCamera = g_haveFrameCamera || ok; }
     GfxQuiet(true);                     // (the mods' drawing is not the world's light)
     DispatchDrawing(MML_EVENT_RENDER_WORLD, Device8());
+    if (g_world && DrawWorldWanted()) {   // (worlddraw.cpp: the mods' and the bridge's shapes, after the mods' drawing)
+        IDirect3DDevice9 *d9 = Device9(Device8());
+        Kept k = Keep(d9);
+        DrawWorldNow(d9);
+        PutBack(d9, k);
+    }
     GfxQuiet(false);
     if (g_world) {                      // the graphics bridge: the frame with the mods' drawing in it to the passes
         ProfScope ps(nullptr, "graphics bridge");

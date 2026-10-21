@@ -3241,4 +3241,12 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   bones read; knocked down by human_hit (type 5, 20), its pelvis posed 1.5 m away (its head with it), handed back:
   the get-up (111 or 338) played in its sequence where the body lay, then walking again (state 0) 0.87 m on, alive;
   7 of 7 in each build.
+- **Made** (32e): draw_world (host/worlddraw.cpp): lines, boxes (turned by their axes), spheres (three great circles)
+  and capsules drawn as lines over the 3D world at its stage 1 after the mods' RENDER_WORLD, depth tested without
+  writing it, or over everything (MML_DRAW_ON_TOP); 0 ms for one frame, else held. Drawn on the game's Direct3D 9
+  device with every state it needs set and the game's state block applied after (render.cpp's Keep, PutBack), so
+  LS3D's record of the device stays true; LS3D's own line and box drawing (ls3d+16B20, +186A0) was read and not used (it
+  writes that record and draws with the last object's world matrix). `draw.world`, `draw.world_state`.
+- **Seen** (both labs, the same picture): a capsule, two spheres and a box half hidden by the taxi and the kerb, the
+  sphere behind the taxi hidden, the one on top over it; a 0 ms shape drawn once and gone.
 
