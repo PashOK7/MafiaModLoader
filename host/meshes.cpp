@@ -387,8 +387,15 @@ std::string NameOf(void *frame) {
 bool SceneFocus(MmlMod *mod, const float *lo, const float *hi) {
     if (!lo || !hi) { g_focus.erase(mod); return true; }
     Focus f{{std::min(lo[0], hi[0]), std::min(lo[1], hi[1]), std::min(lo[2], hi[2])}, {std::max(lo[0], hi[0]), std::max(lo[1], hi[1]), std::max(lo[2], hi[2])}};
+    // a scan at once only for a box that reaches somewhere the last one did not (by 5 m: a new place, not a box moving
+    // with the player, which the scans every 0.25 s follow): a mod giving its box
+    // every tick (a box round a moving player) kept the scans from waiting their 0.25 s
+    auto old = g_focus.find(mod);
+    bool grew = old == g_focus.end();
+    for (int k = 0; k < 3 && !grew; k++)
+        grew = (&f.lo.x)[k] < (&old->second.lo.x)[k] - 5.0f || (&f.hi.x)[k] > (&old->second.hi.x)[k] + 5.0f;
     g_focus[mod] = f;
-    g_nextScan = 0;
+    if (grew) g_nextScan = 0;
     return true;
 }
 
