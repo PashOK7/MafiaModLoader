@@ -55,6 +55,24 @@ NVIDIA GPU" or "the graphics bridge is off": the log says why).
 The frame rate will be lower: the game waits for DLSS 5 every frame.
 
 
+INTROS AND VIDEOS IN ANY FORMAT
+-------------------------------
+The game's own videos (the logos at the start, the intro) are played
+by the loader with FFmpeg: any format (MP4, MKV, WebM, MOV; H.264,
+HEVC, VP9, AV1, 8 or 10 bits), any size and frame rate (4K at 60 fps
+plays smoothly), decoded on the graphics card, in full colour. The game
+itself only plays small Bink or AVI files, in 16-bit colour.
+
+To replace a video, put a file of the same name with one of these
+extensions in the game's folder, beside Game.exe:
+  logo1.mp4   logo2.mp4   logo3.mp4   intro.mp4   (1.2)
+  logo1.mp4   logo2.mp4   intro.mp4                (1.0)
+.mp4, .mkv, .webm and .mov are tried first; without one, the game's
+own .bik or .avi plays as before. Any key skips a video, as in the
+game. mml\logs\mml.log says which file played and how ("decoded by
+D3D11VA" is the graphics card).
+
+
 UNINSTALL
 ---------
 Delete from the game's folder: dinput8.dll, MafiaModLoader.asi,
