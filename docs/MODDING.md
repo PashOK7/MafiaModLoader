@@ -1683,7 +1683,9 @@ if (MML_HAS(H, frame_stats) && H->frame_stats(M, &fs) && fs.p95_ms > 11.1f)
   locals); they are told apart: the system's and the loader's frames are walked by their frame pointers (the loader
   is built with /Oy-) up to the first frame of the game's, and above it a return address is kept only where its
   call's target (a direct call, or one through a pointer at a fixed place: an import, a hook's original) is the
-  function of the frame below; a call through a vtable cannot be checked and is kept (`stale_left_out_percent`).
+  function of the frame below; a call through a vtable cannot be checked and is kept (`stale_left_out_percent`); one
+  that leads to no frame below is kept only when a frame above leads to it (the caller of a function that ended in a
+  jump to another: a tail call). A crash's stack is read and checked the same way (`crash_triage`).
 - What the mods hook themselves (a hook's detour inside the game's function) is the game's time in these
   measures, not the mod's: it shows in the sampler under the mod's DLL.
 - `river_water.status` shows the frame's numbers as the mod sees them.
@@ -2029,7 +2031,9 @@ high-resolution timer if asked, and shows the frame rate and the game's clock st
 
 - Everything runs on the game thread unless said otherwise; do not block it (no sleeping, no waiting on a file).
 - A fault in your callback unloads your mod at the next frame (the game goes on); `log_tail` shows where. A fault
-  inside a game function you called may leave the game in a bad state: check what you pass.
+  inside a game function you called may leave the game in a bad state: check what you pass. A hook's detour is not
+  guarded (the game calls it, not the loader): a fault there crashes the game, and `crash_triage` names your function
+  in its stack by your mod's `.pdb` (deployed beside its DLL; one built since the crash, of another GUID, is not used).
 - Never keep a pointer into another mod's code or data across `MML_EVENT_SERVICES_CHANGED` / `MML_EVENT_MOD_LOADED`.
 - `MmlHost` only grows. A mod that must run on an older loader asks `MML_HAS(host, member)` before using a newer
   member; `mml_mod_load` returning non-zero says "not for this loader".

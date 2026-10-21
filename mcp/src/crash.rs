@@ -1,10 +1,13 @@
 //! The crash dumps the loader writes (<game>\mml\crash): a list, and one opened: the exception, where, the registers,
-//! the faulting address's memory region (freed, decommitted, its protection) and the code addresses on the crashing
-//! thread's stack (a scan: return addresses and leftovers).
+//! the faulting address's memory region (freed, decommitted, its protection), the code addresses on the crashing
+//! thread's stack (a scan: return addresses and leftovers), and, from the report beside the dump, the call stack
+//! checked (the calls the loader read with their targets, kept where a call leads to the frame below: stacks.rs) and
+//! named (the game's by the knowledge base, ours by the PDBs whose GUID is the image's).
 
 use minidump::{Minidump, MinidumpException, MinidumpMemoryInfoList, MinidumpMemoryList, MinidumpMiscInfo, MinidumpModuleList,
                MinidumpSystemInfo, MinidumpThreadList, Module};
 use serde_json::{Value, json};
+use std::collections::{HashMap, HashSet};
 
 fn crash_dir() -> Result<std::path::PathBuf, String> {
     Ok(crate::game::game_dir()?.join("mml").join("crash"))
@@ -38,7 +41,38 @@ fn where_(mods: &MinidumpModuleList, a: u64) -> String {
     }
 }
 
-pub fn inspect(file: Option<String>) -> Result<Value, String> {
+/// The dump's modules' PDB GUIDs (from their CodeView records), by file name in lower case.
+fn module_guids(mods: &MinidumpModuleList) -> HashMap<String, String> {
+    mods.iter().filter_map(|m| {
+        let name = m.code_file();
+        let short = name.rsplit(['\\', '/']).next().unwrap_or(&name).to_lowercase();
+        Some((short, m.debug_identifier()?.uuid().to_string().to_lowercase()))
+    }).collect()
+}
+
+/// The report's calls checked and named: the frames whose call leads to the frame below, `at` first, and how many
+/// were left out (stale return addresses). A PDB names a module of ours only when its GUID is the one the dump's
+/// image names (`guids`; without a dump, trusted).
+fn checked_stack(report: &Value, guids: &HashMap<String, String>) -> Option<(Vec<String>, usize)> {
+    let calls = report["calls"].as_array()?;
+    let at = report["at"].as_str()?.split(" (mod ").next()?.to_string();
+    let pdb_ok = |module: &str| match guids.get(&module.to_lowercase()) {
+        Some(g) => crate::syms::pdb_guid(module).is_some_and(|p| &p == g),
+        None => true,
+    };
+    let start = |t: &str| {
+        let module = t.split("+0x").next().unwrap_or("");
+        let game = ["game.exe", "ls3df.dll"].contains(&module.to_lowercase().as_str());
+        if game || pdb_ok(module) { crate::syms::start_of(t) } else { None }
+    };
+    let (kept, dropped) = crate::stacks::checked_calls(&at, calls, &start);
+    Some((kept.iter().map(|t| crate::syms::describe(t, &pdb_ok)).collect(), dropped))
+}
+
+pub fn inspect(file: Option<String>) -> Result<Value, String> { inspect_with(file).map(|x| x.0) }
+
+/// The dump opened, and the names (lower case) of its modules that are the system's (in the Windows folder).
+fn inspect_with(file: Option<String>) -> Result<(Value, HashSet<String>), String> {
     let dir = crash_dir()?;
     let name = match file {
         Some(f) => f,
@@ -107,16 +141,28 @@ pub fn inspect(file: Option<String>) -> Result<Value, String> {
     if let Ok(threads) = dump.get_stream::<MinidumpThreadList>() {
         out["threads"] = json!(threads.threads.len());
     }
-    Ok(out)
+    // the call stack, checked and named, from the report beside the dump (the calls the loader read at the crash)
+    let report: Option<Value> = std::fs::read_to_string(path.with_extension("json")).ok().and_then(|t| serde_json::from_str(&t).ok());
+    if let Some((stack, dropped)) = report.as_ref().and_then(|r| checked_stack(r, &module_guids(&mods))) {
+        out["stack"] = json!(stack);
+        out["stack_dropped"] = json!(dropped);
+    }
+    let system = mods.iter().filter_map(|m| {
+        let path = m.code_file().to_lowercase();
+        path.contains(":\\windows\\").then(|| path.rsplit(['\\', '/']).next().unwrap_or(&path).to_string())
+    }).collect();
+    Ok((out, system))
 }
 
 #[derive(PartialEq)]
 enum Owner { Game, System, Ours, Mod, Other }
 
-/// Whose code a stack frame ("Game.exe+0x...", "mod_x.dll+0x... (mod x)") is.
-fn owner(frame: &str) -> Owner {
+/// Whose code a stack frame ("Game.exe+0x...", "mod_x.dll+0x... (mod x)") is; `system`: the dump's modules in the
+/// Windows folder.
+fn owner(frame: &str, system: &HashSet<String>) -> Owner {
     if frame.contains("(mod ") { return Owner::Mod; }
     let m = frame.split('+').next().unwrap_or("").to_lowercase();
+    if system.contains(&m) { return Owner::System; }
     if m == "mafiamodloader.asi" { return Owner::Ours; }
     if ["game.exe", "ls3df.dll", "rw_data.dll", "ijoy.dll", "binkw32.dll", "mml_harness.exe"].contains(&m.as_str()) { return Owner::Game; }
     let system = ["ntdll.dll", "kernel32.dll", "kernelbase.dll", "user32.dll", "gdi32.dll", "win32u.dll", "msvcrt.dll",
@@ -178,7 +224,9 @@ pub fn triage(file: Option<String>) -> Result<Value, String> {
     };
     let stem = name.trim_end_matches(".dmp").to_string();
     let report: Option<Value> = std::fs::read_to_string(dir.join(format!("{stem}.json"))).ok().and_then(|t| serde_json::from_str(&t).ok());
-    let dump = inspect(Some(format!("{stem}.dmp")));
+    let dump = inspect_with(Some(format!("{stem}.dmp")));
+    let system = dump.as_ref().map(|x| x.1.clone()).unwrap_or_default();
+    let dump = dump.map(|x| x.0);
     let mut out = json!({"dump": format!("{stem}.dmp")});
     let r = report.clone().unwrap_or(Value::Null);
     let d = dump.as_ref().ok().cloned().unwrap_or(Value::Null);
@@ -187,9 +235,16 @@ pub fn triage(file: Option<String>) -> Result<Value, String> {
         .or_else(|| d["exception"].as_str().map(|s| s.trim_start_matches("0x").to_string())).unwrap_or_default();
     let at = r["at"].as_str().or(d["at"].as_str()).unwrap_or("?").to_string();
     let access = if r["access"].is_object() { r["access"].clone() } else { d["access"].clone() };
-    let stack: Vec<String> = match r["stack"].as_array() {
-        Some(s) => s.iter().filter_map(|x| x.as_str().map(String::from)).collect(),
-        None => d["stack_scan"].as_array().map(|s| s.iter().filter_map(|x| x.as_str().map(|t| t.split("] ").last().unwrap_or(t).to_string())).collect()).unwrap_or_default(),
+    // the stack: the report's calls checked and named (by the dump's modules when it opened), else the loader's own
+    // rough one (a loader before 2026-10-21), else the dump's scan
+    let checked = match d["stack"].as_array() {
+        Some(s) => Some((s.iter().filter_map(|x| x.as_str().map(String::from)).collect(), d["stack_dropped"].as_u64().unwrap_or(0) as usize)),
+        None => checked_stack(&r, &HashMap::new()),
+    };
+    let stack: Vec<String> = match (&checked, r["stack"].as_array()) {
+        (Some((s, _)), _) => s.clone(),
+        (None, Some(s)) => s.iter().filter_map(|x| x.as_str().map(String::from)).collect(),
+        (None, None) => d["stack_scan"].as_array().map(|s| s.iter().filter_map(|x| x.as_str().map(|t| t.split("] ").last().unwrap_or(t).to_string())).collect()).unwrap_or_default(),
     };
     // the verdict
     let mut v = format!("{} ({code}) at {at}", exception_name(&code));
@@ -200,10 +255,10 @@ pub fn triage(file: Option<String>) -> Result<Value, String> {
     }
     // the nearest code that is neither the game's nor the system's: a mod, the loader, another ASI (the loader's own
     // frame hook is under every frame's code, so it only counts when nothing nearer is)
-    let nearest = stack.iter().find(|s| matches!(owner(s), Owner::Ours | Owner::Mod | Owner::Other));
+    let nearest = stack.iter().find(|s| matches!(owner(s, &system), Owner::Ours | Owner::Mod | Owner::Other));
     v += &match nearest {
         Some(s) => {
-            let whose = match owner(s) {
+            let whose = match owner(s, &system) {
                 Owner::Mod => "a mod of the loader",
                 Owner::Ours => "the loader itself",
                 _ => "not the loader's: another ASI or DLL",
@@ -216,6 +271,13 @@ pub fn triage(file: Option<String>) -> Result<Value, String> {
     if r["main_thread"].as_bool() == Some(false) { v += "; on another thread than the game's"; }
     out["verdict"] = json!(v);
     out["stack"] = json!(stack);
+    out["stack_note"] = json!(match &checked {
+        Some((_, n)) => format!("the calls whose call leads to the frame below (direct calls checked against the \
+                                 functions' starts; an indirect call's and those walked by the frame pointers kept): {n} \
+                                 return address(es) left by finished calls dropped"),
+        None => "not checked: the loader's rough stack or the dump's scan (leftovers of finished calls may be in it)".into(),
+    });
+    if let Some((_, n)) = &checked { out["stack_dropped"] = json!(n); }
     if !access.is_null() { out["access"] = access; }
     if let Some(regs) = d.get("registers") { out["registers"] = regs.clone(); }
     if report.is_some() {

@@ -152,14 +152,11 @@ double g_sampleSeconds;
 std::mutex g_reportMx;
 json g_report;                  // the last finished run's (with its id)
 
-enum ModKind : uint8_t { kModOther, kModGame, kModOurs };   // ours: the loader and the mods (mml\live)
-struct Mod { uintptr_t base, end; std::string name; ModKind kind; };
-std::vector<Mod> g_modules;     // read before a run: no module is looked up while the game thread is stopped
-std::vector<const Mod *> g_codeMods;   // the game's and ours: the return addresses a chain is made of
+struct Mod { uintptr_t base, end; std::string name; CodeKind kind; };   // ours: the loader and the mods (mml\live)
+std::vector<Mod> g_modules;     // read before a run, by base: no module is looked up while the game thread is stopped
 
 void ReadModules() {
     g_modules.clear();
-    g_codeMods.clear();
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, GetCurrentProcessId());
     if (snap == INVALID_HANDLE_VALUE) return;
     MODULEENTRY32 me{};
@@ -169,32 +166,24 @@ void ReadModules() {
         std::string l = n, path = me.szExePath;   // ansi-ok: only searched for "\mml\live\"
         for (char &c : l) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
         for (char &c : path) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
-        ModKind kind = l == "game.exe" || l == "ls3df.dll" ? kModGame
-                     : l == "mafiamodloader.asi" || path.find("\\mml\\live\\") != std::string::npos ? kModOurs : kModOther;
+        CodeKind kind = l == "game.exe" || l == "ls3df.dll" ? kCodeGame
+                      : l == "mafiamodloader.asi" || path.find("\\mml\\live\\") != std::string::npos ? kCodeOurs : kCodeOther;
         uintptr_t b = reinterpret_cast<uintptr_t>(me.modBaseAddr);
         g_modules.push_back({b, b + me.modBaseSize, n, kind});
     }
     CloseHandle(snap);
-    for (const Mod &m : g_modules) if (m.kind != kModOther) g_codeMods.push_back(&m);
+    std::sort(g_modules.begin(), g_modules.end(), [](const Mod &a, const Mod &b) { return a.base < b.base; });
 }
-const Mod *ModuleAt(uintptr_t a) {
-    for (const Mod &m : g_modules) if (a >= m.base && a < m.end) return &m;
-    return nullptr;
+const Mod *ModuleAt(uintptr_t a) {   // (by base: every value of a stack is asked)
+    auto it = std::upper_bound(g_modules.begin(), g_modules.end(), a, [](uintptr_t x, const Mod &m) { return x < m.base; });
+    if (it == g_modules.begin()) return nullptr;
+    --it;
+    return a < it->end ? &*it : nullptr;
 }
-const Mod *CodeModAt(uintptr_t a) {
-    for (const Mod *m : g_codeMods) if (a >= m->base && a < m->end) return m;
-    return nullptr;
-}
-
-// A return address: right after a call instruction.
-bool AfterCall(uintptr_t a) {
-    __try {
-        const uint8_t *p = reinterpret_cast<const uint8_t *>(a);
-        return p[-5] == 0xE8 || (p[-6] == 0xFF && (p[-5] & 0x38) == 0x10) || (p[-2] == 0xFF && (p[-1] & 0xF8) == 0xD0) ||
-               (p[-3] == 0xFF && (p[-2] & 0x38) == 0x10);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
+// Whose code an address is, by the modules read before the run (the stack's reader: stack.cpp)
+CodeKind ProfKind(uintptr_t a, void *) {
+    const Mod *m = ModuleAt(a);
+    return !m || a - m->base <= 0x1000 ? kCodeNone : m->kind;   // (the first page: the module's headers)
 }
 
 // The top of the stack copied while the thread is stopped (16 KB at most, to its base), read after it goes on.
@@ -210,92 +199,31 @@ size_t CopyStack(uint32_t esp, uintptr_t base, uint32_t *out) {
     return n;
 }
 
-// Where a call before a return address went, when it is a direct one (`call rel32`) or through a pointer at a fixed
-// place (`call [abs]`: an import, a hook's original): its target now, followed through jumps (an import's thunk,
-// MinHook's patch and the host's chain's `jmp [head]`) to the code that runs; 0 for a call through a register or an
-// object (a vtable's). MCP's `profile` keeps a return address only when this target is where the
-// frame below it is (a stale return address, left in a frame's unwritten locals by a call that returned, is not).
-uint32_t CallTarget(uint32_t ret) {
-    __try {
-        const uint8_t *p = reinterpret_cast<const uint8_t *>(static_cast<uintptr_t>(ret));
-        uint32_t t;
-        if (p[-5] == 0xE8) t = ret + *reinterpret_cast<const int32_t *>(p - 4);
-        else if (p[-6] == 0xFF && p[-5] == 0x15) t = **reinterpret_cast<uint32_t *const *>(p - 4);   // call [abs]: an import, a pointer
-        else return 0;
-        for (int hop = 0; hop < 4; hop++) {
-            const uint8_t *q = reinterpret_cast<const uint8_t *>(static_cast<uintptr_t>(t));
-            if (q[0] == 0xE9) t = t + 5 + *reinterpret_cast<const int32_t *>(q + 1);
-            else if (q[0] == 0xFF && q[1] == 0x25) t = **reinterpret_cast<uint32_t *const *>(q + 2);
-            else break;
-        }
-        return t;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return 0;
-    }
-}
-
-// A thread stopped in the system's or the driver's code, or in ours, is walked up by its frame pointers first (Windows'
-// own x86 code keeps them, the loader is built with /Oy-): each frame's return address at [EBP + 4], the next frame at
-// [EBP]. The first return address into the game's code so found is certain (kAnchored in place of its call's target),
-// and the chain goes on from there: what lies in the frames walked over (their locals, stale return addresses among
-// them) is passed. A frame pointer that does not lead up the stack ends the walk (a function of the driver that uses
-// EBP otherwise): the chain is then the stack's whole, from its top.
-constexpr uint32_t kAnchored = 0xFFFFFFFEu;
-size_t AnchorOf(uint32_t eip, uint32_t esp, uint32_t ebp, const uint32_t *stack, size_t n) {
-    const Mod *at = ModuleAt(eip);
-    if (at && at->kind == kModGame) return SIZE_MAX;
-    for (int depth = 0; depth < 64; depth++) {
-        if (ebp < esp || ebp & 3) return SIZE_MAX;
-        size_t i = (ebp - esp) / 4;
-        if (i + 1 >= n) return SIZE_MAX;
-        const uint32_t ret = stack[i + 1], next = stack[i];
-        const Mod *m = ModuleAt(ret);
-        if (m && m->kind == kModGame) return AfterCall(ret) ? i + 1 : SIZE_MAX;
-        if (next <= ebp) return SIZE_MAX;
-        ebp = next;
-    }
-    return SIZE_MAX;
-}
-
-// The chain of a sample: every return address into the game's or our code on the copied stack, top first, each with
-// its call's target (CallTarget): pairs in g_chain.
+// The chain of a sample: the calls on its copied stack (StackCalls: walked by the frame pointers from the system's,
+// the driver's or our code to the first frame of the game's, then every return address into the game's or our code),
+// each with its call's target: pairs in g_chain. MCP's `profile` keeps a return address only where its call leads to
+// the frame below it (a stale one, left in a frame's unwritten locals by a call that returned, is not).
 constexpr int kChainMax = 48;
 void Analyze(Sample &s, uint32_t esp, uint32_t ebp, const uint32_t *stack, size_t n) {
     const Mod *at = ModuleAt(s.eip);
+    const bool out = !at || at->kind == kCodeOther;   // in a system or driver module
     s.chainAt = static_cast<uint32_t>(g_chain.size());
+    StackCall calls[kChainMax];
+    const StackView v = {s.eip, esp, ebp, stack, n};
+    const int k = StackCalls(v, ProfKind, nullptr, false, calls, kChainMax);
     bool gameSeen = false;
-    const size_t anchor = AnchorOf(s.eip, esp, ebp, stack, n);
-    // (walked by its frame pointers: the frames of ours on the way are in the chain, read from the walk itself)
-    if (anchor != SIZE_MAX) {
-        uint32_t e = ebp;
-        while (e >= esp && (e - esp) / 4 + 1 < anchor) {
-            const size_t i = (e - esp) / 4;
-            const uint32_t ret = stack[i + 1];
-            const Mod *m = CodeModAt(ret);
-            if (m && s.chainN < kChainMax) {
-                g_chain.push_back(ret);
-                g_chain.push_back(kAnchored);
-                s.chainN++;
-                if (!s.host && (!at || at->kind == kModOther)) s.host = ret;
-            }
-            e = stack[i];
-        }
-    }
-    for (size_t i = anchor == SIZE_MAX ? 0 : anchor; i < n && s.chainN < kChainMax; i++) {
-        uint32_t v = stack[i];
-        const Mod *m = CodeModAt(v);
-        if (!m || v - m->base <= 0x1000 || !AfterCall(v)) continue;
-        if (s.chainN && g_chain[g_chain.size() - 2] == v) continue;
-        g_chain.push_back(v);
-        g_chain.push_back(i == anchor ? kAnchored : CallTarget(v));
-        s.chainN++;
-        if (m->kind == kModGame) {
-            if (!gameSeen && (!at || at->kind == kModOther)) s.caller = v;
+    for (int i = 0; i < k; i++) {
+        const uint32_t r = calls[i].ret;
+        g_chain.push_back(r);
+        g_chain.push_back(calls[i].target);
+        if (ModuleAt(r)->kind == kCodeGame) {
+            if (!gameSeen && out) s.caller = r;
             gameSeen = true;
-        } else if (!gameSeen && !s.host && (!at || at->kind == kModOther)) {
-            s.host = v;
+        } else if (!gameSeen && !s.host && out) {
+            s.host = r;
         }
     }
+    s.chainN = static_cast<uint16_t>(k);
 }
 
 void Run(HANDLE target, uintptr_t stackBase, double seconds, double intervalMs) {
@@ -368,7 +296,7 @@ void Run(HANDLE target, uintptr_t stackBase, double seconds, double intervalMs) 
         for (uint32_t i = 0; i < s.chainN; i++) {
             const uint32_t target = g_chain[s.chainAt + 2 * i + 1];
             key.push_back(indexOf(g_chain[s.chainAt + 2 * i]));
-            key.push_back(target == kAnchored ? kAnchored : target ? indexOf(target) : 0xFFFFFFFFu);
+            key.push_back(target == kCallWalked ? kCallWalked : target ? indexOf(target) : 0xFFFFFFFFu);
         }
         chains[key]++;
     }

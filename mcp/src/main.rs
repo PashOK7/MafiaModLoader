@@ -975,7 +975,8 @@ impl Server {
     }
 
     /// Open a crash dump: the exception, the faulting module+offset, the registers, the faulting address's memory
-    /// region (freed? decommitted?), the code addresses on the crashing thread's stack.
+    /// region (freed? decommitted?), the code addresses on the crashing thread's stack (a raw scan), and the call
+    /// stack checked and named from the report beside the dump.
     #[tool(annotations(read_only_hint = true))]
     async fn crash_inspect(&self, Parameters(a): Parameters<CrashArgs>) -> Out {
         crash::inspect(a.file).map(|v| kb::annotate(&pretty(&v)))
@@ -983,7 +984,9 @@ impl Server {
 
     /// Start here after a crash: everything about it in one answer. The newest dump (or `file`) with the report the
     /// loader wrote beside it: a verdict (what, where, through whose code: the loader, a mod, or the game alone), the
-    /// call stack with the game's functions and the mods named, the access and its region, the registers, the log's
+    /// call stack (the calls the loader read, kept where a call leads to the frame below: leftovers of finished calls
+    /// dropped and counted) with every frame named (the game's by the knowledge base, the loader's and the mods' by
+    /// their PDBs), the access and its region, the registers, the log's
     /// last lines, the taps' last calls, the last events, the mods and the mission. When the game is running: also
     /// the mods that faulted in this run (the game went on), each with its stack.
     #[tool(annotations(read_only_hint = true))]

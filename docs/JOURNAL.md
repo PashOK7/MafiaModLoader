@@ -3007,3 +3007,28 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Measured** with MCP `bench` (every frame against hooked, 12 blocks, the counters off): 1.2 -0.056 ± 0.020 ms a
   frame of 2.68 (the game thread's CPU -0.061 ms), 1.0 -0.062 ± 0.032 ms of 2.68. Both games set their own filter after
   the loader starts (1.2 once, Game.exe+0x218D64; 1.0 twice): now chained after ours.
+## 2026-10-21: a crash's stack checked and named as a profile's
+
+- **Why**: the crash filter's stack was a scan checked only roughly (a direct call's target within 32 KiB below a
+  frame kept), so leftovers stayed after an indirect call (an LS3DF address between C_game::Tick and
+  C_mission::Tick, seen), and `crash_triage` named LS3DF 1.0's and the mods' frames only as module+offset. The
+  profiler (2026-10-20) already read stacks exactly.
+- **Made**: host/stack.cpp, one reader for both: the walk by frame pointers through the system's and our frames to
+  the first frame of the game's (each return address on the way must follow a call), then every return address into
+  the game's or our code with its call's target. The crash filter asks the modules as it goes (VirtualQuery, the
+  regions remembered; no TLS, no snapshot); the sampler by its snapshot, now searched by base. The report's `calls`
+  keep each target ("frame" when walked); MCP's `checked_calls` (stacks.rs, shared with `profile`) keeps the checked
+  ones, syms.rs names them (the PDB found beside any module, matched by GUID with the dump's CodeView record).
+- **Found on the way**: today's MSVC calls a hook's original as `mov eax, [g_original]` / `call eax` (the test mods'
+  detours, seen in their disassembly): those were unchecked; CallTarget now reads the load before the call (only
+  pushes and loads into other registers between). A detour's call of the original lands in MinHook's trampoline,
+  not in any function: hooks.cpp keeps a lock-free table of the chains' trampolines and their targets. A tail call
+  (a function ending in a jump to another) made its caller's return address look stale, and every frame above it
+  went with it: such a frame is now held and kept when a frame above leads to it.
+- **Offline**: run_tests.py: the first call of `crash` is main's call of harness_crash; `crash_hooked` (main ->
+  hook_b's detour -> hook_a's -> the trampoline -> harness_add -> harness_crash) has each call's target right
+  through the patch, the chain's thunk, `call eax` and the trampoline; the exit line walks from the loader's
+  DllMain through ntdll to the harness. mcp_smoke.py: `crash_triage`'s stack is exactly harness_crash, harness_add,
+  hook_a's Detour (by its PDB), main..., no loader's leftovers, the dropped counted; `crash_mod` (a fault in hook_b's
+  detour: a mod's hook runs unguarded) gets the verdict "in mod_hook_b_... (mod hook_b: ...Detour+0x..)". Not yet
+  seen on a lab crash: the labs were in another session's use.

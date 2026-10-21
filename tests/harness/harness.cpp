@@ -5,21 +5,23 @@
 // loaded before it, as Game.exe imports the game's file layer. It exports harness_add, a function the test
 // mods hook (two of them on the same function: the hook chains). It quits when a file named `quit` appears next to
 // it, or after `--seconds N` (default 120); a file named `crash` makes it crash, an exception nobody handles (the
-// loader's crash report is tested so), `crash_notls` the same on a thread of its own made without TLS.
+// loader's crash report is tested so), `crash_notls` the same on a thread of its own made without TLS, `crash_hooked`
+// under the test mods' hooks of harness_add, `crash_mod` in hook_b's detour.
 #include <windows.h>
 #include <cstdio>
 #include <cstdlib>
 #include <float.h>
 #include <string>
 
+extern "C" __declspec(dllexport) __declspec(noinline) void harness_crash(volatile int *p) {
+    *p = 1;
+}
+
 extern "C" __declspec(dllexport) __declspec(noinline) int harness_add(int a, int b) {
     volatile int x = a;   // (long enough for a hook: more than five bytes before its return)
     volatile int y = b;
+    if (x == -1) harness_crash(nullptr);   // (`crash_hooked`: a crash under the mods' detours, called by the hooks)
     return x + y;
-}
-
-extern "C" __declspec(dllexport) __declspec(noinline) void harness_crash(volatile int *p) {
-    *p = 1;
 }
 
 // A filter of the harness's own, set after the loader's (as a wrapper or an overlay sets one): the loader's runs
@@ -112,6 +114,16 @@ int main(int argc, char **argv) {
         if (GetFileAttributesW((dir + L"crash").c_str()) != INVALID_FILE_ATTRIBUTES) {
             DeleteFileW((dir + L"crash").c_str());
             harness_crash(nullptr);
+        }
+        // the same under the hook chain on harness_add (hook_b's detour, hook_a's, MinHook's trampoline), or in hook_b's
+        // detour itself (a mod's hook runs unguarded: the game calls it)
+        if (GetFileAttributesW((dir + L"crash_hooked").c_str()) != INVALID_FILE_ATTRIBUTES) {
+            DeleteFileW((dir + L"crash_hooked").c_str());
+            harness_add(-1, 0);
+        }
+        if (GetFileAttributesW((dir + L"crash_mod").c_str()) != INVALID_FILE_ATTRIBUTES) {
+            DeleteFileW((dir + L"crash_mod").c_str());
+            harness_add(-2, 0);
         }
         if (GetFileAttributesW((dir + L"setfilter").c_str()) != INVALID_FILE_ATTRIBUTES) {
             DeleteFileW((dir + L"setfilter").c_str());

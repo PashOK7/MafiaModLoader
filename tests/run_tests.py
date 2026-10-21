@@ -665,7 +665,7 @@ def export_rva(path, name):
     return None
 
 
-def run_crash(trigger, tap_crash=False, setup=None):
+def run_crash(trigger, tap_crash=False, setup=None, tap=True):
     """The harness started, a tap and a call made (and `setup(bridge)`), then crashed by its `trigger` file; (its
     output, the report or None)."""
     crash_dir = os.path.join(HARNESS, 'mml', 'crash')
@@ -682,7 +682,7 @@ def run_crash(trigger, tap_crash=False, setup=None):
     time.sleep(0.5)
     b = Bridge(json.load(open(info_path)))
     target = next((h['target'] for h in b.call('hooks.list')['result'] if h['target'].startswith('mml_harness.exe')), None)
-    if target:
+    if target and tap:
         b.call('tap', {'cmd': target + ' n=2'})
     if tap_crash:
         # with its return: the tap's thunk keeps a shadow of the return in the thread's TLS, when it has one
@@ -721,6 +721,12 @@ def crash_tests():
     st = r.get('stack', [])
     check('the report: the stack from the crashing function into the harness\'s frame loop',
           len(st) >= 2 and all(s.startswith('mml_harness.exe+0x') for s in st[:2]), st)
+    exe = os.path.join(HARNESS, 'mml_harness.exe')
+    crash_at, add_at = ['mml_harness.exe+0x%X' % export_rva(exe, n) for n in ('harness_crash', 'harness_add')]
+    calls = r.get('calls', [])
+    check("the report's calls: each return address with its call's target, the first main's call of harness_crash",
+          calls and calls[0][0].startswith('mml_harness.exe+0x') and calls[0][1] == crash_at, calls[:4])
+
     check('the report: the log\'s last lines, the crash in them', any('exception C0000005' in l for l in r.get('log', [])), r.get('log', [])[-5:])
     check('the report: the taps\' last calls', any('1 calls' in t for t in r.get('taps', [])), r.get('taps'))
     check('the report: the last events and the mods', r.get('events') and any(m.get('id') == 'hook_a' for m in r.get('mods', [])),
@@ -729,6 +735,18 @@ def crash_tests():
     check('the report: the address space (free, its largest piece, Large Address Aware or not)',
           a.get('total_mb', 0) >= 2000 and 0 < a.get('largest_mb', 0) <= a.get('free_mb', 0) < a.get('total_mb', 0)
           and isinstance(a.get('large_address_aware'), bool), a)
+
+    # under the hooks: main -> harness_add's patch -> the chain's thunk -> hook_b's detour -> hook_a's -> MinHook's
+    # trampoline -> harness_add -> harness_crash; each call's target read through the jumps and the trampoline
+    out, r = run_crash('crash_hooked', tap=False)   # (a tap's thunk would stand first in the chain)
+    calls = r.get('calls', []) if r else []
+    to_add = [c for c in calls if c[1] == add_at]
+    check("a crash under the hooks: hook_a's call of the original (MinHook's trampoline) leads to harness_add",
+          any(c[0].lower().startswith('mod_hook_a_') for c in to_add), calls[:8])
+    check("... and main's call of harness_add (its patch, the chain's jmp [head]) to hook_b's detour",
+          any(c[0].startswith('mml_harness.exe+0x') and str(c[1]).lower().startswith('mod_hook_b_') for c in calls), calls[:8])
+    check("... and hook_b's call of its original (`mov eax, [g_original]`, `call eax`) to hook_a's detour",
+          any(c[0].lower().startswith('mod_hook_b_') and str(c[1]).lower().startswith('mod_hook_a_') for c in calls), calls[:8])
 
     def another_filter(b):
         r = b.call('crash.filter')
@@ -1797,6 +1815,12 @@ def main():
             proc.kill()
             out, _ = proc.communicate()
     check('the harness exits cleanly', proc.returncode == 0, out.decode(errors='replace'))
+    log = open(os.path.join(HARNESS, 'mml', 'logs', 'mml.log'), encoding='utf-8', errors='replace').read()
+    exiting = next((l for l in log.splitlines() if 'process exiting (ExitProcess' in l), '')
+    walked = exiting.split('): ')[-1].lower()
+    check("the process's exit: who ended it, walked by the frame pointers from the loader's detach through the "
+          "system's exit to the harness's code", 0 <= walked.find('mafiamodloader.asi+0x') < walked.find('ntdll.dll+0x')
+          < walked.find('mml_harness.exe+0x'), exiting)
     text = out.decode(errors='replace')
     check('the x87 given back to the game at 24 bits after every frame (the mods\' callbacks ran at 53)',
           re.search(r'x87 at 24 bits after [1-9][0-9]* frames, 0 given back otherwise', text) is not None, text[-400:])

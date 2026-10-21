@@ -24,25 +24,55 @@ pub enum Target {
     Anchored,
 }
 
-/// The frames kept of one sample: `eip` (an index) at the bottom, then each (return address, its call's target) of
+/// The frames kept of one stack: `eip` (an index) at the bottom, then each (return address, its call's target) of
 /// `pairs` that leads to a kept frame. `start(i)`: where address i's function starts, when known.
+///
+/// A direct call that leads to no kept frame is a stale return address, or a real one whose callee ended in a jump
+/// to another function (a tail call: the game's compiler makes them): it is held, and kept only when a frame above
+/// leads to it (the chain goes on through it); a stale one is not led to, or is taken out with what lies above the
+/// frame a later one leads to.
 pub fn kept_frames(eip: usize, pairs: &[(usize, Target)], start: &dyn Fn(usize) -> Option<String>) -> Vec<usize> {
-    let mut kept: Vec<(usize, Option<String>)> = vec![(eip, start(eip))];
+    // (index, its function's start, checked: false for one held)
+    let mut kept: Vec<(usize, Option<String>, bool)> = vec![(eip, start(eip), true)];
     for (r, target) in pairs {
         match target {
-            Target::Unknown | Target::Anchored => kept.push((*r, start(*r))),
+            Target::Unknown | Target::Anchored => kept.push((*r, start(*r), true)),
             Target::Start(t) => {
                 if let Some(j) = kept.iter().rposition(|k| k.1.as_deref() == Some(t.as_str())) {
                     kept.truncate(j + 1);   // (what was kept above that frame was stale)
-                    kept.push((*r, start(*r)));
-                } else if kept.last().is_some_and(|k| k.1.is_none()) {
-                    kept.push((*r, start(*r)));   // (the frame below is of no known function: not checked)
+                    kept[j].2 = true;       // (one held: a tail call's caller, led to)
+                    kept.push((*r, start(*r), true));
+                } else if kept.last().is_some_and(|k| k.1.is_none() && k.2) {
+                    kept.push((*r, start(*r), true));   // (the frame below is of no known function: not checked)
+                } else {
+                    kept.push((*r, start(*r), false));   // held: stale, or after a tail call
                 }
-                // else: a stale return address, left out
             }
         }
     }
-    kept.into_iter().map(|k| k.0).collect()
+    kept.into_iter().filter(|k| k.2).map(|k| k.0).collect()
+}
+
+/// A crash report's calls (`calls`: [return address, its call's target: "Game.exe+0x..", "frame" when walked by the
+/// frame pointers, null for an indirect call], top first) under the faulting address `at`: the frames kept, `at`
+/// first, and how many were left out. `start`: where a frame's function starts ("game.exe+0x7ad00"), when known.
+pub fn checked_calls(at: &str, calls: &[Value], start: &dyn Fn(&str) -> Option<String>) -> (Vec<String>, usize) {
+    let mut texts = vec![at.to_string()];
+    let mut pairs = vec![];
+    for c in calls {
+        let Some(r) = c.get(0).and_then(|x| x.as_str()) else { continue };
+        texts.push(r.to_string());
+        let t = match c.get(1) {
+            Some(Value::String(s)) if s == "frame" => Target::Anchored,
+            Some(Value::String(s)) => norm(s).map_or(Target::Unknown, Target::Start),
+            _ => Target::Unknown,
+        };
+        pairs.push((texts.len() - 1, t));
+    }
+    let starts: Vec<Option<String>> = texts.iter().map(|t| start(t)).collect();
+    let kept = kept_frames(0, &pairs, &|i| starts.get(i).cloned().flatten());
+    let dropped = pairs.len() + 1 - kept.len();
+    (kept.into_iter().map(|i| texts[i].clone()).collect(), dropped)
 }
 
 fn norm(t: &str) -> Option<String> {
@@ -136,5 +166,31 @@ mod tests {
         let start = |i: usize| starts[i].map(String::from);
         let pairs = vec![(1, Target::Unknown), (2, Target::Unknown), (3, Target::Start("a".into()))];
         assert_eq!(kept_frames(0, &pairs, &start), vec![0, 1, 3]);
+    }
+
+    #[test]
+    fn a_tail_calls_caller_is_kept_once_a_frame_above_leads_to_it() {
+        // the thread in B; A's caller C called A, which jumped to B (no frame of A's): C's return address leads to
+        // no kept frame, held; D's call of C leads to it: both kept. A stale one held at the top is left out.
+        let starts = ["b", "c", "s", "d", "t"];
+        let start = |i: usize| Some(starts[i].to_string());
+        let pairs = vec![(1, Target::Start("a".into())), (2, Target::Start("x".into())), (3, Target::Start("c".into())),
+                         (4, Target::Start("y".into()))];
+        assert_eq!(kept_frames(0, &pairs, &start), vec![0, 1, 3]);
+    }
+
+    #[test]
+    fn a_crash_reports_calls_checked() {
+        // harness_crash (0x1000) <- main (0x2000): a stale return address of main's earlier call of pump (0x3000) in
+        // between, an indirect call above, then the thread's start walked by its frame pointers
+        let start = |t: &str| match t.split("+0x").nth(1).and_then(|o| u32::from_str_radix(o, 16).ok()) {
+            Some(o) if t.starts_with("h.exe") => Some(format!("h.exe+0x{:x}", o & !0xFFF)),
+            _ => None,
+        };
+        let calls: Vec<Value> = serde_json::from_str(
+            r#"[["h.exe+0x2040", "h.exe+0x3000"], ["h.exe+0x2080", "h.exe+0x1000"], ["h.exe+0x4010", null], ["kernel32.dll+0x10", "frame"]]"#).unwrap();
+        let (kept, dropped) = checked_calls("h.exe+0x1008", &calls, &start);
+        assert_eq!(kept, vec!["h.exe+0x1008", "h.exe+0x2080", "h.exe+0x4010", "kernel32.dll+0x10"]);
+        assert_eq!(dropped, 1);
     }
 }
