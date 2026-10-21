@@ -6,9 +6,11 @@
 // Settings: two JSON files (comments allowed), read as one. <mod's folder>\config.json: the defaults, shipped with
 // the mod. <data folder>\config.json: what was changed, written by config_set and the bridge's config.set, or by
 // hand. The mod reads the defaults with the changes merged over them (objects merge key by key; anything else is
-// replaced; null removes). Both files' times are looked at twice a second: a file that changed is read again and
-// its mod gets MML_EVENT_CONFIG_CHANGED (so does a set). A file that does not parse is reported in the log and the
-// values in use stay.
+// replaced; null removes). Both folders are watched (ReadDirectoryChangesW, overlapped: the game thread looks at
+// each watch's completion every frame, a read of memory: no thread, no call while nothing changes); a change to
+// either config.json is read again once its writes have stopped for a moment (kQuietMs: an editor's save, a burst of
+// writes, is one change) and the mod gets MML_EVENT_CONFIG_CHANGED (so does a set). A file that does not parse is
+// reported in the log and the values in use stay; one that cannot be opened yet (a writer holds it) is tried again.
 //
 // Bridge methods (game thread): config.get {mod, key} (the merged value at the key, or the whole config, and which
 // keys were changed from the defaults), config.set {mod, key, value} (any JSON value; null: back to the default).
@@ -28,15 +30,120 @@ namespace {
 struct Config {
     std::string dir;                   // the mod's folder (the defaults' place)
     json defaults = json::object(), changes = json::object(), merged = json::object();
-    uint64_t timeDefaults = 0, timeChanges = 0;
     bool read = false, changed = false;   // changed: its mod is told at the next frame
+    bool stale = false;                   // a file of it changed on disk: read again once quiet
+    LONGLONG staleAt = 0;                 // when the last change was seen (NowMs)
+    LONGLONG heldSince = 0;               // a file of it could not be opened since then (0: it could)
     bool unwritten = false;               // changes made live, not in the file yet
     DWORD editedAt = 0;
     std::map<std::string, std::string> handed;   // strings handed to the mod (config_string, config_json), by key
 };
 std::map<std::string, Config> g_configs;   // by mod id
 std::map<std::string, std::string> g_dataDirs;
-DWORD g_lastLook;
+
+// A file's writes have stopped once no change came for this long: then it is read (a frame or two after the change).
+constexpr LONGLONG kQuietMs = 10;
+
+LONGLONG NowMs() {
+    static LARGE_INTEGER freq;   // (zero-initialised: no dynamic initializer, no TLS)
+    if (!freq.QuadPart) QueryPerformanceFrequency(&freq);
+    LARGE_INTEGER t;
+    QueryPerformanceCounter(&t);
+    return t.QuadPart * 1000 / freq.QuadPart;
+}
+
+std::string LowerAscii(std::string s) {
+    for (char &ch : s) if (ch >= 'A' && ch <= 'Z') ch = static_cast<char>(ch - 'A' + 'a');
+    return s;
+}
+
+std::string DataDirOf(const std::string &id);
+
+// A folder that holds settings (a mod's folder, a data folder), watched for changes to its files. The read stays
+// pending in the kernel; ConfigFrame sees it complete (the OVERLAPPED leaves STATUS_PENDING) and issues the next one.
+struct DirWatch {
+    std::string dir;                  // UTF-8, trailing backslash
+    HANDLE handle = INVALID_HANDLE_VALUE;
+    OVERLAPPED ov{};
+    alignas(DWORD) BYTE buffer[4096];
+    bool pending = false;
+    LONGLONG retryAt = 0;             // a folder that could not be watched (not there): tried again from then
+};
+std::map<std::string, DirWatch *> g_watches;   // by the folder's path in lower case; never freed (the kernel writes the buffer)
+
+bool Issue(DirWatch *w) {
+    w->ov = OVERLAPPED{};
+    w->pending = ReadDirectoryChangesW(w->handle, w->buffer, sizeof w->buffer, FALSE,
+                                       FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME | FILE_NOTIFY_CHANGE_SIZE |
+                                       FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_CREATION, nullptr, &w->ov, nullptr) != FALSE;
+    return w->pending;
+}
+
+void Close(DirWatch *w, LONGLONG now) {
+    CloseHandle(w->handle);
+    w->handle = INVALID_HANDLE_VALUE;
+    w->pending = false;
+    w->retryAt = now + 500;
+}
+
+bool Open(DirWatch *w, LONGLONG now) {
+    w->handle = PathCreateFile(w->dir, FILE_LIST_DIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                               OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED);
+    if (w->handle == INVALID_HANDLE_VALUE) { w->retryAt = now + 500; return false; }
+    if (!Issue(w)) { Close(w, now); return false; }
+    return true;
+}
+
+// The folder of a settings file watched (once; again when it was gone).
+void WatchDir(const std::string &dir) {
+    DirWatch *&w = g_watches[LowerAscii(dir)];
+    if (w) return;
+    w = new DirWatch;
+    w->dir = dir;
+    Open(w, NowMs());
+}
+
+// Every config whose file is `path` (lower case), or under it (a folder renamed or removed), made stale; every
+// config with a file in the folder when `path` is empty (more changes than the buffer held, or the watch broke).
+void MarkStale(const std::string &dirLower, const std::string &path, LONGLONG now) {
+    for (auto &kv : g_configs) {
+        Config &c = kv.second;
+        if (!c.read) continue;
+        for (const std::string &file : {LowerAscii(c.dir + "config.json"), LowerAscii(DataDirOf(kv.first) + "config.json")}) {
+            if (file.compare(0, dirLower.size(), dirLower) != 0) continue;
+            if (!path.empty() && file != path && file.compare(0, path.size() + 1, path + "\\") != 0) continue;
+            c.stale = true;
+            c.staleAt = now;
+        }
+    }
+}
+
+// What the watches saw since the last frame.
+void LookAtWatches(LONGLONG now) {
+    for (auto &kv : g_watches) {
+        DirWatch *w = kv.second;
+        if (w->handle == INVALID_HANDLE_VALUE) {
+            if (now < w->retryAt || !Open(w, now)) continue;
+            MarkStale(kv.first, "", now);   // (watched again: what changed meanwhile is not known)
+            continue;
+        }
+        if (!w->pending || !HasOverlappedIoCompleted(&w->ov)) continue;
+        DWORD bytes = 0;
+        if (!GetOverlappedResult(w->handle, &w->ov, &bytes, FALSE)) {   // the folder removed (its delete pending), or worse
+            Close(w, now);
+            MarkStale(kv.first, "", now);
+            continue;
+        }
+        if (bytes == 0) MarkStale(kv.first, "", now);   // more than the buffer held: anything may have changed
+        for (DWORD at = 0; bytes != 0;) {
+            const auto *n = reinterpret_cast<const FILE_NOTIFY_INFORMATION *>(w->buffer + at);
+            MarkStale(kv.first, LowerAscii(w->dir + Utf8Of(n->FileName, static_cast<int>(n->FileNameLength / sizeof(WCHAR)))), now);
+            if (!n->NextEntryOffset) break;
+            at += n->NextEntryOffset;
+        }
+        if (!Issue(w)) Close(w, now);
+    }
+}
 
 std::string DataDirOf(const std::string &id) {
     auto it = g_dataDirs.find(id);
@@ -47,33 +154,47 @@ std::string DataDirOf(const std::string &id) {
     return g_dataDirs[id] = dir;
 }
 
-// A file's last write time (0: no such file).
-uint64_t FileTime(const std::string &path) {
-    WIN32_FILE_ATTRIBUTE_DATA d;
-    if (!PathAttributesEx(path, &d)) return 0;
-    return (static_cast<uint64_t>(d.ftLastWriteTime.dwHighDateTime) << 32) | d.ftLastWriteTime.dwLowDateTime;
-}
-
-// An object from a JSON file; false (and why) when it is there and cannot be used. No file: an empty object.
-bool ReadObject(const std::string &path, json *out, std::string *err) {
-    std::ifstream f(Wide(path));
-    if (!f) { *out = json::object(); return true; }
+// An object from a JSON file; false (and why) when it is there and cannot be used (*busy: it cannot be opened
+// now: a writer holds it with no sharing, or its delete is pending). No file: an empty object.
+bool ReadObject(const std::string &path, json *out, std::string *err, bool *busy) {
+    HANDLE h = PathCreateFile(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, OPEN_EXISTING,
+                              FILE_ATTRIBUTE_NORMAL);
+    if (h == INVALID_HANDLE_VALUE) {
+        DWORD e = GetLastError();
+        if (e == ERROR_FILE_NOT_FOUND || e == ERROR_PATH_NOT_FOUND) { *out = json::object(); return true; }
+        *busy = e == ERROR_SHARING_VIOLATION || e == ERROR_LOCK_VIOLATION || e == ERROR_ACCESS_DENIED;
+        *err = "cannot be opened (error " + std::to_string(e) + ")";
+        return false;
+    }
+    std::string text;
+    char chunk[4096];
+    DWORD n = 0;
+    while (ReadFile(h, chunk, sizeof chunk, &n, nullptr) && n) text.append(chunk, n);
+    CloseHandle(h);
     try {
-        json j = json::parse(f, nullptr, true, true);
+        json j = json::parse(text, nullptr, true, true);
         if (!j.is_object()) { *err = "not a JSON object"; return false; }
         *out = j;
         return true;
     } catch (const std::exception &e) { *err = e.what(); return false; }
 }
 
-// Both files read (again); true when the merged config is not what it was.
-bool Read(const std::string &id, Config *c) {
+// Both files read (again); true when the merged config is not what it was. *busy: a file could not be opened (a
+// writer holds it): its values in use stay, to be read again.
+bool Read(const std::string &id, Config *c, bool *busy = nullptr) {
     std::string defaultsPath = c->dir + "config.json", changesPath = DataDirOf(id) + "config.json", err;
-    c->timeDefaults = FileTime(defaultsPath);
-    c->timeChanges = FileTime(changesPath);
     json d, u;
-    if (!ReadObject(defaultsPath, &d, &err)) { Log(MML_LOG_WARN, id.c_str(), "%s: %s (the values in use stay)", defaultsPath.c_str(), err.c_str()); d = c->defaults; }
-    if (!ReadObject(changesPath, &u, &err)) { Log(MML_LOG_WARN, id.c_str(), "%s: %s (the values in use stay)", changesPath.c_str(), err.c_str()); u = c->changes; }
+    bool held = false;
+    if (!ReadObject(defaultsPath, &d, &err, &held)) {
+        if (!held) Log(MML_LOG_WARN, id.c_str(), "%s: %s (the values in use stay)", defaultsPath.c_str(), err.c_str());
+        d = c->defaults;
+    }
+    bool held2 = false;
+    if (!ReadObject(changesPath, &u, &err, &held2)) {
+        if (!held2) Log(MML_LOG_WARN, id.c_str(), "%s: %s (the values in use stay)", changesPath.c_str(), err.c_str());
+        u = c->changes;
+    }
+    if (busy) *busy = held || held2;
     json merged = d;
     merged.merge_patch(u);
     bool differs = !c->read || merged != c->merged;
@@ -92,7 +213,13 @@ Config *Of(const std::string &id) {
     if (!ModDirById(id, &dir)) return nullptr;
     Config &c = g_configs[id];
     c.dir = dir;
-    Read(id, &c);
+    bool busy = false;
+    Read(id, &c, &busy);
+    c.stale = busy;   // (a file held by its writer: read again at a frame)
+    c.staleAt = NowMs();
+    c.heldSince = 0;
+    WatchDir(c.dir);
+    WatchDir(DataDirOf(id));
     return &c;
 }
 Config *Of(MmlMod *mod) { return ModAlive(mod) ? Of(ModIdOf(mod)) : nullptr; }
@@ -159,6 +286,8 @@ json Patched(const json &from, const char *key, const json &value) {
 
 bool WriteChanges(const std::string &id, const json &changes, std::string *err) {
     std::string path = DataDirOf(id) + "config.json", tmp = path + ".tmp";
+    MakeDir(MmlDir() + "data\\");   // (removed by hand since: made again)
+    MakeDir(DataDirOf(id));
     {
         std::ofstream f(Wide(tmp), std::ios::trunc);
         if (!f) { *err = "cannot write " + tmp; return false; }
@@ -195,8 +324,7 @@ void Flush(const std::string &id, Config *c) {
     if (!c->unwritten) return;
     std::string err;
     if (!WriteChanges(id, c->changes, &err)) { Log(MML_LOG_WARN, id.c_str(), "config: %s", err.c_str()); return; }
-    c->unwritten = false;
-    c->timeChanges = FileTime(DataDirOf(id) + "config.json");   // (our own write: not a change on disk)
+    c->unwritten = false;   // (our own write comes back as a change on disk: read, the same, not told)
 }
 
 } // namespace
@@ -267,18 +395,30 @@ std::string ConfigValueJson(MmlMod *mod, const char *key) {
 
 void ConfigFrame() {
     DWORD now = GetTickCount();
-    bool look = now - g_lastLook >= 500;
-    if (look) g_lastLook = now;
+    LONGLONG nowMs = NowMs();
+    LookAtWatches(nowMs);
     for (MmlMod *mod : ModsLoaded()) {
         std::string id = ModIdOf(mod);
         auto it = g_configs.find(id);
         if (it == g_configs.end() || !it->second.read) continue;   // a mod that never asked has no config to watch
         Config &c = it->second;
         if (c.unwritten && now - c.editedAt >= 400) Flush(id, &c);   // (live changes: written once they stop)
-        if (look && !c.unwritten && (FileTime(c.dir + "config.json") != c.timeDefaults || FileTime(DataDirOf(id) + "config.json") != c.timeChanges)) {
-            if (Read(id, &c)) {
+        if (c.stale && !c.unwritten && nowMs - c.staleAt >= kQuietMs) {
+            bool busy = false;
+            c.stale = false;
+            if (Read(id, &c, &busy)) {
                 c.changed = true;
                 Log(MML_LOG_INFO, "host", "config: %s's settings changed on disk", id.c_str());
+            }
+            if (!busy) {
+                c.heldSince = 0;
+            } else if (!c.heldSince || nowMs - c.heldSince < 5000) {   // a writer holds a file: read once it lets go
+                if (!c.heldSince) c.heldSince = nowMs;
+                c.stale = true;
+                c.staleAt = nowMs;
+            } else {
+                c.heldSince = 0;
+                Log(MML_LOG_WARN, id.c_str(), "config: a settings file could not be opened for 5 s (the values in use stay)");
             }
         }
         if (!c.changed) continue;
@@ -298,6 +438,7 @@ void ConfigForget(MmlMod *mod) {
     Flush(it->first, &it->second);   // (what was changed live is kept)
     it->second.read = false;
     it->second.changed = false;
+    it->second.stale = false;
     it->second.handed.clear();
 }
 

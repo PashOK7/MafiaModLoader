@@ -5,7 +5,10 @@ the test mods (hook_a, hook_b, kit, heavy, files_a, files_b) and the shipped one
 hello and the token, ping, the mods' list, hook chains in every load and unload order, services, memory read and
 write (a write-protected page), a mod faulting in a command (unloaded, the game goes on), state kept across a hot
 reload, the core mod with no game, the log; the mod author's kit (kit_tests: the drawing queue, keys and
-hotkeys through injected keys, a mod's settings changed by the host, by the bridge and on disk, its data folder);
+hotkeys through injected keys, a mod's settings changed by the host, by the bridge and on disk, its data folder;
+config_watch_tests: how soon a change on disk is seen, a burst of writes, a held file, a deleted one);
+tools/new_mod.py's own mods (new_mod_build, new_mod_tests: a C++ and a Rust mod made, built by the project's build,
+loaded, asked, unloaded, then taken away: sources, CMake lines, outputs);
 a mod's own files in the game (files_tests: a stand-in rw_data.dll's names answered from the mods' `files` folders,
 the order, changes on disk, file_add, a file held open replaced, loads and unloads);
 every mod's settings pages in Options > Mods laid out by the loader's own code (ui_tests: nothing over another,
@@ -164,22 +167,7 @@ def kit_tests(b):
     check('config_set from the mod itself', b.call('kit.set_speed', {'value': 30}).get('result') is True)
     time.sleep(0.2)
     check('... is read back and told', status()['speed'] == 30 and status()['config_events'] == s['config_events'] + 2, status())
-    # edited by hand on disk (as a person or an agent would): read again within a second
-    time.sleep(0.05)
-    with open(changes_path, 'w') as f:
-        f.write('{ "speed": 31, "hotkey": "F8" }  // by hand\n')
-    time.sleep(1.2)
-    s3 = status()
-    check('the file edited on disk is read again: new values, the mod told, a removed change back to its default',
-          s3['speed'] == 31 and s3['hotkey'] == 'F8' and s3['overlay_x'] == 10 and s3['config_events'] == s['config_events'] + 3, s3)
-    b.call('input.key', {'key': 'F7', 'frames': 2})
-    b.call('input.key', {'key': 'F8', 'frames': 2, 'after_frames': 4})
-    time.sleep(0.4)
-    check('the hotkey bound again from the new setting: F8 fires, F7 no more', status()['hot_setting'] == 2, status())
-    with open(changes_path, 'w') as f:
-        f.write('{ "speed": ')
-    time.sleep(1.2)
-    check('a file that does not parse: the values in use stay', status()['speed'] == 31, status())
+    config_watch_tests(b, status, changes_path)
     r = b.call('config.set', {'mod': 'kit', 'key': 'speed', 'value': None})
     check('config.set null: back to the default', r['ok'] and r['result']['value'] == 12.5, r)
     r = b.call('config.set', {'mod': 'kit', 'key': 'speed', 'value': 77})
@@ -304,6 +292,99 @@ def kit_tests(b):
     names = {c['name'] for c in b.call('commands.list')['result']}
     check('commands.list has the kit\'s methods', {'draw.text', 'draw.rect', 'draw.line', 'draw.clear', 'draw.state',
                                                    'config.get', 'config.set'} <= names, names)
+
+
+def config_watch_tests(b, status, changes_path):
+    """A mod's settings edited on disk (as a person or an agent would): both folders are watched, a file is read again
+    a frame or two after its writes stop (it was polled twice a second: up to 500 ms)."""
+    def seen(before, t0, seconds=2.0):
+        # the mod's status once it has been told (a call a frame), the time since t0 and the frames gone by
+        while time.perf_counter() - t0 < seconds:
+            s = status()
+            if s['config_events'] > before['config_events']:
+                return s, round((time.perf_counter() - t0) * 1000), s['frames'] - before['frames']
+        return status(), None, None
+
+    def edit(text, path=changes_path):
+        before = status()
+        t0 = time.perf_counter()
+        with open(path, 'w') as f:
+            f.write(text)
+        s, ms, frames = seen(before, t0)
+        return s, ms, frames, s['config_events'] - before['config_events']
+
+    # (the frames counted from the call before the write to the call that sees the event: the mod is told at the
+    # second frame after the write, the calls add one at each end; polled, it was up to 500 ms: 16 of these frames)
+    lat = [edit('{ "speed": %d }' % (40 + i)) + (40 + i,) for i in range(5)]
+    check('a setting changed on disk reaches the mod a frame or two later (seen in %s ms, %s frames)'
+          % (', '.join(str(x[1]) for x in lat), ', '.join(str(x[2]) for x in lat)),
+          all(ms is not None and frames <= 6 and n == 1 and s['speed'] == want for s, ms, frames, n, want in lat), lat)
+    s3, ms, _, n = edit('{ "speed": 31, "hotkey": "F8" }  // by hand\n')
+    check('the file edited on disk is read again: new values, the mod told once, a removed change back to its default',
+          s3['speed'] == 31 and s3['hotkey'] == 'F8' and s3['overlay_x'] == 10 and n == 1, s3)
+    b.call('input.key', {'key': 'F7', 'frames': 2})
+    b.call('input.key', {'key': 'F8', 'frames': 2, 'after_frames': 4})
+    time.sleep(0.4)
+    check('the hotkey bound again from the new setting: F8 fires, F7 no more', status()['hot_setting'] == 2, status())
+
+    # a burst of writes (an editor's save, a tool writing in pieces): one change, its last values
+    before = status()
+    for i in range(10):
+        with open(changes_path, 'w') as f:
+            f.write('{ "speed": %d, "hotkey": "F8" }' % (50 + i))
+        time.sleep(0.002)
+    time.sleep(0.3)
+    s4 = status()
+    check('a burst of 10 writes in 20 ms: one event, the last values',
+          s4['config_events'] == before['config_events'] + 1 and s4['speed'] == 59, (before['config_events'], s4))
+
+    # the defaults beside the mod's DLL, edited by hand: the mod's folder is watched too
+    defaults_path = os.path.join(HARNESS, 'mml', 'mods', 'kit', 'config.json')
+    original = open(defaults_path, encoding='utf-8').read()
+    s5, ms, _, n = edit(original.replace('"name": "kit"', '"name": "kit edited"'), defaults_path)
+    check('the defaults\' file edited: read again, told (%s ms)' % ms, s5['name'] == 'kit edited' and n == 1 and s5['speed'] == 59, s5)
+    s5, ms, _, n = edit(original, defaults_path)
+    check('... and put back', s5['name'] == 'kit' and n == 1, s5)
+
+    # a file that does not parse (a write cut short): the values in use stay, nothing told
+    before = status()
+    with open(changes_path, 'w') as f:
+        f.write('{ "speed": ')
+    time.sleep(0.3)
+    s6 = status()
+    check('a file that does not parse: the values in use stay, the mod not told',
+          s6['speed'] == 59 and s6['config_events'] == before['config_events'], s6)
+
+    # a writer that holds the file (no sharing): not read meanwhile, read once it lets go
+    import ctypes
+    from ctypes import wintypes
+    k32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    k32.CreateFileW.restype = wintypes.HANDLE
+    k32.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD,
+                                wintypes.DWORD, wintypes.HANDLE]
+    k32.WriteFile.argtypes = [wintypes.HANDLE, ctypes.c_char_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p]
+    k32.CloseHandle.argtypes = [wintypes.HANDLE]
+    before = status()
+    h = k32.CreateFileW(changes_path, 0x40000000, 0, None, 2, 0x80, None)   # GENERIC_WRITE, no sharing, CREATE_ALWAYS
+    check('(a file held with no sharing)', h not in (None, wintypes.HANDLE(-1).value), ctypes.get_last_error())
+    data = b'{ "speed": 32, "hotkey": "F8" }'
+    k32.WriteFile(h, data, len(data), ctypes.byref(wintypes.DWORD()), None)
+    time.sleep(0.25)
+    s7 = status()
+    k32.CloseHandle(h)
+    s8, ms, _ = seen(before, time.perf_counter())
+    tail = '\n'.join(b.call('log.tail', {'lines': 40})['result'])
+    check('a file its writer holds: not read meanwhile, the values stay, no warning; read once it lets go (%s ms)' % ms,
+          s7['speed'] == 59 and s7['config_events'] == before['config_events'] and s8['speed'] == 32
+          and s8['config_events'] == before['config_events'] + 1 and 'cannot be opened' not in tail, (s7, s8))
+
+    # the changes' file deleted: the defaults
+    before = status()
+    t0 = time.perf_counter()
+    os.remove(changes_path)
+    s9, ms, _ = seen(before, t0)
+    check('the changes\' file deleted: the defaults, the mod told (%s ms)' % ms,
+          s9['speed'] == 12.5 and s9['hotkey'] == 'F7' and s9['config_events'] == before['config_events'] + 1, s9)
 
 
 def heavy_tests(b):
@@ -1353,10 +1434,96 @@ def ghidra_names_tests():
 
 
 RUST = os.path.exists(os.path.join(HARNESS, 'mml', 'mods', 'kit_rs', 'kit_rs.dll'))
+NEW_MODS = (('newmod_cpp', False), ('newmod_rs', True))   # tools/new_mod.py's mods: made, built, loaded, taken away
+NEW_MOD_DIR = 'build/x86/new_mod_test'                     # (their sources: --dir, in the build's ignored folder)
+
+
+def new_mod_lines(text):
+    """CMakeLists.txt without the lines new_mod.py added for the tests' mods."""
+    pattern = re.compile(r'mml_add_(rust_)?mod\((%s)\s' % '|'.join(m for m, _ in NEW_MODS))
+    return ''.join(line for line in text.splitlines(True) if not pattern.search(line))
+
+
+def new_mod_build():
+    """tools/new_mod.py as a mod author runs it, then the way its output says: a C++ mod and one in Rust (--rust,
+    when the build has the i686 target) made in build/x86/new_mod_test/, configured and built by the project's
+    build, copied into the harness (switched off: new_mod_tests loads them). Then everything it made is taken away
+    before the harness starts: the sources, the CMake lines (configured again, so the build forgets their targets
+    and removes their output folders). The ids it built."""
+    cmake_path = os.path.join(ROOT, 'CMakeLists.txt')
+    src_root = os.path.join(ROOT, *NEW_MOD_DIR.split('/'))
+    mods = os.path.join(HARNESS, 'mml', 'mods')
+    run = lambda cmd: subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, errors='replace')
+
+    def take_away():   # (also what an interrupted run left)
+        text = open(cmake_path, encoding='utf-8', newline='').read()
+        if new_mod_lines(text) != text:
+            with open(cmake_path, 'w', encoding='utf-8', newline='') as f:
+                f.write(new_mod_lines(text))
+        shutil.rmtree(src_root, ignore_errors=True)
+
+    take_away()
+    original = open(cmake_path, encoding='utf-8', newline='').read()
+    for mod, _ in NEW_MODS:
+        shutil.rmtree(os.path.join(mods, mod), ignore_errors=True)
+    wanted = [(mod, rust) for mod, rust in NEW_MODS if RUST or not rust]
+    if not RUST:
+        print('SKIPPED: new_mod.py --rust (the build has no Rust mods: rustup target add i686-pc-windows-msvc, '
+              'then cmake --preset x86)')
+    built = []
+    try:
+        for mod, rust in wanted:
+            r = run([sys.executable, os.path.join(ROOT, 'tools', 'new_mod.py'), mod, '--dir', NEW_MOD_DIR + '/' + mod]
+                    + (['--rust'] if rust else []))
+            check('new_mod.py %s%s: its files made, its line in CMakeLists.txt' % (mod, ' --rust' if rust else ''),
+                  r.returncode == 0 and 'CMakeLists.txt has its line' in r.stdout
+                  and os.path.exists(os.path.join(src_root, mod, 'mod.json')), r.stdout + r.stderr)
+        r = run(['cmake', '--preset', 'x86'])
+        check('new_mod.py\'s mods: the build configured with them', r.returncode == 0, (r.stdout + r.stderr)[-1500:])
+        targets = [('rust_' if rust else 'mod_') + mod for mod, rust in wanted]
+        r = run(['cmake', '--build', '--preset', 'x86-release', '--target'] + targets)
+        check('new_mod.py\'s mods: built by the project\'s build (%s)' % ', '.join(targets), r.returncode == 0,
+              (r.stdout + r.stderr)[-3000:])
+        for mod, _ in wanted:
+            out = os.path.join(OUT, 'mml', 'mods', mod)
+            if not all(os.path.exists(os.path.join(out, f)) for f in (mod + '.dll', 'mod.json', 'config.json')):
+                check('new_mod.py %s: its DLL, mod.json and config.json in the build\'s output' % mod, False, out)
+                continue
+            shutil.copytree(out, os.path.join(mods, mod))
+            manifest = os.path.join(mods, mod, 'mod.json')
+            text = open(manifest, encoding='utf-8').read()
+            with open(manifest, 'w', encoding='utf-8') as f:
+                f.write(text.replace('"enabled": true', '"enabled": false'))
+            built.append(mod)
+    finally:
+        take_away()
+        r = run(['cmake', '--preset', 'x86'])
+        listed = open(os.path.join(OUT, 'mml', 'build_mods.txt'), encoding='utf-8').read().split()
+        check('new_mod.py\'s mods taken away: sources, CMakeLists.txt as it was, the build configured again without '
+              'them (their output folders gone)',
+              r.returncode == 0 and not os.path.exists(src_root) and open(cmake_path, encoding='utf-8', newline='').read() == original
+              and not any(os.path.exists(os.path.join(OUT, 'mml', 'mods', m)) or m in listed for m, _ in NEW_MODS),
+              (r.stdout + r.stderr)[-1500:])
+    return built
+
+
+def new_mod_tests(b, built):
+    """The mods tools/new_mod.py made (new_mod_build): each loads, answers its command, unloads."""
+    for mod in built:
+        r = b.call('mod.load', {'id': mod})
+        check('new_mod.py\'s %s: loaded' % mod, r['ok'], r)
+        r = b.call(mod + '.status')
+        check('new_mod.py\'s %s: %s.status answers (presses, mission, game)' % (mod, mod),
+              r['ok'] and r['result'].get('presses') == 0 and 'mission' in r['result'] and 'game' in r['result'], r)
+        r = b.call('mod.unload', {'id': mod})
+        loaded = {m['id']: m['loaded'] for m in b.call('mods.list')['result']}
+        check('new_mod.py\'s %s: unloaded, its command gone' % mod,
+              r['ok'] and loaded.get(mod) is False and not b.call(mod + '.status')['ok'], (r, loaded.get(mod)))
 
 
 def main():
     ghidra_names_tests()
+    new_mods = new_mod_build()
     # the harness's game folder: the loader, the test mods and the shipped ones
     mods = os.path.join(HARNESS, 'mml', 'mods')
     shipped = ('core', 'hello_c', 'boxes') + (('hello_rust',) if RUST else ())
@@ -1781,6 +1948,7 @@ def main():
         heavy_tests(b)
         boxes_tests(b)
         rust_tests(b)
+        new_mod_tests(b, new_mods)
         sidecar_tests(b)
         methods_tests(b)
         ui_tests(b)
@@ -1797,6 +1965,9 @@ def main():
             proc.kill()
             out, _ = proc.communicate()
     check('the harness exits cleanly', proc.returncode == 0, out.decode(errors='replace'))
+    for mod in new_mods:   # (nothing of new_mod.py's mods left in the harness either)
+        shutil.rmtree(os.path.join(HARNESS, 'mml', 'mods', mod), ignore_errors=True)
+        shutil.rmtree(os.path.join(HARNESS, 'mml', 'data', mod), ignore_errors=True)
     text = out.decode(errors='replace')
     check('the x87 given back to the game at 24 bits after every frame (the mods\' callbacks ran at 53)',
           re.search(r'x87 at 24 bits after [1-9][0-9]* frames, 0 given back otherwise', text) is not None, text[-400:])
