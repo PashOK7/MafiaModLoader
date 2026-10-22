@@ -27,9 +27,12 @@ void Free(Link *&link);
 
 // The hand-overs: Direct3D 9's pictures to Direct3D 11's halves (Direct3D 9 is done: the caller waited for its event
 // query), Direct3D 11's to Direct3D 9's (Direct3D 11 is done: its event query waited for). Null links are skipped;
-// each returns once its copies are done on the GPU.
+// each returns once its copies are done on the GPU. A copy not done in 250 ms: false, and Busy() is true until it is
+// (nothing is copied meanwhile: the caller's frame goes without).
 bool To11(Link *const *links, int n, std::string *why);
 bool To9(Link *const *links, int n, std::string *why);
+bool Busy();                                   // a late copy still runs on DXVK's queue
+void WaitLimit(double ms);                     // how long a copy is waited for (250 ms; gfx.cpp's MML_GFX_WAIT_MS)
 
 std::string Describe();                        // for gfx.state: the device, the copies, their time
 } // namespace gfxvk

@@ -3341,3 +3341,24 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   the world drawn, the bridge on every frame (1160 frames, not_our_depth 0, 38949 redirects in them), the river's
   reflections the water mod's. The 1.2 and 1.0 labs with the bridge on: the frame right, 0 redirects. Offline tests:
   ALL PASSED.
+
+## 2026-10-22: a late frame no longer turns the graphics bridge off
+
+- **The player's logs** (RTX 5060 Laptop, DXVK, dlss_nr): "DLSS 5 NR: the graphics bridge is off" in the daytime
+  freeride. Three runs of mml.log: 5 to 13 s after `freeride` loaded, `gfx: off: Direct3D 9 did not finish the
+  frame's copy in time` (twice) and `the textures' copy on DXVK's queue did not finish in time` (once); another run
+  of the same freeride kept the bridge 45 minutes. One frame over 250 ms just after the big load (DXVK sending the
+  textures up, making shaders) turned the bridge off for the rest of the game.
+- **Made** (host/gfx.cpp, host/gfx_vk.cpp): a device late at a hand-over is no failure: the frame goes without the
+  passes; while that work still runs (its event query pending, or a copy on DXVK's queue not done: `gfxvk::Busy`)
+  the next frames go without too and touch nothing shared; the bridge goes off only after 10 s of late frames in a
+  row. A late DXVK copy's command buffer and fence are no longer reset while the GPU holds them (they were: the
+  fence reset after a time-out). `gfx.state` `late` (`frames`, `runs`, `now`); the first 10 runs logged.
+  `MML_GFX_WAIT_MS` in the game's environment sets the waits (a test of the late frames).
+- **Seen**: both labs, Windows' 9Ex and DXVK 3.1.1, the freeride with depth_pulse: as before (`late` 0). 1.2 with
+  `MML_GFX_WAIT_MS=0.3` (9Ex) and `2` (DXVK): hundreds of late runs of 1 to 9 frames, the bridge on throughout; 1.0
+  with `0` (every frame late): off after 10 s, `(late for 10 s, 1416 frames)`. A copy late on DXVK's queue itself
+  was not caught in the lab (the Direct3D 9 wait runs out first). Offline tests: ALL PASSED.
+- **Seen too**: the player's `mml\ffmpeg` is missing (`avutil-61.dll`, error 126): the game's own player shows the
+  logos; the pack has it.
+- **Lab**: as before (DXVK out, depth_pulse off).

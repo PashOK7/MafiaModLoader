@@ -56,7 +56,7 @@ struct Vk {
     PFN_vkGetPhysicalDeviceImageFormatProperties2 vkGetPhysicalDeviceImageFormatProperties2 = nullptr;
 } vk;
 
-const uint64_t kWaitNs = 250ull * 1000 * 1000;   // a copy not done in this time: the bridge goes off
+uint64_t g_waitNs = 250ull * 1000 * 1000;   // a copy not done in this time: the frame goes on without it (Busy)
 
 ID3D9VkInteropDevice *g_interop;
 VkInstance g_inst;
@@ -69,6 +69,7 @@ VkExternalMemoryHandleTypeFlagBits g_handleType;
 VkCommandPool g_pool;
 VkCommandBuffer g_cmd;
 VkFence g_fence;
+bool g_inFlight;   // a copy submitted and not seen done (a late one's): its command buffer and fence not reused before
 int g_links;
 unsigned g_copies;
 double g_ms;
@@ -112,8 +113,21 @@ bool Importable(VkExternalMemoryHandleTypeFlagBits type, VkFormat format) {
            (extOut.externalMemoryProperties.externalMemoryFeatures & VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT);
 }
 
+// The copy in flight waited for up to ns: false while it runs (a late copy's command buffer and fence stay as they are
+// until it is done: neither is reset while the GPU holds them).
+bool Settle(uint64_t ns, std::string *why) {
+    if (!g_inFlight) return true;
+    VkResult r = vk.vkWaitForFences(g_dev, 1, &g_fence, VK_TRUE, ns);
+    if (r == VK_TIMEOUT) { *why = "the copy on DXVK's queue did not finish in time"; return false; }
+    g_inFlight = false;
+    vk.vkResetFences(g_dev, 1, &g_fence);
+    if (r != VK_SUCCESS) { *why = VkErr("vkWaitForFences", r); return false; }
+    return true;
+}
+
 // One command buffer on DXVK's queue, waited for. record() fills it.
 template <class F> bool Submit(F record, std::string *why) {
+    if (!Settle(0, why)) return false;   // (the caller waits for a late copy first: Busy)
     vk.vkResetCommandBuffer(g_cmd, 0);
     VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -128,10 +142,8 @@ template <class F> bool Submit(F record, std::string *why) {
     r = vk.vkQueueSubmit(g_queue, 1, &si, g_fence);
     g_interop->ReleaseSubmissionQueue();
     if (r != VK_SUCCESS) { *why = VkErr("vkQueueSubmit on DXVK's queue", r); return false; }
-    r = vk.vkWaitForFences(g_dev, 1, &g_fence, VK_TRUE, kWaitNs);
-    vk.vkResetFences(g_dev, 1, &g_fence);
-    if (r != VK_SUCCESS) { *why = r == VK_TIMEOUT ? "the copy on DXVK's queue did not finish in time" : VkErr("vkWaitForFences", r); return false; }
-    return true;
+    g_inFlight = true;
+    return Settle(g_waitNs, why);
 }
 
 VkImageMemoryBarrier Barrier(VkImage image, VkImageLayout from, VkImageLayout to, VkAccessFlags src, VkAccessFlags dst,
@@ -223,6 +235,13 @@ bool Start(IDirect3DDevice9 *dev9, std::string *why) {
 }
 
 void Stop() {
+    std::string why;
+    if (g_dev && !Settle(2000ull * 1000 * 1000, &why) && g_inFlight) {
+        HWARN("gfx: a copy on DXVK's queue still runs after 2 s: its command buffer and fence are left to it");
+        g_fence = VK_NULL_HANDLE;
+        g_pool = VK_NULL_HANDLE;
+    }
+    g_inFlight = false;
     if (g_dev) {
         if (g_fence) vk.vkDestroyFence(g_dev, g_fence, nullptr);
         if (g_pool) vk.vkDestroyCommandPool(g_dev, g_pool, nullptr);   // (its command buffer with it)
@@ -405,6 +424,13 @@ bool Copy(bool to11, Link *const *links, int n, std::string *why) {
 
 bool To11(Link *const *links, int n, std::string *why) { return Copy(true, links, n, why); }
 bool To9(Link *const *links, int n, std::string *why) { return Copy(false, links, n, why); }
+
+void WaitLimit(double ms) { g_waitNs = static_cast<uint64_t>(ms * 1000000.0); }
+
+bool Busy() {
+    std::string why;
+    return g_interop && !Settle(0, &why) && g_inFlight;
+}
 
 std::string Describe() {
     if (!g_interop) return "";

@@ -54,7 +54,21 @@ template <class T> void SafeRelease(T *&p) { if (p) { p->Release(); p = nullptr;
 
 const D3DFORMAT kFmtIntz = static_cast<D3DFORMAT>(MAKEFOURCC('I', 'N', 'T', 'Z'));
 const float kFarDepth = 100000.0f;   // the linear depth written where nothing was drawn (the sky)
-const double kWaitLimitMs = 250;     // a device that does not finish in this time turns the bridge off
+const double kWaitLimitMs = 250;     // a device that does not finish in this time: the frame goes without the passes
+double g_waitLimitMs = -1;           // kWaitLimitMs, or MML_GFX_WAIT_MS from the environment (a test of the late frames)
+double WaitLimitMs() {
+    if (g_waitLimitMs < 0) {
+        wchar_t b[32];
+        DWORD n = GetEnvironmentVariableW(L"MML_GFX_WAIT_MS", b, 32);
+        g_waitLimitMs = n && n < 32 ? _wtof(b) : kWaitLimitMs;
+        if (g_waitLimitMs < 0) g_waitLimitMs = kWaitLimitMs;
+        if (g_waitLimitMs != kWaitLimitMs) HLOG("gfx: the devices waited for %.1f ms (MML_GFX_WAIT_MS)", g_waitLimitMs);
+        gfxvk::WaitLimit(g_waitLimitMs);
+    }
+    return g_waitLimitMs;
+}
+const double kLateGiveUpMs = 10000;  // the devices late this long, frame after frame: the bridge goes off
+const unsigned kLateLogged = 10;     // the late runs written to the log (the rest only counted)
 
 // Direct3D 11 and DXGI, loaded at the first frame with a pass (a game without effect mods never loads them).
 using CreateDevice11Fn = HRESULT(WINAPI *)(IDXGIAdapter *, D3D_DRIVER_TYPE, HMODULE, UINT, const D3D_FEATURE_LEVEL *, UINT, UINT,
@@ -84,6 +98,15 @@ ID3D11DeviceContext *g_ctx;
 unsigned g_generation;
 std::string g_state = "idle (no pass registered)", g_adapter;
 bool g_failed;                     // set up or a frame failed: off until the device changes or gfx.reset
+// A device late at a hand-over (a mission's load: the textures sent up, shaders made) is not a failure: the frame goes
+// without the passes, the next frames too while that work runs (nothing shared is touched meanwhile), and the bridge
+// goes off only when the devices stay late kLateGiveUpMs (seen 2026-10-22: one slow frame just after the freeride's
+// load in a player's game under DXVK turned it off for the rest of the game).
+bool g_pending9, g_pending11;      // an event query issued and not seen done (a late frame's)
+bool g_frameLate;                  // this frame's failure is a device that did not finish in time
+uint64_t g_lateFrames, g_lateRuns; // frames that went without the passes so, and how many times it began (gfx.state)
+uint64_t g_lateRun;                // the frames of the run now (0: the last frame was not late)
+double g_lateSince;                // when that run began
 
 IDirect3DVertexShader9 *g_vsQuad;
 IDirect3DPixelShader9 *g_psDepth, *g_psComposite;
@@ -525,6 +548,8 @@ void ReleaseAll() {
     if (wasSwapped && g_dev9 && g_gameDS) g_dev9->SetDepthStencilSurface(g_gameDS);
     SafeRelease(g_gameDS);
     g_lastGameDS = nullptr;
+    g_pending9 = g_pending11 = false;
+    g_lateRun = 0;
     ReleaseSized();
     for (auto &v : g_views) ReleaseView(*v);
     ReleaseTimers();
@@ -807,7 +832,7 @@ bool Hand(bool to11, std::initializer_list<gfxvk::Link *> links) {
     if (v.empty()) return true;
     std::string why;
     bool ok = to11 ? gfxvk::To11(v.data(), static_cast<int>(v.size()), &why) : gfxvk::To9(v.data(), static_cast<int>(v.size()), &why);
-    if (!ok) g_frameError = "the textures' copy on DXVK's queue: " + why;
+    if (!ok) g_frameError = "the textures' copy on DXVK's queue: " + why, g_frameLate = gfxvk::Busy();
     return ok;
 }
 
@@ -833,28 +858,69 @@ bool EnsureSize(UINT w, UINT h) {
 }
 
 // ---- the devices wait for each other (a failure goes to g_frameError: the frame's states come back first)
-bool Wait9() {
-    g_event9->Issue(D3DISSUE_END);
+// An issued event query polled up to limitMs (0: once); not done then: g_frameLate, and the query stays pending.
+bool Poll9(double limitMs) {
     double t0 = NowMs();
     for (;;) {
         HRESULT hr = g_event9->GetData(nullptr, 0, D3DGETDATA_FLUSH);
+        g_pending9 = hr == S_FALSE;
         if (hr == S_OK) return true;
         if (hr != S_FALSE) { g_frameError = Fmt("the Direct3D 9 event query failed (0x%08X)", static_cast<unsigned>(hr)); return false; }
-        if (NowMs() - t0 > kWaitLimitMs) { g_frameError = "Direct3D 9 did not finish the frame's copy in time"; return false; }
+        if (NowMs() - t0 >= limitMs) { g_frameError = "Direct3D 9 did not finish the frame's copy in time"; g_frameLate = true; return false; }
         SwitchToThread();
     }
+}
+bool Poll11(double limitMs) {
+    double t0 = NowMs();
+    for (;;) {
+        HRESULT hr = g_ctx->GetData(g_event11, nullptr, 0, 0);
+        g_pending11 = hr == S_FALSE;
+        if (hr == S_OK) return true;
+        if (FAILED(hr)) { g_frameError = Fmt("the Direct3D 11 event query failed (0x%08X)", static_cast<unsigned>(hr)); return false; }
+        if (NowMs() - t0 >= limitMs) { g_frameError = "Direct3D 11 did not finish the passes in time"; g_frameLate = true; return false; }
+        SwitchToThread();
+    }
+}
+bool Wait9() {
+    g_event9->Issue(D3DISSUE_END);
+    return Poll9(WaitLimitMs());
 }
 bool Wait11() {
     g_ctx->End(g_event11);
     g_ctx->Flush();
-    double t0 = NowMs();
-    for (;;) {
-        HRESULT hr = g_ctx->GetData(g_event11, nullptr, 0, 0);
-        if (hr == S_OK) return true;
-        if (FAILED(hr)) { g_frameError = Fmt("the Direct3D 11 event query failed (0x%08X)", static_cast<unsigned>(hr)); return false; }
-        if (NowMs() - t0 > kWaitLimitMs) { g_frameError = "Direct3D 11 did not finish the passes in time"; return false; }
-        SwitchToThread();
+    return Poll11(WaitLimitMs());
+}
+// A late frame's work done on both devices and on DXVK's queue (looked at once, not waited for): the shared textures
+// may be written again. False: still running (g_frameLate), or a query failed.
+bool Settled() {
+    if (g_pending9 && !Poll9(0)) return false;
+    if (g_pending11 && !Poll11(0)) return false;
+    if (gfxvk::On() && gfxvk::Busy()) { g_frameError = "the copy on DXVK's queue did not finish in time"; g_frameLate = true; return false; }
+    return true;
+}
+
+// A frame (or a view) without the passes: a late one is let go, the bridge goes on, unless the devices have been late
+// for kLateGiveUpMs in a row; any other failure turns the bridge off.
+bool FrameFailed() {
+    std::string why = g_frameError.empty() ? std::string("the frame failed") : g_frameError;
+    if (!g_frameLate) return Fail(why);
+    double now = NowMs();
+    g_lateFrames++;
+    if (!g_lateRun++) {
+        g_lateSince = now;
+        g_lateRuns++;
+        if (g_lateRuns <= kLateLogged) HWARN("gfx: %s: the frame goes without the passes", why.c_str());
+        if (g_lateRuns == kLateLogged) HWARN("gfx: late frames %u times: more are counted in gfx.state, not logged", kLateLogged);
     }
+    if (now - g_lateSince >= kLateGiveUpMs) return Fail(Fmt("%s (late for %.0f s, %llu frames)", why.c_str(), (now - g_lateSince) / 1000,
+                                                            static_cast<unsigned long long>(g_lateRun)));
+    return true;
+}
+void FrameOnTime() {
+    if (!g_lateRun) return;
+    if (g_lateRuns <= kLateLogged)
+        HLOG("gfx: the devices caught up after %llu late frames (%.0f ms)", static_cast<unsigned long long>(g_lateRun), NowMs() - g_lateSince);
+    g_lateRun = 0;
 }
 
 // ---- the frame
@@ -1145,6 +1211,12 @@ bool DoStage1() {
     D3DSURFACE_DESC rd;
     rt->GetDesc(&rd);
     if (rd.Width != g_w || rd.Height != g_h) { SafeRelease(rt); g_skipped++; return true; }
+    if (!Settled()) {   // a late frame's work still runs on the shared textures
+        SafeRelease(rt);
+        MotionFrameEnd();
+        g_motionThisFrame = g_motionReady = false;
+        return FrameFailed();
+    }
     Saved9 saved;
     SaveAndNeutral9(saved);
     // 1. the colour and the linear depth into the shared textures
@@ -1177,7 +1249,7 @@ bool DoStage1() {
             if (v->info.fresh) { to11.push_back(v->colorLink); to11.push_back(v->depthLink); }
         std::string why;
         ok = gfxvk::To11(to11.data(), static_cast<int>(to11.size()), &why);
-        if (!ok) g_frameError = "the textures' copy on DXVK's queue: " + why;
+        if (!ok) g_frameError = "the textures' copy on DXVK's queue: " + why, g_frameLate = gfxvk::Busy();
     }
     g_motionReady = ok && motion;
     double t1 = NowMs();
@@ -1200,7 +1272,8 @@ bool DoStage1() {
     }
     Restore9(saved);
     SafeRelease(rt);
-    if (!ok) return Fail(g_frameError.empty() ? std::string("the frame failed") : g_frameError);
+    if (!ok) return FrameFailed();
+    FrameOnTime();
     g_frames++;
     auto smooth = [](double &avg, double v) { avg = g_frames == 1 ? v : avg * 0.95 + v * 0.05; };
     smooth(g_ms9, t1 - t0);
@@ -1490,6 +1563,7 @@ void GfxTakeWorldLight() { if (g_stateHooked) TakeWorldLight(); }
 void GfxStage1() {
     if (!g_swapped || !g_dev9) return;
     g_frameError.clear();
+    g_frameLate = false;
     g_quiet++;
     bool ok = SafeStage1();
     g_quiet--;
@@ -1603,15 +1677,16 @@ void ViewPasses(ViewTargets &v, const float c[8]) {
         }
     }
     g_frameError.clear();
+    g_frameLate = false;
     MmlGfxConstants k{};
     float vm[16], pm[16];
-    bool ok = Wait9() && Hand(true, {v.colorLink, v.depthLink});   // (its colour and depth written)
+    bool ok = Settled() && Wait9() && Hand(true, {v.colorLink, v.depthLink});   // (its colour and depth written)
     if (ok) {
         FillConstants(k, v.w, v.h, vm, pm);
         ok = RunPasses(k, {v.depthSRV, v.colorSRV, v.fxRTV, v.w, v.h, v.handle, vm, pm});
     }
     ok = ok && Hand(false, {v.fxLink});
-    if (!ok) { v.passFails++; return; }
+    if (!ok) { v.passFails++; if (g_frameLate) g_lateFrames++; return; }
     g_dev9->SetRenderTarget(0, v.colorSurf);
     g_dev9->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
     g_dev9->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_ONE);
@@ -1730,6 +1805,7 @@ bool GfxMethod(const std::string &method, const std::string &, std::string *repl
                           {"in_views", p.inViews}});
     json out = {{"state", g_state}, {"adapter", g_adapter}, {"size", {g_w, g_h}}, {"frames", g_frames}, {"generation", g_generation},
                 {"passes", passes}, {"skipped", g_skipped}, {"not_our_depth", g_notOurDepth}, {"depth_redirects", g_depthRedirects},
+                {"late", {{"frames", g_lateFrames}, {"runs", g_lateRuns}, {"now", g_lateRun}}},
                 {"ms", {{"copy_9", r2(g_ms9)}, {"passes_11", r2(g_ms11)}, {"wait_11", r2(g_wait11)}, {"all", r2(g_msAll)},
                         {"gpu_passes", r2(g_gpuPasses)}}},
                 {"following_state", g_stateHooked}, {"multisampling", g_msaa},
