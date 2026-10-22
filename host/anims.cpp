@@ -336,6 +336,17 @@ int HumanGetUp(void *human, int blendMs, std::string *err) {
     bool alive = false;
     auto ra = [&] { alive = ped ? game::at<float>(human, kPedHealth) > 0 : game::at<uint8_t>(human, game::kActorAlive) != 0; };
     if (Guarded(ra) || !alive) { *err = "dead (a body does not get up)"; return 0; }
+    // seated in a car (the car he uses, C_human +0x98, with his model hung under the car's): the game keeps him in
+    // his seat; a get-up would put him on the street under the car still seated (it killed a driver posed in a crash)
+    bool seated = false;
+    auto rs = [&] {
+        void *c = game::at<void *>(human, game::kHumanVehicle);
+        if (!c || game::at<uint32_t>(c, game::kActorType) != 4) return;
+        void *carFrame = game::at<void *>(c, game::kActorFrame);
+        void *fr = game::at<void *>(human, game::kActorFrame);
+        for (int i = 0; fr && i < 24; i++, fr = game::at<void *>(fr, game::kFrameParent)) if (fr == carFrame) { seated = true; return; }
+    };
+    if (!ped && (Guarded(rs) || seated)) { *err = "seated in a car (the game holds him in his seat: nothing to get up from)"; return 0; }
     float w[MML_BONE_COUNT][16] = {};
     if (!PoseOf(human, b.frames, w)) { *err = "his bones could not be read"; return 0; }
     int lying = Lying(w);

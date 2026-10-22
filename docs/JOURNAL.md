@@ -3271,3 +3271,7 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   at its rest test before Engine, where the hook offers the steps: none came. The method wakes the car as Tick does
   (awake, not calm, its rest counters started again: host/control.cpp WakeVehicle). Seen in the 1.2 lab: a
   Bolt-Thrower spawned and left 3 s, moved 22 m by `vehicle.move`.
+- **Fixed**: human_get_up handed back someone seated in a car: put on the street under the car (his position the
+  ground there, the get-up queued) while still in his seat; the ragdoll mod had made a crash's driver a knock-down
+  and got him up so, and he died there. It refuses one seated in a car now (the car he uses, +0x98, with his model
+  under the car's), as it refuses the dead.

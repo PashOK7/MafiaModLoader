@@ -1424,7 +1424,8 @@ typedef struct MmlHost {
      * own again (also at the mod's unload). human_anim_state: what he plays. human_get_up: a body a mod posed handed
      * back to the game: he is put where it lies and turned the way it lies, and plays the game's own get-up from the
      * back or the front (his action queue, as a knock-down queues it); the host draws from the body's pose into the
-     * animation over blend_ms (0: at once). A mod stops posing him before. Game thread. */
+     * animation over blend_ms (0: at once); 0 for the dead and for someone seated in a car (the game holds him in his
+     * seat). A mod stops posing him before. Game thread. */
     int (*human_anim_play)(MmlMod *mod, void *human, const char *anim, int flags);
     int (*human_anim_stop)(MmlMod *mod, void *human);
     int (*human_anim_replace)(MmlMod *mod, void *human, const char *own, const char *with);
