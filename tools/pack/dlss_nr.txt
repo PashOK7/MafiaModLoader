@@ -69,7 +69,9 @@ extensions in the game's folder, beside Game.exe:
   logo1.mp4   logo2.mp4   intro.mp4                (1.0)
 .mp4, .mkv, .webm and .mov are tried first; without one, the game's
 own .bik or .avi plays as before. Any key skips a video, as in the
-game. mml\logs\mml.log says which file played and how ("decoded by
+game. When this archive has the folder mml\mods\upscaled_intro, its
+intro plays instead of the game's: delete that folder to have the
+game's own back. mml\logs\mml.log says which file played and how ("decoded by
 D3D11VA" is the graphics card).
 
 
