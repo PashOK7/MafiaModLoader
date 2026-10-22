@@ -3292,3 +3292,31 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Seen too**: the crash's dump failed (0 bytes, 0x8007001F: no memory left to write it; the JSON report was
   written), and the 64-bit half (mml-sidecar64) outlived the dead game and kept its process object, so the folder's
   next start quit at once (the "freeze" the player may see is that). ROADMAP "Known gaps".
+
+## 2026-10-22: managed textures in video memory on Direct3D 9Ex (dxwrapper)
+
+- **Asked** (the owner): the doubled textures fixed properly, not by turning 9Ex off (the bridge, the shadow map
+  shared with Direct3D 11 and the videos' hardware decoding need it); the cause confirmed by an experiment first.
+- **Found** (dxwrapper's sources, d3d9/IDirect3DDevice9Ex.cpp): with D3d9to9Ex every managed texture (and volume,
+  cube) became `D3DPOOL_DEFAULT | D3DUSAGE_DYNAMIC`; a dynamic texture is kept where the CPU reaches it, inside the
+  game's address space. Counted (a lock counter built into dxwrapper for the experiment): loading the player's freeride
+  made 1162 such textures of 3.2 GB (A8R8G8B8 all: 3194 MB, A4R4G4B4 38 MB, no DXT) against 3.5 GB of the process's
+  private memory. DYNAMIC dropped alone: the game's locks fail and LS3D writes through null (LS3DF+0x79FA9). Managed
+  kept on 9Ex: DXVK refuses to make such a texture. LS3D locks its levels through their surfaces, about ten a texture
+  at its load, never READONLY (one lock in a whole run), never DISCARD; some mip chains (A8R8G8B8, A4R4G4B4,
+  A1R5G5B5; 12 MB in the 1.2 lab, 277 MB with the pack) are locked again later.
+- **Made** (third_party/dxwrapper/MmlManaged.h, patch.py's change 3): a managed 2D texture is a default-pool one
+  without DYNAMIC; a level locked gets a copy in system memory (a one-level SYSTEMMEM texture), filled from the video
+  memory when the level holds something (StretchRect into a render target, GetRenderTargetData) and sent back at
+  the unlock (UpdateSurface of the rectangle written). The copies stay while used, the least recently used let go past
+  256 MB (`MML_MANAGED_BUDGET_MB` in the environment changes it); a format the device cannot read back that way
+  (DXT1, A4R4G4B4 here) keeps its copies as long as its texture. UpdateSurface, UpdateTexture, StretchRect and
+  ColorFill into such a texture mark its copies out of date; GetDC on a level goes through its copy. Volume, cube and
+  AUTOGENMIPMAP textures keep the DYNAMIC conversion. dxwrapper's log says each 30 s what it holds.
+- **Seen**: the player's build (W:/MafiaDLSS, his 8.4 GB of textures, DXVK, ReShade, 9Ex, dlss_nr on): the freeride
+  loads, 610 MB private (3.5 GB before), 2.8 GB free; the world as with 9Ex off. The 1.2 and 1.0 labs (Windows'
+  Direct3D 9): the freeride, a drive, the pause menu as before. The read-back tested with a budget of 0 (every lock
+  after a let-go reads back): 1461 levels in 1.2, 1462 under DXVK with the pack, no content lost, the pictures right.
+  Offline tests: ALL PASSED.
+- **Seen on the way** (ROADMAP "Known gaps"): a game on DXVK that crashed hangs in its exit (a thread left waiting
+  in DXVK's d3d9 for one ExitProcess killed); dlss_nr on our RTX 3070 in the player's build draws the sky alone.

@@ -1191,18 +1191,21 @@ merged, sorted by importance):
 
 ## Known gaps
 
-- **Direct3D 9Ex doubles every texture in the game's memory** (2026-10-22, the DLSS 5 pack in a player's game with
-  Project Upscaled 3.0's 8.4 GB of textures): the graphics bridge wants the game's device on 9Ex (dxwrapper's
-  `D3d9to9Ex = 1`, in the dlss_nr pack's dxwrapper.ini), and 9Ex has no managed pool: the game's textures keep a copy
-  in the process (3.5 GB private, 10 MB of the 4 GB left: the freeride's load dies in ITexture::Create's allocation,
-  LS3DF+0x79923). With `D3d9to9Ex = 0` the same load takes 578 MB and leaves 2.9 GB free, but the bridge refuses a
-  device that is not 9Ex underneath, even DXVK's (whose frame it copies on DXVK's own Vulkan queue anyway). To do:
-  the bridge on a plain Direct3D 9 device where it does not need 9Ex's shared handles (DXVK), and for Windows' own
-  Direct3D 9 a way that does not keep the textures twice.
-- **The 64-bit half outlives a crashed game** (2026-10-22): after the game died (the crash above) mml-sidecar64
-  kept running and kept the dead Game.exe's process object alive, so the next start of that folder quit at once.
-  The sidecar must end when its game ends (wait on the game's process handle). And the crash's dump failed (0 bytes,
-  0x8007001F: no memory left in the process to write it): a dump written from outside (by the sidecar) would not.
+- **The 64-bit half outlives a crashed game** (2026-10-22): after the game died mml-sidecar64 kept running and kept
+  the dead Game.exe's process object alive, so the next start of that folder quit at once (seen three times). The
+  sidecar must end when its game ends (wait on the game's process handle). And a crash's dump fails when the address
+  space is spent (0 bytes, 0x8007001F: no memory left in the process to write it): a dump written from outside (by
+  the sidecar) would not.
+- **A game on DXVK hangs in its exit after a crash** (2026-10-22): the game's own exception filter (after ours) ends
+  the process with the CRT's exit; ExitProcess kills the other threads, and LS3D's release of its device then waits in
+  DXVK's d3d9.dll (SleepConditionVariableSRW) for a thread already gone: the process stays with one thread forever
+  (the player's "freezes"; ended here by terminating that thread). To do: a crash, once reported, ends by
+  TerminateProcess (no DLL's detach run), as Windows' own error reporting does.
+- **dlss_nr on an RTX 3070 in the player's build draws the sky alone** (2026-10-22, W:/MafiaDLSS: DXVK 3.1.1,
+  ReShade 6.8.0 as a Vulkan layer): with dlss_nr on (NGX refuses DLSS-NR on a 3070: the pass's fallback) the world is
+  not drawn, the sky and the HUD are; with it off the frame is right. The same with the pack's own dxwrapper and no
+  texture pack, so not the managed textures' change. Not looked into yet; the player said "Kill Sam: graphics go
+  crazy" on his RTX 5060.
 
 - **The game's videos** (2026-10-21): (1) a real `BIKk` file is not seen played in a lab (none at hand: RAD's
   compressor shows its licence at its first start, the owner's to accept; FFmpeg's decoder reads `BIKk` by its
