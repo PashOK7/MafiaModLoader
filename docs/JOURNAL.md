@@ -3374,3 +3374,15 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   26 ms; uploading 0.8 ms). The picture sharp, its aspect kept (bars above and below at 1280x960). It needs
   `mml\ffmpeg` beside the game, which the player's install lacks (his log: `avutil-61.dll`, error 126).
 - **Lab**: as before (the test mod and DXVK out).
+
+## 2026-10-23: the video player's sound in waves
+
+- **Heard** (the owner, the DXVK lab of the player's build): The Renegade's upscaled intro (MKV, Vorbis) broke off
+  every block. `timing.sound` added to the player's record (video.state, VIDEO_ENDED) measured two causes:
+  Matroska's laced Vorbis packets given times up to 57 ms off (a quarter of the sound dropped as late), and the
+  decoding thread stopped at a full queue of pictures before the sound behind them in the file (heard as waves once
+  the first was fixed). Both fixed in host/video.cpp (knowledge/notes/videos.md "The sound in waves"): the sound one
+  stream, the file read on with video packets queued, the clock started with half a second of sound.
+- **Seen**: under DXVK the whole intro, 5722 of 5722 pictures, nothing dropped or put in, heard clean by the owner;
+  1.2 (9Ex) MP4 with AAC 4K 60 fps and a silent one, 1.0 the intro: clean. The game's own Bink files were not played
+  again (the lab's MP4 copies come first). Offline tests: ALL PASSED.

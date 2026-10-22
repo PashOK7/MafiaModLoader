@@ -41,6 +41,7 @@
 #include <dsound.h>
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <condition_variable>
 #include <cstring>
 #include <deque>
@@ -231,6 +232,9 @@ struct Chunk { std::vector<int16_t> s; size_t at = 0; double pts; };   // stereo
 
 std::string g_forceDecode;              // video.play's `decode` for the video it plays ("": the GPU when it can)
 constexpr int kSlots = 4;               // GPU pictures on their way at once (in the queue, on the screen, retiring)
+constexpr double kSoundResync = 0.25;   // a sound chunk's own time taken when it is this far from where the last ended
+constexpr double kSoundAhead = 3.0;     // seconds of sound decoded ahead of what plays
+constexpr size_t kVideoQueueBytes = 64u << 20;   // video packets read ahead for the sound behind them, at most
 
 struct Video {
     std::string name, file, from, desc, adesc;
@@ -261,12 +265,17 @@ struct Video {
     std::deque<Chunk> chunks;
     double audioQueued = 0;             // seconds of sound waiting
     bool ended = false;                 // the file read to its end, the decoders drained
+    bool allRead = false;               // every packet read (the sound decoded to its end but for the decoder's tail)
     std::string error;                  // the thread stopped on this
     double lastPts = 0, audioEnd = 0;
     // where the time goes (ms, summed; read once the thread has ended): the decoder's calls and the conversion on
     // the decoding thread, the upload and the frame (Clear to Present) on the game thread
     double tDecode = 0, tConvert = 0, tUpload = 0, tPresent = 0, maxConvert = 0, maxUpload = 0, maxPresent = 0;
     int decoded = 0, late = 0, uploads = 0;
+    // the sound (seconds, counts): chunks whose time is not where the one before ended, the silence put into gaps,
+    // the samples dropped as late, the buffer run dry, the fills that found too little decoded (silence)
+    double sndOffMax = 0, sndSilence = 0, sndDropped = 0;
+    int sndChunks = 0, sndOff = 0, sndGaps = 0, sndDrops = 0, sndDry = 0, sndStarved = 0;
 };
 std::map<void *, Video *> g_videos;     // IShow* -> the loader's video
 
@@ -430,6 +439,16 @@ void Decode(Video *v) {
         }
         double pts = Seconds(fr->best_effort_timestamp, v->fmt->streams[v->as]->time_base);
         pts = pts < 0 ? nextAudio : pts - v->origin;
+        // The sound is one stream: a chunk follows where the one before ended, its own time taken only when it is far
+        // from there (a real gap or cut in the file). A frame's time is coarse: Matroska laces several Vorbis packets
+        // into one block with one time, and FFmpeg's guess for the rest was up to 57 ms off; placed by it, a quarter of
+        // the sound was dropped as late (2026-10-23, The Renegade's upscaled intro: a stutter every block).
+        if (v->sndChunks++) {
+            double off = std::fabs(pts - nextAudio);
+            v->sndOffMax = std::max(v->sndOffMax, off);
+            if (off > 0.002) v->sndOff++;
+            if (off <= kSoundResync) pts = nextAudio;
+        }
         Chunk c;
         c.pts = pts;
         int cap = swr_get_out_samples(swr, fr->nb_samples);
@@ -439,9 +458,7 @@ void Decode(Video *v) {
         if (n <= 0) return true;
         c.s.resize(static_cast<size_t>(n) * 2);
         nextAudio = pts + static_cast<double>(n) / v->rate;
-        std::unique_lock<std::mutex> lk(v->mx);
-        v->cv.wait(lk, [&] { return v->stop || v->audioQueued < 3.0; });
-        if (v->stop) return false;
+        std::lock_guard<std::mutex> lk(v->mx);   // (never waits: the loop below reads no more sound than kSoundAhead)
         v->audioQueued += static_cast<double>(n) / v->rate;
         v->audioEnd = std::max(v->audioEnd, nextAudio);
         v->chunks.push_back(std::move(c));
@@ -459,6 +476,25 @@ void Decode(Video *v) {
             if (!ok) return false;
         }
     };
+    // The file is read on while the pictures' queue is full: its video packets wait in vq (compressed: small), its sound
+    // is decoded at once, up to kSoundAhead queued. A container may keep a moment's sound well after its picture: read
+    // in order and stopped at a full queue of pictures (a quarter of a second through the CPU), the thread starved the
+    // sound, heard in waves (2026-10-23, The Renegade's upscaled intro, an MKV, under DXVK).
+    std::deque<AVPacket *> vq;
+    size_t vqBytes = 0;
+    auto clearVq = [&] {
+        for (AVPacket *p : vq) av_packet_free(&p);
+        vq.clear();
+        vqBytes = 0;
+    };
+    auto decodeVideo = [&](AVPacket *p) -> bool {   // (each packet's pictures taken out at once: the decoder never refuses the next one as full)
+        double t0 = Now();
+        int s = avcodec_send_packet(v->vdec, p);
+        v->tDecode += (Now() - t0) * 1000.0;
+        if (s < 0 && s != AVERROR(EAGAIN)) errors++;
+        return receive(v->vdec, true);
+    };
+    bool eof = false;
     while (!v->stop) {
         // the GPU's decoder failing from the start (a driver that took the stream and then refused it): the CPU's,
         // from the file's start
@@ -470,22 +506,51 @@ void Decode(Video *v) {
             if (!OpenVideoDecoder(v, videohw::kSoftware, nullptr, &why)) { v->error = why; break; }
             av_seek_frame(v->fmt, -1, 0, AVSEEK_FLAG_BACKWARD);
             if (v->adec) avcodec_flush_buffers(v->adec);
+            clearVq();
+            eof = false;
+            {
+                std::lock_guard<std::mutex> lk(v->mx);
+                v->allRead = false;
+            }
             errors = 0;
         }
-        int r = av_read_frame(v->fmt, pkt);
-        if (r < 0) {   // the end: the decoders drained
+        bool room = false;   // a picture may be queued
+        {
+            std::unique_lock<std::mutex> lk(v->mx);
+            v->cv.wait(lk, [&] {
+                room = v->pics.size() < v->maxPics && (!shared || v->gpuFailed || !v->freeSlots.empty());
+                bool soundWants = v->rate && v->audioQueued < kSoundAhead && vqBytes < kVideoQueueBytes;
+                return v->stop || (room && (!vq.empty() || !eof)) || (!eof && soundWants) || (eof && vq.empty());
+            });
+        }
+        if (v->stop) break;
+        if (room && !vq.empty()) {
+            AVPacket *p = vq.front();
+            vq.pop_front();
+            vqBytes -= static_cast<size_t>(p->size);
+            bool go = decodeVideo(p);
+            av_packet_free(&p);
+            if (!go) break;
+            continue;
+        }
+        if (eof) {   // the end: the decoders drained
             if (v->vdec) { avcodec_send_packet(v->vdec, nullptr); if (!receive(v->vdec, true)) break; }
             if (v->adec && v->rate) { avcodec_send_packet(v->adec, nullptr); if (!receive(v->adec, false)) break; }
             break;
         }
-        // (each packet's pictures and sound taken out at once: the decoder never refuses the next packet as full)
+        int r = av_read_frame(v->fmt, pkt);
+        if (r < 0) {
+            eof = true;
+            std::lock_guard<std::mutex> lk(v->mx);
+            v->allRead = true;
+            continue;
+        }
         bool go = true;
         if (pkt->stream_index == v->vs) {
-            double t0 = Now();
-            int s = avcodec_send_packet(v->vdec, pkt);
-            v->tDecode += (Now() - t0) * 1000.0;
-            if (s < 0 && s != AVERROR(EAGAIN)) errors++;
-            go = receive(v->vdec, true);
+            AVPacket *p = av_packet_alloc();
+            av_packet_move_ref(p, pkt);
+            vqBytes += static_cast<size_t>(p->size);
+            vq.push_back(p);
         } else if (pkt->stream_index == v->as && v->adec && v->rate) {
             avcodec_send_packet(v->adec, pkt);
             go = receive(v->adec, false);
@@ -493,6 +558,7 @@ void Decode(Video *v) {
         av_packet_unref(pkt);
         if (!go) break;
     }
+    clearVq();
     sws_free_context(&sws);
     swr_free(&swr);
     av_frame_free(&dst);
@@ -784,7 +850,7 @@ void SpeakerFill(Speaker *sp, Video *v, double startTime) {
         sp->played += ((play + sp->size - sp->lastPlay) % sp->size) / 4;
         sp->lastPlay = play;
     }
-    if (sp->played > sp->written) sp->written = sp->played;   // (it ran dry: what it played is gone)
+    if (sp->played > sp->written) sp->written = sp->played, v->sndDry++;   // (it ran dry: what it played is gone)
     uint64_t ahead = static_cast<uint64_t>(sp->rate * 0.3);
     uint64_t want = sp->played + ahead > sp->written ? sp->played + ahead - sp->written : 0;
     if (want < 64) return;
@@ -798,14 +864,18 @@ void SpeakerFill(Speaker *sp, Video *v, double startTime) {
             double head = c.pts + static_cast<double>(c.at / 2) / sp->rate;
             size_t left = (c.s.size() - c.at) / 2;
             if (head > t + 0.03) {   // a gap before this chunk: silence up to it
-                uint64_t gap = std::min<uint64_t>(want - i, static_cast<uint64_t>((head - t) * sp->rate));
-                i += std::max<uint64_t>(gap, 1);
+                uint64_t gap = std::max<uint64_t>(std::min<uint64_t>(want - i, static_cast<uint64_t>((head - t) * sp->rate)), 1);
+                i += gap;
+                v->sndGaps++;
+                v->sndSilence += static_cast<double>(gap) / sp->rate;
                 continue;
             }
             if (head < t - 0.03) {   // late: dropped up to now
                 size_t drop = std::min<size_t>(left, static_cast<size_t>((t - head) * sp->rate) + 1);
                 c.at += drop * 2;
                 v->audioQueued -= static_cast<double>(drop) / sp->rate;
+                v->sndDrops++;
+                v->sndDropped += static_cast<double>(drop) / sp->rate;
             } else {
                 size_t take = static_cast<size_t>(std::min<uint64_t>(left, want - i));
                 memcpy(&out[static_cast<size_t>(i) * 2], &c.s[c.at], take * 4);
@@ -815,6 +885,7 @@ void SpeakerFill(Speaker *sp, Video *v, double startTime) {
             }
             if (c.at >= c.s.size()) v->chunks.pop_front();
         }
+        if (i < want && !v->allRead) v->sndStarved++, v->sndSilence += static_cast<double>(want - i) / sp->rate;   // (silence)
         v->cv.notify_all();
     }
     void *p1 = nullptr, *p2 = nullptr;
@@ -898,7 +969,7 @@ void Play(Video *v) {
          v->desc.c_str(), v->adesc.empty() ? "" : "; ", v->adesc.c_str(), videohw::ApiName(v->api), v->hwWhy.empty() ? "" : " (",
          v->hwWhy.empty() ? "" : (v->hwWhy + ")").c_str(), v->tw, v->th);
 
-    // the first picture (up to 5 s for it), then the clock starts with the sound
+    // the first picture and half a second of sound (up to 5 s for them), then the clock starts with the sound
     double begin = Now(), start = 0;
     bool first = true;
     int shown = 0, dropped = 0;
@@ -926,7 +997,8 @@ void Play(Video *v) {
         }
         if (first) {
             std::lock_guard<std::mutex> lk(v->mx);
-            if (v->pics.empty() && !v->ended && Now() - begin < 5) { /* waiting for the first picture */ }
+            bool soundReady = !sound || v->audioQueued >= 0.5 || v->ended;   // (else its start would be dropped as late)
+            if ((v->pics.empty() || !soundReady) && !v->ended && Now() - begin < 5) { /* waiting for the first picture and sound */ }
             else { first = false; start = Now(); v->clockStart = start; }
         }
         if (first) { WaitMs(2); continue; }
@@ -1019,7 +1091,10 @@ void Play(Video *v) {
         rec.timing = {{"decoded", v->decoded}, {"late", v->late}, {"decode_ms", avg(v->tDecode, v->decoded)},
                       {"convert_ms", avg(v->tConvert, v->decoded)}, {"convert_max_ms", v->maxConvert}, {"uploads", v->uploads},
                       {"upload_ms", avg(v->tUpload, v->uploads)}, {"upload_max_ms", v->maxUpload},
-                      {"present_ms", avg(v->tPresent, shown)}, {"present_max_ms", v->maxPresent}};
+                      {"present_ms", avg(v->tPresent, shown)}, {"present_max_ms", v->maxPresent},
+                      {"sound", {{"chunks", v->sndChunks}, {"off", v->sndOff}, {"off_max_ms", v->sndOffMax * 1000.0},
+                                 {"gaps", v->sndGaps}, {"silence_ms", v->sndSilence * 1000.0}, {"drops", v->sndDrops},
+                                 {"dropped_ms", v->sndDropped * 1000.0}, {"dry", v->sndDry}, {"starved", v->sndStarved}}}};
     }
     rec.path = path;
     rec.ms = ms;

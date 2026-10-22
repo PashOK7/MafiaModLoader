@@ -155,3 +155,19 @@ In order of likelihood, each a silent failure:
   GeForce but leaves the studio range unexpanded (red at about 240 instead of 255).
 - FFmpeg's own AV1 decoder (`av1`) decodes only through a GPU's hwaccel; `libdav1d` only on the CPU: the loader opens
   one or the other by name.
+
+## The sound in waves (2026-10-23)
+
+- **The file**: The Renegade's upscaled intro, an MKV (HEVC 3200x1680 25 fps, Vorbis 44.1 kHz stereo). Heard under
+  DXVK: the sound broke off every block, then, half fixed, in waves. Measured with `timing.sound` (video.state).
+- **Its chunks' times**: Matroska laces several Vorbis packets in one block with one time; FFmpeg's
+  `best_effort_timestamp` for the rest was up to 57 ms from where the chunk before ended (9123 chunks of 10029 off).
+  Placed by them, the speaker took a quarter of the sound for late and dropped it (243 drops, 5.6 s in 23.6 s). The
+  sound is one stream now: a chunk goes where the one before ended, its own time taken only 0.25 s off.
+- **Its interleaving**: one thread read the file in order and stopped at a full queue of pictures (six through the
+  CPU: under DXVK, a quarter of a second); the sound behind them in the file was not read, ran out and was dropped
+  late when it came (141 drops, 3.3 s in 28 s). The thread now reads on while the pictures' queue is full: video
+  packets wait in their own queue (64 MB at most), the sound is decoded at once up to 3 s ahead, and the clock
+  starts once the first picture and half a second of sound are there.
+- **After**: the whole intro under DXVK, 5722 pictures of 5722, no sound dropped, no silence put in; the owner heard
+  it clean. MP4 with AAC (4K 60 fps) and a silent MP4 in 1.2, the intro in 1.0 (9Ex): the same.
