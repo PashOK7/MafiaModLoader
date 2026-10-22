@@ -220,7 +220,8 @@ typedef struct MmlScriptResult {
 typedef void (*MmlScriptFn)(const MmlScriptResult *result, void *user);
 
 typedef struct MmlHumanHit {
-    int type;               /* the game's hit type (0 bullet, 2 tram/plane, 3 explosion, 5 car, 6 fall, 8 car...) */
+    int type;               /* the game's hit type (0 bullet, 2 an explosion (C_game::NewExplosion), a tram, a plane,
+                               5 car, 6 fall, 8 car...) */
     MmlVec3 dir, pos;       /* as the game passed them (may be zero) */
     float damage;
     void *attacker;         /* the actor that caused it, or null */

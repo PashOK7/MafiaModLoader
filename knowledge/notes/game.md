@@ -213,7 +213,9 @@ autosplitter; kept outside it, not ported). Checked against the above:
   0x575FC0).
 - **game** `C_human::Hit` 0x5762A0. A car knocks a person down only when the relative speed squared exceeds 9
   (constant at 0x624058); a pedestrian hit (type 5) knocks down fully above strength 16 (0x624078). Falling and
-  landing damage is hit type 6 (from 0x57B660).
+  landing damage is hit type 6 (from 0x57B660). An explosion is hit type 2: `C_game::NewExplosion` 0x5AAE10 calls
+  every near actor's Hit (vtable +0x7C) with 2, its centre as both the direction's and the place's argument (seen in
+  both labs: the scripts' `explosion 6, 400` gave 67 of damage at 5 m, 200 and more within 3 m, `hit_type` 2).
 
 ## A person's script and his AI (read 2026-10-18 in both builds' code, seen in both labs; host/orders.cpp)
 
