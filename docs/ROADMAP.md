@@ -1201,11 +1201,7 @@ merged, sorted by importance):
   DXVK's d3d9.dll (SleepConditionVariableSRW) for a thread already gone: the process stays with one thread forever
   (the player's "freezes"; ended here by terminating that thread). To do: a crash, once reported, ends by
   TerminateProcess (no DLL's detach run), as Windows' own error reporting does.
-- **dlss_nr on an RTX 3070 in the player's build draws the sky alone** (2026-10-22, W:/MafiaDLSS: DXVK 3.1.1,
-  ReShade 6.8.0 as a Vulkan layer): with dlss_nr on (NGX refuses DLSS-NR on a 3070: the pass's fallback) the world is
-  not drawn, the sky and the HUD are; with it off the frame is right. The same with the pack's own dxwrapper and no
-  texture pack, so not the managed textures' change. Not looked into yet; the player said "Kill Sam: graphics go
-  crazy" on his RTX 5060.
+
 
 - **The game's videos** (2026-10-21): (1) a real `BIKk` file is not seen played in a lab (none at hand: RAD's
   compressor shows its licence at its first start, the owner's to accept; FFmpeg's decoder reads `BIKk` by its

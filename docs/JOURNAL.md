@@ -3320,3 +3320,24 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   Offline tests: ALL PASSED.
 - **Seen on the way** (ROADMAP "Known gaps"): a game on DXVK that crashed hangs in its exit (a thread left waiting
   in DXVK's d3d9 for one ExitProcess killed); dlss_nr on our RTX 3070 in the player's build draws the sky alone.
+
+## 2026-10-22: the bridge keeps its depth buffer against a mod that puts the game's back
+
+- **Asked** (the owner): why dlss_nr in the player's build draws the sky alone on our RTX 3070.
+- **Found**: not dlss_nr (NGX refuses the 3070: its pass returns at once) but the graphics bridge around it: gfx.state
+  said 2 frames of the bridge's and `not_our_depth` 483. Without ReShade the same; without the player's
+  `MafiaWaterShaderMod.asi` the world is back. A tap on dxwrapper's m_IDirect3DDevice9Ex::SetDepthStencilSurface
+  (its address from dxwrapper.pdb with cdb) and on d3d8to9's Direct3DDevice8::SetRenderTarget: the water mod calls
+  Direct3D 8's SetRenderTarget in pairs around each of its water draws (about 36 a frame), its own depth buffer and
+  then the one it kept from its start, the game's: the bridge's readable depth buffer (INTZ), bound before the world,
+  was put away, and the world was drawn into the game's own, which nobody had cleared this frame (LS3D cleared the
+  bridge's): the sky alone, drawn without depth, was seen. With the bridge off the game's is the bound one: nothing to
+  see. The player's "Kill Sam: graphics go crazy" may be this too.
+- **Made** (host/gfx.cpp): the device's SetDepthStencilSurface followed (in HookState's chain): while the bridge's
+  depth buffer stands for the game's, a set of the game's own binds the bridge's; out of that time a set of the
+  bridge's (a mod that kept it meanwhile) binds the game's. The bridge's own sets ordered round the flag.
+  `gfx.state` tells `depth_redirects` (PROTOCOL.md).
+- **Seen**: the player's build (ReShade, the water mod, dlss_nr on, his textures, the managed textures' dxwrapper):
+  the world drawn, the bridge on every frame (1160 frames, not_our_depth 0, 38949 redirects in them), the river's
+  reflections the water mod's. The 1.2 and 1.0 labs with the bridge on: the frame right, 0 redirects. Offline tests:
+  ALL PASSED.

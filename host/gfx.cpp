@@ -223,9 +223,11 @@ using DrawPrimitiveUPFn = HRESULT(STDMETHODCALLTYPE *)(IDirect3DDevice9 *, D3DPR
 using DrawIndexedPrimitiveUPFn = HRESULT(STDMETHODCALLTYPE *)(IDirect3DDevice9 *, D3DPRIMITIVETYPE, UINT, UINT, UINT, const void *,
                                                              D3DFORMAT, const void *, UINT);
 using SetTransformFn = HRESULT(STDMETHODCALLTYPE *)(IDirect3DDevice9 *, D3DTRANSFORMSTATETYPE, const D3DMATRIX *);
+using SetDepthStencilFn = HRESULT(STDMETHODCALLTYPE *)(IDirect3DDevice9 *, IDirect3DSurface9 *);
 // IDirect3DDevice9's vtable slots (d3d9.h's order)
-constexpr int kVtSetTransform = 44, kVtSetLight = 51, kVtLightEnable = 53, kVtSetRenderState = 57, kVtDrawPrimitive = 81,
-              kVtDrawIndexedPrimitive = 82, kVtDrawPrimitiveUP = 83, kVtDrawIndexedPrimitiveUP = 84;
+constexpr int kVtSetDepthStencil = 39, kVtSetTransform = 44, kVtSetLight = 51, kVtLightEnable = 53, kVtSetRenderState = 57,
+              kVtDrawPrimitive = 81, kVtDrawIndexedPrimitive = 82, kVtDrawPrimitiveUP = 83, kVtDrawIndexedPrimitiveUP = 84;
+SetDepthStencilFn oSetDepthStencil;
 SetTransformFn oSetTransform;
 SetRenderStateFn oSetRenderState;
 SetLightFn oSetLight;
@@ -287,6 +289,21 @@ void Tally(UINT prims) {
     while (i < g_sunTallies && !same(g_sunTally[i])) i++;
     if (i == g_sunTallies && g_sunTallies < 6) g_sunTally[g_sunTallies++] = {best->Direction, best->Diffuse, 0};
     if (i < g_sunTallies) g_sunTally[i].prims += prims;
+}
+
+// The readable depth buffer stands for the game's while the world is drawn (GfxBeforeWorld .. GfxAfterWorld): a set of
+// the game's own depth buffer then binds the bridge's, and out of that time a set of the bridge's binds the game's.
+// Another mod may keep the depth buffer it found at its start and put it back after its own drawing: a player's water
+// shader (MafiaWaterShaderMod.asi) did so around every water draw, through Direct3D 8's SetRenderTarget, and the world
+// was drawn into the game's depth buffer, which nobody had cleared this frame: the sky alone was seen (2026-10-22).
+IDirect3DSurface9 *g_lastGameDS;   // the game's depth buffer at the last frame's swap (compared only, not held)
+unsigned g_depthRedirects;
+HRESULT STDMETHODCALLTYPE hkSetDepthStencil(IDirect3DDevice9 *d, IDirect3DSurface9 *s) {
+    if (s && d == g_dev9) {
+        if (g_swapped && s == g_gameDS && g_intzSurf) { s = g_intzSurf; g_depthRedirects++; }
+        else if (!g_swapped && s == g_intzSurf && g_lastGameDS) { s = g_lastGameDS; g_depthRedirects++; }
+    }
+    return oSetDepthStencil(d, s);
 }
 
 HRESULT STDMETHODCALLTYPE hkSetRenderState(IDirect3DDevice9 *d, D3DRENDERSTATETYPE s, DWORD v) {
@@ -364,6 +381,7 @@ void HookState(IDirect3DDevice9 *d) {
     void **vt = *reinterpret_cast<void ***>(d);
     struct { int slot; void *hook; void **orig; } hooks[] = {
         {kVtSetRenderState, reinterpret_cast<void *>(&hkSetRenderState), reinterpret_cast<void **>(&oSetRenderState)},
+        {kVtSetDepthStencil, reinterpret_cast<void *>(&hkSetDepthStencil), reinterpret_cast<void **>(&oSetDepthStencil)},
         {kVtSetTransform, reinterpret_cast<void *>(&hkSetTransform), reinterpret_cast<void **>(&oSetTransform)},
         {kVtSetLight, reinterpret_cast<void *>(&hkSetLight), reinterpret_cast<void **>(&oSetLight)},
         {kVtLightEnable, reinterpret_cast<void *>(&hkLightEnable), reinterpret_cast<void **>(&oLightEnable)},
@@ -502,9 +520,11 @@ int UiMode() {
 }
 
 void ReleaseAll() {
-    if (g_swapped && g_dev9 && g_gameDS) g_dev9->SetDepthStencilSurface(g_gameDS);
+    bool wasSwapped = g_swapped;
+    g_swapped = false;   // (first: hkSetDepthStencil binds the game's own then)
+    if (wasSwapped && g_dev9 && g_gameDS) g_dev9->SetDepthStencilSurface(g_gameDS);
     SafeRelease(g_gameDS);
-    g_swapped = false;
+    g_lastGameDS = nullptr;
     ReleaseSized();
     for (auto &v : g_views) ReleaseView(*v);
     ReleaseTimers();
@@ -1440,9 +1460,10 @@ void GfxBeforeWorld() {
         return;
     }
     if (!EnsureSize(d.Width, d.Height)) { SafeRelease(ds); return; }
-    if (FAILED(g_dev9->SetDepthStencilSurface(g_intzSurf))) { SafeRelease(ds); g_skipped++; return; }
     g_gameDS = ds;   // its reference kept until GfxAfterWorld
-    g_swapped = true;
+    g_lastGameDS = ds;
+    g_swapped = true;   // (first: hkSetDepthStencil lets the bridge's own buffer be bound then)
+    if (FAILED(g_dev9->SetDepthStencilSurface(g_intzSurf))) { g_swapped = false; SafeRelease(g_gameDS); g_skipped++; return; }
     g_motionThisFrame = false;
     if (MotionWanted() && EnsureMotion()) {   // (motion.cpp draws the moving objects again into the cleared target)
         std::string why;
@@ -1477,9 +1498,9 @@ void GfxStage1() {
 
 void GfxAfterWorld() {
     if (!g_swapped) return;
+    g_swapped = false;   // (first: hkSetDepthStencil lets the game's own buffer be bound then)
     if (g_dev9 && g_gameDS) g_dev9->SetDepthStencilSurface(g_gameDS);
     SafeRelease(g_gameDS);
-    g_swapped = false;
 }
 
 // ---- scene views: LS3D draws the scene into a view's targets (view.cpp), the passes get them
@@ -1708,7 +1729,7 @@ bool GfxMethod(const std::string &method, const std::string &, std::string *repl
         passes.push_back({{"mod", ModIdOf(p.mod)}, {"handle", p.handle}, {"order", p.order}, {"cpu_ms", r2(p.cpuMs)}, {"gpu_ms", r2(p.gpuMs)},
                           {"in_views", p.inViews}});
     json out = {{"state", g_state}, {"adapter", g_adapter}, {"size", {g_w, g_h}}, {"frames", g_frames}, {"generation", g_generation},
-                {"passes", passes}, {"skipped", g_skipped}, {"not_our_depth", g_notOurDepth},
+                {"passes", passes}, {"skipped", g_skipped}, {"not_our_depth", g_notOurDepth}, {"depth_redirects", g_depthRedirects},
                 {"ms", {{"copy_9", r2(g_ms9)}, {"passes_11", r2(g_ms11)}, {"wait_11", r2(g_wait11)}, {"all", r2(g_msAll)},
                         {"gpu_passes", r2(g_gpuPasses)}}},
                 {"following_state", g_stateHooked}, {"multisampling", g_msaa},
