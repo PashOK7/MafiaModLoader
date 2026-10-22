@@ -3275,3 +3275,20 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   ground there, the get-up queued) while still in his seat; the ragdoll mod had made a crash's driver a knock-down
   and got him up so, and he died there. It refuses one seated in a car now (the car he uses, +0x98, with his model
   under the car's), as it refuses the dead.
+
+## 2026-10-22: a player's DLSS 5 crash reproduced: Direct3D 9Ex keeps every texture twice
+
+- **Asked** (the owner): the friend's game with the DLSS 5 pack still crashes, with no dump; a lab of its own for his
+  build (W:/MafiaDLSS: his pack from W:/Downloads/Mafia.zip, the game's archives it lacks, the dlss_nr pack of
+  2026-10-21, his ReShade 6.8.0 as a Vulkan layer for that process only: `_launch_reshade.py` there), then the
+  texture pack he uses (his own Project Upscaled 3.0 from moddb, five of its extras, three fixes; each replaced
+  picture's presaved .DX copies removed).
+- **Seen**: the freeride's load (freeitaly) dies at LS3DF+0x79923 (ITexture::Create's 16 MB allocation null) with 10 MB
+  of the 4 GB address space left; the player: "Freeride Daytime crashes to Windows or freezes; without DLSS 5 it does
+  not". Measured from outside (VirtualQueryEx at its lowest): 3.5 GB of private memory; with dlss_nr off the same
+  (3.5 GB, the same crash); with dxwrapper's `D3d9to9Ex = 0` 578 MB, the freeride loaded, 2.9 GB free. 9Ex has no
+  managed pool: the textures are kept a second time in the process. The pack's dxwrapper.ini turns 9Ex on for the
+  bridge, which refuses a device that is not 9Ex underneath, DXVK's too. ROADMAP "Known gaps".
+- **Seen too**: the crash's dump failed (0 bytes, 0x8007001F: no memory left to write it; the JSON report was
+  written), and the 64-bit half (mml-sidecar64) outlived the dead game and kept its process object, so the folder's
+  next start quit at once (the "freeze" the player may see is that). ROADMAP "Known gaps".
