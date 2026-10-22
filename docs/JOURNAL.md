@@ -3266,3 +3266,8 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   lists' cut of 60 and 40 that left out all but a mod's heaviest four.
 - **Seen**: the mod 0.30 ms a frame in both builds (its own tracking of the people near, the Jolt step, the hits),
   the loader's part of it out of the profile.
+- **Fixed** (found while testing the ragdoll mod's dead driver): `vehicle.move` on a parked car moved nothing and
+  said `moving: 1`. A car calm for a second is asleep (its flags' awake bit clear) and returns from C_Vehicle::Tick
+  at its rest test before Engine, where the hook offers the steps: none came. The method wakes the car as Tick does
+  (awake, not calm, its rest counters started again: host/control.cpp WakeVehicle). Seen in the 1.2 lab: a
+  Bolt-Thrower spawned and left 3 s, moved 22 m by `vehicle.move`.

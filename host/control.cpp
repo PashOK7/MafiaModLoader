@@ -222,6 +222,17 @@ bool StepTaken(MmlVehicleStep *s) {
 }
 bool StepWanted(int kind) { return (g_vhook.fn && (g_kinds & KindBit(kind))) || !g_moves.empty(); }
 
+// A car woken as Tick wakes one (C_Vehicle::Tick when +0xC60 is set): awake, not calm, its rest counters (both
+// builds: +4 the ms within 0.15 m of the place at +8, flags +4 the ms calm; 4000 and 1000 ms put it to sleep) started
+// again. A car asleep (the awake flag clear) returns from Tick at its rest test, before Engine: no step of it is
+// offered until something wakes it.
+void WakeVehicle(void *vehicle) {
+    uint32_t &fl = game::at<uint32_t>(vehicle, E().vehicleFlags);
+    fl = (fl | game::kVehAwake) & ~game::kVehCalm;
+    game::at<int>(vehicle, 4) = 0;
+    game::at<int>(vehicle, E().vehicleFlags + 4) = 0;
+}
+
 void __fastcall hkEngine(void *vehicle, void *edx, float dt, float f1, float f2) {
     g_steps++;
     if (StepWanted(MML_VEHICLE_CAR)) {
@@ -243,13 +254,8 @@ void __fastcall hkEngine(void *vehicle, void *edx, float dt, float f1, float f2)
                     PlaceFrame(car, s.body, off);
                     // (kept awake: a car the mod held still would be let sleep by Tick, and a sleeping car stays
                     // where it is when the game's physics takes it back: seen floating until a pedal woke it)
-                    // Tick's rest counters (both builds: +4 the ms within 0.15 m of the place at +8, flags +4 the ms
-                    // calm; 4000 and 1000 ms put the car to sleep) started again, as Tick does when the car moves.
-                    uint32_t &fl = game::at<uint32_t>(vehicle, E().vehicleFlags);
-                    fl = (fl | game::kVehAwake) & ~game::kVehCalm;
-                    game::at<int>(vehicle, 4) = 0;
+                    WakeVehicle(vehicle);
                     game::at<V3>(vehicle, 8) = {s.body.pos[0], s.body.pos[1], s.body.pos[2]};
-                    game::at<int>(vehicle, E().vehicleFlags + 4) = 0;
                     game::at<float>(vehicle, E().vehicleStepTime) = dt;   // (as Engine stores it: the ramps read it)
                 };
                 if (!Guarded(w)) { g_skipped++; return; }
@@ -432,6 +438,9 @@ bool ControlMethod(const std::string &method, const std::string &paramsJson, std
             if (!std::isfinite(Len(m.velocity)) || !std::isfinite(Len(m.turn))) { *reply = "vehicle.move: not finite"; return true; }
             if (ms == 0) g_moves.erase(car);
             else g_moves[car] = m;
+            // a parked car is asleep: woken, or its steps never come (the move was kept and nothing moved)
+            auto wake = [&] { WakeVehicle(static_cast<uint8_t *>(car) + E().vehicle); };
+            if (ms && kind == MML_VEHICLE_CAR && Guarded(wake) != 0) { *reply = "vehicle.move: the car's flags faulted"; return true; }
             char at[16];
             snprintf(at, sizeof at, "0x%X", static_cast<unsigned>(reinterpret_cast<uintptr_t>(car)));
             *reply = dump({{"car", at}, {"kind", kind == MML_VEHICLE_CAR ? "car" : "airplane"}, {"ms", ms},
