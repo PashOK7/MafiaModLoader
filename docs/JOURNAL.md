@@ -3362,3 +3362,15 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Seen too**: the player's `mml\ffmpeg` is missing (`avutil-61.dll`, error 126): the game's own player shows the
   logos; the pack has it.
 - **Lab**: as before (DXVK out, depth_pulse off).
+
+## 2026-10-22: the player's upscaled intro through the loader's video player
+
+- **Asked** (the owner): The Renegade's upscaled intro (moddb "Upscaled Intro", `intro_3_starlight_mini.zip`, Topaz
+  Video AI's Starlight Mini; its author could not get it into the game: as `.bik` it played at 12 frames a second).
+- **The file**: one MKV, HEVC 3200x1680 25 fps, Vorbis 44.1 kHz stereo, 228.9 s, 1.74 GB.
+- **Seen**: as `files\intro.mkv` of a files-only mod, `video.play {"name": "intro"}`: 1.2 and 1.0 on Windows'
+  9Ex, decoded by D3D11VA, a shared texture: 5722 pictures of 5722, none dropped or late (converting 1.1 to 1.3 ms a
+  picture); 1.2 under DXVK 3.1.1, copied through the CPU: 5722 of 5722, none dropped (converting 4.3 ms, at most
+  26 ms; uploading 0.8 ms). The picture sharp, its aspect kept (bars above and below at 1280x960). It needs
+  `mml\ffmpeg` beside the game, which the player's install lacks (his log: `avutil-61.dll`, error 126).
+- **Lab**: as before (the test mod and DXVK out).
