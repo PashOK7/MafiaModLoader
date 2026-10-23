@@ -89,6 +89,49 @@ struct Done {
     char error[160];
 };
 
+// ---- frame generation (DLSS-FG, an RTX 40 or newer; MFG up to 4x on an RTX 50): at the frame's showing (mml.h
+// gfx_show) the pass draws the back buffer (the HUD on it) into "fg_color", signals "fgready" F and writes "fgview";
+// the 64-bit half queues DLSS-FG on it (the depth and motion vectors of the DLSS frame whose picture is shown: its
+// slot's "depth_in" and "mvec_in", as DLSS SR had them), its pictures into "fg_out<i>", signals "fgdone" F and answers
+// in "fgdone"; the pass's GPU waits for it and draws the pictures into the bridge's targets, shown before the frame.
+constexpr uint32_t kFgMax = 3;   // the generated frames between two (MML_GFX_SHOW_MAX)
+static const char *const kFgColor = "fg_color";   // R8G8B8A8_UNORM, the back buffer's size
+static const char *const kFgOut = "fg_out";       // fg_out0..2: R8G8B8A8_UNORM, the back buffer's size
+static const char *const kFenceFgReady = "fgready";
+static const char *const kFenceFgDone = "fgdone";
+static const uint32_t kFgFormat = 28;              // R8G8B8A8_UNORM
+
+struct FgView {
+    uint64_t frame;             // F: the showing's number ("fgready" signalled with it when prepared)
+    uint64_t picture;           // the DLSS frame whose picture the back buffer shows
+    int64_t askQpc;
+    uint32_t outW, outH;        // the back buffer
+    uint32_t renderW, renderH;  // that frame's inputs (its slot's depth and motion vectors)
+    uint32_t slot;
+    uint32_t count;             // the frames to generate (1: 2x .. 3: 4x)
+    uint32_t prepared;          // 1: fg_color written and "fgready" signalled: the half signals "fgdone" with frame
+    uint32_t reset;             // 1: the frames before are unrelated (a cut, a new size)
+    uint32_t colorGen;          // fg_color's generation the pass drew into
+    uint32_t outGen[kFgMax];    // fg_out<i>'s generations it will read
+    uint32_t inGen;             // depth_in<slot>'s generation (the slot's set)
+    float clipToPrevClip[16], prevClipToClip[16], viewToClip[16], clipToView[16];   // row-major, row vectors (Direct3D's)
+    float camPos[4], camUp[4], camRight[4], camFwd[4];
+    float camNear, camFar, camFov, camAspect;
+    uint32_t pad;
+};
+
+struct FgDone {
+    uint64_t frame;             // the view taken last
+    uint32_t ok;                // 1: fg_out0..count-1 hold its pictures once "fgdone" reaches frame
+    uint32_t signalled;         // 1: "fgdone" will reach frame
+    uint32_t count;
+    uint32_t outGen[kFgMax];
+    uint32_t outW, outH;        // the size the half wants fg_color and fg_out at (0: none yet)
+    float workMs, gpuMs;
+    uint32_t pad;
+    char error[124];
+};
+
 enum : uint32_t {   // Status::stage (DLSS-NR's)
     kStarting = 0,      // waiting for the game's adapter (the graphics bridge's first frame)
     kNoVulkan = 1,      // no Vulkan device on that adapter (or vulkan-1.dll)
@@ -126,5 +169,7 @@ struct Status {
 static_assert(sizeof(View) == 104, "View's layout is shared by both halves");
 static_assert(sizeof(Done) == 240, "Done's layout is shared by both halves");
 static_assert(sizeof(Status) == 988, "Status's layout is shared by both halves");
+static_assert(sizeof(FgView) == 416, "FgView's layout is shared by both halves");
+static_assert(sizeof(FgDone) == 176, "FgDone's layout is shared by both halves");
 
 } // namespace dnr

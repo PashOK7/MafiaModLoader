@@ -444,6 +444,26 @@ typedef struct MmlSharedTexture {
     uint32_t format;        /* DXGI_FORMAT */
     uint32_t generation;    /* the half's: changes when it makes the texture anew */
 } MmlSharedTexture;
+/* The frame at its showing (gfx_show; docs/MODDING.md "Pictures shown between the frames"): the game's back buffer,
+ * whole (the HUD on it), on the graphics bridge's device, and up to MML_GFX_SHOW_MAX pictures a mod may draw to be
+ * shown before it (frame generation's in-between frames). The bridge shows them in turn by the game's own Present,
+ * spaced evenly over the time between the game's frames, the frame last. The pictures are shown from the game's
+ * thread, so the waits between them are the game's: they add frames only where the game has time to spare (a frame
+ * rate held by a limit, a vertical sync), not where it draws as fast as it can (interval_ms and work_ms tell which). */
+#define MML_GFX_SHOW_MAX 3
+typedef struct MmlGfxShow {
+    uint32_t size;                    /* sizeof(MmlGfxShow) of the loader that made it */
+    const MmlGfxFrame *frame;         /* the frame: its color the back buffer (B8G8R8A8: the HUD on it); its depth,
+                                         motion and camera as the frame's passes had them; target NULL */
+    uint32_t max_extra;               /* how many pictures may be drawn (MML_GFX_SHOW_MAX) */
+    void *extra[MML_GFX_SHOW_MAX];    /* ID3D11RenderTargetView, B8G8R8A8_UNORM at the frame's size: the pictures */
+    double interval_ms;               /* the time between the game's last frames shown (smoothed, the pictures' waits in it) */
+    double work_ms;                   /* of it, the time the game spent outside Present (its own work and its limit) */
+    uint64_t shows;                   /* the frames shown so far */
+} MmlGfxShow;
+/* returns how many pictures it drew into extra[0..n-1] (0: the frame alone), shown in that order before the frame */
+typedef int (*MmlGfxShowFn)(const MmlGfxShow *show, void *user);
+
 /* A fence of a mod's 64-bit half (side.h fence_create), opened on the graphics bridge's device (gfx_shared_fence):
  * the GPU of one half waits for what the other's queued, without the CPU. */
 typedef struct MmlSharedFence {
@@ -1744,6 +1764,11 @@ typedef struct MmlHost {
      * does not. A wait for a value the half never signals stalls the bridge's device: wait only for a value the half
      * said (a channel) it has queued. */
     int (*gfx_shared_fence)(MmlMod *mod, const char *name, MmlSharedFence *out);
+    /* gfx_show: fn called at each frame's showing (the game's Present) with the frame and the targets of pictures to
+     * show before it (MmlGfxShow); NULL takes it back (the mod's unload too). One mod at a time: the first that asks
+     * has it, another is refused (0) until it lets go. Needs the graphics bridge on (a mod with "gfx": true at the
+     * start). 1 done, 0 refused. Game thread. */
+    int (*gfx_show)(MmlMod *mod, MmlGfxShowFn fn, void *user);
 } MmlHost;
 
 #define MML_ZONE_PLAYER 0x1u

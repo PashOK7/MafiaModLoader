@@ -3451,3 +3451,27 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Seen too**: the player's build exits with an access violation in LS3D's drvClose (its index buffers' release, LS3DF+0x5BA73),
   the game's code alone on the stack (after the session's own mode switches); its trees are white with DLSS off as on
   (the 1.2 lab's are green): both to look at.
+
+## 2026-10-23: frames shown between the frames (gfx_show, DLSS-FG); a repeatable pass test; DLSS SR's smear measured
+
+- **Made (the SDK)**: mml.h `gfx_show` (MmlGfxShow): at the game's Present the bridge copies the back buffer (the HUD on
+  it) into a shared texture, the one mod that holds the showing draws up to 3 pictures, the bridge shows each by the
+  game's own Present spaced over the frames' interval, then the frame (`gfx.state` `show`: gap_ms, gap_error_ms). The
+  Rust crate's `gfx_show`. A mod holds it only while it uses it (whoever holds it costs a back buffer copy a frame).
+- **Made (dlss_nr)**: DLSS Frame Generation through NGX (nvngx_dlssg.dll; `frame_gen` 2x..4x, MFG up to the GPU's
+  MultiFrameCountMax): the back buffer into "fg_color", the shown DLSS frame's slot's depth and motion vectors, the
+  camera's clip matrices; its pictures drawn into the bridge's targets; its own thread, channels and fences in the
+  64-bit half. `fg_stand_in` blends the frames for a GPU without DLSS-FG (the RTX 3070 here: DLSS-FG itself not seen).
+- **Measured** (1.2 lab, its own 61.7 fps limit, the stand-in): the spacing within 0.5 ms of even, but the waits are
+  the game thread's: 2x showed 86 a second with the game at 43 fps, 4x 99.5 with the game at 25. To be useful the
+  pictures must be shown from another thread (the back buffer kept from the game: next).
+- **Made (a test)**: `screenshot.when {actor, at, normal}`: the shot taken in the Present of the frame the actor
+  crosses a plane. `tools/pass_test.py`: the owner's scene (the taxi driven past a still camera in the 1.2 lab), a shot
+  as it crosses the camera's line of sight, once per mode (off, SR modes, NR, the debug views), the car's crops side
+  by side: the car at the same place within 6 cm each run. dlss_nr's debug view 7 shows the motion vectors as DLSS
+  gets them; `mv_scale` scales them (a test).
+- **Found**: the motion vectors are right in size and sign (the check darkest at x1, the render size's the same), but
+  some of the car has none of its own (its front spare wheel and fender) and its shadow none (a decal: it keeps the
+  ground's): DLSS SR leaves a ghost behind the moving car (the friend's "smear"), most at Quality where the car itself
+  is sharp. The pipeline shows the world one frame behind (the car shifted a frame's travel, not blurred); the test
+  turns it off. To fix in the bridge's motion vectors: next.

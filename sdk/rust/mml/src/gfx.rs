@@ -232,6 +232,35 @@ pub struct ShaderRule<'a> {
 unsafe extern "C-unwind" fn on_pass<F: Fn(&GfxFrame)>(frame: *const sys::MmlGfxFrame, user: *mut c_void) {
     guard("a graphics pass", || (*(user as *const F))(&GfxFrame(&*frame)))
 }
+
+/// The frame at its showing (mml.h MmlGfxShow, gfx_show): the back buffer whole and the targets of the pictures to
+/// show before it.
+#[derive(Clone, Copy)]
+pub struct GfxShow<'a>(&'a sys::MmlGfxShow);
+impl<'a> GfxShow<'a> {
+    /// the frame: its color the back buffer (the HUD on it), its depth, motion and camera as the passes had them
+    pub fn frame(&self) -> GfxFrame<'a> {
+        GfxFrame(unsafe { &*self.0.frame })
+    }
+    /// the pictures' targets (ID3D11RenderTargetView, B8G8R8A8_UNORM at the frame's size)
+    pub fn extra(&self) -> &'a [*mut c_void] {
+        &self.0.extra[..(self.0.max_extra as usize).min(self.0.extra.len())]
+    }
+    /// the time between the game's last frames shown (ms, smoothed)
+    pub fn interval_ms(&self) -> f64 {
+        self.0.interval_ms
+    }
+    /// of it, the time the game spent outside Present (ms)
+    pub fn work_ms(&self) -> f64 {
+        self.0.work_ms
+    }
+    pub fn shows(&self) -> u64 {
+        self.0.shows
+    }
+}
+unsafe extern "C-unwind" fn on_show<F: Fn(&GfxShow) -> i32>(show: *const sys::MmlGfxShow, user: *mut c_void) -> c_int {
+    guard("its showing", || (*(user as *const F))(&GfxShow(&*show)) as c_int)
+}
 unsafe extern "C-unwind" fn on_view<F: Fn(&mut ViewCamera) -> bool>(cam: *mut sys::MmlViewCamera, user: *mut c_void) -> c_int {
     guard("a camera", || (*(user as *const F))(&mut *cam) as c_int)
 }
@@ -262,6 +291,16 @@ impl Host {
         let user = keep(f);
         let h = unsafe { f!(self, gfx_pass)(self.module, order, as_c!(on_pass::<F>, *const sys::MmlGfxFrame, *mut c_void), user) };
         track(K_PASS, user, h)
+    }
+    /// f at each frame's showing: it draws pictures into `show.extra()` and returns how many, shown in turn before
+    /// the frame, spaced over the frames' interval (frame generation); false: another mod has the showing. The
+    /// closure is kept for the mod's life (gfx_show_off stops its calls).
+    pub fn gfx_show<F: Fn(&GfxShow) -> i32 + 'static>(&self, f: F) -> bool {
+        let user = keep(f);
+        unsafe { f!(self, gfx_show)(self.module, as_c!(on_show::<F>, *const sys::MmlGfxShow, *mut c_void; c_int), user) != 0 }
+    }
+    pub fn gfx_show_off(&self) {
+        unsafe { f!(self, gfx_show)(self.module, None, ptr::null_mut()) };
     }
     pub fn gfx_pass_remove(&self, handle: i32) {
         unsafe { f!(self, gfx_pass_remove)(self.module, handle) };

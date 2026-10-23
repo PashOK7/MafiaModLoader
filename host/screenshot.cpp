@@ -12,7 +12,9 @@
 // row first (alpha 255).
 //
 // Bridge methods (game thread): screenshot (asks for the next frame presented; returns the shot's id),
-// screenshot.state {id} (done, ok or the error, the file, the size).
+// screenshot.when {actor, at, normal} (the frame presented when the actor crosses a plane: its id; a repeatable test
+// takes its shot at one place of a drive, not at whatever moment a call arrives), screenshot.state {id} (done, ok or
+// the error, the file, the size; a crossing's actor place and its distance past the plane).
 #include "host.h"
 #include <d3d9.h>
 #include <atomic>
@@ -20,6 +22,7 @@
 #include <mutex>
 #include "json.hpp"
 #include "mml/game/game_build.h"
+#include "mml/game/game.h"
 
 using json = nlohmann::json;
 
@@ -41,8 +44,18 @@ PresentFn g_present;
 std::atomic<bool> g_hooked;
 std::mutex g_mx;
 int g_nextId = 1, g_wantId = 0;   // the shot asked for (0: none)
-struct Result { int id; bool ok; std::string path, error; int width, height; };
+struct Result { int id; bool ok; std::string path, error; int width, height; bool crossing; float pos[3], past; };
 std::vector<Result> g_results;    // the last few
+
+// screenshot.when: the shot taken in the Present of the frame in which the actor's world place passes the plane (at,
+// normal) from the side it was on when armed; given up after `until`
+struct Crossing {
+    int id = 0;
+    void *actor = nullptr;
+    float at[3], normal[3];
+    int side = 0;                 // the side it was on (0: not seen yet)
+    ULONGLONG until = 0;
+} g_cross;
 
 std::string WriteShot(int id, uint32_t w, uint32_t h, const uint8_t *bits, int pitch) {
     std::string dir = MmlDir() + "shots\\";
@@ -208,24 +221,52 @@ DWORD SafeCapture(void *dev, int id, int *w, int *h, std::string *err) {
     __except (EXCEPTION_EXECUTE_HANDLER) { return GetExceptionCode(); }
 }
 
+void ReadPlace(void *actor, V3 *out) { *out = game::ActorWorldPos(actor); }
+DWORD SafePlace(void *actor, V3 *out) {
+    __try { ReadPlace(actor, out); return 0; }
+    __except (EXCEPTION_EXECUTE_HANDLER) { return GetExceptionCode(); }
+}
+
 HRESULT __stdcall PresentHook(void *dev, const RECT *src, const RECT *dst, HWND wnd, const void *dirty) {
     RenderPresent(dev);   // (mods' drawing over the whole frame first: it is in the shot)
     int id = 0;
+    bool crossing = false;
+    V3 place{};
+    float past = 0;
     {
         std::lock_guard<std::mutex> lk(g_mx);
         id = g_wantId;
         g_wantId = 0;
+        if (g_cross.id && !id) {   // (the crossing's plane, each frame)
+            const Crossing &c = g_cross;
+            std::string err;
+            if (GetTickCount64() > c.until) err = "the actor did not cross the plane in time";
+            else if (DWORD ex = SafePlace(c.actor, &place)) err = "the actor could not be read (exception " + std::to_string(ex) + ")";
+            if (!err.empty()) {
+                g_results.push_back({c.id, false, "", err, 0, 0, false, {}, 0});
+                if (g_results.size() > 16) g_results.erase(g_results.begin());
+                g_cross = Crossing{};
+            } else {
+                past = (place.x - c.at[0]) * c.normal[0] + (place.y - c.at[1]) * c.normal[1] + (place.z - c.at[2]) * c.normal[2];
+                int side = past >= 0 ? 1 : -1;
+                if (!g_cross.side) g_cross.side = side;
+                else if (side != g_cross.side) {
+                    id = g_cross.id, crossing = true;
+                    g_cross = Crossing{};
+                }
+            }
+        }
     }
     if (id) {
         int w = 0, h = 0;
         std::string err;
         if (DWORD ex = SafeCapture(dev, id, &w, &h, &err)) err = "a fault while copying the frame (exception " + std::to_string(ex) + ")";
         std::lock_guard<std::mutex> lk(g_mx);
-        g_results.push_back({id, err.empty(), MmlDir() + "shots\\" + std::to_string(id) + ".bgra", err, w, h});
+        g_results.push_back({id, err.empty(), MmlDir() + "shots\\" + std::to_string(id) + ".bgra", err, w, h, crossing, {place.x, place.y, place.z}, past});
         if (g_results.size() > 16) g_results.erase(g_results.begin());
     }
     ProfPresentBegin();   // (the frame's record: its end, the time Present blocks)
-    HRESULT hr = g_present(dev, src, dst, wnd, dirty);
+    HRESULT hr = GfxShow(dev, [&] { return g_present(dev, src, dst, wnd, dirty); });   // (a mod's pictures before it: gfx_show)
     ProfPresentEnd(hr);
     return hr;
 }
@@ -257,7 +298,7 @@ bool ScreenshotHookPresent(std::string *err) {
 
 // Game thread (the bridge's jobs run there): hooking is done on the thread that renders.
 bool ScreenshotMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok) {
-    if (method != "screenshot" && method != "screenshot.state") return false;
+    if (method != "screenshot" && method != "screenshot.state" && method != "screenshot.when") return false;
     *ok = false;
     if (method == "screenshot") {
         std::string err;
@@ -270,11 +311,37 @@ bool ScreenshotMethod(const std::string &method, const std::string &paramsJson, 
     }
     json p;
     try { p = json::parse(paramsJson.empty() || paramsJson == "null" ? "{}" : paramsJson); } catch (...) {}
+    if (method == "screenshot.when") {
+        std::string err;
+        void *actor = nullptr;
+        auto v3 = [&](const char *k, float *o) {
+            if (!p.is_object() || !p.contains(k) || !p[k].is_array() || p[k].size() != 3) return false;
+            for (int i = 0; i < 3; i++) o[i] = p[k][i].is_number() ? p[k][i].get<float>() : 0;
+            return true;
+        };
+        Crossing c;
+        if (!EnsureHooked(&err)) { *reply = "screenshot.when: " + err; return true; }
+        if (!p.is_object() || !p.contains("actor") || !p["actor"].is_string() || !ParseActor(p["actor"].get<std::string>(), &actor, &err) || !actor) {
+            *reply = "screenshot.when: actor: " + (err.empty() ? std::string("an actor (\"player\", \"car\", an address)") : err);
+            return true;
+        }
+        if (!v3("at", c.at) || !v3("normal", c.normal)) { *reply = "screenshot.when: at and normal: [x, y, z] each"; return true; }
+        c.actor = actor;
+        c.until = GetTickCount64() + static_cast<ULONGLONG>(p.value("timeout_ms", 20000));
+        std::lock_guard<std::mutex> lk(g_mx);
+        c.id = g_nextId++;
+        g_cross = c;   // (one crossing at a time: a new one replaces it)
+        *reply = json{{"id", c.id}}.dump(-1, ' ', false, json::error_handler_t::replace);
+        *ok = true;
+        return true;
+    }
     int id = p.is_object() ? p.value("id", 0) : 0;
     std::lock_guard<std::mutex> lk(g_mx);
     for (const Result &r : g_results)
         if (r.id == id) {
-            *reply = json{{"id", id}, {"done", true}, {"ok", r.ok}, {"path", r.path}, {"error", r.error}, {"width", r.width}, {"height", r.height}}.dump(-1, ' ', false, json::error_handler_t::replace);
+            json j{{"id", id}, {"done", true}, {"ok", r.ok}, {"path", r.path}, {"error", r.error}, {"width", r.width}, {"height", r.height}};
+            if (r.crossing) j["crossing"] = {{"pos", {r.pos[0], r.pos[1], r.pos[2]}}, {"past", r.past}};
+            *reply = j.dump(-1, ' ', false, json::error_handler_t::replace);
             *ok = true;
             return true;
         }

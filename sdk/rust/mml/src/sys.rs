@@ -38,6 +38,7 @@ pub const MML_PULSE_SQUASH: u32 = 3;
 pub const MML_GFX_UI_OFF: u32 = 0;
 pub const MML_GFX_UI_TAKE: u32 = 1;
 pub const MML_GFX_UI_HIDE: u32 = 2;
+pub const MML_GFX_SHOW_MAX: u32 = 3;
 pub const MML_VIEW_CLIP: u32 = 1;
 pub const MML_VIEW_OWN_SECTOR: u32 = 2;
 pub const MML_GAMECAM_BEHIND: u32 = 1;
@@ -964,6 +965,47 @@ impl Default for MmlSharedTexture {
         }
     }
 }
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct MmlGfxShow {
+    pub size: u32,
+    pub frame: *const MmlGfxFrame,
+    pub max_extra: u32,
+    pub extra: [*mut ::core::ffi::c_void; 3usize],
+    pub interval_ms: f64,
+    pub work_ms: f64,
+    pub shows: u64,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of MmlGfxShow"][::core::mem::size_of::<MmlGfxShow>() - 48usize];
+    ["Alignment of MmlGfxShow"][::core::mem::align_of::<MmlGfxShow>() - 8usize];
+    ["Offset of field: MmlGfxShow::size"][::core::mem::offset_of!(MmlGfxShow, size) - 0usize];
+    ["Offset of field: MmlGfxShow::frame"][::core::mem::offset_of!(MmlGfxShow, frame) - 4usize];
+    ["Offset of field: MmlGfxShow::max_extra"]
+        [::core::mem::offset_of!(MmlGfxShow, max_extra) - 8usize];
+    ["Offset of field: MmlGfxShow::extra"][::core::mem::offset_of!(MmlGfxShow, extra) - 12usize];
+    ["Offset of field: MmlGfxShow::interval_ms"]
+        [::core::mem::offset_of!(MmlGfxShow, interval_ms) - 24usize];
+    ["Offset of field: MmlGfxShow::work_ms"]
+        [::core::mem::offset_of!(MmlGfxShow, work_ms) - 32usize];
+    ["Offset of field: MmlGfxShow::shows"][::core::mem::offset_of!(MmlGfxShow, shows) - 40usize];
+};
+impl Default for MmlGfxShow {
+    fn default() -> Self {
+        let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::core::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+pub type MmlGfxShowFn = ::core::option::Option<
+    unsafe extern "C" fn(
+        show: *const MmlGfxShow,
+        user: *mut ::core::ffi::c_void,
+    ) -> ::core::ffi::c_int,
+>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct MmlSharedFence {
@@ -3665,10 +3707,17 @@ pub struct MmlHost {
             out: *mut MmlSharedFence,
         ) -> ::core::ffi::c_int,
     >,
+    pub gfx_show: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            fn_: MmlGfxShowFn,
+            user: *mut ::core::ffi::c_void,
+        ) -> ::core::ffi::c_int,
+    >,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 800usize];
+    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 804usize];
     ["Alignment of MmlHost"][::core::mem::align_of::<MmlHost>() - 4usize];
     ["Offset of field: MmlHost::size"][::core::mem::offset_of!(MmlHost, size) - 0usize];
     ["Offset of field: MmlHost::api_version"]
@@ -4012,6 +4061,7 @@ const _: () = {
         [::core::mem::offset_of!(MmlHost, scale_beat) - 792usize];
     ["Offset of field: MmlHost::gfx_shared_fence"]
         [::core::mem::offset_of!(MmlHost, gfx_shared_fence) - 796usize];
+    ["Offset of field: MmlHost::gfx_show"][::core::mem::offset_of!(MmlHost, gfx_show) - 800usize];
 };
 pub type MmlModLoadFn = ::core::option::Option<
     unsafe extern "C" fn(host: *const MmlHost, mod_: *mut MmlMod) -> ::core::ffi::c_int,

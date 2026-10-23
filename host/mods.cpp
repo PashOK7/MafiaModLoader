@@ -616,6 +616,7 @@ uint32_t H_ChannelRead(MmlChannel *ch, void *data, uint32_t cap, uint64_t *versi
 uint64_t H_ChannelWait(MmlChannel *ch, uint64_t after, uint32_t timeoutMs) { return SidecarChannelWait(ch, after, timeoutMs); }
 int H_GfxSharedTexture(MmlMod *m, const char *name, MmlSharedTexture *out) { return Alive(m) ? GfxSharedTexture(m, name, out) : 0; }
 int H_GfxSharedFence(MmlMod *m, const char *name, MmlSharedFence *out) { return Alive(m) ? GfxSharedFence(m, name, out) : 0; }
+int H_GfxShow(MmlMod *m, MmlGfxShowFn fn, void *user) { return Alive(m) ? GfxShowSet(m, fn, user) : 0; }
 int H_ZoneAdd(MmlMod *m, const float pos[3], float radius, void *frame, MmlZoneFn fn, void *user) {
     std::string err;
     int id = Alive(m) && fn ? ZoneAdd(m, pos, radius, frame, fn, user, &err) : 0;
@@ -1363,6 +1364,7 @@ void ModsInit() {
     g_host.actor_scale = H_ActorScale;
     g_host.scale_beat = H_ScaleBeat;
     g_host.gfx_shared_fence = H_GfxSharedFence;
+    g_host.gfx_show = H_GfxShow;
     LiveCleanAll();
     Scan();
     LoadEnabled();

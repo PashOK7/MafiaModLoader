@@ -10,6 +10,10 @@
                            // a quarter of the pixels), DLSS SR brings its picture to the frame's: the faster, the softer
   "pipeline": true,        // DLSS works on a frame while the game draws the next (the picture a frame behind); off:
                            // each frame waits for its own (the frame rate is DLSS's then)
+  "frame_gen": 0,          // DLSS Frame Generation (an RTX 40 or newer and nvngx_dlssg.dll): the frames made between two,
+                           // 0 off, 1 2x, 2 3x, 3 4x (3x and 4x: an RTX 50). They are shown from the game's thread, spaced
+                           // over its frame: frames are added where the game waits anyway (its 62.5 fps limit, a vertical
+                           // sync), not where it draws as fast as it can
   "intensity": 1.0,        // InIntensity: how much of DLSS-NR's picture (0 the game's own)
   "tone": 0.3,             // InLocalToneStrength: how much it may change the local tones (light and shade)
   "structure": 0.7,        // InLocalStructureStrength: how much it may change the local structure (detail)
@@ -26,6 +30,7 @@
   "preset": 2,             // NVSDK_NGX_DLSSNR_Hint_Render_Preset at the feature's creation: 0 default, 1 A, 2 B (RTX Remix's)
   "sr_preset": 0,          // DLSS SR's render preset: 0 the DLL's own for each mode, 10 J, 11 K, 12 L, 13 M
   "jitter_sign": -1,       // the jitter as DLSS takes it (InJitterOffset): the inputs' sample offset times this
+  "fg_stand_in": false,    // frame generation's showing tested on any GPU: the frames between two are the two blended
   "wait_ms": 250,          // how long a frame waits for the 64-bit half's answer at most (late frames show the game's)
   "messages": true,        // a line in the game's console when it is switched, and why it cannot run
   "debug": 0               // 0 DLSS-NR's picture; what it is given: 1 the motion vectors, 2 the depth, 3 the mask;

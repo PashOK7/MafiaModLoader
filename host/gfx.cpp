@@ -36,6 +36,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <functional>
 #include <memory>
 #include <vector>
 #include "json.hpp"
@@ -553,6 +554,7 @@ int UiMode() {
     return m;
 }
 
+void ReleaseShow();   // (the showing's textures: below)
 void ReleaseAll() {
     bool wasSwapped = g_swapped;
     g_swapped = false;   // (first: hkSetDepthStencil binds the game's own then)
@@ -561,6 +563,7 @@ void ReleaseAll() {
     g_lastGameDS = nullptr;
     g_pending9 = g_pending11 = false;
     g_lateRun = 0;
+    ReleaseShow();
     ReleaseSized();
     for (auto &v : g_views) ReleaseView(*v);
     ReleaseTimers();
@@ -1364,7 +1367,224 @@ void *WINAPI hkDirect3DCreate8(UINT sdk) {
     }
     return d3d;
 }
+
+// ---- the frame at its showing (gfx_show): a mod's pictures shown before the frame by the game's own Present, spaced
+// evenly over the time between the game's frames (frame generation's in-between frames). The back buffer, whole (the
+// HUD on it), is copied into a texture both devices share; the mod draws its pictures on the bridge's device into
+// targets the bridge shares too; each is copied into the back buffer and shown, a wait between them, then the frame
+// itself (copied back: the back buffer's content is gone after a Present). The waits are on the game's thread (only it
+// may use the device and its back buffer): the game's frame takes them in.
+struct ShowFn { MmlMod *mod = nullptr; MmlGfxShowFn fn = nullptr; void *user = nullptr; } g_showFn;
+IDirect3DTexture9 *g_show9, *g_extra9[MML_GFX_SHOW_MAX];
+IDirect3DSurface9 *g_showSurf9, *g_extraSurf9[MML_GFX_SHOW_MAX];
+ID3D11Texture2D *g_show11, *g_extra11[MML_GFX_SHOW_MAX];
+ID3D11ShaderResourceView *g_showSRV;
+ID3D11RenderTargetView *g_extraRTV[MML_GFX_SHOW_MAX];
+gfxvk::Link *g_showLink, *g_extraLink[MML_GFX_SHOW_MAX];
+UINT g_showW, g_showH;
+bool g_showTried;                  // made (or failed) at this size: a failure is not tried again every frame
+std::string g_showError;
+double g_showStart, g_showEnd;     // the last Present's start and end (ms)
+double g_interval, g_work;         // smoothed: the time between the game's Presents, and of it the time outside them
+double g_showMs;                   // smoothed: the bridge's own time on a frame with pictures (the copies, the mod's, the waits for the devices)
+uint64_t g_shows, g_showFrames, g_showPictures, g_showLate;
+HANDLE g_showTimer;
+double g_lastShown;                // when the last picture or frame was handed to Present (ms)
+double g_gap, g_gapErr;            // smoothed: the time between two things shown, and its distance from the spacing meant
+
+void ReleaseShow() {
+    gfxvk::Free(g_showLink);
+    SafeRelease(g_showSRV); SafeRelease(g_show11); SafeRelease(g_showSurf9); SafeRelease(g_show9);
+    for (int i = 0; i < MML_GFX_SHOW_MAX; i++) {
+        gfxvk::Free(g_extraLink[i]);
+        SafeRelease(g_extraRTV[i]); SafeRelease(g_extra11[i]); SafeRelease(g_extraSurf9[i]); SafeRelease(g_extra9[i]);
+    }
+    g_showW = g_showH = 0;
+    g_showTried = false;
+}
+
+// The shared textures at the back buffer's size: the frame (Direct3D 9 writes, 11 reads) and the pictures (11 writes,
+// 9 reads), A8R8G8B8 (B8G8R8A8_UNORM on Direct3D 11).
+bool EnsureShow(UINT w, UINT h) {
+    if (w == g_showW && h == g_showH && g_showTried) return g_showSRV != nullptr;
+    ReleaseShow();
+    g_showW = w, g_showH = h;
+    g_showTried = true;
+    std::string why;
+    bool ok = MakePair(w, h, D3DFMT_A8R8G8B8, &g_show9, &g_show11, &g_showLink, &why) &&
+              SUCCEEDED(g_show9->GetSurfaceLevel(0, &g_showSurf9)) && SUCCEEDED(g_dev11->CreateShaderResourceView(g_show11, nullptr, &g_showSRV));
+    for (int i = 0; ok && i < MML_GFX_SHOW_MAX; i++)
+        ok = MakePair(w, h, D3DFMT_A8R8G8B8, &g_extra9[i], &g_extra11[i], &g_extraLink[i], &why) &&
+             SUCCEEDED(g_extra9[i]->GetSurfaceLevel(0, &g_extraSurf9[i])) &&
+             SUCCEEDED(g_dev11->CreateRenderTargetView(g_extra11[i], nullptr, &g_extraRTV[i]));
+    if (!ok) {
+        g_showError = "the showing's shared textures: " + (why.empty() ? std::string("a view was refused") : why);
+        HWARN("gfx: %s", g_showError.c_str());
+        ReleaseShow();
+        g_showW = w, g_showH = h;
+        g_showTried = true;
+        return false;
+    }
+    g_showError.clear();
+    HLOG("gfx: the showing at %ux%u: the frame and %d pictures shared", w, h, MML_GFX_SHOW_MAX);
+    return true;
+}
+
+// Until targetMs (NowMs's clock): a high-resolution waitable timer for the most of it, the last half millisecond spun.
+void WaitUntil(double targetMs) {
+    double left = targetMs - NowMs();
+    if (left <= 0) return;
+    if (!g_showTimer) g_showTimer = CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+    if (g_showTimer && left > 1.0) {
+        LARGE_INTEGER due;
+        due.QuadPart = -static_cast<LONGLONG>((left - 0.5) * 10000.0);   // (100 ns units, relative)
+        if (SetWaitableTimer(g_showTimer, &due, 0, nullptr, nullptr, FALSE)) WaitForSingleObject(g_showTimer, 1000);
+    }
+    while (NowMs() < targetMs) YieldProcessor();
+}
+
+struct ShowCall { const MmlGfxShow *show; int n; };
+void CallShow(void *p) {
+    auto *c = static_cast<ShowCall *>(p);
+    c->n = g_showFn.fn(c->show, g_showFn.user);
+}
+
+// The back buffer to the mod and its pictures back: how many to show before the frame (0: the frame alone).
+int ShowPrepare() {
+    double t0 = NowMs();
+    IDirect3DSurface9 *bb = nullptr;
+    if (FAILED(g_dev9->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &bb)) || !bb) return 0;
+    D3DSURFACE_DESC d{};
+    bb->GetDesc(&d);
+    if (d.MultiSampleType != D3DMULTISAMPLE_NONE || !EnsureShow(d.Width, d.Height)) { SafeRelease(bb); return 0; }
+    g_frameError.clear();
+    g_frameLate = false;
+    bool ok = Settled() && SUCCEEDED(g_dev9->StretchRect(bb, nullptr, g_showSurf9, nullptr, D3DTEXF_NONE)) && Wait9() &&
+              Hand(true, {g_showLink});
+    SafeRelease(bb);
+    if (!ok) { g_showLate++; return 0; }
+    // the mod's pictures, its state as the passes have it (the frame's constants, samplers, full-screen shader)
+    g_ctx->UpdateSubresource(g_frameCB, 0, nullptr, &g_k, 0, 0);
+    MmlGfxFrame f{};
+    f.size = sizeof f;
+    f.device = g_dev11;
+    f.context = g_ctx;
+    f.generation = g_generation;
+    f.k = &g_k;
+    f.constants = g_frameCB;
+    f.depth = d.Width == g_w && d.Height == g_h ? g_depthSRV : nullptr;
+    f.color = g_showSRV;
+    f.point = g_point;
+    f.linear = g_linear;
+    f.target = nullptr;
+    f.full_screen = g_vsFull;
+    f.width = d.Width;
+    f.height = d.Height;
+    memcpy(f.view, g_viewM, sizeof f.view);
+    memcpy(f.proj, g_projM, sizeof f.proj);
+    ID3D11ShaderResourceView *motion = g_motionReady && f.depth ? g_motionSRV : nullptr;
+    f.motion = motion;
+    MmlGfxShow s{};
+    s.size = sizeof s;
+    s.frame = &f;
+    s.max_extra = MML_GFX_SHOW_MAX;
+    for (int i = 0; i < MML_GFX_SHOW_MAX; i++) s.extra[i] = g_extraRTV[i];
+    s.interval_ms = g_interval;
+    s.work_ms = g_work;
+    s.shows = g_shows;
+    D3D11_VIEWPORT vp{0, 0, static_cast<float>(d.Width), static_cast<float>(d.Height), 0, 1};
+    g_ctx->RSSetViewports(1, &vp);
+    ID3D11ShaderResourceView *srv[4] = {static_cast<ID3D11ShaderResourceView *>(f.depth), g_showSRV, nullptr, motion};
+    ID3D11SamplerState *smp[2] = {g_point, g_linear};
+    g_ctx->PSSetShaderResources(0, 4, srv);
+    g_ctx->PSSetSamplers(0, 2, smp);
+    g_ctx->PSSetConstantBuffers(0, 1, &g_frameCB);
+    g_ctx->VSSetShader(g_vsFull, nullptr, 0);
+    g_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    g_ctx->IASetInputLayout(nullptr);
+    ShowCall call{&s, 0};
+    g_inPasses = true;   // (gfx_shared_texture and gfx_shared_fence answer inside it, as in a pass)
+    ModCall(g_showFn.mod, CallShow, &call, "its showing (gfx_show)");
+    g_inPasses = false;
+    int n = std::clamp(call.n, 0, MML_GFX_SHOW_MAX);
+    g_ctx->ClearState();   // the shared textures are Direct3D 9's again
+    std::vector<gfxvk::Link *> back;
+    for (int i = 0; i < n; i++) back.push_back(g_extraLink[i]);
+    ok = Wait11();
+    if (ok && gfxvk::On() && n) {
+        std::string why;
+        ok = gfxvk::To9(back.data(), n, &why);
+        if (!ok) g_frameError = "the pictures' copy on DXVK's queue: " + why, g_frameLate = gfxvk::Busy();
+    }
+    if (!ok) { g_showLate++; return 0; }
+    double ms = NowMs() - t0;
+    g_showMs = g_showMs > 0 ? g_showMs * 0.95 + ms * 0.05 : ms;
+    return n;
+}
+
+// The pictures, then the frame, each copied into the back buffer and shown, spaced evenly over the frames' interval.
+HRESULT ShowPictures(int n, const std::function<HRESULT()> &present) {
+    double interval = std::clamp(g_interval > 0 ? g_interval : 16.7, 2.0, 100.0);
+    double slot = interval / (n + 1);
+    double t0 = NowMs();
+    HRESULT hr = S_OK;
+    for (int i = 0; i <= n; i++) {
+        if (i) WaitUntil(t0 + slot * i);
+        IDirect3DSurface9 *bb = nullptr;
+        if (SUCCEEDED(g_dev9->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &bb)) && bb) {
+            g_quiet++;
+            g_dev9->StretchRect(i < n ? g_extraSurf9[i] : g_showSurf9, nullptr, bb, nullptr, D3DTEXF_NONE);
+            g_quiet--;
+            bb->Release();
+        }
+        double at = NowMs();
+        if (g_lastShown > 0 && at - g_lastShown < 250) {   // (the spacing measured: each one shown against the one before)
+            double gap = at - g_lastShown, err = std::fabs(gap - slot);
+            g_gap = g_gap > 0 ? g_gap * 0.98 + gap * 0.02 : gap;
+            g_gapErr = g_gapErr > 0 ? g_gapErr * 0.98 + err * 0.02 : err;
+        }
+        g_lastShown = at;
+        hr = present();
+        if (i < n) g_showPictures++;
+    }
+    g_showFrames++;
+    return hr;
+}
 } // namespace
+
+// The game's Present (screenshot.cpp's hook): the mod's pictures before the frame when one asked (gfx_show).
+HRESULT GfxShow(void *dev8, const std::function<HRESULT()> &present) {
+    double start = NowMs();
+    if (g_showStart > 0) {
+        double dt = start - g_showStart, work = start - g_showEnd;
+        if (dt > 0 && dt < 500) {
+            g_interval = g_interval > 0 ? g_interval * 0.9 + dt * 0.1 : dt;
+            g_work = g_work > 0 ? g_work * 0.9 + work * 0.1 : work;
+        }
+    }
+    g_showStart = start;
+    int n = 0;
+    if (g_showFn.fn && ModAlive(g_showFn.mod) && !g_failed && g_dev11 && g_dev9 && dev8 == g_d3d8 && g_frames) {
+        g_quiet++;
+        n = ShowPrepare();
+        g_quiet--;
+    }
+    if (n <= 0) g_lastShown = 0;   // (a frame alone: the spacing is not measured across it)
+    HRESULT hr = n > 0 ? ShowPictures(n, present) : present();
+    g_showEnd = NowMs();
+    g_shows++;
+    return hr;
+}
+
+int GfxShowSet(MmlMod *mod, MmlGfxShowFn fn, void *user) {
+    if (!fn) {
+        if (g_showFn.mod == mod) g_showFn = ShowFn{};
+        return 1;
+    }
+    if (g_showFn.fn && g_showFn.mod != mod && ModAlive(g_showFn.mod)) return 0;
+    g_showFn = ShowFn{mod, fn, user};
+    return 1;
+}
 
 void GfxInit() {
     QueryPerformanceFrequency(&g_freq);
@@ -1411,6 +1631,7 @@ void GfxRemove(MmlMod *mod) {
     for (auto &f : g_sideFences) if (f.mod == mod) SafeRelease(f.fence);
     g_sideFences.erase(std::remove_if(g_sideFences.begin(), g_sideFences.end(), [&](const SideFence &f) { return f.mod == mod; }),
                        g_sideFences.end());
+    GfxShowSet(mod, nullptr, nullptr);
 }
 
 // A 64-bit half's fence on this device (Direct3D 11.4), for its 32-bit half's pass: 1 there (out filled), 0 not (yet).
@@ -1861,7 +2082,11 @@ bool GfxMethod(const std::string &method, const std::string &, std::string *repl
                 {"ms", {{"copy_9", r2(g_ms9)}, {"passes_11", r2(g_ms11)}, {"wait_11", r2(g_wait11)}, {"all", r2(g_msAll)},
                         {"gpu_passes", r2(g_gpuPasses)}}},
                 {"following_state", g_stateHooked}, {"multisampling", g_msaa},
-                {"ui", {{"mode", UiMode()}, {"frames", g_uiFrames}}}};
+                {"ui", {{"mode", UiMode()}, {"frames", g_uiFrames}}},
+                {"show", {{"mod", g_showFn.fn ? ModIdOf(g_showFn.mod) : std::string()}, {"shows", g_shows}, {"frames", g_showFrames},
+                          {"pictures", g_showPictures}, {"late", g_showLate}, {"interval_ms", r2(g_interval)}, {"work_ms", r2(g_work)},
+                          {"ms", r2(g_showMs)}, {"gap_ms", r2(g_gap)}, {"gap_error_ms", r2(g_gapErr)}, {"size", {g_showW, g_showH}},
+                          {"error", g_showError}}}};
     json views = json::array();
     for (auto &v : g_views)
         views.push_back({{"handle", v->handle}, {"size", {v->w, v->h}}, {"frames", v->info.frames}, {"fresh", v->info.fresh != 0},

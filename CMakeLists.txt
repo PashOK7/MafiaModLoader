@@ -312,7 +312,9 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     # a mod in two halves: this 32-bit one hands the frame to NVIDIA's DLSS 5 Neural Rendering in its 64-bit half and
     # shows DLSS-NR's picture as the frame
     mml_add_mod(dlss_nr ${CMAKE_SOURCE_DIR}/mods/examples/dlss_nr mods/examples/dlss_nr/dlss_nr.cpp
-        SHADERS dlss_nr.hlsl:PsPrepare:ps_5_0 dlss_nr.hlsl:PsComposite:ps_5_0 dlss_nr.hlsl:PsDebug:ps_5_0)
+        SHADERS dlss_nr.hlsl:PsPrepare:ps_5_0 dlss_nr.hlsl:PsComposite:ps_5_0 dlss_nr.hlsl:PsDebug:ps_5_0
+                dlss_nr.hlsl:PsCopyIn:ps_5_0 dlss_nr.hlsl:PsCopyScene:ps_5_0 dlss_nr.hlsl:PsBlend:ps_5_0
+                dlss_nr.hlsl:PsMvecIn:ps_5_0)
     target_include_directories(mod_dlss_nr PRIVATE third_party/json)
     target_link_libraries(mod_dlss_nr PRIVATE d3d11)
     mml_add_mod(puppet ${CMAKE_SOURCE_DIR}/mods/examples/puppet mods/examples/puppet/puppet.cpp)

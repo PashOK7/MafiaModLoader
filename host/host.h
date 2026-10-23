@@ -16,6 +16,7 @@
 #include <intrin.h>
 #include <cstdint>
 #include <cstdio>
+#include <functional>
 #include <string>
 #include <vector>
 #include "mml/mml.h"
@@ -317,6 +318,9 @@ uint64_t SidecarChannelWait(MmlChannel *ch, uint64_t after, uint32_t timeoutMs);
 void SidecarChannelsForget(MmlMod *mod);   // (the mod's unload) its channels closed
 int GfxSharedTexture(MmlMod *mod, const char *name, MmlSharedTexture *out);   // (gfx.cpp; inside a graphics pass)
 int GfxSharedFence(MmlMod *mod, const char *name, MmlSharedFence *out);       // (gfx.cpp; inside a graphics pass)
+int GfxShowSet(MmlMod *mod, MmlGfxShowFn fn, void *user);                     // (gfx.cpp) gfx_show
+// The game's Present (screenshot.cpp's hook): present() shows the back buffer; a mod's pictures (gfx_show) go first.
+HRESULT GfxShow(void *dev8, const std::function<HRESULT()> &present);
 bool SidecarWants(const char *type);
 void SidecarShutdown();
 bool SidecarMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);

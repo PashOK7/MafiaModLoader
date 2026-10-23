@@ -33,13 +33,17 @@
 #include "shaders/PsPrepare.h"
 #include "shaders/PsComposite.h"
 #include "shaders/PsDebug.h"
+#include "shaders/PsCopyIn.h"
+#include "shaders/PsCopyScene.h"
+#include "shaders/PsBlend.h"
+#include "shaders/PsMvecIn.h"
 
 using nlohmann::json;
 
 namespace {
 const MmlHost *H;
 MmlMod *M;
-MmlChannel *g_viewCh, *g_doneCh, *g_statusCh;
+MmlChannel *g_viewCh, *g_doneCh, *g_statusCh, *g_fgViewCh, *g_fgDoneCh;
 double g_freqMs;
 uint64_t g_frame;
 
@@ -66,11 +70,15 @@ struct Settings {
                              // the 64-bit half untouched, or through DLSS SR alone), 5 the motion vectors checked (the
                              // frame before moved by them, against this one), 6 the same without them
     uint32_t waitMs = 250;
+    uint32_t fg = 0;         // frame generation: the frames made between two (0 off, 1 2x, 2 3x, 3 4x)
+    bool fgStandIn = false;  // the showing tested without DLSS-FG: the frames between two blended (any GPU)
+    float mvScale = 1;       // the motion vectors scaled (a test of their size: tools/pass_test.py)
 } S;
 
 float Number(const char *key, double def, float lo, float hi) { return std::clamp(float(H->config_number(M, key, def)), lo, hi); }
 
 void KeyToggle(void *);
+void UpdateShow();
 void ReadSettings() {
     Settings s;
     s.on = Number("on", 1, 0, 1) >= 0.5f;
@@ -91,10 +99,14 @@ void ReadSettings() {
     s.splitAt = Number("split_at", 0.5, 0.05f, 0.95f);
     s.messages = Number("messages", 1, 0, 1) >= 0.5f;
     s.jitterSign = Number("jitter_sign", -1, -1, 1) < 0 ? -1.f : 1.f;
-    s.debug = uint32_t(std::lround(Number("debug", 0, 0, 6)));
+    s.debug = uint32_t(std::lround(Number("debug", 0, 0, 7)));
     s.waitMs = uint32_t(std::lround(Number("wait_ms", 250, 10, 2000)));
+    s.fg = uint32_t(std::lround(Number("frame_gen", 0, 0, dnr::kFgMax)));
+    s.fgStandIn = Number("fg_stand_in", 0, 0, 1) >= 0.5f;
+    s.mvScale = Number("mv_scale", 1, -4, 4);
     S = s;
     H->hotkey(M, S.hotkey.c_str(), KeyToggle, nullptr);   // (the same function again: the combination replaced)
+    UpdateShow();
 }
 
 const char *UpscaleName(uint32_t u) {
@@ -212,7 +224,13 @@ struct Consts {   // dlss_nr.hlsl's DlssNr (b1)
 };
 struct Gfx {
     unsigned generation = 0;
-    ID3D11PixelShader *prepare = nullptr, *composite = nullptr, *debug = nullptr;
+    ID3D11PixelShader *prepare = nullptr, *composite = nullptr, *debug = nullptr, *copyIn = nullptr, *copyScene = nullptr, *blend = nullptr;
+    ID3D11PixelShader *mvecIn = nullptr;
+    ID3D11Texture2D *fgColor = nullptr;      // DLSS-FG's input (the half's), its view of ours
+    uint32_t fgColorGen = 0;
+    ID3D11RenderTargetView *fgColorRtv = nullptr;
+    ID3D11Texture2D *prevShow = nullptr;     // the stand-in's frame before (the back buffer as it was shown)
+    ID3D11ShaderResourceView *prevShowSrv = nullptr;
     ID3D11Buffer *cb = nullptr;
     ID3D11DeviceContext4 *c4 = nullptr;
     ID3D11Texture2D *inTex[dnr::kSlots][4] = {};
@@ -227,7 +245,9 @@ struct Gfx {
     }
     void Free() {
         FreeIn(), SafeRelease(prepare), SafeRelease(composite), SafeRelease(debug), SafeRelease(cb), SafeRelease(c4);
-        SafeRelease(prevSrv), SafeRelease(prev);
+        SafeRelease(copyIn), SafeRelease(copyScene), SafeRelease(blend), SafeRelease(mvecIn);
+        SafeRelease(prevSrv), SafeRelease(prev), SafeRelease(fgColorRtv), SafeRelease(prevShowSrv), SafeRelease(prevShow);
+        fgColor = nullptr, fgColorGen = 0;
     }
 } G;
 
@@ -237,6 +257,10 @@ bool Make(ID3D11Device *d, ID3D11DeviceContext *c) {
     return SUCCEEDED(d->CreatePixelShader(kPsPrepare, sizeof kPsPrepare, nullptr, &G.prepare)) &&
            SUCCEEDED(d->CreatePixelShader(kPsComposite, sizeof kPsComposite, nullptr, &G.composite)) &&
            SUCCEEDED(d->CreatePixelShader(kPsDebug, sizeof kPsDebug, nullptr, &G.debug)) &&
+           SUCCEEDED(d->CreatePixelShader(kPsCopyIn, sizeof kPsCopyIn, nullptr, &G.copyIn)) &&
+           SUCCEEDED(d->CreatePixelShader(kPsCopyScene, sizeof kPsCopyScene, nullptr, &G.copyScene)) &&
+           SUCCEEDED(d->CreatePixelShader(kPsBlend, sizeof kPsBlend, nullptr, &G.blend)) &&
+           SUCCEEDED(d->CreatePixelShader(kPsMvecIn, sizeof kPsMvecIn, nullptr, &G.mvecIn)) &&
            SUCCEEDED(d->CreateBuffer(&bd, nullptr, &G.cb)) &&
            SUCCEEDED(c->QueryInterface(__uuidof(ID3D11DeviceContext4), reinterpret_cast<void **>(&G.c4)));
 }
@@ -254,6 +278,7 @@ void FullScreen(ID3D11DeviceContext *c, const MmlGfxFrame *f, ID3D11PixelShader 
 struct Camera {
     bool have = false;
     float eye[4], right[4], up[4], fwd[4], proj[4];
+    float viewM[16], projM[16];   // its matrices (row vectors: frame generation's camera)
     unsigned width = 0, height = 0;
     uint32_t key = UINT32_MAX;   // the model, the presets, the modes
 } g_prev;
@@ -275,6 +300,8 @@ void Keep(const MmlGfxConstants *k, const MmlGfxFrame *f) {
     memcpy(g_prev.up, k->up, sizeof g_prev.up);
     memcpy(g_prev.fwd, k->fwd, sizeof g_prev.fwd);
     memcpy(g_prev.proj, k->proj, sizeof g_prev.proj);
+    memcpy(g_prev.viewM, f->view, sizeof g_prev.viewM);
+    memcpy(g_prev.projM, f->proj, sizeof g_prev.projM);
     g_prev.width = f->width, g_prev.height = f->height;
     g_prev.key = ModeKey();
     g_prev.have = true;
@@ -290,6 +317,7 @@ void Constants(ID3D11DeviceContext *c, const MmlGfxConstants *k, bool havePrev, 
     memcpy(x.prevProj, havePrev ? p.proj : k->proj, sizeof x.prevProj);
     x.opts[0] = S.sky, x.opts[1] = havePrev ? 1.f : 0.f, x.opts[2] = split, x.opts[3] = float(S.debug);
     x.opts2[0] = g_bridgeMotion ? 1.f : 0.f;
+    x.opts2[1] = S.mvScale;
     const float one[4] = {1, 1, 0, 0};
     memcpy(x.render, render ? render : one, sizeof x.render);
     D3D11_MAPPED_SUBRESOURCE m;
@@ -331,6 +359,17 @@ struct Ring {
 dnr::Done g_done{};
 uint64_t g_doneVersion;
 int64_t g_doneSeen;
+
+// Each slot's frame as frame generation needs it: its inputs' size and generation, its camera and the one before
+// (the frame whose picture the showing finds in the back buffer is a slot's: the frame before's when pipelined).
+struct SlotCam {
+    uint64_t frame = 0;
+    uint32_t rw = 0, rh = 0, inGen = 0;
+    bool cut = true;
+    float view[16], proj[16], prevView[16], prevProj[16];
+    float eye[4], up[4], right[4], fwd[4];
+} g_slotCam[dnr::kSlots];
+struct Shown { bool valid = false; uint32_t slot = 0; uint64_t frame = 0; } g_shown;   // the picture this frame's pass drew
 
 void ReadDone() {
     uint64_t dv = 0;
@@ -390,6 +429,7 @@ bool Composite(ID3D11DeviceContext *c, const MmlGfxFrame *f, const MmlGfxConstan
     ID3D11ShaderResourceView *none = nullptr;
     c->PSSetShaderResources(5, 1, &none);
     T.drawn++;
+    g_shown = Shown{true, g_ring.lastSlot, g_done.frame};
     return true;
 }
 
@@ -406,6 +446,7 @@ void Ask(const MmlGfxFrame *f, uint32_t mode, uint32_t up) {
 
 void Pass(const MmlGfxFrame *f, void *) {
     if (MML_GFX_HAS(f, in_view) && f->in_view) return;   // (the frame only, not the mods' scene views)
+    g_shown.valid = false;
     if (H->mission_state() == MML_MISSION_NONE) return;
     ReadStatus();
     TellStatus(false);
@@ -429,7 +470,7 @@ void Pass(const MmlGfxFrame *f, void *) {
     const bool cut = g_resetNext || camera;
     const bool havePrev = !cut;
     // the inputs alone, as DLSS would get them at the frame's size (any GPU: nothing goes to the 64-bit half)
-    if (S.debug >= 1 && S.debug != 4) {
+    if (S.debug >= 1 && S.debug != 4 && S.debug != 7) {
         Constants(c, k, havePrev, 0);
         ID3D11Resource *color = nullptr;
         static_cast<ID3D11ShaderResourceView *>(f->color)->GetResource(&color);
@@ -461,7 +502,10 @@ void Pass(const MmlGfxFrame *f, void *) {
         return;   // (no Vulkan device: nothing runs)
     const uint32_t up = UpscaleUsable();
     const uint32_t mode = S.debug == 4 || !S.nr || !NrUsable() ? dnr::kModeCopy : dnr::kModeNr;
-    if (mode == dnr::kModeCopy && up == dnr::kUpOff && S.debug != 4) return;   // (nothing of DLSS here: the game's own frame)
+    // (nothing of DLSS here: the game's own frame; frame generation alone takes the frame round all the same, for the
+    // depth and the motion vectors it needs)
+    const bool fgFrames = S.fg && !S.fgStandIn && g_status.fgAvailable;
+    if (mode == dnr::kModeCopy && up == dnr::kUpOff && S.debug != 4 && !fgFrames) return;
     T.frames++;
     int64_t t0 = Qpc();
 
@@ -529,6 +573,15 @@ void Pass(const MmlGfxFrame *f, void *) {
     Jitter(v.frame, f->width, rw, sample);
     v.jitter[0] = sample[0] * S.jitterSign, v.jitter[1] = sample[1] * S.jitterSign;
     if (g_ring.slotDone[s]) G.c4->Wait(doneF, g_ring.slotDone[s]);
+    {   // the slot's frame for frame generation (its camera and the one before)
+        SlotCam &sc = g_slotCam[s];
+        sc.frame = v.frame, sc.rw = rw, sc.rh = rh, sc.inGen = t[dnr::kDepthIn].generation, sc.cut = cut;
+        memcpy(sc.view, f->view, sizeof sc.view), memcpy(sc.proj, f->proj, sizeof sc.proj);
+        memcpy(sc.prevView, havePrev ? g_prev.viewM : f->view, sizeof sc.prevView);
+        memcpy(sc.prevProj, havePrev ? g_prev.projM : f->proj, sizeof sc.prevProj);
+        memcpy(sc.eye, k->eye, sizeof sc.eye), memcpy(sc.up, k->up, sizeof sc.up);
+        memcpy(sc.right, k->right, sizeof sc.right), memcpy(sc.fwd, k->fwd, sizeof sc.fwd);
+    }
     const float render[4] = {float(f->width) / float(rw), float(f->height) / float(rh), sample[0], sample[1]};
     Constants(c, k, havePrev, 0, render);
     ID3D11ShaderResourceView *base[2] = {static_cast<ID3D11ShaderResourceView *>(f->depth), static_cast<ID3D11ShaderResourceView *>(f->color)};
@@ -552,6 +605,14 @@ void Pass(const MmlGfxFrame *f, void *) {
     g_ring.lastSent = v.frame, g_ring.lastPrepared = true, g_ring.lastSlot = s;
     g_ring.slotDone[s] = 0;   // (until the half answers: then its "done")
     g_renderW = rw, g_renderH = rh, g_outW = f->width, g_outH = f->height;
+    if (S.debug == 7 && t[dnr::kMvecIn].srv) {   // (the motion vectors DLSS is given, over the frame)
+        Constants(c, k, havePrev, 0, render);
+        auto *mv = static_cast<ID3D11ShaderResourceView *>(t[dnr::kMvecIn].srv);
+        c->PSSetShaderResources(5, 1, &mv);
+        FullScreen(c, f, G.mvecIn);
+        ID3D11ShaderResourceView *none = nullptr;
+        c->PSSetShaderResources(5, 1, &none);
+    }
     Keep(k, f);
     g_resetNext = false;
     T.prepSum += Ms(t0, Qpc());
@@ -560,6 +621,223 @@ void Pass(const MmlGfxFrame *f, void *) {
         if (!Answered()) { T.late++; g_resetNext = true; return; }
         Settle();
         if (!Composite(c, f, k, doneF)) T.none++;
+    }
+}
+
+// ---- frame generation: at the frame's showing (gfx_show), the frames between this one and the one before
+struct FgStats { uint64_t shows, made, pictures, late, none, asks, standIn; double ms, rtSum; } F;
+uint64_t g_fgFrame;
+dnr::FgDone g_fgDone{};
+uint64_t g_fgDoneVersion;
+uint32_t g_fgReadyGen, g_fgDoneGen;
+uint64_t g_fgLastSent, g_fgLastPicture;
+
+// Row-major 4x4 (Direct3D's row vectors): a * b, and the inverse (false: none).
+void Mul4(const float *a, const float *b, float *o) {
+    float r[16];
+    for (int i = 0; i < 4; i++)
+        for (int j = 0; j < 4; j++) r[i * 4 + j] = a[i * 4] * b[j] + a[i * 4 + 1] * b[4 + j] + a[i * 4 + 2] * b[8 + j] + a[i * 4 + 3] * b[12 + j];
+    memcpy(o, r, sizeof r);
+}
+bool Inv4(const float *m, float *o) {
+    double a[4][8];
+    for (int i = 0; i < 4; i++)
+        for (int j = 0; j < 8; j++) a[i][j] = j < 4 ? m[i * 4 + j] : (j - 4 == i ? 1 : 0);
+    for (int c = 0; c < 4; c++) {
+        int p = c;
+        for (int r = c + 1; r < 4; r++) if (std::fabs(a[r][c]) > std::fabs(a[p][c])) p = r;
+        if (std::fabs(a[p][c]) < 1e-12) return false;
+        for (int j = 0; j < 8; j++) std::swap(a[c][j], a[p][j]);
+        double d = a[c][c];
+        for (int j = 0; j < 8; j++) a[c][j] /= d;
+        for (int r = 0; r < 4; r++)
+            if (r != c) {
+                double f = a[r][c];
+                for (int j = 0; j < 8; j++) a[r][j] -= f * a[c][j];
+            }
+    }
+    for (int i = 0; i < 4; i++)
+        for (int j = 0; j < 4; j++) o[i * 4 + j] = float(a[i][j + 4]);
+    return true;
+}
+
+void ReadFgDone() {
+    uint64_t dv = 0;
+    H->channel_read(g_fgDoneCh, &g_fgDone, sizeof g_fgDone, &dv);
+    g_fgDoneVersion = dv;
+}
+// Until the half has answered the view sent last (its work on fg_color queued: written again only after it).
+bool FgAnswered() {
+    ReadFgDone();
+    if (!g_fgLastSent || g_fgDone.frame >= g_fgLastSent) return true;
+    int64_t w0 = Qpc();
+    while (g_fgDone.frame < g_fgLastSent) {
+        double left = S.waitMs - Ms(w0, Qpc());
+        if (left <= 0 || !H->channel_wait(g_fgDoneCh, g_fgDoneVersion, uint32_t(std::ceil(left)))) break;
+        ReadFgDone();
+    }
+    return g_fgDone.frame >= g_fgLastSent;
+}
+void FgAsk(uint32_t w, uint32_t h) {
+    dnr::FgView v{};
+    v.frame = ++g_fgFrame;
+    v.askQpc = Qpc();
+    v.outW = w, v.outH = h;
+    H->channel_write(g_fgViewCh, &v, sizeof v);
+    g_fgLastSent = v.frame;
+    F.asks++;
+}
+
+// The stand-in (no DLSS-FG on this GPU, the setting fg_stand_in): the frame before as shown and this one blended at
+// each picture's time: the showing, its pictures and their pacing tested on any GPU.
+int StandIn(ID3D11DeviceContext *c, ID3D11Device *d, const MmlGfxFrame *f, const MmlGfxShow *s, uint32_t n) {
+    ID3D11Resource *cur = nullptr;
+    static_cast<ID3D11ShaderResourceView *>(f->color)->GetResource(&cur);
+    if (!cur) return 0;
+    D3D11_TEXTURE2D_DESC td{};
+    static_cast<ID3D11Texture2D *>(cur)->GetDesc(&td);
+    D3D11_TEXTURE2D_DESC have{};
+    if (G.prevShow) G.prevShow->GetDesc(&have);
+    bool before = G.prevShow && have.Width == td.Width && have.Height == td.Height && have.Format == td.Format;
+    if (!before) {
+        SafeRelease(G.prevShowSrv), SafeRelease(G.prevShow);
+        td.BindFlags = D3D11_BIND_SHADER_RESOURCE, td.MiscFlags = 0, td.CPUAccessFlags = 0, td.Usage = D3D11_USAGE_DEFAULT;
+        if (SUCCEEDED(d->CreateTexture2D(&td, nullptr, &G.prevShow))) d->CreateShaderResourceView(G.prevShow, nullptr, &G.prevShowSrv);
+    }
+    if (before && G.prevShowSrv) {
+        c->PSSetShaderResources(6, 1, &G.prevShowSrv);
+        for (uint32_t i = 0; i < n; i++) {
+            const float at[4] = {float(i + 1) / float(n + 1), 0, 0, 0};
+            Constants(c, f->k, false, 0, at);
+            auto *rtv = static_cast<ID3D11RenderTargetView *>(s->extra[i]);
+            c->OMSetRenderTargets(1, &rtv, nullptr);
+            FullScreen(c, f, G.blend);
+        }
+        ID3D11ShaderResourceView *none = nullptr;
+        c->PSSetShaderResources(6, 1, &none);
+        c->OMSetRenderTargets(0, nullptr, nullptr);
+    }
+    if (G.prevShow) c->CopyResource(G.prevShow, cur);
+    cur->Release();
+    F.standIn++;
+    return before ? int(n) : 0;
+}
+
+int Show(const MmlGfxShow *s, void *) {
+    F.shows++;
+    if (!S.on || !S.fg || H->mission_state() == MML_MISSION_NONE) return 0;
+    const MmlGfxFrame *f = s->frame;
+    auto *c = static_cast<ID3D11DeviceContext *>(f->context);
+    auto *d = static_cast<ID3D11Device *>(f->device);
+    if (G.generation != f->generation || !G.prepare || !G.c4) return 0;   // (the pass makes them)
+    uint32_t n = std::min<uint32_t>(S.fg, s->max_extra);
+    if (S.fgStandIn) return StandIn(c, d, f, s, n);
+    if (!g_status.fgAvailable || !g_shown.valid) return 0;
+    n = std::min(n, std::max(1u, g_status.fgMaxFrames));
+    const SlotCam &cam = g_slotCam[g_shown.slot];
+    if (cam.frame != g_shown.frame) return 0;
+    int64_t t0 = Qpc();
+    // the half's fences and textures at the back buffer's size (else asked: it makes them)
+    MmlSharedFence rf{}, df{};
+    rf.size = df.size = sizeof rf;
+    bool fences = H->gfx_shared_fence(M, dnr::kFenceFgReady, &rf) && H->gfx_shared_fence(M, dnr::kFenceFgDone, &df);
+    auto *readyF = static_cast<ID3D11Fence *>(rf.fence);
+    auto *doneF = static_cast<ID3D11Fence *>(df.fence);
+    if (fences && (rf.generation != g_fgReadyGen || df.generation != g_fgDoneGen)) {
+        g_fgReadyGen = rf.generation, g_fgDoneGen = df.generation;
+        g_fgFrame = std::max({g_fgFrame, readyF->GetCompletedValue(), doneF->GetCompletedValue()});
+        g_fgLastSent = 0;
+    }
+    if (!FgAnswered()) { F.late++; return 0; }
+    // (the view before's "fgdone": fg_color is not written again before the half has read it)
+    if (g_fgDone.frame == g_fgLastSent && g_fgDone.signalled && doneF) G.c4->Wait(doneF, g_fgDone.frame);
+    MmlSharedTexture col{}, out[dnr::kFgMax]{};
+    col.size = sizeof col;
+    bool have = fences && g_fgDone.outW == f->width && g_fgDone.outH == f->height && H->gfx_shared_texture(M, dnr::kFgColor, &col) &&
+                col.width == f->width && col.height == f->height;
+    for (uint32_t i = 0; have && i < n; i++) {
+        char name[32];
+        snprintf(name, sizeof name, "%s%u", dnr::kFgOut, i);
+        out[i].size = sizeof out[i];
+        have = H->gfx_shared_texture(M, name, &out[i]) && out[i].width == f->width && out[i].height == f->height && out[i].srv;
+    }
+    if (!have) { FgAsk(f->width, f->height); return 0; }
+    if (G.fgColor != col.texture || G.fgColorGen != col.generation) {
+        SafeRelease(G.fgColorRtv);
+        G.fgColor = static_cast<ID3D11Texture2D *>(col.texture), G.fgColorGen = col.generation;
+        if (FAILED(d->CreateRenderTargetView(G.fgColor, nullptr, &G.fgColorRtv))) { G.fgColor = nullptr; return 0; }
+    }
+    // the back buffer into DLSS-FG's input, signalled
+    c->OMSetRenderTargets(1, &G.fgColorRtv, nullptr);
+    FullScreen(c, f, G.copyScene);
+    c->OMSetRenderTargets(0, nullptr, nullptr);
+    dnr::FgView v{};
+    v.frame = ++g_fgFrame;
+    v.picture = g_shown.frame;
+    v.outW = f->width, v.outH = f->height;
+    v.renderW = cam.rw, v.renderH = cam.rh;
+    v.slot = g_shown.slot;
+    v.count = n;
+    v.prepared = 1;
+    v.reset = cam.cut || g_fgLastPicture + 1 != g_shown.frame ? 1 : 0;
+    v.colorGen = col.generation;
+    for (uint32_t i = 0; i < n; i++) v.outGen[i] = out[i].generation;
+    v.inGen = cam.inGen;
+    // the camera: this frame's clip space to the frame before's and back (row vectors: clip -> view -> world -> view'
+    // -> clip'), the projection and its inverse
+    float iv[16], ip[16], ipv[16], ipp[16], m[16];
+    bool cams = Inv4(cam.view, iv) && Inv4(cam.proj, ip) && Inv4(cam.prevView, ipv) && Inv4(cam.prevProj, ipp);
+    if (!cams) { v.reset = 1; memcpy(ip, cam.proj, sizeof ip); }
+    Mul4(ip, iv, m), Mul4(m, cam.prevView, m), Mul4(m, cam.prevProj, v.clipToPrevClip);
+    Mul4(ipp, ipv, m), Mul4(m, cam.view, m), Mul4(m, cam.proj, v.prevClipToClip);
+    memcpy(v.viewToClip, cam.proj, sizeof v.viewToClip);
+    memcpy(v.clipToView, ip, sizeof v.clipToView);
+    memcpy(v.camPos, cam.eye, sizeof v.camPos), memcpy(v.camUp, cam.up, sizeof v.camUp);
+    memcpy(v.camRight, cam.right, sizeof v.camRight), memcpy(v.camFwd, cam.fwd, sizeof v.camFwd);
+    const float *p = cam.proj;   // (_11 _22 _33 _43: 0, 5, 10, 14)
+    v.camNear = p[10] != 0 ? -p[14] / p[10] : 0.1f;
+    v.camFar = p[10] != 1 ? p[14] / (1 - p[10]) : 10000.f;
+    v.camFov = p[5] != 0 ? 2 * std::atan(1 / p[5]) : 1.2f;
+    v.camAspect = p[0] != 0 ? p[5] / p[0] : 1.333f;
+    G.c4->Signal(readyF, v.frame);
+    c->Flush();
+    v.askQpc = Qpc();
+    H->channel_write(g_fgViewCh, &v, sizeof v);
+    g_fgLastSent = v.frame;
+    g_fgLastPicture = g_shown.frame;
+    // its pictures: the answer (queued), then this device's GPU waits for "fgdone" and draws them into the targets
+    if (!FgAnswered()) { F.late++; return 0; }
+    if (g_fgDone.signalled) G.c4->Wait(doneF, v.frame);
+    if (!g_fgDone.ok || g_fgDone.count != n) { F.none++; return 0; }
+    for (uint32_t i = 0; i < n; i++) {
+        if (out[i].generation != g_fgDone.outGen[i]) return F.none++, 0;
+        auto *rtv = static_cast<ID3D11RenderTargetView *>(s->extra[i]);
+        auto *srv = static_cast<ID3D11ShaderResourceView *>(out[i].srv);
+        c->OMSetRenderTargets(1, &rtv, nullptr);
+        c->PSSetShaderResources(5, 1, &srv);
+        FullScreen(c, f, G.copyIn);
+    }
+    ID3D11ShaderResourceView *none = nullptr;
+    c->PSSetShaderResources(5, 1, &none);
+    c->OMSetRenderTargets(0, nullptr, nullptr);
+    F.made++, F.pictures += n;
+    double ms = Ms(t0, Qpc());
+    F.ms = F.ms > 0 ? F.ms * 0.95 + ms * 0.05 : ms;
+    return int(n);
+}
+
+// The showing taken only while frame generation is on: the bridge copies the back buffer for whoever has it, each frame.
+bool g_showHeld;
+void UpdateShow() {
+    bool want = S.fg > 0;
+    if (!MML_HAS(H, gfx_show) || want == g_showHeld) return;
+    if (!want) {
+        H->gfx_show(M, nullptr, nullptr);
+        g_showHeld = false;
+    } else if (H->gfx_show(M, Show, nullptr)) {
+        g_showHeld = true;
+    } else {
+        H->log(M, MML_LOG_WARN, "the showing is another mod's (gfx_show): no frame generation");
     }
 }
 
@@ -623,6 +901,10 @@ int CmdState(const char *, MmlReply *r, void *) {
               {"answer_ms", r3(T.rtSum / n)}, {"answer_max_ms", r3(T.rtMax)}, {"work_ms", r3(T.workSum / n)},
               {"gpu_ms", r3(T.gpuSum / n)}, {"gpu_nr_ms", r3(T.gpuNrSum / n)}, {"gpu_sr_ms", r3(T.gpuSrSum / n)},
               {"pass_ms", r3(T.prepSum / std::max<double>(1, double(T.frames)))},
+              {"fg", {{"available", s.fgAvailable != 0}, {"max_frames", s.fgMaxFrames}, {"dll", s.fgDll}, {"frame_gen", S.fg},
+                      {"stand_in", S.fgStandIn}, {"shows", F.shows}, {"made", F.made}, {"pictures", F.pictures}, {"late", F.late},
+                      {"none", F.none}, {"asks", F.asks}, {"stand_in_frames", F.standIn}, {"ms", r3(F.ms)},
+                      {"last_error", g_fgDone.error}}},
               {"last_error", g_done.error}, {"bridge_off", g_bridgeOff}});
     return 0;
 }
@@ -638,6 +920,7 @@ int CmdToggle(const char *args, MmlReply *r, void *) {
 int CmdReset(const char *, MmlReply *r, void *) {
     T = Stats{};
     g_logged = Stats{};
+    F = FgStats{};
     Reply(r, {{"reset", true}});
     return 0;
 }
@@ -655,7 +938,9 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     g_viewCh = H->channel_open(mod, "view", sizeof(dnr::View));
     g_doneCh = H->channel_open(mod, "done", sizeof(dnr::Done));
     g_statusCh = H->channel_open(mod, "status", sizeof(dnr::Status));
-    if (!g_viewCh || !g_doneCh || !g_statusCh) return 1;
+    g_fgViewCh = H->channel_open(mod, "fgview", sizeof(dnr::FgView));
+    g_fgDoneCh = H->channel_open(mod, "fgdone", sizeof(dnr::FgDone));
+    if (!g_viewCh || !g_doneCh || !g_statusCh || !g_fgViewCh || !g_fgDoneCh) return 1;
     ReadSettings();
     // the bridge's motion vectors (the moving cars' and people's motion besides the camera's), where the loader has them
     if (MML_HAS(H, gfx_motion) && !H->gfx_motion(mod, 1)) H->log(mod, MML_LOG_WARN, "no motion vectors from the bridge: the camera's alone");
@@ -665,7 +950,7 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
         H->log(mod, MML_LOG_ERROR, "the graphics bridge refused the pass: dlss_nr needs \"gfx\": true on at the game's start");
         return 1;
     }
-    H->command(mod, "state", "{} -> on, stage (ready, unsupported, other_gpu, no_dll, old_driver...), message, sr, upscale, render, drawn, late, gpu_ms", CmdState, nullptr);
+    H->command(mod, "state", "{} -> on, stage (ready, unsupported, other_gpu, no_dll, old_driver...), message, sr, upscale, render, fg, drawn, late, gpu_ms", CmdState, nullptr);
     H->command(mod, "toggle", "{on} -> DLSS on or off (no on: switched); the hotkey does the same", CmdToggle, nullptr);
     H->command(mod, "reset", "{} -> the measures started again", CmdReset, nullptr);
     return 0;

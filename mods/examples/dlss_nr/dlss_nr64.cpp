@@ -31,6 +31,7 @@
 #include <nvsdk_ngx_helpers_vk.h>
 #include <nvsdk_ngx_defs_dlssnr.h>
 #include <nvsdk_ngx_helpers_dlssnr_vk.h>
+#include <nvsdk_ngx_helpers_dlssg_vk.h>
 #include <algorithm>
 #include <atomic>
 #include <cstdarg>
@@ -48,7 +49,7 @@
 namespace {
 const MmlSideHost *H;
 MmlSideMod *M;
-MmlSideChannel *g_viewCh, *g_doneCh, *g_statusCh;
+MmlSideChannel *g_viewCh, *g_doneCh, *g_statusCh, *g_fgViewCh, *g_fgDoneCh;
 double g_freqMs;
 
 // The mod's own identity for NGX (an application with no id from NVIDIA: a project of a custom engine).
@@ -143,6 +144,7 @@ struct SlotWork {
     bool pending = false;       // queued, its timestamps not read yet
 };
 SlotWork g_slotWork[dnr::kSlots];
+SlotWork g_fgWork;              // frame generation's (its own thread)
 
 bool Check(VkResult r, const char *what) {
     if (r == VK_SUCCESS) return true;
@@ -279,9 +281,13 @@ struct SharedFence {
     uint32_t gen = 0, importedGen = 0;
     VkSemaphore sem = VK_NULL_HANDLE;
 };
-std::mutex g_texMx;            // the worker holds it for a frame's work; MakeTextures for its change
+std::mutex g_texMx;            // a worker holds it for a frame's work (the queue, NGX, the images); MakeTextures for its change
 Shared g_tex[dnr::kSlots][dnr::kPerSlot];
 SharedFence g_ready, g_done;
+Shared g_fgColor, g_fgOut[dnr::kFgMax];
+SharedFence g_fgReady, g_fgDone;
+uint32_t g_fgTexW, g_fgTexH;   // the size fg_color and fg_out are at
+std::atomic<uint32_t> g_fgWantW{0}, g_fgWantH{0};
 uint32_t g_texOutW, g_texOutH, g_texRW, g_texRH;   // the size the textures are at (the frame's, the render's)
 struct Want { uint32_t outW, outH, rw, rh; };
 std::mutex g_wantMx;
@@ -293,10 +299,20 @@ struct Locals {
     Image nr;                         // DLSS-NR's picture at the render size
     Image sr;                         // DLSS SR's picture at the frame's size
 } L;
+struct FgLocals {                     // frame generation's: the back buffer, the shown frame's depth and motion, the pictures
+    Image color, depth, mvec, out[dnr::kFgMax];
+} FL;
 
 // ---- NGX
 NVSDK_NGX_Parameter *g_caps, *g_params;
-NVSDK_NGX_Handle *g_nrFeature, *g_srFeature;
+NVSDK_NGX_Handle *g_nrFeature, *g_srFeature, *g_fgFeature;
+uint32_t g_fgW, g_fgH;
+bool g_fgAvailable;
+uint32_t g_fgMax = 1;
+std::thread g_fgWorker;
+uint64_t g_fgSeen;
+std::atomic<uint64_t> g_fgEvals{0}, g_fgFailures{0};
+std::atomic<float> g_fgWorkMs{0}, g_fgGpuMs{0};
 uint32_t g_nrW, g_nrH, g_nrPreset = UINT32_MAX;
 struct SrKey { uint32_t rw, rh, outW, outH, upscale, preset; } g_srKey{};
 bool g_ngx, g_available, g_srAvailable;
@@ -360,7 +376,7 @@ NVSDK_NGX_FeatureDiscoveryInfo Discovery(const NVSDK_NGX_FeatureCommonInfo *ci, 
 std::wstring g_modDirW, g_dataDirW;
 const wchar_t *g_paths[1];
 NVSDK_NGX_FeatureCommonInfo g_common{};
-const NVSDK_NGX_Feature kFeatures[] = {NVSDK_NGX_Feature_DLSSNR, NVSDK_NGX_Feature_SuperSampling};
+const NVSDK_NGX_Feature kFeatures[] = {NVSDK_NGX_Feature_DLSSNR, NVSDK_NGX_Feature_SuperSampling, NVSDK_NGX_Feature_FrameGeneration};
 
 // Vulkan on the game's adapter, with what NGX's features ask of the instance and the device, and NGX on it.
 bool Start(const uint32_t luid[2]) {
@@ -525,10 +541,10 @@ bool Start(const uint32_t luid[2]) {
     qpi.queryType = VK_QUERY_TYPE_TIMESTAMP, qpi.queryCount = kTimestamps;
     bool made = Check(vk.vkAllocateCommandBuffers(g_dev, &cai, &g_initCmd), "vkAllocateCommandBuffers") &&
                 Check(vk.vkCreateFence(g_dev, &fci, nullptr, &g_initFence), "vkCreateFence");
-    for (SlotWork &s : g_slotWork)
-        made = made && Check(vk.vkAllocateCommandBuffers(g_dev, &cai, &s.cmd), "vkAllocateCommandBuffers") &&
-               Check(vk.vkCreateFence(g_dev, &fci, nullptr, &s.fence), "vkCreateFence") &&
-               Check(vk.vkCreateQueryPool(g_dev, &qpi, nullptr, &s.timer), "vkCreateQueryPool");
+    for (SlotWork *s : {&g_slotWork[0], &g_slotWork[1], &g_fgWork})
+        made = made && Check(vk.vkAllocateCommandBuffers(g_dev, &cai, &s->cmd), "vkAllocateCommandBuffers") &&
+               Check(vk.vkCreateFence(g_dev, &fci, nullptr, &s->fence), "vkCreateFence") &&
+               Check(vk.vkCreateQueryPool(g_dev, &qpi, nullptr, &s->timer), "vkCreateQueryPool");
     if (!made) return PutStatus(dnr::kNoVulkan, "%s", LastError().c_str()), false;
 
     // NGX: the driver's runtime, the DLLs from the mod's folder, their capabilities
@@ -557,6 +573,11 @@ bool Start(const uint32_t luid[2]) {
     int srAvail = 0, srNeeds = 0;
     g_caps->Get(NVSDK_NGX_Parameter_SuperSampling_Available, &srAvail);
     g_caps->Get(NVSDK_NGX_Parameter_SuperSampling_NeedsUpdatedDriver, &srNeeds);
+    int fgAvail = 0, fgNeeds = 0;
+    unsigned fgMax = 0;
+    g_caps->Get(NVSDK_NGX_Parameter_FrameGeneration_Available, &fgAvail);
+    g_caps->Get(NVSDK_NGX_Parameter_FrameGeneration_NeedsUpdatedDriver, &fgNeeds);
+    g_caps->Get(NVSDK_NGX_DLSSG_Parameter_MultiFrameCountMax, &fgMax);
     dnr::Status s;
     {
         std::lock_guard<std::mutex> lk(g_statusMx);
@@ -565,16 +586,24 @@ bool Start(const uint32_t luid[2]) {
         g_status.featureInit = uint32_t(init);
         g_srAvailable = srAvail && !srNeeds && g_status.srDll[0];
         g_status.srAvailable = g_srAvailable ? 1 : 0;
+        g_fgAvailable = fgAvail && !fgNeeds && g_status.fgDll[0];
+        g_fgMax = std::clamp<unsigned>(fgMax, 1, dnr::kFgMax);
+        g_status.fgAvailable = g_fgAvailable ? 1 : 0;
+        g_status.fgMaxFrames = g_fgAvailable ? g_fgMax : 0;
         s = g_status;
     }
+    const char *fgSay = !s.fgDll[0] ? "frame generation: nvngx_dlssg.dll is missing" : fgNeeds ? "frame generation needs a newer NVIDIA driver"
+                        : !fgAvail ? "frame generation does not run here (it needs a GeForce RTX 40 or newer)"
+                        : g_fgMax >= 3 ? "frame generation ready, up to 4x" : g_fgMax == 2 ? "frame generation ready, up to 3x"
+                                       : "frame generation ready, 2x";
     if (!s.srDll[0])
-        PutSrMessage("nvngx_dlss.dll (NVIDIA's DLSS Super Resolution) is missing: put it into %s", H->mod_dir(M));
+        PutSrMessage("nvngx_dlss.dll (NVIDIA's DLSS Super Resolution) is missing: put it into %s; %s", H->mod_dir(M), fgSay);
     else if (srNeeds)
-        PutSrMessage("DLSS Super Resolution needs a newer NVIDIA driver");
+        PutSrMessage("DLSS Super Resolution needs a newer NVIDIA driver; %s", fgSay);
     else if (!srAvail)
-        PutSrMessage("DLSS Super Resolution does not run on %s (it needs a GeForce RTX)", s.gpu);
+        PutSrMessage("DLSS Super Resolution does not run on %s (it needs a GeForce RTX); %s", s.gpu, fgSay);
     else
-        PutSrMessage("DLSS Super Resolution ready (nvngx_dlss.dll %s)", s.srDll);
+        PutSrMessage("DLSS Super Resolution ready (nvngx_dlss.dll %s); %s", s.srDll, fgSay);
     if (!s.dll[0])
         PutStatus(dnr::kNoDll, "nvngx_dlssnr.dll (NVIDIA's DLSS 5 NR) is missing: put it into %s", H->mod_dir(M));
     else if (needs)
@@ -702,18 +731,17 @@ bool FreeSlot(uint32_t s) {
     return true;
 }
 
-// Queues a slot's recorded work: it waits for "ready" frame (the pass's inputs) and signals "done" frame.
-bool Queue(uint32_t s, uint64_t frame) {
-    SlotWork &w = g_slotWork[s];
+// Queues recorded work: it waits for `wait` to reach value (the pass's inputs) and signals `signal` with it.
+bool Submit(SlotWork &w, VkSemaphore wait, VkSemaphore signal, uint64_t value) {
     VkTimelineSemaphoreSubmitInfo tl{VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO};
-    tl.waitSemaphoreValueCount = 1, tl.pWaitSemaphoreValues = &frame;
-    tl.signalSemaphoreValueCount = 1, tl.pSignalSemaphoreValues = &frame;
+    tl.waitSemaphoreValueCount = 1, tl.pWaitSemaphoreValues = &value;
+    tl.signalSemaphoreValueCount = 1, tl.pSignalSemaphoreValues = &value;
     VkPipelineStageFlags stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
     VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
     si.pNext = &tl;
-    si.waitSemaphoreCount = 1, si.pWaitSemaphores = &g_ready.sem, si.pWaitDstStageMask = &stage;
+    si.waitSemaphoreCount = 1, si.pWaitSemaphores = &wait, si.pWaitDstStageMask = &stage;
     si.commandBufferCount = 1, si.pCommandBuffers = &w.cmd;
-    si.signalSemaphoreCount = 1, si.pSignalSemaphores = &g_done.sem;
+    si.signalSemaphoreCount = 1, si.pSignalSemaphores = &signal;
     VkResult vr = vk.vkQueueSubmit(g_queue, 1, &si, w.fence);
     if (vr != VK_SUCCESS) {
         Error("vkQueueSubmit failed (" + std::to_string(vr) + ")");
@@ -724,6 +752,8 @@ bool Queue(uint32_t s, uint64_t frame) {
     g_signals++;
     return true;
 }
+// A slot's recorded work: it waits for "ready" frame (the pass's inputs) and signals "done" frame.
+bool Queue(uint32_t s, uint64_t frame) { return Submit(g_slotWork[s], g_ready.sem, g_done.sem, frame); }
 
 // A prepared view whose work cannot be done: its "done" signalled all the same (the pass's GPU waits for it).
 void SignalOnly(const dnr::View &v) {
@@ -988,6 +1018,222 @@ void Render(const dnr::View &v) {
     Answer(v, ok, true, t[dnr::kColorOut].gen, work);
 }
 
+// ---- frame generation (its own thread: the showing waits for it; the queue, NGX and the images under g_texMx)
+void FgAnswer(const dnr::FgView &v, bool ok, bool signalled, float workMs) {
+    dnr::FgDone d{};
+    d.frame = v.frame;
+    d.ok = ok;
+    d.signalled = signalled;
+    d.count = v.count;
+    for (uint32_t i = 0; i < dnr::kFgMax; i++) d.outGen[i] = g_fgOut[i].gen;
+    d.outW = g_fgWantW, d.outH = g_fgWantH;
+    d.workMs = workMs;
+    d.gpuMs = g_fgGpuMs;
+    if (!ok) snprintf(d.error, sizeof d.error, "%s", LastError().c_str());
+    H->channel_write(g_fgDoneCh, &d, sizeof d);
+}
+
+bool FreeFg() {
+    SlotWork &w = g_fgWork;
+    if (!w.pending) return true;
+    if (vk.vkWaitForFences(g_dev, 1, &w.fence, VK_TRUE, 2000000000ull) != VK_SUCCESS) return Error("the GPU did not finish frame generation in 2 s"), false;
+    vk.vkResetFences(g_dev, 1, &w.fence);
+    w.pending = false;
+    uint64_t ts[kTimestamps] = {};
+    if (vk.vkGetQueryPoolResults(g_dev, w.timer, 0, 2, sizeof ts[0] * 2, ts, sizeof ts[0], VK_QUERY_RESULT_64_BIT) == VK_SUCCESS)
+        g_fgGpuMs = float(double(ts[1] - ts[0]) * g_tickNs / 1e6);
+    return true;
+}
+
+// A prepared view whose work cannot be done: its "fgdone" signalled all the same.
+void FgSignalOnly(const dnr::FgView &v) {
+    if (!FreeFg()) { g_broken = true; return; }
+    SlotWork &w = g_fgWork;
+    VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vk.vkResetCommandBuffer(w.cmd, 0);
+    vk.vkBeginCommandBuffer(w.cmd, &bi);
+    vk.vkCmdResetQueryPool(w.cmd, w.timer, 0, kTimestamps);
+    for (uint32_t t = 0; t < 2; t++) vk.vkCmdWriteTimestamp(w.cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, w.timer, t);
+    vk.vkEndCommandBuffer(w.cmd);
+    if (!Submit(w, g_fgReady.sem, g_fgDone.sem, v.frame)) g_broken = true;
+}
+
+struct FgMake { uint32_t w, h; };
+NVSDK_NGX_Result MakeFg(VkCommandBuffer c, void *u) {
+    auto *m = static_cast<FgMake *>(u);
+    NVSDK_NGX_DLSSG_Create_Params cp{};
+    cp.Width = m->w, cp.Height = m->h;
+    cp.NativeBackbufferFormat = VK_FORMAT_R8G8B8A8_UNORM;   // ("as the graphics API defines it": Vulkan's)
+    return NGX_VK_CREATE_DLSSG(c, 1, 1, &g_fgFeature, g_params, &cp);
+}
+bool FgFeature(uint32_t w, uint32_t h) {
+    if (g_fgFeature && g_fgW == w && g_fgH == h) return true;
+    if (g_fgFeature) vk.vkDeviceWaitIdle(g_dev), NVSDK_NGX_VULKAN_ReleaseFeature(g_fgFeature), g_fgFeature = nullptr;
+    if (!g_params) return Error("NGX's parameters were not allocated"), false;
+    FgMake m{w, h};
+    char what[96];
+    snprintf(what, sizeof what, "DLSS Frame Generation's feature at %ux%u", w, h);
+    if (!RunInit(what, MakeFg, &m) || !g_fgFeature) {
+        g_fgFeature = nullptr;
+        g_fgAvailable = false;
+        {
+            std::lock_guard<std::mutex> lk(g_statusMx);
+            g_status.fgAvailable = 0;
+        }
+        PutSrMessage("%s", LastError().c_str());
+        return false;
+    }
+    g_fgW = w, g_fgH = h;
+    return true;
+}
+
+void M4(float (&o)[4][4], const float *m) { memcpy(o, m, sizeof o); }
+
+void FgRender(const dnr::FgView &v) {
+    double t0 = Now();
+    std::unique_lock<std::mutex> lk(g_texMx);
+    if (v.outW && v.outH && (g_fgWantW != v.outW || g_fgWantH != v.outH)) g_fgWantW = v.outW, g_fgWantH = v.outH;
+    if (!v.prepared) return FgAnswer(v, false, false, 0);   // (an ask: the textures at this size)
+    if (!ImportFence(g_fgReady) || !ImportFence(g_fgDone)) {
+        Error("frame generation's fences could not be imported");
+        g_broken = true;
+        return FgAnswer(v, false, false, 0);
+    }
+    const uint32_t s = v.slot % dnr::kSlots, n = std::clamp<uint32_t>(v.count, 1, dnr::kFgMax);
+    bool ok = g_fgAvailable && g_fgTexW == v.outW && g_fgTexH == v.outH && g_fgColor.gen == v.colorGen && g_tex[s][dnr::kDepthIn].gen == v.inGen &&
+              g_texRW == v.renderW && g_texRH == v.renderH;
+    for (uint32_t i = 0; ok && i < n; i++) ok = g_fgOut[i].gen == v.outGen[i];
+    // the shared images: the back buffer and the pictures (made for this), the shown frame's depth and motion (its slot's)
+    auto imp = [&](Shared &t, uint32_t w, uint32_t h, uint32_t fmt) {
+        if (!t.handle) return false;
+        if (t.importedGen == t.gen) return true;
+        if (!Import(t.img, t.handle, w, h, VkFormatOf(fmt))) return false;
+        t.importedGen = t.gen;
+        return true;
+    };
+    ok = ok && imp(g_fgColor, v.outW, v.outH, dnr::kFgFormat) && imp(g_tex[s][dnr::kDepthIn], v.renderW, v.renderH, dnr::kTexFormats[dnr::kDepthIn]) &&
+         imp(g_tex[s][dnr::kMvecIn], v.renderW, v.renderH, dnr::kTexFormats[dnr::kMvecIn]);
+    for (uint32_t i = 0; ok && i < n; i++) ok = imp(g_fgOut[i], v.outW, v.outH, dnr::kFgFormat);
+    if (ok && (FL.color.width != v.outW || FL.color.height != v.outH || FL.depth.width != v.renderW || FL.depth.height != v.renderH)) {
+        vk.vkDeviceWaitIdle(g_dev);
+        ok = MakeLocal(FL.color, v.outW, v.outH, VK_FORMAT_R8G8B8A8_UNORM) && MakeLocal(FL.depth, v.renderW, v.renderH, VK_FORMAT_R32_SFLOAT) &&
+             MakeLocal(FL.mvec, v.renderW, v.renderH, VK_FORMAT_R16G16B16A16_SFLOAT);
+        for (uint32_t i = 0; ok && i < dnr::kFgMax; i++) ok = MakeLocal(FL.out[i], v.outW, v.outH, VK_FORMAT_R8G8B8A8_UNORM);
+    }
+    ok = ok && FgFeature(v.outW, v.outH) && FreeFg();
+    if (!ok) {
+        FgSignalOnly(v);
+        g_fgFailures++;
+        return FgAnswer(v, false, !g_broken, 0);
+    }
+    SlotWork &w = g_fgWork;
+    VkCommandBuffer c = w.cmd;
+    VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vk.vkResetCommandBuffer(c, 0);
+    vk.vkBeginCommandBuffer(c, &bi);
+    vk.vkCmdResetQueryPool(c, w.timer, 0, kTimestamps);
+    vk.vkCmdWriteTimestamp(c, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, w.timer, 0);
+    const VkAccessFlags any = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+    std::vector<Image *> sharedIn{&g_fgColor.img, &g_tex[s][dnr::kDepthIn].img, &g_tex[s][dnr::kMvecIn].img};
+    std::vector<VkImageMemoryBarrier> b;
+    for (Image *i : sharedIn) b.push_back(ImgBarrier(*i, 0, VK_ACCESS_TRANSFER_READ_BIT, VK_QUEUE_FAMILY_EXTERNAL, g_family));
+    for (uint32_t i = 0; i < n; i++) b.push_back(ImgBarrier(g_fgOut[i].img, 0, VK_ACCESS_TRANSFER_WRITE_BIT, VK_QUEUE_FAMILY_EXTERNAL, g_family));
+    for (Image *i : {&FL.color, &FL.depth, &FL.mvec}) b.push_back(ImgBarrier(*i, any, VK_ACCESS_TRANSFER_WRITE_BIT));
+    Barrier(c, b, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+    Copy(c, g_fgColor.img, FL.color);
+    Copy(c, g_tex[s][dnr::kDepthIn].img, FL.depth);
+    Copy(c, g_tex[s][dnr::kMvecIn].img, FL.mvec);
+    b.clear();
+    for (Image *i : {&FL.color, &FL.depth, &FL.mvec}) b.push_back(ImgBarrier(*i, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT));
+    for (uint32_t i = 0; i < n; i++) b.push_back(ImgBarrier(FL.out[i], any, VK_ACCESS_SHADER_WRITE_BIT));
+    Barrier(c, b, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+    NVSDK_NGX_Resource_VK color = Res(FL.color, false), depth = Res(FL.depth, false), mvec = Res(FL.mvec, false);
+    NVSDK_NGX_DLSSG_Opt_Eval_Params o{};
+    M4(o.cameraViewToClip, v.viewToClip);
+    M4(o.clipToCameraView, v.clipToView);
+    M4(o.clipToPrevClip, v.clipToPrevClip);
+    M4(o.prevClipToClip, v.prevClipToClip);
+    for (int r = 0; r < 4; r++) o.clipToLensClip[r][r] = 1;   // (no lens distortion)
+    o.mvecScale[0] = o.mvecScale[1] = 1;   // (render pixels: the guide's units)
+    memcpy(o.cameraPos, v.camPos, sizeof o.cameraPos);
+    memcpy(o.cameraUp, v.camUp, sizeof o.cameraUp);
+    memcpy(o.cameraRight, v.camRight, sizeof o.cameraRight);
+    memcpy(o.cameraFwd, v.camFwd, sizeof o.cameraFwd);
+    o.cameraNear = v.camNear, o.cameraFar = v.camFar, o.cameraFOV = v.camFov, o.cameraAspectRatio = v.camAspect;
+    o.colorBuffersHDR = false;
+    o.depthInverted = false;
+    o.cameraMotionIncluded = true;
+    o.reset = v.reset != 0;
+    o.mvecsSubrectSize = {v.renderW, v.renderH};
+    o.depthSubrectSize = {v.renderW, v.renderH};
+    o.backbufferSubrectSize = {v.outW, v.outH};
+    o.outputInterpSubrectSize = {v.outW, v.outH};
+    o.multiFrameCount = n;
+    for (uint32_t i = 0; i < n && ok; i++) {
+        NVSDK_NGX_Resource_VK out = Res(FL.out[i], true);
+        NVSDK_NGX_VK_DLSSG_Eval_Params e{};
+        e.pBackbuffer = &color, e.pDepth = &depth, e.pMVecs = &mvec, e.pOutputInterpFrame = &out;
+        o.multiFrameIndex = i + 1;
+        NVSDK_NGX_Result r = NGX_VK_EVALUATE_DLSSG(c, g_fgFeature, g_params, &e, &o);
+        if (NVSDK_NGX_FAILED(r)) {
+            char m[160];
+            snprintf(m, sizeof m, "DLSS Frame Generation's evaluation %u failed: %s (0x%08X)", i + 1, NgxText(r), unsigned(r));
+            Error(m);
+            ok = false;
+        }
+    }
+    b.clear();
+    for (uint32_t i = 0; i < n; i++) b.push_back(ImgBarrier(FL.out[i], VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT));
+    Barrier(c, b, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+    if (ok)
+        for (uint32_t i = 0; i < n; i++) Copy(c, FL.out[i], g_fgOut[i].img);
+    b.clear();
+    for (Image *i : sharedIn) b.push_back(ImgBarrier(*i, VK_ACCESS_TRANSFER_READ_BIT, 0, g_family, VK_QUEUE_FAMILY_EXTERNAL));
+    for (uint32_t i = 0; i < n; i++) b.push_back(ImgBarrier(g_fgOut[i].img, VK_ACCESS_TRANSFER_WRITE_BIT, 0, g_family, VK_QUEUE_FAMILY_EXTERNAL));
+    Barrier(c, b, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+    vk.vkCmdWriteTimestamp(c, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, w.timer, 1);
+    vk.vkEndCommandBuffer(c);
+    if (!Submit(w, g_fgReady.sem, g_fgDone.sem, v.frame)) return FgAnswer(v, false, false, 0);
+    float work = float(Now() - t0);
+    g_fgWorkMs = work;
+    (ok ? g_fgEvals : g_fgFailures)++;
+    FgAnswer(v, ok, true, work);
+}
+
+void FgWork() {
+    if (!g_ready_) return;
+    dnr::FgView v;
+    uint64_t vv = 0;
+    if (H->channel_read(g_fgViewCh, &v, sizeof v, &vv) == sizeof v && vv != g_fgSeen) {
+        g_fgSeen = vv;
+        FgRender(v);
+    }
+}
+int GuardedFgWork() {
+    __try {
+        FgWork();
+        return 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return static_cast<int>(GetExceptionCode());
+    }
+}
+void FgWorker() {
+    while (!g_stop) {
+        H->channel_wait(g_fgViewCh, g_fgSeen, 20);   // (the showing's ask wakes it at once)
+        if (g_stop) break;
+        if (g_broken) { Sleep(10); continue; }
+        if (int code = GuardedFgWork()) {
+            g_broken = true;
+            char b[160];
+            snprintf(b, sizeof b, "a fault (0x%08X) in frame generation's work: stopped (mod.reload starts again)", static_cast<unsigned>(code));
+            Error(b);
+            PutStatus(dnr::kFailed, "%s", b);
+        }
+    }
+}
+
 void Work() {
     if (!g_ready_) {
         uint32_t luid[2] = {};
@@ -1074,7 +1320,38 @@ void MakeTextures() {
     H->log(M, 1, "the textures at %ux%u, the inputs at %ux%u", w.outW, w.outH, w.rw, w.rh);
 }
 
+// Frame generation's textures at the back buffer's size the showing asked for, and its fences.
+void MakeFgTextures() {
+    uint32_t w = g_fgWantW, h = g_fgWantH;
+    if (!w || !h || !H->texture_d3d12_device()) return;
+    std::lock_guard<std::mutex> lk(g_texMx);
+    MakeFence(g_fgReady, dnr::kFenceFgReady);
+    MakeFence(g_fgDone, dnr::kFenceFgDone);
+    if (w == g_fgTexW && h == g_fgTexH) return;
+    if (g_dev) vk.vkDeviceWaitIdle(g_dev);
+    for (Shared *s : {&g_fgColor, &g_fgOut[0], &g_fgOut[1], &g_fgOut[2]}) Free(s->img), s->importedGen = 0, s->handle = nullptr;
+    g_fgTexW = g_fgTexH = 0;
+    for (uint32_t i = 0; i <= dnr::kFgMax; i++) {
+        char name[32];
+        if (i == 0) snprintf(name, sizeof name, "%s", dnr::kFgColor);
+        else snprintf(name, sizeof name, "%s%u", dnr::kFgOut, i - 1);
+        MmlSideTexture t{};
+        t.size = sizeof t;
+        if (!H->texture_create(M, name, w, h, dnr::kFgFormat, &t)) {
+            Error(std::string("texture_create ") + name + " failed");
+            return;
+        }
+        Shared &s = i == 0 ? g_fgColor : g_fgOut[i - 1];
+        s.handle = t.shared_handle;
+        s.gen = t.generation;
+    }
+    g_fgTexW = w, g_fgTexH = h;
+    H->log(M, 1, "frame generation's textures at %ux%u", w, h);
+}
+
 void OnFrame(MmlSideMod *, const char *, const char *, void *) {
+    if (g_ready_ && (g_fgWantW != g_fgTexW || g_fgWantH != g_fgTexH || (g_fgWantW && (!g_fgReady.handle || !g_fgDone.handle))))
+        MakeFgTextures();
     if (g_ready_) {
         Want w;
         {
@@ -1120,6 +1397,9 @@ int Side(MmlSideMod *, const char *, MmlSideReply *r, void *) {
                         {"copies", g_copies.load()}, {"failures", g_failures.load()}, {"signals", g_signals.load()},
                         {"textures", {{"frame", {g_texOutW, g_texOutH}}, {"inputs", {g_texRW, g_texRH}}}},
                         {"fences", {{"ready", g_ready.gen}, {"done", g_done.gen}}},
+                        {"fg", {{"available", s.fgAvailable != 0}, {"max_frames", s.fgMaxFrames}, {"dll", s.fgDll},
+                                {"feature", {g_fgW, g_fgH}}, {"textures", {g_fgTexW, g_fgTexH}}, {"evaluations", g_fgEvals.load()},
+                                {"failures", g_fgFailures.load()}, {"work_ms", r3(g_fgWorkMs.load())}, {"gpu_ms", r3(g_fgGpuMs.load())}}},
                         {"nr_feature", {g_nrW, g_nrH}}, {"work_ms", r3(g_workMs.load())}, {"gpu_ms", r3(g_gpuMs.load())},
                         {"gpu_nr_ms", r3(g_gpuNrMs.load())}, {"gpu_sr_ms", r3(g_gpuSrMs.load())}, {"error", LastError()}};
     std::string out = j.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
@@ -1128,25 +1408,27 @@ int Side(MmlSideMod *, const char *, MmlSideReply *r, void *) {
 }
 
 void Shutdown() {
-    if (g_worker.joinable()) {
-        g_stop = true;
-        g_worker.join();
-    }
+    g_stop = true;
+    if (g_worker.joinable()) g_worker.join();
+    if (g_fgWorker.joinable()) g_fgWorker.join();
     if (g_dev) vk.vkDeviceWaitIdle(g_dev);
     if (g_nrFeature) NVSDK_NGX_VULKAN_ReleaseFeature(g_nrFeature), g_nrFeature = nullptr;
     if (g_srFeature) NVSDK_NGX_VULKAN_ReleaseFeature(g_srFeature), g_srFeature = nullptr;
+    if (g_fgFeature) NVSDK_NGX_VULKAN_ReleaseFeature(g_fgFeature), g_fgFeature = nullptr;
     if (g_params) NVSDK_NGX_VULKAN_DestroyParameters(g_params), g_params = nullptr;
     if (g_ngx) NVSDK_NGX_VULKAN_Shutdown1(g_dev), g_ngx = false;
     if (g_dev) {
-        for (Image *i : {&L.color, &L.depth, &L.mvec, &L.mask, &L.nr, &L.sr}) Free(*i);
+        for (Image *i : {&L.color, &L.depth, &L.mvec, &L.mask, &L.nr, &L.sr, &FL.color, &FL.depth, &FL.mvec, &FL.out[0], &FL.out[1], &FL.out[2]})
+            Free(*i);
         for (auto &slot : g_tex)
             for (Shared &s : slot) Free(s.img);
-        for (SharedFence *f : {&g_ready, &g_done})
+        for (Shared *s : {&g_fgColor, &g_fgOut[0], &g_fgOut[1], &g_fgOut[2]}) Free(s->img);
+        for (SharedFence *f : {&g_ready, &g_done, &g_fgReady, &g_fgDone})
             if (f->sem) vk.vkDestroySemaphore(g_dev, f->sem, nullptr), f->sem = VK_NULL_HANDLE;
-        for (SlotWork &s : g_slotWork) {
-            if (s.timer) vk.vkDestroyQueryPool(g_dev, s.timer, nullptr);
-            if (s.fence) vk.vkDestroyFence(g_dev, s.fence, nullptr);
-            s = SlotWork{};
+        for (SlotWork *s : {&g_slotWork[0], &g_slotWork[1], &g_fgWork}) {
+            if (s->timer) vk.vkDestroyQueryPool(g_dev, s->timer, nullptr);
+            if (s->fence) vk.vkDestroyFence(g_dev, s->fence, nullptr);
+            *s = SlotWork{};
         }
         if (g_initFence) vk.vkDestroyFence(g_dev, g_initFence, nullptr), g_initFence = VK_NULL_HANDLE;
         if (g_pool) vk.vkDestroyCommandPool(g_dev, g_pool, nullptr), g_pool = VK_NULL_HANDLE;
@@ -1161,11 +1443,22 @@ void Shutdown() {
             H->texture_remove(M, name);
             g_tex[s][k].handle = nullptr;
         }
+    for (uint32_t i = 0; i <= dnr::kFgMax; i++) {
+        Shared &s = i == 0 ? g_fgColor : g_fgOut[i - 1];
+        if (!s.handle) continue;
+        char name[32];
+        if (i == 0) snprintf(name, sizeof name, "%s", dnr::kFgColor);
+        else snprintf(name, sizeof name, "%s%u", dnr::kFgOut, i - 1);
+        H->texture_remove(M, name);
+        s.handle = nullptr;
+    }
     if (MML_SIDE_HAS(H, fence_remove)) {
         if (g_ready.handle) H->fence_remove(M, dnr::kFenceReady);
         if (g_done.handle) H->fence_remove(M, dnr::kFenceDone);
+        if (g_fgReady.handle) H->fence_remove(M, dnr::kFenceFgReady);
+        if (g_fgDone.handle) H->fence_remove(M, dnr::kFenceFgDone);
     }
-    g_ready = SharedFence{}, g_done = SharedFence{};
+    g_ready = SharedFence{}, g_done = SharedFence{}, g_fgReady = SharedFence{}, g_fgDone = SharedFence{};
     if (g_inst) vk.vkDestroyInstance(g_inst, nullptr), g_inst = VK_NULL_HANDLE;
     if (g_vkDll) FreeLibrary(g_vkDll), g_vkDll = nullptr;
 }
@@ -1183,10 +1476,13 @@ MML_EXPORT int mml_side_load(const MmlSideHost *host, MmlSideMod *mod) {
     g_viewCh = H->channel_open(mod, "view", sizeof(dnr::View));
     g_doneCh = H->channel_open(mod, "done", sizeof(dnr::Done));
     g_statusCh = H->channel_open(mod, "status", sizeof(dnr::Status));
-    if (!g_viewCh || !g_doneCh || !g_statusCh) return 1;
+    g_fgViewCh = H->channel_open(mod, "fgview", sizeof(dnr::FgView));
+    g_fgDoneCh = H->channel_open(mod, "fgdone", sizeof(dnr::FgDone));
+    if (!g_viewCh || !g_doneCh || !g_statusCh || !g_fgViewCh || !g_fgDoneCh) return 1;
     PutStatus(dnr::kStarting, "starting: waiting for the game's first frame");
     g_stop = false;
     g_worker = std::thread(Worker);
+    g_fgWorker = std::thread(FgWorker);
     H->subscribe(mod, "FRAME", OnFrame, nullptr);
     H->command(mod, "side", "{} -> what NGX said (stage, message, gpu, driver, dll, available, sr...), evaluations, work_ms, gpu_ms", Side, nullptr);
     return 0;

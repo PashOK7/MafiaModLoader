@@ -12,7 +12,7 @@ cbuffer DlssNr : register(b1) {
     float4 g_prevProj;    // its projection's _11, _22, _31, _32
     float4 g_opts;        // x: the mask on the sky (0..1), y: 1 when there is a frame before, z: the split's place
                           // (0..1 of the width, 0: none), w: the debug view (1 motion, 2 depth, 3 mask)
-    float4 g_opts2;       // x: 1 when the bridge's motion vectors are bound (frame.hlsli g_motion, t3)
+    float4 g_opts2;       // x: 1 when the bridge's motion vectors are bound (frame.hlsli g_motion, t3), y: their scale (a test)
     float4 g_render;      // xy: the frame's pixels a render pixel covers (the frame's size / the render size), zw: where
                           // in its render pixel this frame's inputs are sampled (the jitter, -0.5..0.5)
 };
@@ -33,12 +33,12 @@ float2 PrevScreen(float3 d) {
 // cars' and people's own: gfx_motion); else the camera's alone: the depth reprojected through the last frame's camera.
 float2 Motion(float2 pixel) {
     if (g_opts.y < 0.5) return 0;
-    if (g_opts2.x > 0.5) return g_motion.Load(int3(pixel, 0));
+    if (g_opts2.x > 0.5) return g_motion.Load(int3(pixel, 0)) * g_opts2.y;
     float z = SceneDepth(pixel);
     float3 ray = ViewRay(pixel);
     float3 d = IsSky(z) ? ray : g_eye.xyz + ray * z - g_prevEye.xyz;
     if (dot(d, g_prevFwd.xyz) <= 1e-4) return 0;   // (behind the last camera: no place there)
-    return PrevScreen(d) - pixel;
+    return (PrevScreen(d) - pixel) * g_opts2.y;
 }
 
 float Mask(float2 pixel) { return IsSky(SceneDepth(pixel)) ? g_opts.x : 1; }
@@ -74,6 +74,22 @@ float4 PsComposite(float4 pos : SV_Position) : SV_Target {
     if (g_opts.z > 0 && abs(pos.x - split) < 1) return float4(1, 1, 1, 1);
     if (g_opts.z > 0 && pos.x < split) return float4(g_sceneColor.Load(int3(pos.xy, 0)).rgb, 1);
     return float4(saturate(g_nrOut.Load(int3(pos.xy, 0)).rgb), 1);
+}
+
+// The showing (frame generation): the back buffer (t1, as the bridge gives it at the showing) into DLSS-FG's input,
+// DLSS-FG's pictures (t5) into the bridge's targets, and the stand-in for a GPU without DLSS-FG: the frame before (t6)
+// and this one blended at the picture's time (g_render.x: 0 the frame before .. 1 this one).
+// The motion vectors as DLSS is given them (the debug view 7: the slot's "mvec_in" at t5, at the render size), in the
+// colours of the debug view 1 (back in the frame's pixels): the same picture when they reach DLSS whole.
+float4 PsMvecIn(float4 pos : SV_Position) : SV_Target {
+    float2 m = g_nrOut.Load(int3(pos.xy / g_render.xy, 0)).rg * g_render.xy;
+    return float4(saturate(0.5 + m / 32), 0.5, 1);
+}
+float4 PsCopyScene(float4 pos : SV_Position) : SV_Target { return float4(g_sceneColor.Load(int3(pos.xy, 0)).rgb, 1); }
+float4 PsCopyIn(float4 pos : SV_Position) : SV_Target { return float4(g_nrOut.Load(int3(pos.xy, 0)).rgb, 1); }
+float4 PsBlend(float4 pos : SV_Position) : SV_Target {
+    float3 before = g_prevColor.Load(int3(pos.xy, 0)).rgb, now = g_sceneColor.Load(int3(pos.xy, 0)).rgb;
+    return float4(lerp(before, now, g_render.x), 1);
 }
 
 // The inputs as DLSS-NR gets them (the settings' debug view): the motion vectors as colours (grey: still; red right,
