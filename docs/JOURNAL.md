@@ -3415,3 +3415,6 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   (no `/MP`) and the projects one by one (no `/m`): the host's ~70 files took 7 to 10 minutes after a change to
   mml.h. Now `/MP /FS` in CMakeLists and `/m` in the build presets: 105 s for everything after mml.h, 16 s with no
   change (a cl.exe a core in the Task Manager meanwhile).
+- **Seen by the owner**: a two-car elevated train pulsed in its first car alone. Its second car is a model frame of
+  its own (C_railway +0xC4, +0x1A8; knowledge/notes/scale.md): actor_scale now scales every car of a train. 1.2: 40
+  held, 43 frames drawn (the trains' cars; the player in his taxi left out). Offline tests: ALL PASSED.

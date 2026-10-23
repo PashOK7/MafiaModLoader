@@ -32,3 +32,7 @@ What `actor.scale` (mml.h actor_scale, host/scale.cpp) rests on.
 - **game** Actor types seen in the city freeride (1.2): 2 the player, 4 cars, 8 trams (`salina*`) and the elevated
   trains (`metro*`), 5, 6, 12, 18, 20, 25, 35 (scenery and managers). An elevated train far from the player was not
   found drawn where its actor stood (it may be drawn only near the player); not looked into.
+- **code** A train's other cars (both builds, `C_railway::GetVagon` 1.2 0x496E10, 1.0 0x4E82D0, the same code): car
+  0 is the actor's model (+0x68); the others are model frames of their own in the sector, named `<name>_vagon<i>`
+  (C_railway::GameInit), not children of the first: +0xC4 points to their frames, +0x1A8 counts them (metro6 in the
+  1.2 lab: one, `metro6_vagon0`, 12.5 m behind). actor_scale scales them all (game.h kRailwayVagons).

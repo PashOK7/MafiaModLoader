@@ -259,6 +259,10 @@ inline std::string TextUtf8(const char *text) {
 // The fields' offsets differ between the builds: they come from game_build.h (each read in the game's code and
 // seen in the running 1.2 game). Positions are metres, the world's; +y is up.
 constexpr int kActorTypeCar = 4;
+// C_railway (type 8: the trams, the elevated trains; both builds, C_railway::GetVagon 1.2 0x496E10, 1.0 0x4E82D0): car 0
+// its model (+0x68), the others model frames of their own in the sector ("<name>_vagon<i>", made by its GameInit):
+// +0xC4 a pointer to their frames, +0x1A8 how many.
+constexpr int kActorTypeRailway = 8, kRailwayVagons = 0xC4, kRailwayVagonCount = 0x1A8;
 // An actor's type by the class the game makes for it (C_mission::CreateActor, 1.2 0x53F7D0, 1.0 0x5FED70: the same
 // switch in both builds, 2026-10-18); nullptr for a type it does not make (3, 0x11...).
 inline const char *ActorTypeName(int type) {

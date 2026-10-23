@@ -89,19 +89,23 @@ float Shape(int shape, double beats) {
 
 bool Plain(const MmlActorScale &s) { return s.scale[0] == 1 && s.scale[1] == 1 && s.scale[2] == 1 && (s.bpm <= 0 || s.amount == 0); }
 
-void *ModelOf(const Entry &e, const std::vector<void *> &peds) {
-    void *frame = nullptr;
+// Its model frames: one, or a train's every car (C_railway: its own model the first, the others model frames of
+// their own in the sector, "<name>_vagon<i>", game.h kRailwayVagons).
+void ModelsOf(const Entry &e, const std::vector<void *> &peds, std::vector<void *> *out) {
     auto f = [&] {
         if (e.pedestrian) {
             if (std::find(peds.begin(), peds.end(), e.who) == peds.end()) return;
             MmlPedestrian p{};
-            if (PedestrianRead(e.who, &p) && p.spawned) frame = p.model;
-        } else {
-            frame = game::at<void *>(e.who, game::kActorFrame);
+            if (PedestrianRead(e.who, &p) && p.spawned && p.model) out->push_back(p.model);
+            return;
         }
+        if (void *frame = game::at<void *>(e.who, game::kActorFrame)) out->push_back(frame);
+        if (game::at<int>(e.who, game::kActorType) != game::kActorTypeRailway) return;
+        int n = game::at<int>(e.who, game::kRailwayVagonCount);
+        void **cars = game::at<void **>(e.who, game::kRailwayVagons);
+        for (int i = 0; cars && i < n && i < 64; i++) if (cars[i]) out->push_back(cars[i]);
     };
-    if (Guarded(f)) return nullptr;
-    return frame;
+    Guarded(f);
 }
 
 // The frame's local matrix scaled about the pivot (its own space), as UpdateMatrix leaves a built one.
@@ -210,9 +214,12 @@ void ScaleBeforeRender() {
     double t = BeatSeconds();
     // (the frames first: one drawn inside another scaled one, the player in his car, takes its size from it)
     std::vector<std::pair<const Entry *, void *>> todo;
+    std::vector<void *> models;
     for (const Entry &e : g_entries) {
-        void *frame = ModelOf(e, peds);
-        if (frame && std::none_of(todo.begin(), todo.end(), [&](const auto &x) { return x.second == frame; })) todo.push_back({&e, frame});
+        models.clear();
+        ModelsOf(e, peds, &models);
+        for (void *frame : models)
+            if (std::none_of(todo.begin(), todo.end(), [&](const auto &x) { return x.second == frame; })) todo.push_back({&e, frame});
     }
     std::vector<void *> frames;
     for (const auto &x : todo) frames.push_back(x.second);
