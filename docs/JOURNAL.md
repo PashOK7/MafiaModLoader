@@ -3404,3 +3404,14 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   pulsing at 120 bpm, Paulie at 2 (1.0), a tram stretched 1.6 and pulsing, filmed from its own space (1.2); bounce
   holding 38 (1.2) and 30 (1.0), no faults. Offline tests: ALL PASSED.
 - **Lab**: bounce loaded by `mod.load` only (its `enabled` stays false).
+- **Asked again** (the owner, watching): Tommy in his car grew with the car and again on his own, larger than the
+  car; and the pulse should not be a heartbeat but a smooth squash, tall and narrow to low and wide, eased, never
+  longer (people not deeper either). Now a frame inside another scaled one this frame (any parent up to 32 levels)
+  is not scaled again, and `MML_PULSE_SQUASH` (x * (1 - a c), y * (1 + a c), z kept; c a cosine of the beat) is
+  bounce's default (amount 0.2).
+- **Seen**: both labs, bounce's squash: the taxi tall and narrow, then low and wide, its length the same; 30 held, 29
+  drawn (the player in the taxi left to it). Offline tests: ALL PASSED.
+- **The build** (the owner: "seven minutes for this small mod?"): MSBuild compiled each project's files one by one
+  (no `/MP`) and the projects one by one (no `/m`): the host's ~70 files took 7 to 10 minutes after a change to
+  mml.h. Now `/MP /FS` in CMakeLists and `/m` in the build presets: 105 s for everything after mml.h, 16 s with no
+  change (a cl.exe a core in the Task Manager meanwhile).

@@ -271,6 +271,8 @@ typedef void (*MmlFrameGoneFn)(void *frame, void *user);
 #define MML_PULSE_BEAT   0        /* a kick on the beat that dies away before the next */
 #define MML_PULSE_SINE   1        /* a smooth swell, largest on the beat */
 #define MML_PULSE_BOUNCE 2        /* |sin|: a hop each beat, back to its size on it */
+#define MML_PULSE_SQUASH 3        /* tall and narrow on the beat, low and wide between, eased both ways (a cosine):
+                                     x * (1 - amount * c), y * (1 + amount * c); its length (z) kept */
 #define MML_SCALE_BEAT_NOW 0x1u   /* flags: the pulses' shared beat starts now (every pulsing actor's) */
 typedef struct MmlActorScale {
     uint32_t size;          /* sizeof(MmlActorScale) */
@@ -1719,7 +1721,8 @@ typedef struct MmlHost {
      * is drawn, so the game's tick, its physics, its collision and its bullets keep the actor's own size. Set it once
      * (it holds), or in RENDER_BEGIN each frame for a mod's own animation. NULL (or 1, 1, 1 with no pulse) gives it
      * its own size back; the mod's go at its unload, every one at the mission's close or the actor's destruction.
-     * A person in a car is drawn as the car's child: the car's size is his too. 1 done, 0 refused (the log says
+     * One drawn inside another scaled one (a person in a car: the car's child) takes its size from it and is not
+     * scaled again. 1 done, 0 refused (the log says
      * why). Game thread. */
     int (*actor_scale)(MmlMod *mod, void *actor, const MmlActorScale *scale);
 } MmlHost;

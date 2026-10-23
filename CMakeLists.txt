@@ -7,7 +7,9 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # static CRT: players need no Visual C++ redistributable
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-add_compile_options(/W3 /utf-8 /permissive- /Zi)
+# /MP: a project's files compiled at once, one cl.exe a core (without it the host's ~70 files went one by one, 7 to
+# 10 minutes after a change to mml.h); /FS: their PDB written through mspdbsrv. The presets give MSBuild /m too.
+add_compile_options(/W3 /utf-8 /permissive- /Zi /MP /FS)
 add_compile_definitions(_CRT_SECURE_NO_WARNINGS WIN32_LEAN_AND_MEAN NOMINMAX)
 add_link_options(/DEBUG /OPT:REF /OPT:ICF)
 

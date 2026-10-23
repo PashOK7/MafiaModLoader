@@ -34,6 +34,7 @@ pub const MML_SCALE_PIVOT_POINT: u32 = 2;
 pub const MML_PULSE_BEAT: u32 = 0;
 pub const MML_PULSE_SINE: u32 = 1;
 pub const MML_PULSE_BOUNCE: u32 = 2;
+pub const MML_PULSE_SQUASH: u32 = 3;
 pub const MML_SCALE_BEAT_NOW: u32 = 1;
 pub const MML_GFX_UI_OFF: u32 = 0;
 pub const MML_GFX_UI_TAKE: u32 = 1;

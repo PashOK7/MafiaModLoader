@@ -1,6 +1,7 @@
 // bounce: everything around the player pulsing in size to a beat (actor_scale; docs/MODDING.md "The size things are
 // drawn at"). The "Bounce" of the racing games' and GTA's mods: cars, people, the traffic's walkers, trams and trains
-// drawn larger on each beat, their physics and collision their own (the host scales their drawing alone).
+// drawn tall and narrow on each beat and low and wide between, eased both ways (MML_PULSE_SQUASH: never longer),
+// their physics and collision their own (the host scales their drawing alone; the player in his car goes with it).
 //
 // Every half second the mod looks for what is near the player and gives each new one the pulse (the host keeps it
 // pulsing; all at one bpm beat together): the cars and the people by the collision's moving objects in a box around
@@ -35,9 +36,9 @@ constexpr int kTypeRailway = 8;   // C_railway: the trams (salina*), the elevate
 void ReadSettings() {
     S.on = H->config_number(M, "on", 1) != 0;
     S.bpm = static_cast<float>(H->config_number(M, "bpm", 120));
-    S.amount = static_cast<float>(H->config_number(M, "amount", 0.35));
+    S.amount = static_cast<float>(H->config_number(M, "amount", 0.2));
     S.size = static_cast<float>(H->config_number(M, "size", 1));
-    S.shape = static_cast<int>(H->config_number(M, "shape", MML_PULSE_BEAT));
+    S.shape = static_cast<int>(H->config_number(M, "shape", MML_PULSE_SQUASH));
     S.radius = static_cast<float>(H->config_number(M, "radius", 80));
     S.cars = H->config_number(M, "cars", 1) != 0;
     S.people = H->config_number(M, "people", 1) != 0;

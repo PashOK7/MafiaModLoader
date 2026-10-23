@@ -6,9 +6,9 @@
   "hotkey": "Shift+F7",
   "beat_hotkey": "Shift+F5",
   "bpm": 120,
-  "amount": 0.35,       // on the beat: size * (1 + amount * the pulse)
+  "amount": 0.2,        // squash: height * (1 + amount * c), width * (1 - amount * c), c from 1 on the beat to -1
   "size": 1,
-  "shape": 0,           // 0 a kick that dies away, 1 a swell, 2 a hop
+  "shape": 3,           // 3 squash (tall and narrow, then low and wide; eased), 0 a kick, 1 a swell, 2 a hop (all three: every axis)
   "radius": 80,         // metres around the player (trams and trains: four times as far)
   "cars": true,
   "people": true,

@@ -76,10 +76,11 @@ double BeatSeconds() {
     return static_cast<double>(now.QuadPart - g_beatStart.QuadPart) / static_cast<double>(g_freq.QuadPart);
 }
 
-// 0..1, its top on the beat
+// 0..1, its top on the beat (the squash: -1..1, tall on the beat, wide between: a cosine, slow at both ends)
 float Shape(int shape, double beats) {
     double f = beats - std::floor(beats);
     switch (shape) {
+    case MML_PULSE_SQUASH: return static_cast<float>(std::cos(2 * 3.14159265358979 * f));
     case MML_PULSE_SINE: return static_cast<float>(0.5 + 0.5 * std::cos(2 * 3.14159265358979 * f));
     case MML_PULSE_BOUNCE: return static_cast<float>(std::fabs(std::sin(3.14159265358979 * f)));
     default: return static_cast<float>(std::exp(-5.0 * f));
@@ -145,12 +146,12 @@ Entry *Find(void *who) {   // (one size an actor: the last mod's or the bridge's
 }
 
 json EntryJson(const Entry &e) {
-    static const char *shapes[] = {"beat", "sine", "bounce"};
+    static const char *shapes[] = {"beat", "sine", "bounce", "squash"};
     static const char *pivots[] = {"bottom", "origin", "point"};
     json j = {{e.pedestrian ? "pedestrian" : "actor", HexOf(e.who)}, {"by", e.mod ? ModIdOf(e.mod) : "bridge"},
               {"scale", {e.s.scale[0], e.s.scale[1], e.s.scale[2]}}, {"pivot", pivots[std::clamp(e.s.pivot, 0, 2)]}};
     if (e.s.pivot == MML_SCALE_PIVOT_POINT) j["point"] = {e.s.point[0], e.s.point[1], e.s.point[2]};
-    if (e.s.bpm > 0) j["pulse"] = {{"bpm", e.s.bpm}, {"amount", e.s.amount}, {"shape", shapes[std::clamp(e.s.shape, 0, 2)]}, {"phase", e.s.phase}};
+    if (e.s.bpm > 0) j["pulse"] = {{"bpm", e.s.bpm}, {"amount", e.s.amount}, {"shape", shapes[std::clamp(e.s.shape, 0, 3)]}, {"phase", e.s.phase}};
     return j;
 }
 
@@ -187,7 +188,7 @@ int ActorScale(MmlMod *mod, void *actor, const MmlActorScale *s, std::string *er
     for (int i = 0; i < 3; i++)
         if (!(s->scale[i] > 0) || s->scale[i] > 1000) { *err = "scale: each of x, y, z above 0 (and up to 1000)"; return 0; }
     if (s->pivot < MML_SCALE_PIVOT_BOTTOM || s->pivot > MML_SCALE_PIVOT_POINT) { *err = "pivot: MML_SCALE_PIVOT_*"; return 0; }
-    if (s->shape < MML_PULSE_BEAT || s->shape > MML_PULSE_BOUNCE) { *err = "shape: MML_PULSE_*"; return 0; }
+    if (s->shape < MML_PULSE_BEAT || s->shape > MML_PULSE_SQUASH) { *err = "shape: MML_PULSE_*"; return 0; }
     if (!(s->bpm >= 0 && s->bpm <= 2000) || !(std::fabs(s->amount) <= 100)) { *err = "bpm 0..2000, amount -100..100"; return 0; }
     if (!e) {
         if (g_entries.size() >= kMaxScaled) { *err = "4096 scaled at once already"; return 0; }
@@ -207,12 +208,31 @@ void ScaleBeforeRender() {
     std::vector<void *> peds;
     if (std::any_of(g_entries.begin(), g_entries.end(), [](const Entry &e) { return e.pedestrian; })) peds = PedestrianElements();
     double t = BeatSeconds();
+    // (the frames first: one drawn inside another scaled one, the player in his car, takes its size from it)
+    std::vector<std::pair<const Entry *, void *>> todo;
     for (const Entry &e : g_entries) {
         void *frame = ModelOf(e, peds);
-        if (!frame) continue;
-        if (std::any_of(g_kept.begin(), g_kept.end(), [&](const Kept &k) { return k.frame == frame; })) continue;
+        if (frame && std::none_of(todo.begin(), todo.end(), [&](const auto &x) { return x.second == frame; })) todo.push_back({&e, frame});
+    }
+    std::vector<void *> frames;
+    for (const auto &x : todo) frames.push_back(x.second);
+    std::sort(frames.begin(), frames.end());
+    for (const auto &[ep, frame] : todo) {
+        const Entry &e = *ep;
+        bool inside = false;
+        auto up = [&] {
+            void *p = game::at<void *>(frame, game::kFrameParent);
+            for (int i = 0; p && i < 32 && !inside; i++, p = game::at<void *>(p, game::kFrameParent))
+                inside = std::binary_search(frames.begin(), frames.end(), p);
+        };
+        if (Guarded(up) || inside) continue;
         float s[3] = {e.s.scale[0], e.s.scale[1], e.s.scale[2]};
-        if (e.s.bpm > 0) {
+        if (e.s.bpm > 0 && e.s.shape == MML_PULSE_SQUASH) {
+            // (tall and narrow on the beat, low and wide between; its length, z, kept)
+            float w = e.s.amount * Shape(e.s.shape, t * e.s.bpm / 60.0 + e.s.phase);
+            s[0] = std::max(0.001f, s[0] * (1 - w));
+            s[1] = std::max(0.001f, s[1] * (1 + w));
+        } else if (e.s.bpm > 0) {
             float f = 1 + e.s.amount * Shape(e.s.shape, t * e.s.bpm / 60.0 + e.s.phase);
             for (float &v : s) v = std::max(0.001f, v * f);
         }
@@ -320,7 +340,8 @@ bool ScaleMethod(const std::string &method, const std::string &paramsJson, std::
         if (shape == "beat") s.shape = MML_PULSE_BEAT;
         else if (shape == "sine") s.shape = MML_PULSE_SINE;
         else if (shape == "bounce") s.shape = MML_PULSE_BOUNCE;
-        else { *reply = "actor.scale: shape, \"beat\", \"sine\" or \"bounce\""; return true; }
+        else if (shape == "squash") s.shape = MML_PULSE_SQUASH;
+        else { *reply = "actor.scale: shape, \"beat\", \"sine\", \"bounce\" or \"squash\""; return true; }
         if (!ActorScale(nullptr, actor, clear ? nullptr : &s, &err)) { *reply = "actor.scale: " + err; return true; }
         Entry *e = Find(actor);
         json r = e ? EntryJson(*e) : json{{"actor", HexOf(actor)}, {"scale", {1, 1, 1}}, {"own_size", true}};

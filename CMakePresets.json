@@ -17,8 +17,8 @@
     }
   ],
   "buildPresets": [
-    { "name": "x86-release", "configurePreset": "x86", "configuration": "RelWithDebInfo" },
-    { "name": "x86-debug", "configurePreset": "x86", "configuration": "Debug" },
-    { "name": "x64-release", "configurePreset": "x64", "configuration": "RelWithDebInfo" }
+    { "name": "x86-release", "configurePreset": "x86", "configuration": "RelWithDebInfo", "nativeToolOptions": ["/m"] },
+    { "name": "x86-debug", "configurePreset": "x86", "configuration": "Debug", "nativeToolOptions": ["/m"] },
+    { "name": "x64-release", "configurePreset": "x64", "configuration": "RelWithDebInfo", "nativeToolOptions": ["/m"] }
   ]
 }

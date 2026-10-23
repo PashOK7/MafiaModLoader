@@ -1179,7 +1179,7 @@ MmlActorScale s = {sizeof s};
 s.scale[0] = s.scale[1] = s.scale[2] = 1.5f;   /* along the model's own axes */
 s.pivot = MML_SCALE_PIVOT_BOTTOM;              /* from the ground; _ORIGIN, or _POINT with s.point */
 s.bpm = 120; s.amount = 0.35f;                 /* pulsing: scale * (1 + amount * shape), every one at a bpm together */
-s.shape = MML_PULSE_BEAT;                      /* a kick that dies away; _SINE a swell; _BOUNCE a hop */
+s.shape = MML_PULSE_SQUASH;                    /* tall and narrow, then low and wide, eased; length kept */
 H->actor_scale(M, car, &s);                    /* any actor: a car, a person, a tram, a train... or a pedestrian's element */
 H->actor_scale(M, car, NULL);                  /* its own size back */
 s.flags = MML_SCALE_BEAT_NOW; H->actor_scale(M, NULL, &s);   /* the shared beat starts now (a hotkey on the music) */
@@ -1191,7 +1191,8 @@ s.flags = MML_SCALE_BEAT_NOW; H->actor_scale(M, NULL, &s);   /* the shared beat 
   scripts' `FRM_SETSCALE` does) holds too, but the game reads those matrices back: a car scaled so drove as another
   car (knowledge/notes/scale.md).
 - One size an actor (the last mod's, or the bridge's); it holds until changed. For a mod's own animation give it
-  again in RENDER_BEGIN each frame. A person in a car is drawn as the car's child: the car's size is his too. The
+  again in RENDER_BEGIN each frame. One drawn inside another scaled one (a person in a car: the car's child) takes
+  its size from it and is not scaled again. The
   mod's sizes go at its unload, all of them at the mission's close or the actor's destruction.
 - **What is near**: the game's actors (`world_near`; the trams and the elevated trains are type 8), the parked and
   the traffic's cars (not among the actors: `world_shapes` with MML_WORLD_MOVING, the owners of classes 0x201 and
@@ -1200,7 +1201,8 @@ s.flags = MML_SCALE_BEAT_NOW; H->actor_scale(M, NULL, &s);   /* the shared beat 
   `"clear": true`; `"beat": true`), `actors.scaled` lists them. `call camera.set {"follow": "0x...", "eye": [6, 4,
   -14], "at": [0, 1, 2]}` films any of them from its own space (a tram the game's camera cannot follow).
 - `mods/examples/bounce` (not enabled by default; Shift+F7 on and off, Shift+F5 the beat now; Options > Mods >
-  Bounce): everything within 80 m of the player pulsing to 120 bpm, for the "Bounce" videos.
+  Bounce): everything within 80 m of the player squashing to 120 bpm, for the "Bounce" videos. The other shapes
+  (`MML_PULSE_BEAT` a kick, `_SINE`, `_BOUNCE`) scale every axis.
 
 ### People's skinning (more than two bones a vertex)
 
