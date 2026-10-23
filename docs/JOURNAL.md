@@ -3424,3 +3424,30 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   _AIRPLANE); scale_beat replaces actor_scale with no actor and a flag. bounce now asks world_near by type and
   pedestrians_list: no collision owners, no classes. Seen: world.near found 11 traffic cars (1.2) and 5 (1.0, the
   traffic still coming); bounce 42 held, 45 drawn (1.2), 19 (1.0), squashing, no faults. Offline tests: ALL PASSED.
+
+## 2026-10-23: shared GPU fences; dlss_nr pipelined, with DLSS Super Resolution
+
+- **Asked** (the owner): the friend's RTX 5060 Laptop gives 62.5 fps without DLSS (the game's limit) and 20 to 30 with
+  DLSS 5 NR; make the frame pipelined and add DLSS Super Resolution with its presets (and frame generation after).
+- **Why it was slow**: every frame ran the halves one after the other with the CPU waiting at each step (the pass spun
+  on its inputs' event query, the half on its fence, the pass on the half's answer): DLSS-NR's 12 to 13 ms at
+  2560x1600 were added to the frame whole, and NR ran at the frame's full size.
+- **Made (the SDK)**: shared fences between the halves: side.h `fence_create`/`fence_remove` (a Direct3D 12 fence
+  made shared, its handle given to the game as the textures' are: sidecar/proto.h kFence, kFenceGone), mml.h
+  `gfx_shared_fence` (the bridge opens it as an ID3D11Fence through ID3D11Device5::OpenSharedFence); the Rust crate's
+  `gfx_shared_fence`; side_test checks the refusal outside a pass (offline tests).
+- **Made (dlss_nr)**: two slots of textures, the fences "ready" and "done" (dlss_nr.h): the pass draws the frame
+  before's picture (its GPU waiting for "done"), then this frame's inputs, signals "ready" and writes the view; the
+  64-bit half queues the work on the slot's own command buffer (waiting for "ready" N, signalling "done" N, timeline
+  semaphores imported from the fences) and answers at once. DLSS Super Resolution (NGX SuperSampling,
+  nvngx_dlss.dll pinned by deps.py with Frame Generation's DLL and headers): its modes give the render size (NGX's
+  optimal-settings callback); the inputs at that size, jittered (Halton); DLSS-NR at the render size, SR to the frame's.
+  Settings: `nr`, `upscale`, `pipeline`, `sr_preset`, `jitter_sign`. pack.py ships nvngx_dlss.dll; the pack's README.
+- **Seen** (an RTX 3070: DLSS-NR refused there, SR runs): the player's build under DXVK (SR every mode switched in the
+  game's Options, textures made anew each time, no frame late); the jitter's sign measured (above, MODDING.md); 1.2 and
+  1.0 on 9Ex: the picture right, every frame with it after the first 30 (the textures made). 1.2 with fps_unlock:
+  142.8 fps without, 121.5 SR Quality waited for, 132.6 pipelined. DLSS-NR's own path at the render size is not seen
+  (no RTX 50 here): the friend's test.
+- **Seen too**: the player's build exits with an access violation in LS3D's drvClose (its index buffers' release, LS3DF+0x5BA73),
+  the game's code alone on the stack (after the session's own mode switches); its trees are white with DLSS off as on
+  (the 1.2 lab's are green): both to look at.

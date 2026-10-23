@@ -127,8 +127,11 @@ int Refusals(const char *, MmlReply *r, void *) {
     MmlSharedTexture t{};
     t.size = sizeof t;
     int tex = H->gfx_shared_texture(M, "picture", &t);
+    MmlSharedFence f{};
+    f.size = sizeof f;
+    int fence = MML_HAS(H, gfx_shared_fence) ? H->gfx_shared_fence(M, "ready", &f) : -1;
     Reply(r, "{\"other_size\": " + std::string(other ? "true" : "false") + ", \"too_long\": " + std::to_string(tooLong) +
-             ", \"texture_outside_pass\": " + std::to_string(tex) + "}");
+             ", \"texture_outside_pass\": " + std::to_string(tex) + ", \"fence_outside_pass\": " + std::to_string(fence) + "}");
     return 0;
 }
 } // namespace

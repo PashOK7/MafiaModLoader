@@ -444,6 +444,13 @@ typedef struct MmlSharedTexture {
     uint32_t format;        /* DXGI_FORMAT */
     uint32_t generation;    /* the half's: changes when it makes the texture anew */
 } MmlSharedTexture;
+/* A fence of a mod's 64-bit half (side.h fence_create), opened on the graphics bridge's device (gfx_shared_fence):
+ * the GPU of one half waits for what the other's queued, without the CPU. */
+typedef struct MmlSharedFence {
+    uint32_t size;          /* sizeof(MmlSharedFence), set by the caller */
+    void *fence;            /* ID3D11Fence* (Direct3D 11.4: ID3D11DeviceContext4's Signal and Wait take it) */
+    uint32_t generation;    /* the half's: changes when it makes the fence anew (its value starts again at 0) */
+} MmlSharedFence;
 typedef struct MmlChannel MmlChannel;   /* shared memory with the mod's 64-bit half (channel_open) */
 
 /* The mission's scene drawn again, by LS3D itself, from another camera into a target of the bridge's (scene_view;
@@ -1729,6 +1736,14 @@ typedef struct MmlHost {
     /* scale_beat: the pulses' shared beat starts now (every pulsing actor's, whoever set it): a hotkey tapped on the
      * music's beat. Returns 1. Game thread. */
     int (*scale_beat)(MmlMod *mod);
+    /* gfx_shared_fence: the 64-bit half's fence of that name (side.h fence_create) on the graphics bridge's device,
+     * opened at the first ask and again whenever the half makes it anew (its generation): out's fence (ID3D11Fence*:
+     * the loader's, not to be released). 1 there, 0 not (yet, or a device without Direct3D 11.4). Inside a graphics
+     * pass. The pass signals it (ID3D11DeviceContext4::Signal) once its work on the shared textures is queued, and
+     * waits on the half's (ID3D11DeviceContext4::Wait) before reading what the half wrote: the GPUs wait, the CPU
+     * does not. A wait for a value the half never signals stalls the bridge's device: wait only for a value the half
+     * said (a channel) it has queued. */
+    int (*gfx_shared_fence)(MmlMod *mod, const char *name, MmlSharedFence *out);
 } MmlHost;
 
 #define MML_ZONE_PLAYER 0x1u

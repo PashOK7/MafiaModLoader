@@ -30,6 +30,7 @@
 #include <d3d9.h>
 #include <d3d11.h>
 #include <d3d11_1.h>
+#include <d3d11_4.h>   // (ID3D11Device5::OpenSharedFence: the halves' shared fences)
 #include <dxgi.h>
 #include <algorithm>
 #include <cmath>
@@ -154,6 +155,16 @@ struct SideTex {
 std::vector<SideTex> g_sideTex;
 bool g_inPasses;                 // the passes are running (RunPasses)
 void ReleaseSideTex(SideTex &t) { SafeRelease(t.srv); SafeRelease(t.tex); }
+// the 64-bit halves' shared fences (gfx_shared_fence), opened as the textures are
+struct SideFence {
+    MmlMod *mod;
+    std::string name;
+    uint64_t stamp;
+    unsigned gen;
+    ID3D11Fence *fence;
+    uint32_t generation;
+};
+std::vector<SideFence> g_sideFences;
 // the 2D pass for mods (gfx_ui): the HUD and the menus drawn into a shared target (premultiplied RGBA8)
 std::vector<std::pair<MmlMod *, int>> g_uiAsk;   // each mod's mode
 IDirect3DTexture9 *g_ui9; IDirect3DSurface9 *g_uiSurf9;
@@ -555,6 +566,8 @@ void ReleaseAll() {
     ReleaseTimers();
     for (auto &t : g_sideTex) ReleaseSideTex(t);
     g_sideTex.clear();
+    for (auto &f : g_sideFences) SafeRelease(f.fence);
+    g_sideFences.clear();
     SafeRelease(g_vsQuad); SafeRelease(g_psDepth); SafeRelease(g_psComposite);
     SafeRelease(g_decl); SafeRelease(g_quad); SafeRelease(g_event9); SafeRelease(g_block); SafeRelease(g_psMotionAll);
     MotionDeviceGone();
@@ -1395,6 +1408,45 @@ void GfxRemove(MmlMod *mod) {
     GfxUiAsk(mod, MML_GFX_UI_OFF);
     for (auto &t : g_sideTex) if (t.mod == mod) ReleaseSideTex(t);
     g_sideTex.erase(std::remove_if(g_sideTex.begin(), g_sideTex.end(), [&](const SideTex &t) { return t.mod == mod; }), g_sideTex.end());
+    for (auto &f : g_sideFences) if (f.mod == mod) SafeRelease(f.fence);
+    g_sideFences.erase(std::remove_if(g_sideFences.begin(), g_sideFences.end(), [&](const SideFence &f) { return f.mod == mod; }),
+                       g_sideFences.end());
+}
+
+// A 64-bit half's fence on this device (Direct3D 11.4), for its 32-bit half's pass: 1 there (out filled), 0 not (yet).
+int GfxSharedFence(MmlMod *mod, const char *name, MmlSharedFence *out) {
+    if (!name || !out || out->size < sizeof(MmlSharedFence) || !g_inPasses || !g_dev11) return 0;
+    std::string id = ModIdOf(mod);
+    auto it = std::find_if(g_sideFences.begin(), g_sideFences.end(), [&](const SideFence &f) { return f.mod == mod && f.name == name; });
+    SidecarFenceInfo now{};
+    if (!SidecarFence(id, name, &now, false)) {   // none (yet, or no more)
+        if (it != g_sideFences.end()) { SafeRelease(it->fence); g_sideFences.erase(it); }
+        return 0;
+    }
+    if (it == g_sideFences.end() || it->stamp != now.stamp || it->gen != g_generation) {
+        if (it == g_sideFences.end()) it = g_sideFences.insert(g_sideFences.end(), SideFence{mod, name, 0, 0, nullptr, 0});
+        SafeRelease(it->fence);
+        SidecarFenceInfo mine{};
+        HRESULT hr = E_FAIL;
+        ID3D11Device5 *dev5 = nullptr;
+        if (SidecarFence(id, name, &mine, true)) {
+            hr = g_dev11->QueryInterface(__uuidof(ID3D11Device5), reinterpret_cast<void **>(&dev5));
+            if (SUCCEEDED(hr)) hr = dev5->OpenSharedFence(mine.handle, __uuidof(ID3D11Fence), reinterpret_cast<void **>(&it->fence));
+            SafeRelease(dev5);
+            CloseHandle(mine.handle);
+        }
+        it->stamp = mine.handle ? mine.stamp : now.stamp;
+        it->gen = g_generation;
+        it->generation = now.generation;
+        if (FAILED(hr)) {
+            Log(MML_LOG_WARN, id.c_str(), "gfx_shared_fence %s: Direct3D 11.4 did not open it (0x%08X)", name, static_cast<unsigned>(hr));
+            SafeRelease(it->fence);
+        }
+    }
+    if (!it->fence) return 0;
+    out->fence = it->fence;
+    out->generation = it->generation;
+    return 1;
 }
 
 // A 64-bit half's texture on this device, for its 32-bit half's pass: 1 there (out filled), 0 not (yet).

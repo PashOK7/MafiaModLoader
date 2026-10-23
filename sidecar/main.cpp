@@ -191,6 +191,13 @@ struct Texture {
     uint32_t w = 0, h = 0, format = 0, generation = 0;
 };
 
+struct Fence {
+    std::string name;
+    ID3D12Fence *fence = nullptr;
+    HANDLE handle = nullptr;   // ours
+    uint32_t generation = 0;
+};
+
 } // namespace
 
 // ---- one load of a half
@@ -206,8 +213,9 @@ struct Half {
     struct Cmd { MmlSideCommandFn fn; void *user; std::string help; };
     std::map<std::string, Cmd> commands;
     std::vector<Texture> textures;
+    std::vector<Fence> fences;
     std::vector<MmlSideChannel *> channels;
-    uint32_t textureGen = 0;
+    uint32_t textureGen = 0, fenceGen = 0;
 };
 
 namespace {
@@ -362,6 +370,53 @@ void H_TextureRemove(MmlSideMod *m, const char *name) {
     h->textures.erase(std::remove_if(h->textures.begin(), h->textures.end(), [](const Texture &t) { return !t.res; }), h->textures.end());
 }
 
+void DropFence(Half *h, Fence &f, bool tell) {
+    if (tell) Send(side::kFenceGone, 0, {{"mod", h->id}, {"name", f.name}});
+    if (f.handle) CloseHandle(f.handle);
+    if (f.fence) f.fence->Release();
+    f = Fence{};
+}
+
+int H_FenceCreate(MmlSideMod *m, const char *name, MmlSideFence *out) {
+    Half *h = Of(m);
+    if (!h || !name || !*name) return 0;
+    ID3D12Device *dev = D3d12();
+    if (!dev) { Log(h->id, 2, std::string("fence_create ") + name + ": " + (g_haveLuid ? g_d3d12Error : "the game's adapter is not known yet")); return 0; }
+    for (Fence &f : h->fences) if (f.name == name) DropFence(h, f, true);
+    h->fences.erase(std::remove_if(h->fences.begin(), h->fences.end(), [](const Fence &f) { return !f.fence; }), h->fences.end());
+    Fence f;
+    f.name = name;
+    f.generation = ++h->fenceGen;
+    // (shared across adapters' processes: Direct3D 11.4 opens it, Vulkan imports it as a timeline semaphore)
+    if (FAILED(dev->CreateFence(0, D3D12_FENCE_FLAG_SHARED, IID_PPV_ARGS(&f.fence))) ||
+        FAILED(dev->CreateSharedHandle(f.fence, nullptr, GENERIC_ALL, nullptr, &f.handle))) {
+        Log(h->id, 2, std::string("fence_create ") + name + ": the shared fence was not made");
+        DropFence(h, f, false);
+        return 0;
+    }
+    HANDLE theirs = nullptr;
+    if (!DuplicateHandle(GetCurrentProcess(), f.handle, g_game, &theirs, 0, FALSE, DUPLICATE_SAME_ACCESS)) {
+        Log(h->id, 2, std::string("fence_create ") + name + ": its handle was not given to the game (" + std::to_string(GetLastError()) + ")");
+        DropFence(h, f, false);
+        return 0;
+    }
+    Send(side::kFence, 0, {{"mod", h->id}, {"name", name}, {"handle", static_cast<uint64_t>(reinterpret_cast<uintptr_t>(theirs))},
+                           {"generation", f.generation}});
+    h->fences.push_back(f);
+    if (out && out->size >= sizeof(MmlSideFence)) {
+        out->d3d12_fence = f.fence;
+        out->shared_handle = f.handle;
+        out->generation = f.generation;
+    }
+    return 1;
+}
+void H_FenceRemove(MmlSideMod *m, const char *name) {
+    Half *h = Of(m);
+    if (!h || !name) return;
+    for (Fence &f : h->fences) if (f.name == name) DropFence(h, f, true);
+    h->fences.erase(std::remove_if(h->fences.begin(), h->fences.end(), [](const Fence &f) { return !f.fence; }), h->fences.end());
+}
+
 MmlSideChannel *H_ChannelOpen(MmlSideMod *m, const char *name, uint32_t size) {
     Half *h = Of(m);
     if (!h || !name || !*name) return nullptr;
@@ -385,6 +440,7 @@ const MmlSideHost g_host = {
     H_Call, H_Subscribe, H_Command, H_ReplyAppend, H_ReplyError,
     H_AdapterLuid, H_D3d12Device, H_TextureCreate, H_TextureRemove,
     H_ChannelOpen, H_ChannelWrite, H_ChannelRead, H_ChannelWait,
+    H_FenceCreate, H_FenceRemove,
 };
 
 // ---- calls into halves, each behind __try (no C++ objects with destructors here)
@@ -482,6 +538,7 @@ void Unload(const std::string &id, const char *why) {
     }
     h->alive = false;
     for (Texture &t : h->textures) DropTexture(h, t, true);
+    for (Fence &f : h->fences) DropFence(h, f, true);
     for (MmlSideChannel *c : h->channels) { side::ChannelClose(&c->ch); delete c; }
     for (auto &c : h->commands) Send(side::kCommandRemove, 0, {{"mod", id}, {"name", c.first}});
     Send(side::kSubscribe, 0, {{"mod", id}, {"types", json::array()}});

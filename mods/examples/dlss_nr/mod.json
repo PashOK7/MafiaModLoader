@@ -1,6 +1,6 @@
 {
   "id": "dlss_nr",
-  "name": "DLSS 5 NR: NVIDIA's DLSS 5 Neural Rendering over the game's frame (a GeForce RTX 50, nvngx_dlssnr.dll beside the mod)",
+  "name": "DLSS: NVIDIA's DLSS 5 Neural Rendering (a GeForce RTX 50) and Super Resolution, DLAA to Ultra Performance (an RTX), over the game's frame (NVIDIA's DLLs beside the mod)",
   "version": "0.1.0",
   "type": "native",
   "entry": "dlss_nr.dll",
@@ -11,11 +11,16 @@
   "load_order": 100,
   "depends": [],
   "settings": {
-    "title": "DLSS 5 NR",
+    "title": "DLSS",
     "sections": [
-      {"title": "Picture", "controls": [
+      {"title": "DLSS", "controls": [
         {"key": "on", "label": "On"},
         {"key": "hotkey", "label": "On and off", "kind": "key"},
+        {"key": "nr", "label": "DLSS 5 NR"},
+        {"key": "upscale", "label": "Super Resolution", "options": [{"value": 0, "label": "Off"}, {"value": 1, "label": "DLAA"}, {"value": 2, "label": "Quality"}, {"value": 3, "label": "Balanced"}, {"value": 4, "label": "Performance"}, {"value": 5, "label": "Ultra Performance"}]},
+        {"key": "pipeline", "label": "Pipelined (a frame behind)"}
+      ]},
+      {"title": "Picture", "controls": [
         {"key": "intensity", "label": "Intensity", "min": 0, "max": 1, "step": 0.05},
         {"key": "tone", "label": "Local tone", "min": 0, "max": 1, "step": 0.05},
         {"key": "structure", "label": "Local structure", "min": 0, "max": 1, "step": 0.05},
@@ -29,7 +34,9 @@
         {"key": "split_at", "label": "Split at", "min": 0.05, "max": 0.95, "step": 0.05}
       ]},
       {"title": "Advanced", "controls": [
-        {"key": "preset", "label": "Preset", "options": [{"value": 0, "label": "Default"}, {"value": 1, "label": "A"}, {"value": 2, "label": "B"}, {"value": 3, "label": "C"}]},
+        {"key": "preset", "label": "NR preset", "options": [{"value": 0, "label": "Default"}, {"value": 1, "label": "A"}, {"value": 2, "label": "B"}, {"value": 3, "label": "C"}]},
+        {"key": "sr_preset", "label": "SR preset", "options": [{"value": 0, "label": "Default"}, {"value": 10, "label": "J"}, {"value": 11, "label": "K"}, {"value": 12, "label": "L"}, {"value": 13, "label": "M"}]},
+        {"key": "jitter_sign", "label": "Jitter", "options": [{"value": -1, "label": "Normal"}, {"value": 1, "label": "Flipped"}]},
         {"key": "wait_ms", "label": "Wait at most", "min": 10, "max": 2000, "step": 10, "unit": "ms"},
         {"key": "messages", "label": "Messages"},
         {"key": "debug", "label": "Show", "options": [{"value": 0, "label": "Picture"}, {"value": 1, "label": "Motion"}, {"value": 2, "label": "Depth"}, {"value": 3, "label": "Mask"}, {"value": 4, "label": "Round trip"}, {"value": 5, "label": "Motion check"}, {"value": 6, "label": "Still check"}]}

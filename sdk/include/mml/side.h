@@ -79,6 +79,14 @@ typedef struct MmlSideTexture {
     uint32_t generation;        /* bumped when the texture is made anew */
 } MmlSideTexture;
 
+typedef struct MmlSideFence {
+    uint32_t size;              /* sizeof(MmlSideFence), set by the caller */
+    void *d3d12_fence;          /* ID3D12Fence* (the sidecar's Direct3D 12 device), its value 0 at the start */
+    void *shared_handle;        /* its NT handle in this process: Vulkan imports it as a timeline semaphore
+                                   (VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_D3D12_FENCE_BIT), Direct3D 12 opens it */
+    uint32_t generation;        /* bumped when the fence is made anew */
+} MmlSideFence;
+
 typedef struct MmlSideHost {
     uint32_t size;              /* sizeof(MmlSideHost) of the sidecar that made it */
     uint32_t version;           /* MML_SIDE_API_VERSION */
@@ -115,6 +123,15 @@ typedef struct MmlSideHost {
     /* Until the channel holds a version after `after`, at most timeout_ms (0: only looks): that version's number, 0
      * when none came in time; the other half's write wakes it at once. One waiter a channel. Any thread. */
     uint64_t (*channel_wait)(MmlSideChannel *ch, uint64_t after, uint32_t timeout_ms);
+
+    /* Shared fences: one GPU timeline both halves' devices signal and wait on, without the CPU (the 32-bit half opens
+     * it on the graphics bridge's device: mml.h gfx_shared_fence, an ID3D11Fence). A frame handed from one device to
+     * the other: the writer signals value N once its work on the shared textures is queued, the reader's GPU waits for
+     * N before reading them; a channel says which N to wait for. A wait for a value nobody signals stalls that queue:
+     * a reader waits only for what the writer said it queued. Made once the adapter is known (texture_create's rule);
+     * 1 made, 0 not (the log says why). */
+    int (*fence_create)(MmlSideMod *mod, const char *name, MmlSideFence *out);
+    void (*fence_remove)(MmlSideMod *mod, const char *name);
 } MmlSideHost;
 
 typedef int (*MmlSideLoadFn)(const MmlSideHost *host, MmlSideMod *mod);

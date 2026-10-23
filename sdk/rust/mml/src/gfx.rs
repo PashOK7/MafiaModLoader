@@ -10,7 +10,7 @@ use core::ptr;
 
 pub use sys::{
     MmlFrameStats as FrameStats, MmlGameCamera as GameCamera, MmlGfxConstants as GfxConstants, MmlGfxView as GfxView,
-    MmlRenderCamera as RenderCamera, MmlShadowSettings as ShadowSettings, MmlSharedTexture as SharedTexture,
+    MmlRenderCamera as RenderCamera, MmlShadowSettings as ShadowSettings, MmlSharedFence as SharedFence, MmlSharedTexture as SharedTexture,
     MmlViewCamera as ViewCamera,
 };
 
@@ -305,6 +305,14 @@ impl Host {
             generation: 0,
         };
         if unsafe { f!(self, gfx_shared_texture)(self.module, n.as_ptr(), &mut t) } != 0 { Some(t) } else { None }
+    }
+    /// The mod's 64-bit half's fence of that name (side.h fence_create) on the bridge's device, inside a pass: its
+    /// ID3D11Fence (the loader's: valid in this pass; ID3D11DeviceContext4's Signal and Wait take it) and the half's
+    /// generation; None: not there (yet), or a device without Direct3D 11.4
+    pub fn gfx_shared_fence(&self, name: &str) -> Option<SharedFence> {
+        let n = cstring(name);
+        let mut t = SharedFence { size: core::mem::size_of::<SharedFence>() as u32, fence: ptr::null_mut(), generation: 0 };
+        if unsafe { f!(self, gfx_shared_fence)(self.module, n.as_ptr(), &mut t) } != 0 { Some(t) } else { None }
     }
 
     // ---- the scene from another camera

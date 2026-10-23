@@ -1,14 +1,17 @@
-NVIDIA DLSS 5 Neural Rendering for Mafia: The City of Lost Heaven
-=================================================================
+NVIDIA DLSS 5 Neural Rendering and DLSS Super Resolution for Mafia
+==================================================================
 
 For personal use only: do not upload or share this archive publicly
-(it contains NVIDIA's nvngx_dlssnr.dll, under NVIDIA's license).
+(it contains NVIDIA's nvngx_dlssnr.dll and nvngx_dlss.dll, under
+NVIDIA's license).
 
 
 YOU NEED
 --------
-- A GeForce RTX 50 graphics card (RTX 5060 and up). Older cards cannot
-  run DLSS 5 Neural Rendering: NVIDIA's file refuses them.
+- For DLSS 5 Neural Rendering: a GeForce RTX 50 graphics card (RTX 5060
+  and up). Older cards cannot run it: NVIDIA's file refuses them.
+  DLSS Super Resolution (DLAA to Ultra Performance) runs on any GeForce
+  RTX (20 series and newer), with or without Neural Rendering.
 - NVIDIA driver 617.42 or newer (nvidia.com/drivers or the NVIDIA App).
 - Mafia 1.2 (Steam / GOG / patched retail) or 1.0.
 - The game running on the GeForce. A PC whose processor has graphics of
@@ -42,17 +45,31 @@ The first line of mml\logs\mml.log says how much it has.
 
 USE
 ---
-F12           DLSS 5 NR on / off (remembered).
-Esc > Options > Mods > DLSS 5 NR
-              strength, tone, detail, model A/B/C, a split screen to
-              compare with and without (tab "Compare").
+F12           DLSS on / off (remembered).
+Esc > Options > Mods > DLSS
+  DLSS 5 NR         Neural Rendering on / off.
+  Super Resolution  Off, DLAA, Quality, Balanced, Performance,
+                    Ultra Performance. Neural Rendering runs at the
+                    mode's smaller size and Super Resolution brings its
+                    picture back to the screen's: Performance gives it a
+                    quarter of the pixels, so it costs about a quarter.
+                    The faster the mode, the softer the picture.
+  Pipelined         DLSS works on one frame while the game draws the
+                    next one (the picture is one frame behind): much
+                    faster. Off: every frame waits for DLSS.
+  Picture           strength, tone, detail, model A/B/C.
+  Compare           a split screen with and without.
+  Advanced          the presets of Neural Rendering and of Super
+                    Resolution (Default, J, K, L, M).
 
 When a mission or the free ride starts, the message line at the bottom
-left says "DLSS 5 NR: on". If it says something else, it says why
-(for example "needs a GeForce RTX 50 GPU", "the game is not on the
-NVIDIA GPU" or "the graphics bridge is off": the log says why).
+left says what runs, for example "DLSS: 5 NR + SR Performance". If
+something cannot run, it says why (for example "needs a GeForce RTX 50
+GPU", "the game is not on the NVIDIA GPU" or "the graphics bridge is
+off": the log says why).
 
-The frame rate will be lower: the game waits for DLSS 5 every frame.
+Start with Super Resolution on Performance and go up to Quality or DLAA
+while the frame rate allows it.
 
 
 INTROS AND VIDEOS IN ANY FORMAT

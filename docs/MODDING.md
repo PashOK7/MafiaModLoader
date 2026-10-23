@@ -2019,6 +2019,17 @@ smallest half alone, `mods/examples/side_picture` a mod in two halves that hands
   not there. There is no lock between the processes: **the 64-bit half writes a texture only when the 32-bit half is
   not reading it** (two textures, written in turn), waits for its GPU work (a fence) and only then says in a channel
   which texture is whole; the 32-bit half draws the one the channel names.
+- **Shared fences** (the GPUs wait, the CPUs do not): the 64-bit half makes one with `fence_create(mod, name, &out)`
+  (a Direct3D 12 fence made shared, value 0; Vulkan imports `out.shared_handle` as a timeline semaphore,
+  `VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_D3D12_FENCE_BIT`, with `VK_KHR_external_semaphore_win32` and the
+  `timelineSemaphore` feature), the 32-bit half opens it in a pass with `gfx_shared_fence(mod, name, &f)` (an
+  `ID3D11Fence`; `ID3D11DeviceContext4::Signal` and `Wait` take it). A frame handed over each way: the pass draws frame
+  N's inputs and signals "ready" N, the half's queue waits for "ready" N, works, signals "done" N; the pass's GPU waits
+  for "done" N before it reads that picture or writes those inputs again. The half answers in a channel as soon as its
+  work is queued: so DLSS on frame N runs while the game draws N + 1 (`dlss_nr`: the round trip's CPU waits gone).
+  **Wait only for a value the other side said it queued** (a channel): a wait for a value nobody signals stalls that
+  queue (the bridge's device, or the half's), and a half that took a view must signal its value whatever came of its
+  work. A new fence (the half reloaded, its generation) starts at 0: count on from the fences' completed values.
 - **The frame's round trip** (`side_picture`, measured 2026-10-18 in both labs, an RTX 3070): the 32-bit half writes
   the frame's number into a channel at `FRAME` (the frame's start); the sidecar is told of `FRAME` right after, the
   half's worker draws that frame's picture (two clears) and waits for its GPU: 0.4 ms from the frame's start to the
@@ -2169,6 +2180,18 @@ smallest half alone, `mods/examples/side_picture` a mod in two halves that hands
   `third_party/_deps/ngx/bin/`, and a player puts it beside the mod's `mod.json` (`<game>\mml\mods\dlss_nr\`, not in
   `x64\`: the sidecar copies that folder at each load, and the DLL is 266 MB). Bypassing NGX's check of the GPU is
   against NVIDIA's license (4.d): the mod does not and will not.
+  **Since 2026-10-23 the mod also runs DLSS Super Resolution** (NGX feature SuperSampling, `nvngx_dlss.dll` of the
+  public DLSS SDK, any GeForce RTX; the same Vulkan device with both features' extensions) and works **pipelined**:
+  the frames go round two slots of shared textures, ordered by two shared fences ("ready", "done": the section above),
+  the pass drawing the picture of the frame before while the half's GPU works on this one. With Super Resolution on
+  (Off, DLAA, Quality, Balanced, Performance, Ultra Performance: the render size NGX's optimal-settings callback gives
+  for the mode), the pass draws the inputs at the render size, each render pixel the frame's pixel under a jittered
+  point (Halton 2, 3 over 8 x scale^2 phases, DLSS's guide; none at DLAA's 1:1, where no sub-pixel sample exists), the
+  motion vectors in render pixels; DLSS-NR runs at that size and DLSS SR (LDR, `MVLowRes`) brings its picture to the
+  frame's. The jitter DLSS takes is the sample offset negated (`jitter_sign` -1: measured in the player's build at Ultra
+  Performance on a frozen scene; +1 left the picture blocky, the billboard unreadable). Measured on the RTX 3070 at
+  1280x960 (DLSS-NR not there: SR alone), 1.2 with fps_unlock: 142.8 fps without DLSS, 121.5 with SR Quality waited for,
+  132.6 pipelined; SR's own GPU time 0.6 to 0.8 ms, the pass's 0.2 ms; 1.0 the same path, every frame with its picture.
 
 ## 4. A complete example
 

@@ -40,6 +40,8 @@ enum MsgType : uint32_t {
     kModState = 107,      // json {id, generation, state: "loaded" | "failed" | "unloaded" | "faulted", error, where}
     kTexture = 108,       // json {mod, name, handle (in the game's process), width, height, format, generation}
     kTextureGone = 109,   // json {mod, name}
+    kFence = 110,         // json {mod, name, handle (in the game's process), generation}
+    kFenceGone = 111,     // json {mod, name}
 };
 
 struct MsgHeader {

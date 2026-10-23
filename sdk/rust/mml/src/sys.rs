@@ -966,6 +966,33 @@ impl Default for MmlSharedTexture {
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
+pub struct MmlSharedFence {
+    pub size: u32,
+    pub fence: *mut ::core::ffi::c_void,
+    pub generation: u32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of MmlSharedFence"][::core::mem::size_of::<MmlSharedFence>() - 12usize];
+    ["Alignment of MmlSharedFence"][::core::mem::align_of::<MmlSharedFence>() - 4usize];
+    ["Offset of field: MmlSharedFence::size"]
+        [::core::mem::offset_of!(MmlSharedFence, size) - 0usize];
+    ["Offset of field: MmlSharedFence::fence"]
+        [::core::mem::offset_of!(MmlSharedFence, fence) - 4usize];
+    ["Offset of field: MmlSharedFence::generation"]
+        [::core::mem::offset_of!(MmlSharedFence, generation) - 8usize];
+};
+impl Default for MmlSharedFence {
+    fn default() -> Self {
+        let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::core::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct MmlChannel {
     _unused: [u8; 0],
 }
@@ -3631,10 +3658,17 @@ pub struct MmlHost {
     >,
     pub scale_beat:
         ::core::option::Option<unsafe extern "C" fn(mod_: *mut MmlMod) -> ::core::ffi::c_int>,
+    pub gfx_shared_fence: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            name: *const ::core::ffi::c_char,
+            out: *mut MmlSharedFence,
+        ) -> ::core::ffi::c_int,
+    >,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 796usize];
+    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 800usize];
     ["Alignment of MmlHost"][::core::mem::align_of::<MmlHost>() - 4usize];
     ["Offset of field: MmlHost::size"][::core::mem::offset_of!(MmlHost, size) - 0usize];
     ["Offset of field: MmlHost::api_version"]
@@ -3976,6 +4010,8 @@ const _: () = {
         [::core::mem::offset_of!(MmlHost, actor_scale) - 788usize];
     ["Offset of field: MmlHost::scale_beat"]
         [::core::mem::offset_of!(MmlHost, scale_beat) - 792usize];
+    ["Offset of field: MmlHost::gfx_shared_fence"]
+        [::core::mem::offset_of!(MmlHost, gfx_shared_fence) - 796usize];
 };
 pub type MmlModLoadFn = ::core::option::Option<
     unsafe extern "C" fn(host: *const MmlHost, mod_: *mut MmlMod) -> ::core::ffi::c_int,

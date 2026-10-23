@@ -99,6 +99,16 @@ PINNED = {
             (DLSS_RAW + 'include/nvsdk_ngx_vk.h', '2d364ce7132881eb669e9498fd570d74cba563b1fbebc82c235f8e1ad2dd8b6d', 'include'),
             (DLSS_RAW + 'include/nvsdk_ngx_helpers_vk.h', 'c192bff72138f12f770db48e12c1d8f712dfc81ea0e8e055ebb27d8dd1b31623', 'include'),
             (DLSS_RAW + 'lib/Windows_x86_64/x64/nvsdk_ngx_s.lib', '7b9a5239c1145af5f645ab472aa066f9ea79db36ac819562312aae69d65f3765', 'lib'),
+            # DLSS Super Resolution (DLAA to Ultra Performance) and Frame Generation of the same SDK: their runtimes
+            # (signed by NVIDIA) and Frame Generation's headers (its Vulkan helpers; nvsdk_ngx.h and its loader header
+            # are what nvsdk_ngx_params_dlssg.h includes). The hashes: the files as GitHub served them on 2026-10-23.
+            (DLSS_RAW + 'include/nvsdk_ngx.h', 'dc38e7467cf415379c9d12ae1b6e4a494c453ed92720fb53e92aecb523e7b848', 'include'),
+            (DLSS_RAW + 'include/nvsdk_ngx_loader.h', 'abdf5f66a692620538357d29fdf78e3e2a677ee8140b7a638962ecb766585e75', 'include'),
+            (DLSS_RAW + 'include/nvsdk_ngx_defs_dlssg.h', 'c29765ab9e0125f9d724ae9811cc2abe03738d17486ec8eee80d78a1504549e1', 'include'),
+            (DLSS_RAW + 'include/nvsdk_ngx_params_dlssg.h', 'c24fa5aa68ffa2808c828b75cfa32843f1606f80a145f84055ac450d7e6c74ad', 'include'),
+            (DLSS_RAW + 'include/nvsdk_ngx_helpers_dlssg_vk.h', 'b371d90b9f4372b9a415e68a0afbdc2f31b7b552e219a9637d848749bc965316', 'include'),
+            (DLSS_RAW + 'lib/Windows_x86_64/rel/nvngx_dlss.dll', 'd00b5b0ab29c3ca101b70c3a5ecb3a01b7ef33766a3383a28a18623083e6123e', 'bin'),
+            (DLSS_RAW + 'lib/Windows_x86_64/rel/nvngx_dlssg.dll', '8d59d49b36410dd6b62fef2503a5871d347415bd85d943fa0848563a95dd50c7', 'bin'),
             (DLSS_RAW + 'LICENSE.txt', 'd4216e39ebef5f9b50a6712ebb37beeb5379862a67733a9999c651f21592aaf0', ''),
             ('https://github.com/ip7z/7zip/releases/download/26.04/7zr.exe',
              '256feca8e274e5da655e2a284fabafd9f554365eb164862089dacd4e8276d282', 'tools'),

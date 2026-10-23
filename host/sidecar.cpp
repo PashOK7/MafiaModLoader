@@ -69,6 +69,8 @@ std::map<std::string, std::string> g_commands;   // "<mod>.<name>" -> help
 struct SharedTex { HANDLE handle; uint32_t w, h, format, generation; uint64_t stamp; };
 uint64_t g_texStamp;
 std::map<std::string, std::map<std::string, SharedTex>> g_textures;   // mod -> name -> texture
+struct SharedFence { HANDLE handle; uint32_t generation; uint64_t stamp; };
+std::map<std::string, std::map<std::string, SharedFence>> g_fences;   // mod -> name -> fence (stamped as the textures)
 std::set<std::string> g_subTypes;   // the union of every half's subscriptions ("*": all)
 std::atomic<bool> g_anySub{false}, g_tickSub{false}, g_frameSub{false};
 
@@ -222,6 +224,26 @@ void Handle(uint32_t type, uint32_t aux, const std::string &payload) {
                             j.value("height", 0u), j.value("format", 0u), j.value("generation", 0u), ++g_texStamp};
         break;
     }
+    case side::kFence: {
+        std::lock_guard<std::mutex> lk(g_mx);
+        auto &m = g_fences[j.value("mod", std::string())];
+        std::string name = j.value("name", std::string());
+        auto it = m.find(name);
+        if (it != m.end() && it->second.handle) CloseHandle(it->second.handle);
+        m[name] = SharedFence{reinterpret_cast<HANDLE>(static_cast<uintptr_t>(j.value("handle", 0ull))), j.value("generation", 0u),
+                              ++g_texStamp};
+        break;
+    }
+    case side::kFenceGone: {
+        std::lock_guard<std::mutex> lk(g_mx);
+        auto &m = g_fences[j.value("mod", std::string())];
+        auto it = m.find(j.value("name", std::string()));
+        if (it != m.end()) {
+            if (it->second.handle) CloseHandle(it->second.handle);
+            m.erase(it);
+        }
+        break;
+    }
     case side::kTextureGone: {
         std::lock_guard<std::mutex> lk(g_mx);
         auto &m = g_textures[j.value("mod", std::string())];
@@ -313,6 +335,8 @@ DWORD WINAPI Watcher(void *proc) {
         g_commands.clear();
         for (auto &m : g_textures) for (auto &t : m.second) if (t.second.handle) CloseHandle(t.second.handle);
         g_textures.clear();
+        for (auto &m : g_fences) for (auto &f : m.second) if (f.second.handle) CloseHandle(f.second.handle);
+        g_fences.clear();
         ULONGLONG now = GetTickCount64();
         while (!g_restarts.empty() && now - g_restarts.front() > 60000) g_restarts.pop_front();
         again = g_wanted && g_restarts.size() < 3;
@@ -490,6 +514,12 @@ json StateValue() {
             for (auto &x : t->second) tex[x.first] = {{"width", x.second.w}, {"height", x.second.h}, {"format", x.second.format}, {"generation", x.second.generation}};
             h["textures"] = tex;
         }
+        auto f = g_fences.find(kv.first);
+        if (f != g_fences.end() && !f->second.empty()) {
+            json fences = json::object();
+            for (auto &x : f->second) fences[x.first] = {{"generation", x.second.generation}};
+            h["fences"] = fences;
+        }
         halves[kv.first] = h;
     }
     json cmds = json::array();
@@ -534,6 +564,22 @@ bool SidecarTexture(const std::string &mod, const std::string &name, SidecarTex 
     if (dup) {
         HANDLE mine = nullptr;
         if (!DuplicateHandle(GetCurrentProcess(), s.handle, GetCurrentProcess(), &mine, 0, FALSE, DUPLICATE_SAME_ACCESS)) return false;
+        out->handle = mine;
+    }
+    return true;
+}
+
+// A half's shared fence, for its 32-bit half (gfx.cpp opens it on its device): as SidecarTexture.
+bool SidecarFence(const std::string &mod, const std::string &name, SidecarFenceInfo *out, bool dup) {
+    std::lock_guard<std::mutex> lk(g_mx);
+    auto m = g_fences.find(mod);
+    if (m == g_fences.end()) return false;
+    auto f = m->second.find(name);
+    if (f == m->second.end() || !f->second.handle) return false;
+    *out = SidecarFenceInfo{nullptr, f->second.generation, f->second.stamp};
+    if (dup) {
+        HANDLE mine = nullptr;
+        if (!DuplicateHandle(GetCurrentProcess(), f->second.handle, GetCurrentProcess(), &mine, 0, FALSE, DUPLICATE_SAME_ACCESS)) return false;
         out->handle = mine;
     }
     return true;

@@ -39,8 +39,9 @@ PACKS = {
         'mods': ['core', 'dlss_nr'],
         # NVIDIA's DLL (tools/deps.py ngx): beside the mod's mod.json, where the half looks for it
         'files': {'mml/mods/dlss_nr/nvngx_dlssnr.dll': os.path.join(DEPS, 'ngx', 'bin', 'nvngx_dlssnr.dll'),
+                  'mml/mods/dlss_nr/nvngx_dlss.dll': os.path.join(DEPS, 'ngx', 'bin', 'nvngx_dlss.dll'),
                   'licenses/NVIDIA-RTX-SDKs-LICENSE.txt': os.path.join(DEPS, 'ngx', 'bin', 'LICENSE.txt')},
-        'inside': ['NVIDIA nvngx_dlssnr.dll 310.9.16.0 (NVIDIA RTX SDKs license).'],
+        'inside': ['NVIDIA nvngx_dlssnr.dll and nvngx_dlss.dll 310.9.16.0 (NVIDIA RTX SDKs license).'],
     },
 }
 

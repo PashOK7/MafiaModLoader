@@ -1,6 +1,7 @@
-// dlss_nr's drawing (dlss_nr.cpp's graphics pass, Direct3D 11, shader model 5). DLSS 5 Neural Rendering runs in the
-// 64-bit half over the frame it is given: PsPrepare gives it the frame (the shared textures "color_in", "depth_in",
-// "mvec_in", "mask_in"), PsComposite puts what came back ("color_out") on the screen, PsDebug shows the inputs.
+// dlss_nr's drawing (dlss_nr.cpp's graphics pass, Direct3D 11, shader model 5). DLSS (5 Neural Rendering, Super
+// Resolution) runs in the 64-bit half over the frame it is given: PsPrepare gives it the frame at the render size (a
+// slot's shared textures "color_in", "depth_in", "mvec_in", "mask_in"), PsComposite puts what came back ("color_out")
+// on the screen, PsDebug shows the inputs.
 #include "mml/gfx/frame.hlsli"
 
 cbuffer DlssNr : register(b1) {
@@ -12,6 +13,8 @@ cbuffer DlssNr : register(b1) {
     float4 g_opts;        // x: the mask on the sky (0..1), y: 1 when there is a frame before, z: the split's place
                           // (0..1 of the width, 0: none), w: the debug view (1 motion, 2 depth, 3 mask)
     float4 g_opts2;       // x: 1 when the bridge's motion vectors are bound (frame.hlsli g_motion, t3)
+    float4 g_render;      // xy: the frame's pixels a render pixel covers (the frame's size / the render size), zw: where
+                          // in its render pixel this frame's inputs are sampled (the jitter, -0.5..0.5)
 };
 
 Texture2D<float4> g_nrOut : register(t5);   // "color_out": DLSS-NR's picture, in the display's gamma (as it was given)
@@ -49,13 +52,18 @@ struct Prepared {
     float4 mask : SV_Target3;    // DLSS-NR's control mask: how much it may change each pixel
 };
 
+// One render pixel: the frame's pixel under its jittered sample point (the game drew the frame at its full size; a
+// render pixel sampled at one point of it is what a render at the smaller size would have drawn there, its jitter the
+// sub-pixel sample DLSS gathers over the frames). The motion vector in render pixels.
 Prepared PsPrepare(float4 pos : SV_Position) {
     Prepared o;
-    o.color = float4(saturate(g_sceneColor.Load(int3(pos.xy, 0)).rgb), 1);
-    float z = SceneDepth(pos.xy);
+    float2 at = min((floor(pos.xy) + 0.5 + g_render.zw) * g_render.xy, g_size.xy - 0.5);
+    float2 pixel = floor(at) + 0.5;
+    o.color = float4(saturate(g_sceneColor.Load(int3(pixel, 0)).rgb), 1);
+    float z = SceneDepth(pixel);
     o.depth = IsSky(z) ? 1 : saturate(g_depthProj.x + g_depthProj.y / max(z, 1e-3));
-    o.motion = float4(Motion(pos.xy), 0, 0);
-    o.mask = Mask(pos.xy).xxxx;
+    o.motion = float4(Motion(pixel) / g_render.xy, 0, 0);
+    o.mask = Mask(pixel).xxxx;
     return o;
 }
 

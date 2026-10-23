@@ -1368,8 +1368,9 @@ def sidecar_tests(b):
     check('channel_wait in the 64-bit half: woken by the 32-bit half\'s write 300 ms later (%s ms)' % wr.get('ms'),
           w['ok'] and wr['version'] > wr['after'] and 200 <= wr['ms'] < 2000, (r, w))
     r = b.call('side_test.refusals')
-    check('channels: another size refused, a version longer than the channel refused; gfx_shared_texture outside a pass: 0',
-          r['ok'] and r['result'] == {'other_size': False, 'too_long': 0, 'texture_outside_pass': 0}, r)
+    check('channels: another size refused, a version longer than the channel refused; gfx_shared_texture and '
+          'gfx_shared_fence outside a pass: 0',
+          r['ok'] and r['result'] == {'other_size': False, 'too_long': 0, 'texture_outside_pass': 0, 'fence_outside_pass': 0}, r)
     r = b.call('side_test.flood')
     t = b.call('side_test.torn') if r['ok'] else r
     tr = t.get('result') or {}

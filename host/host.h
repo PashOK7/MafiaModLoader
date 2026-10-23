@@ -307,6 +307,8 @@ std::vector<std::pair<std::string, std::string>> SidecarCommands();
 // the half makes it anew); with dup, handle is this process's own copy of its handle (the caller closes it).
 struct SidecarTex { void *handle; uint32_t w, h, format, generation; uint64_t stamp; };
 bool SidecarTexture(const std::string &mod, const std::string &name, SidecarTex *out, bool dup);
+struct SidecarFenceInfo { void *handle; uint32_t generation; uint64_t stamp; };   // a half's shared fence, as SidecarTex
+bool SidecarFence(const std::string &mod, const std::string &name, SidecarFenceInfo *out, bool dup);
 // the channels of the mods' 32-bit halves (mml.h channel_open; the memory sidecar/channel.h describes); any thread
 MmlChannel *SidecarChannelOpen(MmlMod *mod, const char *name, uint32_t size, std::string *err);
 int SidecarChannelWrite(MmlChannel *ch, const void *data, uint32_t bytes);
@@ -314,6 +316,7 @@ uint32_t SidecarChannelRead(MmlChannel *ch, void *data, uint32_t cap, uint64_t *
 uint64_t SidecarChannelWait(MmlChannel *ch, uint64_t after, uint32_t timeoutMs);
 void SidecarChannelsForget(MmlMod *mod);   // (the mod's unload) its channels closed
 int GfxSharedTexture(MmlMod *mod, const char *name, MmlSharedTexture *out);   // (gfx.cpp; inside a graphics pass)
+int GfxSharedFence(MmlMod *mod, const char *name, MmlSharedFence *out);       // (gfx.cpp; inside a graphics pass)
 bool SidecarWants(const char *type);
 void SidecarShutdown();
 bool SidecarMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
