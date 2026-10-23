@@ -43,7 +43,7 @@ template <class T> T &At(const void *p, int off) { return *reinterpret_cast<T *>
 
 using RenderFgFn = void(__fastcall *)(void *visual, void *edx, uint8_t *entry);
 using DipFn = HRESULT(STDMETHODCALLTYPE *)(IDirect3DDevice9 *, D3DPRIMITIVETYPE, INT, UINT, UINT, UINT, UINT);
-RenderFgFn oObject, oLit, oBillboard;
+RenderFgFn oObject, oLit, oBillboard, oShadow;
 DipFn oDip;
 bool g_hookTried, g_hooked, g_dipHooked;
 std::string g_hookWhy;
@@ -308,17 +308,29 @@ void __fastcall hkRenderFg(void *visual, void *edx, uint8_t *entry) {
     g_now = nullptr;
 }
 
+// A shadow's faces on what receives it (the shadow visual: a car's shadow on the road), for the motion vectors alone: its
+// entry is not a face group's, so no rules and no survey (game_build.h fgRenderShadow). The entry is a copy in
+// Render's list, elsewhere each frame: the group is told by its sort key (+0x04), one of the visual's two halves
+void __fastcall hkRenderShadow(void *visual, void *edx, uint8_t *entry) {
+    if (!MotionWanted()) { oShadow(visual, edx, entry); return; }
+    MotionGroupBegin(4, visual, reinterpret_cast<const void *>(static_cast<uintptr_t>(At<uint32_t>(entry, 0x04))),
+                     !ViewDrawingNow() && g_inFrame);
+    oShadow(visual, edx, entry);
+    MotionGroupEnd();
+}
+
 bool EnsureHooks() {
     if (g_hookTried) return g_hooked;
     g_hookTried = true;
     if (!game::g_ls3d) { g_hookWhy = "no game known"; g_hookTried = false; return false; }
     const game::Ls3dBuild &l = game::Ls3d();
-    if (!l.fgRenderObject || !l.fgRenderLit || !l.fgRenderBillboard) { g_hookWhy = "not known for this LS3DF.dll"; return false; }
+    if (!l.fgRenderObject || !l.fgRenderLit || !l.fgRenderBillboard || !l.fgRenderShadow) { g_hookWhy = "not known for this LS3DF.dll"; return false; }
     uintptr_t base = ModuleBase("LS3DF.dll");
     struct { uintptr_t at; void *detour; RenderFgFn *orig; } hooks[] = {
         {base + l.fgRenderObject, reinterpret_cast<void *>(&hkRenderFg<&oObject, 1>), &oObject},
         {base + l.fgRenderLit, reinterpret_cast<void *>(&hkRenderFg<&oLit, 2>), &oLit},
         {base + l.fgRenderBillboard, reinterpret_cast<void *>(&hkRenderFg<&oBillboard, 3>), &oBillboard},
+        {base + l.fgRenderShadow, reinterpret_cast<void *>(&hkRenderShadow), &oShadow},
     };
     std::string err;
     for (auto &h : hooks) {
@@ -328,7 +340,7 @@ bool EnsureHooks() {
         return false;
     }
     g_hooked = true;
-    HLOG("geom: the face groups' m_RenderFGroup hooked (objects, lit objects, billboards)");
+    HLOG("geom: the face groups' m_RenderFGroup hooked (objects, lit objects, billboards, shadows)");
     return true;
 }
 

@@ -3475,3 +3475,29 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   ground's): DLSS SR leaves a ghost behind the moving car (the friend's "smear"), most at Quality where the car itself
   is sharp. The pipeline shows the world one frame behind (the car shifted a frame's travel, not blurred); the test
   turns it off. To fix in the bridge's motion vectors: next.
+
+## 2026-10-24: the bridge's motion vectors whole on a moving car (its cut-out parts, its shadow)
+
+- **Found** (the pass test's motion views, `tools/pass_test.py --modes motion,motion_check`): the holes in the car's
+  front were not draws left out but the depth test of PsMotionAll. The wheels and the spare wheel are quads with
+  alpha-tested textures; drawn again with the alpha test off, their clear parts gave the objects' target their depth
+  over the fender seen through them, and the fender's pixels then failed the comparison with the frame's depth. With
+  the comparison taken out the front was whole and the wheels square.
+- **Fixed**: the motion draw repeats the draw's own alpha test (`AlphaCut`: the stage-0 texture's alpha against
+  ALPHAREF, GREATER and GREATEREQUAL, in the draw's own FVF so its texture coordinates come along; the diffuse alpha the
+  stage may modulate by is left out).
+- **Found**: a car's shadow is no decal of the car's: it is LS3D's shadow projector, whose own visual cuts the
+  receivers' faces under it out and draws them textured with the shadow's picture, through its own m_RenderFGroup
+  (the shadow visual's vtable +0x6C: 1.2 LS3DF+0x53EE0, 1.0 +0x51690; its shadow projector at +0x1E0, whose world matrix the
+  picture follows) and IGraph's DrawIndexedPrimitive (a dynamic buffer, then the device's). Its entry in Render's list is
+  a copy, elsewhere each frame.
+- **Made**: that m_RenderFGroup hooked for the motion vectors alone (kind 4; `game_build.h` fgRenderShadow, checked by
+  `tools/check_builds.py`): the faces drawn again with the motion of the shadow's projector (a point of them goes back
+  through the projector's inverse and its last matrix), cut where the picture's alpha is under 0.2; keyed by the
+  entry's sort key. What writes no depth is no longer left out: the frame's own depth test and PsMotionAll's comparison
+  keep it where it is what is seen (a shadow on the road, not glass over the street far behind it). `gfx.state`
+  motion `shadows`, `shadows_again`.
+- **Measured** (the pass test, the same modes before and after): the motion view's car whole (fender, spare wheel,
+  bumper), round wheels, the shadow's shape with the car's motion; the check's mean 12.75 -> 11.40, its bright bands
+  under the car gone. SR Ultra Performance: the shadow without its doubled edge and trail. 1.0 lab: the hook on, the
+  same pictures. The cost: the road under the shadow moves with it in the vectors (its texture faint there).

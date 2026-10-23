@@ -36,13 +36,15 @@ row_major float4x4 g_before : register(c8); // VsMotion: the last frame's; PsMot
                                             // last frame's clip space (inverse(view) * view before * projection before)
 float4 g_proj : register(c12);              // PsMotionAll: this frame's projection _11, _22, _31, _32
 
-struct MotionV { float4 pos : POSITION; float4 now : TEXCOORD0; float4 before : TEXCOORD1; };
+struct MotionV { float4 pos : POSITION; float4 now : TEXCOORD0; float4 before : TEXCOORD1; float2 uv : TEXCOORD2; };
 
-MotionV VsMotion(float3 pos : POSITION) {
+// (the draw's own vertex layout, its FVF: the texture's place for an alpha-tested draw)
+MotionV VsMotion(float3 pos : POSITION, float2 uv : TEXCOORD0) {
     MotionV o;
     o.pos = mul(float4(pos, 1), g_now);
     o.now = o.pos;
     o.before = mul(float4(pos, 1), g_before);
+    o.uv = uv;
     return o;
 }
 
@@ -52,12 +54,18 @@ MotionV VsMotionSkin(float3 pos : POSITION0, float3 was : POSITION1) {
     o.pos = mul(float4(pos, 1), g_now);
     o.now = o.pos;
     o.before = mul(float4(was, 1), g_before);
+    o.uv = 0;
     return o;
 }
 
 float2 ToScreen(float4 clip) { return float2((clip.x / clip.w + 1) * 0.5 * g_size.x, (1 - clip.y / clip.w) * 0.5 * g_size.y); }
 
-float4 PsMotion(float2 vpos : VPOS, float4 now : TEXCOORD0, float4 before : TEXCOORD1) : COLOR0 {
+// PsMotion: x the draw's alpha test (its reference, 0..1; < 0 none: the texture at s0 is the draw's own, its alpha
+// what the test compares)
+float4 g_motionDraw : register(c2);
+
+float4 PsMotion(float2 vpos : VPOS, float4 now : TEXCOORD0, float4 before : TEXCOORD1, float2 uv : TEXCOORD2) : COLOR0 {
+    if (g_motionDraw.x >= 0) clip(tex2D(g_tex, uv).a - g_motionDraw.x);   // (where the draw's own test left it out)
     float2 here = vpos + 0.5;
     float2 motion = before.w > 1e-4 ? ToScreen(before) - here : 0;
     return float4(motion, now.w, 1);   // (w of a perspective projection: the view depth, compared in PsMotionAll)
@@ -72,8 +80,8 @@ float4 PsMotionAll(float2 vpos : VPOS) : COLOR0 {
     float2 uv = here * g_size.zw;
     float z = tex2D(g_viewDepth, uv).r;
     float4 o = tex2D(g_objects, uv);
-    // an object's, where the object is what is seen (its depth is the frame's: a nearer thing drawn after it, or a
-    // pixel its alpha test left out, has another)
+    // an object's, where the object is what is seen (its depth is the frame's: a nearer thing drawn after it has
+    // another; a shadow on the road has the road's, glass over the street far behind it has not)
     if (o.w > 0.5 && abs(o.z - z) <= 0.01 * z + 0.05) return float4(o.xy, 0, 0);
     // the camera's: this pixel's place in view space, through the last frame's camera; the sky (g_depth.z) as a
     // direction alone (its turn without its move)

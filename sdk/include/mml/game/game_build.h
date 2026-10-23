@@ -540,7 +540,11 @@ struct Ls3dBuild {
     // mesh: objects, morphs and single meshes share fgRenderObject; lit (lightmapped) objects fgRenderLit;
     // billboards fgRenderBillboard. A face group: +0x04 material, +0x08 faces, +0x0C the next group; a material:
     // +0x08 flags, +0x0C its texture (the animation's frame now); a texture: +0x1C its file name without folders.
-    uintptr_t fgRenderObject, fgRenderLit, fgRenderBillboard;
+    // fgRenderShadow: a shadow's (the shadow visual: the receivers' faces under a shadow projector cut out and textured with
+    // its picture: a car's shadow on the road), the same call; the visual's +0x1E0 its shadow projector, whose world
+    // matrix (+0x10) the picture moves with; its +0x10 the world matrix it draws with; its faces through IGraph's
+    // DrawIndexedPrimitive (a dynamic buffer, FVF xyz, diffuse, one texture: 24 bytes) or its own buffer.
+    uintptr_t fgRenderObject, fgRenderLit, fgRenderBillboard, fgRenderShadow;
     // The scene's lights (host/lights.cpp): I3D_light's vtable (written by its constructor and destructor). Its
     // slots, stdcall(light, ...), the same in both builds: +0x24 SetOn(bool), +0x50 SetLightType, +0x54
     // SetColor(r, g, b), +0x58 SetColor(const S_vector *), +0x5C SetPower(float), +0x60 SetMode, +0x64
@@ -857,7 +861,7 @@ inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1
                                   0x72122, 0x6D592,
                                   0x2EE00, 0x2EC00, 0x2E070,
                                   0x9B6D0, 0x9C8F8, 0x4A1D0, 0x65560,
-                                  0x39280, 0x28D40, 0x083B0,
+                                  0x39280, 0x28D40, 0x083B0, 0x53EE0,
                                   0x9BC88,   // (I3D_light's vtable: its constructor 0x201F0 writes it at 0x2027D)
                                   0x9C660, 0x9C5B8,   // (written at 0x3FA3B and 0x406D8, PRTE's at 0x3FB72)
                                   0x9CE78,   // (I3D_sound's: written at 0x5774F and 0x57802)
@@ -881,7 +885,7 @@ inline const Ls3dBuild kLs3d10 = {"1.0", 0x5ED80, 0x1A8A0, 0x305B0, 0x5D070, 0x1
                                   // (2026-10-15: the camera's constructor 0xAA20, the vtable holding GetSector,
                                   // Render's calls of QueueVisual)
                                   0x97690, 0x98898, 0x47D20, 0x622D0,
-                                  0x37940, 0x28670, 0x07E50,   // (the vtables +0x6C of OBJ_, LMAP, billboards)
+                                  0x37940, 0x28670, 0x07E50, 0x51690,   // (the vtables +0x6C of OBJ_, LMAP, billboards, shadows)
                                   0x97C28,   // (I3D_light's vtable: its slots' code the same as 1.2's, written at 0x2002D)
                                   0x98600, 0x98558,   // (written at 0x3DDFB and 0x3EB08, PRTE's at 0x3DF22)
                                   0x98E10,   // (I3D_sound's: its slots' code the same as 1.2's, written at 0x5486F)

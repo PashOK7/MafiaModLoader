@@ -34,25 +34,25 @@ SCENES = {
 # what each mode sets in dlss_nr (and whether DLSS is on at all); the checks are its debug views at the frame's size:
 # the frame before moved by the motion vectors against this one (black where they are right), and not moved
 MODES = {
-    'off': {'on': False, 'debug': 0},
-    'sr_dlaa': {'on': True, 'pipeline': False, 'debug': 0, 'nr': False, 'upscale': 1},
-    'sr_quality': {'on': True, 'pipeline': False, 'debug': 0, 'nr': False, 'upscale': 2},
-    'sr_balanced': {'on': True, 'pipeline': False, 'debug': 0, 'nr': False, 'upscale': 3},
-    'sr_perf': {'on': True, 'pipeline': False, 'debug': 0, 'nr': False, 'upscale': 4},
-    'sr_ultra': {'on': True, 'pipeline': False, 'debug': 0, 'nr': False, 'upscale': 5},
-    'nr': {'on': True, 'pipeline': False, 'debug': 0, 'nr': True, 'upscale': 0},
-    'nr_sr_perf': {'on': True, 'pipeline': False, 'debug': 0, 'nr': True, 'upscale': 4},
-    'nr_sr_ultra': {'on': True, 'pipeline': False, 'debug': 0, 'nr': True, 'upscale': 5},
+    'off': {'on': False, 'debug': 0, 'mv_scale': 1},
+    'sr_dlaa': {'on': True, 'pipeline': False, 'debug': 0, 'nr': False, 'upscale': 1, 'mv_scale': 1},
+    'sr_quality': {'on': True, 'pipeline': False, 'debug': 0, 'nr': False, 'upscale': 2, 'mv_scale': 1},
+    'sr_balanced': {'on': True, 'pipeline': False, 'debug': 0, 'nr': False, 'upscale': 3, 'mv_scale': 1},
+    'sr_perf': {'on': True, 'pipeline': False, 'debug': 0, 'nr': False, 'upscale': 4, 'mv_scale': 1},
+    'sr_ultra': {'on': True, 'pipeline': False, 'debug': 0, 'nr': False, 'upscale': 5, 'mv_scale': 1},
+    'nr': {'on': True, 'pipeline': False, 'debug': 0, 'nr': True, 'upscale': 0, 'mv_scale': 1},
+    'nr_sr_perf': {'on': True, 'pipeline': False, 'debug': 0, 'nr': True, 'upscale': 4, 'mv_scale': 1},
+    'nr_sr_ultra': {'on': True, 'pipeline': False, 'debug': 0, 'nr': True, 'upscale': 5, 'mv_scale': 1},
     'sr_ultra_mv0': {'on': True, 'pipeline': False, 'debug': 0, 'nr': False, 'upscale': 5, 'mv_scale': 0},
     'sr_ultra_mv1': {'on': True, 'pipeline': False, 'debug': 0, 'nr': False, 'upscale': 5, 'mv_scale': 1},
     'sr_ultra_mvneg': {'on': True, 'pipeline': False, 'debug': 0, 'nr': False, 'upscale': 5, 'mv_scale': -1},
-    'motion': {'on': True, 'pipeline': False, 'debug': 1},
+    'motion': {'on': True, 'pipeline': False, 'debug': 1, 'mv_scale': 1},
     'motion_dlss_ultra': {'on': True, 'pipeline': False, 'debug': 7, 'nr': False, 'upscale': 5, 'mv_scale': 1},
     'motion_check': {'on': True, 'pipeline': False, 'debug': 5, 'mv_scale': 1},
     'motion_check_x0.5': {'on': True, 'pipeline': False, 'debug': 5, 'mv_scale': 0.5},
     'motion_check_x1.5': {'on': True, 'pipeline': False, 'debug': 5, 'mv_scale': 1.5},
     'motion_check_x2': {'on': True, 'pipeline': False, 'debug': 5, 'mv_scale': 2},
-    'still_check': {'on': True, 'pipeline': False, 'debug': 6},
+    'still_check': {'on': True, 'pipeline': False, 'debug': 6, 'mv_scale': 1},
 }
 
 

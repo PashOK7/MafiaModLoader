@@ -699,6 +699,13 @@ def main(a):
             check(any(s.endswith('+ 0x10]') for s in body) and any(s.endswith('+ 4]') for s in body) and 'ret 4' in whole and
                   'call dword ptr [' in whole and '+ 0x154]' in whole and '+ 0x11c]' in whole,
                   f'{name} LS3DF {f}: the entry\'s face group and material, SetIndices, DrawIndexedPrimitive, ret 4')
+        # a shadow's: at +0x6C of the shadow visual's vtable, its shadow projector at +0x1E0, its world matrix (+0x10), IGraph's
+        # DrawIndexedPrimitive (+0x5C) and the device's, ret 4
+        fn = (gls.base + ls['fgRenderShadow']).to_bytes(4, 'little')
+        whole = ' '.join(ins(ls['fgRenderShadow'], 0x360))
+        check(any(code[s + 0x6C:s + 0x70] == fn for s in vts) and '+ 0x1e0]' in whole and '+ 0x10]' in whole and
+              'ret 4' in whole and '+ 0x5c]' in whole and '+ 0x11c]' in whole,
+              f'{name} LS3DF fgRenderShadow: shadow visual\'s +0x6C, its shadow projector, IGraph\'s and the device\'s draws, ret 4')
     # The frame rate's sites (fps_unlock): the limiter's minimum jump inside frameLimit, after `cmp eax, edi` and
     # before its Sleep; Present's yield: `mov reg, [Sleep]` then `push 0; call reg`.
     for name, (exe, ls, gexe, gls) in builds.items():

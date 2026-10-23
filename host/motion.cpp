@@ -33,6 +33,7 @@
 #include <intrin.h>
 #include <smmintrin.h>
 #include "mml/game/game_build.h"
+#include "mml/game/game.h"
 #include "shaders/VsMotion.h"
 #include "shaders/VsMotionSkin.h"
 #include "shaders/PsMotion.h"
@@ -74,6 +75,9 @@ bool g_haveCameraBefore;
 // the group LS3D draws now (geom.cpp), and its draws so far; how many times this frame the same visual's same group
 // was drawn before (one visual and one group drawn again for another instance: the four wheels of a car)
 const void *g_visual, *g_group;
+bool g_shadow;   // the group is a shadow's (kind 4): its picture moves with its shadow projector, not with its faces
+constexpr int kShadowOwner = 0x1E0;   // the shadow visual: its projector (game_build.h fgRenderShadow)
+constexpr float kShadowSeen = 0.2f;   // a shadow's alpha from which its own motion is taken
 unsigned g_drawInGroup, g_occurrence;
 struct Pair {
     const void *visual, *group;
@@ -119,7 +123,7 @@ std::string g_skinHookWhy;
 // Direct3D 9 objects
 IDirect3DVertexShader9 *g_vs, *g_vsSkin;
 IDirect3DPixelShader9 *g_ps;
-IDirect3DVertexDeclaration9 *g_decl, *g_declSkin;
+IDirect3DVertexDeclaration9 *g_declSkin;
 IDirect3DStateBlock9 *g_block;
 IDirect3DDevice9 *g_madeOn;
 // the skinned draws' vertices, this frame's position and the last frame's (24 bytes), appended through the frames
@@ -131,6 +135,7 @@ bool g_ringFresh = true;
 // statistics
 unsigned g_visualsMoving, g_drawsAgain, g_skipped, g_skinnedAgain;
 unsigned g_lastVisuals, g_lastDraws, g_lastSkipped, g_lastSkinned;
+unsigned g_shadowsSeen, g_shadowsAgain, g_lastShadowsSeen, g_lastShadowsAgain;   // shadows' draws: met, drawn again
 unsigned g_copiesStreamed;          // copies read from the drawn buffer (a source not locked)
 double g_msCopies, g_msCopiesLast; // the skinned copies kept since the last frame began
 unsigned g_limbLods, g_lastLimbLods;  // skinned LODs whose limbs moved
@@ -140,7 +145,7 @@ LARGE_INTEGER g_freq;
 double NowMs() { LARGE_INTEGER t; QueryPerformanceCounter(&t); return 1000.0 * t.QuadPart / g_freq.QuadPart; }
 
 void Release() {
-    SafeRelease(g_vs); SafeRelease(g_vsSkin); SafeRelease(g_ps); SafeRelease(g_decl); SafeRelease(g_declSkin);
+    SafeRelease(g_vs); SafeRelease(g_vsSkin); SafeRelease(g_ps); SafeRelease(g_declSkin);
     SafeRelease(g_block); SafeRelease(g_ring);
     g_madeOn = nullptr;
     g_ringFresh = true;
@@ -149,13 +154,12 @@ void Release() {
 bool Make(IDirect3DDevice9 *d) {
     if (g_madeOn == d && g_vs) return true;
     Release();
-    const D3DVERTEXELEMENT9 el[] = {{0, 0, D3DDECLTYPE_FLOAT3, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_POSITION, 0}, D3DDECL_END()};
     const D3DVERTEXELEMENT9 skin[] = {{0, 0, D3DDECLTYPE_FLOAT3, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_POSITION, 0},
                                       {0, 12, D3DDECLTYPE_FLOAT3, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_POSITION, 1}, D3DDECL_END()};
     if (FAILED(d->CreateVertexShader(reinterpret_cast<const DWORD *>(kVsMotion), &g_vs)) ||
         FAILED(d->CreateVertexShader(reinterpret_cast<const DWORD *>(kVsMotionSkin), &g_vsSkin)) ||
         FAILED(d->CreatePixelShader(reinterpret_cast<const DWORD *>(kPsMotion), &g_ps)) ||
-        FAILED(d->CreateVertexDeclaration(el, &g_decl)) || FAILED(d->CreateVertexDeclaration(skin, &g_declSkin)) ||
+        FAILED(d->CreateVertexDeclaration(skin, &g_declSkin)) ||
         FAILED(d->CreateVertexBuffer(kRingVerts * kRingStride, D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, 0, D3DPOOL_DEFAULT, &g_ring, nullptr))) {
         Release();
         return false;
@@ -180,6 +184,23 @@ void Mul(const D3DMATRIX &a, const D3DMATRIX &b, D3DMATRIX &out) {
     out = r;
 }
 
+// an affine matrix's inverse (row vectors: rotation and scale in the 3x3, the translation in the last row)
+D3DMATRIX AffineInverse(const D3DMATRIX &m) {
+    const float a = m._11, b = m._12, c = m._13, d = m._21, e = m._22, f = m._23, g = m._31, h = m._32, i = m._33;
+    const float A = e * i - f * h, B = f * g - d * i, C = d * h - e * g;
+    float det = a * A + b * B + c * C;
+    det = std::fabs(det) > 1e-12f ? 1.0f / det : 0.0f;
+    D3DMATRIX r{};
+    r._11 = A * det, r._12 = (c * h - b * i) * det, r._13 = (b * f - c * e) * det;
+    r._21 = B * det, r._22 = (a * i - c * g) * det, r._23 = (c * d - a * f) * det;
+    r._31 = C * det, r._32 = (b * g - a * h) * det, r._33 = (a * e - b * d) * det;
+    r._41 = -(m._41 * r._11 + m._42 * r._21 + m._43 * r._31);
+    r._42 = -(m._41 * r._12 + m._42 * r._22 + m._43 * r._32);
+    r._43 = -(m._41 * r._13 + m._42 * r._23 + m._43 * r._33);
+    r._44 = 1;
+    return r;
+}
+
 bool Same(const D3DMATRIX &a, const D3DMATRIX &b) {
     for (int i = 0; i < 4; i++)
         for (int j = 0; j < 4; j++)
@@ -194,6 +215,30 @@ bool PositionFirst(IDirect3DDevice9 *d) {
     if (FAILED(d->GetFVF(&fvf)) || !fvf) return false;
     DWORD p = fvf & D3DFVF_POSITION_MASK;
     return p == D3DFVF_XYZ || (p >= D3DFVF_XYZB1 && p <= D3DFVF_XYZB5);
+}
+
+// The draw's alpha test as PsMotion repeats it (its reference 0..1, or -1): the stage-0 texture's alpha against the
+// reference, where the test passes greater (LS3D's cut-out textures: a wheel's spokes, a fence; without it the
+// quad's clear parts gave the objects' target their depth over what is seen through them). The diffuse alpha the
+// stage may modulate it by is left out.
+float AlphaCut(IDirect3DDevice9 *d) {
+    DWORD on = FALSE, ref = 0, func = 0, op = 0, a1 = 0, a2 = 0, index = 0;
+    d->GetRenderState(D3DRS_ALPHATESTENABLE, &on);
+    if (!on) return -1;
+    d->GetRenderState(D3DRS_ALPHAREF, &ref);
+    d->GetRenderState(D3DRS_ALPHAFUNC, &func);
+    d->GetTextureStageState(0, D3DTSS_ALPHAOP, &op);
+    d->GetTextureStageState(0, D3DTSS_ALPHAARG1, &a1);
+    d->GetTextureStageState(0, D3DTSS_ALPHAARG2, &a2);
+    d->GetTextureStageState(0, D3DTSS_TEXCOORDINDEX, &index);
+    const bool tex1 = (a1 & D3DTA_SELECTMASK) == D3DTA_TEXTURE, tex2 = (a2 & D3DTA_SELECTMASK) == D3DTA_TEXTURE;
+    const bool fromTex = op == D3DTOP_SELECTARG1 ? tex1 : op == D3DTOP_SELECTARG2 ? tex2 : op != D3DTOP_DISABLE && (tex1 || tex2);
+    if (!fromTex || index != 0 || (func != D3DCMP_GREATER && func != D3DCMP_GREATEREQUAL)) return -1;
+    IDirect3DBaseTexture9 *t = nullptr;
+    d->GetTexture(0, &t);
+    if (!t) return -1;
+    t->Release();
+    return ((ref & 0xFF) + (func == D3DCMP_GREATER ? 0.5f : 0.0f)) / 255.0f;   // (clip keeps what is not below it)
 }
 
 template <class T> T At(const void *p, int off) { return *reinterpret_cast<const T *>(static_cast<const uint8_t *>(p) + off); }
@@ -333,6 +378,15 @@ Skin *SkinOf(INT base, bool moved) {
 void DrawAgain(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex, UINT verts, UINT start, UINT n, DipFn dip) {
     D3DMATRIX world{};
     if (FAILED(d->GetTransform(D3DTS_WORLD, &world))) return;
+    // what the draw moves with: its world matrix, or a shadow's projector's (the faces under it are the road's, its
+    // picture is the car's)
+    D3DMATRIX track = world;
+    if (g_shadow) {
+        g_shadowsSeen++;
+        const uint8_t *owner = At<const uint8_t *>(g_visual, kShadowOwner);
+        if (!owner) return;
+        std::memcpy(&track, owner + game::kFrameWorld, sizeof track);
+    }
     const Key key{g_visual, g_group, g_occurrence << 8 | (g_drawInGroup & 0xFF)};
     auto it = g_seen.find(key);
     Seen *s = it == g_seen.end() ? nullptr : &it->second;
@@ -340,29 +394,39 @@ void DrawAgain(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex,
         if (!s) s = &g_seen[key];
         s->haveBefore = s->frame && s->frame + 1 == g_frame;
         s->before = s->now;
-        s->now = world;
+        s->now = track;
         s->frame = g_frame;
         if (s->haveBefore && !Same(s->now, s->before)) g_visualsMoving++;   // (draws that moved, counted once a frame)
     }
     if (!s->haveBefore) return;   // new: its motion is not known
-    bool moved = !Same(world, s->before);
+    bool moved = !Same(track, s->before);
     SkinGpuDraw gpu;
-    const bool gpuSkin = SkinGpuFor(d, g_visual, base, &gpu);   // (a person the GPU skins: both palettes in his shader)
-    Skin *skin = gpuSkin ? nullptr : SkinOf(base, moved);   // (a person: his limbs' own motion)
+    const bool gpuSkin = !g_shadow && SkinGpuFor(d, g_visual, base, &gpu);   // (a person the GPU skins: both palettes in his shader)
+    Skin *skin = gpuSkin || g_shadow ? nullptr : SkinOf(base, moved);   // (a person: his limbs' own motion)
     if (skin && !skin->ringed) skin = nullptr;
     if (!moved && !skin && !gpuSkin) return;   // still
-    // what writes no depth (a car's shadow on the road, glass, smoke): translucent over what is behind it, whose motion
-    // is the one to keep (a shadow's own would move the road under it with the car)
-    DWORD zwrite = TRUE;
+    // what writes no depth (a car's shadow on the road, its glass) is drawn too, under the frame's own depth test:
+    // PsMotionAll keeps it where its depth is what is seen (the shadow on the road, not glass over the street far
+    // behind it). Its own depth function: it was not written by it
+    DWORD zwrite = TRUE, zfunc = D3DCMP_LESSEQUAL;
     d->GetRenderState(D3DRS_ZWRITEENABLE, &zwrite);
-    if (!zwrite) return;
+    d->GetRenderState(D3DRS_ZFUNC, &zfunc);
     if (!PositionFirst(d)) { g_skipped++; return; }
+    // (a shadow's picture is blended by its alpha over the whole box of faces under it: its own motion where it
+    // darkens the road enough to be seen, the road's elsewhere)
+    const float cut[4] = {skin ? -1.0f : g_shadow ? (std::max)(AlphaCut(d), kShadowSeen) : AlphaCut(d), 0, 0, 0};
     D3DMATRIX view{}, proj{}, now, before;
     d->GetTransform(D3DTS_VIEW, &view);
     d->GetTransform(D3DTS_PROJECTION, &proj);
     Mul(world, view, now);
     Mul(now, proj, now);
-    Mul(s->before, g_viewBefore, before);
+    if (g_shadow) {   // (a point of the faces where the picture's place on them was: through its shadow's move back)
+        Mul(world, AffineInverse(track), before);
+        Mul(before, s->before, before);
+    } else {
+        before = s->before;
+    }
+    Mul(before, g_viewBefore, before);
     Mul(before, g_projBefore, before);
     // the device's state kept: the target, the viewport, the shaders, the vertex layout and the states the block holds
     IDirect3DSurface9 *rt = nullptr;
@@ -385,7 +449,7 @@ void DrawAgain(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex,
     d->SetViewport(&vp);
     d->SetRenderState(D3DRS_ZENABLE, D3DZB_TRUE);
     d->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
-    d->SetRenderState(D3DRS_ZFUNC, D3DCMP_LESSEQUAL);   // (the object's own depth, just written: what of it is in front)
+    d->SetRenderState(D3DRS_ZFUNC, zwrite ? D3DCMP_LESSEQUAL : zfunc);   // (the object's own depth, just written: what of it is in front)
     d->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
     d->SetRenderState(D3DRS_SEPARATEALPHABLENDENABLE, FALSE);
     d->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);
@@ -398,7 +462,7 @@ void DrawAgain(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex,
     d->SetRenderState(D3DRS_FILLMODE, D3DFILL_SOLID);
     d->SetVertexShader(skin ? g_vsSkin : g_vs);
     d->SetPixelShader(g_ps);
-    d->SetVertexDeclaration(skin ? g_declSkin : g_decl);
+    if (skin) d->SetVertexDeclaration(g_declSkin);   // (else the draw's own FVF: its position and its texture's place)
     if (skin) d->SetStreamSource(0, g_ring, 0, kRingStride);
     D3DSURFACE_DESC td{};
     g_target->GetDesc(&td);
@@ -406,6 +470,7 @@ void DrawAgain(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex,
     d->SetVertexShaderConstantF(4, &now._11, 4);
     d->SetVertexShaderConstantF(8, &before._11, 4);
     d->SetPixelShaderConstantF(0, size, 1);
+    d->SetPixelShaderConstantF(2, cut, 1);
     if (gpuSkin) {
         SkinGpuSaved k{};
         SkinGpuBind(d, gpu, &k);
@@ -422,6 +487,7 @@ void DrawAgain(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex,
         dip(d, t, skin ? static_cast<INT>(skin->ringAt) : base, minIndex, verts, start, n);   // (the LOD's vertices in the ring)
     }
     g_drawsAgain++;
+    if (g_shadow) g_shadowsAgain++;
     if (skin) g_skinnedAgain++;
     d->SetRenderTarget(0, rt);
     d->SetViewport(&vp);
@@ -454,6 +520,8 @@ void MotionRemove(MmlMod *mod) { MotionAsk(mod, false); }
 void MotionFrameBegin(void *dev9, void *target, const float *viewBefore, const float *projBefore) {
     if (!g_freq.QuadPart) QueryPerformanceFrequency(&g_freq);
     g_lastVisuals = g_visualsMoving, g_lastDraws = g_drawsAgain, g_lastSkipped = g_skipped, g_lastSkinned = g_skinnedAgain;
+    g_lastShadowsSeen = g_shadowsSeen, g_lastShadowsAgain = g_shadowsAgain;
+    g_shadowsSeen = g_shadowsAgain = 0;
     g_msLast = g_msNow + g_msCopies, g_msCopiesLast = g_msCopies;
     g_lastLimbLods = g_limbLods, g_lastLimbMax = g_limbMax, g_limbLods = 0, g_limbMax = 0;
     g_visualsMoving = g_drawsAgain = g_skipped = g_skinnedAgain = 0;
@@ -484,7 +552,8 @@ void MotionDeviceGone() { Release(); g_seen.clear(); g_counts.clear(); g_skins.c
 
 // geom.cpp: the face group LS3D draws now (kind 1 an object, 2 lightmapped, 3 a billboard), in the frame or not.
 void MotionGroupBegin(int kind, const void *visual, const void *group, bool inFrame) {
-    g_visual = g_on && inFrame && (kind == 1 || kind == 2) ? visual : nullptr;
+    g_visual = g_on && inFrame && (kind == 1 || kind == 2 || kind == 4) ? visual : nullptr;
+    g_shadow = kind == 4;
     g_group = group;
     g_drawInGroup = 0;
     if (g_visual) {
@@ -518,10 +587,10 @@ std::string MotionState() {
     snprintf(b, sizeof b,
              "{\"asked_by\": \"%s\", \"visuals_known\": %u, \"moving\": %u, \"drawn_again\": %u, \"skinned_again\": %u, "
              "\"skinned_known\": %u, \"limbs_moving\": %u, \"limbs_most_m\": %.3f, \"skin_hook\": \"%s\", \"left_out\": %u, "
-             "\"ms\": %.3f, \"ms_copies\": %.3f, \"copies_streamed\": %u}",
+             "\"ms\": %.3f, \"ms_copies\": %.3f, \"copies_streamed\": %u, \"shadows\": %u, \"shadows_again\": %u}",
              mods.c_str(), static_cast<unsigned>(g_seen.size()), g_lastVisuals, g_lastDraws, g_lastSkinned,
              static_cast<unsigned>(g_skins.size()), g_lastLimbLods, g_lastLimbMax, g_skinHooked ? "on" : g_skinHookWhy.c_str(),
-             g_lastSkipped, g_msLast, g_msCopiesLast, g_copiesStreamed);
+             g_lastSkipped, g_msLast, g_msCopiesLast, g_copiesStreamed, g_lastShadowsSeen, g_lastShadowsAgain);
     return b;
 }
 
