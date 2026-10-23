@@ -3501,3 +3501,14 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   bumper), round wheels, the shadow's shape with the car's motion; the check's mean 12.75 -> 11.40, its bright bands
   under the car gone. SR Ultra Performance: the shadow without its doubled edge and trail. 1.0 lab: the hook on, the
   same pictures. The cost: the road under the shadow moves with it in the vectors (its texture faint there).
+
+## 2026-10-24: DLSS SR still when still (the colour filtered at the jittered point)
+
+- **Seen** (the owner, by eye): Ultra Performance shook by its pixels on a still picture. `tools/still_test.py`
+  (new: the camera held still, frames in a row compared) measured it: 0.67 mean difference a frame in Ultra
+  Performance against 0.16 in Quality and 0.12 without DLSS, the pipeline no matter.
+- **Why**: PsPrepare took for each render pixel the frame's pixel under its jittered point. The sample moved to that
+  pixel's centre, by another amount in each pixel where the frame's size is no whole multiple of the render size
+  (1280 / 427), against the jitter DLSS was told.
+- **Fixed**: the colour filtered (bilinear) at the jittered point itself; depth and motion stay the nearest pixel's.
+  Ultra Performance 0.67 -> 0.23, the pixels changed by more than 8 from 0.5 % to none; Quality 0.15.

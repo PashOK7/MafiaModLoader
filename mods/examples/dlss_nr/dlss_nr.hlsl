@@ -52,14 +52,18 @@ struct Prepared {
     float4 mask : SV_Target3;    // DLSS-NR's control mask: how much it may change each pixel
 };
 
-// One render pixel: the frame's pixel under its jittered sample point (the game drew the frame at its full size; a
-// render pixel sampled at one point of it is what a render at the smaller size would have drawn there, its jitter the
-// sub-pixel sample DLSS gathers over the frames). The motion vector in render pixels.
+// One render pixel: the frame at its jittered sample point (the game drew the frame at its full size; a render pixel
+// sampled at one point of it is what a render at the smaller size would have drawn there, its jitter the sub-pixel
+// sample DLSS gathers over the frames). The colour is filtered at that very point: the frame's pixel under it would
+// move the sample to that pixel's centre, by another amount in each pixel where the frame's size is no whole multiple
+// of the render size (1280 / 427 in Ultra Performance), against the jitter DLSS is told: the picture shimmered when
+// still (tools/still_test.py). The depth and the motion are the nearest pixel's (not blended across an edge). The
+// motion vector in render pixels.
 Prepared PsPrepare(float4 pos : SV_Position) {
     Prepared o;
-    float2 at = min((floor(pos.xy) + 0.5 + g_render.zw) * g_render.xy, g_size.xy - 0.5);
+    float2 at = clamp((floor(pos.xy) + 0.5 + g_render.zw) * g_render.xy, 0.5, g_size.xy - 0.5);
     float2 pixel = floor(at) + 0.5;
-    o.color = float4(saturate(g_sceneColor.Load(int3(pixel, 0)).rgb), 1);
+    o.color = float4(saturate(g_sceneColor.SampleLevel(g_linear, at * g_size.zw, 0).rgb), 1);
     float z = SceneDepth(pixel);
     o.depth = IsSky(z) ? 1 : saturate(g_depthProj.x + g_depthProj.y / max(z, 1e-3));
     o.motion = float4(Motion(pixel) / g_render.xy, 0, 0);
