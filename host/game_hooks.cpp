@@ -140,6 +140,7 @@ int __fastcall hkMissionClose(void *self, void *edx) {
     HudMissionClose();
     StateMissionClose();      // (the invulnerable people go with the mission)
     AnimsMissionClose();
+    ScaleMissionClose();
     HitsMissionClose();       // (the bullets' shapes, the bridge's takes)      // (the radar's marks and the compass given back while the HUD knows the mission's frames)
     SetPaused(false);
     Dispatch(Event(MML_EVENT_MISSION_CLOSE));
@@ -168,6 +169,8 @@ void __fastcall hkActorDtor(void *self, void *edx) {
     StateActorGone(self);
     AnimsActorGone(self);
     HitsActorGone(self);
+    ScaleActorGone(self);
+    CameraFollowGone(self);
     oActorDtor(self, edx);
 }
 void *__fastcall hkHumanCtor(void *self, void *edx) {

@@ -446,7 +446,9 @@ bool ViewDrawShadow(void *driver, void *scene, RenderFn render, const float worl
 // ---- the frame's own camera overridden: one owner (the last mod that asked, or the bridge's camera.set)
 namespace {
 struct Override { MmlMod *mod; MmlViewFn fn; void *user; } g_ov;
-struct HeldCam { bool on; float eye[3], fwd[3], up[3], fovY; DWORD until; } g_heldCam;
+// follow: an actor whose model frame carries the camera (eye and at offsets in its space, each frame: a train, a
+// tram, a person, anything the game's own camera does not follow); level: its yaw alone (a car's roll left out)
+struct HeldCam { bool on; float eye[3], fwd[3], up[3], fovY; DWORD until; void *follow; float offEye[3], offAt[3]; bool level; } g_heldCam;
 CamSaved g_frameSaved;
 uint8_t *g_frameCam;
 bool g_framePut;
@@ -457,6 +459,43 @@ struct OvCall { MmlViewCamera *c; int r; };
 void CallOv(void *p) {
     auto *oc = static_cast<OvCall *>(p);
     oc->r = g_ov.fn(oc->c, g_ov.user);
+}
+std::string HexOf(uintptr_t v) {
+    char b[16];
+    snprintf(b, sizeof b, "0x%08X", static_cast<unsigned>(v));
+    return b;
+}
+// A followed actor's place this frame: the eye and the point looked at from its model frame's world matrix (its
+// rows its axes, normalized: a frame's own scale left out). False: it has no frame now.
+bool FollowPose() {
+    bool ok = false;
+    auto f = [&] {
+        void *frame = game::at<void *>(g_heldCam.follow, game::kActorFrame);
+        if (!frame) return;
+        const float *w = &game::at<float>(frame, game::kFrameWorld);
+        float ax[3][3];
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) ax[i][j] = w[i * 4 + j];
+            Normalize(ax[i]);
+        }
+        if (g_heldCam.level) {   // (x and z flattened onto the ground, y the world's up)
+            ax[2][1] = 0;
+            if (!Normalize(ax[2])) { ax[2][0] = 0; ax[2][2] = 1; }
+            ax[1][0] = 0; ax[1][1] = 1; ax[1][2] = 0;
+            Cross(ax[1], ax[2], ax[0]);
+        }
+        float eye[3], at[3];
+        for (int j = 0; j < 3; j++) {
+            eye[j] = w[12 + j] + g_heldCam.offEye[0] * ax[0][j] + g_heldCam.offEye[1] * ax[1][j] + g_heldCam.offEye[2] * ax[2][j];
+            at[j] = w[12 + j] + g_heldCam.offAt[0] * ax[0][j] + g_heldCam.offAt[1] * ax[1][j] + g_heldCam.offAt[2] * ax[2][j];
+        }
+        float fwd[3] = {at[0] - eye[0], at[1] - eye[1], at[2] - eye[2]};
+        if (!Normalize(fwd)) return;
+        for (int j = 0; j < 3; j++) { g_heldCam.eye[j] = eye[j]; g_heldCam.fwd[j] = fwd[j]; }
+        ok = true;
+    };
+    __try { f(); } __except (EXCEPTION_EXECUTE_HANDLER) { ok = false; }
+    return ok;
 }
 // The bridge's held camera into c: its pose; its field of view scaling both sides (the game's aspect kept).
 void ApplyHeld(MmlViewCamera *c) {
@@ -481,6 +520,10 @@ DWORD SafeRestoreFrame() {
 }
 } // namespace
 
+void CameraFollowGone(void *actor) {
+    if (g_heldCam.follow == actor) g_heldCam.on = false, g_heldCam.follow = nullptr;
+}
+
 int CameraOverride(MmlMod *mod, MmlViewFn fn, void *user) {
     if (!fn) { if (g_ov.mod == mod) g_ov = Override{}; return 1; }
     g_ov = Override{mod, fn, user};
@@ -497,6 +540,7 @@ void FrameCameraBegin(void *scene) {
     MmlViewCamera c;
     GameCamera(cam, &c);
     if (g_heldCam.on) {
+        if (g_heldCam.follow && !FollowPose()) { g_ovSkipped++; g_ovLast = "skipped: the followed actor has no model frame"; return; }
         ApplyHeld(&c);
     } else {
         OvCall oc{&c, 0};
@@ -537,7 +581,27 @@ bool CameraMethod(const std::string &method, const std::string &paramsJson, std:
     }
     if (method == "camera.set") {
         HeldCam h{};
-        if (!v3("eye", h.eye)) { *ok = false; *reply = "camera.set {eye: [x, y, z], at: [x, y, z] | dir: [x, y, z], up, fov (degrees, vertical), ms}"; return true; }
+        if (p.contains("follow")) {
+            std::string err;
+            const json &a = p["follow"];
+            std::string text = a.is_string() ? a.get<std::string>() : a.is_number() ? HexOf(static_cast<uintptr_t>(a.get<uint64_t>())) : "";
+            if (!ParseActor(text, &h.follow, &err)) { *ok = false; *reply = "camera.set: follow: " + err; return true; }
+            const float behind[3] = {0, 4, -14}, ahead[3] = {0, 1, 0};
+            if (!v3("eye", h.offEye)) memcpy(h.offEye, behind, sizeof behind);
+            if (!v3("at", h.offAt)) memcpy(h.offAt, ahead, sizeof ahead);
+            h.level = p.value("level", true);
+            h.up[0] = 0; h.up[1] = 1; h.up[2] = 0;
+            h.fovY = p.value("fov", 0.0f);
+            h.until = GetTickCount() + static_cast<DWORD>(std::min(std::max(p.value("ms", 60000), 0), 3600000));
+            h.on = true;
+            g_heldCam = h;
+            if (!FollowPose()) { g_heldCam.on = false; *ok = false; *reply = "camera.set: follow: the actor has no model frame"; return true; }
+            *reply = json({{"held", true}, {"follow", HexOf(reinterpret_cast<uintptr_t>(h.follow))}, {"eye", {g_heldCam.eye[0], g_heldCam.eye[1], g_heldCam.eye[2]}},
+                           {"ms", static_cast<int>(h.until - GetTickCount())}, {"note", "drawn from the next frame; camera.release gives it back"}})
+                         .dump(-1, ' ', false, json::error_handler_t::replace);
+            return true;
+        }
+        if (!v3("eye", h.eye)) { *ok = false; *reply = "camera.set {eye: [x, y, z], at: [x, y, z] | dir: [x, y, z], up, fov (degrees, vertical), ms}; or follow (an actor) with eye and at in its space"; return true; }
         float at[3];
         if (v3("at", at)) { for (int i = 0; i < 3; i++) h.fwd[i] = at[i] - h.eye[i]; }
         else if (!v3("dir", h.fwd)) { *ok = false; *reply = "camera.set: `at` (a point to look at) or `dir`"; return true; }

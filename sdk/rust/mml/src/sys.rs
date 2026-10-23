@@ -28,6 +28,13 @@ pub const MML_DRAW_BOX: u32 = 2;
 pub const MML_DRAW_SPHERE: u32 = 3;
 pub const MML_DRAW_CAPSULE: u32 = 4;
 pub const MML_DRAW_ON_TOP: u32 = 1;
+pub const MML_SCALE_PIVOT_BOTTOM: u32 = 0;
+pub const MML_SCALE_PIVOT_ORIGIN: u32 = 1;
+pub const MML_SCALE_PIVOT_POINT: u32 = 2;
+pub const MML_PULSE_BEAT: u32 = 0;
+pub const MML_PULSE_SINE: u32 = 1;
+pub const MML_PULSE_BOUNCE: u32 = 2;
+pub const MML_SCALE_BEAT_NOW: u32 = 1;
 pub const MML_GFX_UI_OFF: u32 = 0;
 pub const MML_GFX_UI_TAKE: u32 = 1;
 pub const MML_GFX_UI_HIDE: u32 = 2;
@@ -461,6 +468,40 @@ const _: () = {
 pub type MmlFrameGoneFn = ::core::option::Option<
     unsafe extern "C" fn(frame: *mut ::core::ffi::c_void, user: *mut ::core::ffi::c_void),
 >;
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct MmlActorScale {
+    pub size: u32,
+    pub scale: [f32; 3usize],
+    pub pivot: ::core::ffi::c_int,
+    pub point: [f32; 3usize],
+    pub bpm: f32,
+    pub amount: f32,
+    pub phase: f32,
+    pub shape: ::core::ffi::c_int,
+    pub flags: u32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of MmlActorScale"][::core::mem::size_of::<MmlActorScale>() - 52usize];
+    ["Alignment of MmlActorScale"][::core::mem::align_of::<MmlActorScale>() - 4usize];
+    ["Offset of field: MmlActorScale::size"][::core::mem::offset_of!(MmlActorScale, size) - 0usize];
+    ["Offset of field: MmlActorScale::scale"]
+        [::core::mem::offset_of!(MmlActorScale, scale) - 4usize];
+    ["Offset of field: MmlActorScale::pivot"]
+        [::core::mem::offset_of!(MmlActorScale, pivot) - 16usize];
+    ["Offset of field: MmlActorScale::point"]
+        [::core::mem::offset_of!(MmlActorScale, point) - 20usize];
+    ["Offset of field: MmlActorScale::bpm"][::core::mem::offset_of!(MmlActorScale, bpm) - 32usize];
+    ["Offset of field: MmlActorScale::amount"]
+        [::core::mem::offset_of!(MmlActorScale, amount) - 36usize];
+    ["Offset of field: MmlActorScale::phase"]
+        [::core::mem::offset_of!(MmlActorScale, phase) - 40usize];
+    ["Offset of field: MmlActorScale::shape"]
+        [::core::mem::offset_of!(MmlActorScale, shape) - 44usize];
+    ["Offset of field: MmlActorScale::flags"]
+        [::core::mem::offset_of!(MmlActorScale, flags) - 48usize];
+};
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct MmlPedestrian {
@@ -3578,10 +3619,17 @@ pub struct MmlHost {
             hi: *const f32,
         ) -> ::core::ffi::c_int,
     >,
+    pub actor_scale: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            actor: *mut ::core::ffi::c_void,
+            scale: *const MmlActorScale,
+        ) -> ::core::ffi::c_int,
+    >,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 788usize];
+    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 792usize];
     ["Alignment of MmlHost"][::core::mem::align_of::<MmlHost>() - 4usize];
     ["Offset of field: MmlHost::size"][::core::mem::offset_of!(MmlHost, size) - 0usize];
     ["Offset of field: MmlHost::api_version"]
@@ -3919,6 +3967,8 @@ const _: () = {
         [::core::mem::offset_of!(MmlHost, draw_world) - 780usize];
     ["Offset of field: MmlHost::scene_ready"]
         [::core::mem::offset_of!(MmlHost, scene_ready) - 784usize];
+    ["Offset of field: MmlHost::actor_scale"]
+        [::core::mem::offset_of!(MmlHost, actor_scale) - 788usize];
 };
 pub type MmlModLoadFn = ::core::option::Option<
     unsafe extern "C" fn(host: *const MmlHost, mod_: *mut MmlMod) -> ::core::ffi::c_int,

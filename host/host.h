@@ -663,6 +663,16 @@ float PedestrianHealth(void *element);
 bool PedestriansMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 // a frame's release told (framelife.cpp): LS3D's frames' and meshes' Release hooked once something is watched
 void FrameLifeInit();
+// the size things are drawn at (scale.cpp): an actor's or a pedestrian's model frame scaled for the world's drawing
+// alone (render.cpp around the world's Render); actor.scale, actors.scaled
+int ActorScale(MmlMod *mod, void *actor, const MmlActorScale *s, std::string *err);   // s null: its own size
+void ScaleBeforeRender();
+void ScaleAfterRender();
+void ScaleActorGone(void *actor);
+void CameraFollowGone(void *actor);    // (view.cpp) camera.set's followed actor destroyed: the camera given back
+void ScaleModGone(MmlMod *mod);
+void ScaleMissionClose();
+bool ScaleMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 // drawing in the world (worlddraw.cpp): lines, boxes, spheres, capsules over the 3D world at its stage 1
 int DrawWorldAdd(MmlMod *mod, const MmlDrawShape *shape, std::string *err);   // shape null: the mod's taken away
 bool DrawWorldWanted();

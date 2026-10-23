@@ -143,6 +143,7 @@ int __stdcall hkRender(void *driver, void *scene) {
         GeomFrameBegin();   // (geom.cpp: the game's geometry hidden, surveyed, captured)
         GameCameraFrame();   // (gamecam.cpp: a mod's field of view held on the game's camera)
         FrameCameraBegin(scene);   // (view.cpp: the frame drawn from a mod's camera; the views start from it)
+        ScaleBeforeRender();   // (scale.cpp: the actors drawn at the mods' sizes: the shadows and the views too)
         ShadowsBeforeWorld(driver, scene, oRender);   // (shadows.cpp: the map from the sun, LS3D drawing it, before the views)
         GfxViewsNewFrame();
         {
@@ -159,6 +160,7 @@ int __stdcall hkRender(void *driver, void *scene) {
         r = oRender(driver, scene);
     }
     if (g_world) {
+        ScaleAfterRender();   // (their own sizes back before anything of the game's reads them)
         FrameCameraEnd();   // (the game's camera back)
         GeomFrameDrawing(false);
         GfxAfterWorld();

@@ -3386,3 +3386,21 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Seen**: under DXVK the whole intro, 5722 of 5722 pictures, nothing dropped or put in, heard clean by the owner;
   1.2 (9Ex) MP4 with AAC 4K 60 fps and a silent one, 1.0 the intro: clean. The game's own Bink files were not played
   again (the lab's MP4 copies come first). Offline tests: ALL PASSED.
+
+## 2026-10-23: the size things are drawn at ("Bounce")
+
+- **Asked** (the owner): cars, people, trams pulsing in size to music, their collision and physics unchanged, as the
+  GTA and NFS "Bounce" videos have them.
+- **Read**: LS3D's frame scale (`+0x90`) and how UpdateMatrix and UpdateWMatrixProc build the matrices from it, the
+  frame's hierarchy box (knowledge/notes/scale.md).
+- **Seen**: a scale written into the taxi's frame held through driving, but the owner, watching, saw the car drive
+  differently: the game reads the frames' matrices back. So the loader scales a model frame's local matrix for the
+  world's Render alone and puts it back after (host/scale.cpp; render.cpp around Render). An A/B from one restore
+  point (1.2, Accelerate 3 s): -1985.51 -4.805 18.913 at its own size, -1985.67 -4.803 18.916 drawn at 2.
+- **Made**: `actor_scale` (mml.h, the Rust crate's `actor_scale`), `actor.scale`, `actors.scaled`; `camera.set
+  {follow}` (the owner: "a camera that follows the train?"); `mods/examples/bounce` (cars by the collision's moving
+  objects: the parked and traffic cars are not actors; people, the traffic's walkers, trams and trains).
+- **Seen in both labs**: the taxi at 2 with its wheels on the road (bottom pivot), a parked traffic car and the taxi
+  pulsing at 120 bpm, Paulie at 2 (1.0), a tram stretched 1.6 and pulsing, filmed from its own space (1.2); bounce
+  holding 38 (1.2) and 30 (1.0), no faults. Offline tests: ALL PASSED.
+- **Lab**: bounce loaded by `mod.load` only (its `enabled` stays false).

@@ -447,7 +447,9 @@ H->camera_ray(M, 400, 300, o, d);              /* the ray through the screen's m
   (overridden or not), so a label over a person's head lands on him whatever drew the frame. 0 before the first
   frame or behind the camera.
 - `call camera.set {"eye": [x, y, z], "at": [x, y, z] | "dir": [...], "up", "fov": 60, "ms": 10000}` holds a
-  camera from the bridge (an agent's look at a place: then `screenshot`), `camera.release` gives it back,
+  camera from the bridge (an agent's look at a place: then `screenshot`); with `"follow"` (any actor) `eye` and `at`
+  are in its space and the camera goes with it (a tram, a train, a person; the city is drawn around the player, so
+  one far from him is filmed in an empty world); `camera.release` gives it back,
   `camera.state` (who owns it, frames drawn, declined, skipped and why, the last frame's eye and forward).
 - `mods/examples/orbit_cam` (not enabled by default; F8, `orbit_cam.on {"on": true}`): the camera circles the
   player while he is played as usual; a label over his head through `camera_project`.
@@ -1169,6 +1171,36 @@ H->frame_watch(M, model, NULL, NULL);                               /* no longer
   mod watching the model and its bones is told of each.
 - `call frame.watch {"frame": "0x..."}` does the same for an agent: the release comes as the event `FRAME_RELEASED`;
   `frames.watched` lists what is watched.
+
+### The size things are drawn at
+
+```c
+MmlActorScale s = {sizeof s};
+s.scale[0] = s.scale[1] = s.scale[2] = 1.5f;   /* along the model's own axes */
+s.pivot = MML_SCALE_PIVOT_BOTTOM;              /* from the ground; _ORIGIN, or _POINT with s.point */
+s.bpm = 120; s.amount = 0.35f;                 /* pulsing: scale * (1 + amount * shape), every one at a bpm together */
+s.shape = MML_PULSE_BEAT;                      /* a kick that dies away; _SINE a swell; _BOUNCE a hop */
+H->actor_scale(M, car, &s);                    /* any actor: a car, a person, a tram, a train... or a pedestrian's element */
+H->actor_scale(M, car, NULL);                  /* its own size back */
+s.flags = MML_SCALE_BEAT_NOW; H->actor_scale(M, NULL, &s);   /* the shared beat starts now (a hotkey on the music) */
+```
+
+- **The drawing alone**: the model frame's local matrix is scaled around the world's Render (after RENDER_BEGIN,
+  before the shadow map and the scene views) and put back right after it, so the game's tick, the cars' physics,
+  the collision and the bullets keep the actor's own size. A scale written into the frame's own `+0x90` (as the
+  scripts' `FRM_SETSCALE` does) holds too, but the game reads those matrices back: a car scaled so drove as another
+  car (knowledge/notes/scale.md).
+- One size an actor (the last mod's, or the bridge's); it holds until changed. For a mod's own animation give it
+  again in RENDER_BEGIN each frame. A person in a car is drawn as the car's child: the car's size is his too. The
+  mod's sizes go at its unload, all of them at the mission's close or the actor's destruction.
+- **What is near**: the game's actors (`world_near`; the trams and the elevated trains are type 8), the parked and
+  the traffic's cars (not among the actors: `world_shapes` with MML_WORLD_MOVING, the owners of classes 0x201 and
+  0x202), people (the owners of the spheres of class 0x100), the traffic's walkers (`pedestrians_list`).
+- `call actor.scale {"actor": "car", "scale": 2}` (or `[x, y, z]`, `"pivot"`, `"bpm"`, `"amount"`, `"shape"`;
+  `"clear": true`; `"beat": true`), `actors.scaled` lists them. `call camera.set {"follow": "0x...", "eye": [6, 4,
+  -14], "at": [0, 1, 2]}` films any of them from its own space (a tram the game's camera cannot follow).
+- `mods/examples/bounce` (not enabled by default; Shift+F7 on and off, Shift+F5 the beat now; Options > Mods >
+  Bounce): everything within 80 m of the player pulsing to 120 bpm, for the "Bounce" videos.
 
 ### People's skinning (more than two bones a vertex)
 

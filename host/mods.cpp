@@ -742,6 +742,13 @@ int H_FrameWatch(MmlMod *m, void *frame, MmlFrameGoneFn fn, void *user) {
     if (!r) Log(MML_LOG_WARN, Who(m), "frame_watch: %s", err.c_str());
     return r;
 }
+int H_ActorScale(MmlMod *m, void *actor, const MmlActorScale *s) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    int r = ActorScale(m, actor, s, &err);
+    if (!r) Log(MML_LOG_WARN, Who(m), "actor_scale: %s", err.c_str());
+    return r;
+}
 int H_SceneReady(MmlMod *m, const float lo[3], const float hi[3]) { return Alive(m) && SceneReady(m, lo, hi) ? 1 : 0; }
 int H_DrawWorld(MmlMod *m, const MmlDrawShape *shape) {
     if (!Alive(m)) return 0;
@@ -959,6 +966,7 @@ bool UnloadMod(ModEntry *e, const char *why) {
     HitsModGone(m);
     FrameLifeModGone(m);
     DrawWorldModGone(m);
+    ScaleModGone(m);
     CapturesRemove(m);
     SidecarChannelsForget(m);
     ConfigForget(m);
@@ -1346,6 +1354,7 @@ void ModsInit() {
     g_host.frame_watch = H_FrameWatch;
     g_host.draw_world = H_DrawWorld;
     g_host.scene_ready = H_SceneReady;
+    g_host.actor_scale = H_ActorScale;
     LiveCleanAll();
     Scan();
     LoadEnabled();
@@ -1461,6 +1470,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (HitsMethod(method, paramsJson, reply, &ok)) return ok;
     if (PedestriansMethod(method, paramsJson, reply, &ok)) return ok;
     if (FrameLifeMethod(method, paramsJson, reply, &ok)) return ok;
+    if (ScaleMethod(method, paramsJson, reply, &ok)) return ok;
     if (ItemsMethod(method, paramsJson, reply, &ok)) return ok;
     if (StatsMethod(method, paramsJson, reply, &ok)) return ok;
     if (WorldMethod(method, paramsJson, reply, &ok)) return ok;

@@ -9,6 +9,7 @@ use core::ptr;
 pub use sys::MmlPedestrian as Pedestrian;
 /// A shape drawn in the world (draw_world): sys::MML_DRAW_LINE, _BOX, _SPHERE, _CAPSULE
 pub use sys::MmlDrawShape as DrawShape;
+pub use sys::MmlActorScale as ActorScale;
 /// A capsule in the world's space: the segment a-b and its radius (bullet_shape)
 pub use sys::MmlCapsule as Capsule;
 
@@ -273,6 +274,18 @@ impl Host {
     /// Every visual of the box (world) is among scene_pieces now (a body put there finds its ground)
     pub fn scene_ready(&self, lo: [f32; 3], hi: [f32; 3]) -> bool {
         unsafe { f!(self, scene_ready)(self.module, lo.as_ptr(), hi.as_ptr()) != 0 }
+    }
+    /// An actor (or a pedestrian's element) drawn at another size, pulsing when `bpm` is set; its physics and
+    /// collision keep its own (None: its own size back)
+    pub fn actor_scale(&self, actor: Actor, scale: Option<&ActorScale>) -> bool {
+        match scale {
+            Some(s) => {
+                let mut s = *s;
+                s.size = core::mem::size_of::<ActorScale>() as u32;
+                unsafe { f!(self, actor_scale)(self.module, actor.as_ptr(), &s) != 0 }
+            }
+            None => unsafe { f!(self, actor_scale)(self.module, actor.as_ptr(), ptr::null()) != 0 },
+        }
     }
     /// The mod's shapes in the world taken away
     pub fn draw_world_clear(&self) -> bool {

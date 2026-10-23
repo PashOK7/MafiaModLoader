@@ -1,0 +1,18 @@
+{
+  // The defaults of bounce's settings (shipped with the mod; a deploy replaces this file in the game's folder).
+  // Changes are kept in <game>\mml\data\bounce\config.json: the game's Options > Mods > Bounce, or
+  // `config.set {"mod": "bounce", "key": "bpm", "value": 128}`.
+  "on": true,
+  "hotkey": "Shift+F7",
+  "beat_hotkey": "Shift+F5",
+  "bpm": 120,
+  "amount": 0.35,       // on the beat: size * (1 + amount * the pulse)
+  "size": 1,
+  "shape": 0,           // 0 a kick that dies away, 1 a swell, 2 a hop
+  "radius": 80,         // metres around the player (trams and trains: four times as far)
+  "cars": true,
+  "people": true,
+  "pedestrians": true,
+  "trains": true,
+  "player": true
+}

@@ -781,6 +781,12 @@ What is done, what comes next and later, and what is known to be missing or wron
   the knowledge base, the loader's, the mods' and the stand-in's by their PDBs when the GUID is the dump's image's;
   the verdict counts the dump's modules in the Windows folder as the system's. The process's exit line walks the
   same way. Offline (the stand-in): crashes in the game's code, under two mods' hooks and in a mod's hook, the exit.
+- **The size things are drawn at** (2026-10-23; the owner's "Bounce" video): `actor_scale` (mml.h), `actor.scale`,
+  `actors.scaled`: any actor or traffic pedestrian drawn at another size around its pivot, pulsing to a beat, its
+  model frame scaled for the world's Render alone so its physics and collision stay its own (an A/B drive from one
+  restore point: the same within the input's timing). Seen in both labs: cars, a parked traffic car, Paulie, a tram.
+  `camera.set {follow}` films any actor from its own space. `mods/examples/bounce` pulses everything near the player
+  (knowledge/notes/scale.md).
 
 ## Next, by importance
 
@@ -1190,6 +1196,12 @@ merged, sorted by importance):
   `fn load(host) -> Result<(), E>`.
 
 ## Known gaps
+
+- **MCP tools take an unknown parameter without a word** (2026-10-23): `mem_write {"type": "f32", "values": [2, 2,
+  2]}` wrote three u32 2s (the parameter is `as`): a taxi's scale became denormals and it vanished. The tools should
+  refuse a parameter they do not know.
+- **A far actor is filmed in an empty world** (2026-10-23): `camera.set {follow}` on a tram 580 m from the player
+  showed a ground plane and a few props: the city's sectors are drawn around the player. Not looked into.
 
 - **The 64-bit half outlives a crashed game** (2026-10-22): after the game died mml-sidecar64 kept running and kept
   the dead Game.exe's process object alive, so the next start of that folder quit at once (seen three times). The

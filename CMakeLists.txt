@@ -30,7 +30,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     # ---- the loader
     add_library(MafiaModLoader SHARED
         host/main.cpp host/paths.cpp host/log.cpp host/memory.cpp host/crash.cpp host/stack.cpp host/hooks.cpp host/mods.cpp host/game_hooks.cpp
-        host/bridge.cpp host/tap.cpp host/start.cpp host/input.cpp host/screenshot.cpp host/draw.cpp host/config.cpp host/menus.cpp host/menus10.cpp host/script.cpp host/orders.cpp host/world.cpp host/lifecycle.cpp host/files.cpp host/render.cpp host/gfx.cpp host/gfx_vk.cpp host/motion.cpp host/view.cpp host/geom.cpp host/prof.cpp host/d3dstats.cpp host/events.cpp host/native.cpp host/humans.cpp host/watch.cpp host/happen.cpp host/collide.cpp host/state.cpp host/lights.cpp host/effects.cpp host/props.cpp host/sound.cpp host/control.cpp host/interact.cpp host/hud.cpp host/saves.cpp host/anims.cpp host/hits.cpp host/pedestrians.cpp host/framelife.cpp host/worlddraw.cpp host/items.cpp host/stats.cpp host/models.cpp host/meshes.cpp host/shaders.cpp host/skin.cpp host/vdata.cpp host/shadows.cpp host/panel.cpp host/fpu.cpp host/gamecam.cpp host/sidecar.cpp host/video.cpp host/video_hw.cpp)
+        host/bridge.cpp host/tap.cpp host/start.cpp host/input.cpp host/screenshot.cpp host/draw.cpp host/config.cpp host/menus.cpp host/menus10.cpp host/script.cpp host/orders.cpp host/world.cpp host/lifecycle.cpp host/files.cpp host/render.cpp host/gfx.cpp host/gfx_vk.cpp host/motion.cpp host/view.cpp host/geom.cpp host/prof.cpp host/d3dstats.cpp host/events.cpp host/native.cpp host/humans.cpp host/watch.cpp host/happen.cpp host/collide.cpp host/state.cpp host/lights.cpp host/effects.cpp host/props.cpp host/sound.cpp host/control.cpp host/interact.cpp host/hud.cpp host/saves.cpp host/anims.cpp host/hits.cpp host/pedestrians.cpp host/framelife.cpp host/worlddraw.cpp host/scale.cpp host/items.cpp host/stats.cpp host/models.cpp host/meshes.cpp host/shaders.cpp host/skin.cpp host/vdata.cpp host/shadows.cpp host/panel.cpp host/fpu.cpp host/gamecam.cpp host/sidecar.cpp host/video.cpp host/video_hw.cpp)
     # ($<0:> keeps Visual Studio from adding a per-configuration folder)
     set_target_properties(MafiaModLoader PROPERTIES SUFFIX ".asi" RUNTIME_OUTPUT_DIRECTORY ${MML_OUT}/$<0:>)
     target_include_directories(MafiaModLoader PRIVATE third_party/json host ${CMAKE_BINARY_DIR}/gen)
@@ -319,6 +319,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     mml_add_mod(probe ${CMAKE_SOURCE_DIR}/mods/examples/probe mods/examples/probe/probe.cpp)
     mml_add_mod(bounty ${CMAKE_SOURCE_DIR}/mods/examples/bounty mods/examples/bounty/bounty.cpp)
     mml_add_mod(dusk ${CMAKE_SOURCE_DIR}/mods/examples/dusk mods/examples/dusk/dusk.cpp)
+    mml_add_mod(bounce ${CMAKE_SOURCE_DIR}/mods/examples/bounce mods/examples/bounce/bounce.cpp)
     mml_add_mod(exhaust_fx ${CMAKE_SOURCE_DIR}/mods/examples/exhaust_fx mods/examples/exhaust_fx/exhaust_fx.cpp)
     mml_add_mod(wind ${CMAKE_SOURCE_DIR}/mods/examples/wind mods/examples/wind/wind.cpp)
     mml_add_mod(storm ${CMAKE_SOURCE_DIR}/mods/examples/storm mods/examples/storm/storm.cpp)

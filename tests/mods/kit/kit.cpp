@@ -401,9 +401,13 @@ int Hits(const char *args, MmlReply *r, void *) {
     int drawn = H->draw_world(M, &ds), badDrawn = H->draw_world(M, &bad);
     const float lo[3] = {0, 0, 0}, hi[3] = {1, 1, 1};
     int ready = H->scene_ready(M, lo, hi);
-    char out[260];
-    snprintf(out, sizeof out, "{\"filter\":%d,\"hit\":%d,\"null_hit\":%d,\"pedestrians\":%d,\"shape\":%d,\"watch\":%d,\"unwatch\":%d,\"draw\":%d,\"bad_draw\":%d,\"ready\":%d}",
-             filter, hit, nullHit, pedestrians, shape, watch, unwatch, drawn, badDrawn, ready);
+    MmlActorScale sc{};
+    sc.size = sizeof sc;
+    sc.scale[0] = sc.scale[1] = sc.scale[2] = 2;
+    int scaled = H->actor_scale(M, nullptr, &sc);
+    char out[300];
+    snprintf(out, sizeof out, "{\"filter\":%d,\"hit\":%d,\"null_hit\":%d,\"pedestrians\":%d,\"shape\":%d,\"watch\":%d,\"unwatch\":%d,\"draw\":%d,\"bad_draw\":%d,\"ready\":%d,\"scaled\":%d}",
+             filter, hit, nullHit, pedestrians, shape, watch, unwatch, drawn, badDrawn, ready, scaled);
     H->reply_append(r, out, static_cast<size_t>(-1));
     return 0;
 }

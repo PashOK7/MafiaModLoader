@@ -264,6 +264,26 @@ typedef struct MmlDrawShape {
 /* frame_watch: a watched frame (or mesh) about to be freed by LS3D */
 typedef void (*MmlFrameGoneFn)(void *frame, void *user);
 
+/* actor_scale: the size an actor (or a traffic pedestrian) is drawn at; its collision and physics keep its own */
+#define MML_SCALE_PIVOT_BOTTOM 0  /* the bottom of its model's bounds (under its middle): it grows from the ground */
+#define MML_SCALE_PIVOT_ORIGIN 1  /* its model frame's origin */
+#define MML_SCALE_PIVOT_POINT  2  /* `point`, in its model's space */
+#define MML_PULSE_BEAT   0        /* a kick on the beat that dies away before the next */
+#define MML_PULSE_SINE   1        /* a smooth swell, largest on the beat */
+#define MML_PULSE_BOUNCE 2        /* |sin|: a hop each beat, back to its size on it */
+#define MML_SCALE_BEAT_NOW 0x1u   /* flags: the pulses' shared beat starts now (every pulsing actor's) */
+typedef struct MmlActorScale {
+    uint32_t size;          /* sizeof(MmlActorScale) */
+    float scale[3];         /* along the model's own x, y, z (1, 1, 1: its own size) */
+    int pivot;              /* MML_SCALE_PIVOT_* */
+    float point[3];         /* MML_SCALE_PIVOT_POINT's */
+    float bpm;              /* beats a minute; 0: no pulse */
+    float amount;           /* the pulse: scale * (1 + amount * shape), shape 0..1 (negative: it shrinks) */
+    float phase;            /* where in its beat it is, 0..1 (the others' beat shifted by it) */
+    int shape;              /* MML_PULSE_* */
+    uint32_t flags;         /* MML_SCALE_BEAT_NOW */
+} MmlActorScale;
+
 typedef struct MmlPedestrian {
     uint32_t size;          /* set by the host */
     void *element;          /* the traffic's element: what human_hit, human_skeleton, bone_set and human_get_up take */
@@ -1692,6 +1712,16 @@ typedef struct MmlHost {
      * (the scans read new meshes within a budget) had the mod's focus holding the box, and its focus holds it still.
      * A body put there before it is ready may fall through what is not there yet. Game thread. */
     int (*scene_ready)(MmlMod *mod, const float lo[3], const float hi[3]);
+    /* ---- the size things are drawn at (both builds; docs/MODDING.md "The size things are drawn at").
+     * actor_scale: an actor (a car, a person, a tram, a train, a boat, an airplane...) or a traffic pedestrian's
+     * element drawn at another size, about its pivot, and pulsing to a beat when bpm is set: its model frame's local
+     * matrix scaled for the frame's drawing alone (the shadows and the mods' views too) and given back once the world
+     * is drawn, so the game's tick, its physics, its collision and its bullets keep the actor's own size. Set it once
+     * (it holds), or in RENDER_BEGIN each frame for a mod's own animation. NULL (or 1, 1, 1 with no pulse) gives it
+     * its own size back; the mod's go at its unload, every one at the mission's close or the actor's destruction.
+     * A person in a car is drawn as the car's child: the car's size is his too. 1 done, 0 refused (the log says
+     * why). Game thread. */
+    int (*actor_scale)(MmlMod *mod, void *actor, const MmlActorScale *scale);
 } MmlHost;
 
 #define MML_ZONE_PLAYER 0x1u
