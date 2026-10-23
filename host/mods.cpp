@@ -749,6 +749,11 @@ int H_ActorScale(MmlMod *m, void *actor, const MmlActorScale *s) {
     if (!r) Log(MML_LOG_WARN, Who(m), "actor_scale: %s", err.c_str());
     return r;
 }
+int H_ScaleBeat(MmlMod *m) {
+    if (!Alive(m)) return 0;
+    ScaleBeat();
+    return 1;
+}
 int H_SceneReady(MmlMod *m, const float lo[3], const float hi[3]) { return Alive(m) && SceneReady(m, lo, hi) ? 1 : 0; }
 int H_DrawWorld(MmlMod *m, const MmlDrawShape *shape) {
     if (!Alive(m)) return 0;
@@ -1355,6 +1360,7 @@ void ModsInit() {
     g_host.draw_world = H_DrawWorld;
     g_host.scene_ready = H_SceneReady;
     g_host.actor_scale = H_ActorScale;
+    g_host.scale_beat = H_ScaleBeat;
     LiveCleanAll();
     Scan();
     LoadEnabled();

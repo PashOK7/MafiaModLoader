@@ -14,7 +14,7 @@
 // The pivot by default is the bottom of the model's bounds (the frame's hierarchy box, +0xB0 min, +0xBC max, in its
 // own space, valid while +0xAC bit 0x100 is set), under its middle: a car is scaled from the road, not from its axles.
 //
-// The pulse: scale * (1 + amount * shape(t)), t the beats since a shared start (MML_SCALE_BEAT_NOW, the bridge's
+// The pulse: scale * (1 + amount * shape(t)), t the beats since a shared start (scale_beat, the bridge's
 // `beat`) times bpm, shifted by the phase: every pulsing actor at one bpm beats together.
 //
 // Bridge methods (game thread): actor.scale {actor, scale, pivot, bpm, amount, shape, phase; clear; beat},
@@ -164,12 +164,7 @@ json EntryJson(const Entry &e) {
 int ActorScale(MmlMod *mod, void *actor, const MmlActorScale *s, std::string *err) {
     if (!game::g_exe || !game::g_ls3d || !game::Ls3d().frameUpdateMatrix) { *err = "not a known build of the game"; return 0; }
     if (s && s->size < sizeof(MmlActorScale)) { *err = "MmlActorScale.size: sizeof(MmlActorScale)"; return 0; }
-    if (s && (s->flags & MML_SCALE_BEAT_NOW)) QueryPerformanceCounter(&g_beatStart);
-    if (!actor) {
-        if (s && (s->flags & MML_SCALE_BEAT_NOW)) return 1;
-        *err = "no actor";
-        return 0;
-    }
+    if (!actor) { *err = "no actor"; return 0; }
     std::vector<void *> peds = PedestrianElements();
     bool pedestrian = std::find(peds.begin(), peds.end(), actor) != peds.end();
     if (!pedestrian) {
@@ -205,6 +200,11 @@ int ActorScale(MmlMod *mod, void *actor, const MmlActorScale *s, std::string *er
     e->s.size = sizeof(MmlActorScale);
     e->s.flags = 0;
     return 1;
+}
+
+void ScaleBeat() {
+    BeatSeconds();   // (the frequency read)
+    QueryPerformanceCounter(&g_beatStart);
 }
 
 void ScaleBeforeRender() {
@@ -299,7 +299,7 @@ bool ScaleMethod(const std::string &method, const std::string &paramsJson, std::
             return true;
         }
         std::string err;
-        if (p.value("beat", false)) QueryPerformanceCounter(&g_beatStart);
+        if (p.value("beat", false)) ScaleBeat();
         if (p.contains("clear") && p["clear"].is_string() && p["clear"] == "all") {
             size_t n = g_entries.size();
             g_entries.erase(std::remove_if(g_entries.begin(), g_entries.end(), [](const Entry &e) { return !e.mod; }), g_entries.end());

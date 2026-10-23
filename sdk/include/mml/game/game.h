@@ -121,6 +121,19 @@ inline void ListActors(std::vector<void *> *out) {
     if (void *g = Game()) take(reinterpret_cast<uint8_t *>(g) + 0x124);
 }
 
+// The traffic's cars out in the world now (game_build.h trafficElements): C_car actors the game keeps out of the
+// lists ListActors reads (the parked ones too), each element's +0 byte set while it is out, its +0xC the car.
+constexpr int kTrafficElemOut = 0x0, kTrafficElemCar = 0xC;
+inline void ListTrafficCars(std::vector<void *> *out) {
+    if (!Mission() || !Exe().trafficElements) return;
+    uint8_t **b = *reinterpret_cast<uint8_t ***>(Exe().trafficElements);
+    uint8_t **e = *reinterpret_cast<uint8_t ***>(Exe().trafficElements + 4);
+    if (!b || e < b || e - b > 1024) return;
+    for (uint8_t **p = b; p < e; p++)
+        if (*p && at<uint8_t>(*p, kTrafficElemOut))
+            if (void *car = at<void *>(*p, kTrafficElemCar)) out->push_back(car);
+}
+
 inline void *FindChild(void *frame, const char *name) {
     using Fn = void *(__stdcall *)(void *, const char *, uint32_t);
     void **vt = *reinterpret_cast<void ***>(frame);

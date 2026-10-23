@@ -404,7 +404,7 @@ int Hits(const char *args, MmlReply *r, void *) {
     MmlActorScale sc{};
     sc.size = sizeof sc;
     sc.scale[0] = sc.scale[1] = sc.scale[2] = 2;
-    int scaled = H->actor_scale(M, nullptr, &sc);
+    int scaled = H->actor_scale(M, nullptr, &sc) + 10 * H->scale_beat(M);   // (no actor: refused; the beat: 1)
     char out[300];
     snprintf(out, sizeof out, "{\"filter\":%d,\"hit\":%d,\"null_hit\":%d,\"pedestrians\":%d,\"shape\":%d,\"watch\":%d,\"unwatch\":%d,\"draw\":%d,\"bad_draw\":%d,\"ready\":%d,\"scaled\":%d}",
              filter, hit, nullHit, pedestrians, shape, watch, unwatch, drawn, badDrawn, ready, scaled);

@@ -273,7 +273,6 @@ typedef void (*MmlFrameGoneFn)(void *frame, void *user);
 #define MML_PULSE_BOUNCE 2        /* |sin|: a hop each beat, back to its size on it */
 #define MML_PULSE_SQUASH 3        /* tall and narrow on the beat, low and wide between, eased both ways (a cosine):
                                      x * (1 - amount * c), y * (1 + amount * c); its length (z) kept */
-#define MML_SCALE_BEAT_NOW 0x1u   /* flags: the pulses' shared beat starts now (every pulsing actor's) */
 typedef struct MmlActorScale {
     uint32_t size;          /* sizeof(MmlActorScale) */
     float scale[3];         /* along the model's own x, y, z (1, 1, 1: its own size) */
@@ -283,7 +282,7 @@ typedef struct MmlActorScale {
     float amount;           /* the pulse: scale * (1 + amount * shape), shape 0..1 (negative: it shrinks) */
     float phase;            /* where in its beat it is, 0..1 (the others' beat shifted by it) */
     int shape;              /* MML_PULSE_* */
-    uint32_t flags;         /* MML_SCALE_BEAT_NOW */
+    uint32_t flags;         /* 0 (reserved) */
 } MmlActorScale;
 
 typedef struct MmlPedestrian {
@@ -1275,8 +1274,10 @@ typedef struct MmlHost {
     int (*world_ray)(MmlMod *mod, const float from[3], const float to[3], uint32_t what, void *ignore, MmlHit *hit);
     /* a sphere of `radius` moved from `from` to `to`: where it stops (hit->pos: its centre there), what it touched */
     int (*world_sweep)(MmlMod *mod, const float from[3], const float to[3], float radius, uint32_t what, void *ignore, MmlHit *hit);
-    /* the actors within `radius` of a point (their model's world position), nearest first; `type` 0 any, else the
-     * game's actor type (2 a person, 4 a car); returns how many there are (more than `max`: the first max given) */
+    /* the actors within `radius` of a point (their model's world position), nearest first: the game's actors and the
+     * traffic's cars (parked ones too: C_car actors the game keeps out of its own lists); `type` 0 any, else the
+     * game's actor type (MML_ACTOR_*); returns how many there are (more than `max`: the first max given). The
+     * traffic's walkers are not actors: pedestrians_list. */
     int (*world_near)(MmlMod *mod, const float at[3], float radius, int type, void **out, int max);
     /* the collision shapes in a box (the world's axes): the static world's primitives and the moving objects, as
      * the game keeps them in its grids; returns how many there are (more than `max`: the first max given) */
@@ -1721,10 +1722,13 @@ typedef struct MmlHost {
      * is drawn, so the game's tick, its physics, its collision and its bullets keep the actor's own size. Set it once
      * (it holds), or in RENDER_BEGIN each frame for a mod's own animation. NULL (or 1, 1, 1 with no pulse) gives it
      * its own size back; the mod's go at its unload, every one at the mission's close or the actor's destruction.
-     * One drawn inside another scaled one (a person in a car: the car's child) takes its size from it and is not
+     * A tram's or a train's every car is scaled with it. One drawn inside another scaled one (a person in a car: the car's child) takes its size from it and is not
      * scaled again. 1 done, 0 refused (the log says
      * why). Game thread. */
     int (*actor_scale)(MmlMod *mod, void *actor, const MmlActorScale *scale);
+    /* scale_beat: the pulses' shared beat starts now (every pulsing actor's, whoever set it): a hotkey tapped on the
+     * music's beat. Returns 1. Game thread. */
+    int (*scale_beat)(MmlMod *mod);
 } MmlHost;
 
 #define MML_ZONE_PLAYER 0x1u
@@ -1748,9 +1752,12 @@ typedef struct MmlHost {
 
 #define MML_FILE_GAME 1              /* file_read: the game's own file, not a mod's of the same name */
 
-/* actor_spawn's kinds: the game's actor types (C_actor +0x10) */
-#define MML_ACTOR_CAR 4
-#define MML_ACTOR_HUMAN 27
+/* the game's actor types (C_actor +0x10; actor_spawn's kinds, world_near's `type`) */
+#define MML_ACTOR_PLAYER 2         /* the player (a C_human) */
+#define MML_ACTOR_CAR 4            /* a car: the missions', the parked and the traffic's (world_near) */
+#define MML_ACTOR_RAILWAY 8        /* a tram or an elevated train (actor_scale takes every car of it) */
+#define MML_ACTOR_AIRPLANE 22
+#define MML_ACTOR_HUMAN 27         /* a person of a mission's or of actor_spawn (a C_entity) */
 
 typedef int (*MmlModLoadFn)(const MmlHost *host, MmlMod *mod);
 typedef void (*MmlModUnloadFn)(MmlMod *mod);

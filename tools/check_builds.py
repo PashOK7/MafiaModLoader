@@ -1155,6 +1155,15 @@ def main(a):
         slot = {'1.2': 0x98, '1.0': 0x94}[name]   # (IGraph's slots from +0x64 on are 4 bytes lower in 1.0)
         check(pair > 0 and f'+ {slot:#x}]' in lp and f'+ {slot + 4:#x}]' in lp and 'ret 4' in lp,
               f'{name} LS3DF the video loop: IGraph +{slot:#x} keyboardUpdate, +{slot + 4:#x} ReadKey (side by side in the vtable), ret 4')
+    # The traffic's cars (game.h ListTrafficCars): C_traffic_car::ChcesMeSejmout walks the vector at trafficElements
+    # (its begin and end read), each element's +0 byte and its +0xC car.
+    walker = {'1.2': 0x4BAD30, '1.0': 0x506B60}
+    for name, (exe, ls, gexe, gls) in builds.items():
+        if not exe.get('trafficElements'):
+            continue
+        t = ' | '.join('%s %s' % (i.mnemonic, i.op_str) for i in gexe.md.disasm(gexe.at(walker[name] - 0x400000, 0x47), walker[name]))
+        check(f'[{exe["trafficElements"]:#x}]' in t and f'[{exe["trafficElements"] + 4:#x}]' in t and '+ 0xc]' in t,
+              f'{name} trafficElements: ChcesMeSejmout reads its begin and end, an element\'s +0xC')
     print('ALL PASSED' if not fails else f'{fails} FAILED')
     return 1 if fails else 0
 

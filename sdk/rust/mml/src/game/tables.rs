@@ -255,6 +255,7 @@ pub struct Exe {
     pub materials: usize,
     pub materialCount: usize,
     pub cdFind: usize,
+    pub trafficElements: usize,
 }
 
 /// LS3DF.dll's, as RVAs (add the module's base; the int members are offsets): game_build.h Ls3dBuild.
@@ -588,6 +589,7 @@ pub static EXE_12: Exe = Exe {
     materials: 0x6D4C24,
     materialCount: 0x6D4C28,
     cdFind: 0x5662E0,
+    trafficElements: 0x63D848,
 };
 
 pub static EXE_10: Exe = Exe {
@@ -840,6 +842,7 @@ pub static EXE_10: Exe = Exe {
     materials: 0x6EFBA4,
     materialCount: 0x6EFBA8,
     cdFind: 0x623FC0,
+    trafficElements: 0x6561A0,
 };
 
 pub static LS3D_12: Ls3d = Ls3d {
@@ -1114,6 +1117,8 @@ pub const kShotHitPos: i32 = 0x38;
 pub const kShotHitNormal: i32 = 0x44;
 pub const kShotHits: i32 = 0x50;
 pub const kShotSurface: i32 = 0x58;
+pub const kTrafficElemOut: i32 = 0x0;
+pub const kTrafficElemCar: i32 = 0xC;
 pub const kVtEnumFrames: i32 = 0x34;
 pub const kSurfaceDeepWater: i32 = 31;
 pub const kSurfaceShallowWater: i32 = 44;

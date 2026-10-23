@@ -1182,7 +1182,7 @@ s.bpm = 120; s.amount = 0.35f;                 /* pulsing: scale * (1 + amount *
 s.shape = MML_PULSE_SQUASH;                    /* tall and narrow, then low and wide, eased; length kept */
 H->actor_scale(M, car, &s);                    /* any actor: a car, a person, a tram, a train... or a pedestrian's element */
 H->actor_scale(M, car, NULL);                  /* its own size back */
-s.flags = MML_SCALE_BEAT_NOW; H->actor_scale(M, NULL, &s);   /* the shared beat starts now (a hotkey on the music) */
+H->scale_beat(M);                              /* the shared beat starts now (a hotkey on the music) */
 ```
 
 - **The drawing alone**: the model frame's local matrix is scaled around the world's Render (after RENDER_BEGIN,
@@ -1194,9 +1194,9 @@ s.flags = MML_SCALE_BEAT_NOW; H->actor_scale(M, NULL, &s);   /* the shared beat 
   again in RENDER_BEGIN each frame. One drawn inside another scaled one (a person in a car: the car's child) takes
   its size from it and is not scaled again. The
   mod's sizes go at its unload, all of them at the mission's close or the actor's destruction.
-- **What is near**: the game's actors (`world_near`; the trams and the elevated trains are type 8), the parked and
-  the traffic's cars (not among the actors: `world_shapes` with MML_WORLD_MOVING, the owners of classes 0x201 and
-  0x202), people (the owners of the spheres of class 0x100), the traffic's walkers (`pedestrians_list`).
+- **What is near**: `world_near` (the game's actors and the traffic's cars, parked ones too; `MML_ACTOR_CAR`,
+  `_HUMAN`, `_PLAYER`, `_RAILWAY` for the trams and the elevated trains, whose every car is scaled) and
+  `pedestrians_list` (the traffic's walkers: not actors).
 - `call actor.scale {"actor": "car", "scale": 2}` (or `[x, y, z]`, `"pivot"`, `"bpm"`, `"amount"`, `"shape"`;
   `"clear": true`; `"beat": true`), `actors.scaled` lists them. `call camera.set {"follow": "0x...", "eye": [6, 4,
   -14], "at": [0, 1, 2]}` films any of them from its own space (a tram the game's camera cannot follow).

@@ -217,6 +217,7 @@ int NearActors(const V3 &at, float radius, int type, std::vector<Near> *out) {
     auto f = [&]() {
         std::vector<void *> all;
         game::ListActors(&all);
+        game::ListTrafficCars(&all);   // (actors too, kept out of the game's lists)
         std::sort(all.begin(), all.end());
         all.erase(std::unique(all.begin(), all.end()), all.end());
         for (void *a : all) {

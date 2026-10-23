@@ -4,11 +4,11 @@
 // their physics and collision their own (the host scales their drawing alone; the player in his car goes with it).
 //
 // Every half second the mod looks for what is near the player and gives each new one the pulse (the host keeps it
-// pulsing; all at one bpm beat together): the cars and the people by the collision's moving objects in a box around
-// him (world_shapes: parked and traffic cars are there, though not among the game's actors), the traffic's walkers
-// (pedestrians_list), the trams and the elevated trains (world_near, the game's type 8), the player himself. A hotkey
-// turns it on and off, another starts the beat at once (tap it on the music's beat). Its settings: the game's
-// Options > Mods > Bounce, or `config.set {"mod": "bounce", "key": "bpm", "value": 128}`.
+// pulsing; all at one bpm beat together): world_near's actors (the cars, the traffic's and the parked ones too, the
+// people, the player, the trams and the elevated trains: the host scales a train's every car) and the traffic's
+// walkers (pedestrians_list). A hotkey turns it on and off, another starts the beat at once (scale_beat: tap it on
+// the music's beat). Its settings: the game's Options > Mods > Bounce, or `config.set {"mod": "bounce", "key": "bpm",
+// "value": 128}`.
 #include <windows.h>
 #include <cmath>
 #include <cstdio>
@@ -29,9 +29,6 @@ struct Settings {
 } S;
 std::unordered_set<void *> g_pulsing;   // what has the pulse now
 DWORD g_lastScan;
-
-constexpr uint32_t kClassCarBody = 0x201, kClassCarHull = 0x202, kClassPersonMask = 0x100;
-constexpr int kTypeRailway = 8;   // C_railway: the trams (salina*), the elevated trains (metro*)
 
 void ReadSettings() {
     S.on = H->config_number(M, "on", 1) != 0;
@@ -77,28 +74,24 @@ void Scan() {
     if (!frame || !H->frame_world(M, frame, w)) return;
     at[0] = w[12]; at[1] = w[13]; at[2] = w[14];
     MmlActorScale s = Pulse();
-    if (S.player) Give(player, s);
-    if (S.cars || S.people) {
-        const float lo[3] = {at[0] - S.radius, at[1] - 40, at[2] - S.radius}, hi[3] = {at[0] + S.radius, at[1] + 40, at[2] + S.radius};
-        static MmlShape shapes[2048];
-        int n = H->world_shapes(M, lo, hi, MML_WORLD_MOVING, shapes, 2048);
-        for (int i = 0; i < n && i < 2048; i++) {
-            const MmlShape &sh = shapes[i];
-            bool car = sh.classes == kClassCarBody || sh.classes == kClassCarHull;
-            // (a person's own spheres; the traffic's walkers share their system's owner: pedestrians_list below)
-            bool person = (sh.classes & kClassPersonMask) && sh.kind == MML_SHAPE_SPHERE;
-            if ((car && S.cars) || (person && S.people)) Give(sh.actor, s);
-        }
+    const struct { bool on; int type; float radius; } kinds[] = {
+        {S.cars, MML_ACTOR_CAR, S.radius}, {S.people, MML_ACTOR_HUMAN, S.radius}, {S.player, MML_ACTOR_PLAYER, S.radius},
+        {S.trains, MML_ACTOR_RAILWAY, S.radius * 4},   // (from farther: a train is long)
+    };
+    static void *found[512];
+    for (const auto &k : kinds) {
+        if (!k.on) continue;
+        int n = H->world_near(M, at, k.radius, k.type, found, 512);
+        for (int i = 0; i < n && i < 512; i++) Give(found[i], s);
     }
     if (S.pedestrians) {
         static MmlPedestrian peds[256];
-        int n = H->pedestrians_list(M, peds, 256);
-        for (int i = 0; i < n && i < 256; i++) if (peds[i].spawned) Give(peds[i].element, s);
-    }
-    if (S.trains) {
-        void *rail[64];
-        int n = H->world_near(M, at, S.radius * 4, kTypeRailway, rail, 64);
-        for (int i = 0; i < n && i < 64; i++) Give(rail[i], s);
+        int m = H->pedestrians_list(M, peds, 256);
+        for (int i = 0; i < m && i < 256; i++) {
+            const MmlVec3 &p = peds[i].pos;
+            float dx = p.x - at[0], dy = p.y - at[1], dz = p.z - at[2];
+            if (peds[i].spawned && dx * dx + dy * dy + dz * dz <= S.radius * S.radius) Give(peds[i].element, s);
+        }
     }
 }
 
@@ -122,11 +115,7 @@ void OnEvent(const MmlEvent *ev, void *) {
 
 void BindKeys() {
     H->hotkey(M, H->config_string(M, "hotkey", "Shift+F7"), [](void *) { H->config_set(M, "on", S.on ? "false" : "true"); }, nullptr);
-    H->hotkey(M, H->config_string(M, "beat_hotkey", "Shift+F5"), [](void *) {
-        MmlActorScale s = Pulse();
-        s.flags = MML_SCALE_BEAT_NOW;
-        H->actor_scale(M, nullptr, &s);   // (no actor: the shared beat alone)
-    }, nullptr);
+    H->hotkey(M, H->config_string(M, "beat_hotkey", "Shift+F5"), [](void *) { H->scale_beat(M); }, nullptr);
 }
 
 int Status(const char *, MmlReply *r, void *) {
@@ -141,7 +130,7 @@ int Status(const char *, MmlReply *r, void *) {
 MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     H = host;
     M = mod;
-    if (!MML_HAS(H, actor_scale)) return 1;   // a loader without actor_scale
+    if (!MML_HAS(H, scale_beat)) return 1;   // a loader without actor_scale and scale_beat
     ReadSettings();
     BindKeys();
     for (MmlEventType t : {MML_EVENT_CONFIG_CHANGED, MML_EVENT_MISSION_TICK, MML_EVENT_MISSION_CLOSE, MML_EVENT_ACTOR_DESTROYED})

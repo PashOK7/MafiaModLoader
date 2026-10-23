@@ -35,7 +35,6 @@ pub const MML_PULSE_BEAT: u32 = 0;
 pub const MML_PULSE_SINE: u32 = 1;
 pub const MML_PULSE_BOUNCE: u32 = 2;
 pub const MML_PULSE_SQUASH: u32 = 3;
-pub const MML_SCALE_BEAT_NOW: u32 = 1;
 pub const MML_GFX_UI_OFF: u32 = 0;
 pub const MML_GFX_UI_TAKE: u32 = 1;
 pub const MML_GFX_UI_HIDE: u32 = 2;
@@ -97,7 +96,10 @@ pub const MML_ANIM_SIMPLE: u32 = 1;
 pub const MML_SAVE_SLOT: u32 = 0;
 pub const MML_SAVE_PROFILE: u32 = 1;
 pub const MML_FILE_GAME: u32 = 1;
+pub const MML_ACTOR_PLAYER: u32 = 2;
 pub const MML_ACTOR_CAR: u32 = 4;
+pub const MML_ACTOR_RAILWAY: u32 = 8;
+pub const MML_ACTOR_AIRPLANE: u32 = 22;
 pub const MML_ACTOR_HUMAN: u32 = 27;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -3627,10 +3629,12 @@ pub struct MmlHost {
             scale: *const MmlActorScale,
         ) -> ::core::ffi::c_int,
     >,
+    pub scale_beat:
+        ::core::option::Option<unsafe extern "C" fn(mod_: *mut MmlMod) -> ::core::ffi::c_int>,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 792usize];
+    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 796usize];
     ["Alignment of MmlHost"][::core::mem::align_of::<MmlHost>() - 4usize];
     ["Offset of field: MmlHost::size"][::core::mem::offset_of!(MmlHost, size) - 0usize];
     ["Offset of field: MmlHost::api_version"]
@@ -3970,6 +3974,8 @@ const _: () = {
         [::core::mem::offset_of!(MmlHost, scene_ready) - 784usize];
     ["Offset of field: MmlHost::actor_scale"]
         [::core::mem::offset_of!(MmlHost, actor_scale) - 788usize];
+    ["Offset of field: MmlHost::scale_beat"]
+        [::core::mem::offset_of!(MmlHost, scale_beat) - 792usize];
 };
 pub type MmlModLoadFn = ::core::option::Option<
     unsafe extern "C" fn(host: *const MmlHost, mod_: *mut MmlMod) -> ::core::ffi::c_int,

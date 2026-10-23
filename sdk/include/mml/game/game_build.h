@@ -471,6 +471,11 @@ struct ExeBuild {
     // drive; 1.2's PlayVideo asks it for <name>.avi then <name>.bik, 1.0's InitSystem for logo1.avi and logo2.avi
     // and the intro's script command for intro.avi (the path it fills is what IShow's open is given).
     uintptr_t cdFind;
+    // The traffic's cars (host/collide.cpp world_near, game.h ListTrafficCars): a vector of the traffic's elements,
+    // [begin, end) at +0, +4, each element a pointer: its +0 a byte, set while it is out in the world, its +0xC the
+    // C_car (an actor of type 4 the game keeps out of its actors' list: its frame "traffic_element", parked cars too).
+    // C_traffic_car::ChcesMeSejmout (1.2 0x4BAD30, 1.0 0x506B60) walks it so; read in both builds' code.
+    uintptr_t trafficElements;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -708,6 +713,8 @@ inline const ExeBuild kExe12 = {
     0x6D4C24, 0x6D4C28,
     // the videos (2026-10-21: called by PlayVideo at 0x55D4CD, 0x55D52D, 0x55D5D9 and by InitSystem at 0x5BF5E7)
     0x5662E0,
+    // the traffic's cars (2026-10-23: C_traffic_car::ChcesMeSejmout 0x4BAD30 and GetBridgeCarCount read it)
+    0x63D848,
 };
 
 inline const ExeBuild kExe10 = {
@@ -837,6 +844,8 @@ inline const ExeBuild kExe10 = {
     0x6EFBA4, 0x6EFBA8,
     // the videos (2026-10-21: m10CdFind; InitSystem's calls at 0x5FA411, 0x5FB214, 0x5FB25C, the intro's at 0x5C6539)
     0x623FC0,
+    // the traffic's cars (2026-10-23: C_traffic_car::ChcesMeSejmout 0x506B60, the same code as 1.2's)
+    0x6561A0,
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,

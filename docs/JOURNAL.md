@@ -3418,3 +3418,9 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Seen by the owner**: a two-car elevated train pulsed in its first car alone. Its second car is a model frame of
   its own (C_railway +0xC4, +0x1A8; knowledge/notes/scale.md): actor_scale now scales every car of a train. 1.2: 40
   held, 43 frames drawn (the trains' cars; the player in his taxi left out). Offline tests: ALL PASSED.
+- **Asked** (the owner): bounce stays an example, and what it found by hand should be the SDK's. The traffic's cars
+  (C_car actors kept out of the game's lists, parked ones too) are now in world_near and world.near (game_build.h
+  trafficElements, both builds, check_builds ALL PASSED); mml.h names the types (MML_ACTOR_PLAYER, _RAILWAY,
+  _AIRPLANE); scale_beat replaces actor_scale with no actor and a flag. bounce now asks world_near by type and
+  pedestrians_list: no collision owners, no classes. Seen: world.near found 11 traffic cars (1.2) and 5 (1.0, the
+  traffic still coming); bounce 42 held, 45 drawn (1.2), 19 (1.0), squashing, no faults. Offline tests: ALL PASSED.

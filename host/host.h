@@ -666,6 +666,7 @@ void FrameLifeInit();
 // the size things are drawn at (scale.cpp): an actor's or a pedestrian's model frame scaled for the world's drawing
 // alone (render.cpp around the world's Render); actor.scale, actors.scaled
 int ActorScale(MmlMod *mod, void *actor, const MmlActorScale *s, std::string *err);   // s null: its own size
+void ScaleBeat();                         // the pulses' shared beat starts now
 void ScaleBeforeRender();
 void ScaleAfterRender();
 void ScaleActorGone(void *actor);

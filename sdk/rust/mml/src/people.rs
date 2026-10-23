@@ -287,6 +287,10 @@ impl Host {
             None => unsafe { f!(self, actor_scale)(self.module, actor.as_ptr(), ptr::null()) != 0 },
         }
     }
+    /// The pulses' shared beat starts now (every pulsing actor's): a hotkey tapped on the music's beat
+    pub fn scale_beat(&self) -> bool {
+        unsafe { f!(self, scale_beat)(self.module) != 0 }
+    }
     /// The mod's shapes in the world taken away
     pub fn draw_world_clear(&self) -> bool {
         unsafe { f!(self, draw_world)(self.module, ptr::null()) != 0 }

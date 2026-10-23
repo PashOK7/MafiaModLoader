@@ -36,3 +36,9 @@ What `actor.scale` (mml.h actor_scale, host/scale.cpp) rests on.
   0 is the actor's model (+0x68); the others are model frames of their own in the sector, named `<name>_vagon<i>`
   (C_railway::GameInit), not children of the first: +0xC4 points to their frames, +0x1A8 counts them (metro6 in the
   1.2 lab: one, `metro6_vagon0`, 12.5 m behind). actor_scale scales them all (game.h kRailwayVagons).
+- **code** The traffic's cars (both builds; game_build.h trafficElements, 1.2 0x63D848, 1.0 0x6561A0, checked by
+  tools/check_builds.py in C_traffic_car::ChcesMeSejmout): a vector of element pointers, an element's +0 byte set
+  while it is out, its +0xC a C_car (type 4, frame `traffic_element`, `save_excluded`), parked cars among them: 13 in
+  the city freeride. The game's actors' lists (C_mission +0x38, C_game +0x124) leave them out, so world_near now adds
+  them (game.h ListTrafficCars). The owner of the collision's class-0x100 boxes is the pedestrians' system
+  (C_don_ocas, type 19), not a person.
