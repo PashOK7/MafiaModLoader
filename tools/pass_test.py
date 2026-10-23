@@ -5,6 +5,7 @@ each mode asked; the frames and the car's part of them side by side.
     python tools/pass_test.py                          # the scene "taxi", the modes off, sr_quality, sr_ultra
     python tools/pass_test.py --modes off,sr_ultra,nr_sr_perf --game 1.2 --out build/pass_test
     python tools/pass_test.py --scene my.json          # a scene of one's own (the keys of SCENES below)
+    python tools/pass_test.py --speed 1.4 --modes motion_check   # the car at a steady 5 km/h
 
 The game runs with the loader and the player sits in a car (a freeride: game_launch {"go": "freeride"}); dlss_nr is on
 at the start for the DLSS modes ("gfx": true). Each run: the car put at the scene's start, facing its way, stopped;
@@ -81,7 +82,7 @@ def read_bgra(path):
     return Image.frombuffer('RGBA', (w, h), data[16:16 + w * h * 4], 'raw', 'BGRA', 0, 1).convert('RGB')
 
 
-def run(game, scene, mode, out):
+def run(game, scene, mode, out, speed=0.0):
     eye, fwd = scene['eye'], norm(scene['fwd'])
     right = norm([fwd[2], 0.0, -fwd[0]])   # the horizontal across the line of sight: the plane's normal
     for k, v in MODES[mode].items():
@@ -94,7 +95,11 @@ def run(game, scene, mode, out):
     call(game, 'camera.set', {'eye': eye, 'at': [eye[i] + fwd[i] * 20 for i in range(3)], 'ms': 60000})
     time.sleep(1.5)   # (the car settled, DLSS's history made with the new mode)
     shot = call(game, 'screenshot.when', {'actor': 'car', 'at': eye, 'normal': right, 'timeout_ms': 15000})['id']
-    tool('input', {'game': game, 'steps': [{'action': 'Accelerate', 'ms': scene['accelerate_ms']}], 'no_wait': True})
+    if speed > 0:   # (a steady speed, the game's physics left out: vehicle.move)
+        call(game, 'vehicle.move', {'car': 'car', 'velocity': [x * speed for x in norm(scene['dir'])], 'turn': [0, 0, 0],
+                                    'ms': int(1000 * 20 / speed) + 2000})
+    else:
+        tool('input', {'game': game, 'steps': [{'action': 'Accelerate', 'ms': scene['accelerate_ms']}], 'no_wait': True})
     t0 = time.time()
     while True:
         st = call(game, 'screenshot.state', {'id': shot})
@@ -104,6 +109,8 @@ def run(game, scene, mode, out):
             raise RuntimeError('%s: no shot in 20 s' % mode)
         time.sleep(0.1)
     call(game, 'input.release')
+    if speed > 0:
+        call(game, 'vehicle.move', {'car': 'car', 'ms': 0})
     if not st.get('ok'):
         raise RuntimeError('%s: %s' % (mode, st.get('error')))
     img = read_bgra(st['path'])
@@ -122,6 +129,7 @@ def main():
     ap.add_argument('--scene', default='taxi', help='a name in SCENES or a JSON file of its keys')
     ap.add_argument('--modes', default='off,sr_quality,sr_ultra', help=','.join(MODES))
     ap.add_argument('--out', default=os.path.join(ROOT, 'build', 'pass_test'))
+    ap.add_argument('--speed', type=float, default=0, help='m/s, steady (vehicle.move); 0: the scene\'s Accelerate')
     a = ap.parse_args()
     scene = SCENES[a.scene] if a.scene in SCENES else json.load(open(a.scene, encoding='utf-8'))
     modes = [m.strip() for m in a.modes.split(',') if m.strip()]
@@ -129,7 +137,7 @@ def main():
         if m not in MODES:
             sys.exit('unknown mode %s (%s)' % (m, ', '.join(MODES)))
     os.makedirs(a.out, exist_ok=True)
-    crops = [(m, run(a.game, scene, m, a.out)) for m in modes]
+    crops = [(m, run(a.game, scene, m, a.out, a.speed)) for m in modes]
     call(a.game, 'camera.release')
     from PIL import Image, ImageDraw
     w, h = crops[0][1].size

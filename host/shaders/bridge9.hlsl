@@ -66,8 +66,10 @@ float4 g_motionDraw : register(c2);
 
 float4 PsMotion(float2 vpos : VPOS, float4 now : TEXCOORD0, float4 before : TEXCOORD1, float2 uv : TEXCOORD2) : COLOR0 {
     if (g_motionDraw.x >= 0) clip(tex2D(g_tex, uv).a - g_motionDraw.x);   // (where the draw's own test left it out)
-    float2 here = vpos + 0.5;
-    float2 motion = before.w > 1e-4 ? ToScreen(before) - here : 0;
+    // (where this pixel is, through the same mapping as where it was: Direct3D 9 puts a pixel's centre at the whole
+    // coordinate, ToScreen at its + 0.5, and vpos + 0.5 here left every moving object's vector half a pixel off on
+    // both axes at any speed: its edges shook under DLSS)
+    float2 motion = before.w > 1e-4 && now.w > 1e-4 ? ToScreen(before) - ToScreen(now) : 0;
     return float4(motion, now.w, 1);   // (w of a perspective projection: the view depth, compared in PsMotionAll)
 }
 

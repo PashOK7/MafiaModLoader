@@ -3512,3 +3512,13 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   (1280 / 427), against the jitter DLSS was told.
 - **Fixed**: the colour filtered (bilinear) at the jittered point itself; depth and motion stay the nearest pixel's.
   Ultra Performance 0.67 -> 0.23, the pixels changed by more than 8 from 0.5 % to none; Quality 0.15.
+
+## 2026-10-24: moving objects' motion vectors half a pixel off (Direct3D 9's pixel centres)
+
+- **Seen** (the owner, by eye): under DLSS SR every moving object shook by a pixel a frame at any speed, as the still
+  picture had before; a car moved by `vehicle.move` past a still camera did not show it to the eye.
+- **Why**: PsMotion took this pixel's place as vpos + 0.5 and where it was through ToScreen, which puts a pixel's
+  centre at + 0.5 of Direct3D 11's convention; Direct3D 9 rasterises with the centre at the whole coordinate. Every
+  moving object's vector was (-0.5, -0.5) pixels off whatever its speed (still things take the camera's path, not this).
+- **Fixed**: the place now through the same mapping, ToScreen(now). `tools/pass_test.py --speed 1.4` (new: a steady
+  5 km/h by vehicle.move) measured the check of the car: 7.80 -> 2.59.
