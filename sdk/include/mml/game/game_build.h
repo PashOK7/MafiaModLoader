@@ -476,6 +476,18 @@ struct ExeBuild {
     // C_car (an actor of type 4 the game keeps out of its actors' list: its frame "traffic_element", parked cars too).
     // C_traffic_car::ChcesMeSejmout (1.2 0x4BAD30, 1.0 0x506B60) walks it so; read in both builds' code.
     uintptr_t trafficElements;
+    // The joysticks (host/joyplug.cpp, knowledge/notes/ijoy.md): the game opens its DirectInput game controllers once,
+    // in InitSystem, through IJoy.dll (the same file in both builds). joyInit: fastcall(HINSTANCE), CreateJoyBase into
+    // joyBase (an IJoyBase*; null when no controller was attached), then for each device i CreateJoy(i, background)
+    // pushed to the vector whose begin is joyList ([begin, end) at +0, +4: the game loop's and the menus' Update of
+    // each, the force feedback's lookups by a binding's joystick index; a failed CreateJoy is a null call there);
+    // joyDone: the vector's IJoys and the base released (end = begin, joyBase null). controlsRelease: thiscall
+    // (controls), the bindings' three arrays emptied and the controls' own list of the joysticks (+8/+0xC, 0x8C bytes
+    // an entry: the IJoy, its state, its changes) released; controlsInitDevices: thiscall(controls, IGraph*, IJoy **,
+    // int count) ret 0xC, that list made of them (each AddRef'd). keyBindingsApply: thiscall(loadSave), the profile's
+    // 60 bindings (+0x1F4) given to the controls again through input_set_binding, which drops a joystick's binding
+    // whose index is not below the list's count. Read in both builds' code.
+    uintptr_t joyInit, joyDone, joyBase, joyList, controlsRelease, controlsInitDevices, keyBindingsApply;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -719,6 +731,9 @@ inline const ExeBuild kExe12 = {
     0x5662E0,
     // the traffic's cars (2026-10-23: C_traffic_car::ChcesMeSejmout 0x4BAD30 and GetBridgeCarCount read it)
     0x63D848,
+    // the joysticks (2026-10-24: InitSystem's calls at 0x5BFC86 and 0x5BFCB0; joy_devices_done; the profile's apply,
+    // what G_LoadSaveClass::Init and ProfileLoad call)
+    0x5BD5F0, 0x5BD870, 0x647F24, 0x647C20, 0x4EFC80, 0x4EFDE0, 0x607A60,
 };
 
 inline const ExeBuild kExe10 = {
@@ -850,6 +865,9 @@ inline const ExeBuild kExe10 = {
     0x623FC0,
     // the traffic's cars (2026-10-23: C_traffic_car::ChcesMeSejmout 0x506B60, the same code as 1.2's)
     0x6561A0,
+    // the joysticks (2026-10-24: InitSystem's calls at 0x5FA9EA and 0x5FAA16; 1.2's twins, the same code; the
+    // profile's apply, what gui_options_controls_close calls on loadSave)
+    0x5F83E0, 0x5F8660, 0x6F956C, 0x6F92D0, 0x5D1610, 0x5D1770, 0x559A90,
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,

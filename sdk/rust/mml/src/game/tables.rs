@@ -256,6 +256,13 @@ pub struct Exe {
     pub materialCount: usize,
     pub cdFind: usize,
     pub trafficElements: usize,
+    pub joyInit: usize,
+    pub joyDone: usize,
+    pub joyBase: usize,
+    pub joyList: usize,
+    pub controlsRelease: usize,
+    pub controlsInitDevices: usize,
+    pub keyBindingsApply: usize,
 }
 
 /// LS3DF.dll's, as RVAs (add the module's base; the int members are offsets): game_build.h Ls3dBuild.
@@ -591,6 +598,13 @@ pub static EXE_12: Exe = Exe {
     materialCount: 0x6D4C28,
     cdFind: 0x5662E0,
     trafficElements: 0x63D848,
+    joyInit: 0x5BD5F0,
+    joyDone: 0x5BD870,
+    joyBase: 0x647F24,
+    joyList: 0x647C20,
+    controlsRelease: 0x4EFC80,
+    controlsInitDevices: 0x4EFDE0,
+    keyBindingsApply: 0x607A60,
 };
 
 pub static EXE_10: Exe = Exe {
@@ -844,6 +858,13 @@ pub static EXE_10: Exe = Exe {
     materialCount: 0x6EFBA8,
     cdFind: 0x623FC0,
     trafficElements: 0x6561A0,
+    joyInit: 0x5F83E0,
+    joyDone: 0x5F8660,
+    joyBase: 0x6F956C,
+    joyList: 0x6F92D0,
+    controlsRelease: 0x5D1610,
+    controlsInitDevices: 0x5D1770,
+    keyBindingsApply: 0x559A90,
 };
 
 pub static LS3D_12: Ls3d = Ls3d {

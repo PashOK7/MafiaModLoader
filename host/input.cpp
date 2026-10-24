@@ -32,6 +32,7 @@
 // fields of the menus take characters from LS3D's own translation of the keys it read); text.get {id}, text.find
 // {text, from, to}.
 #include "host.h"
+#include "joyplug.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -112,6 +113,7 @@ bool Captured(bool key, int code) {
 }
 
 void __fastcall UpdateHook(uintptr_t controls, void *edx, int flag) {
+    JoyBeforeControls();   // (a joystick plugged in: the game's opened again before it is read)
     g_update(controls, edx, flag);
     for (int s : g_clearSlots) WriteSlot(s, 0.0f, 0.0f);
     g_clearSlots.clear();
@@ -762,6 +764,7 @@ void HotkeysRemove(MmlMod *mod) {
 }
 
 bool InputMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok) {
+    if (JoyMethod(method, paramsJson, reply, ok)) return true;
     if (method.compare(0, 6, "input.") && method.compare(0, 5, "text.")) return false;
     *ok = false;
     json p;

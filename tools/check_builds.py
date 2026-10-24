@@ -1171,6 +1171,33 @@ def main(a):
         t = ' | '.join('%s %s' % (i.mnemonic, i.op_str) for i in gexe.md.disasm(gexe.at(walker[name] - 0x400000, 0x47), walker[name]))
         check(f'[{exe["trafficElements"]:#x}]' in t and f'[{exe["trafficElements"] + 4:#x}]' in t and '+ 0xc]' in t,
               f'{name} trafficElements: ChcesMeSejmout reads its begin and end, an element\'s +0xC')
+    # The joysticks (host/joyplug.cpp): InitSystem calls joyInit, then controlsInitDevices with the controls and the
+    # vector at joyList; joyInit pushes joyBase for CreateJoyBase and calls the base's NumDevices (+0x18) and
+    # CreateJoy (+0x2C); joyDone reads the vector's begin and end and joyBase; controlsRelease empties the controls'
+    # list (+8, +0xC); controlsInitDevices ends with ret 0xC; keyBindingsApply gives the 60 bindings at +0x1F4.
+    init_calls = {'1.2': 0x5BFC86, '1.0': 0x5FA9EA}
+    for name, (exe, ls, gexe, gls) in builds.items():
+        if not exe.get('joyInit'):
+            continue
+        dis = lambda va, n: ' | '.join('%s %s' % (i.mnemonic, i.op_str) for i in gexe.md.disasm(gexe.at(va - 0x400000, n), va))
+        site = dis(init_calls[name], 0x40)
+        check(site.startswith(f'call {exe["joyInit"]:#x}') and f'[{exe["joyList"]:#x}]' in site
+              and f'ecx, {exe["controls"]:#x}' in site and f'call {exe["controlsInitDevices"]:#x}' in site,
+              f'{name} joyInit: InitSystem calls it, then controlsInitDevices on the controls with joyList')
+        t = dis(exe['joyInit'], 0x60)
+        check(f'push {exe["joyBase"]:#x}' in t and '+ 0x18]' in t and '+ 0x2c]' in t,
+              f'{name} joyInit: CreateJoyBase into joyBase, NumDevices, CreateJoy')
+        t = dis(exe['joyDone'], 0x5E)
+        check(f'[{exe["joyList"]:#x}]' in t and f'[{exe["joyList"] + 4:#x}]' in t and f'[{exe["joyBase"]:#x}]' in t,
+              f'{name} joyDone: the vector and the base released')
+        t = dis(exe['controlsRelease'], 0x130)
+        check('+ 8]' in t and '+ 0xc]' in t and '0x8c' in t.replace('0x8c8c', ''),
+              f'{name} controlsRelease: the joysticks\' list at +8 / +0xC')
+        t = dis(exe['controlsInitDevices'], 0x320)
+        check('ret 0xc' in t, f'{name} controlsInitDevices: ret 0xC')
+        t = dis(exe['keyBindingsApply'], 0x47)
+        check('0x1f4' in t and '0x3c' in t and f'ecx, {exe["controls"]:#x}' in t,
+              f'{name} keyBindingsApply: the 60 bindings at +0x1F4 given to the controls')
     print('ALL PASSED' if not fails else f'{fails} FAILED')
     return 1 if fails else 0
 

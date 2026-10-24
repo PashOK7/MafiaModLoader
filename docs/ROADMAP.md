@@ -787,6 +787,13 @@ What is done, what comes next and later, and what is known to be missing or wron
   restore point: the same within the input's timing). Seen in both labs: cars, a parked traffic car, Paulie, a tram.
   `camera.set {follow}` films any actor from its own space. `mods/examples/bounce` pulses everything near the player
   (knowledge/notes/scale.md).
+- **A gamepad plugged in while the game runs** (2026-10-24; the owner: the first of the game's bugs fixed through
+  the loader): both builds open their DirectInput controllers once at the start (IJoy.dll; none attached: no base at
+  all), and the profile's bindings of a joystick that is not open are dropped. host/joyplug.cpp watches the HID
+  device interfaces (CM_Register_Notification; a poll thread where it is missing) and, on the game thread before the
+  controls' update, opens the game's joysticks again through the game's own functions when DirectInput lists a
+  controller the game does not have (or has and cannot read), the profile's bindings given again: `joy.state`,
+  `joy.rescan`, `joy.hotplug`, `joy.drop` (knowledge/notes/ijoy.md).
 
 ## Next, by importance
 
@@ -1197,6 +1204,12 @@ merged, sorted by importance):
 
 ## Known gaps
 
+- **A gamepad plugged in while the game runs: not seen with a real pad** (2026-10-24, host/joyplug.cpp): the
+  opening again is seen in both labs (`joy.drop`, `joy.rescan`), the device's arrival with real hardware and the poll
+  thread (no CM_Register_Notification: Windows 7, Wine) are not. The running mission's force feedback effects stay on
+  the old IJoys until the next mission's load. `input.actions` shows a joystick's button names (IJoy's, in the
+  system's code page) as the game's language's (a Russian system's "Button 0" came out as "Êíîïêà 0"): converted with the wrong
+  code page.
 - **Frame generation on DXVK is shown from the game's thread** (2026-10-24): the bridge's own thread presents through
   a Direct3D 9 swap chain of its own, which the DXVK path (pictures copied on Vulkan's queue) does not have yet: a
   player on DXVK gets the old, slow showing (`gfx.state` show.thread). Also: the shown frames are not capped to the

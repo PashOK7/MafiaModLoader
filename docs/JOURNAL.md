@@ -3606,3 +3606,29 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Made**: the dlss_nr pack's dxwrapper.ini makes the game's full screen a borderless window over the screen
   (EnableWindowMode, FullscreenWindowMode; the brightness by WindowModeGammaShader): pack.py's `dxwrapper` lines. In
   the lab with them: the showing's thread on, its Present shown. The game still faults at its exit in drvClose.
+
+## 2026-10-24: a gamepad plugged in while the game runs (the first of the game's bugs fixed through the loader)
+
+- **Found** (both builds' code, IJoy.dll through mafia-re's byte-exact decompilation; knowledge/notes/ijoy.md): the
+  game opens its DirectInput controllers once, in InitSystem (`joy_devices_init`: CreateJoyBase, then an IJoy each
+  into a vector; `input_init_devices`: the controls' own list). With none attached CreateJoyBase fails and the game
+  has no base at all. A binding names a joystick by its index, and `input_set_binding` drops a joystick's binding
+  whose index is not below the count: a pad absent at the start loses its bindings in the controls (the profile
+  keeps them) until a restart. Also: `joy_devices_init` calls through a null IJoy when a CreateJoy fails (a crash
+  at the start), and the force feedback manager indexes the vector by a binding's index unchecked (safe only because
+  the controls never keep an index past the count). An older note had CreateJoyBase's arguments in the wrong order.
+- **Made**: host/joyplug.cpp. The HID device interfaces watched (CM_Register_Notification, registered at the first
+  controls' update, not in DllMain; a poll thread where it is missing); on the game thread before the controls'
+  update, 750 ms after the devices went quiet and again 3 s later, DirectInput's attached controllers compared with
+  the base's; one new (or back and neither pollable nor acquirable) has the game's own functions run again in the
+  start's order, the old devices unacquired first, the profile's bindings applied again. An unplugged controller
+  changes nothing (no index moves). `joy.state`, `joy.rescan {force}`, `joy.hotplug {on}`, `joy.drop` (the
+  joysticks let go as a start without them leaves them, in one frame: a plug-in tested without hardware).
+  game_build.h "The joysticks" (checked by tools/check_builds.py in both builds' files).
+- **Seen in both labs**: this machine's Keychron keyboards are DirectInput game controllers, so each game had two
+  IJoys. `joy.rescan {force}`: opened again, the 60 bindings the same, no fault; a joystick binding put in the
+  profile (slot 50, joystick 1 button 0), `joy.drop` (opened 0, the slot dropped to none, as at a start without
+  them), `joy.rescan` "new: Keychron K4 HE" (opened 2, the slot a joystick's again); the cars driven after it.
+  A first try of the drop by separate `native.call`s crashed 1.2 in C_player::AI: each call is a frame of its own,
+  and the controls had no bindings in between; `joy.drop` does it in one call.
+- **Not seen**: a real pad plugged in (the notification's path), the poll thread (Windows 7, Wine): the owner's test.
