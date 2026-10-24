@@ -3563,3 +3563,19 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Not done**: the pictures are shown however fast the game runs (the game's presentation interval, immediate in
   the labs): over the display's refresh most of them tear or are never seen; a cap to the refresh (or the game's
   limit at refresh / (n + 1)) is the next step for FG to be useful.
+
+## 2026-10-24: the friend's RTX 5060 Laptop: DLSS at the frame's size in every mode; the GPU's time growing
+
+- **Seen** (The Renegade's logs, 2560x1600, DXVK, NR on): "NR + Ultra Performance, 2560x1600 to 2560x1600": the
+  64-bit half never made the inputs smaller in any mode (no "the inputs at" line after a mode change), so NR ran at
+  the frame's size always. In the lab (an RTX 3070, NR not loaded) NGX's optimal settings give 427x320 for Ultra
+  Performance at 1280x960. The likeliest reason: with nvngx_dlssnr.dll loaded the capability block's
+  DLSSOptimalSettingsCallback answers the frame's size (not checked: no RTX 50 here).
+- **Fixed**: NGX's answer is taken only when it is smaller than the frame; else DLSS's own ratio of the mode. Each
+  size chosen is logged with its source and NGX's answer, so the next logs say which it was.
+- **Seen too**: the GPU's time over a session in the city grew from 15 ms (NR 14, SR 1.1 at DLAA) to 90-100 ms
+  (NR 85, SR 10): SR at the same size taking 9 times longer means the GPU itself slowed (a laptop's 8 GB filling up
+  as the city's textures load, or its heat), not more work of ours: the lab's bridge cost, measured across seven
+  districts, stays the same (0.8 ms, the motion 0.1-1.7 ms, DLSS 1 ms). Frame generation was shown from the game's
+  thread there (DXVK: `gfx.state` show.thread), hence its low frame rate. The game also faulted at its exit in
+  LS3DF+0x5AC2E (from +0x5BA73, the index buffers' release), as on 2026-10-23: Known gaps.

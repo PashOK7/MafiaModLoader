@@ -629,21 +629,42 @@ NVSDK_NGX_PerfQuality_Value Quality(uint32_t up) {
     default: return NVSDK_NGX_PerfQuality_Value_UltraPerformance;
     }
 }
+// The render size of a Super Resolution mode: NGX's optimal settings, else DLSS's own ratios of each mode (Quality
+// 2/3, Balanced 0.58, Performance 1/2, Ultra Performance 1/3). NGX's answer is taken only when it is smaller than the
+// frame: with DLSS 5 NR loaded too, the RTX 5060's log showed the inputs at the frame's size in every mode (a full
+// size answer, or none), and NR ran at 2560x1600 in Ultra Performance. Each size chosen is logged with where it came from.
 void RenderSize(uint32_t outW, uint32_t outH, uint32_t up, uint32_t *rw, uint32_t *rh) {
     *rw = outW, *rh = outH;
-    if (up == dnr::kUpOff || up == dnr::kUpDlaa || !g_srAvailable || !g_caps) return;
-    void *cb = nullptr;   // (NGX_DLSS_GET_OPTIMAL_SETTINGS of nvsdk_ngx_helpers.h, which needs Direct3D's headers)
-    NVSDK_NGX_Parameter_GetVoidPointer(g_caps, NVSDK_NGX_Parameter_DLSSOptimalSettingsCallback, &cb);
-    if (!cb) return;
-    NVSDK_NGX_Parameter_SetUI(g_caps, NVSDK_NGX_Parameter_Width, outW);
-    NVSDK_NGX_Parameter_SetUI(g_caps, NVSDK_NGX_Parameter_Height, outH);
-    NVSDK_NGX_Parameter_SetI(g_caps, NVSDK_NGX_Parameter_PerfQualityValue, Quality(up));
-    NVSDK_NGX_Parameter_SetI(g_caps, NVSDK_NGX_Parameter_RTXValue, 0);
-    if (NVSDK_NGX_FAILED(reinterpret_cast<PFN_NVSDK_NGX_DLSS_GetOptimalSettingsCallback>(cb)(g_caps))) return;
+    if (up == dnr::kUpOff || up == dnr::kUpDlaa || !g_srAvailable) return;
     unsigned w = 0, h = 0;
-    NVSDK_NGX_Parameter_GetUI(g_caps, NVSDK_NGX_Parameter_OutWidth, &w);
-    NVSDK_NGX_Parameter_GetUI(g_caps, NVSDK_NGX_Parameter_OutHeight, &h);
-    if (w >= 16 && h >= 16 && w <= outW && h <= outH) *rw = w, *rh = h;
+    NVSDK_NGX_Result r = NVSDK_NGX_Result_Fail;
+    void *cb = nullptr;   // (NGX_DLSS_GET_OPTIMAL_SETTINGS of nvsdk_ngx_helpers.h, which needs Direct3D's headers)
+    if (g_caps) NVSDK_NGX_Parameter_GetVoidPointer(g_caps, NVSDK_NGX_Parameter_DLSSOptimalSettingsCallback, &cb);
+    if (cb) {
+        NVSDK_NGX_Parameter_SetUI(g_caps, NVSDK_NGX_Parameter_Width, outW);
+        NVSDK_NGX_Parameter_SetUI(g_caps, NVSDK_NGX_Parameter_Height, outH);
+        NVSDK_NGX_Parameter_SetI(g_caps, NVSDK_NGX_Parameter_PerfQualityValue, Quality(up));
+        NVSDK_NGX_Parameter_SetI(g_caps, NVSDK_NGX_Parameter_RTXValue, 0);
+        r = reinterpret_cast<PFN_NVSDK_NGX_DLSS_GetOptimalSettingsCallback>(cb)(g_caps);
+        if (!NVSDK_NGX_FAILED(r)) {
+            NVSDK_NGX_Parameter_GetUI(g_caps, NVSDK_NGX_Parameter_OutWidth, &w);
+            NVSDK_NGX_Parameter_GetUI(g_caps, NVSDK_NGX_Parameter_OutHeight, &h);
+        }
+    }
+    const bool ngx = w >= 16 && h >= 16 && w < outW && h < outH;
+    if (ngx) {
+        *rw = w, *rh = h;
+    } else {
+        const double ratio = up == dnr::kUpQuality ? 2.0 / 3.0 : up == dnr::kUpBalanced ? 0.58 : up == dnr::kUpPerformance ? 0.5 : 1.0 / 3.0;
+        *rw = std::max(16u, uint32_t(outW * ratio + 0.5)), *rh = std::max(16u, uint32_t(outH * ratio + 0.5));
+    }
+    static uint32_t said[4];   // (the mod's own thread: logged once a size)
+    if (said[0] != outW || said[1] != outH || said[2] != up || said[3] != *rw) {
+        said[0] = outW, said[1] = outH, said[2] = up, said[3] = *rw;
+        if (ngx) H->log(M, 1, "Super Resolution %u: %ux%u from %ux%u (NGX's optimal settings)", up, *rw, *rh, outW, outH);
+        else H->log(M, 1, "Super Resolution %u: %ux%u from %ux%u (DLSS's ratio: NGX answered %ux%u, result 0x%08X, %s)", up, *rw, *rh,
+                    outW, outH, w, h, static_cast<unsigned>(r), cb ? "its callback there" : "no callback");
+    }
 }
 
 // ---- the frame's work (the worker)
