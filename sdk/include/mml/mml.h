@@ -426,6 +426,10 @@ typedef struct MmlGfxFrame {
                                convention), the camera's motion and what moved by itself (cars, their wheels, doors,
                                props, people as wholes); bound to t3 (frame.hlsli g_motion), while a mod wants them
                                (gfx_motion) and the frame before was drawn; else NULL (and in the scene views) */
+    /* (MML_GFX_HAS(frame, jitter)) */
+    float jitter[2];        /* the sub-pixel offset this frame's world was drawn with (gfx_jitter), in the frame's pixels:
+                               x right, y down; 0 0 without (and in the scene views). view and proj are the camera's
+                               without it, the motion vectors too; the depth and the colour are the picture as drawn */
 } MmlGfxFrame;
 #define MML_GFX_HAS(f, member) ((size_t)(f)->size >= offsetof(MmlGfxFrame, member) + sizeof((f)->member))
 #define MML_GFX_UI_OFF 0     /* gfx_ui: the 2D pass as the game draws it */
@@ -1769,6 +1773,12 @@ typedef struct MmlHost {
      * has it, another is refused (0) until it lets go. Needs the graphics bridge on (a mod with "gfx": true at the
      * start). 1 done, 0 refused. Game thread. */
     int (*gfx_show)(MmlMod *mod, MmlGfxShowFn fn, void *user);
+    /* gfx_jitter: the frame's world drawn, from the next frame on, with the game's projection offset by (x, y) of the
+     * frame's pixels (x right, y down; -0.5..0.5 for a temporal upscaler's sub-pixel samples, DLSS's, a TAA's), until
+     * asked again; on 0 takes it back (the mod's unload too). What a frame was drawn with is MmlGfxFrame's jitter; the
+     * frame's view and proj and the motion vectors are without it. The scene views, the sun's shadow map and the 2D
+     * pass are not offset. One mod at a time: 0 while another holds it. Needs the graphics bridge on. Game thread. */
+    int (*gfx_jitter)(MmlMod *mod, int on, float x, float y);
 } MmlHost;
 
 #define MML_ZONE_PLAYER 0x1u

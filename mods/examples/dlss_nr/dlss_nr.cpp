@@ -331,20 +331,55 @@ void Constants(ID3D11DeviceContext *c, const MmlGfxConstants *k, bool havePrev, 
     if (b[0]) b[0]->Release();
 }
 
-// The jitter: a Halton (2, 3) sequence, as DLSS's guide asks, over 8 times the pixels' scale squared phases (8 at the
-// frame's size, where a render pixel is a frame pixel and no sub-pixel sample is there to take: no jitter then).
+// The jitter: a Halton (2, 3) sequence, as DLSS's guide asks, over 8 times the pixels' scale squared phases (8 at
+// least: DLAA's, a render pixel a frame pixel).
 float Halton(uint32_t i, uint32_t base) {
     float f = 1, r = 0;
     for (; i; i /= base) f /= float(base), r += f * float(i % base);
     return r;
 }
-void Jitter(uint64_t frame, uint32_t outW, uint32_t rw, float out[2]) {
-    out[0] = out[1] = 0;
-    if (rw >= outW || !rw) return;
-    float scale = float(outW) / float(rw);
+void Jitter(uint64_t n, float scale, float out[2]) {
     uint32_t phases = std::max<uint32_t>(8, uint32_t(std::ceil(8 * scale * scale)));
-    uint32_t i = uint32_t(frame % phases) + 1;
+    uint32_t i = uint32_t(n % phases) + 1;
     out[0] = Halton(i, 2) - 0.5f, out[1] = Halton(i, 3) - 0.5f;
+}
+
+// Each frame's sample, j render pixels from the render pixel's centre, comes from two places: the frame's whole pixels
+// of it from where PsPrepare samples the frame (jr), the rest, under half a frame's pixel, from the game's own
+// projection offset (gfx_jitter: jg, the world drawn there). A point of the frame's picture at p shows the scene at
+// p - jg, so the render pixel's sample is its centre + jr - jg / scale. Without the game's offset (DLAA: a render
+// pixel is a frame pixel) DLSS would have no sub-pixel sample at all: no anti-aliasing, the thin wires broken as the
+// game draws them. jg is asked a frame ahead: MmlGfxFrame's jitter says what the frame was drawn with.
+struct JitAsk { float jg[2], jr[2]; bool set; } g_jitAsk;
+uint64_t g_jitN;
+bool g_jitHeld, g_jitUsed;
+void JitterRelease() {
+    if (g_jitHeld && MML_HAS(H, gfx_jitter)) H->gfx_jitter(M, 0, 0, 0);
+    g_jitHeld = false, g_jitAsk = JitAsk{};
+}
+// this frame's sampling offset and the sample DLSS is told of (render pixels); the next frame's asked
+void JitterFrame(const MmlGfxFrame *f, uint32_t rw, float jr[2], float j[2]) {
+    g_jitUsed = true;
+    const float scale = rw ? float(f->width) / float(rw) : 1.f;
+    float jg[2] = {0, 0};
+    if (MML_GFX_HAS(f, jitter)) jg[0] = f->jitter[0], jg[1] = f->jitter[1];
+    const bool paired = g_jitAsk.set && jg[0] == g_jitAsk.jg[0] && jg[1] == g_jitAsk.jg[1];
+    jr[0] = paired ? g_jitAsk.jr[0] : 0, jr[1] = paired ? g_jitAsk.jr[1] : 0;
+    j[0] = jr[0] - jg[0] / scale, j[1] = jr[1] - jg[1] / scale;
+    float t[2];
+    Jitter(++g_jitN, scale, t);
+    JitAsk a{};
+    a.set = true;
+    for (int i = 0; i < 2; i++) {
+        float whole = std::round(t[i] * scale);
+        a.jg[i] = whole - t[i] * scale, a.jr[i] = whole / scale;
+    }
+    g_jitHeld = MML_HAS(H, gfx_jitter) && MML_GFX_HAS(f, jitter) && H->gfx_jitter(M, 1, a.jg[0], a.jg[1]);
+    if (!g_jitHeld) {   // (a loader without it, or another mod holds it: the frame's pixels alone, above DLAA)
+        a.jg[0] = a.jg[1] = 0;
+        a.jr[0] = scale > 1 ? t[0] : 0, a.jr[1] = scale > 1 ? t[1] : 0;
+    }
+    g_jitAsk = a;
 }
 
 // ---- the ring (dlss_nr.h): what each slot's next writer must wait for, and the view answered last
@@ -444,8 +479,14 @@ void Ask(const MmlGfxFrame *f, uint32_t mode, uint32_t up) {
     g_ring.lastSent = v.frame, g_ring.lastPrepared = false;
 }
 
+void PassFrame(const MmlGfxFrame *f);
 void Pass(const MmlGfxFrame *f, void *) {
     if (MML_GFX_HAS(f, in_view) && f->in_view) return;   // (the frame only, not the mods' scene views)
+    g_jitUsed = false;
+    PassFrame(f);
+    if (!g_jitUsed && g_jitHeld) JitterRelease();   // (a frame without DLSS: the game's world drawn still again)
+}
+void PassFrame(const MmlGfxFrame *f) {
     g_shown.valid = false;
     if (H->mission_state() == MML_MISSION_NONE) return;
     ReadStatus();
@@ -569,9 +610,9 @@ void Pass(const MmlGfxFrame *f, void *) {
     v.mode = mode, v.nr = mode == dnr::kModeNr, v.upscale = up;
     v.preset = S.preset, v.style = S.model, v.autoMask = S.autoMask ? 1 : 0, v.srPreset = S.srPreset;
     v.intensity = S.intensity, v.tone = S.tone, v.structure = S.structure, v.skin = S.skin;
-    float sample[2];
-    Jitter(v.frame, f->width, rw, sample);
-    v.jitter[0] = sample[0] * S.jitterSign, v.jitter[1] = sample[1] * S.jitterSign;
+    float sample[2], told[2];
+    JitterFrame(f, rw, sample, told);
+    v.jitter[0] = told[0] * S.jitterSign, v.jitter[1] = told[1] * S.jitterSign;
     if (g_ring.slotDone[s]) G.c4->Wait(doneF, g_ring.slotDone[s]);
     {   // the slot's frame for frame generation (its camera and the one before)
         SlotCam &sc = g_slotCam[s];

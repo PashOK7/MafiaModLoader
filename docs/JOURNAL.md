@@ -3522,3 +3522,21 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   moving object's vector was (-0.5, -0.5) pixels off whatever its speed (still things take the camera's path, not this).
 - **Fixed**: the place now through the same mapping, ToScreen(now). `tools/pass_test.py --speed 1.4` (new: a steady
   5 km/h by vehicle.move) measured the check of the car: 7.80 -> 2.59.
+
+## 2026-10-24: the world's jitter (gfx_jitter): DLAA anti-aliases, SR gathers below the game's pixels
+
+- **Seen** (the owner): DLAA's picture was OFF's, the wires as stepped and broken. **Why**: the game drew every frame
+  from the pixels' centres and dlss_nr only sampled that frame: in DLAA no sub-pixel sample at all (its jitter was 0),
+  in the SR modes nothing finer than the game's own pixels.
+- **Made (the SDK)**: mml.h `gfx_jitter` and MmlGfxFrame's `jitter`; the Rust crate's. The bridge offsets every
+  perspective projection the game sets while the frame's world is drawn (GfxBeforeWorld .. GfxAfterWorld; the one
+  set before taken too: LS3D sets it only when it changes), the scene views, the sun's map and the 2D pass not; it
+  gives back the game's own after the world. The frame's view, proj and constants are without it; the motion
+  vectors take the last frame's camera through this frame's jitter, so it cancels while the objects are still drawn
+  again where the depth buffer has them. `gfx.state` `jitter`.
+- **Made (dlss_nr)**: each frame's sample j (render pixels, Halton over 8 x scale^2 phases) split: its whole frame
+  pixels where PsPrepare samples, the rest the game's offset; DLSS told jr - jg / scale with the offset the frame was
+  really drawn with (f->jitter); the offset let go in a frame without DLSS.
+- **Measured** (still_test, 1.2): DLAA 0.02, Quality 0.04, Ultra Performance 0.16 (0.23 before). 1.0: the offset
+  applied, DLAA 0.06, Quality 0.14, Ultra 0.25; the slow car's check 1.16. The owner by eye, 1.2: every mode
+  "perfect", the wires whole.

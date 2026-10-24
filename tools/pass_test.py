@@ -30,6 +30,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCENES = {
     'taxi': {'eye': [-1967.555, -2.592, 5.258], 'fwd': [0.0174, -0.1054, 0.9943],
              'car': [-1955.188, -4.537, 17.641], 'dir': [-0.9996, -0.0048, -0.0278], 'accelerate_ms': 6000},
+    # the street north of the freeride's start: the trams' wires across it, near and far (a camera alone: still_test.py)
+    'wires': {'eye': [-1984.6, -2.5, 22.0], 'fwd': [0.0, 0.06, 1.0]},
 }
 
 # what each mode sets in dlss_nr (and whether DLSS is on at all); the checks are its debug views at the frame's size:

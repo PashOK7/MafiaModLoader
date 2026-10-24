@@ -302,6 +302,15 @@ impl Host {
     pub fn gfx_show_off(&self) {
         unsafe { f!(self, gfx_show)(self.module, None, ptr::null_mut()) };
     }
+    /// The frame's world drawn from the next frame on with the game's projection offset by (x, y) of the frame's
+    /// pixels (a temporal upscaler's sub-pixel samples); GfxFrame's jitter says what a frame was drawn with. False:
+    /// another mod holds it
+    pub fn gfx_jitter(&self, x: f32, y: f32) -> bool {
+        unsafe { f!(self, gfx_jitter)(self.module, 1, x, y) != 0 }
+    }
+    pub fn gfx_jitter_off(&self) {
+        unsafe { f!(self, gfx_jitter)(self.module, 0, 0.0, 0.0) };
+    }
     pub fn gfx_pass_remove(&self, handle: i32) {
         unsafe { f!(self, gfx_pass_remove)(self.module, handle) };
         untrack(K_PASS, handle);

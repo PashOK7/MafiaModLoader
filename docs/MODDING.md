@@ -412,8 +412,10 @@ float3 history = g_myHistory.SampleLevel(g_linear, before * g_size.zw, 0).rgb;
   system memory: the drawn buffer is video memory, which the CPU reads uncached) and the one the world drew the frame
   before; a person's draw goes again from a buffer of the host's with both positions for each vertex (VsMotionSkin),
   so a planted foot is still and a swinging arm moves by its own.
-- **Not**: billboards (as the camera), what writes no depth (a car's shadow decal, glass, smoke: the motion of what is behind;
-  the edge of a shadow that moves with its car mismatches either way), the scene views (`f->motion` is NULL there).
+- **A car's shadow** (LS3D's shadow projector: the road's faces under it textured with its picture) has its
+  projector's motion where its picture darkens the road; what writes no depth (glass) is kept where its depth is what
+  is seen. Alpha-tested draws (a wheel's spokes, a fence) are cut as the game cuts them.
+- **Not**: billboards and smoke (as the camera), the scene views (`f->motion` is NULL there).
 - **Its cost**: only while a mod wants them; the moving draws again (in the freeride's traffic 15 to 90 of them,
   0.2 to 0.4 ms of the game thread at 1280x960 on an RTX 3070; a walking person's copies 0.005 ms) and one
   full-screen pass. `gfx.state`'s `motion`: who asked, the draws known, moved and drawn again, the people's
@@ -421,6 +423,21 @@ float3 history = g_myHistory.SampleLevel(g_linear, before * g_size.zw, 0).rgb;
   other shared textures.
 - `dlss_nr`'s debug views show them: `1` as colours (grey still; red to the right, green down), `5` the frame before
   moved by them against this one (black where they are right), `6` the same without them.
+
+### The world's jitter: sub-pixel samples for a temporal upscaler
+
+The game draws every frame from the same point of each pixel: an upscaler or a TAA that gathers samples over frames
+gets nothing between the pixels, and thin things the game draws broken (the trams' wires far away) stay broken.
+`H->gfx_jitter(M, 1, x, y)` (Rust `host.gfx_jitter(x, y)`) has the frame's world drawn, from the next frame on, with
+the game's projection offset by (x, y) of the frame's pixels (x right, y down; ask a new offset each frame, a Halton
+sequence within -0.5..0.5); `gfx_jitter(M, 0, 0, 0)` takes it back, and so does the mod's unload. What a frame was
+drawn with is `f->jitter` (`MML_GFX_HAS(f, jitter)`), one frame after it was asked: pair the two by that. The frame's
+`view`, `proj` and constants are the camera's without it, and so are the motion vectors (the last frame's camera is
+taken through this frame's jitter: it cancels); the depth and the colour are the picture as drawn. The scene views,
+the sun's shadow map and the 2D pass are not offset. One mod at a time (0: another holds it). Let it go in any frame
+that does not use it: the game's world shakes by it otherwise. `dlss_nr` splits each frame's sample between the game's
+offset (under half a frame's pixel) and where it samples the frame (its whole pixels): `tools/still_test.py` measures
+the picture still.
 
 ### The camera: the frame drawn from a mod's, a world point on the screen
 

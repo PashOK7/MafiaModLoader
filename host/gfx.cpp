@@ -226,6 +226,16 @@ bool g_viewClipWanted;
 float g_viewBackdrop[16];
 unsigned g_viewSkySets;            // the backdrop's view set while a clipped view drew (gfx.state)
 
+// The world's sub-pixel jitter (gfx_jitter): while the frame's world is drawn (GfxBeforeWorld .. GfxAfterWorld) every
+// perspective projection the game sets goes to the device offset by the mod's pixels, the scene views' and the sun's
+// map not. What the bridge gives (the frame's view and proj, the constants) is without it; the motion vectors take the
+// last frame's camera through this frame's jitter, so it cancels in them while their pixels are the drawn picture's.
+struct JitterAsk { MmlMod *mod = nullptr; float want[2] = {0, 0}; } g_jitter;
+float g_jitNow[2];                 // this frame's world's (pixels; 0 0: none)
+bool g_jitWorld;                   // the frame's world is being drawn with it
+D3DMATRIX g_projClean;             // the last perspective projection the game set, as it set it
+bool g_projCleanHave;
+
 // the frame in flight
 IDirect3DSurface9 *g_gameDS;       // the game's depth buffer while ours is bound
 bool g_swapped;
@@ -357,7 +367,31 @@ HRESULT STDMETHODCALLTYPE hkSetRenderState(IDirect3DDevice9 *d, D3DRENDERSTATETY
     }
     return hr;
 }
+// A perspective projection (row vectors: w is the view depth times _34): (x, y) pixels of the frame added to where it
+// puts every point, times sign (-1 takes them back)
+bool Perspective(const D3DMATRIX &m) { return m._34 != 0.0f && m._44 == 0.0f; }
+void JitterInto(D3DMATRIX &m, const float j[2], float sign) {
+    if (!Perspective(m) || !g_w || !g_h) return;
+    m._31 += sign * 2.0f * j[0] / static_cast<float>(g_w) * m._34;
+    m._32 -= sign * 2.0f * j[1] / static_cast<float>(g_h) * m._34;
+}
+void JitterInto(float *m16, const float j[2], float sign) {
+    D3DMATRIX m;
+    memcpy(&m, m16, sizeof m);
+    JitterInto(m, j, sign);
+    memcpy(m16, &m, sizeof m);
+}
+
 HRESULT STDMETHODCALLTYPE hkSetTransform(IDirect3DDevice9 *d, D3DTRANSFORMSTATETYPE s, const D3DMATRIX *m) {
+    D3DMATRIX jittered;
+    if (s == D3DTS_PROJECTION && m && !g_quiet && Perspective(*m)) {
+        g_projClean = *m, g_projCleanHave = true;
+        if (g_jitWorld && !ViewDrawingNow()) {
+            jittered = *m;
+            JitterInto(jittered, g_jitNow, 1);
+            m = &jittered;
+        }
+    }
     HRESULT hr = oSetTransform(d, s, m);
     if (g_viewClipWanted && !g_quiet && s == D3DTS_VIEW && m && SUCCEEDED(hr)) {   // (see g_viewClipWanted)
         bool sky = !memcmp(m, g_viewBackdrop, sizeof g_viewBackdrop);
@@ -815,6 +849,7 @@ bool MotionCombine(const D3DMATRIX &proj) {
     if (!Invert(view, inv)) return false;
     memcpy(&viewBefore, g_viewBefore, sizeof viewBefore);
     memcpy(&projBefore, g_projBefore, sizeof projBefore);
+    if (g_jitWorld) JitterInto(projBefore, g_jitNow, 1);   // (this frame's jitter in both places: it cancels)
     MulM(inv, viewBefore, before);
     MulM(before, projBefore, before);
     // s1, the linear depth (written just before), with its states kept: the bridge's block holds stage 0's only
@@ -957,6 +992,7 @@ void FillConstants(MmlGfxConstants &k, UINT w, UINT h, float *viewOut, float *pr
     D3DMATRIX v{}, p{};
     g_dev9->GetTransform(D3DTS_VIEW, &v);
     g_dev9->GetTransform(D3DTS_PROJECTION, &p);
+    if (g_jitWorld && !g_viewNow) JitterInto(p, g_jitNow, -1);   // (the camera's own: the jitter is in MmlGfxFrame's)
     // a row-vector view matrix: its columns are the camera's axes in the world; its fourth row -(eye . axis)
     float r[3] = {v._11, v._21, v._31}, u[3] = {v._12, v._22, v._32}, f[3] = {v._13, v._23, v._33};
     for (int i = 0; i < 3; i++) {
@@ -1122,6 +1158,7 @@ bool RunPasses(MmlGfxConstants &k, const PassTarget &t) {
     f.sun_shadow = sun;
     ID3D11ShaderResourceView *motion = frame && g_motionReady ? g_motionSRV : nullptr;   // (t3: the frame's only)
     f.motion = motion;
+    f.jitter[0] = frame ? g_jitNow[0] : 0, f.jitter[1] = frame ? g_jitNow[1] : 0;
     TimerFrame *tf = frame ? BeginTimers() : nullptr;
     if (tf) Mark(tf, 0);
     std::vector<Pass> passes = g_passes;   // (a pass may add or take back passes)
@@ -1252,8 +1289,10 @@ bool DoStage1() {
     {   // this frame's camera, for the next frame's motion
         D3DMATRIX v{};
         g_dev9->GetTransform(D3DTS_VIEW, &v);
+        D3DMATRIX clean = proj;
+        if (g_jitWorld) JitterInto(clean, g_jitNow, -1);
         memcpy(g_viewBefore, &v, sizeof g_viewBefore);
-        memcpy(g_projBefore, &proj, sizeof g_projBefore);
+        memcpy(g_projBefore, &clean, sizeof g_projBefore);
         g_cameraBefore = true;
     }
     ok = ok && Wait9();
@@ -1484,6 +1523,7 @@ int ShowPrepare() {
     memcpy(f.proj, g_projM, sizeof f.proj);
     ID3D11ShaderResourceView *motion = g_motionReady && f.depth ? g_motionSRV : nullptr;
     f.motion = motion;
+    f.jitter[0] = g_jitNow[0], f.jitter[1] = g_jitNow[1];
     MmlGfxShow s{};
     s.size = sizeof s;
     s.frame = &f;
@@ -1586,6 +1626,16 @@ int GfxShowSet(MmlMod *mod, MmlGfxShowFn fn, void *user) {
     return 1;
 }
 
+int GfxJitterSet(MmlMod *mod, int on, float x, float y) {
+    if (!on) {
+        if (g_jitter.mod == mod) g_jitter = JitterAsk{};
+        return 1;
+    }
+    if (g_jitter.mod && g_jitter.mod != mod && ModAlive(g_jitter.mod)) return 0;
+    g_jitter = JitterAsk{mod, {x, y}};
+    return 1;
+}
+
 void GfxInit() {
     QueryPerformanceFrequency(&g_freq);
     void *old = nullptr;
@@ -1632,6 +1682,7 @@ void GfxRemove(MmlMod *mod) {
     g_sideFences.erase(std::remove_if(g_sideFences.begin(), g_sideFences.end(), [&](const SideFence &f) { return f.mod == mod; }),
                        g_sideFences.end());
     GfxShowSet(mod, nullptr, nullptr);
+    GfxJitterSet(mod, 0, 0, 0);
 }
 
 // A 64-bit half's fence on this device (Direct3D 11.4), for its 32-bit half's pass: 1 there (out filled), 0 not (yet).
@@ -1810,6 +1861,19 @@ void GfxBeforeWorld() {
     g_lastGameDS = ds;
     g_swapped = true;   // (first: hkSetDepthStencil lets the bridge's own buffer be bound then)
     if (FAILED(g_dev9->SetDepthStencilSurface(g_intzSurf))) { g_swapped = false; SafeRelease(g_gameDS); g_skipped++; return; }
+    // the world's jitter, one for the whole frame (the projection set now taken too: LS3D sets it only when it changes)
+    const bool jit = g_jitter.mod && ModAlive(g_jitter.mod);
+    g_jitNow[0] = jit ? g_jitter.want[0] : 0, g_jitNow[1] = jit ? g_jitter.want[1] : 0;
+    g_jitWorld = g_jitNow[0] != 0 || g_jitNow[1] != 0;
+    if (g_jitWorld) {
+        D3DMATRIX p{};
+        g_dev9->GetTransform(D3DTS_PROJECTION, &p);
+        if (Perspective(p)) {
+            g_projClean = p, g_projCleanHave = true;
+            JitterInto(p, g_jitNow, 1);
+            oSetTransform(g_dev9, D3DTS_PROJECTION, &p);
+        }
+    }
     g_motionThisFrame = false;
     if (MotionWanted() && EnsureMotion()) {   // (motion.cpp draws the moving objects again into the cleared target)
         std::string why;
@@ -1826,7 +1890,10 @@ void GfxBeforeWorld() {
         g_dev9->SetViewport(&vp);
         SafeRelease(rt);
         g_quiet--;
-        MotionFrameBegin(g_dev9, g_motionObjSurf9, g_cameraBefore ? g_viewBefore : nullptr, g_cameraBefore ? g_projBefore : nullptr);
+        float projBefore[16];   // (the last camera through this frame's jitter: it cancels in the objects' vectors)
+        memcpy(projBefore, g_projBefore, sizeof projBefore);
+        if (g_jitWorld) JitterInto(projBefore, g_jitNow, 1);
+        MotionFrameBegin(g_dev9, g_motionObjSurf9, g_cameraBefore ? g_viewBefore : nullptr, g_cameraBefore ? projBefore : nullptr);
         g_motionThisFrame = g_cameraBefore;
     }
 }
@@ -1844,6 +1911,10 @@ void GfxStage1() {
 }
 
 void GfxAfterWorld() {
+    if (g_jitWorld) {   // (the game's own projection back for what is drawn after the world)
+        g_jitWorld = false;
+        if (g_dev9 && g_projCleanHave) oSetTransform(g_dev9, D3DTS_PROJECTION, &g_projClean);
+    }
     if (!g_swapped) return;
     g_swapped = false;   // (first: hkSetDepthStencil lets the game's own buffer be bound then)
     if (g_dev9 && g_gameDS) g_dev9->SetDepthStencilSurface(g_gameDS);
@@ -2083,6 +2154,8 @@ bool GfxMethod(const std::string &method, const std::string &, std::string *repl
                         {"gpu_passes", r2(g_gpuPasses)}}},
                 {"following_state", g_stateHooked}, {"multisampling", g_msaa},
                 {"ui", {{"mode", UiMode()}, {"frames", g_uiFrames}}},
+                {"jitter", {{"mod", g_jitter.mod && ModAlive(g_jitter.mod) ? ModIdOf(g_jitter.mod) : std::string()},
+                            {"now", {g_jitNow[0], g_jitNow[1]}}}},
                 {"show", {{"mod", g_showFn.fn ? ModIdOf(g_showFn.mod) : std::string()}, {"shows", g_shows}, {"frames", g_showFrames},
                           {"pictures", g_showPictures}, {"late", g_showLate}, {"interval_ms", r2(g_interval)}, {"work_ms", r2(g_work)},
                           {"ms", r2(g_showMs)}, {"gap_ms", r2(g_gap)}, {"gap_error_ms", r2(g_gapErr)}, {"size", {g_showW, g_showH}},
