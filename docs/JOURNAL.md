@@ -3595,3 +3595,14 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Measured** (`tools/fg_test.py`, a 199 Hz display): 9Ex 2x the game 100 shown 200, 3x 66 / 199, 4x 49 / 196;
   DXVK 100 / 200, 67 / 202, 51 / 202, the spacing 5 ms within 0.05-0.2; 1.0 (9Ex) 83 / 166, 58 / 175, 44 / 175.
   The owner by eye, DXVK 2x: smooth.
+
+## 2026-10-24: the RTX 5060's next logs: the render size right; the game in exclusive full screen
+
+- **Seen** (The Renegade, the update with the render size's fallback): "NGX answered 2560x1600, result 0x00000001,
+  its callback there" in every mode: NGX's optimal settings answer the frame's size with NR loaded; the ratios took
+  over (Balanced 1485x928: NR 5 ms instead of 15). He: "now the DLSS working good", Balanced in the free ride,
+  Quality in the story. Frame generation still slowed his game: "the showing on the game's thread: a full-screen
+  device" (an exclusive full screen has one swap chain alone).
+- **Made**: the dlss_nr pack's dxwrapper.ini makes the game's full screen a borderless window over the screen
+  (EnableWindowMode, FullscreenWindowMode; the brightness by WindowModeGammaShader): pack.py's `dxwrapper` lines. In
+  the lab with them: the showing's thread on, its Present shown. The game still faults at its exit in drvClose.

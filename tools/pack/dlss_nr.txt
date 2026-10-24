@@ -64,8 +64,11 @@ Esc > Options > Mods > DLSS
                     rate: the game then runs at the refresh rate
                     divided by 2, 3 or 4 (144 Hz and 2x: 72 fps). Pick
                     the one that keeps the game's own frame rate where
-                    it runs smoothly. With DXVK too. In a window or
-                    borderless (not exclusive full screen).
+                    it runs smoothly. With DXVK too.
+
+The game's full screen is a borderless window over the whole screen
+(dxwrapper.ini: EnableWindowMode, FullscreenWindowMode): frame
+generation cannot show its frames in an exclusive full screen.
   Picture           strength, tone, detail, model A/B/C.
   Compare           a split screen with and without.
   Advanced          the presets of Neural Rendering and of Super

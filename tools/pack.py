@@ -47,6 +47,12 @@ PACKS = {
                   'mml/mods/dlss_nr/nvngx_dlssg.dll': os.path.join(DEPS, 'ngx', 'bin', 'nvngx_dlssg.dll'),
                   'licenses/NVIDIA-RTX-SDKs-LICENSE.txt': os.path.join(DEPS, 'ngx', 'bin', 'LICENSE.txt')},
         'inside': ['NVIDIA nvngx_dlssnr.dll, nvngx_dlss.dll and nvngx_dlssg.dll 310.9.16.0 (NVIDIA RTX SDKs license).'],
+        # dxwrapper.ini's own lines for the pack: the game's full screen as a borderless window over the screen (the
+        # bridge's frame generation shows from its own thread through a swap chain of its own, which an exclusive
+        # full-screen device cannot have: the RTX 5060's log said "a full-screen device"), the brightness setting by
+        # dxwrapper's gamma shader (a window has no gamma ramp)
+        'dxwrapper': ['[d3d9]', 'EnableWindowMode           = 1', 'FullscreenWindowMode       = 1',
+                      'WindowModeGammaShader      = 1'],
     },
 }
 
@@ -127,6 +133,9 @@ def main():
     put(dest, 'MafiaModLoader.asi', os.path.join(OUT86, 'MafiaModLoader.asi'))
     for f in ('d3d8.dll', 'dxwrapper.dll', 'dxwrapper.ini'):
         put(dest, f, os.path.join(OUT86, 'dxwrapper', f))
+    if pack.get('dxwrapper'):
+        with open(os.path.join(dest, 'dxwrapper.ini'), 'a', encoding='utf-8', newline='\r\n') as ini:
+            ini.write('\n' + '\n'.join(pack['dxwrapper']) + '\n')
     # the mods: the 32-bit half, its 64-bit half and the sidecar when it has one
     sidecar = False
     for mod in pack['mods']:
