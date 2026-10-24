@@ -1574,9 +1574,10 @@ int ShowPrepare() {
 // own on the game's window. Direct3D 9 lets a swap chain present between another thread's BeginScene and EndScene as
 // long as its back buffer is not the device's target: the game's back buffer never reaches this one. The device is
 // made thread-safe for it (D3DCREATE_MULTITHREADED, hkCreateDevice8). Two slots: one shown, one waiting; the game
-// waits only for the one waiting to be taken (it runs at most a frame ahead of what is seen). Not for a full-screen
-// device (one swap chain alone may show there) nor on DXVK (its pictures go through Vulkan's queue): the game's
-// thread shows them then, as before.
+// waits only for the one waiting to be taken (it runs at most a frame ahead of what is seen). Its swap chain waits for
+// the display's refresh, and the thread keeps a refresh between two things shown itself (DXVK's Present returns at
+// once): what is shown never outruns the display. Not for a full-screen device (one swap chain alone may show there):
+// the game's thread shows them then, as before.
 struct ShowSlot { IDirect3DSurface9 *pic[MML_GFX_SHOW_MAX + 1] = {}; int n = 0; double interval = 0; };
 IDirect3DSwapChain9 *g_showChain;
 IDirect3DSurface9 *g_showChainBB;
@@ -1589,11 +1590,12 @@ bool g_presenterStop;
 HANDLE g_presenter;                // (a Windows thread: a std::thread left joinable at the process's end terminates it)
 HANDLE g_presenterTimer;
 HRESULT g_presenterHr = S_OK;      // the thread's last Present (a lost device: the game's own Present shows it)
+double g_refreshMs;                // the display's period (0: not known): two things are not shown closer than it
 std::string g_threadWhy;           // why the showing is on the game's thread (gfx.state show.thread)
 bool g_threadTried;
 
 DWORD WINAPI Presenter(void *) {
-    double lastEnd = 0;
+    double lastEnd = 0, lastPresent = 0;
     for (;;) {
         int idx;
         {
@@ -1610,6 +1612,9 @@ DWORD WINAPI Presenter(void *) {
         double t0 = std::max(NowMs(), lastEnd);
         for (int i = 0; i <= s.n; i++) {
             if (i) WaitUntil(t0 + slot * i, &g_presenterTimer);
+            // (the display's period at least since the last: DXVK's Present does not wait for the refresh, its own
+            // thread shows; the slots then hold the game at the refresh / (pictures + 1) as vsync does on Direct3D 9)
+            if (g_refreshMs > 0 && lastPresent > 0) WaitUntil(lastPresent + g_refreshMs * 0.98, &g_presenterTimer);
             g_dev9->StretchRect(s.pic[i], nullptr, g_showChainBB, nullptr, D3DTEXF_NONE);
             double at = NowMs();
             if (g_lastShown > 0 && at - g_lastShown < 250) {
@@ -1619,6 +1624,7 @@ DWORD WINAPI Presenter(void *) {
             }
             g_lastShown = at;
             g_presenterHr = g_showChain->Present(nullptr, nullptr, nullptr, nullptr, 0);
+            lastPresent = NowMs();
             if (i < s.n) g_showPictures++;
         }
         g_showFrames++;
@@ -1660,7 +1666,6 @@ bool EnsureShowThread(UINT w, UINT h) {
     g_threadTried = true;
     g_slotW = w, g_slotH = h;
     auto no = [](const std::string &why) { g_threadWhy = why; HLOG("gfx: the showing on the game's thread: %s", why.c_str()); return false; };
-    if (gfxvk::On()) return no("DXVK (its pictures go through Vulkan's queue)");
     D3DDEVICE_CREATION_PARAMETERS cp{};
     if (FAILED(g_dev9->GetCreationParameters(&cp)) || !(cp.BehaviorFlags & D3DCREATE_MULTITHREADED))
         return no("the device is not thread-safe (made before the loader, or without a mod with \"gfx\": true)");
@@ -1676,7 +1681,11 @@ bool EnsureShowThread(UINT w, UINT h) {
     mine.SwapEffect = D3DSWAPEFFECT_DISCARD;
     mine.hDeviceWindow = pp.hDeviceWindow ? pp.hDeviceWindow : cp.hFocusWindow;
     mine.Windowed = TRUE;
-    mine.PresentationInterval = pp.PresentationInterval;
+    // each Present waits for the display's refresh: what is shown never outruns it, and the slots (the game waits for
+    // the one waiting to be taken) hold the game at the refresh / (pictures + 1)
+    mine.PresentationInterval = D3DPRESENT_INTERVAL_ONE;
+    D3DDISPLAYMODE dm{};
+    g_refreshMs = SUCCEEDED(g_dev9->GetDisplayMode(0, &dm)) && dm.RefreshRate >= 24 ? 1000.0 / dm.RefreshRate : 0;
     HRESULT hr = g_dev9->CreateAdditionalSwapChain(&mine, &g_showChain);
     if (FAILED(hr) || !g_showChain) return no(Fmt("CreateAdditionalSwapChain failed (0x%08X)", static_cast<unsigned>(hr)));
     if (FAILED(g_showChain->GetBackBuffer(0, D3DBACKBUFFER_TYPE_MONO, &g_showChainBB))) { ShowThreadStop(); g_threadTried = true; return no("its back buffer"); }
@@ -2324,7 +2333,8 @@ bool GfxMethod(const std::string &method, const std::string &, std::string *repl
                 {"show", {{"mod", g_showFn.fn ? ModIdOf(g_showFn.mod) : std::string()}, {"shows", g_shows}, {"frames", g_showFrames},
                           {"pictures", g_showPictures}, {"late", g_showLate}, {"interval_ms", r2(g_interval)}, {"work_ms", r2(g_work)},
                           {"ms", r2(g_showMs)}, {"gap_ms", r2(g_gap)}, {"gap_error_ms", r2(g_gapErr)}, {"size", {g_showW, g_showH}},
-                          {"thread", g_presenter ? std::string("on") : g_threadWhy}, {"error", g_showError}}}};
+                          {"thread", g_presenter ? std::string("on") : g_threadWhy},
+                          {"thread_present", Fmt("0x%08X", static_cast<unsigned>(g_presenterHr))}, {"error", g_showError}}}};
     json views = json::array();
     for (auto &v : g_views)
         views.push_back({{"handle", v->handle}, {"size", {v->w, v->h}}, {"frames", v->info.frames}, {"fresh", v->info.fresh != 0},

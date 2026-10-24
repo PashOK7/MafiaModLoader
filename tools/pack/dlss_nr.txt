@@ -60,11 +60,12 @@ Esc > Options > Mods > DLSS
                     faster. Off: every frame waits for DLSS.
   Frame generation  Off, 2x, 3x, 4x (an RTX 40 or 50): DLSS makes the
                     frames between two of the game's and shows them
-                    evenly spaced; the game's own frame rate stays as
-                    it is. Shown frames over the monitor's refresh rate
-                    are not seen: with frame generation, cap the game
-                    (see FPS UNLOCK) at the refresh rate divided by 2,
-                    3 or 4 (144 Hz and 2x: 72).
+                    evenly spaced, at most at the monitor's refresh
+                    rate: the game then runs at the refresh rate
+                    divided by 2, 3 or 4 (144 Hz and 2x: 72 fps). Pick
+                    the one that keeps the game's own frame rate where
+                    it runs smoothly. With DXVK too. In a window or
+                    borderless (not exclusive full screen).
   Picture           strength, tone, detail, model A/B/C.
   Compare           a split screen with and without.
   Advanced          the presets of Neural Rendering and of Super

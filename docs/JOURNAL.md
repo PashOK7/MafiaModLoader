@@ -3584,3 +3584,14 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   the adapter's own counters stayed at 2.1 GB through 45 switches and a sidecar restart. A process's counter keeps
   counting a shared texture it made after it is gone, it seems: `tools/vram_test.py` (new) reads the adapter's. The
   friend's slower GPU over a session is then his 8 GB laptop's (a texture pack, NR at the frame's size), not ours.
+
+## 2026-10-24: frame generation on DXVK, and never faster than the display
+
+- **Made**: the showing's own thread on DXVK too (by the time it shows, the pictures are in Direct3D 9 surfaces:
+  DXVK makes the bridge's swap chain a Vulkan swap chain of its own on the window, FIFO, beside the game's). The
+  swap chain waits for the refresh (D3DPRESENT_INTERVAL_ONE), and the thread keeps the display's period between two
+  things shown itself: DXVK's Present returns at once (its own thread shows). The two slots then hold the game at the
+  refresh / (pictures + 1). `gfx.state` show.thread_present: the thread's last Present.
+- **Measured** (`tools/fg_test.py`, a 199 Hz display): 9Ex 2x the game 100 shown 200, 3x 66 / 199, 4x 49 / 196;
+  DXVK 100 / 200, 67 / 202, 51 / 202, the spacing 5 ms within 0.05-0.2; 1.0 (9Ex) 83 / 166, 58 / 175, 44 / 175.
+  The owner by eye, DXVK 2x: smooth.
