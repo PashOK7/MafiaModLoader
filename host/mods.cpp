@@ -618,6 +618,7 @@ int H_GfxSharedTexture(MmlMod *m, const char *name, MmlSharedTexture *out) { ret
 int H_GfxSharedFence(MmlMod *m, const char *name, MmlSharedFence *out) { return Alive(m) ? GfxSharedFence(m, name, out) : 0; }
 int H_GfxShow(MmlMod *m, MmlGfxShowFn fn, void *user) { return Alive(m) ? GfxShowSet(m, fn, user) : 0; }
 int H_GfxJitter(MmlMod *m, int on, float x, float y) { return Alive(m) ? GfxJitterSet(m, on, x, y) : 0; }
+int H_GfxUpscale(MmlMod *m, unsigned w, unsigned h, MmlGfxUpscaleFn fn, void *user) { return Alive(m) ? GfxUpscaleSet(m, w, h, fn, user) : 0; }
 int H_ZoneAdd(MmlMod *m, const float pos[3], float radius, void *frame, MmlZoneFn fn, void *user) {
     std::string err;
     int id = Alive(m) && fn ? ZoneAdd(m, pos, radius, frame, fn, user, &err) : 0;
@@ -1367,6 +1368,7 @@ void ModsInit() {
     g_host.gfx_shared_fence = H_GfxSharedFence;
     g_host.gfx_show = H_GfxShow;
     g_host.gfx_jitter = H_GfxJitter;
+    g_host.gfx_upscale = H_GfxUpscale;
     LiveCleanAll();
     Scan();
     LoadEnabled();

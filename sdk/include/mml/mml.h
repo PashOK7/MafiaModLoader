@@ -427,9 +427,15 @@ typedef struct MmlGfxFrame {
                                props, people as wholes); bound to t3 (frame.hlsli g_motion), while a mod wants them
                                (gfx_motion) and the frame before was drawn; else NULL (and in the scene views) */
     /* (MML_GFX_HAS(frame, jitter)) */
-    float jitter[2];        /* the sub-pixel offset this frame's world was drawn with (gfx_jitter), in the frame's pixels:
-                               x right, y down; 0 0 without (and in the scene views). view and proj are the camera's
-                               without it, the motion vectors too; the depth and the colour are the picture as drawn */
+    float jitter[2];        /* the sub-pixel offset this frame's world was drawn with (gfx_jitter), in the pixels of the
+                               picture as drawn (render_width x render_height): x right, y down; 0 0 without (and in the
+                               scene views). view and proj are the camera's without it, the motion vectors too; the depth
+                               and the colour are the picture as drawn */
+    /* (MML_GFX_HAS(frame, render_height)) */
+    unsigned render_width, render_height;   /* the size the world was drawn at: width x height, except in the upscaler's
+                               call (gfx_upscale), where depth, color and motion hold the world at its render size in
+                               their top-left render_width x render_height (k->size that size too; the motion in its
+                               pixels) and the upscaler draws the frame at width x height into target */
 } MmlGfxFrame;
 #define MML_GFX_HAS(f, member) ((size_t)(f)->size >= offsetof(MmlGfxFrame, member) + sizeof((f)->member))
 #define MML_GFX_UI_OFF 0     /* gfx_ui: the 2D pass as the game draws it */
@@ -467,6 +473,14 @@ typedef struct MmlGfxShow {
 } MmlGfxShow;
 /* returns how many pictures it drew into extra[0..n-1] (0: the frame alone), shown in that order before the frame */
 typedef int (*MmlGfxShowFn)(const MmlGfxShow *show, void *user);
+
+/* The upscaler (gfx_upscale): called at each frame of the mission's world before the passes, with the frame whose
+ * world was drawn at its render size (MmlGfxFrame render_width x render_height, the top-left of depth, color and
+ * motion; k->size that size; jitter in its pixels). It draws the whole frame (width x height, alpha 1) into target and
+ * returns 1, or returns 0 when it has no picture this frame (its history not there yet, a late answer): the bridge
+ * then stretches the smaller picture over the frame. The passes after it get the frame at its size: its picture as
+ * color, the depth and the motion vectors brought up to it. */
+typedef int (*MmlGfxUpscaleFn)(const MmlGfxFrame *frame, void *user);
 
 /* A fence of a mod's 64-bit half (side.h fence_create), opened on the graphics bridge's device (gfx_shared_fence):
  * the GPU of one half waits for what the other's queued, without the CPU. */
@@ -1776,11 +1790,21 @@ typedef struct MmlHost {
      * game's thread goes on at once. 1 done, 0 refused. Game thread. */
     int (*gfx_show)(MmlMod *mod, MmlGfxShowFn fn, void *user);
     /* gfx_jitter: the frame's world drawn, from the next frame on, with the game's projection offset by (x, y) of the
-     * frame's pixels (x right, y down; -0.5..0.5 for a temporal upscaler's sub-pixel samples, DLSS's, a TAA's), until
+     * pixels it is drawn at (the frame's; the render size's under gfx_upscale) (x right, y down; -0.5..0.5 for a temporal upscaler's sub-pixel samples, DLSS's, a TAA's), until
      * asked again; on 0 takes it back (the mod's unload too). What a frame was drawn with is MmlGfxFrame's jitter; the
      * frame's view and proj and the motion vectors are without it. The scene views, the sun's shadow map and the 2D
      * pass are not offset. One mod at a time: 0 while another holds it. Needs the graphics bridge on. Game thread. */
     int (*gfx_jitter)(MmlMod *mod, int on, float x, float y);
+    /* gfx_upscale: the frame's world drawn at w x h (a temporal upscaler's render size: DLSS's, FSR's) from the next
+     * frame on, until asked again, and fn (MmlGfxUpscaleFn) called first at each frame to draw the whole frame from
+     * it; w or h 0: at the frame's own size (fn called all the same: DLAA). Every viewport the game sets on the frame's
+     * target while the world is drawn is scaled to that size (its top-left), the projection unchanged; what the game
+     * draws after the world (its near pass, the lens flares) and the 2D pass are at the frame's size, over the
+     * upscaled frame. The jitter (gfx_jitter) is then in the render size's pixels: a whole render pixel's sample
+     * offset goes into the game's projection, as DLSS's guide asks. fn NULL takes it back (the mod's unload too):
+     * the world at the frame's size again. One mod at a time: 0 while another holds it. Needs the graphics bridge on
+     * (the Direct3D 9 device's state followed: gfx.state following_state). Game thread. */
+    int (*gfx_upscale)(MmlMod *mod, unsigned w, unsigned h, MmlGfxUpscaleFn fn, void *user);
 } MmlHost;
 
 #define MML_ZONE_PLAYER 0x1u

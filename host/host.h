@@ -728,6 +728,9 @@ bool GfxPassViews(MmlMod *mod, int handle, bool on);   // mml.h gfx_pass_views
 int GfxStateNow(std::string *why);        // mml.h gfx_state: 1 on, 0 off (why), -1 not yet
 void GfxRemove(MmlMod *mod);              // its mod unloads: its passes go
 void GfxQuiet(bool on);                   // drawing that is not the game's (not tallied as the world's light)
+void GfxDrawnSize(float out[4]);          // the size this frame's world is drawn at: w, h, 1/w, 1/h (gfx_upscale's, else the frame's)
+void GfxFrameBegin();                     // (render.cpp) a frame's first drawing: its GPU time starts
+int GfxUpscaleSet(MmlMod *mod, unsigned w, unsigned h, MmlGfxUpscaleFn fn, void *user);   // mml.h gfx_upscale
 // ---- motion vectors (motion.cpp; mml.h gfx_motion, MmlGfxFrame motion)
 bool MotionWanted();                      // a mod wants them
 int MotionAsk(MmlMod *mod, bool on);      // mml.h gfx_motion

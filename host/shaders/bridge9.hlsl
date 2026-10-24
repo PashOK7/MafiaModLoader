@@ -13,6 +13,8 @@
 
 float4 g_size : register(c0);    // width, height, 1/width, 1/height
 float4 g_depth : register(c1);   // the projection's _33, _43; the value written where nothing was drawn (d >= 1)
+float4 g_drawn : register(c3);   // the size the world is drawn at (the frame's, or an upscaler's render size at the
+                                 // targets' top-left: gfx_upscale): width, height, 1/width, 1/height
 
 sampler2D g_tex : register(s0);
 
@@ -58,7 +60,8 @@ MotionV VsMotionSkin(float3 pos : POSITION0, float3 was : POSITION1) {
     return o;
 }
 
-float2 ToScreen(float4 clip) { return float2((clip.x / clip.w + 1) * 0.5 * g_size.x, (1 - clip.y / clip.w) * 0.5 * g_size.y); }
+// a clip-space point where it is drawn (pixels of the picture as drawn: g_drawn)
+float2 ToScreen(float4 clip) { return float2((clip.x / clip.w + 1) * 0.5 * g_drawn.x, (1 - clip.y / clip.w) * 0.5 * g_drawn.y); }
 
 // PsMotion: x the draw's alpha test (its reference, 0..1; < 0 none: the texture at s0 is the draw's own, its alpha
 // what the test compares)
@@ -87,7 +90,8 @@ float4 PsMotionAll(float2 vpos : VPOS) : COLOR0 {
     if (o.w > 0.5 && abs(o.z - z) <= 0.01 * z + 0.05) return float4(o.xy, 0, 0);
     // the camera's: this pixel's place in view space, through the last frame's camera; the sky (g_depth.z) as a
     // direction alone (its turn without its move)
-    float2 ndc = float2(uv.x * 2 - 1, 1 - uv.y * 2);
+    float2 drawn = here * g_drawn.zw;   // (where in the picture as drawn: the projection's own range)
+    float2 ndc = float2(drawn.x * 2 - 1, 1 - drawn.y * 2);
     bool sky = z >= g_depth.z * 0.999;
     float d = sky ? 1 : z;
     float3 v = float3((ndc.x - g_proj.z) / g_proj.x * d, (ndc.y - g_proj.w) / g_proj.y * d, d);

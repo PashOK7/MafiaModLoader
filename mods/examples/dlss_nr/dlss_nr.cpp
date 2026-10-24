@@ -8,9 +8,12 @@
 // What DLSS is given: the frame where the world is drawn and the HUD is not yet (in its gamma), its depth, each pixel's
 // motion vector (the bridge's: the camera's and the moving cars' and people's), and DLSS-NR's control mask (how much it
 // may change each pixel: the sky's share a setting). With Super Resolution the inputs are at the render size of its
-// mode, each render pixel the frame's pixel under a jittered point (a Halton sequence: DLSS gathers the sub-pixel
-// samples over the frames); DLSS-NR runs at that size, then DLSS SR brings its picture to the frame's: DLSS-NR's cost
-// is the render size's. The settings are NVIDIA's own, on the game's Options > Mods page; a key turns it on and off.
+// mode: the mod is the graphics bridge's upscaler (gfx_upscale), so the game draws its world at that size, its
+// projection jittered (a Halton sequence: DLSS gathers the sub-pixel samples over the frames) and its textures' mip
+// bias DLSS's, and the inputs are read one to one; DLSS-NR runs at that size, then DLSS SR brings its picture to the
+// frame's, under the HUD drawn at the frame's size. (A loader without gfx_upscale: the game draws the frame whole and
+// the pass samples it at the render size.) The settings are NVIDIA's own, on the game's Options > Mods page; a key
+// turns it on and off.
 //
 //   call dlss_nr.state  -> {"on", "stage", "message", "sr", "upscale", "render", "drawn", "late", "gpu_ms", ...}
 //   call dlss_nr.toggle {"on": true}   (no "on": switched)        F12 (the setting "hotkey")
@@ -24,6 +27,7 @@
 #include <d3d11.h>
 #include <d3d11_4.h>   // (ID3D11DeviceContext4's Signal and Wait on the shared fences)
 #include <algorithm>
+#include <climits>
 #include <cmath>
 #include <cstring>
 #include <string>
@@ -79,6 +83,7 @@ float Number(const char *key, double def, float lo, float hi) { return std::clam
 
 void KeyToggle(void *);
 void UpdateShow();
+void UpdateUpscale();
 void ReadSettings() {
     Settings s;
     s.on = Number("on", 1, 0, 1) >= 0.5f;
@@ -107,6 +112,7 @@ void ReadSettings() {
     S = s;
     H->hotkey(M, S.hotkey.c_str(), KeyToggle, nullptr);   // (the same function again: the combination replaced)
     UpdateShow();
+    UpdateUpscale();
 }
 
 const char *UpscaleName(uint32_t u) {
@@ -221,6 +227,8 @@ struct Consts {   // dlss_nr.hlsl's DlssNr (b1)
     float opts[4];
     float opts2[4];   // x: 1 when the bridge's motion vectors are bound (t3: the objects' motion too)
     float render[4];  // xy: the frame's size / the render size, zw: the inputs' sample offset (the jitter)
+    float opts3[4];   // xy: the frame's size (the picture DLSS draws), z: 1 when the world was drawn at the render size
+                      // (gfx_upscale: the inputs are its pixels, read one to one)
 };
 struct Gfx {
     unsigned generation = 0;
@@ -307,6 +315,8 @@ void Keep(const MmlGfxConstants *k, const MmlGfxFrame *f) {
     g_prev.have = true;
 }
 
+bool g_direct;   // this frame's world drawn at the render size (the upscaler's call): the inputs are its pixels
+unsigned g_outSize[2];   // the frame's size (the picture drawn)
 void Constants(ID3D11DeviceContext *c, const MmlGfxConstants *k, bool havePrev, float split, const float render[4] = nullptr) {
     Consts x{};
     const Camera &p = g_prev;
@@ -320,6 +330,7 @@ void Constants(ID3D11DeviceContext *c, const MmlGfxConstants *k, bool havePrev, 
     x.opts2[1] = S.mvScale;
     const float one[4] = {1, 1, 0, 0};
     memcpy(x.render, render ? render : one, sizeof x.render);
+    x.opts3[0] = float(g_outSize[0]), x.opts3[1] = float(g_outSize[1]), x.opts3[2] = g_direct ? 1.f : 0.f;
     D3D11_MAPPED_SUBRESOURCE m;
     if (SUCCEEDED(c->Map(G.cb, 0, D3D11_MAP_WRITE_DISCARD, 0, &m))) {
         memcpy(m.pData, &x, sizeof x);
@@ -344,13 +355,15 @@ void Jitter(uint64_t n, float scale, float out[2]) {
     out[0] = Halton(i, 2) - 0.5f, out[1] = Halton(i, 3) - 0.5f;
 }
 
-// Each frame's sample, j render pixels from the render pixel's centre, comes from two places: the frame's whole pixels
-// of it from where PsPrepare samples the frame (jr), the rest, under half a frame's pixel, from the game's own
-// projection offset (gfx_jitter: jg, the world drawn there). A point of the frame's picture at p shows the scene at
-// p - jg, so the render pixel's sample is its centre + jr - jg / scale. Without the game's offset (DLAA: a render
-// pixel is a frame pixel) DLSS would have no sub-pixel sample at all: no anti-aliasing, the thin wires broken as the
-// game draws them. jg is asked a frame ahead: MmlGfxFrame's jitter says what the frame was drawn with.
-struct JitAsk { float jg[2], jr[2]; bool set; } g_jitAsk;
+// Each frame's sample, j render pixels from the render pixel's centre. With the world drawn at the render size
+// (gfx_upscale) all of it is the game's own projection offset (jg, in render pixels: a point of the picture at p shows
+// the scene at p - jg) and the inputs are read one to one: DLSS is told -jg, as its guide has a renderer jitter its
+// projection. Without it (a loader without gfx_upscale) the game drew the frame at its full size and PsPrepare samples
+// it: the sample comes from two places, the frame's whole pixels of it from where PsPrepare samples the frame (jr),
+// the rest, under half a frame's pixel, from the game's projection offset (gfx_jitter: jg, in the frame's pixels), so
+// the render pixel's sample is its centre + jr - jg / scale (DLAA: a render pixel is a frame pixel, the offset alone
+// gives it a sub-pixel sample). jg is asked a frame ahead: MmlGfxFrame's jitter says what the frame was drawn with.
+struct JitAsk { float jg[2], jr[2]; bool set, direct; } g_jitAsk;
 uint64_t g_jitN;
 bool g_jitHeld, g_jitUsed;
 void JitterRelease() {
@@ -360,17 +373,19 @@ void JitterRelease() {
 // this frame's sampling offset and the sample DLSS is told of (render pixels); the next frame's asked
 void JitterFrame(const MmlGfxFrame *f, uint32_t rw, float jr[2], float j[2]) {
     g_jitUsed = true;
-    const float scale = rw ? float(f->width) / float(rw) : 1.f;
+    const float scale = g_direct || !rw ? 1.f : float(f->width) / float(rw);
     float jg[2] = {0, 0};
     if (MML_GFX_HAS(f, jitter)) jg[0] = f->jitter[0], jg[1] = f->jitter[1];
-    const bool paired = g_jitAsk.set && jg[0] == g_jitAsk.jg[0] && jg[1] == g_jitAsk.jg[1];
+    const bool paired = g_jitAsk.set && g_jitAsk.direct == g_direct && jg[0] == g_jitAsk.jg[0] && jg[1] == g_jitAsk.jg[1];
     jr[0] = paired ? g_jitAsk.jr[0] : 0, jr[1] = paired ? g_jitAsk.jr[1] : 0;
     j[0] = jr[0] - jg[0] / scale, j[1] = jr[1] - jg[1] / scale;
     float t[2];
-    Jitter(++g_jitN, scale, t);
+    Jitter(++g_jitN, g_direct && rw ? float(f->width) / float(rw) : scale, t);
     JitAsk a{};
     a.set = true;
+    a.direct = g_direct;
     for (int i = 0; i < 2; i++) {
+        if (g_direct) { a.jg[i] = t[i], a.jr[i] = 0; continue; }   // (all of it in the projection, render pixels)
         float whole = std::round(t[i] * scale);
         a.jg[i] = whole - t[i] * scale, a.jr[i] = whole / scale;
     }
@@ -479,21 +494,60 @@ void Ask(const MmlGfxFrame *f, uint32_t mode, uint32_t up) {
     g_ring.lastSent = v.frame, g_ring.lastPrepared = false;
 }
 
-void PassFrame(const MmlGfxFrame *f);
+// The upscaler's place (gfx_upscale, a loader with it): the world drawn at DLSS's render size, DLSS's picture drawn
+// first among the passes (Upscale). It is held while DLSS is on, at the render size the 64-bit half wants for the
+// frame's size and mode (the frame's own size until it said); the debug views of the inputs show them as DLSS gets
+// them, at the render size.
+bool g_upHeld;
+unsigned g_upW = UINT_MAX, g_upH = UINT_MAX;
+int Upscale(const MmlGfxFrame *f, void *);
+void UpdateUpscale() {
+    if (!MML_HAS(H, gfx_upscale)) return;
+    const bool want = S.on;
+    unsigned w = 0, h = 0;
+    if (want && g_done.renderW && g_outSize[0] && g_done.forW == g_outSize[0] && g_done.forH == g_outSize[1] &&
+        g_done.forUpscale == UpscaleUsable())
+        w = g_done.renderW, h = g_done.renderH;
+    if (want == g_upHeld && w == g_upW && h == g_upH) return;
+    if (!want) {
+        H->gfx_upscale(M, 0, 0, nullptr, nullptr);
+        g_upHeld = false;
+    } else if (H->gfx_upscale(M, w, h, Upscale, nullptr)) {
+        g_upHeld = true;
+    } else {
+        if (g_upHeld || g_upW == UINT_MAX) H->log(M, MML_LOG_WARN, "the bridge's upscaler is another mod's (gfx_upscale): DLSS samples the frame at its size");
+        g_upHeld = false;
+    }
+    g_upW = w, g_upH = h;
+}
+
+bool PassFrame(const MmlGfxFrame *f);
 void Pass(const MmlGfxFrame *f, void *) {
     if (MML_GFX_HAS(f, in_view) && f->in_view) return;   // (the frame only, not the mods' scene views)
+    if (g_upHeld) return;   // (DLSS is the bridge's upscaler: Upscale)
     g_jitUsed = false;
+    g_direct = false;
     PassFrame(f);
     if (!g_jitUsed && g_jitHeld) JitterRelease();   // (a frame without DLSS: the game's world drawn still again)
 }
-void PassFrame(const MmlGfxFrame *f) {
+int Upscale(const MmlGfxFrame *f, void *) {
+    g_jitUsed = false;
+    g_direct = MML_GFX_HAS(f, render_height) && f->render_width && f->render_height;
+    bool drew = PassFrame(f);
+    g_direct = false;
+    if (!g_jitUsed && g_jitHeld) JitterRelease();
+    return drew ? 1 : 0;
+}
+// DLSS over the frame: true when its picture was drawn into the target (the pipeline's, the frame before's)
+bool PassFrame(const MmlGfxFrame *f) {
     g_shown.valid = false;
-    if (H->mission_state() == MML_MISSION_NONE) return;
+    g_outSize[0] = f->width, g_outSize[1] = f->height;
+    if (H->mission_state() == MML_MISSION_NONE) return false;
     ReadStatus();
     TellStatus(false);
     if (!S.on) {
         g_resetNext = true;
-        return;
+        return false;
     }
     auto *d = static_cast<ID3D11Device *>(f->device);
     auto *c = static_cast<ID3D11DeviceContext *>(f->context);
@@ -501,7 +555,7 @@ void PassFrame(const MmlGfxFrame *f) {
         if (!Make(d, c)) {
             if (!G.c4) H->log(M, MML_LOG_ERROR, "the bridge's device has no Direct3D 11.4 context (ID3D11DeviceContext4): Windows 10 1703 or newer");
             G.Free();
-            return;
+            return false;
         }
         G.generation = f->generation;
     }
@@ -537,16 +591,25 @@ void PassFrame(const MmlGfxFrame *f) {
         if (color) color->Release();
         Keep(k, f);
         g_resetNext = false;
-        return;
+        // (the render size of this mode asked of the half, now and then, so the world is drawn at it: the view shows
+        // the inputs DLSS would get)
+        const uint32_t up = UpscaleUsable();
+        static int64_t lastAsk;
+        if (g_direct && g_status.stage != dnr::kStarting && g_status.stage != dnr::kNoVulkan && g_status.stage != dnr::kOtherGpu &&
+            (g_done.forW != f->width || g_done.forH != f->height || g_done.forUpscale != up) && Ms(lastAsk, Qpc()) > 250) {
+            lastAsk = Qpc();
+            Ask(f, S.nr && NrUsable() ? dnr::kModeNr : dnr::kModeCopy, up);
+        }
+        return true;   // (the whole target: the view)
     }
     if (g_status.stage == dnr::kStarting || g_status.stage == dnr::kNoVulkan || g_status.stage == dnr::kOtherGpu)
-        return;   // (no Vulkan device: nothing runs)
+        return false;   // (no Vulkan device: nothing runs)
     const uint32_t up = UpscaleUsable();
     const uint32_t mode = S.debug == 4 || !S.nr || !NrUsable() ? dnr::kModeCopy : dnr::kModeNr;
     // (nothing of DLSS here: the game's own frame; frame generation alone takes the frame round all the same, for the
     // depth and the motion vectors it needs)
     const bool fgFrames = S.fg && !S.fgStandIn && g_status.fgAvailable;
-    if (mode == dnr::kModeCopy && up == dnr::kUpOff && S.debug != 4 && !fgFrames) return;
+    if (mode == dnr::kModeCopy && up == dnr::kUpOff && S.debug != 4 && !fgFrames) return false;
     T.frames++;
     int64_t t0 = Qpc();
 
@@ -568,16 +631,19 @@ void PassFrame(const MmlGfxFrame *f) {
     if (!Answered()) {
         T.late++;
         g_resetNext = true;
-        return;
+        return false;
     }
     Settle();
     // pipelined: the frame before's picture, now (its DLSS ran while the game drew this frame)
-    if (S.pipeline && fences) Composite(c, f, k, doneF);
+    bool drew = S.pipeline && fences && Composite(c, f, k, doneF);
     // this frame's slot at the size the half wants for this frame's size and mode: else it is asked (the textures are
     // made) and the frame goes without
     const uint32_t s = uint32_t((g_frame + 1) % dnr::kSlots);
     bool have = fences && g_done.renderW && g_done.forW == f->width && g_done.forH == f->height && g_done.forUpscale == up;
     const uint32_t rw = g_done.renderW, rh = g_done.renderH;
+    // (the world drawn at another size than this mode's: a frame of a switch; the bridge stretches it, the next is
+    // drawn at this one)
+    if (have && g_direct && (f->render_width != rw || f->render_height != rh)) { g_resetNext = true; return drew; }
     MmlSharedTexture t[dnr::kPerSlot];
     for (uint32_t i = 0; have && i < dnr::kPerSlot; i++) {
         char name[32];
@@ -590,14 +656,14 @@ void PassFrame(const MmlGfxFrame *f) {
     if (!have) {
         Ask(f, mode, up);
         T.noTextures++;
-        return;
+        return drew;
     }
     for (int i = 0; i < 4; i++)
         if (G.inTex[s][i] != t[i].texture || G.inGen[s][i] != t[i].generation) {
             SafeRelease(G.inRtv[s][i]);
             G.inTex[s][i] = static_cast<ID3D11Texture2D *>(t[i].texture);
             G.inGen[s][i] = t[i].generation;
-            if (FAILED(d->CreateRenderTargetView(G.inTex[s][i], nullptr, &G.inRtv[s][i]))) { G.FreeIn(); return; }
+            if (FAILED(d->CreateRenderTargetView(G.inTex[s][i], nullptr, &G.inRtv[s][i]))) { G.FreeIn(); return drew; }
         }
     // this frame's inputs into its slot, at the render size, once the slot's last work is over (on the GPU)
     dnr::View v{};
@@ -623,7 +689,7 @@ void PassFrame(const MmlGfxFrame *f) {
         memcpy(sc.eye, k->eye, sizeof sc.eye), memcpy(sc.up, k->up, sizeof sc.up);
         memcpy(sc.right, k->right, sizeof sc.right), memcpy(sc.fwd, k->fwd, sizeof sc.fwd);
     }
-    const float render[4] = {float(f->width) / float(rw), float(f->height) / float(rh), sample[0], sample[1]};
+    const float render[4] = {g_direct ? 1.f : float(f->width) / float(rw), g_direct ? 1.f : float(f->height) / float(rh), sample[0], sample[1]};
     Constants(c, k, havePrev, 0, render);
     ID3D11ShaderResourceView *base[2] = {static_cast<ID3D11ShaderResourceView *>(f->depth), static_cast<ID3D11ShaderResourceView *>(f->color)};
     c->PSSetShaderResources(0, 2, base);
@@ -659,10 +725,12 @@ void PassFrame(const MmlGfxFrame *f) {
     T.prepSum += Ms(t0, Qpc());
     // not pipelined: this frame's own picture, waited for
     if (!S.pipeline) {
-        if (!Answered()) { T.late++; g_resetNext = true; return; }
+        if (!Answered()) { T.late++; g_resetNext = true; return false; }
         Settle();
-        if (!Composite(c, f, k, doneF)) T.none++;
+        drew = Composite(c, f, k, doneF);
+        if (!drew) T.none++;
     }
+    return drew;
 }
 
 // ---- frame generation: at the frame's showing (gfx_show), the frames between this one and the one before
@@ -902,6 +970,8 @@ void OnEvent(const MmlEvent *ev, void *) {
         break;
     case MML_EVENT_RENDER_END: {
         CheckBridge(false);
+        ReadDone();
+        UpdateUpscale();   // (the next frame's world at the render size the half wants now)
         int64_t now = Qpc();
         if (!g_loggedQpc) g_loggedQpc = now;
         if (Ms(g_loggedQpc, now) >= 60000) { LogStats("the last minute"); g_loggedQpc = now; }
@@ -937,6 +1007,7 @@ int CmdState(const char *, MmlReply *r, void *) {
               {"sr", {{"available", s.srAvailable != 0}, {"dll", s.srDll}, {"message", s.srMessage}}},
               {"nr_on", S.nr && NrUsable()}, {"upscale", UpscaleName(UpscaleUsable())}, {"pipeline", S.pipeline},
               {"render", {g_renderW, g_renderH}}, {"frame", {g_outW, g_outH}},
+              {"upscaler", g_upHeld}, {"world_asked", {g_upHeld ? g_upW : 0, g_upHeld ? g_upH : 0}},
               {"mode", S.debug == 4 ? "round_trip" : S.debug ? "debug_view" : "dlss"}, {"frames", T.frames}, {"drawn", T.drawn},
               {"late", T.late}, {"none", T.none}, {"no_textures", T.noTextures}, {"silent", T.silent},
               {"answer_ms", r3(T.rtSum / n)}, {"answer_max_ms", r3(T.rtMax)}, {"work_ms", r3(T.workSum / n)},

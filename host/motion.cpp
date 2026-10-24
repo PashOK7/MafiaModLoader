@@ -469,8 +469,11 @@ void DrawAgain(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex,
     const float size[4] = {float(td.Width), float(td.Height), 1.0f / td.Width, 1.0f / td.Height};
     d->SetVertexShaderConstantF(4, &now._11, 4);
     d->SetVertexShaderConstantF(8, &before._11, 4);
+    float drawn[4];   // (where the world is drawn: the render size's under an upscaler, PsMotion's pixels)
+    GfxDrawnSize(drawn);
     d->SetPixelShaderConstantF(0, size, 1);
     d->SetPixelShaderConstantF(2, cut, 1);
+    d->SetPixelShaderConstantF(3, drawn, 1);
     if (gpuSkin) {
         SkinGpuSaved k{};
         SkinGpuBind(d, gpu, &k);

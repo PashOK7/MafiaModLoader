@@ -135,6 +135,7 @@ int __stdcall hkRender(void *driver, void *scene) {
     if (g_world) g_worldRenders++;
     void *dev = Device8();
     if (dev) ScreenshotHookPresent(nullptr);   // (PRESENT: the device's Present hooked once it exists)
+    GfxFrameBegin();   // (gfx.cpp: the frame's GPU time, to its Present)
     if (g_world) HumansBeforeRender();   // (humans.cpp: the poses the bridge holds; the mods' bone_set come after)
     if (Subscribed(MML_EVENT_RENDER_BEGIN)) Dispatch(Ev(MML_EVENT_RENDER_BEGIN, dev));
     if (g_world) HumansFlushPoses();

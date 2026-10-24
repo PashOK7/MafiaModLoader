@@ -32,8 +32,11 @@ other mods back one by one. If the game folder already has dinput8.dll,
 d3d8.dll or dxwrapper files from other mods, back them up first: this
 archive replaces them.
 
-DXVK works with it: keep DXVK's d3d9.dll, dxgi.dll, d3d11.dll (and
-dxvk.conf) in the game folder, but not DXVK's d3d8.dll (this archive's
+This archive includes DXVK's d3d9.dll (the game's Direct3D 9 on Vulkan):
+with it the game and DLSS hand each frame over on the graphics card
+and the game never waits for it. Keep it. If you have DXVK already,
+keep yours (2.1 or newer) or take this one; dxgi.dll, d3d11.dll and
+dxvk.conf of DXVK may stay too, but not DXVK's d3d8.dll (this archive's
 d3d8.dll must stay).
 ReShade 6.8 on top of DXVK (Vulkan) with its effects runs with the mod
 (tested on an RTX 3070, the mod's frame path without DLSS 5 itself).
@@ -50,11 +53,12 @@ F12           DLSS on / off (remembered).
 Esc > Options > Mods > DLSS
   DLSS 5 NR         Neural Rendering on / off.
   Super Resolution  Off, DLAA, Quality, Balanced, Performance,
-                    Ultra Performance. Neural Rendering runs at the
-                    mode's smaller size and Super Resolution brings its
-                    picture back to the screen's: Performance gives it a
-                    quarter of the pixels, so it costs about a quarter.
-                    The faster the mode, the softer the picture.
+                    Ultra Performance. The game draws its world at the
+                    mode's smaller size (Performance: a quarter of the
+                    pixels), Neural Rendering runs there, and Super
+                    Resolution brings the picture back to the screen's;
+                    the HUD is drawn at the screen's size. The faster
+                    the mode, the softer the picture.
   Pipelined         DLSS works on one frame while the game draws the
                     next one (the picture is one frame behind): much
                     faster. Off: every frame waits for DLSS.
@@ -69,6 +73,9 @@ Esc > Options > Mods > DLSS
 The game's full screen is a borderless window over the whole screen
 (dxwrapper.ini: EnableWindowMode, FullscreenWindowMode): frame
 generation cannot show its frames in an exclusive full screen.
+The game's textures are filtered anisotropically (16x: dxwrapper.ini's
+AnisotropicFiltering), so roads and walls stay sharp at a grazing
+angle, with DLSS or without.
   Picture           strength, tone, detail, model A/B/C.
   Compare           a split screen with and without.
   Advanced          the presets of Neural Rendering and of Super
@@ -119,15 +126,15 @@ D3D11VA" is the graphics card).
 UNINSTALL
 ---------
 Delete from the game's folder: dinput8.dll, MafiaModLoader.asi,
-d3d8.dll, dxwrapper.dll, dxwrapper.ini, the "mml" folder (and
-README.txt, licenses). No game files were changed.
+d3d8.dll, d3d9.dll, dxwrapper.dll, dxwrapper.ini, the "mml" folder
+(and README.txt, licenses). No game files were changed.
 
 
 IF SOMETHING GOES WRONG
 -----------------------
 Send these files (the ones that exist):
   <game>\mml\logs\mml.log and mml.prev.log
-  <game>\dxwrapper-game.log
+  <game>\dxwrapper-game.log and Game_d3d9.log (DXVK's)
   <game>\mml\data\dlss_nr\nvngx.log
   everything in <game>\mml\crash\
 

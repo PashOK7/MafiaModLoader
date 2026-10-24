@@ -1110,6 +1110,9 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
     Rendering over the game's own frame** (the owner, 2026-10-19: the game as it is, no ray tracing, with DLSS 5 NR;
     a guide for a friend's RTX 5060). NGX's DLSSNR through Vulkan in a 64-bit half, the frame, its depth, motion
     vectors and a mask from the graphics bridge, the picture back under the HUD; settings, a hotkey, a split screen.
+    *(2026-10-24: DLSS as designed: the bridge's upscaler, `gfx_upscale`: the world drawn at the mode's render size,
+    the jitter in the projection, the textures' mip bias DLSS's, the HUD at the frame's size; the devices ordered on
+    the GPU under DXVK (shared fences), and DXVK in the dlss_nr pack; the frame's times in the log once a minute.)*
 
 ### Tier 5: the agent's own tools (to write and debug those mods)
 
@@ -1210,10 +1213,25 @@ merged, sorted by importance):
   the old IJoys until the next mission's load. `input.actions` shows a joystick's button names (IJoy's, in the
   system's code page) as the game's language's (a Russian system's "Button 0" came out as "Êíîïêà 0"): converted with the wrong
   code page.
-- **Frame generation on DXVK is shown from the game's thread** (2026-10-24): the bridge's own thread presents through
-  a Direct3D 9 swap chain of its own, which the DXVK path (pictures copied on Vulkan's queue) does not have yet: a
-  player on DXVK gets the old, slow showing (`gfx.state` show.thread). Also: the shown frames are not capped to the
-  display's refresh.
+- **The graphics bridge on Direct3D 9Ex waits for both devices each frame** (2026-10-24): 9Ex has no fence and no
+  keyed mutex, so the game's thread waits for Direct3D 9's work before the passes and for Direct3D 11's after them
+  (event queries): the CPU and the GPU take turns, which a GPU-heavy frame pays for (a player's RTX 5060 laptop at
+  2560x1600 held near 30 fps in every DLSS mode). Under DXVK the two devices are ordered on the GPU (shared fences:
+  the dlss_nr pack ships DXVK's d3d9.dll for it). For 9Ex itself the way would be D3D9On12 (Direct3D 12 fences under
+  Direct3D 9: IDirect3DDevice9On12's Unwrap/ReturnUnderlyingResource), through dxwrapper: not tried.
+- **DXVK's hand-over still costs the game's thread** (2026-10-24): each hand-over flushes DXVK's command stream and
+  waits for its CS thread and submission thread to have submitted everything (FlushRenderingCommands,
+  LockSubmissionQueue: the interop's only way to put a submission of ours in its order), about 0.7 ms a frame at
+  1280x960 on the RTX 3070 (`gfx.state` timing.hand_ms), two a frame (and two more with frame generation). Not the
+  GPU's time: that is ordered by the fences.
+- **The world drawn smaller: pretransformed draws** (2026-10-24, gfx_upscale): a draw with screen-space vertices
+  (XYZRHW) between the world's start and stage 1 is not scaled with the viewport. None was seen in the freeride's
+  picture in either lab (the lens flares and the 2D come after stage 1), but the world's draws were not surveyed by
+  their vertex format: a mission's effect drawn so would sit at the frame's size in the render size's corner.
+- **DLSS on an RTX 50 with the upscaler** (2026-10-24): the render-size world, the mip bias and the GPU-ordered DXVK
+  path are seen on the RTX 3070 (SR alone, frame generation's stand-in); DLSS-NR at the render size, DLSS-FG itself
+  and the frame rate on the friend's RTX 5060 laptop wait for his next logs (the log's minute line now says whether
+  the CPU or the GPU holds the frame).
 - **The game faults at its exit in LS3DF+0x5AC2E** (from +0x5BA73, the index buffers' release in drvClose; 2026-10-23
   and 2026-10-24, the RTX 5060 friend's DXVK game, after the session): not reproduced in the labs, not looked into.
 - **MCP tools take an unknown parameter without a word** (2026-10-23): `mem_write {"type": "f32", "values": [2, 2,
@@ -1280,8 +1298,7 @@ merged, sorted by importance):
   Vulkan device on the game's adapter, NGX started, its verdict, the round trip of the frame, the inputs as debug
   views); the feature's creation and evaluation, their image layouts and the picture's look wait for an RTX 50 (the
   owner's friend's 5060). The motion vectors are the bridge's (2026-10-20: the camera's and what moves by itself,
-  people as wholes; see "The motion vectors" below); the frame waits for DLSS-NR each frame (no pipelining a frame
-  behind). Stage `other_gpu` (the game on a CPU's own graphics beside the GeForce, as a player's
+  people as wholes; see "The motion vectors" below); pipelined a frame behind since 2026-10-23. Stage `other_gpu` (the game on a CPU's own graphics beside the GeForce, as a player's
   RTX 5060 machine ran it) is not seen: the labs' machine has NVIDIA GPUs only.
 - **A thread without TLS in a player's game** (2026-10-19): the Mafia 1.2 of a player's mod pack (Freeride Deluxe,
   the 4 GB patch, a Czech retail release; Windows 11 24H2, the game on "AMD Radeon(TM) Graphics") had a thread made

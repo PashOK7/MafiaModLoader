@@ -45,8 +45,14 @@ PACKS = {
         'files': {'mml/mods/dlss_nr/nvngx_dlssnr.dll': os.path.join(DEPS, 'ngx', 'bin', 'nvngx_dlssnr.dll'),
                   'mml/mods/dlss_nr/nvngx_dlss.dll': os.path.join(DEPS, 'ngx', 'bin', 'nvngx_dlss.dll'),
                   'mml/mods/dlss_nr/nvngx_dlssg.dll': os.path.join(DEPS, 'ngx', 'bin', 'nvngx_dlssg.dll'),
-                  'licenses/NVIDIA-RTX-SDKs-LICENSE.txt': os.path.join(DEPS, 'ngx', 'bin', 'LICENSE.txt')},
-        'inside': ['NVIDIA nvngx_dlssnr.dll, nvngx_dlss.dll and nvngx_dlssg.dll 310.9.16.0 (NVIDIA RTX SDKs license).'],
+                  'licenses/NVIDIA-RTX-SDKs-LICENSE.txt': os.path.join(DEPS, 'ngx', 'bin', 'LICENSE.txt'),
+                  # DXVK's Direct3D 9 (tools/deps.py dxvk): on Vulkan the graphics bridge orders the game's frame and
+                  # DLSS on the GPU (shared fences) and the game's thread waits for neither; on Windows' Direct3D 9Ex
+                  # it waits for both devices each frame (docs/MODDING.md "Effects over the frame")
+                  'd3d9.dll': os.path.join(DEPS, 'dxvk', 'x32', 'd3d9.dll'),
+                  'licenses/DXVK-LICENSE.txt': os.path.join(DEPS, 'dxvk', 'LICENSE')},
+        'inside': ['NVIDIA nvngx_dlssnr.dll, nvngx_dlss.dll and nvngx_dlssg.dll 310.9.16.0 (NVIDIA RTX SDKs license).',
+                   'DXVK 3.1.1 d3d9.dll (Direct3D 9 on Vulkan; zlib license).'],
         # dxwrapper.ini's own lines for the pack: the game's full screen as a borderless window over the screen (the
         # bridge's frame generation shows from its own thread through a swap chain of its own, which an exclusive
         # full-screen device cannot have: the RTX 5060's log said "a full-screen device"), the brightness setting by

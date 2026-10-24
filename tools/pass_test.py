@@ -56,6 +56,11 @@ MODES = {
     'motion_check_x1.5': {'on': True, 'pipeline': False, 'debug': 5, 'mv_scale': 1.5},
     'motion_check_x2': {'on': True, 'pipeline': False, 'debug': 5, 'mv_scale': 2},
     'still_check': {'on': True, 'pipeline': False, 'debug': 6, 'mv_scale': 1},
+    # the checks at a mode's render size (the world drawn at it under the loader's gfx_upscale: what DLSS gets)
+    'motion_check_dlaa': {'on': True, 'pipeline': False, 'debug': 5, 'nr': False, 'upscale': 1, 'mv_scale': 1},
+    'motion_check_perf': {'on': True, 'pipeline': False, 'debug': 5, 'nr': False, 'upscale': 4, 'mv_scale': 1},
+    'motion_check_ultra': {'on': True, 'pipeline': False, 'debug': 5, 'nr': False, 'upscale': 5, 'mv_scale': 1},
+    'still_check_perf': {'on': True, 'pipeline': False, 'debug': 6, 'nr': False, 'upscale': 4, 'mv_scale': 1},
 }
 
 

@@ -13,10 +13,24 @@
 //      (each behind its mod's fault guard), with GPU timestamps around each, and waits for the GPU.
 //   4. Direct3D 9 blends the target over the frame (ONE, INVSRCALPHA) and gives back every state it touched.
 //   5. After Render the game's own depth buffer is put back.
-// The devices wait for each other with event queries (Direct3D 9Ex has no keyed mutex). With no pass registered the
-// bridge does nothing at all; its device is made at the first frame with a pass and kept (reloads do not remake it).
-// When Direct3D 9 is DXVK's (its d3d9.dll beside the game: Vulkan underneath, whose shared handles Direct3D 11 cannot
-// open) each shared texture is two, copied on DXVK's queue at the hand-overs (gfx_vk.cpp: Hand11, Hand9 here).
+// On Direct3D 9Ex the devices wait for each other with event queries on the game's thread (9Ex has no keyed mutex and
+// no fence: nothing else orders two devices). With no pass registered the bridge does nothing at all; its device is
+// made at the first frame with a pass and kept (reloads do not remake it). When Direct3D 9 is DXVK's (its d3d9.dll
+// beside the game: Vulkan underneath, whose shared handles Direct3D 11 cannot open) each shared texture is two, copied
+// on DXVK's queue at the hand-overs (gfx_vk.cpp: Hand here), and two fences of Direct3D 11 shared with DXVK's device
+// order the copies and the passes on the GPU: the game's thread waits for neither device (GpuSync).
+//
+// A temporal upscaler (gfx_upscale: DLSS) has the world drawn smaller: from GfxBeforeWorld to stage 1 every viewport the
+// game sets on the frame's target is scaled to the upscaler's render size, so the world fills the top-left of the
+// frame's targets at that size (the projection unchanged: the same picture, fewer pixels; the jitter in its pixels).
+// At stage 1 the game's own viewport is put back: what LS3D draws after (its near pass, the lens flares) and the 2D pass
+// are at the frame's size. The upscaler runs first among the passes and draws the whole frame from the smaller picture
+// (else the bridge stretches it); the passes after it get the frame at its size (its picture, the depth and the motion
+// vectors brought up to it).
+//
+// The frame's times (gfx.state timing; the log once a minute): the time between the game's Presents, of it the game
+// thread's waits for the devices and its time in Present, and the GPU's: Direct3D 9's from the frame's first drawing to
+// its Present (timestamp queries, read frames later) and the passes'.
 //
 // The frame's constants: the camera from the device's transforms at stage 1; the world's fog and sun from the
 // game's own drawing: LS3D turns its fog off for what it draws last and enables its lights around the objects they
@@ -47,6 +61,9 @@
 #include "shaders/PsDepth.h"
 #include "shaders/PsComposite.h"
 #include "shaders/VsFullScreen.h"
+#include "shaders/PsStretch.h"
+#include "shaders/PsUpDepth.h"
+#include "shaders/PsUpMotion.h"
 #include "shaders/PsMotionAll.h"
 
 using json = nlohmann::json;
@@ -245,11 +262,43 @@ std::string g_frameError;
 MmlGfxConstants g_k;
 float g_viewM[16], g_projM[16];
 
+// The upscaler (gfx_upscale): the world drawn at its render size, its function first at stage 1.
+struct UpscaleAsk { MmlMod *mod = nullptr; MmlGfxUpscaleFn fn = nullptr; void *user = nullptr; UINT w = 0, h = 0; } g_up;
+UINT g_dw, g_dh;                   // the size this frame's world is drawn at (the frame's, or the upscaler's)
+bool g_upFrame;                    // this frame's world is the upscaler's (its function runs at stage 1)
+bool g_scaledNow;                  // the world is being drawn smaller now (GfxBeforeWorld .. stage 1): viewports scaled
+bool g_rtFrame;                    // the device's target 0 is the frame's size (a viewport on it is scaled)
+D3DVIEWPORT9 g_vpGame;             // the last viewport the game set, as it set it
+unsigned g_upDrawn, g_upStretched; // frames the upscaler drew, frames the bridge stretched (gfx.state)
+double g_upCpuMs, g_upGpuMs;       // smoothed: the upscaler's function's time, its GPU time
+// the frame at its size for the passes after the upscaler: its picture, the depth and the motion brought up to it
+ID3D11Texture2D *g_upColor11, *g_upDepth11, *g_upMotion11;
+ID3D11ShaderResourceView *g_upColorSRV, *g_upDepthSRV, *g_upMotionSRV;
+ID3D11RenderTargetView *g_upDepthRTV, *g_upMotionRTV;
+ID3D11PixelShader *g_psStretch, *g_psUpDepth, *g_psUpMotion;
+ID3D11Buffer *g_upCB;              // bridge11.hlsl's Up (b1): the render size, the frame's
+bool g_upMade;                     // this frame's g_up* written (the showing gives them too)
+
 // statistics
 LARGE_INTEGER g_freq;
 unsigned g_frames, g_notOurDepth, g_skipped;
 double g_ms9, g_ms11, g_msAll, g_wait11;
 double NowMs() { LARGE_INTEGER t; QueryPerformanceCounter(&t); return 1000.0 * t.QuadPart / g_freq.QuadPart; }
+
+// The frame's times, summed over the frames since they were last logged (once a minute) or reset.
+struct Timing {
+    uint64_t frames = 0, gpuFrames = 0, passFrames = 0;
+    double frameMs = 0, presentMs = 0, wait9Ms = 0, wait11Ms = 0, handMs = 0, gpuMs = 0, passesMs = 0;
+};
+Timing g_tm, g_tmLogged;
+double g_tmLoggedAt;
+// Direct3D 9's GPU time of a frame: timestamps at its first drawing and at its Present, read a few frames later
+struct Stamp { IDirect3DQuery9 *disjoint = nullptr, *freq = nullptr, *begin = nullptr, *end = nullptr; bool open = false, pending = false; };
+constexpr int kStamps = 6;
+Stamp g_stamps[kStamps];
+int g_stampNext;
+Stamp *g_stampNow;
+double g_gpuFrame;                 // the last read frame's, ms
 
 std::string Fmt(const char *fmt, ...) {
     char b[512];
@@ -271,9 +320,16 @@ using DrawIndexedPrimitiveUPFn = HRESULT(STDMETHODCALLTYPE *)(IDirect3DDevice9 *
                                                              D3DFORMAT, const void *, UINT);
 using SetTransformFn = HRESULT(STDMETHODCALLTYPE *)(IDirect3DDevice9 *, D3DTRANSFORMSTATETYPE, const D3DMATRIX *);
 using SetDepthStencilFn = HRESULT(STDMETHODCALLTYPE *)(IDirect3DDevice9 *, IDirect3DSurface9 *);
+using SetRenderTargetFn = HRESULT(STDMETHODCALLTYPE *)(IDirect3DDevice9 *, DWORD, IDirect3DSurface9 *);
+using SetViewportFn = HRESULT(STDMETHODCALLTYPE *)(IDirect3DDevice9 *, const D3DVIEWPORT9 *);
+using SetSamplerStateFn = HRESULT(STDMETHODCALLTYPE *)(IDirect3DDevice9 *, DWORD, D3DSAMPLERSTATETYPE, DWORD);
 // IDirect3DDevice9's vtable slots (d3d9.h's order)
-constexpr int kVtSetDepthStencil = 39, kVtSetTransform = 44, kVtSetLight = 51, kVtLightEnable = 53, kVtSetRenderState = 57,
-              kVtDrawPrimitive = 81, kVtDrawIndexedPrimitive = 82, kVtDrawPrimitiveUP = 83, kVtDrawIndexedPrimitiveUP = 84;
+constexpr int kVtSetRenderTarget = 37, kVtSetDepthStencil = 39, kVtSetTransform = 44, kVtSetViewport = 47, kVtSetLight = 51,
+              kVtLightEnable = 53, kVtSetRenderState = 57, kVtSetSamplerState = 69, kVtDrawPrimitive = 81, kVtDrawIndexedPrimitive = 82,
+              kVtDrawPrimitiveUP = 83, kVtDrawIndexedPrimitiveUP = 84;
+SetRenderTargetFn oSetRenderTarget;
+SetViewportFn oSetViewport;
+SetSamplerStateFn oSetSamplerState;
 SetDepthStencilFn oSetDepthStencil;
 SetTransformFn oSetTransform;
 SetRenderStateFn oSetRenderState;
@@ -369,13 +425,72 @@ HRESULT STDMETHODCALLTYPE hkSetRenderState(IDirect3DDevice9 *d, D3DRENDERSTATETY
     }
     return hr;
 }
-// A perspective projection (row vectors: w is the view depth times _34): (x, y) pixels of the frame added to where it
-// puts every point, times sign (-1 takes them back)
+// A perspective projection (row vectors: w is the view depth times _34): (x, y) pixels of the picture as drawn (the
+// frame's, or the upscaler's render size) added to where it puts every point, times sign (-1 takes them back)
 bool Perspective(const D3DMATRIX &m) { return m._34 != 0.0f && m._44 == 0.0f; }
 void JitterInto(D3DMATRIX &m, const float j[2], float sign) {
-    if (!Perspective(m) || !g_w || !g_h) return;
-    m._31 += sign * 2.0f * j[0] / static_cast<float>(g_w) * m._34;
-    m._32 -= sign * 2.0f * j[1] / static_cast<float>(g_h) * m._34;
+    const UINT w = g_dw ? g_dw : g_w, h = g_dh ? g_dh : g_h;
+    if (!Perspective(m) || !w || !h) return;
+    m._31 += sign * 2.0f * j[0] / static_cast<float>(w) * m._34;
+    m._32 -= sign * 2.0f * j[1] / static_cast<float>(h) * m._34;
+}
+
+// The world drawn smaller (the upscaler's render size): a viewport on the frame's target scaled from the frame's size
+// to it, rounded to whole pixels at both edges (the game's full-frame viewport becomes 0, 0, the render size).
+D3DVIEWPORT9 Scaled(const D3DVIEWPORT9 &v) {
+    D3DVIEWPORT9 s = v;
+    if (!g_w || !g_h) return s;
+    auto at = [](DWORD x, UINT to, UINT from) { return static_cast<DWORD>((static_cast<uint64_t>(x) * to + from / 2) / from); };
+    s.X = at(v.X, g_dw, g_w), s.Y = at(v.Y, g_dh, g_h);
+    s.Width = std::max<DWORD>(1, at(v.X + v.Width, g_dw, g_w) - s.X);
+    s.Height = std::max<DWORD>(1, at(v.Y + v.Height, g_dh, g_h) - s.Y);
+    return s;
+}
+bool IsFrameSize(IDirect3DSurface9 *s) {
+    D3DSURFACE_DESC d{};
+    return s && SUCCEEDED(s->GetDesc(&d)) && d.Width == g_w && d.Height == g_h;
+}
+HRESULT STDMETHODCALLTYPE hkSetViewport(IDirect3DDevice9 *d, const D3DVIEWPORT9 *v) {
+    if (d != g_dev9 || g_quiet || !v) return oSetViewport(d, v);
+    if (g_rtFrame) g_vpGame = *v;
+    if (!g_scaledNow || !g_rtFrame || ViewDrawingNow()) return oSetViewport(d, v);
+    D3DVIEWPORT9 s = Scaled(*v);
+    return oSetViewport(d, &s);
+}
+// Setting a target sets the viewport to the whole of it (Direct3D 9, as 8): the frame's target set again while the
+// world is drawn smaller takes the scaled one (LS3D sets its viewport only when its rectangle changes).
+// The textures' mip bias while the world is drawn smaller (DLSS's guide: log2(render width / display width) added to the
+// renderer's own): a texture's mip is chosen for the pixels it covers, and at the render size those are fewer, so
+// without it every texture is the render size's, blurred (a road at a grazing angle most), and DLSS cannot bring back
+// what was never sampled. The game's own bias (LS3D sets none) is followed per sampler and the scaled one added.
+constexpr DWORD kSamplers = 16;
+float g_lodGame[kSamplers];        // the game's own D3DSAMP_MIPMAPLODBIAS per sampler
+float g_lodBias;                   // added while the world is drawn smaller (0 otherwise)
+float g_lodAsked = NAN;            // gfx.state {"mip_bias"}: another bias in its place (a test; NaN: DLSS's own)
+DWORD Bits(float f) { DWORD d; memcpy(&d, &f, 4); return d; }
+float Float(DWORD d) { float f; memcpy(&f, &d, 4); return f; }
+HRESULT STDMETHODCALLTYPE hkSetSamplerState(IDirect3DDevice9 *d, DWORD i, D3DSAMPLERSTATETYPE t, DWORD v) {
+    if (d != g_dev9 || g_quiet || t != D3DSAMP_MIPMAPLODBIAS || i >= kSamplers) return oSetSamplerState(d, i, t, v);
+    g_lodGame[i] = Float(v);
+    return oSetSamplerState(d, i, t, g_lodBias != 0 && !ViewDrawingNow() ? Bits(g_lodGame[i] + g_lodBias) : v);
+}
+void LodBias(float bias) {
+    if (bias == g_lodBias || !g_dev9 || !oSetSamplerState) return;
+    g_lodBias = bias;
+    for (DWORD i = 0; i < kSamplers; i++) oSetSamplerState(g_dev9, i, D3DSAMP_MIPMAPLODBIAS, Bits(g_lodGame[i] + bias));
+}
+
+HRESULT STDMETHODCALLTYPE hkSetRenderTarget(IDirect3DDevice9 *d, DWORD i, IDirect3DSurface9 *s) {
+    HRESULT hr = oSetRenderTarget(d, i, s);
+    if (d != g_dev9 || i != 0 || FAILED(hr)) return hr;
+    g_rtFrame = IsFrameSize(s);
+    if (g_quiet || !g_rtFrame) return hr;
+    g_vpGame = D3DVIEWPORT9{0, 0, g_w, g_h, 0, 1};
+    if (g_scaledNow && !ViewDrawingNow()) {
+        D3DVIEWPORT9 v = Scaled(g_vpGame);
+        oSetViewport(d, &v);
+    }
+    return hr;
 }
 void JitterInto(float *m16, const float j[2], float sign) {
     D3DMATRIX m;
@@ -432,6 +547,10 @@ HRESULT STDMETHODCALLTYPE hkDrawIndexedPrimitiveUP(IDirect3DDevice9 *d, D3DPRIMI
 }
 
 void ReadStateNow(IDirect3DDevice9 *d) {   // the state as the game set it before the hooks went in
+    for (DWORD i = 0; i < kSamplers; i++) {
+        DWORD v = 0;
+        g_lodGame[i] = SUCCEEDED(d->GetSamplerState(i, D3DSAMP_MIPMAPLODBIAS, &v)) ? Float(v) : 0;
+    }
     d->GetRenderState(D3DRS_FOGENABLE, &g_fogNow.on);
     d->GetRenderState(D3DRS_FOGCOLOR, &g_fogNow.color);
     d->GetRenderState(D3DRS_FOGTABLEMODE, &g_fogNow.table);
@@ -453,6 +572,9 @@ void HookState(IDirect3DDevice9 *d) {
     struct { int slot; void *hook; void **orig; } hooks[] = {
         {kVtSetRenderState, reinterpret_cast<void *>(&hkSetRenderState), reinterpret_cast<void **>(&oSetRenderState)},
         {kVtSetDepthStencil, reinterpret_cast<void *>(&hkSetDepthStencil), reinterpret_cast<void **>(&oSetDepthStencil)},
+        {kVtSetRenderTarget, reinterpret_cast<void *>(&hkSetRenderTarget), reinterpret_cast<void **>(&oSetRenderTarget)},
+        {kVtSetViewport, reinterpret_cast<void *>(&hkSetViewport), reinterpret_cast<void **>(&oSetViewport)},
+        {kVtSetSamplerState, reinterpret_cast<void *>(&hkSetSamplerState), reinterpret_cast<void **>(&oSetSamplerState)},
         {kVtSetTransform, reinterpret_cast<void *>(&hkSetTransform), reinterpret_cast<void **>(&oSetTransform)},
         {kVtSetLight, reinterpret_cast<void *>(&hkSetLight), reinterpret_cast<void **>(&oSetLight)},
         {kVtLightEnable, reinterpret_cast<void *>(&hkLightEnable), reinterpret_cast<void **>(&oLightEnable)},
@@ -514,8 +636,10 @@ void ReadTimers() {
         if (!all) continue;
         auto ms = [&](int a, int b) { return 1000.0 * static_cast<double>(v[b] - v[a]) / static_cast<double>(dj.Frequency); };
         g_gpuPasses = t.marks > 1 ? ms(0, t.marks - 1) : 0;
+        g_tm.passesMs += g_gpuPasses, g_tm.passFrames++;
         for (int i = 1; i < t.marks; i++) {
             int h = t.handles[i - 1];
+            if (h == -1) g_upGpuMs = g_upGpuMs <= 0 ? ms(i - 1, i) : g_upGpuMs * 0.9 + ms(i - 1, i) * 0.1;   // (the upscaler's)
             for (Pass &p : g_passes)
                 if (p.handle == h) p.gpuMs = p.gpuMs <= 0 ? ms(i - 1, i) : p.gpuMs * 0.9 + ms(i - 1, i) * 0.1;
         }
@@ -578,8 +702,13 @@ void ReleaseSized() {
     SafeRelease(g_depthSurf9); SafeRelease(g_depth9);
     SafeRelease(g_fx9);
     SafeRelease(g_uiSRV); SafeRelease(g_ui11); SafeRelease(g_uiSurf9); SafeRelease(g_ui9);
+    SafeRelease(g_upColorSRV); SafeRelease(g_upDepthSRV); SafeRelease(g_upMotionSRV);
+    SafeRelease(g_upDepthRTV); SafeRelease(g_upMotionRTV);
+    SafeRelease(g_upColor11); SafeRelease(g_upDepth11); SafeRelease(g_upMotion11);
+    g_upMade = false;
     g_uiFrames = 0;
     g_w = g_h = 0;
+    g_dw = g_dh = 0;
     SafeRelease(g_sunSRV); SafeRelease(g_sun11);
     g_sunHandle = nullptr;
 }
@@ -613,6 +742,11 @@ void ReleaseAll() {
     MotionDeviceGone();
     SafeRelease(g_frameCB); SafeRelease(g_point); SafeRelease(g_linear); SafeRelease(g_vsFull); SafeRelease(g_over);
     SafeRelease(g_event11);
+    SafeRelease(g_psStretch); SafeRelease(g_psUpDepth); SafeRelease(g_psUpMotion); SafeRelease(g_upCB);
+    for (Stamp &s : g_stamps) { SafeRelease(s.disjoint); SafeRelease(s.freq); SafeRelease(s.begin); SafeRelease(s.end); s = Stamp{}; }
+    g_stampNow = nullptr;
+    g_scaledNow = false;
+    g_lodBias = 0;
     if (g_ctx) { g_ctx->ClearState(); g_ctx->Flush(); }
     gfxvk::Stop();   // (every link freed above)
     SafeRelease(g_ctx); SafeRelease(g_dev11);
@@ -707,6 +841,15 @@ bool MakeDevice11() {
     bl.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
     if (FAILED(g_dev11->CreateBlendState(&bl, &g_over))) return Fail("the passes' blend state");
     if (FAILED(g_dev11->CreateVertexShader(kVsFullScreen, sizeof kVsFullScreen, nullptr, &g_vsFull))) return Fail("the full-screen vertex shader");
+    if (FAILED(g_dev11->CreatePixelShader(kPsStretch, sizeof kPsStretch, nullptr, &g_psStretch)) ||
+        FAILED(g_dev11->CreatePixelShader(kPsUpDepth, sizeof kPsUpDepth, nullptr, &g_psUpDepth)) ||
+        FAILED(g_dev11->CreatePixelShader(kPsUpMotion, sizeof kPsUpMotion, nullptr, &g_psUpMotion)))
+        return Fail("the upscaler's shaders");
+    D3D11_BUFFER_DESC ub{};
+    ub.ByteWidth = 16;
+    ub.Usage = D3D11_USAGE_DEFAULT;
+    ub.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+    if (FAILED(g_dev11->CreateBuffer(&ub, nullptr, &g_upCB))) return Fail("the upscaler's constant buffer");
     D3D11_QUERY_DESC qd{D3D11_QUERY_EVENT, 0};
     if (FAILED(g_dev11->CreateQuery(&qd, &g_event11))) return Fail("the Direct3D 11 event query");
     HLOG("gfx: Direct3D 11 device on %s (feature level %x.%x)", g_adapter.c_str(), (got >> 12) & 0xF, (got >> 8) & 0xF);
@@ -758,6 +901,12 @@ bool Acquire(void *d3d8) {
     if (gfxvk::Start(g_dev9, &why)) HLOG("gfx: Direct3D 9 is DXVK's (Vulkan): the shared textures are copied on its queue");
     else if (!why.empty()) return Fail(why);
     if (!MakeDevice11() || !MakeFixed9()) return false;
+    if (gfxvk::On()) {
+        if (gfxvk::Fences(g_dev11, g_ctx, &why))
+            HLOG("gfx: DXVK and Direct3D 11 wait for each other on the GPU (shared fences): the game's thread waits for neither");
+        else
+            HWARN("gfx: the hand-overs with DXVK wait on the game's thread (%s)", why.c_str());
+    }
     HookState(g_dev9);
     g_generation++;
     g_state = "on";
@@ -865,8 +1014,13 @@ bool MotionCombine(const D3DMATRIX &proj) {
     const DWORD want[5] = {D3DTEXF_POINT, D3DTEXF_POINT, D3DTEXF_NONE, D3DTADDRESS_CLAMP, D3DTADDRESS_CLAMP};
     for (int i = 0; i < 5; i++) g_dev9->SetSamplerState(1, ss[i], want[i]);
     g_dev9->SetRenderTarget(0, g_motionSurf9);
+    const D3DVIEWPORT9 vp{0, 0, g_dw, g_dh, 0, 1};   // (the world's part: the render size's under an upscaler)
+    g_dev9->SetViewport(&vp);
     const float c[8] = {static_cast<float>(g_w), static_cast<float>(g_h), 1.0f / g_w, 1.0f / g_h, proj._33, proj._43, kFarDepth, 0};
     const float p[4] = {proj._11, proj._22, proj._31, proj._32};
+    float drawn[4];
+    GfxDrawnSize(drawn);
+    g_dev9->SetPixelShaderConstantF(3, drawn, 1);
     g_dev9->SetPixelShaderConstantF(8, &before._11, 4);
     g_dev9->SetPixelShaderConstantF(12, p, 1);
     FullScreen9(g_psMotionAll, g_motionObj9, c);
@@ -936,14 +1090,22 @@ bool Poll11(double limitMs) {
     }
 }
 bool Wait9() {
+    double t0 = NowMs();
     g_event9->Issue(D3DISSUE_END);
-    return Poll9(WaitLimitMs());
+    bool ok = Poll9(WaitLimitMs());
+    g_tm.wait9Ms += NowMs() - t0;
+    return ok;
 }
 bool Wait11() {
+    double t0 = NowMs();
     g_ctx->End(g_event11);
     g_ctx->Flush();
-    return Poll11(WaitLimitMs());
+    bool ok = Poll11(WaitLimitMs());
+    g_tm.wait11Ms += NowMs() - t0;
+    return ok;
 }
+// The devices' work ordered on the GPU (DXVK with the shared fences): no wait for either on the game's thread.
+bool GpuSync() { return gfxvk::Gpu(); }
 // A late frame's work done on both devices and on DXVK's queue (looked at once, not waited for): the shared textures
 // may be written again. False: still running (g_frameLate), or a query failed.
 bool Settled() {
@@ -1127,6 +1289,127 @@ ID3D11ShaderResourceView *SunShadow(MmlGfxConstants &k, bool frame) {
     return g_sunSRV;
 }
 
+// The frame at its size for the passes after the upscaler (made at the first frame that needs them).
+bool EnsureUp() {
+    if (g_upColor11) return true;
+    D3D11_TEXTURE2D_DESC td{};
+    td.Width = g_w, td.Height = g_h, td.MipLevels = 1, td.ArraySize = 1, td.SampleDesc.Count = 1, td.Usage = D3D11_USAGE_DEFAULT;
+    td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    td.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;   // (the effects target's: copied whole)
+    bool ok = SUCCEEDED(g_dev11->CreateTexture2D(&td, nullptr, &g_upColor11)) &&
+              SUCCEEDED(g_dev11->CreateShaderResourceView(g_upColor11, nullptr, &g_upColorSRV));
+    td.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+    td.Format = DXGI_FORMAT_R32_FLOAT;
+    ok = ok && SUCCEEDED(g_dev11->CreateTexture2D(&td, nullptr, &g_upDepth11)) &&
+         SUCCEEDED(g_dev11->CreateShaderResourceView(g_upDepth11, nullptr, &g_upDepthSRV)) &&
+         SUCCEEDED(g_dev11->CreateRenderTargetView(g_upDepth11, nullptr, &g_upDepthRTV));
+    td.Format = DXGI_FORMAT_R16G16_FLOAT;
+    ok = ok && SUCCEEDED(g_dev11->CreateTexture2D(&td, nullptr, &g_upMotion11)) &&
+         SUCCEEDED(g_dev11->CreateShaderResourceView(g_upMotion11, nullptr, &g_upMotionSRV)) &&
+         SUCCEEDED(g_dev11->CreateRenderTargetView(g_upMotion11, nullptr, &g_upMotionRTV));
+    if (!ok) {
+        HWARN("gfx: the frame at its size for the passes after the upscaler could not be made: they get the smaller picture");
+        SafeRelease(g_upColorSRV); SafeRelease(g_upDepthSRV); SafeRelease(g_upMotionSRV);
+        SafeRelease(g_upDepthRTV); SafeRelease(g_upMotionRTV);
+        SafeRelease(g_upColor11); SafeRelease(g_upDepth11); SafeRelease(g_upMotion11);
+    }
+    return ok;
+}
+
+// A bridge's own full-screen draw on Direct3D 11 (the upscaler's helpers): ps into rtv over the frame, srvs at t0..t3,
+// g_up's sizes at b1, no blending.
+void Draw11(ID3D11PixelShader *ps, ID3D11RenderTargetView *rtv, ID3D11ShaderResourceView *const srv[4]) {
+    const float up[4] = {static_cast<float>(g_dw), static_cast<float>(g_dh), static_cast<float>(g_w), static_cast<float>(g_h)};
+    g_ctx->UpdateSubresource(g_upCB, 0, nullptr, up, 0, 0);
+    D3D11_VIEWPORT vp{0, 0, static_cast<float>(g_w), static_cast<float>(g_h), 0, 1};
+    g_ctx->RSSetViewports(1, &vp);
+    g_ctx->OMSetRenderTargets(1, &rtv, nullptr);
+    g_ctx->OMSetBlendState(nullptr, nullptr, 0xFFFFFFFFu);
+    g_ctx->OMSetDepthStencilState(nullptr, 0);
+    g_ctx->RSSetState(nullptr);
+    g_ctx->PSSetShaderResources(0, 4, srv);
+    ID3D11SamplerState *smp[2] = {g_point, g_linear};
+    g_ctx->PSSetSamplers(0, 2, smp);
+    g_ctx->PSSetConstantBuffers(1, 1, &g_upCB);
+    g_ctx->VSSetShader(g_vsFull, nullptr, 0);
+    g_ctx->PSSetShader(ps, nullptr, 0);
+    g_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    g_ctx->IASetInputLayout(nullptr);
+    g_ctx->Draw(3, 0);
+    ID3D11ShaderResourceView *none[4] = {};
+    g_ctx->PSSetShaderResources(0, 4, none);
+    g_ctx->OMSetRenderTargets(0, nullptr, nullptr);
+}
+
+struct UpscaleCall { const MmlGfxFrame *frame; int drew; };
+void CallUpscale(void *p) {
+    auto *c = static_cast<UpscaleCall *>(p);
+    c->drew = g_up.fn(c->frame, g_up.user);
+}
+// The upscaler first (gfx_upscale): the whole frame into the effects target from the picture drawn at the render size
+// (stretched by the bridge when it drew nothing), then the frame at its size in f for the passes after it.
+void RunUpscaler(MmlGfxConstants &k, const PassTarget &t, MmlGfxFrame &f, ID3D11ShaderResourceView *srv[4], TimerFrame *tf) {
+    const bool scaled = g_dw != g_w || g_dh != g_h;
+    MmlGfxConstants ku = k;   // (its pixels: the render size's)
+    ku.size[0] = static_cast<float>(g_dw), ku.size[1] = static_cast<float>(g_dh), ku.size[2] = 1.0f / g_dw, ku.size[3] = 1.0f / g_dh;
+    g_ctx->UpdateSubresource(g_frameCB, 0, nullptr, &ku, 0, 0);
+    MmlGfxFrame fu = f;
+    fu.k = &ku;
+    fu.render_width = g_dw, fu.render_height = g_dh;
+    D3D11_VIEWPORT vp{0, 0, static_cast<float>(t.w), static_cast<float>(t.h), 0, 1};
+    g_ctx->RSSetViewports(1, &vp);
+    g_ctx->OMSetRenderTargets(1, &t.rtv, nullptr);
+    g_ctx->OMSetBlendState(g_over, nullptr, 0xFFFFFFFFu);
+    g_ctx->OMSetDepthStencilState(nullptr, 0);
+    g_ctx->RSSetState(nullptr);
+    ID3D11SamplerState *smp[2] = {g_point, g_linear};
+    g_ctx->PSSetShaderResources(0, 4, srv);
+    g_ctx->PSSetSamplers(0, 2, smp);
+    g_ctx->PSSetConstantBuffers(0, 1, &g_frameCB);
+    g_ctx->CSSetShaderResources(0, 4, srv);
+    g_ctx->CSSetSamplers(0, 2, smp);
+    g_ctx->CSSetConstantBuffers(0, 1, &g_frameCB);
+    g_ctx->VSSetConstantBuffers(0, 1, &g_frameCB);
+    g_ctx->VSSetShader(g_vsFull, nullptr, 0);
+    g_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    g_ctx->IASetInputLayout(nullptr);
+    UpscaleCall call{&fu, 0};
+    double t0 = NowMs();
+    ModCall(g_up.mod, CallUpscale, &call, "its upscaler (gfx_upscale)");
+    double ms = NowMs() - t0;
+    g_upCpuMs = g_upCpuMs <= 0 ? ms : g_upCpuMs * 0.9 + ms * 0.1;
+    g_ctx->ClearState();
+    if (call.drew > 0) {
+        g_upDrawn++;
+    } else if (scaled) {   // (nothing of the upscaler's: the smaller picture stretched over the frame)
+        ID3D11ShaderResourceView *in[4] = {nullptr, f.color ? static_cast<ID3D11ShaderResourceView *>(f.color) : nullptr, nullptr, nullptr};
+        Draw11(g_psStretch, t.rtv, in);
+        g_upStretched++;
+    }
+    Mark(tf, -1);
+    g_ctx->UpdateSubresource(g_frameCB, 0, nullptr, &k, 0, 0);   // (the passes after it: the frame's pixels)
+    // the frame at its size for the passes after it
+    bool others = false;
+    for (const Pass &p : g_passes) others = others || ModAlive(p.mod);
+    g_upMade = false;
+    if (!others || !(call.drew > 0 || scaled) || !EnsureUp()) return;
+    ID3D11Resource *fx = nullptr;
+    t.rtv->GetResource(&fx);
+    if (fx) { g_ctx->CopyResource(g_upColor11, fx); fx->Release(); }
+    f.color = g_upColorSRV;
+    srv[1] = g_upColorSRV;
+    if (scaled) {
+        ID3D11ShaderResourceView *in[4] = {srv[0], nullptr, nullptr, srv[3]};
+        Draw11(g_psUpDepth, g_upDepthRTV, in);
+        f.depth = srv[0] = g_upDepthSRV;
+        if (srv[3]) {
+            Draw11(g_psUpMotion, g_upMotionRTV, in);
+            f.motion = srv[3] = g_upMotionSRV;
+        }
+    }
+    g_upMade = true;
+}
+
 bool RunPasses(MmlGfxConstants &k, const PassTarget &t) {
     bool frame = t.view == 0;
     if (frame) ReadTimers();
@@ -1162,10 +1445,14 @@ bool RunPasses(MmlGfxConstants &k, const PassTarget &t) {
     ID3D11ShaderResourceView *motion = frame && g_motionReady ? g_motionSRV : nullptr;   // (t3: the frame's only)
     f.motion = motion;
     f.jitter[0] = frame ? g_jitNow[0] : 0, f.jitter[1] = frame ? g_jitNow[1] : 0;
+    f.render_width = t.w, f.render_height = t.h;
     TimerFrame *tf = frame ? BeginTimers() : nullptr;
     if (tf) Mark(tf, 0);
-    std::vector<Pass> passes = g_passes;   // (a pass may add or take back passes)
     g_inPasses = true;
+    ID3D11ShaderResourceView *srv[4] = {t.depth, t.color, sun, motion};
+    g_upMade = false;
+    if (frame && g_upFrame && g_up.fn && ModAlive(g_up.mod)) RunUpscaler(k, t, f, srv, tf);
+    std::vector<Pass> passes = g_passes;   // (a pass may add or take back passes)
     for (const Pass &p : passes) {
         if (!ModAlive(p.mod) || (!frame && !p.inViews)) continue;
         D3D11_VIEWPORT vp{0, 0, static_cast<float>(t.w), static_cast<float>(t.h), 0, 1};
@@ -1174,7 +1461,6 @@ bool RunPasses(MmlGfxConstants &k, const PassTarget &t) {
         g_ctx->OMSetBlendState(g_over, nullptr, 0xFFFFFFFFu);   // (a pass's 0 leaves the passes before it as they are)
         g_ctx->OMSetDepthStencilState(nullptr, 0);
         g_ctx->RSSetState(nullptr);
-        ID3D11ShaderResourceView *srv[4] = {t.depth, t.color, sun, motion};
         ID3D11SamplerState *smp[2] = {g_point, g_linear};
         g_ctx->PSSetShaderResources(0, 4, srv);
         g_ctx->PSSetSamplers(0, 2, smp);
@@ -1198,6 +1484,7 @@ bool RunPasses(MmlGfxConstants &k, const PassTarget &t) {
     g_inPasses = false;
     if (tf) EndTimers(tf);
     g_ctx->ClearState();   // the shared textures are Direct3D 9's again
+    if (GpuSync()) return true;   // (Hand's To9 queues Direct3D 11's signal and DXVK's wait for it)
     double t0 = NowMs();
     bool ok = Wait11();
     double w = NowMs() - t0;
@@ -1255,19 +1542,35 @@ void Restore9(Saved9 &s) {
     SafeRelease(s.vs); SafeRelease(s.ps); SafeRelease(s.decl); SafeRelease(s.vb);
 }
 
+// The world drawn smaller and no upscaled frame over it (a frame the passes did not run): the smaller picture stretched
+// over the frame by Direct3D 9 (through the colour's texture: StretchRect takes no overlapping copy), so the frame is
+// never seen in a corner.
+void Unscaled9(IDirect3DSurface9 *rt, bool copied) {
+    if (!g_upFrame || (g_dw == g_w && g_dh == g_h) || !rt || !g_colorSurf9) return;
+    RECT r{0, 0, static_cast<LONG>(g_dw), static_cast<LONG>(g_dh)};
+    if (!copied) g_dev9->StretchRect(rt, &r, g_colorSurf9, &r, D3DTEXF_NONE);
+    g_dev9->StretchRect(g_colorSurf9, &r, rt, nullptr, D3DTEXF_LINEAR);
+    g_upStretched++;
+}
+
 bool DoStage1() {
     double t0 = NowMs();
-    IDirect3DSurface9 *ds = nullptr;
-    g_dev9->GetDepthStencilSurface(&ds);
-    bool ours = ds == g_intzSurf;
-    SafeRelease(ds);
-    if (!ours) { g_notOurDepth++; return true; }   // LS3D bound another depth buffer this frame
     IDirect3DSurface9 *rt = nullptr;
     if (FAILED(g_dev9->GetRenderTarget(0, &rt)) || !rt) { g_skipped++; return true; }
     D3DSURFACE_DESC rd;
     rt->GetDesc(&rd);
-    if (rd.Width != g_w || rd.Height != g_h) { SafeRelease(rt); g_skipped++; return true; }
+    IDirect3DSurface9 *ds = nullptr;
+    g_dev9->GetDepthStencilSurface(&ds);
+    bool ours = ds == g_intzSurf;
+    SafeRelease(ds);
+    if (!ours || rd.Width != g_w || rd.Height != g_h) {   // LS3D bound another depth buffer or target this frame
+        if (ours) g_skipped++; else g_notOurDepth++;
+        Unscaled9(rt, false);
+        SafeRelease(rt);
+        return true;
+    }
     if (!Settled()) {   // a late frame's work still runs on the shared textures
+        Unscaled9(rt, false);
         SafeRelease(rt);
         MotionFrameEnd();
         g_motionThisFrame = g_motionReady = false;
@@ -1275,14 +1578,18 @@ bool DoStage1() {
     }
     Saved9 saved;
     SaveAndNeutral9(saved);
-    // 1. the colour and the linear depth into the shared textures
+    // 1. the colour and the linear depth into the shared textures (the world's part of them: the render size's under
+    // an upscaler, at their top-left)
+    const D3DVIEWPORT9 drawn{0, 0, g_dw, g_dh, 0, 1};
     D3DMATRIX proj{};
     g_dev9->GetTransform(D3DTS_PROJECTION, &proj);
     const float c[8] = {static_cast<float>(g_w), static_cast<float>(g_h), 1.0f / g_w, 1.0f / g_h, proj._33, proj._43, kFarDepth, 0};
-    bool ok = SUCCEEDED(g_dev9->StretchRect(rt, nullptr, g_colorSurf9, nullptr, D3DTEXF_NONE));
+    RECT region{0, 0, static_cast<LONG>(g_dw), static_cast<LONG>(g_dh)};
+    bool ok = SUCCEEDED(g_dev9->StretchRect(rt, &region, g_colorSurf9, &region, D3DTEXF_NONE));
     if (!ok) g_frameError = "StretchRect of the frame's colour failed";
     g_dev9->SetRenderTarget(0, g_depthSurf9);
     g_dev9->SetDepthStencilSurface(nullptr);   // the INTZ texture is read now: not bound for writing
+    g_dev9->SetViewport(&drawn);
     FullScreen9(g_psDepth, g_intz, c);
     // the motion vectors, when the moving objects were drawn again this frame (motion.cpp)
     g_motionReady = false;
@@ -1298,7 +1605,7 @@ bool DoStage1() {
         memcpy(g_projBefore, &clean, sizeof g_projBefore);
         g_cameraBefore = true;
     }
-    ok = ok && Wait9();
+    ok = ok && (GpuSync() || Wait9());
     if (ok && gfxvk::On()) {   // (on DXVK: the pictures copied to Direct3D 11's halves, the 2D pass's and the views' too)
         std::vector<gfxvk::Link *> to11{g_colorLink, g_depthLink};
         if (motion) to11.push_back(g_motionLink);
@@ -1311,7 +1618,7 @@ bool DoStage1() {
     }
     g_motionReady = ok && motion;
     double t1 = NowMs();
-    // 2. the passes
+    // 2. the upscaler and the passes
     if (ok) {
         FillConstants(g_k, g_w, g_h, g_viewM, g_projM);
         ok = RunPasses(g_k, {g_depthSRV, g_colorSRV, g_fxRTV, g_w, g_h, 0, g_viewM, g_projM});
@@ -1327,6 +1634,8 @@ bool DoStage1() {
         g_dev9->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
         g_dev9->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD);
         FullScreen9(g_psComposite, g_fx9, c);
+    } else {
+        Unscaled9(rt, true);
     }
     Restore9(saved);
     SafeRelease(rt);
@@ -1350,7 +1659,7 @@ bool SafeStage1() { __try { return DoStage1(); } __except (NoteFault(GetExceptio
 
 bool Wants() {
     for (const Pass &p : g_passes) if (ModAlive(p.mod)) return !g_failed;
-    return false;
+    return g_up.fn && ModAlive(g_up.mod) && !g_failed;
 }
 
 void *Device8() {
@@ -1505,7 +1814,7 @@ int ShowPrepare() {
     if (d.MultiSampleType != D3DMULTISAMPLE_NONE || !EnsureShow(d.Width, d.Height)) { SafeRelease(bb); return 0; }
     g_frameError.clear();
     g_frameLate = false;
-    bool ok = Settled() && SUCCEEDED(g_dev9->StretchRect(bb, nullptr, g_showSurf9, nullptr, D3DTEXF_NONE)) && Wait9() &&
+    bool ok = Settled() && SUCCEEDED(g_dev9->StretchRect(bb, nullptr, g_showSurf9, nullptr, D3DTEXF_NONE)) && (GpuSync() || Wait9()) &&
               Hand(true, {g_showLink});
     SafeRelease(bb);
     if (!ok) { g_showLate++; return 0; }
@@ -1518,7 +1827,7 @@ int ShowPrepare() {
     f.generation = g_generation;
     f.k = &g_k;
     f.constants = g_frameCB;
-    f.depth = d.Width == g_w && d.Height == g_h ? g_depthSRV : nullptr;
+    f.depth = d.Width != g_w || d.Height != g_h ? nullptr : g_upMade ? g_upDepthSRV : g_depthSRV;   // (the frame's at its size)
     f.color = g_showSRV;
     f.point = g_point;
     f.linear = g_linear;
@@ -1528,8 +1837,9 @@ int ShowPrepare() {
     f.height = d.Height;
     memcpy(f.view, g_viewM, sizeof f.view);
     memcpy(f.proj, g_projM, sizeof f.proj);
-    ID3D11ShaderResourceView *motion = g_motionReady && f.depth ? g_motionSRV : nullptr;
+    ID3D11ShaderResourceView *motion = g_motionReady && f.depth ? (g_upMade ? g_upMotionSRV : g_motionSRV) : nullptr;
     f.motion = motion;
+    f.render_width = d.Width, f.render_height = d.Height;
     f.jitter[0] = g_jitNow[0], f.jitter[1] = g_jitNow[1];
     MmlGfxShow s{};
     s.size = sizeof s;
@@ -1557,8 +1867,8 @@ int ShowPrepare() {
     g_ctx->ClearState();   // the shared textures are Direct3D 9's again
     std::vector<gfxvk::Link *> back;
     for (int i = 0; i < n; i++) back.push_back(g_extraLink[i]);
-    ok = Wait11();
-    if (ok && gfxvk::On() && n) {
+    ok = GpuSync() || Wait11();
+    if (ok && gfxvk::On() && (n || GpuSync())) {   // (with the fences, To9 also queues Direct3D 11's signal)
         std::string why;
         ok = gfxvk::To9(back.data(), n, &why);
         if (!ok) g_frameError = "the pictures' copy on DXVK's queue: " + why, g_frameLate = gfxvk::Busy();
@@ -1759,6 +2069,101 @@ HRESULT ShowPictures(int n, const std::function<HRESULT()> &present) {
 }
 } // namespace
 
+namespace {
+// ---- the frame's times: Direct3D 9's GPU time of each frame (timestamps), the minute's line in the log
+bool g_stampsOff;   // the device has no timestamp queries (made once, refused: not asked again)
+void ReadStamps() {
+    for (Stamp &s : g_stamps) {
+        if (!s.pending) continue;
+        BOOL disjoint = TRUE;
+        UINT64 freq = 0, b = 0, e = 0;
+        if (s.disjoint->GetData(&disjoint, sizeof disjoint, 0) != S_OK || s.freq->GetData(&freq, sizeof freq, 0) != S_OK ||
+            s.begin->GetData(&b, sizeof b, 0) != S_OK || s.end->GetData(&e, sizeof e, 0) != S_OK)
+            continue;
+        s.pending = false;
+        if (disjoint || !freq || e < b) continue;
+        g_gpuFrame = 1000.0 * static_cast<double>(e - b) / static_cast<double>(freq);
+        g_tm.gpuMs += g_gpuFrame, g_tm.gpuFrames++;
+    }
+}
+void StampEnd() {
+    if (!g_stampNow) return;
+    Stamp &s = *g_stampNow;
+    g_stampNow = nullptr;
+    s.end->Issue(D3DISSUE_END);
+    s.freq->Issue(D3DISSUE_END);
+    s.disjoint->Issue(D3DISSUE_END);
+    s.open = false;
+    s.pending = true;
+    g_stampNext = (g_stampNext + 1) % kStamps;
+}
+
+const char *SyncName() {
+    return GpuSync() ? "the devices ordered on the GPU (DXVK, shared fences)" :
+           gfxvk::On() ? "DXVK, the hand-overs waited for on the CPU" : "Direct3D 9Ex: the devices waited for on the CPU";
+}
+
+// Once a minute while the bridge runs: what a frame took, and of it the game thread's waits for the devices and its
+// time in Present, the GPU's time of the frame and of the passes (a player's log says what holds the frame rate).
+void TimingLog(double now) {
+    if (!g_tmLoggedAt) { g_tmLoggedAt = now; g_tmLogged = g_tm; return; }
+    if (now - g_tmLoggedAt < 60000) return;
+    const Timing &a = g_tm, &b = g_tmLogged;
+    const double n = static_cast<double>(a.frames - b.frames), secs = (now - g_tmLoggedAt) / 1000;
+    const double gn = static_cast<double>(a.gpuFrames - b.gpuFrames), pn = static_cast<double>(a.passFrames - b.passFrames);
+    if (n > 0 && g_frames && !g_failed) {
+        std::string up;
+        if (g_up.fn && ModAlive(g_up.mod))
+            up = Fmt("; the world drawn at %ux%u for %s's upscaler (the frame %ux%u)", g_dw, g_dh, ModIdOf(g_up.mod), g_w, g_h);
+        HLOG("gfx: the last minute: %.0f frames, %.1f a second; a frame %.2f ms: the game thread waited %.2f ms of it for the devices "
+             "(Direct3D 9 %.2f, Direct3D 11 %.2f), %.2f handing over on DXVK's queue, %.2f in Present; the GPU: the frame %.2f ms "
+             "(Direct3D 9, its first drawing to its Present), the passes %.2f%s; %s",
+             n, n / secs, (a.frameMs - b.frameMs) / n, (a.wait9Ms - b.wait9Ms + a.wait11Ms - b.wait11Ms) / n, (a.wait9Ms - b.wait9Ms) / n,
+             (a.wait11Ms - b.wait11Ms) / n, (a.handMs - b.handMs) / n, (a.presentMs - b.presentMs) / n,
+             gn > 0 ? (a.gpuMs - b.gpuMs) / gn : 0.0, pn > 0 ? (a.passesMs - b.passesMs) / pn : 0.0, up.c_str(), SyncName());
+    }
+    g_tmLogged = g_tm;
+    g_tmLoggedAt = now;
+}
+} // namespace
+
+void GfxFrameBegin() {
+    if (!g_dev9 || g_failed || g_stampsOff || g_stampNow) return;
+    ReadStamps();
+    Stamp &s = g_stamps[g_stampNext];
+    if (s.pending) return;   // (the GPU that far behind: this frame goes untimed)
+    if (!s.disjoint) {
+        if (FAILED(g_dev9->CreateQuery(D3DQUERYTYPE_TIMESTAMPDISJOINT, &s.disjoint)) ||
+            FAILED(g_dev9->CreateQuery(D3DQUERYTYPE_TIMESTAMPFREQ, &s.freq)) || FAILED(g_dev9->CreateQuery(D3DQUERYTYPE_TIMESTAMP, &s.begin)) ||
+            FAILED(g_dev9->CreateQuery(D3DQUERYTYPE_TIMESTAMP, &s.end))) {
+            SafeRelease(s.disjoint); SafeRelease(s.freq); SafeRelease(s.begin); SafeRelease(s.end);
+            g_stampsOff = true;
+            HWARN("gfx: Direct3D 9 has no timestamp queries: the frame's GPU time is not measured");
+            return;
+        }
+    }
+    s.disjoint->Issue(D3DISSUE_BEGIN);
+    s.begin->Issue(D3DISSUE_END);
+    s.open = true;
+    g_stampNow = &s;
+}
+
+void GfxDrawnSize(float out[4]) {
+    const UINT w = g_dw ? g_dw : g_w, h = g_dh ? g_dh : g_h;
+    out[0] = static_cast<float>(w), out[1] = static_cast<float>(h);
+    out[2] = w ? 1.0f / w : 0, out[3] = h ? 1.0f / h : 0;
+}
+
+int GfxUpscaleSet(MmlMod *mod, unsigned w, unsigned h, MmlGfxUpscaleFn fn, void *user) {
+    if (!fn) {
+        if (g_up.mod == mod) g_up = UpscaleAsk{};
+        return 1;
+    }
+    if (g_up.fn && g_up.mod != mod && ModAlive(g_up.mod)) return 0;
+    g_up = UpscaleAsk{mod, fn, user, w, h};
+    return 1;
+}
+
 // The game's Present (screenshot.cpp's hook): the mod's pictures before the frame when one asked (gfx_show).
 HRESULT GfxShow(void *dev8, const std::function<HRESULT()> &present) {
     double start = NowMs();
@@ -1767,9 +2172,17 @@ HRESULT GfxShow(void *dev8, const std::function<HRESULT()> &present) {
         if (dt > 0 && dt < 500) {
             g_interval = g_interval > 0 ? g_interval * 0.9 + dt * 0.1 : dt;
             g_work = g_work > 0 ? g_work * 0.9 + work * 0.1 : work;
+            g_tm.frames++, g_tm.frameMs += dt;
         }
     }
     g_showStart = start;
+    if (dev8 == g_d3d8) StampEnd();
+    auto timed = [&]() {   // (the game's Present: its time in it, the device's own wait for the GPU among it)
+        double t0 = NowMs();
+        HRESULT r = present();
+        g_tm.presentMs += NowMs() - t0;
+        return r;
+    };
     int n = 0;
     const bool held = g_showFn.fn && ModAlive(g_showFn.mod) && !g_failed && g_dev11 && g_dev9 && dev8 == g_d3d8 && g_frames;
     if (held) {
@@ -1779,14 +2192,18 @@ HRESULT GfxShow(void *dev8, const std::function<HRESULT()> &present) {
     }
     HRESULT hr;
     if (held && (n > 0 || g_presenter) && g_showW && EnsureShowThread(g_showW, g_showH)) {
+        double t0 = NowMs();
         hr = ShowQueue(n);   // (the thread shows them, a frame alone too while the showing is held: the game goes on)
+        g_tm.presentMs += NowMs() - t0;   // (its wait for a free slot: the game held by the showing)
     } else {
         if (g_presenter) ShowThreadStop();   // (a frame without pictures: the game's own Present again)
         if (n <= 0) g_lastShown = 0;   // (a frame alone: the spacing is not measured across it)
-        hr = n > 0 ? ShowPictures(n, present) : present();
+        hr = n > 0 ? ShowPictures(n, timed) : timed();
     }
     g_showEnd = NowMs();
     g_shows++;
+    if (gfxvk::On()) g_tm.handMs += gfxvk::TakeMs();
+    if (dev8 == g_d3d8) TimingLog(g_showEnd);
     return hr;
 }
 
@@ -1857,6 +2274,7 @@ void GfxRemove(MmlMod *mod) {
                        g_sideFences.end());
     GfxShowSet(mod, nullptr, nullptr);
     GfxJitterSet(mod, 0, 0, 0);
+    GfxUpscaleSet(mod, 0, 0, nullptr, nullptr);
 }
 
 // A 64-bit half's fence on this device (Direct3D 11.4), for its 32-bit half's pass: 1 there (out filled), 0 not (yet).
@@ -2019,6 +2437,8 @@ void GfxUiEnd() {
 void GfxBeforeWorld() {
     g_fogTallies = g_sunTallies = 0;   // a new frame: the tallies start over
     g_framePrims = g_litPrims = 0;
+    g_upFrame = g_scaledNow = false;
+    g_dw = g_w, g_dh = g_h;
     if (!Wants() || g_swapped || !Acquire(Device8())) return;
     IDirect3DSurface9 *ds = nullptr;
     if (FAILED(g_dev9->GetDepthStencilSurface(&ds)) || !ds) { g_skipped++; return; }
@@ -2035,6 +2455,25 @@ void GfxBeforeWorld() {
     g_lastGameDS = ds;
     g_swapped = true;   // (first: hkSetDepthStencil lets the bridge's own buffer be bound then)
     if (FAILED(g_dev9->SetDepthStencilSurface(g_intzSurf))) { g_swapped = false; SafeRelease(g_gameDS); g_skipped++; return; }
+    // the upscaler's render size for this frame's world (its last ask): every viewport the game sets on the frame's
+    // target scaled to it until stage 1 (the one set now taken too: LS3D sets its own only when its rectangle changes)
+    g_upFrame = g_up.fn && ModAlive(g_up.mod);
+    g_dw = g_w, g_dh = g_h;
+    if (g_upFrame && g_up.w && g_up.h && g_stateHooked) g_dw = std::min<UINT>(g_up.w, g_w), g_dh = std::min<UINT>(g_up.h, g_h);
+    g_scaledNow = g_dw != g_w || g_dh != g_h;
+    {
+        IDirect3DSurface9 *rt = nullptr;
+        g_dev9->GetRenderTarget(0, &rt);
+        g_rtFrame = IsFrameSize(rt);
+        SafeRelease(rt);
+        D3DVIEWPORT9 vp{};
+        if (g_rtFrame && SUCCEEDED(g_dev9->GetViewport(&vp))) g_vpGame = vp;
+        if (g_scaledNow && g_rtFrame) {
+            D3DVIEWPORT9 sv = Scaled(vp);
+            oSetViewport(g_dev9, &sv);
+        }
+    }
+    if (g_scaledNow) LodBias(std::isnan(g_lodAsked) ? std::log2(static_cast<float>(g_dw) / static_cast<float>(g_w)) : g_lodAsked);
     // the world's jitter, one for the whole frame (the projection set now taken too: LS3D sets it only when it changes)
     const bool jit = g_jitter.mod && ModAlive(g_jitter.mod);
     g_jitNow[0] = jit ? g_jitter.want[0] : 0, g_jitNow[1] = jit ? g_jitter.want[1] : 0;
@@ -2074,21 +2513,35 @@ void GfxBeforeWorld() {
 
 void GfxTakeWorldLight() { if (g_stateHooked) TakeWorldLight(); }
 
+// The world drawn: the game's own viewport back (what LS3D draws after it, its near pass and lens flares, and the 2D
+// pass are at the frame's size, over the upscaled frame), and its own projection (the jitter is the world's alone).
+void EndScaled() {
+    if (!g_scaledNow) return;
+    g_scaledNow = false;
+    if (g_dev9 && g_rtFrame) oSetViewport(g_dev9, &g_vpGame);
+    LodBias(0);
+}
+void EndJitter() {
+    if (!g_jitWorld) return;
+    g_jitWorld = false;
+    if (g_dev9 && g_projCleanHave) oSetTransform(g_dev9, D3DTS_PROJECTION, &g_projClean);
+}
+
 void GfxStage1() {
     if (!g_swapped || !g_dev9) return;
+    EndScaled();
     g_frameError.clear();
     g_frameLate = false;
     g_quiet++;
     bool ok = SafeStage1();
     g_quiet--;
+    EndJitter();
     if (!ok && !g_failed) Fail("a fault while drawing the frame: " + g_faultWhere);
 }
 
 void GfxAfterWorld() {
-    if (g_jitWorld) {   // (the game's own projection back for what is drawn after the world)
-        g_jitWorld = false;
-        if (g_dev9 && g_projCleanHave) oSetTransform(g_dev9, D3DTS_PROJECTION, &g_projClean);
-    }
+    EndScaled();
+    EndJitter();
     if (!g_swapped) return;
     g_swapped = false;   // (first: hkSetDepthStencil lets the game's own buffer be bound then)
     if (g_dev9 && g_gameDS) g_dev9->SetDepthStencilSurface(g_gameDS);
@@ -2198,7 +2651,7 @@ void ViewPasses(ViewTargets &v, const float c[8]) {
     g_frameLate = false;
     MmlGfxConstants k{};
     float vm[16], pm[16];
-    bool ok = Settled() && Wait9() && Hand(true, {v.colorLink, v.depthLink});   // (its colour and depth written)
+    bool ok = Settled() && (GpuSync() || Wait9()) && Hand(true, {v.colorLink, v.depthLink});   // (its colour and depth written)
     if (ok) {
         FillConstants(k, v.w, v.h, vm, pm);
         ok = RunPasses(k, {v.depthSRV, v.colorSRV, v.fxRTV, v.w, v.h, v.handle, vm, pm});
@@ -2311,10 +2764,16 @@ void GfxViewsShowNow() {
     SafeRelease(rt);
 }
 
-bool GfxMethod(const std::string &method, const std::string &, std::string *reply, bool *ok) {
+bool GfxMethod(const std::string &method, const std::string &params, std::string *reply, bool *ok) {
     if (method != "gfx.state" && method != "gfx.reset") return false;
     if (method == "gfx.reset") {
         if (g_failed) { g_failed = false; g_state = g_passes.empty() ? "idle (no pass registered)" : "waiting for the mission's world"; }
+    }
+    {   // (the frame's times since the last minute's line, or since {"timing_reset": true})
+        json p = json::parse(params.empty() ? "{}" : params, nullptr, false);
+        if (p.is_object() && p.value("timing_reset", false)) g_tmLogged = g_tm, g_tmLoggedAt = NowMs();
+        if (p.is_object() && p.contains("mip_bias"))   // (a number: that bias under an upscaler; null: DLSS's own again)
+            g_lodAsked = p["mip_bias"].is_number() ? p["mip_bias"].get<float>() : NAN;
     }
     auto r2 = [](double v) { return std::round(v * 1000) / 1000; };
     json passes = json::array();
@@ -2341,6 +2800,23 @@ bool GfxMethod(const std::string &method, const std::string &, std::string *repl
                          {"pass_runs", v->passRuns}, {"pass_fails", v->passFails}});
     out["views"] = views;
     out["view_sky_sets"] = g_viewSkySets;
+    {
+        const Timing &a = g_tm, &b = g_tmLogged;
+        const double n = static_cast<double>(a.frames - b.frames), secs = g_tmLoggedAt ? (NowMs() - g_tmLoggedAt) / 1000 : 0;
+        const double gn = static_cast<double>(a.gpuFrames - b.gpuFrames), pn = static_cast<double>(a.passFrames - b.passFrames);
+        auto per = [&](double x) { return n > 0 ? r2(x / n) : 0.0; };
+        out["timing"] = {{"frames", a.frames - b.frames}, {"seconds", r2(secs)}, {"fps", secs > 0 ? r2(n / secs) : 0.0},
+                         {"frame_ms", per(a.frameMs - b.frameMs)}, {"wait9_ms", per(a.wait9Ms - b.wait9Ms)},
+                         {"wait11_ms", per(a.wait11Ms - b.wait11Ms)}, {"hand_ms", per(a.handMs - b.handMs)},
+                         {"present_ms", per(a.presentMs - b.presentMs)},
+                         {"gpu_frame_ms", gn > 0 ? r2((a.gpuMs - b.gpuMs) / gn) : 0.0}, {"gpu_frame_last_ms", r2(g_gpuFrame)},
+                         {"gpu_passes_ms", pn > 0 ? r2((a.passesMs - b.passesMs) / pn) : 0.0}, {"sync", SyncName()},
+                         {"timestamps", !g_stampsOff}};
+        out["upscale"] = {{"mod", g_up.fn && ModAlive(g_up.mod) ? ModIdOf(g_up.mod) : std::string()}, {"asked", {g_up.w, g_up.h}},
+                          {"drawn", {g_dw, g_dh}}, {"frames_drawn", g_upDrawn}, {"frames_stretched", g_upStretched},
+                          {"cpu_ms", r2(g_upCpuMs)}, {"gpu_ms", r2(g_upGpuMs)}, {"frame_at_its_size", g_upMade},
+                          {"mip_bias", g_dw && g_w && g_dw != g_w ? r2(std::isnan(g_lodAsked) ? std::log2(static_cast<double>(g_dw) / g_w) : g_lodAsked) : 0.0}};
+    }
     {
         json m = json::parse(MotionState(), nullptr, false);
         if (m.is_object()) {

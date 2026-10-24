@@ -294,8 +294,13 @@ float4 PsMine(float4 pos : SV_Position) : SV_Target {
 - **Under DXVK** (its `d3d9.dll` beside the game, for ReShade on Vulkan or its own sake: dxwrapper loads the game
   folder's `d3d9.dll` before the system's) the game's Direct3D 9 runs on Vulkan, whose shared textures Direct3D 11
   cannot open. The bridge then keeps two of each texture and copies them on DXVK's own queue at each hand-over
-  (DXVK's interop interfaces, `host/gfx_vk.cpp`): the passes see the same textures as on 9Ex, about 0.5 ms a copy at
-  1280x960 on an RTX 3070. `gfx.state`'s `d3d9` says which way the frame goes.
+  (DXVK's interop interfaces, `host/gfx_vk.cpp`): the passes see the same textures as on 9Ex. Two fences of Direct3D
+  11 shared with DXVK's Vulkan device (timeline semaphores) order the copies and the passes on the GPU, so the game's
+  thread waits for neither device; what it still spends at a hand-over is DXVK's own (its command stream recorded and
+  submitted before ours: about 0.7 ms a frame at 1280x960 on an RTX 3070). On Direct3D 9Ex, which has no fence, the
+  game's thread waits for each device at the hand-overs (event queries): the CPU and the GPU take turns there, which
+  costs a GPU-heavy frame (DLSS on a laptop) most of its rate. `gfx.state`'s `d3d9` and `timing.sync` say which way
+  the frame goes; the log says it once a minute with the frame's times (below).
 - **Each frame of the mission's world** (not the menus): the frame's depth buffer is a readable one while the world
   is drawn; at the point where the world is drawn and the HUD not yet (after the mods' `RENDER_WORLD` drawing, so
   their Direct3D 9 drawing is in the frame the passes see), the frame's colour and linear depth (metres along the
@@ -321,7 +326,10 @@ float4 PsMine(float4 pos : SV_Position) : SV_Target {
   fault guard.
 - **Costs** are measured: `call gfx.state` gives each pass's CPU and GPU time (timestamps), the bridge's copy and
   waits (about 0.65 ms of CPU a frame for the whole bridge at 1280x960 in the labs), the device, the frame's size,
-  the fog and sun found.
+  the fog and sun found. `timing` (and the log's line once a minute while the bridge runs) is the whole frame's: its
+  time between Presents, the game thread's waits for the devices, its time handing over on DXVK's queue and in
+  Present, and the GPU's time of the frame (timestamps) and of the passes: a player's log tells whether the CPU or
+  the GPU holds the frame rate.
 - `mods/examples/depth_pulse`: a scanner's wave over the world from the player (`depth_pulse.now`, F11).
 - **The 2D pass for a mod** (`gfx_ui(M, MML_GFX_UI_HIDE)` or `_TAKE`): the HUD, the menus over the world and the
   loader's `draw_*` are drawn into a shared target (premultiplied RGBA8, the frame's size) that the passes get as
@@ -424,20 +432,57 @@ float3 history = g_myHistory.SampleLevel(g_linear, before * g_size.zw, 0).rgb;
 - `dlss_nr`'s debug views show them: `1` as colours (grey still; red to the right, green down), `5` the frame before
   moved by them against this one (black where they are right), `6` the same without them.
 
+### The upscaler: the world drawn at a render size (DLSS, FSR)
+
+A temporal upscaler is worth its name only when the game draws fewer pixels: `H->gfx_upscale(M, w, h, Upscale, NULL)`
+(Rust `host.gfx_upscale(w, h, |f| ...)`) has the frame's world drawn at `w` x `h` from the next frame on, and calls
+`Upscale` first at each frame's stage 1 to draw the whole frame from it:
+
+```c
+int Upscale(const MmlGfxFrame *f, void *user) {
+    /* f->render_width x f->render_height: the world as drawn, at the top-left of f->color, f->depth, f->motion;
+       f->k->size that size (frame.hlsli's helpers work in its pixels); f->jitter in its pixels */
+    /* ... run the upscaler, then draw its picture into f->target over the whole frame (f->width x f->height, alpha 1) */
+    return 1;                                  /* 0: no picture this frame: the bridge stretches the smaller one */
+}
+H->gfx_upscale(M, 1280, 720, Upscale, NULL);   /* again when the size changes; 0, 0: the frame's own size (DLAA) */
+```
+
+- **How the world is drawn smaller**: from the world's start to stage 1 every viewport the game sets on the frame's
+  target (and the one the target's set gives) is scaled to the render size, the projection unchanged: the same
+  picture, fewer pixels. The game's own viewport is put back at stage 1, so what LS3D draws after the world (its near
+  pass, the lens flares) and the 2D pass (the HUD, the menus) are at the frame's size, over the upscaled frame. The
+  motion vectors are drawn at the render size (in its pixels), the depth too.
+- **The textures' mip bias**: while the world is drawn smaller every sampler's mip bias is the game's plus
+  log2(render width / frame width) (DLSS's guide: -1.58 at a third of the size): a texture is sampled as finely as at
+  the frame's size, and DLSS brings it together. `gfx.state`'s `upscale.mip_bias`; `gfx.state {"mip_bias": x}` tries
+  another (a test). The game's textures are also filtered anisotropically (the loader's `dxwrapper.ini`:
+  `AnisotropicFiltering`), with or without an upscaler.
+- **The jitter** (`gfx_jitter`, below) is then in the render size's pixels: the whole sample offset goes into the
+  game's projection and the inputs are read one to one, as DLSS's guide has a renderer do it.
+- **The passes after it** get the frame at its size: its picture as `color`, the depth and the motion vectors
+  brought up to it (the nearest render pixel's), `render_width`/`render_height` the frame's.
+- **A frame without its picture** (the upscaler returns 0: its history not there yet, a mode switched) is the smaller
+  picture stretched over the frame by the bridge, never a corner of it. `gfx.state`'s `upscale`: who has it, the size
+  asked and drawn, the frames it drew and the bridge stretched, its CPU and GPU time.
+- One mod at a time (0: another has it); NULL takes it back, and so does the mod's unload. It needs the device's state
+  followed (`gfx.state` `following_state`), as the jitter does. `dlss_nr` is the upscaler while DLSS is on.
+
 ### The world's jitter: sub-pixel samples for a temporal upscaler
 
 The game draws every frame from the same point of each pixel: an upscaler or a TAA that gathers samples over frames
 gets nothing between the pixels, and thin things the game draws broken (the trams' wires far away) stay broken.
 `H->gfx_jitter(M, 1, x, y)` (Rust `host.gfx_jitter(x, y)`) has the frame's world drawn, from the next frame on, with
-the game's projection offset by (x, y) of the frame's pixels (x right, y down; ask a new offset each frame, a Halton
-sequence within -0.5..0.5); `gfx_jitter(M, 0, 0, 0)` takes it back, and so does the mod's unload. What a frame was
+the game's projection offset by (x, y) of the pixels it is drawn at (the frame's; the render size's under
+`gfx_upscale`) (x right, y down; ask a new offset each frame, a Halton sequence within -0.5..0.5); `gfx_jitter(M, 0, 0, 0)` takes it back, and so does the mod's unload. What a frame was
 drawn with is `f->jitter` (`MML_GFX_HAS(f, jitter)`), one frame after it was asked: pair the two by that. The frame's
 `view`, `proj` and constants are the camera's without it, and so are the motion vectors (the last frame's camera is
 taken through this frame's jitter: it cancels); the depth and the colour are the picture as drawn. The scene views,
 the sun's shadow map and the 2D pass are not offset. One mod at a time (0: another holds it). Let it go in any frame
-that does not use it: the game's world shakes by it otherwise. `dlss_nr` splits each frame's sample between the game's
-offset (under half a frame's pixel) and where it samples the frame (its whole pixels): `tools/still_test.py` measures
-the picture still.
+that does not use it: the game's world shakes by it otherwise. The offset is the world's alone: it is taken off at
+stage 1 (the near pass and the 2D pass are drawn without it). `dlss_nr` as the upscaler puts each frame's whole sample
+there; with a loader without `gfx_upscale` it splits it between the game's offset (under half a frame's pixel) and
+where it samples the frame (its whole pixels): `tools/still_test.py` measures the picture still.
 
 ### The camera: the frame drawn from a mod's, a world point on the screen
 
@@ -2209,6 +2254,14 @@ smallest half alone, `mods/examples/side_picture` a mod in two halves that hands
   Performance on a frozen scene; +1 left the picture blocky, the billboard unreadable). Measured on the RTX 3070 at
   1280x960 (DLSS-NR not there: SR alone), 1.2 with fps_unlock: 142.8 fps without DLSS, 121.5 with SR Quality waited for,
   132.6 pipelined; SR's own GPU time 0.6 to 0.8 ms, the pass's 0.2 ms; 1.0 the same path, every frame with its picture.
+  **Since 2026-10-24 it is the bridge's upscaler** (`gfx_upscale`, above): the game draws its world at the mode's
+  render size (Ultra Performance at 1280x960: 427x320, a ninth of the pixels), the textures' mip bias DLSS's own, the
+  whole jitter in the game's projection, and the pass reads its inputs one to one; DLSS's picture is the frame, the HUD
+  drawn over it at the frame's size. Before, the game drew the whole frame and the pass sampled it smaller: Super
+  Resolution saved nothing of the game's own GPU time, and a player's RTX 5060 laptop at 2560x1600 stayed near 30 fps
+  in every mode (with the bridge's waits for both devices on Direct3D 9Ex, below "Effects over the frame"). The debug
+  views of the inputs show them at the render size; `tools/pass_test.py --modes motion_check_perf` checks the motion
+  vectors there.
 
 ## 4. A complete example
 

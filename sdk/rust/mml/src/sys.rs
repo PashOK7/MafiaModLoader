@@ -874,10 +874,12 @@ pub struct MmlGfxFrame {
     pub sun_shadow: *mut ::core::ffi::c_void,
     pub motion: *mut ::core::ffi::c_void,
     pub jitter: [f32; 2usize],
+    pub render_width: ::core::ffi::c_uint,
+    pub render_height: ::core::ffi::c_uint,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of MmlGfxFrame"][::core::mem::size_of::<MmlGfxFrame>() - 220usize];
+    ["Size of MmlGfxFrame"][::core::mem::size_of::<MmlGfxFrame>() - 228usize];
     ["Alignment of MmlGfxFrame"][::core::mem::align_of::<MmlGfxFrame>() - 4usize];
     ["Offset of field: MmlGfxFrame::size"][::core::mem::offset_of!(MmlGfxFrame, size) - 0usize];
     ["Offset of field: MmlGfxFrame::device"][::core::mem::offset_of!(MmlGfxFrame, device) - 4usize];
@@ -916,6 +918,10 @@ const _: () = {
         [::core::mem::offset_of!(MmlGfxFrame, motion) - 208usize];
     ["Offset of field: MmlGfxFrame::jitter"]
         [::core::mem::offset_of!(MmlGfxFrame, jitter) - 212usize];
+    ["Offset of field: MmlGfxFrame::render_width"]
+        [::core::mem::offset_of!(MmlGfxFrame, render_width) - 220usize];
+    ["Offset of field: MmlGfxFrame::render_height"]
+        [::core::mem::offset_of!(MmlGfxFrame, render_height) - 224usize];
 };
 impl Default for MmlGfxFrame {
     fn default() -> Self {
@@ -1006,6 +1012,12 @@ impl Default for MmlGfxShow {
 pub type MmlGfxShowFn = ::core::option::Option<
     unsafe extern "C" fn(
         show: *const MmlGfxShow,
+        user: *mut ::core::ffi::c_void,
+    ) -> ::core::ffi::c_int,
+>;
+pub type MmlGfxUpscaleFn = ::core::option::Option<
+    unsafe extern "C" fn(
+        frame: *const MmlGfxFrame,
         user: *mut ::core::ffi::c_void,
     ) -> ::core::ffi::c_int,
 >;
@@ -3725,10 +3737,19 @@ pub struct MmlHost {
             y: f32,
         ) -> ::core::ffi::c_int,
     >,
+    pub gfx_upscale: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            w: ::core::ffi::c_uint,
+            h: ::core::ffi::c_uint,
+            fn_: MmlGfxUpscaleFn,
+            user: *mut ::core::ffi::c_void,
+        ) -> ::core::ffi::c_int,
+    >,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 808usize];
+    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 812usize];
     ["Alignment of MmlHost"][::core::mem::align_of::<MmlHost>() - 4usize];
     ["Offset of field: MmlHost::size"][::core::mem::offset_of!(MmlHost, size) - 0usize];
     ["Offset of field: MmlHost::api_version"]
@@ -4075,6 +4096,8 @@ const _: () = {
     ["Offset of field: MmlHost::gfx_show"][::core::mem::offset_of!(MmlHost, gfx_show) - 800usize];
     ["Offset of field: MmlHost::gfx_jitter"]
         [::core::mem::offset_of!(MmlHost, gfx_jitter) - 804usize];
+    ["Offset of field: MmlHost::gfx_upscale"]
+        [::core::mem::offset_of!(MmlHost, gfx_upscale) - 808usize];
 };
 pub type MmlModLoadFn = ::core::option::Option<
     unsafe extern "C" fn(host: *const MmlHost, mod_: *mut MmlMod) -> ::core::ffi::c_int,

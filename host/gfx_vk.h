@@ -19,20 +19,30 @@ bool On();
 void Stop();                                   // every link freed first
 bool IsDxvk(IDirect3DDevice9 *dev9);           // DXVK's device (its interop interface answers)
 
+// The hand-overs ordered on the GPU: two fences of Direct3D 11 (11.4) shared with DXVK's device as timeline
+// semaphores (DXVK enables VK_KHR_external_semaphore_win32 where the driver has it). True: To11 and To9 wait for
+// nothing on the CPU (Gpu()); false and why: they wait for their copies as before. Made once a device (Stop frees).
+bool Fences(ID3D11Device *dev11, ID3D11DeviceContext *ctx, std::string *why);
+bool Gpu();
+
 // The Direct3D 11 half of a Direct3D 9 texture (made by the caller, D3DPOOL_DEFAULT, no shared handle): a shared
 // texture of the same size and format (render target and shader resource), imported into DXVK's device. Null and why
 // when it cannot be.
 Link *Make(IDirect3DTexture9 *t9, ID3D11Device *dev11, ID3D11Texture2D **t11, std::string *why);
 void Free(Link *&link);
 
-// The hand-overs: Direct3D 9's pictures to Direct3D 11's halves (Direct3D 9 is done: the caller waited for its event
-// query), Direct3D 11's to Direct3D 9's (Direct3D 11 is done: its event query waited for). Null links are skipped;
-// each returns once its copies are done on the GPU. A copy not done in 250 ms: false, and Busy() is true until it is
-// (nothing is copied meanwhile: the caller's frame goes without).
+// The hand-overs. With the shared fences (Gpu()): To11 queues the copies after everything Direct3D 9 has drawn so far
+// and signals the fence Direct3D 11's context then waits for (queued there too); To9 signals the other from Direct3D
+// 11's context (its work so far) and queues the copies behind a wait for it, before anything Direct3D 9 draws after.
+// Neither waits on the CPU. Without them: Direct3D 9 is done (the caller waited for its event query) or Direct3D 11 is
+// (its event query waited for), each returns once its copies are done on the GPU; a copy not done in 250 ms: false,
+// and Busy() is true until it is (nothing is copied meanwhile: the caller's frame goes without). Null links are
+// skipped.
 bool To11(Link *const *links, int n, std::string *why);
 bool To9(Link *const *links, int n, std::string *why);
-bool Busy();                                   // a late copy still runs on DXVK's queue
+bool Busy();                                   // a late copy still runs on DXVK's queue (CPU-waited hand-overs only)
 void WaitLimit(double ms);                     // how long a copy is waited for (250 ms; gfx.cpp's MML_GFX_WAIT_MS)
+double TakeMs();                               // the game thread's time in the hand-overs since the last call (ms)
 
 std::string Describe();                        // for gfx.state: the device, the copies, their time
 } // namespace gfxvk

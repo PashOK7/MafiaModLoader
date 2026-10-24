@@ -102,6 +102,15 @@ impl<'a> GfxFrame<'a> {
     pub fn motion(&self) -> Option<*mut c_void> {
         if gfx_has!(self, motion) && !self.0.motion.is_null() { Some(self.0.motion) } else { None }
     }
+    /// the sub-pixel offset the world was drawn with (Host::gfx_jitter), in the pixels of the picture as drawn
+    pub fn jitter(&self) -> [f32; 2] {
+        if gfx_has!(self, jitter) { self.0.jitter } else { [0.0; 2] }
+    }
+    /// the size the world was drawn at: the frame's, except in the upscaler's call (Host::gfx_upscale), where depth,
+    /// color and motion hold it at their top-left
+    pub fn render_size(&self) -> (u32, u32) {
+        if gfx_has!(self, render_height) && self.0.render_width != 0 { (self.0.render_width, self.0.render_height) } else { self.size() }
+    }
 }
 
 #[cfg(feature = "windows")]
@@ -261,6 +270,9 @@ impl<'a> GfxShow<'a> {
 unsafe extern "C-unwind" fn on_show<F: Fn(&GfxShow) -> i32>(show: *const sys::MmlGfxShow, user: *mut c_void) -> c_int {
     guard("its showing", || (*(user as *const F))(&GfxShow(&*show)) as c_int)
 }
+unsafe extern "C-unwind" fn on_upscale<F: Fn(&GfxFrame) -> bool>(frame: *const sys::MmlGfxFrame, user: *mut c_void) -> c_int {
+    guard("its upscaler", || (*(user as *const F))(&GfxFrame(&*frame)) as c_int)
+}
 unsafe extern "C-unwind" fn on_view<F: Fn(&mut ViewCamera) -> bool>(cam: *mut sys::MmlViewCamera, user: *mut c_void) -> c_int {
     guard("a camera", || (*(user as *const F))(&mut *cam) as c_int)
 }
@@ -302,14 +314,27 @@ impl Host {
     pub fn gfx_show_off(&self) {
         unsafe { f!(self, gfx_show)(self.module, None, ptr::null_mut()) };
     }
-    /// The frame's world drawn from the next frame on with the game's projection offset by (x, y) of the frame's
-    /// pixels (a temporal upscaler's sub-pixel samples); GfxFrame's jitter says what a frame was drawn with. False:
+    /// The frame's world drawn from the next frame on with the game's projection offset by (x, y) of the pixels it
+    /// is drawn at (the render size's under gfx_upscale; a temporal upscaler's sub-pixel samples); GfxFrame's jitter says what a frame was drawn with. False:
     /// another mod holds it
     pub fn gfx_jitter(&self, x: f32, y: f32) -> bool {
         unsafe { f!(self, gfx_jitter)(self.module, 1, x, y) != 0 }
     }
     pub fn gfx_jitter_off(&self) {
         unsafe { f!(self, gfx_jitter)(self.module, 0, 0.0, 0.0) };
+    }
+    /// The frame's world drawn at w x h from the next frame on (a temporal upscaler's render size; 0 0: the frame's
+    /// own) and f called first among the passes to draw the whole frame from it into the target (true), or not (false:
+    /// the bridge stretches it). The jitter is then in the render size's pixels. Called again when the size changes
+    /// (each call keeps its closure for the mod's life). False: another mod is the upscaler
+    pub fn gfx_upscale<F: Fn(&GfxFrame) -> bool + 'static>(&self, w: u32, h: u32, f: F) -> bool {
+        let user = keep(f);
+        unsafe {
+            f!(self, gfx_upscale)(self.module, w, h, as_c!(on_upscale::<F>, *const sys::MmlGfxFrame, *mut c_void; c_int), user) != 0
+        }
+    }
+    pub fn gfx_upscale_off(&self) {
+        unsafe { f!(self, gfx_upscale)(self.module, 0, 0, None, ptr::null_mut()) };
     }
     pub fn gfx_pass_remove(&self, handle: i32) {
         unsafe { f!(self, gfx_pass_remove)(self.module, handle) };

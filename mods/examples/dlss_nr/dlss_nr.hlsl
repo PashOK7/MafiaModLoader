@@ -15,6 +15,9 @@ cbuffer DlssNr : register(b1) {
     float4 g_opts2;       // x: 1 when the bridge's motion vectors are bound (frame.hlsli g_motion, t3), y: their scale (a test)
     float4 g_render;      // xy: the frame's pixels a render pixel covers (the frame's size / the render size), zw: where
                           // in its render pixel this frame's inputs are sampled (the jitter, -0.5..0.5)
+    float4 g_opts3;       // xy: the frame's size (the picture DLSS draws), z: 1 when the world was drawn at the render size
+                          // (gfx_upscale: g_size is the render size, the inputs its pixels at the top-left of the
+                          // frame's textures, read one to one; g_render.xy 1, zw 0: the jitter is the game's projection's)
 };
 
 Texture2D<float4> g_nrOut : register(t5);   // "color_out": DLSS-NR's picture, in the display's gamma (as it was given)
@@ -59,11 +62,13 @@ struct Prepared {
 // of the render size (1280 / 427 in Ultra Performance), against the jitter DLSS is told: the picture shimmered when
 // still (tools/still_test.py). The depth and the motion are the nearest pixel's (not blended across an edge). The
 // motion vector in render pixels.
+// With the world drawn at the render size (g_opts3.z) a render pixel is the picture's own pixel, read as it is.
 Prepared PsPrepare(float4 pos : SV_Position) {
     Prepared o;
     float2 at = clamp((floor(pos.xy) + 0.5 + g_render.zw) * g_render.xy, 0.5, g_size.xy - 0.5);
     float2 pixel = floor(at) + 0.5;
-    o.color = float4(saturate(g_sceneColor.SampleLevel(g_linear, at * g_size.zw, 0).rgb), 1);
+    o.color = float4(saturate(g_opts3.z > 0.5 ? g_sceneColor.Load(int3(pixel, 0)).rgb :
+                                                g_sceneColor.SampleLevel(g_linear, at * g_size.zw, 0).rgb), 1);
     float z = SceneDepth(pixel);
     o.depth = IsSky(z) ? 1 : saturate(g_depthProj.x + g_depthProj.y / max(z, 1e-3));
     o.motion = float4(Motion(pixel) / g_render.xy, 0, 0);
@@ -73,10 +78,14 @@ Prepared PsPrepare(float4 pos : SV_Position) {
 
 // DLSS-NR's picture as the frame (alpha 1), in the gamma it came in. With the split on, the game's own frame left
 // of it and a thin line where it is: the difference seen at once.
+// (The game's own frame: under gfx_upscale the world drawn at the render size, brought up to the frame's filtered.)
 float4 PsComposite(float4 pos : SV_Position) : SV_Target {
-    float split = g_opts.z * g_size.x;
+    float split = g_opts.z * g_opts3.x;
     if (g_opts.z > 0 && abs(pos.x - split) < 1) return float4(1, 1, 1, 1);
-    if (g_opts.z > 0 && pos.x < split) return float4(g_sceneColor.Load(int3(pos.xy, 0)).rgb, 1);
+    if (g_opts.z > 0 && pos.x < split) {
+        float2 uv = g_opts3.z > 0.5 ? pos.xy * g_size.xy / (g_opts3.xy * g_opts3.xy) : pos.xy * g_size.zw;
+        return float4(g_sceneColor.SampleLevel(g_linear, uv, 0).rgb, 1);
+    }
     return float4(saturate(g_nrOut.Load(int3(pos.xy, 0)).rgb), 1);
 }
 
@@ -86,7 +95,8 @@ float4 PsComposite(float4 pos : SV_Position) : SV_Target {
 // The motion vectors as DLSS is given them (the debug view 7: the slot's "mvec_in" at t5, at the render size), in the
 // colours of the debug view 1 (back in the frame's pixels): the same picture when they reach DLSS whole.
 float4 PsMvecIn(float4 pos : SV_Position) : SV_Target {
-    float2 m = g_nrOut.Load(int3(pos.xy / g_render.xy, 0)).rg * g_render.xy;
+    float2 toRender = g_opts3.z > 0.5 ? g_size.xy / g_opts3.xy : 1 / g_render.xy;   // (a frame pixel in render pixels)
+    float2 m = g_nrOut.Load(int3(pos.xy * toRender, 0)).rg / toRender;
     return float4(saturate(0.5 + m / 32), 0.5, 1);
 }
 float4 PsCopyScene(float4 pos : SV_Position) : SV_Target { return float4(g_sceneColor.Load(int3(pos.xy, 0)).rgb, 1); }
@@ -101,20 +111,24 @@ float4 PsBlend(float4 pos : SV_Position) : SV_Target {
 // the mask; the check of the motion vectors (5): the frame before, fetched where each pixel's vector says it was,
 // against this frame (four times the difference: black where the vectors are right, the moving actors aside), and
 // (6) the same with no vectors, to compare.
+// (Under gfx_upscale the inputs are the render size's: each frame pixel shows the render pixel under it.)
+float2 InPixel(float2 pos) { return g_opts3.z > 0.5 ? floor(pos * g_size.xy / g_opts3.xy) + 0.5 : pos; }
+float2 InUv(float2 at) { return at / (g_opts3.z > 0.5 ? g_opts3.xy : g_size.xy); }   // (the textures are the frame's size)
 float4 PsDebug(float4 pos : SV_Position) : SV_Target {
+    float2 p = InPixel(pos.xy);
     if (g_opts.w > 4.5) {
-        float2 at = pos.xy + (g_opts.w < 5.5 ? Motion(pos.xy) : 0);
-        float3 now = g_sceneColor.Load(int3(pos.xy, 0)).rgb;
-        float3 before = g_prevColor.SampleLevel(g_linear, at * g_size.zw, 0).rgb;
+        float2 at = p + (g_opts.w < 5.5 ? Motion(p) : 0);
+        float3 now = g_sceneColor.Load(int3(p, 0)).rgb;
+        float3 before = g_prevColor.SampleLevel(g_linear, InUv(at), 0).rgb;
         return float4(saturate(abs(now - before) * 4), 1);
     }
     if (g_opts.w < 1.5) {
-        float2 m = Motion(pos.xy);
+        float2 m = Motion(p);
         return float4(saturate(0.5 + m / 32), 0.5, 1);
     }
     if (g_opts.w < 2.5) {
-        float z = SceneDepth(pos.xy);
+        float z = SceneDepth(p);
         return float4((IsSky(z) ? 0 : 1 - saturate(log2(1 + z) / log2(501))).xxx, 1);
     }
-    return float4(Mask(pos.xy).xxx, 1);
+    return float4(Mask(p).xxx, 1);
 }

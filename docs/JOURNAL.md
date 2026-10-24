@@ -3632,3 +3632,52 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   A first try of the drop by separate `native.call`s crashed 1.2 in C_player::AI: each call is a frame of its own,
   and the controls had no bindings in between; `joy.drop` does it in one call.
 - **Not seen**: a real pad plugged in (the notification's path), the poll thread (Windows 7, Wine): the owner's test.
+
+## 2026-10-24: DLSS as designed: the world at the render size, the devices ordered on the GPU
+
+- **Seen** (The Renegade's logs, RTX 5060 laptop, 2560x1600, DXVK): "always 30 fps" in every mode and setting, though
+  DLSS's own GPU time was 7 to 12 ms (dlss_nr's minute lines: 1681 to 2223 frames a minute in the free ride; the menus
+  60). Two reasons in the bridge, not the GPU: (1) the game drew its whole frame at 2560x1600 and dlss_nr sampled it
+  at the render size, so Super Resolution saved nothing of the game's own drawing; (2) at each hand-over the game's
+  thread waited for the device on the CPU (Wait9, a fence-waited copy on DXVK's queue, Wait11 behind DLSS's "done" of
+  the frame before, the copy back, and again at the showing): the CPU and the GPU took turns, a frame cost their sum.
+  The lab's profile (RTX 3070, 1280x960, 9Ex, 141 fps): Wait9 + Wait11 10.7 % of the game thread.
+- **Made (the bridge, host/gfx_vk.cpp)**: on DXVK two fences of Direct3D 11 (11.4, shared NT handles) imported into
+  DXVK's Vulkan device as timeline semaphores (VK_KHR_external_semaphore_win32, which DXVK enables where it can):
+  To11's submission signals "to 11" after its copies and Direct3D 11's context waits for it; Direct3D 11 signals
+  "to 9" after the passes and To9's submission waits for it before its copies (a fill of a small buffer anchors the
+  wait, the barrier after it holds DXVK's next commands). The order on DXVK's queue: FlushRenderingCommands, then
+  LockSubmissionQueue, which (DXVK 3.1.1's DxvkDevice::lockSubmission) synchronises its submission thread first, so a
+  submission of ours comes after everything recorded before it. The command buffers go round a ring of 8. No CPU wait
+  for either device on DXVK (`gfx.state` timing.sync, d3d9); 9Ex keeps its event queries (no fence there).
+- **Made (the SDK)**: mml.h `gfx_upscale(mod, w, h, fn, user)` and MmlGfxFrame's `render_width`, `render_height`;
+  the Rust crate's `gfx_upscale`, `GfxFrame::render_size`, `jitter`. From the world's start to stage 1 every viewport
+  the game sets on the frame's target (and the one a SetRenderTarget gives: LS3D sets its own only when its rectangle
+  changes) is scaled to the render size; the game's own is put back at stage 1, so LS3D's near pass, the lens flares
+  and the 2D pass stay at the frame's size; the jitter (in the render size's pixels now) is taken off there too. The
+  depth and the motion vectors are made at the render size (bridge9.hlsl's g_drawn, c3); the upscaler's function runs
+  first, the bridge stretches the smaller picture when it returns 0 (or a frame goes without the passes); the passes
+  after it get the frame brought up to its size. Every sampler's mip bias is the game's plus log2(render / frame)
+  while the world is drawn smaller (DLSS's guide; -1.58 in Ultra Performance).
+- **Made (dlss_nr)**: the upscaler while DLSS is on, at the render size the 64-bit half answered for the frame's size
+  and mode (the frame's own until it has); the inputs read one to one, the whole Halton sample in the projection, DLSS
+  told -jg. The debug views of the inputs show them at the render size (they ask the half for its size).
+- **Made (the frame's times)**: Direct3D 9 timestamps from a frame's first drawing to its Present, the game thread's
+  waits and its time in Present and handing over: `gfx.state` timing, and a line in the log once a minute ("the game
+  thread waited X ms of it for the devices ... the GPU: the frame Y ms"), so the next player's log says what holds the
+  frame. `gfx.state {"mip_bias": x}` tries another bias.
+- **Seen by the owner**: textures at a grazing angle blurred, much worse in Ultra Performance. Without DLSS: the game
+  asks for trilinear filtering only: the loader's dxwrapper.ini now has `AnisotropicFiltering = 1` (16x, dxwrapper's
+  own; its log "Setting Anisotropic Filtering at 16x"). With DLSS: the mips were chosen for the render size: the bias
+  above. The parking lot and the pavement at a grazing angle, Ultra Performance, bias 0 against -1.58: the slabs'
+  joints and the facades sharp again.
+- **Measured** (1.2 lab, RTX 3070, 1280x960): on 9Ex the lab is CPU-bound (5.5 ms a frame, the GPU 1 to 2.3 ms): 181
+  fps off, 180 DLAA, 164 Quality, 176 Performance, 184 Ultra; the world drawn at 853x640, 640x480, 427x320. On DXVK
+  (3.1.1): the waits 0, the hand-overs 0.7 to 1.6 ms a frame of the game thread (DXVK's command stream flushed), 95 fps
+  (DXVK's own CPU cost here: 14 % of the game thread in ucrtbase's copies under LS3D's drawing). The moving taxi
+  (`tools/pass_test.py --modes motion_check_dlaa,motion_check_perf,sr_dlaa,sr_perf --speed 1.4`): the checks black but
+  the spinning wheels, SR Performance without a trail. Frame generation's stand-in on DXVK (`tools/fg_test.py`, a
+  200 Hz display): 2x the game 100.7 shown 201, 4x 50.2 / 201, the spacing within 0.08 ms. 1.0 lab (9Ex): the world at
+  427x320 in Ultra Performance, the picture whole, the bias applied. A player's run in the 1.2 lab on DXVK with DLAA
+  exited cleanly.
+- **The pack**: dlss_nr's ships DXVK 3.1.1's d3d9.dll (its license beside), the README says why and what to send.
