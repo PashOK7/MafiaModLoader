@@ -3579,3 +3579,8 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   districts, stays the same (0.8 ms, the motion 0.1-1.7 ms, DLSS 1 ms). Frame generation was shown from the game's
   thread there (DXVK: `gfx.state` show.thread), hence its low frame rate. The game also faulted at its exit in
   LS3DF+0x5AC2E (from +0x5BA73, the index buffers' release), as on 2026-10-23: Known gaps.
+- **Not a leak** (measured after): Windows' "GPU Process Memory" counters gave the sidecar 13 GB of dedicated memory
+  on the 8 GB RTX 3070 after a few hundred mode switches, growing 128 MB a switch that remade the shared textures;
+  the adapter's own counters stayed at 2.1 GB through 45 switches and a sidecar restart. A process's counter keeps
+  counting a shared texture it made after it is gone, it seems: `tools/vram_test.py` (new) reads the adapter's. The
+  friend's slower GPU over a session is then his 8 GB laptop's (a texture pack, NR at the frame's size), not ours.
