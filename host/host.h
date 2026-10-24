@@ -32,6 +32,11 @@ namespace host {
 // gives a path to the game's ANSI functions (rw_data's dtaOpen), AcpToUtf8 takes one from it.
 const std::string &GameDir();   // the game's folder, trailing backslash
 const std::string &MmlDir();    // <game>\mml\ (trailing backslash)
+bool OutOfProcess();            // loaded into the game's Setup.exe: nothing started (main.cpp)
+void GammaDevice(void *dev8);   // (gfx.cpp) the game's device made: its gamma ramp followed on DXVK (gamma.cpp)
+void GammaReset();              // ... before its Reset
+void GammaPresent(void *dev8);  // (screenshot.cpp) at its Present: the ramp drawn over the frame in a window
+std::string GammaState();       // for gfx.state
 std::wstring Wide(const std::string &utf8);
 std::string Utf8Of(const wchar_t *wide, int n = -1);   // n: characters, -1: up to the terminator
 std::string AcpToUtf8(const char *acp);

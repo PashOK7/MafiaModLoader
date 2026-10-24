@@ -113,7 +113,7 @@ unsigned g_seq;
 
 // ---- devices
 void *g_d3d8;                      // the game's device the rest was made for
-IDirect3DDevice9Ex *g_dev9;
+IDirect3DDevice9 *g_dev9;          // (9Ex under dxwrapper; DXVK's plain one under a d3d8to9 without 9Ex)
 ID3D11Device *g_dev11;
 ID3D11DeviceContext *g_ctx;
 unsigned g_generation;
@@ -796,8 +796,9 @@ bool MakeDevice11() {
                                                   D3DRTYPE_TEXTURE, kFmtIntz));
     SafeRelease(d3d9ex);
     SafeRelease(d3d9);
+    if (!haveLuid) haveLuid = gfxvk::Luid(&luid);   // (DXVK's plain Direct3D 9: its Vulkan device's)
     if (haveLuid) SidecarAdapter(luid.LowPart, static_cast<uint32_t>(luid.HighPart));
-    if (!haveLuid) return Fail("no adapter LUID from Direct3D 9Ex");
+    if (!haveLuid) return Fail("no adapter LUID from Direct3D 9Ex nor DXVK's Vulkan device");
     if (!intz) return Fail("the adapter has no INTZ (readable depth) format");
     IDXGIFactory1 *factory = nullptr;
     if (FAILED(pCreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void **>(&factory)))) return Fail("CreateDXGIFactory1 failed");
@@ -895,8 +896,16 @@ bool Acquire(void *d3d8) {
     if (g_failed || !d3d8) return false;
     g_d3d8 = d3d8;
     auto qi = (*reinterpret_cast<HRESULT(__stdcall ***)(void *, REFIID, void **)>(d3d8))[0];
-    if (FAILED(qi(d3d8, __uuidof(IDirect3DDevice9Ex), reinterpret_cast<void **>(&g_dev9))) || !g_dev9)
-        return Fail("the game's device is not Direct3D 9Ex underneath (a wrapper: dxwrapper with D3d8to9 and D3d9to9Ex)");
+    // Direct3D 9Ex shares textures by handle (dxwrapper with D3d8to9 and D3d9to9Ex); DXVK's Direct3D 9 shares through
+    // Vulkan whether it was made extended or not (Ultimate ASI Loader's d3d8to9, Mafia Fusion Fix's, makes a plain one)
+    IDirect3DDevice9Ex *ex = nullptr;
+    if (SUCCEEDED(qi(d3d8, __uuidof(IDirect3DDevice9Ex), reinterpret_cast<void **>(&ex))) && ex) {
+        g_dev9 = ex;
+    } else if (FAILED(qi(d3d8, __uuidof(IDirect3DDevice9), reinterpret_cast<void **>(&g_dev9))) || !g_dev9 || !gfxvk::IsDxvk(g_dev9)) {
+        SafeRelease(g_dev9);
+        return Fail("the game's device is neither Direct3D 9Ex underneath (dxwrapper with D3d8to9 and D3d9to9Ex) nor DXVK's "
+                    "Direct3D 9 (a d3d8to9 over DXVK's d3d9.dll)");
+    }
     std::string why;
     if (gfxvk::Start(g_dev9, &why)) HLOG("gfx: Direct3D 9 is DXVK's (Vulkan): the shared textures are copied on its queue");
     else if (!why.empty()) return Fail(why);
@@ -1695,12 +1704,14 @@ void NoMultisampling(DWORD *pp, const char *when) {
 HRESULT STDMETHODCALLTYPE hkReset8(void *dev, DWORD *pp) {
     NoMultisampling(pp, "Reset");
     ShowThreadStop();   // (its swap chain and slots are the device's default pool: gone before a Reset)
+    GammaReset();
     return oReset8(dev, pp);
 }
 HRESULT STDMETHODCALLTYPE hkCreateDevice8(void *self, UINT adapter, DWORD type, HWND focus, DWORD flags, DWORD *pp, void **device) {
     NoMultisampling(pp, "CreateDevice");
     if (!ModsWantingGfx().empty()) flags |= D3DCREATE_MULTITHREADED;   // (the showing's own thread presents on it)
     HRESULT hr = oCreateDevice8(self, adapter, type, focus, flags, pp, device);
+    if (SUCCEEDED(hr) && device && *device) GammaDevice(*device);   // (gamma.cpp: the brightness in a window on DXVK)
     if (SUCCEEDED(hr) && device && *device && !oReset8) {
         std::string err;
         void *reset = (*reinterpret_cast<void ***>(*device))[14];
@@ -2800,6 +2811,7 @@ bool GfxMethod(const std::string &method, const std::string &params, std::string
                          {"pass_runs", v->passRuns}, {"pass_fails", v->passFails}});
     out["views"] = views;
     out["view_sky_sets"] = g_viewSkySets;
+    out["gamma"] = GammaState();
     {
         const Timing &a = g_tm, &b = g_tmLogged;
         const double n = static_cast<double>(a.frames - b.frames), secs = g_tmLoggedAt ? (NowMs() - g_tmLoggedAt) / 1000 : 0;

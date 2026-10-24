@@ -1228,6 +1228,12 @@ merged, sorted by importance):
   (XYZRHW) between the world's start and stage 1 is not scaled with the viewport. None was seen in the freeride's
   picture in either lab (the lens flares and the 2D come after stage 1), but the world's draws were not surveyed by
   their vertex format: a mission's effect drawn so would sit at the frame's size in the render size's corner.
+- **Mafia Fusion Fix beside the loader** (2026-10-24, ThirteenAG's, WidescreenFixesPack `source/Mafia.FusionFix`): seen
+  in both labs in its own layout (Ultimate ASI Loader 10 as d3d8.dll with its d3d8to9, DXVK's d3d9.dll, its .asi in
+  scripts\): the bridge on, the upscaler, its draw distance (800 m). Not seen: its settings.bin written from Setup.exe
+  (the labs keep the registry: WriteSettingsToFile 0 there), its free camera and radar map with the loader's camera
+  and HUD services, its SMAA and console gamma (Direct3D 9 post effects at LS3D's render's end) over DLSS's picture,
+  a screen scaled by Windows (the labs' is not: the DPI awareness is seen only as set).
 - **DLSS on an RTX 50 with the upscaler** (2026-10-24): the render-size world, the mip bias and the GPU-ordered DXVK
   path are seen on the RTX 3070 (SR alone, frame generation's stand-in); DLSS-NR at the render size, DLSS-FG itself
   and the frame rate on the friend's RTX 5060 laptop wait for his next logs (the log's minute line now says whether

@@ -25,19 +25,42 @@ YOU NEED
 INSTALL
 -------
 Unpack everything from this archive into the game's folder (the folder
-with Game.exe) and start the game as usual. That's all.
+with Game.exe), then run Setup.exe once:
+  - Fullscreen OFF (frame generation shows its frames from a window of
+    its own: an exclusive full screen cannot have one),
+  - Resolution: your screen's own (2560 x 1600 on a 2560x1600 laptop).
+    DLSS draws the game smaller by itself; a smaller resolution here
+    only makes a smaller window,
+  - Save and exit.
+Then start the game as usual.
 
-Start with a clean game (no other mods): if it works there, add your
-other mods back one by one. If the game folder already has dinput8.dll,
-d3d8.dll or dxwrapper files from other mods, back them up first: this
-archive replaces them.
+An older version of this archive installed dinput8.dll, dxwrapper.dll
+and dxwrapper.ini: delete those three. If the game folder has d3d8.dll
+or dinput8.dll from other mods, back them up first: this archive
+replaces them.
 
-This archive includes DXVK's d3d9.dll (the game's Direct3D 9 on Vulkan):
-with it the game and DLSS hand each frame over on the graphics card
-and the game never waits for it. Keep it. If you have DXVK already,
-keep yours (2.1 or newer) or take this one; dxgi.dll, d3d11.dll and
-dxvk.conf of DXVK may stay too, but not DXVK's d3d8.dll (this archive's
-d3d8.dll must stay).
+MAFIA FUSION FIX works with it (ThirteenAG's widescreen fix and more):
+unpack Fusion Fix and this archive in any order. Both use the same
+Ultimate ASI Loader as d3d8.dll with its d3d8.ini (UseD3D8to9=1), so
+either one's copy is fine. Delete Mafia.WidescreenFix.asi (Fusion Fix
+replaces it). In Mafia.FusionFix.ini:
+  - BorderlessWindowed = 1 (with Setup's Fullscreen off and your screen's
+    resolution: a borderless window over the whole screen),
+  - WriteSettingsToFile = 1 keeps the settings in savegame\settings.bin:
+    run Setup.exe once after installing and press Save and exit, or the
+    game opens Setup.exe instead of starting,
+  - its DrawDistance (600) makes the game draw much more of the city
+    and moves the fog away (measured: from 84..280 m to 240..800 m),
+    so the city looks darker and harsher than the game's own hazy
+    picture, and the processor's work grows with it. Enable = 0 in
+    [DRAW_DISTANCE] gives the game's own distance, fog and look back.
+
+This archive includes DXVK's d3d9.dll (the game's Direct3D 9 on Vulkan)
+and dxvk.conf (textures filtered anisotropically, 16x: sharp at a
+grazing angle): with it the game and DLSS hand each frame over on the
+graphics card and the game never waits for it. Keep both. If you have
+DXVK already, keep yours (2.1 or newer) or take this one; dxgi.dll and
+d3d11.dll of DXVK may stay too.
 ReShade 6.8 on top of DXVK (Vulkan) with its effects runs with the mod
 (tested on an RTX 3070, the mod's frame path without DLSS 5 itself).
 
@@ -68,14 +91,10 @@ Esc > Options > Mods > DLSS
                     rate: the game then runs at the refresh rate
                     divided by 2, 3 or 4 (144 Hz and 2x: 72 fps). Pick
                     the one that keeps the game's own frame rate where
-                    it runs smoothly. With DXVK too.
+                    it runs smoothly. In a window only (Setup's
+                    Fullscreen off): in an exclusive full screen the
+                    game's own thread shows them, much slower.
 
-The game's full screen is a borderless window over the whole screen
-(dxwrapper.ini: EnableWindowMode, FullscreenWindowMode): frame
-generation cannot show its frames in an exclusive full screen.
-The game's textures are filtered anisotropically (16x: dxwrapper.ini's
-AnisotropicFiltering), so roads and walls stay sharp at a grazing
-angle, with DLSS or without.
   Picture           strength, tone, detail, model A/B/C.
   Compare           a split screen with and without.
   Advanced          the presets of Neural Rendering and of Super
@@ -125,16 +144,16 @@ D3D11VA" is the graphics card).
 
 UNINSTALL
 ---------
-Delete from the game's folder: dinput8.dll, MafiaModLoader.asi,
-d3d8.dll, d3d9.dll, dxwrapper.dll, dxwrapper.ini, the "mml" folder
-(and README.txt, licenses). No game files were changed.
+Delete from the game's folder: MafiaModLoader.asi, d3d9.dll,
+dxvk.conf, the "mml" folder (and README.txt, licenses), and d3d8.dll
+with d3d8.ini unless Fusion Fix stays. No game files were changed.
 
 
 IF SOMETHING GOES WRONG
 -----------------------
 Send these files (the ones that exist):
   <game>\mml\logs\mml.log and mml.prev.log
-  <game>\dxwrapper-game.log and Game_d3d9.log (DXVK's)
+  <game>\Game_d3d9.log (DXVK's)
   <game>\mml\data\dlss_nr\nvngx.log
   everything in <game>\mml\crash\
 

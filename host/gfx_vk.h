@@ -18,6 +18,7 @@ bool Start(IDirect3DDevice9 *dev9, std::string *why);
 bool On();
 void Stop();                                   // every link freed first
 bool IsDxvk(IDirect3DDevice9 *dev9);           // DXVK's device (its interop interface answers)
+bool Luid(LUID *out);                          // the adapter of DXVK's Vulkan device (Start first)
 
 // The hand-overs ordered on the GPU: two fences of Direct3D 11 (11.4) shared with DXVK's device as timeline
 // semaphores (DXVK enables VK_KHR_external_semaphore_win32 where the driver has it). True: To11 and To9 wait for

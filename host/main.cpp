@@ -64,12 +64,38 @@ bool InstanceInit() {
         oCreateMutexA = reinterpret_cast<CreateMutexAFn>(old);
     return !g_second;
 }
+
+// The game's Setup.exe (its display, sound and detail settings) loads d3d8.dll too: where the ASI loader is the game's
+// d3d8.dll (Mafia Fusion Fix's way: Ultimate ASI Loader with its d3d8to9), it loads this loader into Setup as well.
+// The loader stays out of it: no log (the game's would be rotated away), no hooks, no bridge, no crash filter.
+bool g_out;
+bool IsSetup(const std::string &exe) {
+    std::string name = exe.substr(exe.find_last_of("\\/") + 1);
+    for (char &c : name) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+    return name == "setup.exe";
+}
+
+// The process DPI aware (the system's DPI), as dxwrapper makes it: on a screen scaled by Windows (a laptop's 2560x1600
+// at 150 or 200 %) a DPI-unaware game's window is measured in scaled units while Direct3D's back buffer is in pixels.
+// Nothing when something set it first (the game's manifest, dxwrapper): Windows refuses a second setting.
+void DpiAware() {
+    using SetFn = BOOL(WINAPI *)(HANDLE);
+    HMODULE user = GetModuleHandleW(L"user32.dll");
+    auto set = user ? reinterpret_cast<SetFn>(GetProcAddress(user, "SetProcessDpiAwarenessContext")) : nullptr;
+    if (!set) return;   // (Windows 8.1 and older)
+    if (set(reinterpret_cast<HANDLE>(static_cast<intptr_t>(-2))))   // (DPI_AWARENESS_CONTEXT_SYSTEM_AWARE)
+        HLOG("the process made DPI aware (the system's DPI): the game's window and its picture in pixels on a scaled screen");
+    else if (GetLastError() != ERROR_ACCESS_DENIED)
+        HWARN("the process not made DPI aware (error %lu)", GetLastError());
+}
 }
 const std::string &GameDir() { return g_gameDir; }
 const std::string &MmlDir() { return g_mmlDir; }
+bool OutOfProcess() { return g_out; }
 
 void Init() {
     std::string exe = ModulePath(nullptr);
+    if (IsSetup(exe)) { g_out = true; return; }
     g_gameDir = exe.substr(0, exe.find_last_of("\\/") + 1);
     g_mmlDir = g_gameDir + "mml\\";
     if (!InstanceInit()) {   // (first: before the log, the bridge's file, anything of this folder's)
@@ -87,6 +113,7 @@ void Init() {
              a.largeAddressAware ? " (Game.exe is Large Address Aware)" :
              " (Game.exe is not Large Address Aware: the 4 GB patch would double it, for texture packs, DXVK, ReShade)");
     }
+    DpiAware();
     CrashFilterStart();
     if (GameHooksInstall()) {
         HLOG("game: Mafia %s", GameBuild());
@@ -122,6 +149,7 @@ extern "C" __declspec(dllexport) void mml_host_present(unsigned ms) {
 
 BOOL WINAPI DllMain(HINSTANCE, DWORD reason, LPVOID reserved) {
     if (reason == DLL_PROCESS_ATTACH) host::Init();
+    else if (host::OutOfProcess()) return TRUE;   // (the game's Setup: nothing was started)
     else if (reason == DLL_PROCESS_DETACH && !reserved) HLOG("process detaching (the loader unloaded)");
     else if (reason == DLL_PROCESS_DETACH) {   // (the process ends: on the thread that called ExitProcess)
         if (host::ThreadHasTls())

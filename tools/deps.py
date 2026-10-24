@@ -8,6 +8,7 @@
     python tools/deps.py ngx vulkan # NVIDIA NGX (DLSS SDK) with DLSS 5 Neural Rendering, the Vulkan headers (x64)
     python tools/deps.py dxwrapper  # dxwrapper's sources (Direct3D 8 on 9Ex), built by the x86 preset with our patch
     python tools/deps.py dxvk       # DXVK's 32-bit d3d9.dll: the graphics bridge's Vulkan path tested in a lab
+    python tools/deps.py ual10      # Ultimate ASI Loader 10 (its d3d8.dll with d3d8to9: the dlss_nr pack, Fusion Fix's way)
     python tools/deps.py ffmpeg     # FFmpeg's and dav1d's sources, built by the x86 preset (the loader's video player)
     python tools/deps.py ghidra     # an optional one: Ghidra and its Python bridge (tools/ghidra_cli.py)
     python tools/deps.py --force    # again, from scratch
@@ -37,6 +38,13 @@ PINNED = {
              '952cebfc30d525afc2bdbaca954329d405ded3aa688a83027354dae14dfd5c5f'),
             ('https://raw.githubusercontent.com/ThirteenAG/Ultimate-ASI-Loader/v9.7.4/license',
              'ceca73c504e39084b0b80d2a437aea9988313d1915418d3c629c3e4a8313f5a1', '')],
+    # Ultimate ASI Loader v10.0.0 (2026-10-21, x86, with PDB), MIT: its d3d8.dll form carries crosire's d3d8to9
+    # ([GlobalSets] UseD3D8to9=1 in d3d8.ini), as Mafia Fusion Fix ships it; the dlss_nr pack puts it there over DXVK
+    # (tools/pack.py "loader": "d3d8"). The hash is GitHub's published digest; the license is the same file as v9.7.4's.
+    'ual10': [('https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases/download/v10.0.0/Ultimate-ASI-Loader.zip',
+               '41bc535561a001f7164a9513c7b05fcecf08be780cac896ec84566cd6d534fb5'),
+              ('https://raw.githubusercontent.com/ThirteenAG/Ultimate-ASI-Loader/v10.0.0/license',
+               'ceca73c504e39084b0b80d2a437aea9988313d1915418d3c629c3e4a8313f5a1', '')],
     # Jolt Physics v5.6.0, commit e77f175595e64cb44218cc9d9d56fc365ad0e36a (2026-07-11), MIT: the rigid bodies for
     # mods, built for x86 by CMakeLists.txt (target Jolt). The archive's 1250 files were compared with a clone of
     # the tag (mafia-ragdoll's, whose 577 unit tests pass on the 32-bit build): all identical.
@@ -177,7 +185,7 @@ PINNED = {
                'ddac49f903da9d5bac833e5cc79395098b9c33cfd3279be5f31bd00387d2d4db'),
 }
 # fetched only when named: not every build needs them
-OPTIONAL = {'ghidra', 'cuda', 'flow', 'ngx', 'vulkan', 'dxwrapper', 'dxvk', 'ffmpeg'}
+OPTIONAL = {'ghidra', 'cuda', 'flow', 'ngx', 'vulkan', 'dxwrapper', 'dxvk', 'ffmpeg', 'ual10'}
 
 
 def download(name, url, sha, archive):

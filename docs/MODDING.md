@@ -301,6 +301,14 @@ float4 PsMine(float4 pos : SV_Position) : SV_Target {
   game's thread waits for each device at the hand-overs (event queries): the CPU and the GPU take turns there, which
   costs a GPU-heavy frame (DLSS on a laptop) most of its rate. `gfx.state`'s `d3d9` and `timing.sync` say which way
   the frame goes; the log says it once a minute with the frame's times (below).
+- **Which Direct3D 9**: Direct3D 9Ex underneath (dxwrapper's D3d8to9 and D3d9to9Ex, the labs'), or DXVK's Direct3D 9
+  whether extended or not: Ultimate ASI Loader as the game's `d3d8.dll` with its d3d8to9 (`d3d8.ini`: `[GlobalSets]
+  UseD3D8to9=1`, Mafia Fusion Fix's layout and the dlss_nr pack's) over DXVK's `d3d9.dll` makes a plain one, and the
+  bridge takes it (the adapter's LUID from DXVK's Vulkan device). Windows' own plain Direct3D 9 shares nothing: off,
+  and it says so. Without dxwrapper the loader makes the process DPI aware itself (as dxwrapper did) and draws the
+  game's gamma ramp (its brightness) in a window on DXVK, which applies one in a full screen only (`gfx.state`
+  `gamma`); dxvk.conf's `d3d9.samplerAnisotropy = 16` is dxwrapper's anisotropic filtering there. Ultimate ASI
+  Loader as `d3d8.dll` loads the loader into the game's Setup.exe too: it stays out of it (no log, no hooks).
 - **Each frame of the mission's world** (not the menus): the frame's depth buffer is a readable one while the world
   is drawn; at the point where the world is drawn and the HUD not yet (after the mods' `RENDER_WORLD` drawing, so
   their Direct3D 9 drawing is in the frame the passes see), the frame's colour and linear depth (metres along the

@@ -281,6 +281,11 @@ Rendering over the game's frame, NGX through Vulkan in the sidecar; a GeForce RT
   the bridge loads Windows' own by full path (a bare name found DXVK's dxgi, and Windows' d3d11 faulted on its
   adapter). Test it with `python tools/deps.py dxvk` and `third_party/_deps/dxvk/x32/*.dll` copied into a lab (and
   taken out after).
+- **Two layouts of the game's Direct3D**: the labs run dxwrapper as d3d8.dll (Direct3D 8 on 9Ex) with Ultimate ASI
+  Loader as dinput8.dll; the dlss_nr pack (and Mafia Fusion Fix) runs Ultimate ASI Loader 10 as d3d8.dll with its
+  d3d8to9 (`d3d8.ini`) over DXVK's d3d9.dll, no dxwrapper: there the bridge orders the devices on the GPU, the loader
+  makes the process DPI aware and draws the game's gamma in a window, and it stays out of Setup.exe (which then loads
+  it too). Test the pack's layout by swapping a lab's files (`third_party/_deps/ual10`, `dxvk`) and put them back.
 - **The MCP server's own binary is locked while your session runs it**: to build a new one, rename
   `mcp/target/release/mml-mcp.exe` first (Windows allows that), build, and test the new one with a client of your
   own (`tests/mcp_smoke.py` shows how); the session gets it at its next start.

@@ -73,6 +73,7 @@ struct Vk {
     PFN_vkGetPhysicalDeviceMemoryProperties vkGetPhysicalDeviceMemoryProperties = nullptr;
     PFN_vkGetPhysicalDeviceImageFormatProperties2 vkGetPhysicalDeviceImageFormatProperties2 = nullptr;
     PFN_vkGetPhysicalDeviceExternalSemaphoreProperties vkGetPhysicalDeviceExternalSemaphoreProperties = nullptr;
+    PFN_vkGetPhysicalDeviceProperties2 vkGetPhysicalDeviceProperties2 = nullptr;
 } vk;
 
 uint64_t g_waitNs = 250ull * 1000 * 1000;   // a copy not done in this time: the frame goes on without it (Busy)
@@ -294,6 +295,17 @@ bool IsDxvk(IDirect3DDevice9 *dev9) {
 }
 
 bool On() { return g_interop != nullptr; }
+
+bool Luid(LUID *out) {
+    if (!g_interop || !vk.vkGetPhysicalDeviceProperties2) return false;
+    VkPhysicalDeviceIDProperties id{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES};
+    VkPhysicalDeviceProperties2 p{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+    p.pNext = &id;
+    vk.vkGetPhysicalDeviceProperties2(g_pd, &p);
+    if (!id.deviceLUIDValid) return false;
+    memcpy(out, id.deviceLUID, sizeof *out);
+    return true;
+}
 bool Gpu() { return g_interop && g_gpu; }
 
 bool Start(IDirect3DDevice9 *dev9, std::string *why) {
@@ -318,6 +330,7 @@ bool Start(IDirect3DDevice9 *dev9, std::string *why) {
         reinterpret_cast<PFN_vkGetPhysicalDeviceImageFormatProperties2>(gipa(g_inst, "vkGetPhysicalDeviceImageFormatProperties2"));
     vk.vkGetPhysicalDeviceExternalSemaphoreProperties =
         reinterpret_cast<PFN_vkGetPhysicalDeviceExternalSemaphoreProperties>(gipa(g_inst, "vkGetPhysicalDeviceExternalSemaphoreProperties"));
+    vk.vkGetPhysicalDeviceProperties2 = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties2>(gipa(g_inst, "vkGetPhysicalDeviceProperties2"));
     if (!gdpa || !vk.vkGetPhysicalDeviceMemoryProperties || !vk.vkGetPhysicalDeviceImageFormatProperties2)
         return fail("its Vulkan instance lacks a function the copies need");
     std::string missing;

@@ -229,6 +229,7 @@ DWORD SafePlace(void *actor, V3 *out) {
 
 HRESULT __stdcall PresentHook(void *dev, const RECT *src, const RECT *dst, HWND wnd, const void *dirty) {
     RenderPresent(dev);   // (mods' drawing over the whole frame first: it is in the shot)
+    GammaPresent(dev);    // (gamma.cpp: the game's brightness in a window on DXVK, before the shot and the showing)
     int id = 0;
     bool crossing = false;
     V3 place{};

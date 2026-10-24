@@ -3681,3 +3681,30 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   427x320 in Ultra Performance, the picture whole, the bias applied. A player's run in the 1.2 lab on DXVK with DLAA
   exited cleanly.
 - **The pack**: dlss_nr's ships DXVK 3.1.1's d3d9.dll (its license beside), the README says why and what to send.
+
+## 2026-10-24: Mafia Fusion Fix and the dlss_nr pack in one layout
+
+- **Asked** (The Renegade): a version that works with Mafia Fusion Fix (ThirteenAG; its source in WidescreenFixesPack,
+  `source/Mafia.FusionFix`), which ships Ultimate ASI Loader as d3d8.dll with crosire's d3d8to9 inside
+  (`d3d8.ini` `[GlobalSets] UseD3D8to9=1`) and its .asi in scripts\; with the pack's dxwrapper as d3d8.dll the two
+  collide (two ASI loaders, two d3d8.dll). And: "the game opens in a quarter of the screen" after a resolution or a
+  borderless switch.
+- **Read** (its sources): it reaches Direct3D 9 by QueryInterface(IDirect3DDevice9) on the game's device (any d3d8to9
+  answers), mid-hooks LS3DF by patterns (CreateWindowExA for its borderless window, centred at the game's size;
+  GetSystemMetrics answered 0; the shadows' ZBIAS; the camera's FOV), rw_data's archive lookup (its eye animations: a
+  mid-hook inside the function whose entry the loader hooks), the registry (WriteSettingsToFile: savegame\settings.bin,
+  written by Setup.exe, which loads the same d3d8.dll: without that file the game opens Setup.exe instead of starting;
+  the lab did so once).
+- **Made**: the bridge takes DXVK's plain Direct3D 9 (d3d8to9 makes no 9Ex; DXVK answers IDirect3DDevice9Ex only for
+  an extended device), the adapter's LUID from DXVK's Vulkan device; the loader stays out of Setup.exe (no log, no
+  hooks: it would rotate the game's log away); it makes the process DPI aware itself (dxwrapper did: a window on a
+  scaled screen); it draws the game's gamma ramp (the brightness slider) over the frame in a window on DXVK, which
+  applies a ramp in a full screen only (host/gamma.cpp, bridge9.hlsl PsGamma; `gfx.state` gamma; seen with
+  IGraph::SetGammaRamp called through native.call: the frame brighter, then back). The dlss_nr pack: Ultimate ASI
+  Loader 10.0.0 as d3d8.dll with d3d8.ini (`tools/deps.py ual10`; the same as Fusion Fix's: either may overwrite the
+  other), DXVK's d3d9.dll with dxvk.conf (`d3d9.samplerAnisotropy = 16`), no dxwrapper, no dinput8.dll; the README:
+  Setup's Fullscreen off at the screen's resolution (frame generation needs a window; DLSS makes the render smaller
+  itself), Fusion Fix's settings.bin and draw distance.
+- **Seen**: 1.2 and 1.0 labs in that layout with Fusion Fix in scripts\: the bridge on DXVK's plain device, the devices
+  ordered on the GPU, DLSS SR's render size and mip bias, Fusion Fix's 800 m draw distance; Setup.exe started with the
+  loader beside it: mml.log untouched. The labs put back in their dxwrapper layout after.

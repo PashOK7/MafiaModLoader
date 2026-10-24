@@ -98,3 +98,12 @@ float4 PsMotionAll(float2 vpos : VPOS) : COLOR0 {
     float4 before = mul(float4(v, sky ? 0 : 1), g_before);
     return float4(before.w > 1e-4 ? ToScreen(before) - here : 0, 0, 0);
 }
+
+// The game's brightness in a window (host/gamma.cpp, on DXVK): the frame's copy (s0) through the game's gamma ramp,
+// 256 texels at s1 (each channel its own row of the ramp: red, green, blue), filtered between the ramp's entries.
+sampler2D g_ramp : register(s1);
+float4 PsGamma(float2 vpos : VPOS) : COLOR0 {
+    float3 c = tex2D(g_tex, (vpos + 0.5) * g_size.zw).rgb;
+    float3 u = c * (255.0 / 256.0) + 0.5 / 256.0;
+    return float4(tex2D(g_ramp, float2(u.r, 0.5)).r, tex2D(g_ramp, float2(u.g, 0.5)).g, tex2D(g_ramp, float2(u.b, 0.5)).b, 1);
+}
