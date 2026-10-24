@@ -3708,3 +3708,10 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Seen**: 1.2 and 1.0 labs in that layout with Fusion Fix in scripts\: the bridge on DXVK's plain device, the devices
   ordered on the GPU, DLSS SR's render size and mip bias, Fusion Fix's 800 m draw distance; Setup.exe started with the
   loader beside it: mml.log untouched. The labs put back in their dxwrapper layout after.
+- **Seen by the owner**: with Fusion Fix the game darker and harsher, the loading screen too. My first answer (its
+  draw distance moving the fog away) was a guess, and wrong. Measured (1.2 lab, DLSS off, the world still, two fixed
+  cameras, the frame's luminance): without Fusion Fix (dxwrapper, or UAL + DXVK alike) the mean 85.8 / 66.4, the 5th
+  percentile 21 / 19; Fusion Fix with the tester's ini 73.3 / 52.4, 9 / 7; its draw distance off (the fog back at
+  84..280 m) the same 73.4 / 52.5; ConsoleGamma 0 (the tester's ini had 1, its default is 0) 86.5 / 66.5, 22 / 19:
+  the game's own. ConsoleGamma, Fusion Fix's "Xbox 360" curve drawn at LS3D's render's end, is all of it; the pack's
+  README says so.

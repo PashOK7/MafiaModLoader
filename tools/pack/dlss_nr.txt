@@ -49,11 +49,16 @@ replaces it). In Mafia.FusionFix.ini:
   - WriteSettingsToFile = 1 keeps the settings in savegame\settings.bin:
     run Setup.exe once after installing and press Save and exit, or the
     game opens Setup.exe instead of starting,
-  - its DrawDistance (600) makes the game draw much more of the city
-    and moves the fog away (measured: from 84..280 m to 240..800 m),
-    so the city looks darker and harsher than the game's own hazy
-    picture, and the processor's work grows with it. Enable = 0 in
-    [DRAW_DISTANCE] gives the game's own distance, fog and look back.
+  - ConsoleGamma = 1 is its "Xbox 360" gamma curve: the whole picture,
+    the loading screens too, darker and harsher (measured: the frame's
+    mean brightness 86 -> 73, its darkest twentieth 21 -> 9 of 255).
+    ConsoleGamma = 0 gives the game's own look back, exactly.
+  - SMAA = 1 smooths edges after DLSS, which smooths them already:
+    SMAA = 0 with DLSS on.
+  - its DrawDistance makes the game draw more of the city (the fog
+    moved from 84..280 m to 240..800 m; the look measured the same):
+    the processor's work grows with it. Enable = 0 in [DRAW_DISTANCE]
+    gives the game's own distance back if the frame rate drops.
 
 This archive includes DXVK's d3d9.dll (the game's Direct3D 9 on Vulkan)
 and dxvk.conf (textures filtered anisotropically, 16x: sharp at a
