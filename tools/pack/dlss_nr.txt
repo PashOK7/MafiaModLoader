@@ -2,8 +2,8 @@ NVIDIA DLSS 5 Neural Rendering and DLSS Super Resolution for Mafia
 ==================================================================
 
 For personal use only: do not upload or share this archive publicly
-(it contains NVIDIA's nvngx_dlssnr.dll and nvngx_dlss.dll, under
-NVIDIA's license).
+(it contains NVIDIA's nvngx_dlssnr.dll, nvngx_dlss.dll and
+nvngx_dlssg.dll, under NVIDIA's license).
 
 
 YOU NEED
@@ -12,6 +12,7 @@ YOU NEED
   and up). Older cards cannot run it: NVIDIA's file refuses them.
   DLSS Super Resolution (DLAA to Ultra Performance) runs on any GeForce
   RTX (20 series and newer), with or without Neural Rendering.
+  DLSS Frame Generation runs on a GeForce RTX 40 or 50.
 - NVIDIA driver 617.42 or newer (nvidia.com/drivers or the NVIDIA App).
 - Mafia 1.2 (Steam / GOG / patched retail) or 1.0.
 - The game running on the GeForce. A PC whose processor has graphics of
@@ -57,6 +58,13 @@ Esc > Options > Mods > DLSS
   Pipelined         DLSS works on one frame while the game draws the
                     next one (the picture is one frame behind): much
                     faster. Off: every frame waits for DLSS.
+  Frame generation  Off, 2x, 3x, 4x (an RTX 40 or 50): DLSS makes the
+                    frames between two of the game's and shows them
+                    evenly spaced; the game's own frame rate stays as
+                    it is. Shown frames over the monitor's refresh rate
+                    are not seen: with frame generation, cap the game
+                    (see FPS UNLOCK) at the refresh rate divided by 2,
+                    3 or 4 (144 Hz and 2x: 72).
   Picture           strength, tone, detail, model A/B/C.
   Compare           a split screen with and without.
   Advanced          the presets of Neural Rendering and of Super
@@ -70,6 +78,18 @@ off": the log says why).
 
 Start with Super Resolution on Performance and go up to Quality or DLAA
 while the frame rate allows it.
+
+
+FPS UNLOCK
+----------
+The game's 62.5 fps limit is taken away, its time kept real (cars,
+people and physics move as at 62.5 fps). A line at the top left shows
+the frames a second.
+F11           the unlock on / off (off: the game's own 62.5).
+A cap of its own, and the line hidden: create the file
+<game>\mml\data\fps_unlock\config.json with
+  { "max_fps": 72, "show": false }
+(0 for no cap). It is read again while the game runs.
 
 
 INTROS AND VIDEOS IN ANY FORMAT
