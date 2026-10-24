@@ -10,6 +10,8 @@
     ... --since <old> --include mml/ffmpeg
                                       # the update carries everything under that path, changed or not (a player whose
                                       # install lacks it); several --include may be given
+    ... --since <old> --split 19      # the update also as 7-Zip volumes of 19 MB each, <name>-update.7z.001, .002...
+                                      # (a chat's upload limit; 7-Zip from Program Files)
 
 From the builds' outputs (cmake --build --preset x86-release and x64-release: they must be current) and the pinned
 third-party files (tools/deps.py): Ultimate ASI Loader as dinput8.dll, MafiaModLoader.asi, our dxwrapper build
@@ -18,9 +20,11 @@ sidecar when one has a half; switched on in the archive's manifests: a graphics 
 the pack's own files, FFmpeg (the loader's video player: mml/ffmpeg, its BUILD.txt and licences), its README
 (tools/pack/<pack>.txt) and every license. No PDBs (players send logs and dumps).
 """
+import glob
 import os
 import re
 import shutil
+import subprocess
 import sys
 import zipfile
 
@@ -212,6 +216,29 @@ def update(dest, old_archive, include=()):
         z.writestr('UPDATE.txt', '\r\n'.join(note) + '\r\n')
     print('update: %s (%.1f MB, %d files changed, %d to delete)' % (os.path.relpath(archive, ROOT),
                                                                      os.path.getsize(archive) / 1e6, len(changed), len(gone)))
+    if '--split' in sys.argv:
+        split(dest, changed, new, note, float(options('--split')[0]))
+
+
+def split(dest, changed, new, note, mb):
+    """The update as 7-Zip volumes of `mb` MB each (LZMA2 at its best): <dest>-update.7z.001, .002..."""
+    seven = next((p for p in (shutil.which('7z'), os.path.join(os.environ.get('ProgramFiles', r'C:\Program Files'), '7-Zip', '7z.exe'))
+                  if p and os.path.exists(p)), None)
+    if not seven:
+        sys.exit('pack: --split needs 7-Zip (7z.exe on PATH or in Program Files)')
+    stage = dest + '-update'
+    shutil.rmtree(stage, ignore_errors=True)
+    for rel in changed:
+        put(stage, rel, new[rel])
+    note = note[:3] + ['All the parts (.7z.001, .7z.002...) in one folder: open the .001 with 7-Zip or WinRAR.', ''] + note[3:]
+    open(os.path.join(stage, 'UPDATE.txt'), 'w', encoding='utf-8', newline='\r\n').write('\n'.join(note) + '\n')
+    base = dest + '-update.7z'
+    for old in glob.glob(base + '.*'):
+        os.remove(old)
+    subprocess.run([seven, 'a', '-t7z', '-mx=9', '-v%db' % int(mb * 1e6), base, '.'], cwd=stage, check=True,
+                   stdout=subprocess.DEVNULL)
+    parts = sorted(glob.glob(base + '.*'))
+    print('split: %s' % ', '.join('%s (%.1f MB)' % (os.path.basename(p), os.path.getsize(p) / 1e6) for p in parts))
 
 
 if __name__ == '__main__':
