@@ -3547,3 +3547,19 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   (boxes, physx_*, flow_smoke...): `deploy` called `mod.reload` for each, and `mod.reload` loads a mod not loaded.
 - **Fixed** (the MCP server): only the mods `mods.list` says are loaded are reloaded; the others are named in
   `not_loaded`. tests/mcp_smoke.py deploys a mod that is off into the running stand-in game and checks it stays off.
+
+## 2026-10-24: frame generation shown from the bridge's own thread
+
+- **Made**: while a mod holds gfx_show, the game's Present copies the back buffer (the frame, not yet shown) and the
+  mod's pictures into one of two slots and returns at once; a thread of the bridge's shows them, spaced, through a
+  swap chain of its own on the game's window (Direct3D 9 lets a swap chain present between another thread's
+  BeginScene and EndScene when its back buffer is not the target). The device is made with D3DCREATE_MULTITHREADED
+  when a mod has "gfx": true; the thread and its swap chain are let go before a Reset. A full-screen device or DXVK:
+  the game's thread shows them as before (`gfx.state` show.thread says which and why). A Windows thread, not a
+  std::thread (one left joinable at the process's end terminates it).
+- **Measured** (`tools/fg_test.py`, new; the stand-in, 1.2 with fps_unlock): the game 152 fps off, 144 at 2x
+  (287 shown a second), 148 at 3x (445), 135 at 4x (540); the spacing within 0.2 ms. Before: 2x took the game to 43,
+  4x to 25. 1.0: 131 / 119 / 124 / 134, the same. Both games closed with 2x on: a clean exit, no dump.
+- **Not done**: the pictures are shown however fast the game runs (the game's presentation interval, immediate in
+  the labs): over the display's refresh most of them tear or are never seen; a cap to the refresh (or the game's
+  limit at refresh / (n + 1)) is the next step for FG to be useful.

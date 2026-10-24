@@ -1771,7 +1771,9 @@ typedef struct MmlHost {
     /* gfx_show: fn called at each frame's showing (the game's Present) with the frame and the targets of pictures to
      * show before it (MmlGfxShow); NULL takes it back (the mod's unload too). One mod at a time: the first that asks
      * has it, another is refused (0) until it lets go. Needs the graphics bridge on (a mod with "gfx": true at the
-     * start). 1 done, 0 refused. Game thread. */
+     * start). The pictures and the frame are shown, spaced over the frames' interval, from a thread of the bridge's
+     * through a swap chain of its own while it holds it (gfx.state show.thread: on a windowed device, not on DXVK): the
+     * game's thread goes on at once. 1 done, 0 refused. Game thread. */
     int (*gfx_show)(MmlMod *mod, MmlGfxShowFn fn, void *user);
     /* gfx_jitter: the frame's world drawn, from the next frame on, with the game's projection offset by (x, y) of the
      * frame's pixels (x right, y down; -0.5..0.5 for a temporal upscaler's sub-pixel samples, DLSS's, a TAA's), until
