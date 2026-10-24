@@ -1410,7 +1410,8 @@ impl Server {
     /// the game holds open is replaced all the same (it reads the old one until it closes it). A mod switched on or
     /// off in the game's folder (its mod.json there says `enabled`) stays so: `kept` names them. Only the mods the
     /// build defines go (build/x86/out/mml/build_mods.txt): a removed mod's old output folder is named in `skipped`, and
-    /// the game folder's mods the build does not define are left as they are, named in `others`.
+    /// the game folder's mods the build does not define are left as they are, named in `others`. Only the mods loaded
+    /// in the running game are reloaded; the others stay off (`not_loaded`).
     #[tool]
     async fn deploy(&self, Parameters(a): Parameters<DeployArgs>) -> Out {
         let running = self.bridge.call("ping", json!({}), 1500).await.is_ok();
@@ -1419,12 +1420,32 @@ impl Server {
         if !report.kept.is_empty() { out["kept"] = json!(report.kept); }
         if !report.others.is_empty() { out["others"] = json!(report.others); }
         if running && a.reload.unwrap_or(true) {
+            // (mod.reload loads a mod that is not loaded: a mod switched off would be switched on)
+            let loaded: std::collections::HashSet<String> = match self.call_value("mods.list", json!({}), Some(5000)).await {
+                Ok(v) => v
+                    .as_array()
+                    .or_else(|| v.get("mods").and_then(|m| m.as_array()))
+                    .map(|l| {
+                        l.iter()
+                            .filter(|m| m.get("loaded").and_then(|x| x.as_bool()) == Some(true))
+                            .filter_map(|m| m.get("id").and_then(|x| x.as_str()).map(String::from))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                Err(e) => return Err(format!("deploy: copied, but mods.list did not answer ({e}): nothing reloaded\n{}", pretty(&out)).into()),
+            };
             let mut reloads = vec![];
+            let mut off = vec![];
             for id in &report.mods {
+                if !loaded.contains(id) {
+                    off.push(id.clone());
+                    continue;
+                }
                 let r = self.call_value("mod.reload", json!({"id": id}), Some(15000)).await;
                 reloads.push(json!({"id": id, "ok": r.is_ok(), "detail": r.map_or_else(|e| json!(e), |v| v)}));
             }
             out["reloaded"] = json!(reloads);
+            if !off.is_empty() { out["not_loaded"] = json!(off); }
         }
         Ok(pretty(&out))
     }

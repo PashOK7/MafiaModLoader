@@ -3540,3 +3540,10 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Measured** (still_test, 1.2): DLAA 0.02, Quality 0.04, Ultra Performance 0.16 (0.23 before). 1.0: the offset
   applied, DLAA 0.06, Quality 0.14, Ultra 0.25; the slow car's check 1.16. The owner by eye, 1.2: every mode
   "perfect", the wires whole.
+
+## 2026-10-24: deploy no longer switches on the mods that are off
+
+- **Seen**: a whole build deployed into the running 1.2 lab loaded every mod it copied, the ones switched off too
+  (boxes, physx_*, flow_smoke...): `deploy` called `mod.reload` for each, and `mod.reload` loads a mod not loaded.
+- **Fixed** (the MCP server): only the mods `mods.list` says are loaded are reloaded; the others are named in
+  `not_loaded`. tests/mcp_smoke.py deploys a mod that is off into the running stand-in game and checks it stays off.

@@ -240,6 +240,14 @@ def main():
         c.tool('call', {'method': 'state.time', 'params': {'scale': 1}})
         check('the instructions tell of the kit', all(w in c.info.get('instructions', '') for w in ('draw.text', 'config.set', 'new_mod.py')))
         check('the instructions tell of the HUD', all(w in c.info.get('instructions', '') for w in ('hud.marker', 'hud.console', 'draw.picture')))
+        # deploy into the running game: a mod that is not loaded is not reloaded (mod.reload would load it)
+        ok, text = c.tool('deploy', {'mods': ['freeride_picture']})
+        ok2, listed = c.tool('call', {'method': 'mods.list'})
+        pic_loaded = ok2 and any(m.get('id') == 'freeride_picture' and m.get('loaded') for m in
+                                 (json.loads(listed) if listed.lstrip().startswith('[') else json.loads(listed).get('mods', [])))
+        check('deploy into the running game: a mod switched off stays off (not_loaded)',
+              ok and '"not_loaded"' in text and 'freeride_picture' in text.split('"not_loaded"')[1] and not pic_loaded, (text, listed))
+        shutil.rmtree(os.path.join(HARNESS, 'mml', 'mods', 'freeride_picture'), ignore_errors=True)
         two_games(c)
     finally:
         open(os.path.join(HARNESS, 'quit'), 'w').close()
