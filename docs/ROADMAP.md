@@ -1197,6 +1197,12 @@ merged, sorted by importance):
 
 ## Known gaps
 
+- **Frame generation on DXVK is shown from the game's thread** (2026-10-24): the bridge's own thread presents through
+  a Direct3D 9 swap chain of its own, which the DXVK path (pictures copied on Vulkan's queue) does not have yet: a
+  player on DXVK gets the old, slow showing (`gfx.state` show.thread). Also: the shown frames are not capped to the
+  display's refresh.
+- **The game faults at its exit in LS3DF+0x5AC2E** (from +0x5BA73, the index buffers' release in drvClose; 2026-10-23
+  and 2026-10-24, the RTX 5060 friend's DXVK game, after the session): not reproduced in the labs, not looked into.
 - **MCP tools take an unknown parameter without a word** (2026-10-23): `mem_write {"type": "f32", "values": [2, 2,
   2]}` wrote three u32 2s (the parameter is `as`): a taxi's scale became denormals and it vanished. The tools should
   refuse a parameter they do not know.
