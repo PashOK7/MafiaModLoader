@@ -3897,3 +3897,27 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   names through HookAdd, a log line each); mods/game_fixes removed, the pack without it, its README's section and
   the update's notes say the loader does it. **Seen**: both labs log the fixes (1.0 the names alone), 1.2's controls
   W S A D Q, Sniper Mode X after a restart, "Joy0 / Y Axis" in both.
+
+## 2026-10-25: the tester's crashes; the countryside map
+
+- **Asked** (the owner): the tester's game crashed after 1.5 hours (maybe not ours); why. And the countryside map in
+  the radar "from Fusion Fix" does not work.
+- **Read** (his logcrash.zip: five dumps and reports, mml.log): four at the menu's Quit, LS3DF+0x5AC2E in
+  C_IBManager::m_FreeAllIBuffers from IGraph::Close (the known exit crash). One in the freeride at
+  C_traffic_car::AI+0x2B8, a null read; crash_triage: the game's own code, the loader in the stack only as the
+  mission's tick hook. The dump read (minidump; a 32-bit process's high addresses are sign-extended there): the
+  traffic manager's slots +0x74, 25 of them (+0x220), 16 filled; the loop that runs when a policeman asks for a car
+  (ai_police_action, the list at 0x63D86C) reads every slot without the null test the other loops have; 1.0 has the
+  same code. **Made**: host/fixes.cpp, the loop's `cmp byte ptr [eax], 0; jz next` made a jump to a stub that takes
+  an empty slot as an inactive car (game_build.h trafficSlotTest, check_builds.py). **Seen**: the stubs in both labs'
+  memory; the crash's condition not made again.
+- **Seen in passing**: the loader's own stack reader (host/stack.cpp AfterCallAt) caught access violations at
+  0x3FFFFB in his game and the copy of his folder: Game.exe's first page (its headers) had been made executable by
+  some tool, so its base 0x400000 on a stack was taken for code and read below. Caught, but dxwrapper logs each as an
+  error. **Made**: LiveKind takes a module's first page out of its code.
+- **The countryside map**: not Fusion Fix's (its RadarMap draws the city's 0mapar.bmp alone, in our port and in
+  ThirteenAG's newest); it is the tester's libMafiaCountrysideMap2.0.asi (fullmap.bmp, the Tab map). It writes a call
+  into C_game::Init (0x5A3955) and floats into .rdata without VirtualProtect: both fault in every layout, also with
+  the loader taken out and with UAL 10 as d3d8.dll (A/B in the copy of his folder: 0x5A3955 the game's bytes each
+  time). A trial with .text made writable by the loader let the call in and the .rdata write still faulted; taken
+  out again (ROADMAP Known gaps).

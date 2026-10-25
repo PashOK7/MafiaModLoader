@@ -267,6 +267,7 @@ pub struct Exe {
     pub settingsSaveRoot: usize,
     pub sniperConflictTest: usize,
     pub sniperRTest: usize,
+    pub trafficSlotTest: usize,
 }
 
 /// LS3DF.dll's, as RVAs (add the module's base; the int members are offsets): game_build.h Ls3dBuild.
@@ -613,6 +614,7 @@ pub static EXE_12: Exe = Exe {
     settingsSaveRoot: 0x5BF465,
     sniperConflictTest: 0x60592F,
     sniperRTest: 0x60595E,
+    trafficSlotTest: 0x4AFEF8,
 };
 
 pub static EXE_10: Exe = Exe {
@@ -877,6 +879,7 @@ pub static EXE_10: Exe = Exe {
     settingsSaveRoot: 0,
     sniperConflictTest: 0,
     sniperRTest: 0,
+    trafficSlotTest: 0x4FBD38,
 };
 
 pub static LS3D_12: Ls3d = Ls3d {

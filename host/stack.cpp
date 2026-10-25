@@ -183,10 +183,18 @@ CodeKind LiveKind(uintptr_t a, void *ctx) {
     for (int i = 0; i < rs.n; i++) if (a >= rs.r[i].base && a < rs.r[i].end) return rs.r[i].kind;
     MEMORY_BASIC_INFORMATION mi;
     if (!VirtualQuery(reinterpret_cast<const void *>(a), &mi, sizeof mi)) return kCodeNone;
-    const uintptr_t base = reinterpret_cast<uintptr_t>(mi.BaseAddress), module = reinterpret_cast<uintptr_t>(mi.AllocationBase);
-    const bool code = mi.State == MEM_COMMIT && mi.Type == MEM_IMAGE &&
-                      (mi.Protect & (PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY));
-    Region g = {base, base + mi.RegionSize, code ? KindOfModule(module) : kCodeNone};
+    uintptr_t base = reinterpret_cast<uintptr_t>(mi.BaseAddress), end = base + mi.RegionSize;
+    const uintptr_t module = reinterpret_cast<uintptr_t>(mi.AllocationBase);
+    bool code = mi.State == MEM_COMMIT && mi.Type == MEM_IMAGE &&
+                (mi.Protect & (PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY));
+    // A module's first page is its headers, never code, though a tool may have made it executable (one region with
+    // the code then): a player's Game.exe had, and its base 0x400000 on a stack was taken for a return address and
+    // read 7 bytes below, outside the image (caught, but logged as an access violation by dxwrapper).
+    if (code && base < module + 0x1000) {
+        if (a < module + 0x1000) end = module + 0x1000, code = false;
+        else base = module + 0x1000;
+    }
+    Region g = {base, end, code ? KindOfModule(module) : kCodeNone};
     if (rs.n < 64) rs.r[rs.n++] = g;
     else { rs.r[rs.next] = g; rs.next = (rs.next + 1) % 64; }
     return g.kind;

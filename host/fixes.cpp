@@ -22,6 +22,13 @@
 //                            names it (its own table, read from 1.0's controlsKeyName), an axis "X Axis", a button
 //                            "Button 3", a hat "POV 1". A key's name is taken from DirectInput's own (Unicode) in 1.2,
 //                            so a layout's letter the font has (an AZERTY "A", a German "Ü") stays.
+//   An empty traffic slot    The traffic manager's AI (C_traffic_car::AI) keeps its cars in slots (+0x74, +0x220 of
+//   (both builds)            them, empty while a car is not out: 16 of 25 filled in the tester's crash). When a
+//                            policeman asks for a car (ai_police_action fills a list) and every car is out, one loop
+//                            looks for a car to take back and reads each slot without testing for an empty one, as
+//                            the other loops do: a crash at C_traffic_car::AI+0x2B8 (the tester, after 1.5 hours of
+//                            the freeride, a chase on). Its `cmp byte ptr [eax], 0; jz <next>` jumps to a stub that
+//                            takes an empty slot as an inactive car (the same `jz`), and else does the same.
 #include "host.h"
 #include <cstdio>
 #include <cstring>
@@ -124,6 +131,38 @@ void Patch(const char *what, uintptr_t a, uintptr_t b, const void *original, con
     if (ok) HLOG("fixes: %s", what);
     else HWARN("fixes: %s: not done (%s)", what, err.c_str());
 }
+
+// ---- an empty traffic slot: `cmp byte ptr [eax], 0; jz next` (5 bytes) made `jmp stub`; the stub: test eax, eax;
+// jz next; cmp byte ptr [eax], 0; jz next; jmp back (after the game's jz). Its page is the loader's, never freed.
+void TrafficSlots(uintptr_t at) {
+    if (!at) return;
+    uint8_t game[5];
+    if (!MemRead(at, game, 5) || game[0] != 0x80 || game[1] != 0x38 || game[2] != 0x00 || game[3] != 0x74) {
+        HWARN("fixes: an empty traffic slot: the game's bytes are not as expected, not done");
+        return;
+    }
+    const uintptr_t next = at + 5 + static_cast<int8_t>(game[4]), back = at + 5;
+    auto *stub = static_cast<uint8_t *>(VirtualAlloc(nullptr, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+    if (!stub) { HWARN("fixes: an empty traffic slot: no memory for its stub, not done"); return; }
+    size_t n = 0;
+    auto rel32 = [&](uintptr_t to) {
+        const int32_t r = static_cast<int32_t>(to - (reinterpret_cast<uintptr_t>(stub) + n + 4));
+        memcpy(stub + n, &r, 4);
+        n += 4;
+    };
+    stub[n++] = 0x85, stub[n++] = 0xC0;                     // test eax, eax
+    stub[n++] = 0x0F, stub[n++] = 0x84, rel32(next);        // jz next
+    stub[n++] = 0x80, stub[n++] = 0x38, stub[n++] = 0x00;   // cmp byte ptr [eax], 0
+    stub[n++] = 0x0F, stub[n++] = 0x84, rel32(next);        // jz next
+    stub[n++] = 0xE9, rel32(back);                          // jmp back
+    FlushInstructionCache(GetCurrentProcess(), stub, n);
+    uint8_t jmp[5] = {0xE9};
+    const int32_t r = static_cast<int32_t>(reinterpret_cast<uintptr_t>(stub) - (at + 5));
+    memcpy(jmp + 1, &r, 4);
+    std::string err;
+    if (PatchAdd(nullptr, at, game, jmp, 5, &err)) HLOG("fixes: an empty traffic slot skipped when a policeman asks for a car");
+    else HWARN("fixes: an empty traffic slot: not done (%s)", err.c_str());
+}
 } // namespace
 
 void FixesInit() {
@@ -134,6 +173,7 @@ void FixesInit() {
           &hklm, &hkcu, 1);
     const uint8_t test[2] = {0x85, 0xC0}, inc[2] = {0x40, 0x90};   // test eax, eax -> inc eax; nop
     Patch("Sniper Mode's key kept at a profile's load", e.sniperConflictTest, e.sniperRTest, test, inc, 2);
+    TrafficSlots(e.trafficSlotTest);
     if (e.controlsKeyName) {
         g_keys12 = e.igraph && !strcmp(GameBuild(), "1.2");
         std::string err;

@@ -1230,7 +1230,14 @@ merged, sorted by importance):
   never writing there. A Sniper Mode key that does conflict with another is still reset at the load (the game's
   intent). The key names were seen in a Russian layout and a joystick in the system's Russian; another language's
   font (a Czech or Russian edition) keeps DirectInput's names whenever they are in its code page. Not yet seen on
-  the tester's machine.
+  the tester's machine. The empty traffic slot (C_traffic_car::AI, a policeman asking for a car): the stub is in both
+  labs' memory, the crash's condition was not made again.
+- **The exit crash writes a dump at every quit** (seen in the tester's crashes of 2026-10-25: four of five at the
+  menu's Quit, LS3DF+0x5AC2E in C_IBManager::m_FreeAllIBuffers from IGraph::Close; knowledge/notes/game.md "The exit
+  crash"): the game is closing anyway, but each leaves a dump of hundreds of MB that a player then sends. Not fixed.
+- **ASI mods that write Game.exe without VirtualProtect** (libMafiaCountrysideMap 2.0, 2026-10-25): its code and
+  .rdata writes fault in every layout, with or without the loader. Making the whole image writable before scripts\
+  loads would let it work: not done (the owner's call; its fullmap.bmp was not in the copy of the tester's folder).
 - **A gamepad plugged in while the game runs: not seen with a real pad** (2026-10-24, host/joyplug.cpp): the
   opening again is seen in both labs (`joy.drop`, `joy.rescan`), the device's arrival with real hardware and the poll
   thread (no CM_Register_Notification: Windows 7, Wine) are not. The running mission's force feedback effects stay on

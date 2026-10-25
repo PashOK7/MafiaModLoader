@@ -503,6 +503,11 @@ struct ExeBuild {
     // (to R, or none when R is bound); sniperConflictTest the first (a conflict of the binding read), sniperRTest the
     // second (whether R is free). 1.0 has neither (its ProfileLoad does not test the slot).
     uintptr_t settingsSaveRoot, sniperConflictTest, sniperRTest;
+    // trafficSlotTest: in the traffic's AI (C_traffic_car::AI, the traffic manager's tick), the `cmp byte ptr [eax],
+    // 0; jz <next>` (80 38 00 74 xx) of the loop that looks for a car to take out of the traffic when a policeman
+    // asked for one (ai_police_action's NoTakMiTedaDajTuPleckuJaJuOdvezu filled its list): it reads each of the
+    // manager's slots (+0x74, +0x220 of them) without testing for an empty one, which the other loops do (both builds).
+    uintptr_t trafficSlotTest;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -755,6 +760,8 @@ inline const ExeBuild kExe12 = {
     // the game's own bugs (2026-10-25: MafiaEntryPoint's RegCreateKeyExA at 0x5BF470; ProfileLoad's find_conflict
     // calls at 0x60592A and 0x605956)
     0x5BF465, 0x60592F, 0x60595E,
+    // (2026-10-25: the tester's crash after 1.5 h of the freeride, C_traffic_car::AI+0x2B8: slot 24 of 25 empty)
+    0x4AFEF8,
 };
 
 inline const ExeBuild kExe10 = {
@@ -894,6 +901,8 @@ inline const ExeBuild kExe10 = {
     // the game's own bugs: none of them here (2026-10-25: MafiaEntryPoint opens and writes HKLM, 0x5F9A43 and
     // 0x5FA1FE; ProfileLoad 0x557880 does not test Sniper Mode's binding)
     0, 0, 0,
+    // (2026-10-25: 1.2's twin, the same bytes, C_traffic_car::AI+0x2B8)
+    0x4FBD38,
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,

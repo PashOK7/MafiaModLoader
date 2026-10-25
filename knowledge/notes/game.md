@@ -595,6 +595,22 @@ autosplitter; kept outside it, not ported). Checked against the above:
   language, in both builds ("Ось Y" drawn "Îñü Y"; controlsKeyName's joystick case: code < 0x100 an axis by IJoy's
   index X, Y, Z, RX, RY, RZ, two sliders; 0x100.. a button; 0x200.. a hat). The loader gives a name the font cannot
   draw in English (1.0's key names; "Y Axis", "Button n", "POV n"): seen in both labs.
+- **code** **The traffic's AI reads an empty slot** (the tester's crash after 1.5 hours of the freeride, 2026-10-25, his
+  dump read). The traffic manager (`C_traffic_car`, vtable 0x624C98, an actor: its AI 0x4AFC40 is the traffic's tick)
+  keeps its cars in slots: `+0x74` an array of `+0x220` of them (`+0x21C` the most, 100, times the density at
+  0x63D7FC: 25 at 0.25), zeroed at GameInit and filled as cars come out (16 of 25 at the crash). When a policeman asks
+  for a car (`ai_police_action::Tick` calls `NoTakMiTedaDajTuPleckuJaJuOdvezu`, which fills the list at 0x63D86C) and
+  every car is out, one loop looks for a car to take back and reads each slot without the test for an empty one the
+  other loops have: `cmp byte ptr [eax], 0` on a null slot (C_traffic_car::AI+0x2B8; 1.0 the same code at 0x4FBD38).
+  The loader's stub takes an empty slot as an inactive car there. Not reproduced: the stubs checked in both labs'
+  memory.
+- **game** **libMafiaCountrysideMap 2.0** (a player's ASI, scripts\; its strings: "MafiaCountrysideMap plugin",
+  fullmap.bmp, "Sorry, but your exe version isn't supported"): it recognises the build by a dword, then writes a
+  `call` into C_game::Init's end (0x5A3955) and five floats into .rdata (0x623B08...) directly, with no VirtualProtect
+  (its only VirtualProtect is MinGW's runtime): both writes fault (caught by dxwrapper's handler, the plugin goes on
+  half done). The same without the loader and with Ultimate ASI Loader 10 as d3d8.dll. With Game.exe's .text made
+  writable (a trial) the call went in and the .rdata write faulted. It is not Fusion Fix's radar map (whose
+  coordinates are the city's 0mapar.bmp, in its own code).
 
 ## The exit crash (seen in mafia-ragdoll, not solved)
 

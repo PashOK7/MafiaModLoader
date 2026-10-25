@@ -1215,6 +1215,15 @@ def main(a):
             call = t - after - 5
             dest = call + 5 + struct.unpack('<i', gexe.at(call + 1 - 0x400000, 4))[0]
             check(dest == 0x607460, f'{name} {f}: the call is loadsave_binding_find_conflict')
+    # The traffic's slots (host/fixes.cpp): mov edx, [ebx + 0x74]; dec esi; mov eax, [edx + esi*4]; lea ecx, [edx +
+    # esi*4]; cmp byte ptr [eax], 0; jz <next>, the next a `test esi, esi; jnz` back to the loop's start.
+    for name, (exe, ls, gexe, gls) in builds.items():
+        t = exe['trafficSlotTest']
+        ok = gexe.at(t - 10 - 0x400000, 14) == bytes.fromhex('8b53744e8b04b28d0cb280380074')
+        nxt = t + 5 + gexe.at(t + 4 - 0x400000, 1)[0]
+        check(ok and gexe.at(nxt - 0x400000, 4) == b'\x85\xf6\x0f\x85' and
+              nxt + 8 + struct.unpack('<i', gexe.at(nxt + 4 - 0x400000, 4))[0] == t - 10,
+              f'{name} trafficSlotTest: the slots\' loop, cmp byte ptr [eax], 0; jz to its next turn')
     print('ALL PASSED' if not fails else f'{fails} FAILED')
     return 1 if fails else 0
 
