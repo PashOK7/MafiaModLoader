@@ -3836,3 +3836,27 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   "61 fps 16.7 ms (17.2 max) shown 180 fps (3x at 200 Hz)" (capped at 60, the stand-in at 4x); status the same.
 - **Heard** (The Renegade, 2026-10-25 14:18): the pack of the day "doesn't run, the setup.exe as well", after he
   removed the old files; he suspects d3d8.dll, d3d8.ini, d3d9.dll. Not reproduced: his logs awaited.
+
+## 2026-10-25: the dlss_nr pack back to dinput8.dll and dxwrapper; the brightness in a window on any Direct3D 9
+
+- **Heard and reproduced** (The Renegade's pack of the day did not start, Setup.exe neither): in a copy of his folder,
+  Ultimate ASI Loader as d3d8.dll is loaded by Setup.exe too, so his ASI mods (scripts\: MafiaLostCheats, MSE,
+  Patcher, water shader, XboxRainDroplets, libMafiaCountrysideMap2.0) loaded there and showed "exe version isn't
+  supported"; Setup never opened, and the game opens Setup when the registry has no settings. Under dinput8.dll
+  Setup.exe loads no plugin. (Windows asks administrator rights for any exe named "setup": `__COMPAT_LAYER=
+  RunAsInvoker` runs it without them for a test.)
+- **Decided** (the owner): the original layout again, no d3d8.dll crutches.
+- **Made**: tools/pack.py: Ultimate ASI Loader (9.7.4) as dinput8.dll, our dxwrapper as d3d8.dll over DXVK's
+  d3d9.dll and dxvk.conf; a pack's `dxwrapper` is a dict of dxwrapper.ini's keys set in place (`D3d9to9Ex = 0`:
+  DXVK's plain Direct3D 9); the update's notes say to delete d3d8.ini; the README's install and uninstall lists.
+  host/gamma.cpp: the old rule "dxwrapper present: it draws a window's ramp" was wrong: dxwrapper draws it only with
+  WindowModeGammaShader 2, or with it (1 by default) and EnableWindowMode, which the labs and the packs leave off, so
+  in a window nobody applied the brightness. Now dxwrapper.ini beside dxwrapper.dll is read (DxwrapperDrawsGamma);
+  otherwise the loader draws the ramp on any Direct3D 9, DXVK's or 9Ex, in a window.
+- **Seen**: both labs (9Ex, dxwrapper): "gamma: on (Direct3D 9 ...)", IGraph::SetGammaRamp (1.2 ls3d+0x72710, 1.0
+  ls3d+0x6EB70, the IGraph* at 0x647EE0 / 0x6F9528) given a brighter ramp through native.call: the frame brighter,
+  the identity: back, `gfx.state` gamma "the ramp the identity". The copy of his folder with the update (dxwrapper
+  over DXVK): "on (DXVK ...)", the same. Offline tests ALL PASSED. Pack and update rebuilt.
+- **Seen in passing**: the trees' leaves white in that copy, also without his scripts\, his maps\ (8932 loose
+  textures), DXVK, and on 9Ex: green in the 1.2 lab with the same loader and dxwrapper. His game's own files; left
+  (ROADMAP Known gaps).

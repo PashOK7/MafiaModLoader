@@ -37,10 +37,14 @@ with Game.exe), then run Setup.exe once:
   - Save and exit.
 Then start the game as usual.
 
-An older version of this archive installed dinput8.dll, dxwrapper.dll
-and dxwrapper.ini: delete those three. If the game folder has d3d8.dll
-or dinput8.dll from other mods, back them up first: this archive
-replaces them.
+The archives of 24 and 25 October had Ultimate ASI Loader as d3d8.dll
+with a d3d8.ini: delete d3d8.ini (d3d8.dll is replaced). Ultimate ASI
+Loader is dinput8.dll here, as most Mafia mods expect: the game loads
+it, Setup.exe does not, so ASI mods in scripts\ run in the game alone.
+If the game folder has d3d8.dll or dinput8.dll from other mods, back
+them up first: this archive replaces them. Windows asks for
+administrator rights for Setup.exe (it does so for any program named
+"setup"): that is expected.
 
 MAFIA FUSION FIX is part of this archive: ThirteenAG's widescreen fix
 and more, ported to the loader (mml\mods\fusion_fix). Do not install
@@ -151,8 +155,9 @@ D3D11VA" is the graphics card).
 UNINSTALL
 ---------
 Delete from the game's folder: MafiaModLoader.asi, d3d9.dll,
-dxvk.conf, the "mml" folder (and README.txt, licenses), and d3d8.dll
-with d3d8.ini unless another mod needs them. No game files were changed.
+dxvk.conf, d3d8.dll, dxwrapper.dll, dxwrapper.ini, the "mml" folder
+(and README.txt, licenses), and dinput8.dll unless other ASI mods need
+it. No game files were changed.
 
 
 IF SOMETHING GOES WRONG

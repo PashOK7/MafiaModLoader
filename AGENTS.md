@@ -286,10 +286,13 @@ Rendering over the game's frame, NGX through Vulkan in the sidecar; a GeForce RT
   adapter). Test it with `python tools/deps.py dxvk` and `third_party/_deps/dxvk/x32/*.dll` copied into a lab (and
   taken out after).
 - **Two layouts of the game's Direct3D**: the labs run dxwrapper as d3d8.dll (Direct3D 8 on 9Ex) with Ultimate ASI
-  Loader as dinput8.dll; the dlss_nr pack (and Mafia Fusion Fix) runs Ultimate ASI Loader 10 as d3d8.dll with its
-  d3d8to9 (`d3d8.ini`) over DXVK's d3d9.dll, no dxwrapper: there the bridge orders the devices on the GPU, the loader
-  makes the process DPI aware and draws the game's gamma in a window, and it stays out of Setup.exe (which then loads
-  it too). Test the pack's layout by swapping a lab's files (`third_party/_deps/ual10`, `dxvk`) and put them back.
+  Loader as dinput8.dll; the dlss_nr pack the same over DXVK's d3d9.dll (dxwrapper's `D3d9to9Ex = 0`: DXVK's plain
+  Direct3D 9; there the bridge orders the devices on the GPU). Mafia Fusion Fix's own layout is Ultimate ASI Loader 10
+  as d3d8.dll with its d3d8to9 (`d3d8.ini`), no dxwrapper: the loader makes the process DPI aware there and stays out
+  of Setup.exe, which loads d3d8.dll too, and so the player's ASI mods, which stopped it (a tester's, 2026-10-25: the
+  pack left that layout). In a window the loader draws the game's gamma ramp (the brightness) on any Direct3D 9 unless
+  dxwrapper.ini has dxwrapper draw it (host/gamma.cpp). Test the pack's layout by swapping a lab's files
+  (`third_party/_deps/dxvk`, dxwrapper.ini's D3d9to9Ex) and put them back.
 - **The MCP server's own binary is locked while your session runs it**: to build a new one, rename
   `mcp/target/release/mml-mcp.exe` first (Windows allows that), build, and test the new one with a client of your
   own (`tests/mcp_smoke.py` shows how); the session gets it at its next start.

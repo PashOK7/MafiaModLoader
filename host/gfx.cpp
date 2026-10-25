@@ -1715,7 +1715,7 @@ HRESULT STDMETHODCALLTYPE hkCreateDevice8(void *self, UINT adapter, DWORD type, 
     NoMultisampling(pp, "CreateDevice");
     FullscreenCreate(self, adapter, focus, pp);   // (fullscreen.cpp: a full screen made a borderless window for the showing)
     HRESULT hr = oCreateDevice8(self, adapter, type, focus, flags, pp, device);
-    if (SUCCEEDED(hr) && device && *device) GammaDevice(*device);   // (gamma.cpp: the brightness in a window on DXVK)
+    if (SUCCEEDED(hr) && device && *device) GammaDevice(*device);   // (gamma.cpp: the brightness in a window)
     if (SUCCEEDED(hr) && device && *device && !oReset8) {
         std::string err;
         void *reset = (*reinterpret_cast<void ***>(*device))[14];

@@ -1,12 +1,13 @@
-// The game's brightness in a window on DXVK. The game sets its brightness (Options' slider) as the device's gamma ramp
+// The game's brightness in a window. The game sets its brightness (Options' slider) as the device's gamma ramp
 // (Direct3D 8 SetGammaRamp, through a d3d8to9 to Direct3D 9's). Direct3D 9 applies a gamma ramp in an exclusive full
 // screen only, and so does DXVK (D3D9SwapChainEx::SetGammaRamp: its blitter takes the ramp only when not windowed);
-// dxwrapper drew it itself in a window (WindowModeGammaShader). Where the game's Direct3D 9 is DXVK's (Ultimate ASI
-// Loader's d3d8to9 over DXVK's d3d9.dll, the dlss_nr pack's layout and Mafia Fusion Fix's, no dxwrapper) the loader
-// keeps the ramp the game sets and, in a window, draws it over the back buffer at each Present: the frame copied, then
-// each channel looked up in a 256-texel table of the ramp (bridge9.hlsl PsGamma), before the screenshots and the
-// showing take the frame, so they see what the player sees. Nothing when the ramp is the identity, in a full screen,
-// or under another Direct3D 9 (dxwrapper's has its own way).
+// dxwrapper draws it itself in a window only in its own window mode (its WindowModeGammaShader, 1 by default, acts
+// with EnableWindowMode, or alone at 2: d3d9/IDirect3DDevice9Ex.cpp), which the labs and the packs leave off (a full
+// screen is made a window by fullscreen.cpp). So the loader keeps the ramp the game sets and, in a window, draws it
+// over the back buffer at each Present: the frame copied, then each channel looked up in a 256-texel table of the ramp
+// (bridge9.hlsl PsGamma), before the screenshots and the showing take the frame, so they see what the player sees
+// (dxwrapper's shader, inside the game's Present, would miss what the showing's thread shows). Nothing when the ramp
+// is the identity, in a full screen, or where dxwrapper's own shader draws it (its dxwrapper.ini read).
 #include "host.h"
 #include <d3d9.h>
 #include <cmath>
@@ -119,6 +120,28 @@ void FillLut() {
     g_lutStale = false;
 }
 
+// dxwrapper draws a window's ramp itself (d3d9/IDirect3DDevice9Ex.cpp SetGammaRamp): WindowModeGammaShader 2, or
+// WindowModeGammaShader (1 when absent: Settings.cpp) with EnableWindowMode, read from the dxwrapper.ini beside it.
+bool DxwrapperDrawsGamma() {
+    HMODULE dw = GetModuleHandleW(L"dxwrapper.dll");
+    if (!dw) return false;
+    std::string ini = ModulePath(dw);
+    ini = ini.substr(0, ini.find_last_of("\\/") + 1) + "dxwrapper.ini";
+    int shader = 1, windowMode = 0;
+    if (FILE *f = FileOpen(ini, "r")) {
+        char line[256];
+        while (fgets(line, sizeof line, f)) {
+            char key[64] = {};
+            int value = 0;
+            if (sscanf(line, " %63[A-Za-z0-9_] = %d", key, &value) != 2) continue;
+            if (!_stricmp(key, "WindowModeGammaShader")) shader = value;
+            else if (!_stricmp(key, "EnableWindowMode")) windowMode = value;
+        }
+        fclose(f);
+    }
+    return shader == 2 || (shader && windowMode);
+}
+
 bool Windowed(IDirect3DDevice9 *d) {
     IDirect3DSwapChain9 *sc = nullptr;
     D3DPRESENT_PARAMETERS pp{};
@@ -190,8 +213,8 @@ void GammaDevice(void *dev8) {
     auto qi = (*reinterpret_cast<HRESULT(__stdcall ***)(void *, REFIID, void **)>(dev8))[0];
     if (FAILED(qi(dev8, __uuidof(IDirect3DDevice9), reinterpret_cast<void **>(&d9))) || !d9) return;
     d9->Release();   // (the game's device holds it)
-    if (!gfxvk::IsDxvk(d9)) { g_state = "not DXVK's Direct3D 9 (the wrapper applies the ramp, or the device does)"; return; }
-    if (GetModuleHandleW(L"dxwrapper.dll")) { g_state = "dxwrapper's (its WindowModeGammaShader draws a window's ramp)"; return; }
+    if (DxwrapperDrawsGamma()) { g_state = "dxwrapper's (its WindowModeGammaShader in its window mode draws a window's ramp)"; return; }
+    const bool dxvk = gfxvk::IsDxvk(d9);
     if (!g_hooked) {
         std::string err;
         void *at = (*reinterpret_cast<void ***>(d9))[kVtSetGammaRamp];
@@ -204,8 +227,10 @@ void GammaDevice(void *dev8) {
     }
     g_dev = d9;
     g_set = false, g_identity = true;
-    g_state = "on (DXVK: the game's gamma ramp drawn over the frame in a window)";
-    HLOG("gamma: the game's brightness drawn over the frame while it is in a window (DXVK applies a gamma ramp in a full screen only)");
+    g_state = dxvk ? "on (DXVK: the game's gamma ramp drawn over the frame in a window)"
+                   : "on (Direct3D 9: the game's gamma ramp drawn over the frame in a window)";
+    HLOG("gamma: the game's brightness drawn over the frame while it is in a window (%s applies a gamma ramp in a full screen only)",
+         dxvk ? "DXVK" : "Direct3D 9");
 }
 
 void GammaReset() { ReleaseSized(); }   // (before the device's Reset: the copy and the quad are its default pool's)

@@ -1249,7 +1249,13 @@ merged, sorted by importance):
   free camera, the settings applied live, a hot reload. Not seen: a cutscene's borders, the credits' missing line,
   every menu at a wide screen (the main menu's panels, the garage, the race's), the eyes at a mission's load, the
   scratches, a pad's dead zones, the borderless window (whether the labs ran in a window was not looked at), the HUD's texts at 1.1's layout
-  (no 1.1 here). The pack's layout for the tester (dxwrapper or Fusion Fix's d3d8.dll) waits for his other mods.
+  (no 1.1 here). The pack's layout: back to Ultimate ASI Loader as dinput8.dll and dxwrapper (D3d9to9Ex 0) over DXVK
+  (2026-10-25: as d3d8.dll Ultimate ASI Loader loaded the tester's ASI mods into Setup.exe, which they stopped). Seen
+  in a copy of his folder with his mods: Setup.exe's dialog, the game, the brightness drawn in a window; fusion_fix's
+  part `ijoy` (a pad's dead zones) not found there (one of his mods patches IJoy.dll first); his
+  libMafiaCountrysideMap2.0.asi faults once at the start (caught, the game goes on). Not seen there: frame
+  generation's caps, the memory with his textures. The trees' leaves look white in that copy whatever the layout
+  (without his ASI mods, his maps\, DXVK, on 9Ex alike; green in the 1.2 lab): his game's own files, not looked into.
 - **Frame generation on a full-screen device** (2026-10-25, the RTX 5060 friend's log of 2026-10-24: 800x600 full
   screen, "the showing on the game's thread: a full-screen device"; he saw 20 fps and a long input lag with frame
   generation): a full-screen device gets no showing thread (host/gfx.cpp: one swap chain alone shows there), so the

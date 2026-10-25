@@ -14,9 +14,9 @@
                                       # (a chat's upload limit; 7-Zip from Program Files)
 
 From the builds' outputs (cmake --build --preset x86-release and x64-release: they must be current) and the pinned
-third-party files (tools/deps.py): Ultimate ASI Loader as dinput8.dll beside our dxwrapper build (d3d8.dll,
-dxwrapper.dll, dxwrapper.ini: third_party/dxwrapper/patch.py), or as d3d8.dll with its d3d8to9 over DXVK (a pack's
-"loader": "d3d8", Mafia Fusion Fix's layout), MafiaModLoader.asi, the mods (their 64-bit halves and the
+third-party files (tools/deps.py): Ultimate ASI Loader as dinput8.dll (the game loads it, its Setup.exe does not: the
+ASI mods are in the game alone) beside our dxwrapper build (d3d8.dll, dxwrapper.dll, dxwrapper.ini:
+third_party/dxwrapper/patch.py; a pack's "dxwrapper" settings over it), MafiaModLoader.asi, the mods (their 64-bit halves and the
 sidecar when one has a half; switched on in the archive's manifests: a graphics mod must be on when the game starts),
 the pack's own files, FFmpeg (the loader's video player: mml/ffmpeg, its BUILD.txt and licences), its README
 (tools/pack/<pack>.txt) and every license. No PDBs (players send logs and dumps).
@@ -56,20 +56,24 @@ PACKS = {
         'inside': ['NVIDIA nvngx_dlssnr.dll, nvngx_dlss.dll and nvngx_dlssg.dll 310.9.16.0 (NVIDIA RTX SDKs license).',
                    'DXVK 3.1.1 d3d9.dll (Direct3D 9 on Vulkan; zlib license).',
                    'Mafia Fusion Fix by ThirteenAG, ported to the loader (mml\\mods\\fusion_fix; MIT).'],
-        # UPDATE.txt's words before its list of files (an update over an archive without a Fusion Fix of its own)
-        'update_notes': ['Mafia Fusion Fix is now part of this archive (mml\\mods\\fusion_fix). If ThirteenAG\'s own',
+        # UPDATE.txt's words before its list of files (an update over the archives of 2026-10-24 and 25, which had
+        # Ultimate ASI Loader as d3d8.dll: it loaded the player's ASI mods into Setup.exe too, where they refused to run)
+        'update_notes': ['Ultimate ASI Loader is dinput8.dll again and dxwrapper d3d8.dll (as before 24 October):',
+                         'your ASI mods in scripts\\ load into the game alone, no longer into Setup.exe, where they',
+                         'stopped it ("exe version isn\'t supported"). d3d8.dll is replaced; delete d3d8.ini.',
+                         '',
+                         'Mafia Fusion Fix is part of this archive (mml\\mods\\fusion_fix). If ThirteenAG\'s own',
                          'Fusion Fix is in the game\'s folder, delete scripts\\Mafia.FusionFix.asi and',
                          'scripts\\Mafia.FusionFix.ini (and Mafia.WidescreenFix.asi if you have it): beside it the',
                          'built-in one does nothing (mml\\logs\\mml.log says why). Then run Setup.exe once and press',
                          'Save and exit: the game keeps its settings in the registry again, not in',
                          'savegame\\settings.bin. Fusion Fix\'s settings: Options > Mods > Fusion Fix in the game.'],
-        # Ultimate ASI Loader as d3d8.dll with its d3d8to9 over DXVK, as Mafia Fusion Fix ships it (its d3d8.dll and
-        # d3d8.ini are the same: either may be unpacked over the other), no dxwrapper: one ASI loader for both, in the
-        # game and in its Setup.exe (Fusion Fix writes its settings.bin from there; the loader stays out of Setup).
-        # DXVK filters the textures anisotropically (dxvk.conf), as dxwrapper did on 9Ex.
-        'loader': 'd3d8',
-        'texts': {'d3d8.ini': ['[GlobalSets]', 'UseD3D8to9=1'],
-                  'dxvk.conf': ['# DXVK (d3d9.dll): every texture of the game filtered anisotropically, 16x',
+        # dxwrapper's settings for the pack (over the build's dxwrapper.ini): Direct3D 8 on DXVK's plain Direct3D 9, not
+        # 9Ex (the bridge orders DXVK's device and Direct3D 11 on the GPU; 9Ex is for Windows' own Direct3D 9). The
+        # game's full screen is made a borderless window by the loader (host/fullscreen.cpp), not by dxwrapper.
+        'dxwrapper': {'D3d9to9Ex': '0'},
+        # DXVK filters the textures anisotropically too (the lowest layer: whatever the wrapper above asks)
+        'texts': {'dxvk.conf': ['# DXVK (d3d9.dll): every texture of the game filtered anisotropically, 16x',
                                 'd3d9.samplerAnisotropy = 16']},
     },
 }
@@ -146,18 +150,21 @@ def main():
     dest = os.path.join(DIST, pack['name'])
     shutil.rmtree(dest, ignore_errors=True)
     os.makedirs(dest)
-    # the loader and Ultimate ASI Loader: as d3d8.dll with its d3d8to9 ("loader": "d3d8"), else as dinput8.dll beside
-    # dxwrapper (Direct3D 8 on 9Ex)
-    d3d8 = pack.get('loader') == 'd3d8'
-    ual = os.path.join(DEPS, 'ual10' if d3d8 else 'ual')
-    put(dest, 'd3d8.dll' if d3d8 else 'dinput8.dll', os.path.join(ual, 'dinput8.dll'))
+    # the loader, Ultimate ASI Loader as dinput8.dll (the game loads it, its Setup.exe does not), dxwrapper as d3d8.dll
+    ual = os.path.join(DEPS, 'ual')
+    put(dest, 'dinput8.dll', os.path.join(ual, 'dinput8.dll'))
     put(dest, 'MafiaModLoader.asi', os.path.join(OUT86, 'MafiaModLoader.asi'))
-    if not d3d8:
-        for f in ('d3d8.dll', 'dxwrapper.dll', 'dxwrapper.ini'):
-            put(dest, f, os.path.join(OUT86, 'dxwrapper', f))
-        if pack.get('dxwrapper'):
-            with open(os.path.join(dest, 'dxwrapper.ini'), 'a', encoding='utf-8', newline='\r\n') as ini:
-                ini.write('\n' + '\n'.join(pack['dxwrapper']) + '\n')
+    for f in ('d3d8.dll', 'dxwrapper.dll', 'dxwrapper.ini'):
+        put(dest, f, os.path.join(OUT86, 'dxwrapper', f))
+    if pack.get('dxwrapper'):   # (its settings given the pack's values in place: one line a key)
+        ini = os.path.join(dest, 'dxwrapper.ini')
+        lines = open(ini, encoding='utf-8').read().splitlines()
+        for key, value in pack['dxwrapper'].items():
+            at = [i for i, line in enumerate(lines) if re.match(r'\s*%s\s*=' % re.escape(key), line)]
+            if len(at) != 1:
+                sys.exit('pack: dxwrapper.ini has %d lines of %s' % (len(at), key))
+            lines[at[0]] = '%-26s = %s' % (key, value)
+        open(ini, 'w', encoding='utf-8', newline='\r\n').write('\n'.join(lines) + '\n')
     for rel, lines in pack.get('texts', {}).items():
         open(os.path.join(dest, rel), 'w', encoding='utf-8', newline='\r\n').write('\n'.join(lines) + '\n')
     # the mods: the 32-bit half, its 64-bit half and the sidecar when it has one
@@ -199,16 +206,13 @@ def main():
     # the licenses
     put(dest, 'licenses/MafiaModLoader-LICENSE.txt', os.path.join(ROOT, 'LICENSE'))
     put(dest, 'licenses/UltimateASILoader-LICENSE.txt', os.path.join(ual, 'license'))
-    if not d3d8:
-        put(dest, 'licenses/dxwrapper-License.txt', os.path.join(OUT86, 'dxwrapper', 'License.txt'))
+    put(dest, 'licenses/dxwrapper-License.txt', os.path.join(OUT86, 'dxwrapper', 'License.txt'))
     # the README, with what is inside and its versions
     inside = ['MafiaModLoader with its %s mod%s (MIT),' % (', '.join(m for m in pack['mods'] if m != 'core'),
                                                        's' if len(pack['mods']) > 2 else ''),
-              'Ultimate ASI Loader %s (%s, MIT),' % (file_version(os.path.join(dest, 'd3d8.dll' if d3d8 else 'dinput8.dll')),
-                                                     'd3d8.dll with its d3d8to9: d3d8.ini' if d3d8 else 'dinput8.dll')]
-    if not d3d8:
-        inside += ['dxwrapper %s built with MafiaModLoader\'s patch: its hooks safe on' % file_version(os.path.join(dest, 'dxwrapper.dll')),
-                   'threads without TLS (d3d8.dll, dxwrapper.dll; zlib),']
+              'Ultimate ASI Loader %s (dinput8.dll, MIT),' % file_version(os.path.join(dest, 'dinput8.dll')),
+              'dxwrapper %s built with MafiaModLoader\'s patch: its hooks safe on' % file_version(os.path.join(dest, 'dxwrapper.dll')),
+              'threads without TLS (d3d8.dll, dxwrapper.dll; zlib),']
     inside += ['%s with dav1d, the loader\'s video player (mml\\ffmpeg; LGPL 2.1 or later and' % ff_version,
                'BSD 2-Clause: its sources and how it was built in mml\\ffmpeg\\BUILD.txt),'] + pack['inside']
     readme = open(os.path.join(ROOT, 'tools', 'pack', sys.argv[1] + '.txt'), encoding='utf-8').read()
