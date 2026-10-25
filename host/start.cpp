@@ -205,28 +205,47 @@ void KeepInBackground() {
 // read once by MafiaEntryPoint before InitSystem: RegQueryValueExA into InitSettings, 63 bytes, byte 0 the version
 // (0x14, or the game takes its defaults), the width a u32 at +2, the height at +6 (both builds: 1.2's InitSettings
 // 0x647EE4, 1.0's 0x6F952C, the globals InitSystem reads the size from). Answered with this size in this process
-// only: the registry is not written, so the player's own game and the other lab keep theirs.
+// only: the registry is not written, so the player's own game and the other lab keep theirs. The same for Setup's
+// Fullscreen (+0x15: InitSystem makes it IGraph::Init's flag 2, a device with Windowed false; 1.2 0x647EF9, 1.0
+// 0x6F9541) and the adapter (+1: IGraph::Init's adapter, Direct3D's ordinal).
 unsigned g_resW, g_resH;
+int g_fullAsked = -1, g_adapterAsked = -1;   // (-1: Setup's own)
 using RegQueryValueExAFn = LSTATUS(WINAPI *)(HKEY, LPCSTR, LPDWORD, LPDWORD, LPBYTE, LPDWORD);
 RegQueryValueExAFn oRegQueryValueExA;
 LSTATUS WINAPI hkRegQueryValueExA(HKEY key, LPCSTR name, LPDWORD reserved, LPDWORD type, LPBYTE data, LPDWORD size) {
     LSTATUS r = oRegQueryValueExA(key, name, reserved, type, data, size);
-    if (r == ERROR_SUCCESS && g_resW && name && !_stricmp(name, "LS3D_setup") && data && size && *size >= 10 && data[0] == 0x14) {
-        unsigned was[2];
-        memcpy(was, data + 2, sizeof was);
-        memcpy(data + 2, &g_resW, 4);
-        memcpy(data + 6, &g_resH, 4);
-        HLOG("start: the screen at %ux%u (Setup.exe's %ux%u in the registry, left as it is)", g_resW, g_resH, was[0], was[1]);
+    if (r == ERROR_SUCCESS && name && !_stricmp(name, "LS3D_setup") && data && size && *size >= 0x16 && data[0] == 0x14) {
+        if (g_resW) {
+            unsigned was[2];
+            memcpy(was, data + 2, sizeof was);
+            memcpy(data + 2, &g_resW, 4);
+            memcpy(data + 6, &g_resH, 4);
+            HLOG("start: the screen at %ux%u (Setup.exe's %ux%u in the registry, left as it is)", g_resW, g_resH, was[0], was[1]);
+        }
+        if (g_fullAsked >= 0) {
+            HLOG("start: %s (Setup.exe's %s in the registry, left as it is)", g_fullAsked ? "full screen" : "in a window",
+                 data[0x15] ? "full screen" : "window");
+            data[0x15] = static_cast<BYTE>(g_fullAsked);
+        }
+        if (g_adapterAsked >= 0) {
+            HLOG("start: the adapter %d (Setup.exe's %u in the registry, left as it is)", g_adapterAsked, data[1]);
+            data[1] = static_cast<BYTE>(g_adapterAsked);
+        }
     }
     return r;
 }
-void AskResolution(unsigned w, unsigned h) {
+bool TakeSetupRead() {
+    if (oRegQueryValueExA) return true;
     void *old = nullptr;
     if (!PatchImport(GetModuleHandleW(nullptr), "advapi32.dll", "RegQueryValueExA", reinterpret_cast<void *>(&hkRegQueryValueExA), &old)) {
-        HWARN("start: resolution: Game.exe's RegQueryValueExA not taken: the screen stays at Setup.exe's size");
-        return;
+        HWARN("start: Game.exe's RegQueryValueExA not taken: the screen stays as Setup.exe set it");
+        return false;
     }
     oRegQueryValueExA = reinterpret_cast<RegQueryValueExAFn>(old);
+    return true;
+}
+void AskResolution(unsigned w, unsigned h) {
+    if (!TakeSetupRead()) return;
     g_resW = w;
     g_resH = h;
 }
@@ -530,6 +549,14 @@ void StartInit() {
             AskResolution(res[0].get<unsigned>(), res[1].get<unsigned>());
         else
             HWARN("start.json: resolution: [width, height], 320x240 to 16384x16384");
+    }
+    if (r.contains("fullscreen")) {
+        if (r["fullscreen"].is_boolean() && TakeSetupRead()) g_fullAsked = r["fullscreen"].get<bool>() ? 1 : 0;
+        else if (!r["fullscreen"].is_boolean()) HWARN("start.json: fullscreen: true or false");
+    }
+    if (r.contains("adapter")) {
+        if (r["adapter"].is_number_unsigned() && r["adapter"].get<unsigned>() < 16 && TakeSetupRead()) g_adapterAsked = r["adapter"].get<int>();
+        else if (!r["adapter"].is_number_unsigned() || r["adapter"].get<unsigned>() >= 16) HWARN("start.json: adapter: Direct3D's ordinal, 0 to 15");
     }
     if (r.contains("kind") && r["kind"].is_string()) {
         std::string k = Lower(r["kind"].get<std::string>());

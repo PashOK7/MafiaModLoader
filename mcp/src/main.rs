@@ -136,6 +136,13 @@ struct LaunchArgs {
     /// both labs may run at other sizes than the player's own game (a widescreen, an ultrawide, a 4:3).
     #[serde(default)]
     resolution: Option<Vec<u32>>,
+    /// Full screen (true) or a window (false) for this run (default: Setup.exe's), the registry left as it is. A full
+    /// screen takes a monitor and the focus: `adapter` puts it on another monitor than the player's.
+    #[serde(default)]
+    fullscreen: Option<bool>,
+    /// The display adapter for this run, Direct3D's ordinal (0 the primary monitor; default: Setup.exe's).
+    #[serde(default)]
+    adapter: Option<u32>,
     /// Keep the game's window in the background (default true): neither the launch nor the game itself activates it,
     /// so whoever works in the window in front is not disturbed (a click on the game's window activates it as
     /// usual). The game runs and draws there; `screenshot` reads its frame where the renderer allows it (Direct3D 9:
@@ -908,7 +915,8 @@ impl Server {
         if self.bridge.call("ping", json!({}), 1500).await.is_ok() {
             return Err("the game is already running (game_close first)".into());
         }
-        let asked = a.go.is_some() || a.profile.is_some() || a.skip_logos == Some(true) || a.resolution.is_some();
+        let asked = a.go.is_some() || a.profile.is_some() || a.skip_logos == Some(true) || a.resolution.is_some()
+            || a.fullscreen.is_some() || a.adapter.is_some();
         let background = a.background.unwrap_or(true);
         if asked || background {
             // read (and deleted) by the loader at the game's start: host/start.cpp
@@ -919,6 +927,8 @@ impl Server {
             if let Some(p) = &a.place { req["place"] = p.clone(); }
             if let Some(s) = &a.save { req["save"] = s.clone(); }
             if let Some(r) = &a.resolution { req["resolution"] = json!(r); }
+            if let Some(f) = a.fullscreen { req["fullscreen"] = json!(f); }
+            if let Some(n) = a.adapter { req["adapter"] = json!(n); }
             for (name, v) in [("traffic", a.traffic), ("pedestrians", a.pedestrians), ("police", a.police)] {
                 if let Some(v) = v { req[name] = json!(v); }
             }

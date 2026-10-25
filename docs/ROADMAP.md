@@ -1252,10 +1252,17 @@ merged, sorted by importance):
   (no 1.1 here). The pack's layout for the tester (dxwrapper or Fusion Fix's d3d8.dll) waits for his other mods.
 - **Frame generation on a full-screen device** (2026-10-25, the RTX 5060 friend's log of 2026-10-24: 800x600 full
   screen, "the showing on the game's thread: a full-screen device"; he saw 20 fps and a long input lag with frame
-  generation): a full-screen device gets no showing thread (host/gfx.cpp), so the generated pictures are presented
-  one after another on the game's thread, each Present waiting for the display: read from the code and the log, not
-  measured. To do: the case reproduced in a lab (full screen, frame generation's stand-in), then a showing that does
-  not hold the game's thread, or Setup's window required with the reason said in the log and `gfx.state`.
+  generation): a full-screen device gets no showing thread (host/gfx.cpp: one swap chain alone shows there), so the
+  generated pictures are shown on the game's thread, the waits between them on it too, and the interval they are
+  spaced over is measured from one Present to the next, the waits in it: the game's rate falls to its own over
+  (pictures + 1). Measured 2026-10-25 with that way forced in a window (`gfx.state {"show_thread": false}`, 1.2 lab,
+  RTX 3070, the stand-in): 2x the game 93 fps on the thread, 53 on the game's thread (shown 186 / 106); 4x 46 / 21.5
+  (shown 185 / 86): the tester's 20 fps. Done the same day: Setup's full screen is made a borderless window while a
+  mod has "gfx": true (host/fullscreen.cpp); seen on a third monitor in both labs (9Ex) and in the pack's layout on
+  DXVK. Not seen: the Reset path (LS3D resets with its full screen's parameters after the options' resolution: made a
+  window again there, untested), the game's exclusive full screen without a gfx mod since `game_launch`'s
+  `fullscreen` (a monitor and the focus taken). DXVK numbers its adapters otherwise than Direct3D 9 (`adapter` 2 was
+  the primary monitor there).
 - **DLSS on an RTX 50 with the upscaler** (2026-10-24): the render-size world, the mip bias and the GPU-ordered DXVK
   path are seen on the RTX 3070 (SR alone, frame generation's stand-in); DLSS-NR at the render size, DLSS-FG itself
   and the frame rate on the friend's RTX 5060 laptop wait for his next logs (the log's minute line now says whether

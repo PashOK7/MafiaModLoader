@@ -3761,3 +3761,32 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **The tester's frame generation** (his 2026-10-24 log, read now): 800x600 full screen (Fusion Fix's empty
   settings.bin), "the showing on the game's thread: a full-screen device": the generated pictures presented on the
   game's thread one after another. His 20 fps and lag fit that; not measured here yet (ROADMAP Known gaps).
+
+## 2026-10-25: frame generation on a full-screen device, measured
+
+- **Asked** (the owner: go on from the handoff): the tester's 20 fps and input lag with frame generation on a
+  full-screen device (his log: 800x600 full screen, "the showing on the game's thread: a full-screen device").
+- **Read**: Setup's Fullscreen is `LS3D_setup` + 0x15 (both builds: InitSystem turns it into IGraph::Init's flag 2,
+  mafia-re's IGRAPH_FULLSCREEN, whose Init makes a topmost window the mode's size and a device with Windowed false;
+  1.2 0x647EF9, 1.0 0x6F9541); the labs' registry has 0 (a window). On the game's thread (`ShowPictures`) the pictures
+  are spaced over `g_interval`, the time from one of the game's Presents to the next, which holds the waits between
+  the pictures themselves: the game's frame becomes its work times (pictures + 1).
+- **Made**: `gfx.state {"show_thread": false}` (a test): the game's thread shows gfx_show's pictures, as on a
+  full-screen device, in a window.
+- **Measured** (1.2 lab, RTX 3070, 1280x960 in a window, 9Ex, dlss_nr Ultra Performance, the stand-in,
+  `tools/fg_test.py`): off 140..151 fps; 2x the game 93.0 shown 186.0 from the bridge's thread, 53.1 / 106.2 from the
+  game's; 4x 46.3 / 185.0 against 21.5 / 85.8. The tester's 20 fps is this way. Full screen itself was not run here.
+- **Asked** (the owner, given the measurement): a borderless window in place of the exclusive full screen; the full
+  screen tried on the third monitor.
+- **Made**: `host/fullscreen.cpp`: while a mod has "gfx": true, CreateDevice's and Reset's full-screen parameters
+  (Direct3D 8's) are made a window's (Windowed, no refresh, the default interval; the mode's back buffer kept); LS3D's
+  window loses its frame and topmost, covers the adapter's monitor (IDirect3D8::GetAdapterMonitor), the picture goes
+  to the mode's proportions in its middle (Present's destination: the game's and the showing thread's), the bars
+  painted black by GDI (LS3D's window erases nothing: WM_ERASEBKGND returns 0). The showing then has its thread.
+  `game_launch {"fullscreen", "adapter"}` answer LS3D_setup's +0x15 and +1 for the run (start.cpp), the registry
+  left alone; `gfx.state` `fullscreen` says what was done.
+- **Seen** (the third monitor, 1920x1080, the window read with PrintWindow): 1.2 at 800x600 and 1.0 at 1024x768 on
+  9Ex, the picture 1440x1080 in the middle, black bars, the HUD whole; frame generation's stand-in from the bridge's
+  thread: 1.2 2x 99.7 shown 200.0, 4x 49.8 / 199.4; 1.0 2x 96.8 / 193.7, 4x 50.0 / 200.0. The pack's layout (Ultimate
+  ASI Loader 10's d3d8to9 over DXVK 3.1.1, swapped into the 1.2 lab and back): the same, 2x 72.4 / 144.8, 4x 36.8 /
+  147.4 (the primary monitor's refresh: DXVK's adapter 2 was the primary monitor), the bars black on DXVK too.

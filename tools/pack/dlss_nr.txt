@@ -26,11 +26,14 @@ INSTALL
 -------
 Unpack everything from this archive into the game's folder (the folder
 with Game.exe), then run Setup.exe once:
-  - Fullscreen OFF (frame generation shows its frames from a window of
-    its own: an exclusive full screen cannot have one),
+  - Fullscreen on or off: on, the game opens as a borderless window
+    over the whole monitor instead of an exclusive full screen (frame
+    generation shows its frames from a window of its own); a resolution
+    of another shape than the screen's is shown at its own proportions,
+    black bars beside it,
   - Resolution: your screen's own (2560 x 1600 on a 2560x1600 laptop).
     DLSS draws the game smaller by itself; a smaller resolution here
-    only makes a smaller window,
+    only makes the picture coarser,
   - Save and exit.
 Then start the game as usual.
 
@@ -44,8 +47,9 @@ unpack Fusion Fix and this archive in any order. Both use the same
 Ultimate ASI Loader as d3d8.dll with its d3d8.ini (UseD3D8to9=1), so
 either one's copy is fine. Delete Mafia.WidescreenFix.asi (Fusion Fix
 replaces it). In Mafia.FusionFix.ini:
-  - BorderlessWindowed = 1 (with Setup's Fullscreen off and your screen's
-    resolution: a borderless window over the whole screen),
+  - BorderlessWindowed = 1 with Setup's Fullscreen off and your
+    screen's resolution (with Fullscreen on the loader makes the window
+    borderless itself),
   - WriteSettingsToFile = 1 keeps the settings in savegame\settings.bin:
     run Setup.exe once after installing and press Save and exit, or the
     game opens Setup.exe instead of starting,
@@ -96,9 +100,7 @@ Esc > Options > Mods > DLSS
                     rate: the game then runs at the refresh rate
                     divided by 2, 3 or 4 (144 Hz and 2x: 72 fps). Pick
                     the one that keeps the game's own frame rate where
-                    it runs smoothly. In a window only (Setup's
-                    Fullscreen off): in an exclusive full screen the
-                    game's own thread shows them, much slower.
+                    it runs smoothly.
 
   Picture           strength, tone, detail, model A/B/C.
   Compare           a split screen with and without.

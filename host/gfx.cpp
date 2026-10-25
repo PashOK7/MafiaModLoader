@@ -47,6 +47,7 @@
 #include <d3d11_4.h>   // (ID3D11Device5::OpenSharedFence: the halves' shared fences)
 #include <dxgi.h>
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <condition_variable>
 #include <cstdio>
@@ -1703,12 +1704,14 @@ void NoMultisampling(DWORD *pp, const char *when) {
 }
 HRESULT STDMETHODCALLTYPE hkReset8(void *dev, DWORD *pp) {
     NoMultisampling(pp, "Reset");
+    FullscreenReset(pp);
     ShowThreadStop();   // (its swap chain and slots are the device's default pool: gone before a Reset)
     GammaReset();
     return oReset8(dev, pp);
 }
 HRESULT STDMETHODCALLTYPE hkCreateDevice8(void *self, UINT adapter, DWORD type, HWND focus, DWORD flags, DWORD *pp, void **device) {
     NoMultisampling(pp, "CreateDevice");
+    FullscreenCreate(self, adapter, focus, pp);   // (fullscreen.cpp: a full screen made a borderless window for the showing)
     if (!ModsWantingGfx().empty()) flags |= D3DCREATE_MULTITHREADED;   // (the showing's own thread presents on it)
     HRESULT hr = oCreateDevice8(self, adapter, type, focus, flags, pp, device);
     if (SUCCEEDED(hr) && device && *device) GammaDevice(*device);   // (gamma.cpp: the brightness in a window on DXVK)
@@ -1914,6 +1917,8 @@ HRESULT g_presenterHr = S_OK;      // the thread's last Present (a lost device: 
 double g_refreshMs;                // the display's period (0: not known): two things are not shown closer than it
 std::string g_threadWhy;           // why the showing is on the game's thread (gfx.state show.thread)
 bool g_threadTried;
+std::atomic<bool> g_threadOff;     // gfx.state {"show_thread": false}: the game's thread shows (a test of that way)
+bool g_threadOffSeen;              // (the game's thread's copy: a change starts the showing anew)
 
 DWORD WINAPI Presenter(void *) {
     double lastEnd = 0, lastPresent = 0;
@@ -1944,7 +1949,7 @@ DWORD WINAPI Presenter(void *) {
                 g_gapErr = g_gapErr > 0 ? g_gapErr * 0.98 + err * 0.02 : err;
             }
             g_lastShown = at;
-            g_presenterHr = g_showChain->Present(nullptr, nullptr, nullptr, nullptr, 0);
+            g_presenterHr = g_showChain->Present(nullptr, FullscreenDest(), nullptr, nullptr, 0);
             lastPresent = NowMs();
             if (i < s.n) g_showPictures++;
         }
@@ -1981,12 +1986,14 @@ void ShowThreadStop() {
 
 // The thread, its swap chain and its slots at the back buffer's size: false (and why) to show on the game's thread.
 bool EnsureShowThread(UINT w, UINT h) {
+    if (g_threadOff != g_threadOffSeen) g_threadOffSeen = g_threadOff, ShowThreadStop();
     if (g_presenter && w == g_slotW && h == g_slotH) return true;
     if (g_threadTried && w == g_slotW && h == g_slotH) return false;
     ShowThreadStop();
     g_threadTried = true;
     g_slotW = w, g_slotH = h;
     auto no = [](const std::string &why) { g_threadWhy = why; HLOG("gfx: the showing on the game's thread: %s", why.c_str()); return false; };
+    if (g_threadOffSeen) return no("gfx.state {\"show_thread\": false} (a test)");
     D3DDEVICE_CREATION_PARAMETERS cp{};
     if (FAILED(g_dev9->GetCreationParameters(&cp)) || !(cp.BehaviorFlags & D3DCREATE_MULTITHREADED))
         return no("the device is not thread-safe (made before the loader, or without a mod with \"gfx\": true)");
@@ -2785,6 +2792,7 @@ bool GfxMethod(const std::string &method, const std::string &params, std::string
         if (p.is_object() && p.value("timing_reset", false)) g_tmLogged = g_tm, g_tmLoggedAt = NowMs();
         if (p.is_object() && p.contains("mip_bias"))   // (a number: that bias under an upscaler; null: DLSS's own again)
             g_lodAsked = p["mip_bias"].is_number() ? p["mip_bias"].get<float>() : NAN;
+        if (p.is_object() && p.contains("show_thread") && p["show_thread"].is_boolean()) g_threadOff = !p["show_thread"].get<bool>();
     }
     auto r2 = [](double v) { return std::round(v * 1000) / 1000; };
     json passes = json::array();
@@ -2804,7 +2812,8 @@ bool GfxMethod(const std::string &method, const std::string &params, std::string
                           {"pictures", g_showPictures}, {"late", g_showLate}, {"interval_ms", r2(g_interval)}, {"work_ms", r2(g_work)},
                           {"ms", r2(g_showMs)}, {"gap_ms", r2(g_gap)}, {"gap_error_ms", r2(g_gapErr)}, {"size", {g_showW, g_showH}},
                           {"thread", g_presenter ? std::string("on") : g_threadWhy},
-                          {"thread_present", Fmt("0x%08X", static_cast<unsigned>(g_presenterHr))}, {"error", g_showError}}}};
+                          {"thread_present", Fmt("0x%08X", static_cast<unsigned>(g_presenterHr))}, {"error", g_showError}}},
+                {"fullscreen", FullscreenState()}};
     json views = json::array();
     for (auto &v : g_views)
         views.push_back({{"handle", v->handle}, {"size", {v->w, v->h}}, {"frames", v->info.frames}, {"fresh", v->info.fresh != 0},

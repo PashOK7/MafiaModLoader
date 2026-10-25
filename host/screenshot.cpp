@@ -267,6 +267,10 @@ HRESULT __stdcall PresentHook(void *dev, const RECT *src, const RECT *dst, HWND 
         if (g_results.size() > 16) g_results.erase(g_results.begin());
     }
     ProfPresentBegin();   // (the frame's record: its end, the time Present blocks)
+    if (!dst && !wnd) {   // (a full screen made a borderless window: the picture at its proportions, the bars black)
+        dst = FullscreenDest();
+        FullscreenPresent();
+    }
     HRESULT hr = GfxShow(dev, [&] { return g_present(dev, src, dst, wnd, dirty); });   // (a mod's pictures before it: gfx_show)
     ProfPresentEnd(hr);
     return hr;

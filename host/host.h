@@ -37,6 +37,12 @@ void GammaDevice(void *dev8);   // (gfx.cpp) the game's device made: its gamma r
 void GammaReset();              // ... before its Reset
 void GammaPresent(void *dev8);  // (screenshot.cpp) at its Present: the ramp drawn over the frame in a window
 std::string GammaState();       // for gfx.state
+// (fullscreen.cpp) Setup's full screen made a borderless window while a mod has "gfx": true
+void FullscreenCreate(void *d3d8, UINT adapter, HWND focus, DWORD *pp);   // (gfx.cpp) before CreateDevice: Direct3D 8's parameters
+void FullscreenReset(DWORD *pp);                                          // ... before the device's Reset
+const RECT *FullscreenDest();   // the picture's place in the window (Present's destination), or null: the game's own
+void FullscreenPresent();       // (screenshot.cpp) at the game's Present: the bars beside the picture
+std::string FullscreenState();  // for gfx.state
 std::wstring Wide(const std::string &utf8);
 std::string Utf8Of(const wchar_t *wide, int n = -1);   // n: characters, -1: up to the terminator
 std::string AcpToUtf8(const char *acp);
