@@ -3892,3 +3892,8 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   DirectInput's wide name into the game's code page), else English (1.0's key names, "Y Axis", "Button n", "POV n").
   **Seen**: 1.2 W S A D Q F R X on the player's page, "Joy0 / Y Axis / -" on the car's; 1.0 "Joy0 / Îñü Y / -" with the
   fix off, "Y Axis" with it.
+- **Decided** (the owner, the same day): the game's own bugs are fixed always, as the gamepad's hot plug is: no mod,
+  no setting. **Made**: host/fixes.cpp (FixesInit after the game's hooks: the two patches through PatchAdd, the
+  names through HookAdd, a log line each); mods/game_fixes removed, the pack without it, its README's section and
+  the update's notes say the loader does it. **Seen**: both labs log the fixes (1.0 the names alone), 1.2's controls
+  W S A D Q, Sniper Mode X after a restart, "Joy0 / Y Axis" in both.

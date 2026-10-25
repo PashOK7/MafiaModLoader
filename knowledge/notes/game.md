@@ -567,7 +567,7 @@ autosplitter; kept outside it, not ported). Checked against the above:
   the limiter), the first step is 1 and the cutscene is the game's own (the bartender, then Tommy at the door, frame
   for frame). No system of the game expects a frame of 0 ms.
 
-## The game's own bugs (mods/game_fixes; read and seen 2026-10-25, both labs)
+## The game's own bugs (host/fixes.cpp, always fixed; read and seen 2026-10-25, both labs)
 
 - **code** **1.2's options are not kept after a restart** (the owner's report: the level of details, the shadows).
   The video options of Options > Audio & Video are the mission's settings (`missionPtr + 0x90`: +0x90 the details'
@@ -593,7 +593,7 @@ autosplitter; kept outside it, not ported). Checked against the above:
   (1252 here): W S A D Q became "ö û ô â é". 1.0's controlsKeyName (0x5D3180) has its own English table instead (103
   names, Escape..Menu) and no such bug. A joystick's names are IJoy's, DirectInput's object names in the system's
   language, in both builds ("Ось Y" drawn "Îñü Y"; controlsKeyName's joystick case: code < 0x100 an axis by IJoy's
-  index X, Y, Z, RX, RY, RZ, two sliders; 0x100.. a button; 0x200.. a hat). game_fixes gives a name the font cannot
+  index X, Y, Z, RX, RY, RZ, two sliders; 0x100.. a button; 0x200.. a hat). The loader gives a name the font cannot
   draw in English (1.0's key names; "Y Axis", "Button n", "POV n"): seen in both labs.
 
 ## The exit crash (seen in mafia-ragdoll, not solved)

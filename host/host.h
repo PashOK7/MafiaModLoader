@@ -690,6 +690,7 @@ float PedestrianHealth(void *element);
 bool PedestriansMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 // a frame's release told (framelife.cpp): LS3D's frames' and meshes' Release hooked once something is watched
 void FrameLifeInit();
+void FixesInit();                         // (fixes.cpp, after the game's hooks) bugs of the game itself, always fixed
 // the size things are drawn at (scale.cpp): an actor's or a pedestrian's model frame scaled for the world's drawing
 // alone (render.cpp around the world's Render); actor.scale, actors.scaled
 int ActorScale(MmlMod *mod, void *actor, const MmlActorScale *s, std::string *err);   // s null: its own size

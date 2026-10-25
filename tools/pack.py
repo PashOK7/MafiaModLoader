@@ -41,7 +41,7 @@ DIST = os.path.join(ROOT, 'build', 'dist')
 PACKS = {
     'dlss_nr': {
         'name': 'Mafia-DLSS5-NR-RTX50',
-        'mods': ['core', 'dlss_nr', 'fps_unlock', 'fusion_fix', 'game_fixes'],
+        'mods': ['core', 'dlss_nr', 'fps_unlock', 'fusion_fix'],
         # NVIDIA's DLL (tools/deps.py ngx): beside the mod's mod.json, where the half looks for it
         'files': {'mml/mods/dlss_nr/nvngx_dlssnr.dll': os.path.join(DEPS, 'ngx', 'bin', 'nvngx_dlssnr.dll'),
                   'mml/mods/dlss_nr/nvngx_dlss.dll': os.path.join(DEPS, 'ngx', 'bin', 'nvngx_dlss.dll'),
@@ -58,11 +58,10 @@ PACKS = {
                    'Mafia Fusion Fix by ThirteenAG, ported to the loader (mml\\mods\\fusion_fix; MIT).'],
         # UPDATE.txt's words before its list of files (an update over the archives of 2026-10-24 and 25, which had
         # Ultimate ASI Loader as d3d8.dll: it loaded the player's ASI mods into Setup.exe too, where they refused to run)
-        'update_notes': ['New: Game fixes (mml\\mods\\game_fixes, Options > Mods > Game fixes): bugs of the game',
-                         'itself. Steam\'s 1.2 now keeps the options set in the game (details, draw distance,',
-                         'shadows...) after a restart and Sniper Mode\'s key; key names in the controls are',
-                         'readable in any keyboard layout. FPS unlock: the intro\'s cutscene no longer starts',
-                         'with people in a T-pose.',
+        'update_notes': ['New: the loader fixes bugs of the game itself, always. Steam\'s 1.2 now keeps the options',
+                         'set in the game (details, draw distance, shadows...) after a restart and Sniper Mode\'s',
+                         'key; key names in the controls are readable in any keyboard layout. FPS unlock: the',
+                         'intro\'s cutscene no longer starts with people in a T-pose.',
                          '',
                          'Ultimate ASI Loader is dinput8.dll again and dxwrapper d3d8.dll (as before 24 October):',
                          'your ASI mods in scripts\\ load into the game alone, no longer into Setup.exe, where they',

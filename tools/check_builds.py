@@ -1198,7 +1198,7 @@ def main(a):
         t = dis(exe['keyBindingsApply'], 0x47)
         check('0x1f4' in t and '0x3c' in t and f'ecx, {exe["controls"]:#x}' in t,
               f'{name} keyBindingsApply: the 60 bindings at +0x1F4 given to the controls')
-    # The game's own bugs (mods/game_fixes): the settings' write at the quit (`push 0x80000002`, the key's name, then
+    # The game's own bugs (host/fixes.cpp): the settings' write at the quit (`push 0x80000002`, the key's name, then
     # RegCreateKeyExA), the two tests of find_conflict's result in ProfileLoad (a call, then `test eax, eax; jz`).
     for name, (exe, ls, gexe, gls) in builds.items():
         if not exe['settingsSaveRoot']:

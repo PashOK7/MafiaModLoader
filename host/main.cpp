@@ -129,6 +129,7 @@ void Init() {
         AnimsInit();
         HitsInit();
         FrameLifeInit();
+        FixesInit();    // (fixes.cpp: bugs of the game itself, always)
     }
     FilesInit();        // (the game reads its first tables before the first frame: the mods' files are there already;
     ModsEarlyFiles();   // after the build is known: a mod made for another build gives none)

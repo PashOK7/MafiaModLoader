@@ -211,8 +211,8 @@ void KeepInBackground() {
 // The game writes LS3D_setup back when it quits by its menu (MafiaEntryPoint: InitSettings with the options' details,
 // draw distance, effects, sounds, shadows and particles of the run): the values answered for this run are given their
 // registry's own again in that write (RegSetValueExA), so the options are kept and the screen stays Setup.exe's.
-// (1.0 writes where it reads, HKEY_LOCAL_MACHINE; 1.2 to HKEY_LOCAL_MACHINE too, which it does not read, unless
-// mods/game_fixes points the write where it reads.)
+// (1.0 writes where it reads, HKEY_LOCAL_MACHINE; 1.2 wrote HKEY_LOCAL_MACHINE too, which it does not read: fixes.cpp
+// points its write where it reads, HKEY_CURRENT_USER.)
 unsigned g_resW, g_resH;
 int g_fullAsked = -1, g_adapterAsked = -1;   // (-1: Setup's own)
 BYTE g_setupRead[0x16];   // the registry's own first bytes of LS3D_setup, as read (the size, the full screen, the adapter)

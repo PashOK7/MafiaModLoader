@@ -132,17 +132,17 @@ A cap of its own, and the line hidden: create the file
 (0 for no cap). It is read again while the game runs.
 
 
-GAME FIXES
-----------
-Bugs of the game itself, each on / off in Options > Mods > Game fixes:
-  - Options kept (1.2): the options set in the game (level of details,
-    draw distance, effects, sounds, shadows, particles) are kept after a
-    restart. Steam's 1.2 wrote them where it never reads them. The game
-    saves them when you leave by its menu's Quit.
-  - Sniper Mode's key kept (1.2): 1.2 took it away at every start.
-  - Key names in any layout: in Options > Controls a key or a joystick
-    axis the game's font cannot show (another keyboard layout, Windows
-    in another language) is named in English.
+THE GAME'S OWN BUGS
+-------------------
+The loader fixes these, always:
+  - Steam's 1.2 keeps the options set in the game (level of details,
+    draw distance, effects, sounds, shadows, particles) after a restart:
+    it wrote them where it never reads them. The game saves them when
+    you leave by its menu's Quit.
+  - Steam's 1.2 keeps Sniper Mode's key: it took it away at every start.
+  - In Options > Controls a key or a joystick axis the game's font
+    cannot show (another keyboard layout, Windows in another language)
+    is named in English.
 
 
 INTROS AND VIDEOS IN ANY FORMAT

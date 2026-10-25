@@ -494,7 +494,7 @@ struct ExeBuild {
     // only computes (no allocation): called again, the HUD follows its constants as they are now. Read in both
     // builds' code.
     uintptr_t hudResolutionChanged;
-    // The game's own bugs (mods/game_fixes; 0: not in this build). settingsSaveRoot: MafiaEntryPoint's `push
+    // The game's own bugs (host/fixes.cpp, always fixed; 0: not in this build). settingsSaveRoot: MafiaEntryPoint's `push
     // 0x80000002` (68 02 00 00 80) before RegCreateKeyExA when the game quits: LS3D_setup (the options' details, draw
     // distance, effects, sounds, shadows, particles) written to HKEY_LOCAL_MACHINE, which 1.2 does not read (its start
     // opens HKEY_CURRENT_USER, as its Setup.exe writes; 1.0 opens and writes HKLM alike). sniperConflictTest: in
