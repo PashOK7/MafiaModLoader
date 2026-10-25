@@ -208,13 +208,36 @@ void KeepInBackground() {
 // only: the registry is not written, so the player's own game and the other lab keep theirs. The same for Setup's
 // Fullscreen (+0x15: InitSystem makes it IGraph::Init's flag 2, a device with Windowed false; 1.2 0x647EF9, 1.0
 // 0x6F9541) and the adapter (+1: IGraph::Init's adapter, Direct3D's ordinal).
+// The game writes LS3D_setup back when it quits by its menu (MafiaEntryPoint: InitSettings with the options' details,
+// draw distance, effects, sounds, shadows and particles of the run): the values answered for this run are given their
+// registry's own again in that write (RegSetValueExA), so the options are kept and the screen stays Setup.exe's.
+// (1.0 writes where it reads, HKEY_LOCAL_MACHINE; 1.2 to HKEY_LOCAL_MACHINE too, which it does not read, unless
+// mods/game_fixes points the write where it reads.)
 unsigned g_resW, g_resH;
 int g_fullAsked = -1, g_adapterAsked = -1;   // (-1: Setup's own)
+BYTE g_setupRead[0x16];   // the registry's own first bytes of LS3D_setup, as read (the size, the full screen, the adapter)
+bool g_setupKept;
 using RegQueryValueExAFn = LSTATUS(WINAPI *)(HKEY, LPCSTR, LPDWORD, LPDWORD, LPBYTE, LPDWORD);
 RegQueryValueExAFn oRegQueryValueExA;
+using RegSetValueExAFn = LSTATUS(WINAPI *)(HKEY, LPCSTR, DWORD, DWORD, const BYTE *, DWORD);
+RegSetValueExAFn oRegSetValueExA;
+LSTATUS WINAPI hkRegSetValueExA(HKEY key, LPCSTR name, DWORD reserved, DWORD type, const BYTE *data, DWORD size) {
+    if (g_setupKept && name && !_stricmp(name, "LS3D_setup") && data && size >= sizeof g_setupRead && size <= 0x100 && data[0] == 0x14) {
+        BYTE out[0x100];
+        memcpy(out, data, size);
+        if (g_resW) memcpy(out + 2, g_setupRead + 2, 8);
+        if (g_fullAsked >= 0) out[0x15] = g_setupRead[0x15];
+        if (g_adapterAsked >= 0) out[1] = g_setupRead[1];
+        HLOG("start: LS3D_setup written by the game with the registry's own screen (the options of the run kept)");
+        return oRegSetValueExA(key, name, reserved, type, out, size);
+    }
+    return oRegSetValueExA(key, name, reserved, type, data, size);
+}
 LSTATUS WINAPI hkRegQueryValueExA(HKEY key, LPCSTR name, LPDWORD reserved, LPDWORD type, LPBYTE data, LPDWORD size) {
     LSTATUS r = oRegQueryValueExA(key, name, reserved, type, data, size);
     if (r == ERROR_SUCCESS && name && !_stricmp(name, "LS3D_setup") && data && size && *size >= 0x16 && data[0] == 0x14) {
+        memcpy(g_setupRead, data, sizeof g_setupRead);
+        g_setupKept = oRegSetValueExA != nullptr;
         if (g_resW) {
             unsigned was[2];
             memcpy(was, data + 2, sizeof was);
@@ -242,6 +265,10 @@ bool TakeSetupRead() {
         return false;
     }
     oRegQueryValueExA = reinterpret_cast<RegQueryValueExAFn>(old);
+    if (PatchImport(GetModuleHandleW(nullptr), "advapi32.dll", "RegSetValueExA", reinterpret_cast<void *>(&hkRegSetValueExA), &old))
+        oRegSetValueExA = reinterpret_cast<RegSetValueExAFn>(old);
+    else   // (then the run's screen goes into the registry when the game quits by its menu)
+        HWARN("start: Game.exe's RegSetValueExA not taken: the screen asked for this run is written when the game quits");
     return true;
 }
 void AskResolution(unsigned w, unsigned h) {

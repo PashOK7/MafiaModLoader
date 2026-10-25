@@ -1198,6 +1198,23 @@ def main(a):
         t = dis(exe['keyBindingsApply'], 0x47)
         check('0x1f4' in t and '0x3c' in t and f'ecx, {exe["controls"]:#x}' in t,
               f'{name} keyBindingsApply: the 60 bindings at +0x1F4 given to the controls')
+    # The game's own bugs (mods/game_fixes): the settings' write at the quit (`push 0x80000002`, the key's name, then
+    # RegCreateKeyExA), the two tests of find_conflict's result in ProfileLoad (a call, then `test eax, eax; jz`).
+    for name, (exe, ls, gexe, gls) in builds.items():
+        if not exe['settingsSaveRoot']:
+            continue
+        at = exe['settingsSaveRoot']
+        check(gexe.at(at - 0x400000, 5) == b'\x68\x02\x00\x00\x80' and gexe.at(at - 5 - 0x400000, 1) == b'\x68',
+              f'{name} settingsSaveRoot: push HKEY_LOCAL_MACHINE after the key\'s name')
+        reg = struct.unpack('<I', gexe.at(at - 4 - 0x400000, 4))[0]
+        check(gexe.at(reg - 0x400000, 34) == b'Software\\Illusion Softworks\\Mafia\0', f'{name} settingsSaveRoot: the game\'s key')
+        for f, after in (('sniperConflictTest', 0), ('sniperRTest', 3)):   # (the bytes between the call and the test)
+            t = exe[f]
+            check(gexe.at(t - 0x400000, 2) == b'\x85\xc0' and gexe.at(t - after - 5 - 0x400000, 1) == b'\xe8',
+                  f'{name} {f}: test eax, eax after the call of find_conflict')
+            call = t - after - 5
+            dest = call + 5 + struct.unpack('<i', gexe.at(call + 1 - 0x400000, 4))[0]
+            check(dest == 0x607460, f'{name} {f}: the call is loadsave_binding_find_conflict')
     print('ALL PASSED' if not fails else f'{fails} FAILED')
     return 1 if fails else 0
 

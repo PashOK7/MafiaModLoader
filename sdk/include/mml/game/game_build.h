@@ -494,6 +494,15 @@ struct ExeBuild {
     // only computes (no allocation): called again, the HUD follows its constants as they are now. Read in both
     // builds' code.
     uintptr_t hudResolutionChanged;
+    // The game's own bugs (mods/game_fixes; 0: not in this build). settingsSaveRoot: MafiaEntryPoint's `push
+    // 0x80000002` (68 02 00 00 80) before RegCreateKeyExA when the game quits: LS3D_setup (the options' details, draw
+    // distance, effects, sounds, shadows, particles) written to HKEY_LOCAL_MACHINE, which 1.2 does not read (its start
+    // opens HKEY_CURRENT_USER, as its Setup.exe writes; 1.0 opens and writes HKLM alike). sniperConflictTest: in
+    // G_LoadSaveClass::ProfileLoad, the two `test eax, eax` (85 C0) after loadsave_binding_find_conflict for Sniper
+    // Mode (slot 29), which returns the conflicting slot or -1 and is tested against 0: every load reset the binding
+    // (to R, or none when R is bound); sniperConflictTest the first (a conflict of the binding read), sniperRTest the
+    // second (whether R is free). 1.0 has neither (its ProfileLoad does not test the slot).
+    uintptr_t settingsSaveRoot, sniperConflictTest, sniperRTest;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -530,7 +539,8 @@ struct Ls3dBuild {
     uintptr_t mouseUpdate, mouseState;
     // The frame rate (mods/examples/fps_unlock; MafiaD3D11's A132). limiterMinJump: in frameLimit, the `jae +0x18`
     // (73 18) that skips the wait when the frame took the minimum (the main loop asks 16 ms, 83 ms the most);
-    // `jmp` there (EB) never waits and returns the frame's real time, the maximum still applied. presentYield: in
+    // `jmp` there (EB) never waits and returns the frame's real time, the maximum still applied, but a frame of 0 ms
+    // too (fps_unlock asks frameLimit for 1 ms instead and reads this place only, for another tool's jmp). presentYield: in
     // IGraph::Present, `push 0; call <reg = Sleep>` (6A 00 FF D3 in 1.2, FF D7 in 1.0) before the device's Present;
     // `jmp +2` (EB 02) skips it.
     uintptr_t limiterMinJump, presentYield;
@@ -742,6 +752,9 @@ inline const ExeBuild kExe12 = {
     0x5BD5F0, 0x5BD870, 0x647F24, 0x647C20, 0x4EFC80, 0x4EFDE0, 0x607A60,
     // the HUD's layout (2026-10-25: G_LoadSaveClass::Init's call at 0x604F44, ecx = hud)
     0x601520,
+    // the game's own bugs (2026-10-25: MafiaEntryPoint's RegCreateKeyExA at 0x5BF470; ProfileLoad's find_conflict
+    // calls at 0x60592A and 0x605956)
+    0x5BF465, 0x60592F, 0x60595E,
 };
 
 inline const ExeBuild kExe10 = {
@@ -878,6 +891,9 @@ inline const ExeBuild kExe10 = {
     0x5F83E0, 0x5F8660, 0x6F956C, 0x6F92D0, 0x5D1610, 0x5D1770, 0x559A90,
     // the HUD's layout (2026-10-25: G_LoadSaveClass::Init's call at 0x556FFD, ecx = hud)
     0x5532E0,
+    // the game's own bugs: none of them here (2026-10-25: MafiaEntryPoint opens and writes HKLM, 0x5F9A43 and
+    // 0x5FA1FE; ProfileLoad 0x557880 does not test Sniper Mode's binding)
+    0, 0, 0,
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,

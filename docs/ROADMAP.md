@@ -155,7 +155,8 @@ What is done, what comes next and later, and what is known to be missing or wron
   0 MB, 0 handles, 0 threads lost a reload, nothing kept by mistake.
 
 - **The frame rate freed: the example mod `fps_unlock`** (2026-10-14; the owner's request, MafiaD3D11's A132 as
-  the base): the limiter's minimum and Present's yield patched (both builds' places in `game_build.h`, checked by
+  the base): the limiter's minimum made 1 ms (a hook since 2026-10-25: A132's `jmp` gave a frame of 0 ms, which broke
+  the intro's cutscene) and Present's yield patched (both builds' places in `game_build.h`, checked by
   `check_builds.py`; bytes checked before, put back at the unload), a cap of its own on a high-resolution timer, the
   frame rate and the game's clock step shown, `F11` / `enabled` to compare at once. Above 62.5 fps the main menu's
   camera started at full speed (its spring stepped once a call): fixed by a hook on `GM_Menu::TickCamera` that does
@@ -1220,6 +1221,16 @@ merged, sorted by importance):
 
 ## Known gaps
 
+- **The game's own bugs: what game_fixes leaves** (2026-10-25, mods/game_fixes, knowledge/notes/game.md). The options
+  are written only when the game quits by its menu's Quit (not at Alt+F4 or a closed window: the game's own way).
+  1.0 writes HKEY_LOCAL_MACHINE where it reads it: in the 1.0 lab the write is refused (RegCreateKeyExA 5, no
+  registry virtualization for that process) and nothing is kept; a player's 1.0 keeps its options through the
+  VirtualStore (the owner's) or as an administrator. The loader's own write guard (the run's `resolution`,
+  `fullscreen`, `adapter` given their registry's values back in that write, host/start.cpp) is seen in 1.2 only, 1.0
+  never writing there. A Sniper Mode key that does conflict with another is still reset at the load (the game's
+  intent). The key names were seen in a Russian layout and a joystick in the system's Russian; another language's
+  font (a Czech or Russian edition) keeps DirectInput's names whenever they are in its code page. game_fixes is not
+  in the dlss_nr pack yet.
 - **A gamepad plugged in while the game runs: not seen with a real pad** (2026-10-24, host/joyplug.cpp): the
   opening again is seen in both labs (`joy.drop`, `joy.rescan`), the device's arrival with real hardware and the poll
   thread (no CM_Register_Notification: Windows 7, Wine) are not. The running mission's force feedback effects stay on

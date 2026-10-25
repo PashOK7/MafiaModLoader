@@ -4,9 +4,12 @@
 // game_build.h) for a frame of at least 16 ms and at most 83 ms. A shorter frame is slept to 16 ms, so the game never
 // runs above 62.5 fps; the limiter's answer is the time every system of the game is given (the mission's tick, the
 // recordings, the caches, the map, the cutscenes). Present also yields (Sleep(0)) before each frame.
-// Two places changed, nothing else: the limiter's `jae` becomes `jmp` (it never waits and returns the frame's real
-// time, in whole milliseconds; a long frame is still cut to 83 ms), and Present's `push 0; call Sleep` is jumped
-// over. The game's time stays real: at 200 fps every system gets 5 ms a frame instead of 16 ms every 16 ms.
+// Two things changed, nothing else: the limiter is asked for 1 ms at least instead of 16 (a hook on it: it waits only
+// when a frame took no time at all and returns the frame's real time, in whole milliseconds; a long frame is still cut
+// to 83 ms), and Present's `push 0; call Sleep` is jumped over. The game's time stays real: at 200 fps every system
+// gets 5 ms a frame instead of 16 ms every 16 ms. Never 0 ms: MafiaD3D11's A132 made the limiter's `jae` a `jmp`, which
+// gives the frame after a load a step of 0, and the intro's cutscene then starts with its people in their bind pose
+// for its first seconds (C_records::Update's tracks given 0 ms; seen in both builds, 2026-10-25).
 // What the game did once a frame instead of by the time breaks then; three are fixed here (the main menu's camera,
 // CamTick and 1.0's Cam10; a person's step at a curb, Swept; the small rotations LS3D drops, which left a car
 // creeping and its steering with a dead zone, RotationMatrix) and the others found go to knowledge/notes/game.md,
@@ -20,6 +23,7 @@
 //                              leave the game as it was)
 //   fixing a game function     CamTick       a hook (host->hook: chained, taken off with the mod) that calls the
 //                              game's own function and corrects what it did once a frame
+//   a call's argument changed  Limiter       the game's own limiter called with another minimum
 //   lengths made once a call   Swept, Walk   the game's own function given, for each call, the lengths of its
 //   made lengths of the time                 step's time: its operands pointed at the mod's floats (in the heap)
 //   an engine function fixed   RotationMatrix   LS3DF.dll's export hooked by its name, the fix checked against the
@@ -63,17 +67,29 @@ struct Settings {
 } S;
 
 // ---- the two places
+// The limiter's `jae` is only read: made `jmp` by another tool (MafiaVR's ASI, A132), the game is unlocked already and
+// left to it. Present's Sleep(0) is the one place written.
 struct Site {
     const char *name;
     uintptr_t at = 0;
     uint8_t original[2], patched[2];   // (the first two bytes are all that changes at either place)
 };
-Site g_sites[2] = {{"the limiter's minimum", 0, {0x73, 0x18}, {0xEB, 0x18}},     // jae +0x18 -> jmp +0x18
+Site g_sites[2] = {{"the limiter's minimum", 0, {0x73, 0x18}, {0xEB, 0x18}},     // jae +0x18 -> jmp +0x18 (another tool's)
                    {"Present's Sleep(0)", 0, {0x6A, 0x00}, {0xEB, 0x02}}};       // push 0 -> jmp +2 (over the call)
 bool g_known;                // the build's places found and as expected
 enum class Owner { none, us, other } g_owner = Owner::none;
 const char *g_why = "";      // why nothing was done
 uintptr_t g_clock;           // LS3D's millisecond clock (the limiter reads it)
+
+// The limiter (game_build.h frameLimit, IGraph::GetTimer: stdcall(IGraph*, min, max) -> ms): when the frame took less
+// than `min` it Sleeps the rest, moves its clock on by it and returns `min`. Asked for 1 ms, it returns the frame's
+// real time and waits only for a frame of 0 ms (above 1000 fps), which no system of the game expects.
+using LimiterFn = int(__stdcall *)(void *, int, int);
+LimiterFn g_limiterOriginal;
+bool g_limiterHooked;
+int __stdcall Limiter(void *graph, int min, int max) {
+    return g_limiterOriginal(graph, g_owner == Owner::us && min > 1 ? 1 : min, max);
+}
 
 enum class State { original, patched, other };
 State StateOf(const Site &s) {
@@ -96,41 +112,42 @@ bool Find() {
     return true;
 }
 
-bool WriteAll(bool patch) {
-    for (Site &s : g_sites)
-        if (!H->mem_write(s.at, patch ? s.patched : s.original, 2)) return false;
-    return true;
-}
-
 void Apply() {
     if (!g_known || g_owner != Owner::none) return;
     State a = StateOf(g_sites[0]), b = StateOf(g_sites[1]);
-    if (a == State::patched && b == State::patched) {   // MafiaVR's ASI, an earlier copy of this mod that was kept...
+    if (a == State::patched) {   // MafiaVR's ASI, A132, an older copy of this mod that was kept...
         g_owner = Owner::other;
-        H->log(M, MML_LOG_INFO, "already unlocked by another tool: left to it");
+        H->log(M, MML_LOG_INFO, "already unlocked by another tool (the limiter never waits): left to it; its frames of 0 ms "
+                                "start the intro's cutscene with its people in their bind pose");
         return;
     }
-    if (a != State::original || b != State::original) {
+    if (a != State::original || b == State::other) {
         g_why = "the two places hold bytes of neither the game nor the unlock (another tool changed them)";
         H->log(M, MML_LOG_WARN, "%s: nothing done", g_why);
         return;
     }
-    if (!WriteAll(true)) {
-        WriteAll(false);
+    if (!g_limiterHooked) {
+        g_why = "the limiter could not be hooked";
+        H->log(M, MML_LOG_WARN, "%s: nothing done", g_why);
+        return;
+    }
+    // (Present's place already jumped over: this mod's own, left by a load that faulted)
+    if (b == State::original && !H->mem_write(g_sites[1].at, g_sites[1].patched, 2)) {
         g_why = "the write failed";
-        H->log(M, MML_LOG_ERROR, "%s: put back", g_why);
+        H->log(M, MML_LOG_ERROR, "%s: nothing done", g_why);
         return;
     }
     g_owner = Owner::us;
-    H->log(M, MML_LOG_INFO, "unlocked: the limiter returns the frame's real time (83 ms the most), Present does not yield");
+    H->log(M, MML_LOG_INFO, "unlocked: the limiter asked for 1 ms at least (the frame's real time, 83 ms the most, never 0), "
+                            "Present does not yield");
 }
 
 void Restore() {
-    if (g_owner == Owner::us && StateOf(g_sites[0]) == State::patched && StateOf(g_sites[1]) == State::patched) {
-        WriteAll(false);
+    if (g_owner == Owner::us && StateOf(g_sites[1]) == State::patched) {
+        H->mem_write(g_sites[1].at, g_sites[1].original, 2);
         H->log(M, MML_LOG_INFO, "the game's own pacing back (62.5 fps the most)");
     }
-    if (g_owner == Owner::us) g_owner = Owner::none;
+    if (g_owner == Owner::us) g_owner = Owner::none;   // (the limiter's hook passes the game's minimum on again)
 }
 
 // ---- the main menu's camera: a spring stepped once a call, made to step by the time
@@ -1019,6 +1036,9 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     g_timer = CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
     if (!g_timer) g_timer = CreateWaitableTimerW(nullptr, TRUE, nullptr);   // (Windows before 10 1803: coarser)
     g_known = Find();
+    if (g_known && game::Ls3d().frameLimit)   // (taken off with the mod; the loader's own hook there chains with it)
+        g_limiterHooked = host->hook(mod, host->module_base("LS3DF.dll") + game::Ls3d().frameLimit, reinterpret_cast<void *>(Limiter),
+                                     reinterpret_cast<void **>(&g_limiterOriginal)) != 0;
     host->state_get(mod, "k10", &g_k10, sizeof g_k10);   // 1.0's camera floats: the process's heap, one block for every load
     if (!g_k10) {
         g_k10 = static_cast<float *>(HeapAlloc(GetProcessHeap(), 0, 2 * sizeof(float)));

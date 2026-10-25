@@ -347,6 +347,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     mml_add_mod(fusion_fix ${CMAKE_SOURCE_DIR}/mods/fusion_fix mods/fusion_fix/fusion_fix.cpp mods/fusion_fix/ff.cpp
         mods/fusion_fix/widescreen.cpp mods/fusion_fix/ls3df.cpp mods/fusion_fix/cutscene.cpp mods/fusion_fix/ui.cpp
         mods/fusion_fix/camera.cpp mods/fusion_fix/restored.cpp mods/fusion_fix/ijoy.cpp)
+    mml_add_mod(game_fixes ${CMAKE_SOURCE_DIR}/mods/game_fixes mods/game_fixes/game_fixes.cpp)
     # (tools/new_mod.py adds a mod's line above this one)
 
     # The mods this build defines: <out>/mml/build_mods.txt, one id a line (written only when it changes), which deploy

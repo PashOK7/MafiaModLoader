@@ -559,6 +559,42 @@ autosplitter; kept outside it, not ported). Checked against the above:
     or 360, one-off events (a hit, a shot, the init).
   - Not scanned: random events rolled once a tick (`rand() % n` in a tick happens more often at a higher rate), and
     counters of frames.
+- **game** **A step of 0 ms breaks the intro's cutscene** (the owner's report; 2026-10-25, both labs). With the
+  limiter's `jae` made `jmp` (A132's way) the first frame after a mission's load is given 0 ms: `C_records::TimeLine`
+  (0x59B130, tapped at the intro: `0` then 56, 83, ...; with the game's own pacing 16, 41, 83) and the recording's
+  tracks then start with the people in their bind pose (the man at the bar's fireplace, arms out) and the camera at
+  another key for the first seconds; the cap at 60 fps changes nothing. Asked for 1 ms at least (fps_unlock's hook on
+  the limiter), the first step is 1 and the cutscene is the game's own (the bartender, then Tommy at the door, frame
+  for frame). No system of the game expects a frame of 0 ms.
+
+## The game's own bugs (mods/game_fixes; read and seen 2026-10-25, both labs)
+
+- **code** **1.2's options are not kept after a restart** (the owner's report: the level of details, the shadows).
+  The video options of Options > Audio & Video are the mission's settings (`missionPtr + 0x90`: +0x90 the details'
+  scale, +0x94 the draw distance's, +0x9C effects, +0xA0 sounds, +0xA4 shadows through a table {0, 1, 3, 6, 9, 15},
+  +0xA8 particles), not the profile's. MafiaEntryPoint copies them from InitSettings (LS3D_setup's 63 bytes: +0x27
+  details, +0x2B distance, +0x2F effects, +0x33 sounds, +0x37 the shadows' index, +0x3B particles; DefaultInitSettings
+  0x5BF520) at its start and back into it when its loop ends (the menu's Quit), then writes it to the registry. 1.2
+  reads `HKEY_CURRENT_USER\Software\Illusion Softworks\Mafia` (RegOpenKeyA 0x80000001 at 0x5BEC61; its Setup.exe
+  writes there) but writes `HKEY_LOCAL_MACHINE` (RegCreateKeyExA 0x80000002, the push at 0x5BF465), which Windows
+  keeps in its VirtualStore for the game (seen there: details 2.0) and 1.2 never reads. 1.0 opens and writes HKLM alike
+  (0x5F9A43, 0x5FA1FE); in the 1.0 lab its RegCreateKeyExA returned 5 (no virtualization for that process): 1.0 kept
+  nothing there either. Fixed (the push made 0x80000001): LOD 2.0 and shadows 0 written to HKCU at the Quit, read at
+  the next start (the menu: Level of Details 1.0, Shadows Very Low).
+- **code** **1.2 takes Sniper Mode's key away at every profile load**. `G_LoadSaveClass::ProfileLoad` (0x6057F0; 1.0's
+  0x557880 has no such test) checks slot 29 (Sniper Mode, new in 1.2) with `loadsave_binding_find_conflict` (0x607460:
+  the conflicting slot, or -1) and tests the result against 0 (`test eax, eax; jz` at 0x60592F): with no conflict the
+  binding is reset, to R when R is free (the second test, 0x60595E, the same) or to none. Seen: X written into the
+  profile (+0x350), ProfileSave, ProfileLoad: none; with each `test` made `inc eax; nop`: X.
+- **code** **The controls' key names in another keyboard layout** (the owner's report: a Russian layout). 1.2's
+  `controlsKeyName` (0x4F1830) names a key by IGraph's GetKeyName (LS3DF+0x71C40, its vtable's +0xCC: DirectInput 8's
+  GetObjectInfo, DIDEVICEOBJECTINSTANCEW, the key's character in the thread's layout: W is U+0446 "ц") and turns it
+  into the system's code page (0x4F1A30: WideCharToMultiByte(CP_ACP)); the font draws the game's language's code page
+  (1252 here): W S A D Q became "ö û ô â é". 1.0's controlsKeyName (0x5D3180) has its own English table instead (103
+  names, Escape..Menu) and no such bug. A joystick's names are IJoy's, DirectInput's object names in the system's
+  language, in both builds ("Ось Y" drawn "Îñü Y"; controlsKeyName's joystick case: code < 0x100 an axis by IJoy's
+  index X, Y, Z, RX, RY, RZ, two sliders; 0x100.. a button; 0x200.. a hat). game_fixes gives a name the font cannot
+  draw in English (1.0's key names; "Y Axis", "Button n", "POV n"): seen in both labs.
 
 ## The exit crash (seen in mafia-ragdoll, not solved)
 

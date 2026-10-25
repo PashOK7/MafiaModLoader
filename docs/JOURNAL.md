@@ -3860,3 +3860,35 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Seen in passing**: the trees' leaves white in that copy, also without his scripts\, his maps\ (8932 loose
   textures), DXVK, and on 9Ex: green in the 1.2 lab with the same loader and dxwrapper. His game's own files; left
   (ROADMAP Known gaps).
+
+## 2026-10-25: the intro's cutscene with fps_unlock; three bugs of the game itself (mods/game_fixes)
+
+- **Asked** (the owner, while the tester tests): (1) 1.2 forgets some options after a restart (the level of details
+  at the most and the shadows off, Sniper Mode's key), 1.0 does not; (2) the controls' key names broken in a Russian
+  layout; (3) with fps_unlock the first seconds of the intro's cutscene (New Game, the video skipped) broken, even
+  capped at 60 fps.
+- **(3) Found**: C_records::TimeLine tapped at the intro: unlocked, its first step 0 ms (then 56, 83...); the game's
+  own pacing 16 (then 41, 83). The limiter's `jae` made `jmp` never waits, so the frame after the load takes no time
+  at all; the recording's people stand in their bind pose and the camera is elsewhere until the next keys. **Made**:
+  fps_unlock hooks the limiter (chained with the loader's) and asks it for 1 ms at least instead of 16 (it waits only
+  for a frame of 0 ms); Present's Sleep(0) stays jumped over; the limiter's jump is only read (another tool's `jmp`:
+  left to it, its 0 ms said in the log). **Seen**: 1.2 the first step 1, the bartender then Tommy at the door as with
+  the game's own pacing; 1.0 the same moment right (it had the man by the fireplace in his bind pose).
+- **(1) Found**: the options are LS3D_setup's (the registry's, as Setup.exe's), copied to the mission's settings at the
+  start and back at the menu's Quit: 1.2 reads HKCU and writes HKLM (the VirtualStore held the written one, details
+  2.0); 1.0 reads and writes HKLM. Sniper Mode (slot 29, new in 1.2): ProfileLoad tests find_conflict's -1 against 0
+  and resets the binding at every load. **Made**: mods/game_fixes (both builds, its fixes per build, game_build.h
+  settingsSaveRoot, sniperConflictTest, sniperRTest, tools/check_builds.py): the push of HKLM made HKCU; both tests
+  `inc eax; nop`. host/start.cpp also takes Game.exe's RegSetValueExA: a run's `resolution`, `fullscreen`, `adapter`
+  are given their registry's values back when the game writes LS3D_setup, so the options are kept and the screen
+  stays Setup.exe's. **Seen** (1.2): LOD and shadows set by the game's menu, Quit, HKCU holds details 2.0 and shadows
+  0 with 1280x960 (the run asked 1600x900), the next start's menu shows them; X written to the profile and loaded:
+  none without the fix, X with it. The owner's HKCU value was put back after. 1.0: the fixes say "not in this build";
+  its write to HKLM refused in the lab (5), so the guard was not exercised there (ROADMAP Known gaps).
+- **(2) Found**: 1.2's controlsKeyName names keys by DirectInput (the layout's character, U+0446 for W) turned into the
+  system's code page; the font draws 1252: "ö û ô â é" for W S A D Q. 1.0 has an English table of its own (read from its
+  code: 103 names). Joysticks: IJoy's names in the system's language, both builds ("Îñü Y"). **Made**: game_fixes
+  `key_names`, a hook on controlsKeyName: a name kept when the font draws it as it is (in 1.2 a key's taken from
+  DirectInput's wide name into the game's code page), else English (1.0's key names, "Y Axis", "Button n", "POV n").
+  **Seen**: 1.2 W S A D Q F R X on the player's page, "Joy0 / Y Axis / -" on the car's; 1.0 "Joy0 / Îñü Y / -" with the
+  fix off, "Y Axis" with it.
