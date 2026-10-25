@@ -966,7 +966,8 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
       the journal: each scene's frame, its game thread, Present, the GPU, the counters, the profile's top functions;
       and `bench` of the reference shaders (item 27) on every draw against the game's own drawing: the price of
       today's way, the number the next steps must beat.
-    - **31b, the state followed, not asked.** The device's Set* calls (the outer links of item 30's counters, made
+    - **31b, the state followed, not asked.** *(2026-10-26, first step done in both labs: host/d3dmirror.cpp, the
+      reference on every draw +258 to +77 ms in the far scene; still to do: only the registers the shaders read.)* The device's Set* calls (the outer links of item 30's counters, made
       a mirror) keep a copy of the state the game set: transforms, lights, material, fog, stages, samplers, streams,
       the vertex format. The shaders' constants come from it, each block written only when it changed (the view and
       the projection once a frame, the fog once, a draw's world). Measure: the host's Get* calls a frame 0; the

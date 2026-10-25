@@ -14,6 +14,7 @@
 //
 // Bridge methods: shader.add, shader.remove, shader.state, shader.survey.
 #include "host.h"
+#include "d3dmirror.h"
 #include <windows.h>
 #include <d3d9.h>
 #include <d3dcompiler.h>
@@ -99,16 +100,53 @@ const char *TextureName(const void *mat) {
 }
 
 // The class of a draw by its blending: 1 opaque, 2 alpha-tested, 4 translucent, 8 additive.
-uint32_t ClassOf(IDirect3DDevice9 *d) {
-    DWORD blend = 0, test = 0, src = 0, dst = 0;
-    d->GetRenderState(D3DRS_ALPHABLENDENABLE, &blend);
-    d->GetRenderState(D3DRS_ALPHATESTENABLE, &test);
-    if (blend) {
-        d->GetRenderState(D3DRS_SRCBLEND, &src);
-        d->GetRenderState(D3DRS_DESTBLEND, &dst);
-        return dst == D3DBLEND_ONE ? MML_SHADE_ADDITIVE : MML_SHADE_TRANSLUCENT;
+uint32_t ClassOf(const D3dMirror &m) {
+    if (m.rs[D3DRS_ALPHABLENDENABLE]) return m.rs[D3DRS_DESTBLEND] == D3DBLEND_ONE ? MML_SHADE_ADDITIVE : MML_SHADE_TRANSLUCENT;
+    return m.rs[D3DRS_ALPHATESTENABLE] ? MML_SHADE_ALPHATEST : MML_SHADE_OPAQUE;
+}
+
+D3dMirror g_scratch;   // (StateOf's without the mirror: game thread)
+
+// The state a draw's work reads: the mirror's (d3dmirror.cpp), or, without it, what is read asked of the device into
+// `scratch` (the transforms, the render states, stages 0 and 1, their textures, the material, the lights, the viewport,
+// the shaders, sampler 2).
+const D3dMirror &StateOf(IDirect3DDevice9 *d, D3dMirror *scratch) {
+    if (const D3dMirror *m = MirrorOf(d)) return *m;
+    D3dMirror &m = *scratch;
+    d->GetTransform(D3DTS_WORLD, &m.world);
+    d->GetTransform(D3DTS_VIEW, &m.view);
+    d->GetTransform(D3DTS_PROJECTION, &m.proj);
+    for (D3DRENDERSTATETYPE s : {D3DRS_FOGENABLE, D3DRS_FOGTABLEMODE, D3DRS_FOGVERTEXMODE, D3DRS_FOGSTART, D3DRS_FOGEND,
+                                 D3DRS_FOGDENSITY, D3DRS_FOGCOLOR, D3DRS_AMBIENT, D3DRS_ALPHATESTENABLE, D3DRS_ALPHAREF,
+                                 D3DRS_LIGHTING, D3DRS_RANGEFOGENABLE, D3DRS_TEXTUREFACTOR, D3DRS_ALPHABLENDENABLE,
+                                 D3DRS_SRCBLEND, D3DRS_DESTBLEND})
+        d->GetRenderState(s, &m.rs[s]);
+    for (DWORD s = 0; s < 3; s++) {
+        d->GetTextureStageState(s, D3DTSS_COLOROP, &m.tss[s][D3DTSS_COLOROP]);
+        d->GetTextureStageState(s, D3DTSS_ALPHAOP, &m.tss[s][D3DTSS_ALPHAOP]);
+        d->GetTextureStageState(s, D3DTSS_TEXCOORDINDEX, &m.tss[s][D3DTSS_TEXCOORDINDEX]);
+        IDirect3DBaseTexture9 *t = nullptr;
+        d->GetTexture(s, &t);
+        m.tex[s] = t;
+        if (t) t->Release();   // (the device keeps it: compared and set back only)
     }
-    return test ? MML_SHADE_ALPHATEST : MML_SHADE_OPAQUE;
+    for (DWORD s = 1; s < 14; s++) d->GetSamplerState(2, static_cast<D3DSAMPLERSTATETYPE>(s), &m.samp[2][s]);
+    d->GetMaterial(&m.material);
+    for (DWORD i = 0; i < 8; i++) {
+        BOOL on = FALSE;
+        m.lightOn[i] = SUCCEEDED(d->GetLightEnable(i, &on)) && on;
+        if (m.lightOn[i]) d->GetLight(i, &m.light[i]);
+    }
+    d->GetViewport(&m.viewport);
+    IDirect3DVertexShader9 *vs = nullptr;
+    IDirect3DPixelShader9 *ps = nullptr;
+    d->GetVertexShader(&vs);
+    d->GetPixelShader(&ps);
+    m.vs = vs;
+    m.ps = ps;
+    if (vs) vs->Release();
+    if (ps) ps->Release();
+    return m;
 }
 
 const char *OpName(DWORD op) {
@@ -201,12 +239,14 @@ void Mul(const D3DMATRIX &a, const D3DMATRIX &b, D3DMATRIX *o) {
     for (int i = 0; i < 4; i++)
         for (int j = 0; j < 4; j++) o->m[i][j] = a.m[i][0] * b.m[0][j] + a.m[i][1] * b.m[1][j] + a.m[i][2] * b.m[2][j] + a.m[i][3] * b.m[3][j];
 }
-void Constants(IDirect3DDevice9 *d, float *c) {
-    memset(c, 0, kRegs * 16);
-    D3DMATRIX w{}, v{}, p{}, vp, wvp;
-    d->GetTransform(D3DTS_WORLD, &w);
-    d->GetTransform(D3DTS_VIEW, &v);
-    d->GetTransform(D3DTS_PROJECTION, &p);
+void Rgba(DWORD x, float *o) {
+    o[0] = ((x >> 16) & 0xFF) / 255.0f; o[1] = ((x >> 8) & 0xFF) / 255.0f; o[2] = (x & 0xFF) / 255.0f; o[3] = ((x >> 24) & 0xFF) / 255.0f;
+}
+float AsFloat(DWORD v) { float f; memcpy(&f, &v, 4); return f; }
+// c0..c75 both kinds of constants share: the transforms, the eye, the time, the fog
+void CommonConstants(const D3dMirror &s, float *c) {
+    const D3DMATRIX &w = s.world, &v = s.view, &p = s.proj;
+    D3DMATRIX vp, wvp;
     Mul(v, p, &vp);
     Mul(w, vp, &wvp);
     memcpy(c + 0, &w, 64);
@@ -219,55 +259,34 @@ void Constants(IDirect3DDevice9 *d, float *c) {
     c[65] = -(tx * v._21 + ty * v._22 + tz * v._23);
     c[66] = -(tx * v._31 + ty * v._32 + tz * v._33);
     c[67] = static_cast<float>((GetTickCount64() % 3600000ull) / 1000.0);
-    DWORD fog = 0, table = 0, vert = 0, fogColor = 0, amb = 0, ref = 0, test = 0, lighting = 0;
-    float fs = 0, fe = 0, fd = 0;
-    d->GetRenderState(D3DRS_FOGENABLE, &fog);
-    d->GetRenderState(D3DRS_FOGTABLEMODE, &table);
-    d->GetRenderState(D3DRS_FOGVERTEXMODE, &vert);
-    d->GetRenderState(D3DRS_FOGSTART, reinterpret_cast<DWORD *>(&fs));
-    d->GetRenderState(D3DRS_FOGEND, reinterpret_cast<DWORD *>(&fe));
-    d->GetRenderState(D3DRS_FOGDENSITY, reinterpret_cast<DWORD *>(&fd));
-    d->GetRenderState(D3DRS_FOGCOLOR, &fogColor);
-    d->GetRenderState(D3DRS_AMBIENT, &amb);
-    d->GetRenderState(D3DRS_ALPHATESTENABLE, &test);
-    d->GetRenderState(D3DRS_ALPHAREF, &ref);
-    d->GetRenderState(D3DRS_LIGHTING, &lighting);
-    DWORD mode = table != D3DFOG_NONE ? table : vert;
-    c[68] = fs; c[69] = fe; c[70] = fd; c[71] = fog ? static_cast<float>(mode) : 0.0f;
-    auto rgba = [](DWORD x, float *o) {
-        o[0] = ((x >> 16) & 0xFF) / 255.0f; o[1] = ((x >> 8) & 0xFF) / 255.0f; o[2] = (x & 0xFF) / 255.0f; o[3] = ((x >> 24) & 0xFF) / 255.0f;
-    };
-    rgba(fogColor, c + 72);
+    const DWORD fog = s.rs[D3DRS_FOGENABLE], table = s.rs[D3DRS_FOGTABLEMODE], vert = s.rs[D3DRS_FOGVERTEXMODE];
+    const DWORD mode = table != D3DFOG_NONE ? table : vert;
+    c[68] = AsFloat(s.rs[D3DRS_FOGSTART]); c[69] = AsFloat(s.rs[D3DRS_FOGEND]); c[70] = AsFloat(s.rs[D3DRS_FOGDENSITY]);
+    c[71] = fog ? static_cast<float>(mode) : 0.0f;
+    Rgba(s.rs[D3DRS_FOGCOLOR], c + 72);
     c[75] = fog ? 1.0f : 0.0f;
-    D3DMATERIAL9 m{};
-    d->GetMaterial(&m);
-    memcpy(c + 76, &m.Diffuse, 16);
-    memcpy(c + 80, &m.Ambient, 16);
-    memcpy(c + 84, &m.Emissive, 16);
-    rgba(amb, c + 88);
+}
+void Constants(const D3dMirror &s, float *c) {
+    memset(c, 0, kRegs * 16);
+    CommonConstants(s, c);
+    memcpy(c + 76, &s.material.Diffuse, 16);
+    memcpy(c + 80, &s.material.Ambient, 16);
+    memcpy(c + 84, &s.material.Emissive, 16);
+    Rgba(s.rs[D3DRS_AMBIENT], c + 88);
     c[92] = static_cast<float>(g_group.kind);
-    c[93] = lighting ? 1.0f : 0.0f;
-    c[94] = test ? (ref & 0xFF) / 255.0f : -1.0f;
+    c[93] = s.rs[D3DRS_LIGHTING] ? 1.0f : 0.0f;
+    c[94] = s.rs[D3DRS_ALPHATESTENABLE] ? (s.rs[D3DRS_ALPHAREF] & 0xFF) / 255.0f : -1.0f;
     c[95] = static_cast<float>(g_group.pass);
-    for (DWORD s = 0; s < 2; s++) {
-        DWORD cop = 0, aop = 0, tci = 0;
-        d->GetTextureStageState(s, D3DTSS_COLOROP, &cop);
-        d->GetTextureStageState(s, D3DTSS_ALPHAOP, &aop);
-        d->GetTextureStageState(s, D3DTSS_TEXCOORDINDEX, &tci);
-        IDirect3DBaseTexture9 *t = nullptr;
-        d->GetTexture(s, &t);
-        float *o = c + 96 + s * 4;
-        o[0] = static_cast<float>(cop); o[1] = static_cast<float>(aop); o[2] = static_cast<float>(tci & 0xFFFF); o[3] = t ? 1.0f : 0.0f;
-        if (t) t->Release();
+    for (DWORD i = 0; i < 2; i++) {
+        float *o = c + 96 + i * 4;
+        o[0] = static_cast<float>(s.tss[i][D3DTSS_COLOROP]); o[1] = static_cast<float>(s.tss[i][D3DTSS_ALPHAOP]);
+        o[2] = static_cast<float>(s.tss[i][D3DTSS_TEXCOORDINDEX] & 0xFFFF); o[3] = s.tex[i] ? 1.0f : 0.0f;
     }
-    D3DVIEWPORT9 vpo{};
-    d->GetViewport(&vpo);
+    const D3DVIEWPORT9 &vpo = s.viewport;
     int n = 0;
     for (DWORD i = 0; i < 8 && n < 8; i++) {
-        BOOL on = FALSE;
-        if (FAILED(d->GetLightEnable(i, &on)) || !on) continue;
-        D3DLIGHT9 l{};
-        d->GetLight(i, &l);
+        if (!s.lightOn[i]) continue;
+        const D3DLIGHT9 &l = s.light[i];
         float *o = c + 108 + n * 24;
         o[0] = l.Position.x; o[1] = l.Position.y; o[2] = l.Position.z; o[3] = static_cast<float>(l.Type);
         o[4] = l.Direction.x; o[5] = l.Direction.y; o[6] = l.Direction.z; o[7] = l.Range;
@@ -277,78 +296,35 @@ void Constants(IDirect3DDevice9 *d, float *c) {
         o[20] = std::cos(l.Theta / 2); o[21] = std::cos(l.Phi / 2);
         n++;
     }
-    DWORD range = 0, tf = 0;
-    d->GetRenderState(D3DRS_RANGEFOGENABLE, &range);
-    d->GetRenderState(D3DRS_TEXTUREFACTOR, &tf);
-    rgba(tf, c + 300);
+    Rgba(s.rs[D3DRS_TEXTUREFACTOR], c + 300);
     c[104] = static_cast<float>(n);
-    c[105] = range ? 1.0f : 0.0f;
+    c[105] = s.rs[D3DRS_RANGEFOGENABLE] ? 1.0f : 0.0f;
     c[106] = static_cast<float>(vpo.Width);
     c[107] = static_cast<float>(vpo.Height);
     ShadowsConstants(g_group.visual, c);
 }
 
 // What the host's own skinned shaders read of game.hlsli (VsSkin, PsSkin: the transforms, the eye, the fog, the
-// draw, the stages, the viewport, the texture factor), c0..c26 and c75: a person's draw no rule takes asks the device
-// for these alone (some 25 calls, not the 60 of every register; there are hundreds of such draws a frame).
-void CoreConstants(IDirect3DDevice9 *d, float *c) {
+// draw, the stages, the viewport, the texture factor), c0..c26 and c75: a person's draw no rule takes writes these
+// alone (there are hundreds of such draws a frame).
+void CoreConstants(const D3dMirror &s, float *c) {
     memset(c, 0, 27 * 16);
-    D3DMATRIX w{}, v{}, p{}, vp, wvp;
-    d->GetTransform(D3DTS_WORLD, &w);
-    d->GetTransform(D3DTS_VIEW, &v);
-    d->GetTransform(D3DTS_PROJECTION, &p);
-    Mul(v, p, &vp);
-    Mul(w, vp, &wvp);
-    memcpy(c + 0, &w, 64);
-    memcpy(c + 16, &v, 64);
-    memcpy(c + 32, &p, 64);
-    memcpy(c + 48, &wvp, 64);
-    float tx = v._41, ty = v._42, tz = v._43;
-    c[64] = -(tx * v._11 + ty * v._12 + tz * v._13);
-    c[65] = -(tx * v._21 + ty * v._22 + tz * v._23);
-    c[66] = -(tx * v._31 + ty * v._32 + tz * v._33);
-    c[67] = static_cast<float>((GetTickCount64() % 3600000ull) / 1000.0);
-    DWORD fog = 0, table = 0, vert = 0, fogColor = 0, ref = 0, test = 0, range = 0, tf = 0;
-    float fs = 0, fe = 0, fd = 0;
-    d->GetRenderState(D3DRS_FOGENABLE, &fog);
-    if (fog) {
-        d->GetRenderState(D3DRS_FOGTABLEMODE, &table);
-        d->GetRenderState(D3DRS_FOGVERTEXMODE, &vert);
-        d->GetRenderState(D3DRS_FOGSTART, reinterpret_cast<DWORD *>(&fs));
-        d->GetRenderState(D3DRS_FOGEND, reinterpret_cast<DWORD *>(&fe));
-        d->GetRenderState(D3DRS_FOGDENSITY, reinterpret_cast<DWORD *>(&fd));
-        d->GetRenderState(D3DRS_FOGCOLOR, &fogColor);
-        d->GetRenderState(D3DRS_RANGEFOGENABLE, &range);
-    }
-    d->GetRenderState(D3DRS_ALPHATESTENABLE, &test);
-    if (test) d->GetRenderState(D3DRS_ALPHAREF, &ref);
-    DWORD mode = table != D3DFOG_NONE ? table : vert;
-    c[68] = fs; c[69] = fe; c[70] = fd; c[71] = fog ? static_cast<float>(mode) : 0.0f;
-    c[72] = ((fogColor >> 16) & 0xFF) / 255.0f; c[73] = ((fogColor >> 8) & 0xFF) / 255.0f; c[74] = (fogColor & 0xFF) / 255.0f;
-    c[75] = fog ? 1.0f : 0.0f;
+    CommonConstants(s, c);
     c[92] = static_cast<float>(g_group.kind);
-    c[94] = test ? (ref & 0xFF) / 255.0f : -1.0f;
+    c[94] = s.rs[D3DRS_ALPHATESTENABLE] ? (s.rs[D3DRS_ALPHAREF] & 0xFF) / 255.0f : -1.0f;
     c[95] = static_cast<float>(g_group.pass);
-    for (DWORD s = 0; s < 2; s++) {
-        DWORD cop = 0, aop = 0, tci = 0;
-        d->GetTextureStageState(s, D3DTSS_COLOROP, &cop);
-        float *o = c + 96 + s * 4;
+    for (DWORD i = 0; i < 2; i++) {
+        float *o = c + 96 + i * 4;
+        const DWORD cop = s.tss[i][D3DTSS_COLOROP];
         o[0] = static_cast<float>(cop);
         if (cop == D3DTOP_DISABLE) continue;   // (a stage off: nothing more of it is read)
-        d->GetTextureStageState(s, D3DTSS_ALPHAOP, &aop);
-        d->GetTextureStageState(s, D3DTSS_TEXCOORDINDEX, &tci);
-        IDirect3DBaseTexture9 *t = nullptr;
-        d->GetTexture(s, &t);
-        o[1] = static_cast<float>(aop); o[2] = static_cast<float>(tci & 0xFFFF); o[3] = t ? 1.0f : 0.0f;
-        if (t) t->Release();
-        if (cop == D3DTOP_BLENDFACTORALPHA || aop == D3DTOP_BLENDFACTORALPHA) d->GetRenderState(D3DRS_TEXTUREFACTOR, &tf);
+        o[1] = static_cast<float>(s.tss[i][D3DTSS_ALPHAOP]); o[2] = static_cast<float>(s.tss[i][D3DTSS_TEXCOORDINDEX] & 0xFFFF);
+        o[3] = s.tex[i] ? 1.0f : 0.0f;
     }
-    D3DVIEWPORT9 vpo{};
-    d->GetViewport(&vpo);
-    c[105] = range ? 1.0f : 0.0f;
-    c[106] = static_cast<float>(vpo.Width);
-    c[107] = static_cast<float>(vpo.Height);
-    c[300] = ((tf >> 16) & 0xFF) / 255.0f; c[301] = ((tf >> 8) & 0xFF) / 255.0f; c[302] = (tf & 0xFF) / 255.0f; c[303] = ((tf >> 24) & 0xFF) / 255.0f;
+    c[105] = s.rs[D3DRS_FOGENABLE] && s.rs[D3DRS_RANGEFOGENABLE] ? 1.0f : 0.0f;
+    c[106] = static_cast<float>(s.viewport.Width);
+    c[107] = static_cast<float>(s.viewport.Height);
+    Rgba(s.rs[D3DRS_TEXTUREFACTOR], c + 300);
 }
 
 bool Make(Rule &r, IDirect3DDevice9 *d) {
@@ -367,7 +343,7 @@ bool Make(Rule &r, IDirect3DDevice9 *d) {
     return true;
 }
 
-Rule *RuleFor(IDirect3DDevice9 *d) {
+Rule *RuleFor(const D3dMirror &st) {
     uint32_t cls = 0;
     std::string name;
     for (auto it = g_rules.rbegin(); it != g_rules.rend(); ++it) {   // (the last added first)
@@ -376,7 +352,7 @@ Rule *RuleFor(IDirect3DDevice9 *d) {
         if (r.kinds && !(r.kinds & (1u << (g_group.kind - 1)))) continue;
         if (r.where && !(r.where & static_cast<uint32_t>(g_group.where))) continue;
         if (g_group.pass > 0 && !(r.flags & MML_SHADE_ALL_PASSES)) continue;
-        if (!cls) cls = ClassOf(d);
+        if (!cls) cls = ClassOf(st);
         if (r.classes && !(r.classes & cls)) continue;
         if (r.pattern != "*") {
             if (name.empty()) name = Lower(g_group.texture ? g_group.texture : "");
@@ -452,12 +428,9 @@ HRESULT SkinnedDip(IDirect3DDevice9 *d, const SkinGpuDraw &s, IDirect3DVertexSha
 }
 
 bool ShadowDraw(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex, UINT verts, UINT start, UINT n, DipFn dip, HRESULT *hr) {
-    DWORD blend = 0, test = 0, dst = 0;
-    d->GetRenderState(D3DRS_ALPHABLENDENABLE, &blend);
-    d->GetRenderState(D3DRS_ALPHATESTENABLE, &test);
-    if (blend) d->GetRenderState(D3DRS_DESTBLEND, &dst);
-    D3DMATRIX v{};
-    d->GetTransform(D3DTS_VIEW, &v);
+    const D3dMirror &st = StateOf(d, &g_scratch);
+    const DWORD blend = st.rs[D3DRS_ALPHABLENDENABLE], test = st.rs[D3DRS_ALPHATESTENABLE], dst = st.rs[D3DRS_DESTBLEND];
+    const D3DMATRIX v = st.view;
     bool sky = !memcmp(&v, g_shadowBack, sizeof g_shadowBack);
     if (sky || (blend && (!test || dst == D3DBLEND_ONE))) { g_shadowSkipped++; *hr = S_OK; return true; }   // (left out: no light stopped)
     if (!MakeShadowShaders(d)) { *hr = S_OK; return true; }
@@ -468,13 +441,11 @@ bool ShadowDraw(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex
         g_shadowVPSet = true;
     }
     float c[kRegs * 4];
-    Constants(d, c);
-    IDirect3DVertexShader9 *oldVs = nullptr;
-    IDirect3DPixelShader9 *oldPs = nullptr;
-    d->GetVertexShader(&oldVs);
-    d->GetPixelShader(&oldPs);
-    d->SetVertexShaderConstantF(0, c, kRegs);
-    d->SetPixelShaderConstantF(0, c, kRegs);
+    Constants(st, c);
+    IDirect3DVertexShader9 *const oldVs = st.vs;   // (the device holds them: set back, not released)
+    IDirect3DPixelShader9 *const oldPs = st.ps;
+    MirrorConstants(d, false, 0, c, kRegs);
+    MirrorConstants(d, true, 0, c, kRegs);
     SkinGpuDraw skin;
     const bool skinned = SkinGpuFor(d, g_group.visual, base, &skin);
     d->SetVertexShader(g_shadowVs);
@@ -487,8 +458,6 @@ bool ShadowDraw(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex
     if (blend) d->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);   // (as LS3D left it: its own cache of the states holds)
     d->SetVertexShader(oldVs);
     d->SetPixelShader(oldPs);
-    if (oldVs) oldVs->Release();
-    if (oldPs) oldPs->Release();
     g_shadowDraws++;
     g_shadowFaces += n;
     return true;
@@ -500,27 +469,28 @@ bool Draw(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex, UINT
     SkinGpuDraw skin;
     const bool skinned = g_group.kind == 1 && SkinGpuFor(d, g_group.visual, base, &skin);
     if (g_rules.empty() && !skinned) return false;
-    Rule *r = g_rules.empty() || !g_group.where ? nullptr : RuleFor(d);   // (the rules: the frame's and the views' draws)
+    MirrorCheckDraw(d);   // (d3d.mirror's check, when asked)
+    const D3dMirror &st = StateOf(d, &g_scratch);
+    Rule *r = g_rules.empty() || !g_group.where ? nullptr : RuleFor(st);   // (the rules: the frame's and the views' draws)
     if (r && !Make(*r, d)) r = nullptr;
     if (!r && !skinned) return false;
     float c[kRegs * 4];
-    if (r) Constants(d, c);
-    else CoreConstants(d, c);   // (a person no rule takes: the host's shaders read these alone)
-    IDirect3DVertexShader9 *oldVs = nullptr;
-    IDirect3DPixelShader9 *oldPs = nullptr;
-    d->GetVertexShader(&oldVs);
-    d->GetPixelShader(&oldPs);
+    if (r) Constants(st, c);
+    else CoreConstants(st, c);   // (a person no rule takes: the host's shaders read these alone)
+    IDirect3DVertexShader9 *const oldVs = st.vs;   // (the device holds them: set back, not released)
+    IDirect3DPixelShader9 *const oldPs = st.ps;
+    // only the registers that differ from what the device holds (MirrorConstants)
     if (r) {
-        d->SetVertexShaderConstantF(0, c, kRegs);
-        d->SetPixelShaderConstantF(0, c, kRegs);
+        MirrorConstants(d, false, 0, c, kRegs);
+        MirrorConstants(d, true, 0, c, kRegs);
     } else {
-        d->SetVertexShaderConstantF(0, c, 27);
-        d->SetPixelShaderConstantF(0, c, 27);
-        d->SetPixelShaderConstantF(75, c + 300, 1);
+        MirrorConstants(d, false, 0, c, 27);
+        MirrorConstants(d, true, 0, c, 27);
+        MirrorConstants(d, true, 75, c + 300, 1);
     }
     if (r && r->constHi > r->constLo) {   // (the mod's own registers)
-        d->SetVertexShaderConstantF(160 + r->constLo, r->consts + r->constLo * 4, r->constHi - r->constLo);
-        d->SetPixelShaderConstantF(160 + r->constLo, r->consts + r->constLo * 4, r->constHi - r->constLo);
+        MirrorConstants(d, false, 160 + r->constLo, r->consts + r->constLo * 4, r->constHi - r->constLo);
+        MirrorConstants(d, true, 160 + r->constLo, r->consts + r->constLo * 4, r->constHi - r->constLo);
     }
     if (!skinned && r->vs) d->SetVertexShader(r->vs);
     if (!skinned && r->ps) d->SetPixelShader(r->ps);
@@ -529,8 +499,8 @@ bool Draw(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex, UINT
     DWORD ss[5] = {};
     const D3DSAMPLERSTATETYPE kSs[5] = {D3DSAMP_MINFILTER, D3DSAMP_MAGFILTER, D3DSAMP_MIPFILTER, D3DSAMP_ADDRESSU, D3DSAMP_ADDRESSV};
     if (map) {
-        d->GetTexture(2, &oldTex);
-        for (int i = 0; i < 5; i++) d->GetSamplerState(2, kSs[i], &ss[i]);
+        oldTex = st.tex[2];
+        for (int i = 0; i < 5; i++) ss[i] = st.samp[2][kSs[i]];
         d->SetTexture(2, map);
         d->SetSamplerState(2, D3DSAMP_MINFILTER, D3DTEXF_POINT);
         d->SetSamplerState(2, D3DSAMP_MAGFILTER, D3DTEXF_POINT);
@@ -551,13 +521,10 @@ bool Draw(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex, UINT
     }
     if (map) {
         d->SetTexture(2, oldTex);
-        if (oldTex) oldTex->Release();
         for (int i = 0; i < 5; i++) d->SetSamplerState(2, kSs[i], ss[i]);
     }
     d->SetVertexShader(oldVs);
     d->SetPixelShader(oldPs);
-    if (oldVs) oldVs->Release();
-    if (oldPs) oldPs->Release();
     if (r) r->drawsNow++;
     return true;
 }
@@ -689,6 +656,7 @@ int ShaderAdd(MmlMod *mod, const MmlShaderRule *in, std::string *err) {
     r->handle = g_nextHandle++;
     int h = r->handle;
     g_rules.push_back(std::move(r));
+    if (g_rules.size() == 1) MirrorUse(true);   // (the device's state followed while a rule draws)
     return h;
 }
 
@@ -698,6 +666,7 @@ bool ShaderRemove(MmlMod *mod, int handle) {
         if ((*it)->mod == mod && (handle == 0 || (*it)->handle == handle)) { Release(**it); it = g_rules.erase(it); any = true; }
         else ++it;
     }
+    if (any && g_rules.empty()) MirrorUse(false);
     return any;
 }
 void ShadersModGone(MmlMod *mod) { ShaderRemove(mod, 0); VdataModGone(mod); }
@@ -719,6 +688,7 @@ int ShaderConstants(MmlMod *mod, int handle, int reg, const float *values, int c
 
 void ShadersFrameEnd() {   // (render.cpp, after the frame's own drawing)
     VdataFrameEnd();
+    MirrorFrame();   // (the mirror read again from the device at the next frame's first draw)
     for (auto &r : g_rules) { r->drawsLast = r->drawsNow; r->drawsNow = 0; }
     if (g_surveyWanted) {
         std::vector<const Combo *> list;
@@ -816,6 +786,9 @@ bool ShadersMethod(const std::string &method, const std::string &paramsJson, std
             ShadowsState(&sh);
             *reply = dump({{"rules", rules}, {"faults", g_faults}, {"shadows", json::parse(sh, nullptr, false)},
                            {"vertex_data", json::parse(VdataState(), nullptr, false)}});
+        } else if (method == "shader.mirror") {
+            if (p.contains("check")) MirrorCheckNext(std::max(0, std::min(p["check"].get<int>(), 100000)));
+            *reply = MirrorStateJson();
         } else if (method == "shader.survey") {
             int id = p.value("id", 0);
             if (!id) {
@@ -828,7 +801,7 @@ bool ShadersMethod(const std::string &method, const std::string &paramsJson, std
                 *reply = dump(out);
             }
         } else {
-            *reply = "unknown shader method (shader.add, shader.remove, shader.state, shader.survey, shader.shadows, shader.constants, shader.vertex_data)";
+            *reply = "unknown shader method (shader.add, shader.remove, shader.state, shader.survey, shader.shadows, shader.constants, shader.vertex_data, shader.mirror)";
             return true;
         }
         *ok = true;

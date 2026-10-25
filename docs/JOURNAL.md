@@ -4015,3 +4015,25 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   the pixels over 8 from 3.74 % to 0.87 % (both builds alike); near 0.05, 0.09 %. What is left: thin edges (the
   vertices transformed in the shader, the depth at near 0.05 and far 5000) and the bridge's shadow on the water (the
   owner).
+
+## 2026-10-26: the device's state followed, not asked (ROADMAP 31b, first step)
+
+- **Found** (`profile`, 1.2's far scene with the reference on every draw, +258 ms): host/shaders.cpp's `Constants`
+  55 % of the game thread: some 60 Get* calls of the device a draw, and 117 registers written whole to both shader
+  stages a draw (d3d9's copies in msvcrt 29 %).
+- **Made**: host/d3dmirror.cpp: while a shader rule draws, the device's Set* calls are hooked on the game's device's
+  vtable and kept (the transforms, every render state, the stages 0..7 and their textures, samplers 0..3, the
+  material, lights 0..7, the viewport, the shaders, both stages' constant registers); MultiplyTransform's product
+  read back, SetRenderTarget's viewport read back at the next use; a state block's Apply, a Reset, another thread's
+  call, another device: read again whole at the next use; nothing kept while a state block records; once a frame
+  read again whole (a wrapper's own state set behind the vtable lasts a frame at most). shaders.cpp reads the state
+  from it (StateOf: without it, the old Get* calls into a copy), and `MirrorConstants` writes only the registers that
+  differ from what the device holds (SSE compares, runs of changed registers one call each). `shader.mirror {check}`
+  compares the mirror with the device's own answers draw by draw.
+- **Seen**: the check, 300 draws of the far scene in both labs and 500 of the crowd with GPU skinning (1.0): no
+  mismatch. The reference on every draw (the game's own drawing against it, `bench`, one lab at a time): 1.2 far
+  +258 to +77 ms (41.2 against 117.9), near +3.6 to +1.1; 1.0 far +260 to +76 (41.4 against 117.6), near +4.4 to +1.3;
+  the pictures unchanged (far 0.87 % of the pixels over 8). Offline tests ALL PASSED.
+- **What is left** (`profile`, far): the compares 15 % (234 registers a draw), the Set* calls into Direct3D some 30 %
+  (the shaders set and put back, the constants' runs: d3d9 and its locks), ShadowsConstants 4 %. Next: write only
+  the registers the bound shaders read (their CTAB), then 31c (shaders that stay bound).
