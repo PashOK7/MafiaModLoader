@@ -138,6 +138,12 @@ bool HookAddInner(uintptr_t target, void *detour, void **original, std::string *
 bool HookRemove(MmlMod *owner, uintptr_t target);
 bool HookRemoveLink(MmlMod *owner, uintptr_t target, void *detour);   // one link only (the host's taps)
 void HookRemoveAll(MmlMod *owner);
+bool HookMid(MmlMod *owner, uintptr_t target, MmlMidFn fn, void *user, std::string *err);   // a link that calls fn
+                                                    // with the registers, anywhere in a function (mml.h hook_mid)
+bool PatchAdd(MmlMod *owner, uintptr_t at, const void *expect, const void *bytes, size_t n, std::string *err);   // code_patch
+bool PatchRemove(MmlMod *owner, uintptr_t at);      // its bytes put back (unless changed since: left, logged)
+void PatchRemoveAll(MmlMod *owner);                 // at the mod's unload
+std::string PatchList();                            // patches.list
 std::string HookList();        // JSON array
 // The function a MinHook trampoline of a chain begins (a detour's call of the original), 0 for any other address;
 // lock-free (the sampler, a crash's filter)

@@ -1875,6 +1875,18 @@ mod of files alone: `"type": "files"`).
   must not lose).
 - `H->hook(M, address, detour, &original)`: any game function, chained with other mods' hooks; removed when the mod
   unloads. `H->mem_read` / `mem_write` never fault.
+- `H->hook_mid(M, address, fn, user)` (Rust `host.hook_mid(at, |c| ...)`): anywhere in a function, `fn(MmlMidContext
+  *c, user)` with the registers as the game had them there (`c->eax`, `c->esp + 8` the stack...; changes go back,
+  esp is read only), then the instructions that were at the address run as before. The x87 and SSE state are the
+  game's again after it (FXSAVE around it, the x87 emptied for the mod's code: a live value on the game's x87 stack is
+  safe), on whatever thread runs that code, behind the fault guard. A link of the same chains as `hook` (several mods
+  at one address, entry and mid hooks alike), `H->unhook(M, address)` takes it back. The address must start an
+  instruction and its 5 bytes hold whole instructions no jump lands inside: check it in the disassembly
+  (`ghidra_read {"op": "asm"}`).
+- `H->code_patch(M, address, expect, bytes, n)`: the game's code changed (a constant, a jump made unconditional, an
+  operand pointed at a mod's variable), refused unless the bytes there are `expect` (another build, another mod's
+  patch), put back at the unload (a hot reload too) or with `bytes` NULL; never over a hook's first 5 bytes or
+  another patch. `call patches.list` shows them, `hooks.list` the mid hooks (`mid`).
 - `H->service_publish` / `service_find`: a versioned table of functions other mods call; find it again after
   `MML_EVENT_SERVICES_CHANGED`. `H->post`: run something on the game thread from another thread.
 

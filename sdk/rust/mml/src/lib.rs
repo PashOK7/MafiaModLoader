@@ -54,8 +54,8 @@ use std::sync::Mutex;
 pub use sys::{
     MmlBulletHit as BulletHit, MmlCarCrash as CarCrash, MmlEventType as EventType, MmlExplosion as Explosion,
     MmlFall as Fall, MmlFont as Font, MmlHit as Hit, MmlHumanHit as HumanHit, MmlItem as Item,
-    MmlItemChange as ItemChange, MmlLogLevel as LogLevel, MmlMissionState as MissionState, MmlShot as Shot,
-    MmlVec3 as Vec3,
+    MmlItemChange as ItemChange, MmlLogLevel as LogLevel, MmlMidContext as MidContext, MmlMissionState as MissionState,
+    MmlShot as Shot, MmlVec3 as Vec3,
 };
 
 /// The exception a panic is raised as, after it is logged ("RUS" in its low bytes): the loader's log and
@@ -525,6 +525,9 @@ macro_rules! as_c {
     };
 }
 
+unsafe extern "C-unwind" fn on_mid<F: Fn(&mut MidContext)>(c: *mut sys::MmlMidContext, user: *mut c_void) {
+    guard("a hook in the middle of a function", || (*(user as *const F))(&mut *c))
+}
 unsafe extern "C-unwind" fn on_event<F: Fn(Event)>(ev: *const sys::MmlEvent, user: *mut c_void) {
     guard("an event handler", || (*(user as *const F))(Event(&*ev)))
 }
@@ -740,6 +743,25 @@ impl Host {
     }
     pub fn unhook(&self, target: usize) -> bool {
         unsafe { f!(self, unhook)(self.module, target) != 0 }
+    }
+    /// f whenever the game's code reaches `at` (anywhere in a function: an instruction's start, 5 bytes of whole
+    /// instructions no jump lands in), with the registers (MidContext: changes go back; esp read only). A link of the
+    /// same chains as `hook`; `unhook(at)` takes it back. The closure is kept for the mod's life.
+    pub fn hook_mid<F: Fn(&mut MidContext) + 'static>(&self, at: usize, f: F) -> bool {
+        let user = keep(f);
+        unsafe { f!(self, hook_mid)(self.module, at, as_c!(on_mid::<F>, *mut sys::MmlMidContext, *mut c_void), user) != 0 }
+    }
+    /// `bytes` over the game's code at `at` when what is there is `expect` (None: whatever it is); put back at the
+    /// unload or by `code_unpatch`. False: refused (the log says why: the bytes found, a hook or a patch there).
+    pub fn code_patch(&self, at: usize, expect: Option<&[u8]>, bytes: &[u8]) -> bool {
+        if expect.is_some_and(|e| e.len() != bytes.len()) {
+            return false;
+        }
+        let e = expect.map_or(ptr::null(), |e| e.as_ptr() as *const c_void);
+        unsafe { f!(self, code_patch)(self.module, at, e, bytes.as_ptr() as *const c_void, bytes.len()) != 0 }
+    }
+    pub fn code_unpatch(&self, at: usize) -> bool {
+        unsafe { f!(self, code_patch)(self.module, at, ptr::null(), ptr::null(), 0) != 0 }
     }
 
     // ---- events, commands

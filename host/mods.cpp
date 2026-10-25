@@ -173,6 +173,21 @@ int H_Hook(MmlMod *m, uintptr_t target, void *detour, void **original) {
     return 0;
 }
 int H_Unhook(MmlMod *m, uintptr_t target) { return Alive(m) && HookRemove(m, target) ? 1 : 0; }
+int H_HookMid(MmlMod *m, uintptr_t at, MmlMidFn fn, void *user) {
+    if (!Alive(m)) return 0;
+    std::string err;
+    if (HookMid(m, at, fn, user, &err)) return 1;
+    Log(MML_LOG_WARN, Who(m), "hook_mid %s failed: %s", DescribeAddress(at).c_str(), err.c_str());
+    return 0;
+}
+int H_CodePatch(MmlMod *m, uintptr_t at, const void *expect, const void *bytes, size_t n) {
+    if (!Alive(m)) return 0;
+    if (!bytes) return PatchRemove(m, at) ? 1 : 0;
+    std::string err;
+    if (PatchAdd(m, at, expect, bytes, n, &err)) return 1;
+    Log(MML_LOG_WARN, Who(m), "code_patch %s (%zu bytes) refused: %s", DescribeAddress(at).c_str(), n, err.c_str());
+    return 0;
+}
 int H_Subscribe(MmlMod *m, MmlEventType type, MmlEventFn fn, void *user) {
     if (!Alive(m) || !fn || type <= 0 || type >= MML_EVENT_COUNT_) return 0;
     g_subs.push_back(Sub{m, type, fn, user});
@@ -951,6 +966,7 @@ bool UnloadMod(ModEntry *e, const char *why) {
     }
     m->alive = false;
     HookRemoveAll(m);
+    PatchRemoveAll(m);   // (after its hooks: the bytes under a patch are the game's again before anything else runs)
     HotkeysRemove(m);
     MenusRemove(m);
     ScriptsRemove(m);
@@ -1153,6 +1169,16 @@ std::vector<MmlMod *> ModsLoaded() {
     for (auto &e : g_mods) if (e->current && !e->faulted) out.push_back(e->current);
     return out;
 }
+// The same from any thread (a hook in the middle of a function may run on the game's sound or loading thread): the
+// fault guard and the x87's precision, the profiler's times only on the game's thread.
+bool ModCallAnyThread(MmlMod *mod, void (*fn)(void *), void *user, const char *where) {
+    if (GetCurrentThreadId() == MainThread()) return ModCall(mod, fn, user, where);
+    if (!Alive(mod) || mod->entry->faulted) return false;
+    DWORD ex = SafePosted(fn, user);
+    if (ex) { Faulted(mod, where, ex); return false; }
+    return true;
+}
+
 bool ModCall(MmlMod *mod, void (*fn)(void *), void *user, const char *where) {
     if (!Alive(mod) || mod->entry->faulted) return false;
     DWORD ex;
@@ -1178,6 +1204,8 @@ void ModsInit() {
     g_host.module_base = H_ModuleBase;
     g_host.hook = H_Hook;
     g_host.unhook = H_Unhook;
+    g_host.hook_mid = H_HookMid;
+    g_host.code_patch = H_CodePatch;
     g_host.subscribe = H_Subscribe;
     g_host.command = H_Command;
     g_host.reply_append = H_ReplyAppend;
@@ -1504,6 +1532,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (method == "mods.list") { *reply = ModsList(); return true; }
     if (method == "commands.list") { *reply = CommandsList(); return true; }
     if (method == "hooks.list") { *reply = HookList(); return true; }
+    if (method == "patches.list") { *reply = PatchList(); return true; }
     if (method == "mods.rescan") {
         Scan();
         LoadEnabled();

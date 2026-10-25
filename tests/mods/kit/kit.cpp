@@ -4,6 +4,7 @@
 // `kit.write` writes a file into the data folder. It asks for an item in the pause menu at its load, and
 // `kit.menu` tries to open a page of its own (with no game there are no menus: refused).
 #include <windows.h>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -567,6 +568,65 @@ int Write(const char *, MmlReply *r, void *) {
     H->reply_append(r, out.c_str(), out.size());
     return 0;
 }
+// ---- hooks in the middle of functions and patches of code (the harness's harness_mid, harness_seven)
+using MidTestFn = int(__cdecl *)(int, float);
+using SevenFn = int(__cdecl *)();
+int g_midArg;           // what the hook read at esp + 4 (the first argument)
+double g_midSum;        // its own x87 work (sines on the x87 stack), kept so the compiler keeps it
+void OnMid(MmlMidContext *c, void *) {
+    g_midArg = *reinterpret_cast<int *>(c->esp + 4);
+    volatile double x = 0.5;
+    for (int i = 0; i < 12; i++) x = std::sin(x) + std::sqrt(x + 1.0);   // (fills the x87 stack the game had f on)
+    g_midSum += x;
+    c->eax += 100;
+}
+int MidHook(const char *, MmlReply *r, void *) {
+    HMODULE exe = GetModuleHandleA(nullptr);
+    auto fn = reinterpret_cast<MidTestFn>(GetProcAddress(exe, "harness_mid"));
+    auto off = reinterpret_cast<const unsigned *>(GetProcAddress(exe, "harness_mid_at"));
+    if (!fn || !off || !MML_HAS(H, hook_mid)) { H->reply_error(r, "no harness_mid or no hook_mid"); return 1; }
+    const uintptr_t at = reinterpret_cast<uintptr_t>(fn) + *off;
+    const int before = fn(2, 1.5f);
+    g_midArg = 0;
+    const int hooked = H->hook_mid(M, at, OnMid, nullptr);
+    const int with = fn(2, 1.5f);
+    const uint8_t nop[2] = {0x90, 0x90};
+    const int patchOver = H->code_patch(M, at + 3, nullptr, nop, 2);   // (inside the hook's 5 bytes: refused)
+    const int unhooked = H->unhook(M, at);
+    const int after = fn(2, 1.5f);
+    char out[192];
+    snprintf(out, sizeof out, "{\"before\":%d,\"hooked\":%d,\"with\":%d,\"arg\":%d,\"patch_over_hook\":%d,\"unhooked\":%d,\"after\":%d}", before,
+             hooked, with, g_midArg, patchOver, unhooked, after);
+    H->reply_append(r, out, (size_t)-1);
+    return 0;
+}
+// {"keep": true}: the patch left for the unload to put back
+int Patch(const char *args, MmlReply *r, void *) {
+    auto fn = reinterpret_cast<SevenFn>(GetProcAddress(GetModuleHandleA(nullptr), "harness_seven"));
+    if (!fn || !MML_HAS(H, code_patch)) { H->reply_error(r, "no harness_seven or no code_patch"); return 1; }
+    const uintptr_t at = reinterpret_cast<uintptr_t>(fn) + 1;
+    const uint8_t seven = 7, nine = 9, eight = 8;
+    const int wrong = H->code_patch(M, at, &eight, &nine, 1);   // (the byte is 7, not 8: refused)
+    const int done = H->code_patch(M, at, &seven, &nine, 1);
+    const int value = fn();
+    const int again = H->code_patch(M, at, nullptr, &eight, 1);   // (patched already: refused)
+    int undone = 0, back = value;
+    if (!strstr(args ? args : "", "keep")) {
+        undone = H->code_patch(M, at, nullptr, nullptr, 0);
+        back = fn();
+    }
+    char out[160];
+    snprintf(out, sizeof out, "{\"wrong_refused\":%d,\"done\":%d,\"value\":%d,\"again_refused\":%d,\"undone\":%d,\"back\":%d}", !wrong, done,
+             value, !again, undone, back);
+    H->reply_append(r, out, (size_t)-1);
+    return 0;
+}
+int Seven(const char *, MmlReply *r, void *) {
+    auto fn = reinterpret_cast<SevenFn>(GetProcAddress(GetModuleHandleA(nullptr), "harness_seven"));
+    std::string out = std::to_string(fn ? fn() : -1);
+    H->reply_append(r, out.c_str(), out.size());
+    return 0;
+}
 } // namespace
 
 MML_EXPORT uint32_t mml_mod_api(void) { return MML_API_VERSION; }
@@ -616,6 +676,9 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->command(mod, "camera","camera_override taken and given back, camera_project and camera_ray with no frame", Camera, nullptr);
     host->command(mod, "poke","{}: adds 7 to a field on the game thread; {\"addr\": 1}: the field's address", Poke, nullptr);
     host->command(mod, "natives","the addresses of native.call's test functions (each convention, floats, a buffer, a fault)", Natives, nullptr);
+    host->command(mod, "midhook", "hook_mid in harness_mid (eax + 100, the argument read, the x87 kept), a patch over it refused, unhook", MidHook, nullptr);
+    host->command(mod, "patch", "code_patch of harness_seven (7 -> 9), a wrong expect and a second patch refused; {\"keep\": true} leaves it", Patch, nullptr);
+    host->command(mod, "seven", "harness_seven()", Seven, nullptr);
     return 0;
 }
 

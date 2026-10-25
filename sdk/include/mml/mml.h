@@ -474,6 +474,16 @@ typedef struct MmlGfxShow {
 /* returns how many pictures it drew into extra[0..n-1] (0: the frame alone), shown in that order before the frame */
 typedef int (*MmlGfxShowFn)(const MmlGfxShow *show, void *user);
 
+/* A hook in the middle of a function (hook_mid): the registers when the game reached the address, in PUSHAD's
+ * order. The function may change any of them but esp (read only: the stack the hooked code had there, its values at
+ * esp + n); they go back when it returns, and the game goes on with the instructions that were at the address. The
+ * x87 and SSE state are the game's again after it (saved and given back whole: its code may use them freely). */
+typedef struct MmlMidContext {
+    uint32_t edi, esi, ebp, esp, ebx, edx, ecx, eax;
+    uint32_t eflags;
+} MmlMidContext;
+typedef void (*MmlMidFn)(MmlMidContext *ctx, void *user);
+
 /* The upscaler (gfx_upscale): called at each frame of the mission's world before the passes, with the frame whose
  * world was drawn at its render size (MmlGfxFrame render_width x render_height, the top-left of depth, color and
  * motion; k->size that size; jitter in its pixels). It draws the whole frame (width x height, alpha 1) into target and
@@ -1805,6 +1815,19 @@ typedef struct MmlHost {
      * the world at the frame's size again. One mod at a time: 0 while another holds it. Needs the graphics bridge on
      * (the Direct3D 9 device's state followed: gfx.state following_state). Game thread. */
     int (*gfx_upscale)(MmlMod *mod, unsigned w, unsigned h, MmlGfxUpscaleFn fn, void *user);
+    /* hook_mid: fn called whenever the game's code reaches `at`, anywhere in a function (not only its entry), with
+     * the registers (MmlMidContext; changes go back), the instructions at `at` run after it as before. `at` must
+     * begin an instruction, and the 5 bytes from it must hold whole instructions no jump lands inside (as for any
+     * hook: check it in the disassembly). It is a link of the same chains as `hook`: several mods may hook one
+     * address, entry and mid hooks alike; unhook(mod, at) takes the mod's links there back, the unload all of them.
+     * fn runs on whatever thread runs that code, behind the mod's fault guard. 1 done, 0 refused (the log says why). */
+    int (*hook_mid)(MmlMod *mod, uintptr_t at, MmlMidFn fn, void *user);
+    /* code_patch: n bytes written over the game's code at `at` (code pages unprotected for it), when the bytes there
+     * are `expect` (NULL: whatever they are; give them: another build or another mod's patch is refused, not
+     * overwritten). What was there is put back when the mod unloads (a hot reload too), or with bytes NULL (the patch
+     * at `at` taken back). A patch may not overlap another patch nor a hook's first 5 bytes. 1 done, 0 refused (the
+     * log says why: the bytes found). Game thread. */
+    int (*code_patch)(MmlMod *mod, uintptr_t at, const void *expect, const void *bytes, size_t n);
 } MmlHost;
 
 #define MML_ZONE_PLAYER 0x1u

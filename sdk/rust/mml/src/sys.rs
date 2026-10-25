@@ -1015,6 +1015,37 @@ pub type MmlGfxShowFn = ::core::option::Option<
         user: *mut ::core::ffi::c_void,
     ) -> ::core::ffi::c_int,
 >;
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct MmlMidContext {
+    pub edi: u32,
+    pub esi: u32,
+    pub ebp: u32,
+    pub esp: u32,
+    pub ebx: u32,
+    pub edx: u32,
+    pub ecx: u32,
+    pub eax: u32,
+    pub eflags: u32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of MmlMidContext"][::core::mem::size_of::<MmlMidContext>() - 36usize];
+    ["Alignment of MmlMidContext"][::core::mem::align_of::<MmlMidContext>() - 4usize];
+    ["Offset of field: MmlMidContext::edi"][::core::mem::offset_of!(MmlMidContext, edi) - 0usize];
+    ["Offset of field: MmlMidContext::esi"][::core::mem::offset_of!(MmlMidContext, esi) - 4usize];
+    ["Offset of field: MmlMidContext::ebp"][::core::mem::offset_of!(MmlMidContext, ebp) - 8usize];
+    ["Offset of field: MmlMidContext::esp"][::core::mem::offset_of!(MmlMidContext, esp) - 12usize];
+    ["Offset of field: MmlMidContext::ebx"][::core::mem::offset_of!(MmlMidContext, ebx) - 16usize];
+    ["Offset of field: MmlMidContext::edx"][::core::mem::offset_of!(MmlMidContext, edx) - 20usize];
+    ["Offset of field: MmlMidContext::ecx"][::core::mem::offset_of!(MmlMidContext, ecx) - 24usize];
+    ["Offset of field: MmlMidContext::eax"][::core::mem::offset_of!(MmlMidContext, eax) - 28usize];
+    ["Offset of field: MmlMidContext::eflags"]
+        [::core::mem::offset_of!(MmlMidContext, eflags) - 32usize];
+};
+pub type MmlMidFn = ::core::option::Option<
+    unsafe extern "C" fn(ctx: *mut MmlMidContext, user: *mut ::core::ffi::c_void),
+>;
 pub type MmlGfxUpscaleFn = ::core::option::Option<
     unsafe extern "C" fn(
         frame: *const MmlGfxFrame,
@@ -3746,10 +3777,27 @@ pub struct MmlHost {
             user: *mut ::core::ffi::c_void,
         ) -> ::core::ffi::c_int,
     >,
+    pub hook_mid: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            at: usize,
+            fn_: MmlMidFn,
+            user: *mut ::core::ffi::c_void,
+        ) -> ::core::ffi::c_int,
+    >,
+    pub code_patch: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            at: usize,
+            expect: *const ::core::ffi::c_void,
+            bytes: *const ::core::ffi::c_void,
+            n: usize,
+        ) -> ::core::ffi::c_int,
+    >,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 812usize];
+    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 820usize];
     ["Alignment of MmlHost"][::core::mem::align_of::<MmlHost>() - 4usize];
     ["Offset of field: MmlHost::size"][::core::mem::offset_of!(MmlHost, size) - 0usize];
     ["Offset of field: MmlHost::api_version"]
@@ -4098,6 +4146,9 @@ const _: () = {
         [::core::mem::offset_of!(MmlHost, gfx_jitter) - 804usize];
     ["Offset of field: MmlHost::gfx_upscale"]
         [::core::mem::offset_of!(MmlHost, gfx_upscale) - 808usize];
+    ["Offset of field: MmlHost::hook_mid"][::core::mem::offset_of!(MmlHost, hook_mid) - 812usize];
+    ["Offset of field: MmlHost::code_patch"]
+        [::core::mem::offset_of!(MmlHost, code_patch) - 816usize];
 };
 pub type MmlModLoadFn = ::core::option::Option<
     unsafe extern "C" fn(host: *const MmlHost, mod_: *mut MmlMod) -> ::core::ffi::c_int,

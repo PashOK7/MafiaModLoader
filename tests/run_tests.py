@@ -1682,6 +1682,28 @@ def main():
         r = b.call('hook_b.call', {'a': 2, 'b': 3})
         check('hook_a loaded again, now outermost: a(b(add)) = 20', r.get('result') == 20, r)
 
+        # hooks in the middle of a function and patches of code (hook_mid, code_patch; the harness's naked functions)
+        r = b.call('kit.midhook')
+        m = r.get('result') or {}
+        check('hook_mid: harness_mid(2, 1.5) = 6 without, 106 with (eax + 100), the argument read at esp + 4, '
+              "the x87's live 1.5 kept across the mod's own x87 work, 6 again after unhook",
+              r['ok'] and m.get('before') == 6 and m.get('hooked') == 1 and m.get('with') == 106 and m.get('arg') == 2 and
+              m.get('unhooked') == 1 and m.get('after') == 6, r)
+        check("code_patch inside a hook's 5 bytes: refused", r['ok'] and m.get('patch_over_hook') == 0, r)
+        r = b.call('kit.patch')
+        p = r.get('result') or {}
+        check('code_patch: harness_seven 7 -> 9, a wrong expect refused, a second patch over it refused, put back: 7',
+              r['ok'] and p.get('wrong_refused') == 1 and p.get('done') == 1 and p.get('value') == 9 and p.get('again_refused') == 1 and
+              p.get('undone') == 1 and p.get('back') == 7, r)
+        r = b.call('kit.patch', {'keep': True})
+        lst = b.call('patches.list').get('result') or []
+        check('patches.list: the kept patch, its owner and bytes', r['ok'] and r['result'].get('value') == 9 and
+              any(x.get('owner') == 'kit' and x.get('bytes') == '09' for x in lst), lst)
+        b.call('mod.reload', {'id': 'kit'})
+        r = b.call('kit.seven')
+        check("the mod's unload put its patch back: 7", r.get('result') == 7, r)
+        check('patches.list: empty again', not any(x.get('owner') == 'kit' for x in (b.call('patches.list').get('result') or [])))
+
         # memory
         base = next(m['base'] for m in b.call('modules')['result'] if m['name'].lower() == 'mml_harness.exe')
         r = b.call('mem.read', {'addr': 'mml_harness.exe+0', 'size': 2, 'as': 'u8'})
