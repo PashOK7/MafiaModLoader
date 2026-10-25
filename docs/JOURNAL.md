@@ -4037,3 +4037,10 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **What is left** (`profile`, far): the compares 15 % (234 registers a draw), the Set* calls into Direct3D some 30 %
   (the shaders set and put back, the constants' runs: d3d9 and its locks), ShadowsConstants 4 %. Next: write only
   the registers the bound shaders read (their CTAB), then 31c (shaders that stay bound).
+- **Made** (the same day): a rule's shaders' constant tables read at its making (shaders.cpp ReadsOf: the 'CTAB'
+  comment of the code, its float4 records' registers): only the registers each stage's shader reads are written at
+  its draws, none for a stage it leaves to the game (the host's skinning shaders: all). No table: all, as before.
+  **Seen** (one lab at a time): the reference on every draw, far: 1.2 +77 to +51.7 ms (41.1 against 92.8), 1.0 +76
+  to +51.7 (41.3 against 93.0); near: +1.1 to +0.9 in both; the pictures unchanged; the mirror's check 300 draws, no
+  mismatch. From +258 ms at the morning's baseline to +52: what is left is the Set* calls themselves (the shaders set
+  and put back at every draw: 31c).

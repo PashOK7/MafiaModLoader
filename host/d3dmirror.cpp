@@ -299,7 +299,7 @@ const D3dMirror *MirrorOf(IDirect3DDevice9 *d) {
     return &g_m;
 }
 
-void MirrorConstants(IDirect3DDevice9 *d, bool pixel, UINT start, const float *v, UINT count) {
+void MirrorConstants(IDirect3DDevice9 *d, bool pixel, UINT start, const float *v, UINT count, const uint32_t *reads) {
     const D3dMirror *m = MirrorOf(d);
     const UINT regs = pixel ? 224 : 256;
     if (!m || start + count > regs) {
@@ -310,6 +310,8 @@ void MirrorConstants(IDirect3DDevice9 *d, bool pixel, UINT start, const float *v
     const float(*held)[4] = pixel ? m->psc : m->vsc;
     // a register's 16 bytes compared as bits (a -0 written over a 0 is written)
     auto same = [&](UINT k) {
+        const UINT r = start + k;
+        if (reads && !(reads[r >> 5] >> (r & 31) & 1)) return true;   // (a register the shader does not read: left as it is)
         const __m128i a = _mm_loadu_si128(reinterpret_cast<const __m128i *>(held[start + k]));
         const __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i *>(v + k * 4));
         return _mm_movemask_epi8(_mm_cmpeq_epi8(a, b)) == 0xFFFF;

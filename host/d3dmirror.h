@@ -4,6 +4,7 @@
 // where they differ from what the device holds.
 #pragma once
 #include <d3d9.h>
+#include <cstdint>
 #include <string>
 
 namespace host {
@@ -31,8 +32,9 @@ void MirrorUse(bool on);
 // it follows (then ask the device). Game thread.
 const D3dMirror *MirrorOf(IDirect3DDevice9 *d);
 // Shader constants written where they differ from what the device holds (runs of changed registers, each one call);
-// without the mirror, written whole. `pixel`: the pixel shader's.
-void MirrorConstants(IDirect3DDevice9 *d, bool pixel, UINT start, const float *v, UINT count);
+// without the mirror, written whole. `pixel`: the pixel shader's. `reads`: the registers the shader reads (a bit a
+// register, c0..c255): the others are not written (null: all of them).
+void MirrorConstants(IDirect3DDevice9 *d, bool pixel, UINT start, const float *v, UINT count, const uint32_t *reads = nullptr);
 // The next frame's start (Present): the mirror is read again from the device at its next use.
 void MirrorFrame();
 // The mirror against the device's own answers at the next `draws` draws (shader.mirror's check): what differs, by name.

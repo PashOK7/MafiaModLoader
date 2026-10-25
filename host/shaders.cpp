@@ -80,7 +80,43 @@ struct Rule {
     unsigned drawsNow = 0, drawsLast = 0;
     float consts[64 * 4] = {};       // the mod's own registers c160..c223 (shader_constants), set at each draw it takes
     int constLo = 0, constHi = 0;    // (the registers given: [lo, hi) of 0..64)
+    // the float registers each of its shaders reads (a bit a register, c0..c255; from the code's constant table):
+    // only those are written at its draws; a stage it leaves to the game reads none
+    uint32_t vsReads[8], psReads[8];
 };
+
+// The float registers a Direct3D 9 shader's code reads, from the constant table the compiler leaves in it (a comment
+// token 'CTAB': D3DXSHADER_CONSTANTTABLE, its D3DXSHADER_CONSTANTINFO records: RegisterSet 2 is float4, then the index
+// and the count). False (every register taken as read) when the code has no such table.
+bool ReadsOf(const std::vector<uint8_t> &code, uint32_t out[8]) {
+    memset(out, 0xFF, 32);
+    if (code.size() < 8) return false;
+    const auto *t = reinterpret_cast<const uint32_t *>(code.data());
+    const size_t n = code.size() / 4;
+    for (size_t i = 1; i < n;) {
+        const uint32_t tok = t[i];
+        if ((tok & 0xFFFF) != 0xFFFE) break;   // (the comments come first, after the version)
+        const size_t len = tok >> 16;
+        if (i + 1 + len > n) break;
+        if (len >= 8 && t[i + 1] == 0x42415443u) {   // 'CTAB'
+            const auto *base = reinterpret_cast<const uint8_t *>(&t[i + 2]);
+            const size_t bytes = (len - 1) * 4;
+            const uint32_t count = *reinterpret_cast<const uint32_t *>(base + 12), info = *reinterpret_cast<const uint32_t *>(base + 16);
+            if (info + size_t(count) * 20 > bytes) return false;
+            memset(out, 0, 32);
+            for (uint32_t k = 0; k < count; k++) {
+                const uint8_t *ci = base + info + k * 20;
+                const uint16_t set = *reinterpret_cast<const uint16_t *>(ci + 4), reg = *reinterpret_cast<const uint16_t *>(ci + 6),
+                               cnt = *reinterpret_cast<const uint16_t *>(ci + 8);
+                if (set != 2) continue;   // (D3DXRS_FLOAT4)
+                for (uint32_t r = reg; r < uint32_t(reg) + cnt && r < 256; r++) out[r >> 5] |= 1u << (r & 31);
+            }
+            return true;
+        }
+        i += 1 + len;
+    }
+    return false;
+}
 std::vector<std::unique_ptr<Rule>> g_rules;
 int g_nextHandle = 1;
 unsigned g_faults;
@@ -481,16 +517,18 @@ bool Draw(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex, UINT
     IDirect3DPixelShader9 *const oldPs = st.ps;
     // only the registers that differ from what the device holds (MirrorConstants)
     if (r) {
-        MirrorConstants(d, false, 0, c, kRegs);
-        MirrorConstants(d, true, 0, c, kRegs);
+        static const uint32_t kAll[8] = {~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u};
+        const bool hostVs = skinned && !(r->vs && (r->flags & MML_SHADE_SKINNED));   // (the host's skinning shader: reads them all)
+        MirrorConstants(d, false, 0, c, kRegs, hostVs ? kAll : r->vsReads);
+        MirrorConstants(d, true, 0, c, kRegs, r->ps ? r->psReads : kAll);
     } else {
         MirrorConstants(d, false, 0, c, 27);
         MirrorConstants(d, true, 0, c, 27);
         MirrorConstants(d, true, 75, c + 300, 1);
     }
     if (r && r->constHi > r->constLo) {   // (the mod's own registers)
-        MirrorConstants(d, false, 160 + r->constLo, r->consts + r->constLo * 4, r->constHi - r->constLo);
-        MirrorConstants(d, true, 160 + r->constLo, r->consts + r->constLo * 4, r->constHi - r->constLo);
+        MirrorConstants(d, false, 160 + r->constLo, r->consts + r->constLo * 4, r->constHi - r->constLo, r->vsReads);
+        MirrorConstants(d, true, 160 + r->constLo, r->consts + r->constLo * 4, r->constHi - r->constLo, r->psReads);
     }
     if (!skinned && r->vs) d->SetVertexShader(r->vs);
     if (!skinned && r->ps) d->SetPixelShader(r->ps);
@@ -652,6 +690,8 @@ int ShaderAdd(MmlMod *mod, const MmlShaderRule *in, std::string *err) {
         if (in->ps_code && in->ps_size) r->psCode.assign(static_cast<const uint8_t *>(in->ps_code), static_cast<const uint8_t *>(in->ps_code) + in->ps_size);
     }
     if (r->vsCode.empty() && r->psCode.empty()) { *err = "no shader: source with vs_entry and/or ps_entry, or vs_code / ps_code"; return 0; }
+    if (r->vsCode.empty()) memset(r->vsReads, 0, sizeof r->vsReads); else ReadsOf(r->vsCode, r->vsReads);
+    if (r->psCode.empty()) memset(r->psReads, 0, sizeof r->psReads); else ReadsOf(r->psCode, r->psReads);
     if (!GeomEnsureHooks(err)) return 0;
     r->handle = g_nextHandle++;
     int h = r->handle;
