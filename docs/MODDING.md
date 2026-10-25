@@ -1887,7 +1887,9 @@ mod of files alone: `"type": "files"`).
 - `H->code_patch(M, address, expect, bytes, n)`: the game's code changed (a constant, a jump made unconditional, an
   operand pointed at a mod's variable), refused unless the bytes there are `expect` (another build, another mod's
   patch), put back at the unload (a hot reload too) or with `bytes` NULL; never over a hook's first 5 bytes or
-  another patch. `call patches.list` shows them, `hooks.list` the mid hooks (`mid`).
+  another patch. `call patches.list` shows them, `hooks.list` the mid hooks (`mid`). `mods/fusion_fix` is a large
+  user of both (Mafia Fusion Fix's 70 to 85 patches and 30 to 40 hooks a build, found by byte patterns, all taken
+  back and made again when its settings change).
 - `H->service_publish` / `service_find`: a versioned table of functions other mods call; find it again after
   `MML_EVENT_SERVICES_CHANGED`. `H->post`: run something on the game thread from another thread.
 

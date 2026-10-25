@@ -794,6 +794,19 @@ What is done, what comes next and later, and what is known to be missing or wron
   controls' update, opens the game's joysticks again through the game's own functions when DirectInput lists a
   controller the game does not have (or has and cannot read), the profile's bindings given again: `joy.state`,
   `joy.rescan`, `joy.hotplug`, `joy.drop` (knowledge/notes/ijoy.md).
+- **Mafia Fusion Fix as a mod** (2026-10-25; the owner: understand what it does from its sources and build it as a
+  mod of the loader, not beside it): `mods/fusion_fix`, ThirteenAG's modules (WidescreenFixesPack d35057d, MIT) kept
+  as written against `ff.h` (its patterns found at run time in the modules as shipped, `injector::WriteMemory` as
+  `code_patch`, `safetyhook::create_mid` as `hook_mid`, its inline hooks as `hook`): the HUD, map, texts, menus, FOV
+  (Hor+), videos and cutscene borders at the screen's aspect, the draw distance, the shadows' z-bias, the HUD's lines
+  and the cursor at the screen's scale, the borderless window, the eyes' animations, the cars' scratches, the radar's
+  map, the free camera, the sticks' dead zones; 15 parts, all on in both builds; its ini as live settings (Options >
+  Mods), every patch and hook taken back and made again on a change (90 ms), the HUD laid out again by the game's
+  own ResolutionChanged (`hudResolutionChanged`). Three of its faults found and fixed in the port (1.0's camera
+  hooked inside a function, 1.0's car speed read at 1.2's offset, a tail call's z-bias read past its arguments).
+  Beside it: `game_launch {"resolution": [w, h]}` (the screen's size for one run, the registry left alone), the mods'
+  2D space kept 800 wide over the screen when the HUD's units are not, MinHook's threads walked with NtGetNextThread
+  (31 hooks: 1.2 s to 15 ms).
 
 ## Next, by importance
 
@@ -1228,12 +1241,21 @@ merged, sorted by importance):
   (XYZRHW) between the world's start and stage 1 is not scaled with the viewport. None was seen in the freeride's
   picture in either lab (the lens flares and the 2D come after stage 1), but the world's draws were not surveyed by
   their vertex format: a mission's effect drawn so would sit at the frame's size in the render size's corner.
-- **Mafia Fusion Fix beside the loader** (2026-10-24, ThirteenAG's, WidescreenFixesPack `source/Mafia.FusionFix`): seen
-  in both labs in its own layout (Ultimate ASI Loader 10 as d3d8.dll with its d3d8to9, DXVK's d3d9.dll, its .asi in
-  scripts\): the bridge on, the upscaler, its draw distance (800 m). Not seen: its settings.bin written from Setup.exe
-  (the labs keep the registry: WriteSettingsToFile 0 there), its free camera and radar map with the loader's camera
-  and HUD services, its SMAA and console gamma (Direct3D 9 post effects at LS3D's render's end) over DLSS's picture,
-  a screen scaled by Windows (the labs' is not: the DPI awareness is seen only as set).
+- **Fusion Fix's mod: not ported, not seen** (2026-10-25, mods/fusion_fix). Not ported: WriteSettingsToFile (the
+  registry's settings in savegame\settings.bin: with an empty file the game started at 800x600, the tester's case),
+  ConsoleGamma and SMAA (shaders on d3d8to9's device at LS3D's render's end: for the loader, graphics passes to be).
+  Seen in both labs at 1920x1080 and 2560x1080 (`game_launch` resolution): the HUD and radar round and in the
+  corners, the FOV Hor+ (and the game's own Vert- back when the mod unloads), the pause menu, the radar's map, the
+  free camera, the settings applied live, a hot reload. Not seen: a cutscene's borders, the credits' missing line,
+  every menu at a wide screen (the main menu's panels, the garage, the race's), the eyes at a mission's load, the
+  scratches, a pad's dead zones, the borderless window (whether the labs ran in a window was not looked at), the HUD's texts at 1.1's layout
+  (no 1.1 here). The pack's layout for the tester (dxwrapper or Fusion Fix's d3d8.dll) waits for his other mods.
+- **Frame generation on a full-screen device** (2026-10-25, the RTX 5060 friend's log of 2026-10-24: 800x600 full
+  screen, "the showing on the game's thread: a full-screen device"; he saw 20 fps and a long input lag with frame
+  generation): a full-screen device gets no showing thread (host/gfx.cpp), so the generated pictures are presented
+  one after another on the game's thread, each Present waiting for the display: read from the code and the log, not
+  measured. To do: the case reproduced in a lab (full screen, frame generation's stand-in), then a showing that does
+  not hold the game's thread, or Setup's window required with the reason said in the log and `gfx.state`.
 - **DLSS on an RTX 50 with the upscaler** (2026-10-24): the render-size world, the mip bias and the GPU-ordered DXVK
   path are seen on the RTX 3070 (SR alone, frame generation's stand-in); DLSS-NR at the render size, DLSS-FG itself
   and the frame rate on the friend's RTX 5060 laptop wait for his next logs (the log's minute line now says whether

@@ -1,0 +1,39 @@
+{
+  // The defaults of fusion_fix's settings: Fusion Fix's Mafia.FusionFix.ini, its keys by the same names (shipped
+  // with the mod; a deploy replaces this file in the game's folder). Changes are kept in
+  // <game>\mml\data\fusion_fix\config.json, made in the game's Options > Mods or with
+  // `config.set {"mod": "fusion_fix", "key": "widescreen_hud", "value": false}`, and take effect at once.
+
+  // [WIDESCREEN]
+  "widescreen_hud": true,                  // false: the HUD at 4:3 in the middle
+  "widescreen_map": true,                  // false: the map at 4:3 in the middle
+  "zoom_fmvs": true,                       // false: videos fitted to the screen, true: zoomed to fill it
+
+  // [CUTSCENES]
+  "cutscene_borders": 3,                   // 0 off, 1 letterbox, 2 pillarbox, 3 both; the shot's FOV stays as it was
+  "no_cutscene_border_animation": false,   // true: the borders shown and hidden at once, not slid in and out
+
+  // [DRAW_DISTANCE]
+  "draw_distance": true,                   // the draw distance overridden
+  "draw_distance_value": 600,
+  "draw_distance_skip_min": 20,            // a mission's distance outside these is left as it is
+  "draw_distance_skip_max": 450,
+
+  // [MAIN]
+  "fps_limit": 0,                          // the game's frame delay for this rate; 0: the game's own
+  "borderless_windowed": true,             // the window without its frame, when Setup.exe chose a window
+  "left_stick_deadzone": 10,               // percent
+  "right_stick_deadzone": 10,
+
+  // [GRAPHICS]
+  "restore_eye_animations": true,          // the models with moving eyes (A2.dta) in place of the patch's (A8.dta)
+  "restore_car_scratches": true,           // 1.0's opacity of the cars' scratches, in 1.2
+
+  // [HUD]
+  "radar_map": true,                       // the Xbox's radar: the city's map in it, larger cars, zoom by speed
+
+  // [CAMERA]
+  "free_camera": true,                     // the camera turned round the car by the mouse and the right stick
+  "camera_return_timeout": 3,              // seconds without input before it returns behind a moving car
+  "camera_return_speed": 2                 // 0: it does not return by itself
+}

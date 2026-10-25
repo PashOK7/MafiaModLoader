@@ -16,7 +16,7 @@ add_link_options(/DEBUG /OPT:REF /OPT:ICF)
 set(MML_OUT ${CMAKE_BINARY_DIR}/out)   # the layout of <game>: MafiaModLoader.asi, mml/mods/<id>/...
 
 if(CMAKE_SIZEOF_VOID_P EQUAL 4)
-    # ---- MinHook (third_party/minhook, unmodified)
+    # ---- MinHook (third_party/minhook: upstream but for its threads' walk, third_party/README.md)
     add_library(minhook STATIC
         third_party/minhook/src/buffer.c third_party/minhook/src/hook.c third_party/minhook/src/trampoline.c
         third_party/minhook/src/hde/hde32.c third_party/minhook/src/hde/hde64.c)
@@ -339,6 +339,9 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     mml_add_rust_mod(hello_rust ${CMAKE_SOURCE_DIR}/mods/examples/hello_rust)
     mml_add_rust_mod(depth_pulse_rs ${CMAKE_SOURCE_DIR}/mods/examples/depth_pulse_rs)
     mml_add_mod(devtools ${CMAKE_SOURCE_DIR}/mods/examples/devtools mods/examples/devtools/devtools.cpp)
+    mml_add_mod(fusion_fix ${CMAKE_SOURCE_DIR}/mods/fusion_fix mods/fusion_fix/fusion_fix.cpp mods/fusion_fix/ff.cpp
+        mods/fusion_fix/widescreen.cpp mods/fusion_fix/ls3df.cpp mods/fusion_fix/cutscene.cpp mods/fusion_fix/ui.cpp
+        mods/fusion_fix/camera.cpp mods/fusion_fix/restored.cpp mods/fusion_fix/ijoy.cpp)
     # (tools/new_mod.py adds a mod's line above this one)
 
     # The mods this build defines: <out>/mml/build_mods.txt, one id a line (written only when it changes), which deploy

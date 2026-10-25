@@ -1,0 +1,33 @@
+{
+  "id": "fusion_fix",
+  "name": "Fusion Fix: ThirteenAG's widescreen and restoration fixes, on the loader",
+  "version": "0.1.0",
+  "type": "native",
+  "entry": "fusion_fix.dll",
+  "enabled": false,
+  "builds": ["1.2", "1.0"],
+  "load_order": 100,
+  "depends": ["core"],
+  "settings": {
+    "title": "Fusion Fix",
+    "controls": [
+      {"key": "widescreen_hud", "label": "Widescreen HUD"},
+      {"key": "widescreen_map", "label": "Widescreen map"},
+      {"key": "zoom_fmvs", "label": "Videos fill the screen"},
+      {"key": "cutscene_borders", "label": "Cutscene borders", "options": [
+        {"value": 0, "label": "Off"}, {"value": 1, "label": "Letterbox"},
+        {"value": 2, "label": "Pillarbox"}, {"value": 3, "label": "Both"}]},
+      {"key": "no_cutscene_border_animation", "label": "Borders at once"},
+      {"key": "draw_distance", "label": "Draw distance"},
+      {"key": "draw_distance_value", "label": "Distance", "min": 300, "max": 1500, "step": 50, "unit": "m"},
+      {"key": "radar_map", "label": "Map in the radar"},
+      {"key": "free_camera", "label": "Free camera in cars"},
+      {"key": "camera_return_timeout", "label": "Camera returns after", "min": 0, "max": 10, "step": 0.5, "unit": "s"},
+      {"key": "restore_eye_animations", "label": "Moving eyes"},
+      {"key": "restore_car_scratches", "label": "Car scratches"},
+      {"key": "borderless_windowed", "label": "Borderless window"},
+      {"key": "left_stick_deadzone", "label": "Left stick dead zone", "min": 0, "max": 50, "step": 1, "unit": "%"},
+      {"key": "right_stick_deadzone", "label": "Right stick dead zone", "min": 0, "max": 50, "step": 1, "unit": "%"}
+    ]
+  }
+}

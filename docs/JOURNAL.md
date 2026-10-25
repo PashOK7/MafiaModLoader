@@ -3715,3 +3715,49 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   84..280 m) the same 73.4 / 52.5; ConsoleGamma 0 (the tester's ini had 1, its default is 0) 86.5 / 66.5, 22 / 19:
   the game's own. ConsoleGamma, Fusion Fix's "Xbox 360" curve drawn at LS3D's render's end, is all of it; the pack's
   README says so.
+
+## 2026-10-25: Mafia Fusion Fix as a mod of the loader
+
+- **Asked** (the owner, after the pack's layout change broke the tester's other mods): understand from its sources
+  what Fusion Fix does and build it as a mod of the loader, first the SDK's mid-function hooks (8621d75, 7406eb6),
+  then its modules one by one, checked in both labs.
+- **Read**: WidescreenFixesPack `source/Mafia.FusionFix` at d35057d (2026-10-04; our copy the same file for file):
+  185 byte patterns (`tools/check_sites.py`: 184 found in the labs' files, 1 in neither build), found at run time
+  (Hooking.Patterns: every match, the first of a list of alternatives that matches), `injector::WriteMemory` (69
+  patches in 1.2, 85 in 1.0), safetyhook mid and inline hooks, IAT entries. Most of it is the HUD's and the menus'
+  800-unit constants made 600 x aspect; the FOV's half-angle multiplier made Hor+ at each projection's site; the
+  rest restores what the patches took out or adds the Xbox's radar and a free camera.
+- **Made**: `mods/fusion_fix`: its modules kept as written (`widescreen.cpp`, `ls3df.cpp`, `cutscene.cpp`, `ui.cpp`,
+  `camera.cpp`, `restored.cpp`, `ijoy.cpp`) against `ff.h`. Its patterns are looked for in each module's file laid
+  out as in memory (the loader's own hook on the HUD's DrawAll covers the first bytes of its radar's pattern), the
+  module's memory when the file finds nothing (a packed exe). Fusion Fix reads the resolution with a hook in
+  InitSystem; the loader's mods come after it, so the mod reads the same globals at once and calls the game's
+  `G_IndicatorsClass::ResolutionChanged` again (`game_build.h` hudResolutionChanged, both builds) to lay the HUD out
+  from the patched constants, and again from the game's own when it unloads. Its ini is the mod's settings (Options
+  > Mods); a change takes every patch and hook back and makes them again. Not ported: its settings.bin in place of
+  the registry, ConsoleGamma and SMAA (ROADMAP Known gaps).
+- **Found in Fusion Fix, fixed in the port**: (1) 1.0's camera update has a C++ exception frame and its pattern
+  finds the code after the prologue; Fusion Fix hooks that place as the function's entry: the game left silently at
+  its first camera frame (seen: 1.0 exited during the start with every part on, ran with the camera part off; the
+  disassembly at 0x5D4DD0, the twin of 1.2's 0x5ED4C0). The hook goes on the prologue. (2) Its free camera reads the
+  car's speed at `car + 1548`, 1.2's C_Vehicle speed; 1.0's is elsewhere (game_build.h vehicle + vehSpeed). (3) Its
+  z-bias hook reads SetRenderState's arguments from esp at each site; one site is a tail jump (LS3DF 1.2
+  +0x6D12D), where they are past the return address (read in the disassembly; its deduce_args reads from esp + 0).
+- **Measured**: the mod's first Apply took 1.4..1.7 s: 1 ms its patches, 343 ms its patterns, 1234 ms its 31 hooks.
+  MinHook freezes the process's threads at each hook enabled, and finds them with CreateToolhelp32Snapshot, every
+  thread of the system. `third_party/minhook/src/hook.c` now walks the process's own with NtGetNextThread (the
+  snapshot the fallback): 15 ms for the same 31 hooks, the whole Apply 336 ms (1.2) and 192 ms (1.0), a settings
+  change 90 ms; the loader's own start hooks faster with it too.
+- **Seen**, both labs at once, 1.2 at 1920x1080 and 1.0 at 2560x1080 (`game_launch {"resolution"}`, new: the
+  game's `LS3D_setup` read answered with that size, the registry left alone): every part on in both builds; the HUD
+  and the radar round and in the screen's corners, the pause menu at 4:3 proportions in the middle, the radar's city
+  map, the free camera turned by the mouse; the FOV Hor+ (the camera's cached projection x 1.0711 at 16:9, Fusion
+  Fix's formula), and with the mod unloaded the game's Vert- picture and stretched HUD back (after the camera's
+  SetFOV is called again: the projection stayed Fusion Fix's until then, which first made the A/B look the same).
+- **Found in the loader**: the mods' 2D space followed the HUD's own units, so with Fusion Fix x 400 was left of the
+  middle and 800 short of the right edge (seen). host/draw.cpp's ModSpace keeps 800 x 600 over the HUD's area
+  (`(width - 2 * hudXOffset) / 800`): the same as before without Fusion Fix, the screen's middle and edge with it
+  (seen in both labs), the texts square in either.
+- **The tester's frame generation** (his 2026-10-24 log, read now): 800x600 full screen (Fusion Fix's empty
+  settings.bin), "the showing on the game's thread: a full-screen device": the generated pictures presented on the
+  game's thread one after another. His 20 fps and lag fit that; not measured here yet (ROADMAP Known gaps).
