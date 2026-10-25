@@ -594,9 +594,13 @@ int MidHook(const char *, MmlReply *r, void *) {
     const int patchOver = H->code_patch(M, at + 3, nullptr, nop, 2);   // (inside the hook's 5 bytes: refused)
     const int unhooked = H->unhook(M, at);
     const int after = fn(2, 1.5f);
-    char out[192];
-    snprintf(out, sizeof out, "{\"before\":%d,\"hooked\":%d,\"with\":%d,\"arg\":%d,\"patch_over_hook\":%d,\"unhooked\":%d,\"after\":%d}", before,
-             hooked, with, g_midArg, patchOver, unhooked, after);
+    // eip moved past `add eax, 1; nop; nop` (at + 5): the game goes on there, 2 + 3 = 5
+    H->hook_mid(M, at, [](MmlMidContext *c, void *) { c->eip += 5; }, nullptr);
+    const int skipped = fn(2, 1.5f);
+    H->unhook(M, at);
+    char out[224];
+    snprintf(out, sizeof out, "{\"before\":%d,\"hooked\":%d,\"with\":%d,\"arg\":%d,\"patch_over_hook\":%d,\"unhooked\":%d,\"after\":%d,\"skipped\":%d}",
+             before, hooked, with, g_midArg, patchOver, unhooked, after, skipped);
     H->reply_append(r, out, (size_t)-1);
     return 0;
 }

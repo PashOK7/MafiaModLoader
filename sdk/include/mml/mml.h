@@ -476,11 +476,14 @@ typedef int (*MmlGfxShowFn)(const MmlGfxShow *show, void *user);
 
 /* A hook in the middle of a function (hook_mid): the registers when the game reached the address, in PUSHAD's
  * order. The function may change any of them but esp (read only: the stack the hooked code had there, its values at
- * esp + n); they go back when it returns, and the game goes on with the instructions that were at the address. The
- * x87 and SSE state are the game's again after it (saved and given back whole: its code may use them freely). */
+ * esp + n); they go back when it returns, and the game goes on with the instructions that were at the address. eip
+ * is that address: set to another one, the game goes on there instead (the rest of the chain and the instructions
+ * at the address left out). The x87 and SSE state are the game's again after it (saved and given back whole: its
+ * code may use them freely). */
 typedef struct MmlMidContext {
     uint32_t edi, esi, ebp, esp, ebx, edx, ecx, eax;
     uint32_t eflags;
+    uint32_t eip;
 } MmlMidContext;
 typedef void (*MmlMidFn)(MmlMidContext *ctx, void *user);
 

@@ -1690,6 +1690,7 @@ def main():
               r['ok'] and m.get('before') == 6 and m.get('hooked') == 1 and m.get('with') == 106 and m.get('arg') == 2 and
               m.get('unhooked') == 1 and m.get('after') == 6, r)
         check("code_patch inside a hook's 5 bytes: refused", r['ok'] and m.get('patch_over_hook') == 0, r)
+        check('hook_mid: eip moved past the hooked instructions, the game goes on there: 5', r['ok'] and m.get('skipped') == 5, r)
         r = b.call('kit.patch')
         p = r.get('result') or {}
         check('code_patch: harness_seven 7 -> 9, a wrong expect refused, a second patch over it refused, put back: 7',

@@ -1027,10 +1027,11 @@ pub struct MmlMidContext {
     pub ecx: u32,
     pub eax: u32,
     pub eflags: u32,
+    pub eip: u32,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of MmlMidContext"][::core::mem::size_of::<MmlMidContext>() - 36usize];
+    ["Size of MmlMidContext"][::core::mem::size_of::<MmlMidContext>() - 40usize];
     ["Alignment of MmlMidContext"][::core::mem::align_of::<MmlMidContext>() - 4usize];
     ["Offset of field: MmlMidContext::edi"][::core::mem::offset_of!(MmlMidContext, edi) - 0usize];
     ["Offset of field: MmlMidContext::esi"][::core::mem::offset_of!(MmlMidContext, esi) - 4usize];
@@ -1042,6 +1043,7 @@ const _: () = {
     ["Offset of field: MmlMidContext::eax"][::core::mem::offset_of!(MmlMidContext, eax) - 28usize];
     ["Offset of field: MmlMidContext::eflags"]
         [::core::mem::offset_of!(MmlMidContext, eflags) - 32usize];
+    ["Offset of field: MmlMidContext::eip"][::core::mem::offset_of!(MmlMidContext, eip) - 36usize];
 };
 pub type MmlMidFn = ::core::option::Option<
     unsafe extern "C" fn(ctx: *mut MmlMidContext, user: *mut ::core::ffi::c_void),

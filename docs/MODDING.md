@@ -1877,7 +1877,8 @@ mod of files alone: `"type": "files"`).
   unloads. `H->mem_read` / `mem_write` never fault.
 - `H->hook_mid(M, address, fn, user)` (Rust `host.hook_mid(at, |c| ...)`): anywhere in a function, `fn(MmlMidContext
   *c, user)` with the registers as the game had them there (`c->eax`, `c->esp + 8` the stack...; changes go back,
-  esp is read only), then the instructions that were at the address run as before. The x87 and SSE state are the
+  esp is read only), then the instructions that were at the address run as before; `c->eip` set to another address
+  sends the game there instead (a branch skipped, a case of a switch taken). The x87 and SSE state are the
   game's again after it (FXSAVE around it, the x87 emptied for the mod's code: a live value on the game's x87 stack is
   safe), on whatever thread runs that code, behind the fault guard. A link of the same chains as `hook` (several mods
   at one address, entry and mid hooks alike), `H->unhook(M, address)` takes it back. The address must start an

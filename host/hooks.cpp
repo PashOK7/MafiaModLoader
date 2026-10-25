@@ -127,29 +127,34 @@ void CallMid(void *p) {
     auto *m = static_cast<MidCall *>(p);
     m->e->fn(m->c, m->e->user);
 }
-// The stub's call: the registers as PUSHAD left them (its ESP is the one after PUSHFD: the hooked code's is 4 above).
-void __stdcall MidDispatch(MidEntry *e, MmlMidContext *c) {
-    c->esp += 4;
+// The stub's call: the registers as PUSHAD left them, the flags, and the slot the stub returns through (MmlMidContext's
+// eip: the hooked address going in; the next step of the chain, or where the mod sends the code, going out). PUSHAD's
+// ESP is the one after the slot and PUSHFD: the hooked code's is 8 above.
+void __stdcall MidDispatch(MidEntry *e, MmlMidContext *c, uintptr_t at) {
+    c->esp += 8;
+    c->eip = static_cast<uint32_t>(at);
     MidCall call{e, c};
     ModCallAnyThread(e->mod, CallMid, &call, "its hook in the middle of a function");
+    c->eip = c->eip != at ? c->eip : static_cast<uint32_t>(reinterpret_cast<uintptr_t>(e->next));
 }
 
-// pushfd; pushad; mov ebx, esp (the context); sub esp, 0x210; and esp, -16; fxsave [esp]; fninit (an empty x87 stack
-// for the mod's code, whatever the game left on it); push ebx; push entry; call MidDispatch (stdcall: it pops both);
-// fxrstor [esp]; mov esp, ebx; popad; popfd; jmp [entry->next]
-void WriteMidStub(MidEntry *e) {
+// sub esp, 4 (the slot it returns through); pushfd; pushad; mov ebx, esp (the context); sub esp, 0x210; and esp, -16;
+// fxsave [esp]; fninit (an empty x87 stack for the mod's code, whatever the game left on it); push at; push ebx; push
+// entry; call MidDispatch (stdcall: it pops all three); fxrstor [esp]; mov esp, ebx; popad; popfd; ret (to the slot)
+void WriteMidStub(MidEntry *e, uintptr_t at) {
     uint8_t *p = e->code;
     size_t i = 0;
     auto put = [&](std::initializer_list<uint8_t> bytes) { for (uint8_t b : bytes) p[i++] = b; };
     auto dword = [&](uint32_t v) { memcpy(p + i, &v, 4); i += 4; };
-    put({0x9C, 0x60, 0x8B, 0xDC, 0x81, 0xEC});
+    put({0x83, 0xEC, 0x04, 0x9C, 0x60, 0x8B, 0xDC, 0x81, 0xEC});
     dword(0x210);
-    put({0x83, 0xE4, 0xF0, 0x0F, 0xAE, 0x04, 0x24, 0xDB, 0xE3, 0x53, 0x68});
+    put({0x83, 0xE4, 0xF0, 0x0F, 0xAE, 0x04, 0x24, 0xDB, 0xE3, 0x68});
+    dword(static_cast<uint32_t>(at));
+    put({0x53, 0x68});
     dword(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(e)));
     put({0xE8});
     dword(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&MidDispatch) - reinterpret_cast<uintptr_t>(p + i + 4)));
-    put({0x0F, 0xAE, 0x0C, 0x24, 0x8B, 0xE3, 0x61, 0x9D, 0xFF, 0x25});
-    dword(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&e->next)));
+    put({0x0F, 0xAE, 0x0C, 0x24, 0x8B, 0xE3, 0x61, 0x9D, 0xC3});
     FlushInstructionCache(GetCurrentProcess(), p, i);
 }
 
@@ -231,7 +236,7 @@ bool HookMid(MmlMod *owner, uintptr_t target, MmlMidFn fn, void *user, std::stri
     MidEntry *e = NewMid();
     if (!e) { if (err) *err = "no memory for the stub"; return false; }
     e->mod = owner, e->fn = fn, e->user = user, e->next = nullptr;
-    WriteMidStub(e);
+    WriteMidStub(e, target);
     if (!AddLink(owner, target, e->code, const_cast<void **>(&e->next), kMiddle, err, e)) {
         e->freedAt = GetTickCount64();
         g_freeMids.push_back(e);
