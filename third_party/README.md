@@ -1,6 +1,9 @@
 # Third-party code
 
-Everything here is unmodified upstream code, pinned. Bigger dependencies are not kept in the repository:
+Everything here is upstream code, pinned, unmodified but for one change in MinHook: `src/hook.c` walks the
+process's own threads with `NtGetNextThread` before it falls back to `CreateToolhelp32Snapshot`, which takes every
+thread of the system at each hook enabled or disabled (some 40 ms each on a busy desktop: a mod's 31 hooks took
+1.2 s; the change is marked `MafiaModLoader:` in the file). Bigger dependencies are not kept in the repository:
 `python tools/deps.py` downloads them at pinned versions, checks their SHA-256 and unpacks them into
 `third_party/_deps/` (ignored by git).
 

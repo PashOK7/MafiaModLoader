@@ -488,6 +488,12 @@ struct ExeBuild {
     // 60 bindings (+0x1F4) given to the controls again through input_set_binding, which drops a joystick's binding
     // whose index is not below the list's count. Read in both builds' code.
     uintptr_t joyInit, joyDone, joyBase, joyList, controlsRelease, controlsInitDevices, keyBindingsApply;
+    // The HUD's layout (mods/fusion_fix): hudResolutionChanged, G_IndicatorsClass::ResolutionChanged, thiscall(hud),
+    // plain ret: the HUD's scale (hud + hudScale), its base width and the places of its gauges computed from IGraph's
+    // size and the constants in its code; G_LoadSaveClass::Init calls it once, at the start (before mods load). It
+    // only computes (no allocation): called again, the HUD follows its constants as they are now. Read in both
+    // builds' code.
+    uintptr_t hudResolutionChanged;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -734,6 +740,8 @@ inline const ExeBuild kExe12 = {
     // the joysticks (2026-10-24: InitSystem's calls at 0x5BFC86 and 0x5BFCB0; joy_devices_done; the profile's apply,
     // what G_LoadSaveClass::Init and ProfileLoad call)
     0x5BD5F0, 0x5BD870, 0x647F24, 0x647C20, 0x4EFC80, 0x4EFDE0, 0x607A60,
+    // the HUD's layout (2026-10-25: G_LoadSaveClass::Init's call at 0x604F44, ecx = hud)
+    0x601520,
 };
 
 inline const ExeBuild kExe10 = {
@@ -868,6 +876,8 @@ inline const ExeBuild kExe10 = {
     // the joysticks (2026-10-24: InitSystem's calls at 0x5FA9EA and 0x5FAA16; 1.2's twins, the same code; the
     // profile's apply, what gui_options_controls_close calls on loadSave)
     0x5F83E0, 0x5F8660, 0x6F956C, 0x6F92D0, 0x5D1610, 0x5D1770, 0x559A90,
+    // the HUD's layout (2026-10-25: G_LoadSaveClass::Init's call at 0x556FFD, ecx = hud)
+    0x5532E0,
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,

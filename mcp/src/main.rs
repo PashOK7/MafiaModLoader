@@ -131,6 +131,11 @@ struct LaunchArgs {
     /// The freeride's pedestrian density, 0..1 (default: the menu's own, 1).
     #[serde(default)]
     pedestrians: Option<f64>,
+    /// The screen's size for this run, [width, height] (default: Setup.exe's). Setup.exe's choice is the registry's,
+    /// one for every game on the machine; this one is the launched game's alone (the registry is left as it is), so
+    /// both labs may run at other sizes than the player's own game (a widescreen, an ultrawide, a 4:3).
+    #[serde(default)]
+    resolution: Option<Vec<u32>>,
     /// Keep the game's window in the background (default true): neither the launch nor the game itself activates it,
     /// so whoever works in the window in front is not disturbed (a click on the game's window activates it as
     /// usual). The game runs and draws there; `screenshot` reads its frame where the renderer allows it (Direct3D 9:
@@ -903,7 +908,7 @@ impl Server {
         if self.bridge.call("ping", json!({}), 1500).await.is_ok() {
             return Err("the game is already running (game_close first)".into());
         }
-        let asked = a.go.is_some() || a.profile.is_some() || a.skip_logos == Some(true);
+        let asked = a.go.is_some() || a.profile.is_some() || a.skip_logos == Some(true) || a.resolution.is_some();
         let background = a.background.unwrap_or(true);
         if asked || background {
             // read (and deleted) by the loader at the game's start: host/start.cpp
@@ -913,6 +918,7 @@ impl Server {
             if let Some(k) = &a.kind { req["kind"] = json!(k); }
             if let Some(p) = &a.place { req["place"] = p.clone(); }
             if let Some(s) = &a.save { req["save"] = s.clone(); }
+            if let Some(r) = &a.resolution { req["resolution"] = json!(r); }
             for (name, v) in [("traffic", a.traffic), ("pedestrians", a.pedestrians), ("police", a.police)] {
                 if let Some(v) = v { req[name] = json!(v); }
             }

@@ -72,6 +72,20 @@ Draw2dFn g_draw2d;
 struct Vertex { float x, y, z, rhw; uint32_t diffuse, specular; float u, v; };   // the game's 2D vertex (FVF 0x1C4)
 struct Space { float sx, sy, ox; };
 
+// The space mods draw in (mml.h): 800 x 600 units over the HUD's area, the whole screen (1.2's middle screen of three
+// past its x offset, hudXOffset), whatever the HUD's own units are: the game's are 1/800 of that width, but a mod
+// that lays the HUD out at the screen's aspect (mods/fusion_fix) makes them square, 600 high and wider than 800 on a
+// wide screen, and the mods' 800 would end short of the screen's right edge. The screen's width in pixels is the
+// float before the HUD's scale (G_IndicatorsClass::ResolutionChanged writes both). False before the HUD is set up.
+bool ModSpace(const game::ExeBuild &e, Space *s) {
+    const float *scale = reinterpret_cast<const float *>(e.hud + e.hudScale);
+    float ox = e.hudXOffset ? *reinterpret_cast<const float *>(e.hudXOffset) : 0.0f;
+    float width = scale[-2];
+    if (!(scale[0] > 0.01f && scale[0] < 100.0f && scale[1] > 0.01f && scale[1] < 100.0f && width > 2.0f * ox + 1.0f)) return false;
+    *s = Space{(width - 2.0f * ox) / 800.0f, scale[1], ox};
+    return true;
+}
+
 template <class F> F Vt(void *obj, int off) { return *reinterpret_cast<F *>(*reinterpret_cast<uint8_t **>(obj) + off); }
 using SetTextureFn = int(__stdcall *)(void *igraph, void *texture);
 using DrawPrimitiveFn = int(__stdcall *)(void *igraph, int type, int count, const void *vertices, int format);
@@ -145,9 +159,8 @@ DWORD SafeDrawAll(const Item *frame, size_t nFrame, const Item *pass, size_t nPa
         const game::ExeBuild &e = game::Exe();
         void *ig = *reinterpret_cast<void **>(e.igraph), *drv = *reinterpret_cast<void **>(e.i3dDriver);
         if (!ig || !drv) return 0;
-        const float *scale = reinterpret_cast<const float *>(e.hud + e.hudScale);
-        Space s{scale[0], scale[1], e.hudXOffset ? *reinterpret_cast<const float *>(e.hudXOffset) : 0.0f};
-        if (!(s.sx > 0.01f && s.sx < 100.0f && s.sy > 0.01f && s.sy < 100.0f)) return 0;   // the HUD is not set up yet
+        Space s;
+        if (!ModSpace(e, &s)) return 0;   // the HUD is not set up yet
         int blend = Vt<GetStateFn>(ig, 0x48)(ig, 0), func = Vt<GetStateFn>(ig, 0x48)(ig, 1);
         int state3 = Vt<GetStateFn>(drv, 0x18)(drv, 3);
         Vt<SetStateFn>(drv, 0x14)(drv, 3, 0);
@@ -313,10 +326,10 @@ float SafeTextWidth(int font, float size, const char *text) {
     __try {
         const game::ExeBuild &e = game::Exe();
         using TextSizeFn = float(__fastcall *)(uintptr_t hud, void *edx, const char *text, float size, int font, const char *end);
-        const float *scale = reinterpret_cast<const float *>(e.hud + e.hudScale);
-        if (!(scale[0] > 0.01f && scale[0] < 100.0f)) return 0.0f;
+        Space s;
+        if (!ModSpace(e, &s)) return 0.0f;
         float factor = *reinterpret_cast<const float *>(e.hud + e.hudFonts + font * e.hudFontSize + 8);
-        return reinterpret_cast<TextSizeFn>(e.hudTextSize)(e.hud, nullptr, text, size * scale[1] * factor, font, nullptr) / scale[0];
+        return reinterpret_cast<TextSizeFn>(e.hudTextSize)(e.hud, nullptr, text, size * s.sy * factor, font, nullptr) / s.sx;
     } __except (EXCEPTION_EXECUTE_HANDLER) { return 0.0f; }
 }
 
@@ -397,18 +410,17 @@ void DrawPassQuad(MmlMod *owner, const float xy[8], uint32_t argb) {
     memcpy(it.p, xy, sizeof it.p);
     Queue(&g_pass, it);
 }
-// A point of camera_project's (800 x 600 over the whole viewport) in the HUD's units (800 x 600 of its 4:3 middle
-// where the game adds an x offset); false before the HUD is set up.
+// A point of camera_project's (800 x 600 over the whole viewport) in the mods' drawing units (800 x 600 of the HUD's
+// area, the middle screen where the game adds an x offset: ModSpace); false before the HUD is set up.
 bool DrawUnitsFromScreen(float x, float y, float *ux, float *uy) {
     __try {
         const game::ExeBuild &e = game::Exe();
-        const float *scale = reinterpret_cast<const float *>(e.hud + e.hudScale);
-        float ox = e.hudXOffset ? *reinterpret_cast<const float *>(e.hudXOffset) : 0.0f;
-        if (!(scale[0] > 0.01f && scale[0] < 100.0f)) return false;
-        float width = scale[-2];   // (the screen's pixels: hud + hudScale - 8)
-        *ux = (x / 800.0f * width - ox) / scale[0];
+        Space s;
+        if (!ModSpace(e, &s)) return false;
+        float width = reinterpret_cast<const float *>(e.hud + e.hudScale)[-2];   // (the screen's pixels)
+        *ux = (x / 800.0f * width - s.ox) / s.sx;
         *uy = y;
-        return width > 1.0f;
+        return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
 }
 

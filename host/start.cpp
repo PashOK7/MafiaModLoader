@@ -4,7 +4,9 @@
 // A start is asked for once, by <game>\mml\start.json (the MCP server's game_launch writes it; it is deleted when
 // read, so the next launch is the game's usual one):
 //   {"skip_logos": true, "profile": 4 | "name", "go": "menu" | "freeride", "traffic": 1, "pedestrians": 1, "police": 0,
-//    "background": true}
+//    "background": true, "resolution": [1920, 1080]}
+// - resolution: the screen at this size for this run, whatever Setup.exe chose (its setting is the registry's, one
+//   for every game on the machine, and is left as it is: AskResolution);
 // - skip_logos: the three logo videos InitSystem plays before the profile menu are not played (PlayVideo answers
 //   "played" for logo1, logo2, logo3 only: the videos missions play are left alone). 1.0 plays two AVI logos,
 //   logo1.avi and logo2.avi, and only when cd_find_game_file finds them (on the game's disc): it is answered "not
@@ -196,6 +198,37 @@ void KeepInBackground() {
     else
         HWARN("start: background: LS3DF.dll's CreateWindowExA not taken: its window will come up over the others");
     HLOG("start: the game's window is kept in the background (the game does not activate it)");
+}
+
+// The screen's size asked for (start.json "resolution": [w, h]). The game's display settings are the registry's
+// LS3D_setup (HKCU\Software\Illusion Softworks\Mafia: Setup.exe writes it, one value for every game on the machine),
+// read once by MafiaEntryPoint before InitSystem: RegQueryValueExA into InitSettings, 63 bytes, byte 0 the version
+// (0x14, or the game takes its defaults), the width a u32 at +2, the height at +6 (both builds: 1.2's InitSettings
+// 0x647EE4, 1.0's 0x6F952C, the globals InitSystem reads the size from). Answered with this size in this process
+// only: the registry is not written, so the player's own game and the other lab keep theirs.
+unsigned g_resW, g_resH;
+using RegQueryValueExAFn = LSTATUS(WINAPI *)(HKEY, LPCSTR, LPDWORD, LPDWORD, LPBYTE, LPDWORD);
+RegQueryValueExAFn oRegQueryValueExA;
+LSTATUS WINAPI hkRegQueryValueExA(HKEY key, LPCSTR name, LPDWORD reserved, LPDWORD type, LPBYTE data, LPDWORD size) {
+    LSTATUS r = oRegQueryValueExA(key, name, reserved, type, data, size);
+    if (r == ERROR_SUCCESS && g_resW && name && !_stricmp(name, "LS3D_setup") && data && size && *size >= 10 && data[0] == 0x14) {
+        unsigned was[2];
+        memcpy(was, data + 2, sizeof was);
+        memcpy(data + 2, &g_resW, 4);
+        memcpy(data + 6, &g_resH, 4);
+        HLOG("start: the screen at %ux%u (Setup.exe's %ux%u in the registry, left as it is)", g_resW, g_resH, was[0], was[1]);
+    }
+    return r;
+}
+void AskResolution(unsigned w, unsigned h) {
+    void *old = nullptr;
+    if (!PatchImport(GetModuleHandleW(nullptr), "advapi32.dll", "RegQueryValueExA", reinterpret_cast<void *>(&hkRegQueryValueExA), &old)) {
+        HWARN("start: resolution: Game.exe's RegQueryValueExA not taken: the screen stays at Setup.exe's size");
+        return;
+    }
+    oRegQueryValueExA = reinterpret_cast<RegQueryValueExAFn>(old);
+    g_resW = w;
+    g_resH = h;
 }
 
 uintptr_t TopMenu() { return g_menuOk ? Rd(game::Exe().menuTop) : 0; }
@@ -490,6 +523,14 @@ void StartInit() {
     }
     g_req.go = r.value("go", "");
     if (r.value("background", false)) KeepInBackground();
+    if (r.contains("resolution")) {
+        const json &res = r["resolution"];
+        if (res.is_array() && res.size() == 2 && res[0].is_number_unsigned() && res[1].is_number_unsigned() &&
+            res[0].get<unsigned>() >= 320 && res[1].get<unsigned>() >= 240 && res[0].get<unsigned>() <= 16384 && res[1].get<unsigned>() <= 16384)
+            AskResolution(res[0].get<unsigned>(), res[1].get<unsigned>());
+        else
+            HWARN("start.json: resolution: [width, height], 320x240 to 16384x16384");
+    }
     if (r.contains("kind") && r["kind"].is_string()) {
         std::string k = Lower(r["kind"].get<std::string>());
         for (const Kind &kd : kKinds) if (k == kd.name || k == kd.alias || k == kd.mission) g_req.kind = &kd;

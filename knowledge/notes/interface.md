@@ -228,6 +228,13 @@ known here: **pet1kk** (his notes only), **game** (also checked in our running 1
   bytes bigger). **game** `+0x44A8`: the car the player drives or drove last (`RadarSetPlayerCar` `0x5FA500` sets
   it; the address TrackMafia read, `Game.exe+0x2C3E28`); `+0x4174` (`0x6C3AF4`): that car's speed in km/h as the
   speedometer takes it (32.08 beside the car's own 8.906 m/s).
+- **code** Its layout (read 2026-10-25 in both builds; mods/fusion_fix): `G_IndicatorsClass::ResolutionChanged`
+  (1.2 0x601520, 1.0 0x5532E0, thiscall(hud), plain ret) computes the screen's width (`hud + 0x40B8`, 1.0 `+0x90B8`),
+  the scale of the 800x600 units (`+0x40C0`/`+0x40C4`: x from the width times 1/800, y from the height times 1/600)
+  and the gauges' places from constants in its own code; `G_LoadSaveClass::Init` calls it once at the start, before
+  the loader's mods load. It only computes: called again, the HUD follows its constants as they are then (Fusion
+  Fix patches the 1/800 to 1/(600 x aspect): square units, the HUD 600 x aspect wide). 1.2 also lays it out for a
+  Matrox triple head there (`hudXOffset` = width / 3), Fusion Fix jumps over that.
 - **pet1kk** Its visibility flags: `[hud + 0x40A4]`; `0x47A070` sets them, `0x47A080` ors them, `0x47A0E0` saves
   and `0x47A2A0` restores them. The cinema bars: `0x5FA300` `HUD::LetterBox(bool show, int ms)`; `0x5FA050` builds
   the bars' geometry (the cutscene loader passes 0.5405405).

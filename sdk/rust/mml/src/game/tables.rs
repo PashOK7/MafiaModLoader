@@ -263,6 +263,7 @@ pub struct Exe {
     pub controlsRelease: usize,
     pub controlsInitDevices: usize,
     pub keyBindingsApply: usize,
+    pub hudResolutionChanged: usize,
 }
 
 /// LS3DF.dll's, as RVAs (add the module's base; the int members are offsets): game_build.h Ls3dBuild.
@@ -605,6 +606,7 @@ pub static EXE_12: Exe = Exe {
     controlsRelease: 0x4EFC80,
     controlsInitDevices: 0x4EFDE0,
     keyBindingsApply: 0x607A60,
+    hudResolutionChanged: 0x601520,
 };
 
 pub static EXE_10: Exe = Exe {
@@ -865,6 +867,7 @@ pub static EXE_10: Exe = Exe {
     controlsRelease: 0x5D1610,
     controlsInitDevices: 0x5D1770,
     keyBindingsApply: 0x559A90,
+    hudResolutionChanged: 0x5532E0,
 };
 
 pub static LS3D_12: Ls3d = Ls3d {

@@ -373,6 +373,13 @@ autosplitter; kept outside it, not ported). Checked against the above:
   0x605E40) and closes with 19.
 - **game** Starting a freeride writes the profile's `mafiaNNN.570` and `mafiaNNN.sav` (seen after every freeride
   start, both labs); loading a chapter wrote nothing until it was played.
+- **code** The display settings (read 2026-10-25 in both builds, run in both labs): Setup.exe's choice is the
+  registry's `HKCU\Software\Illusion Softworks\Mafia` `LS3D_setup` (REG_BINARY, 63 bytes; one value for every game
+  on the machine). `MafiaEntryPoint` (1.2 0x5BEBE0) reads it once, before `InitSystem`, with `RegQueryValueExA`
+  into `InitSettings` (1.2 0x647EE4, 1.0 0x6F952C) when it is 63 bytes and byte 0 is the version 0x14 (else
+  `DefaultInitSettings`'): the width a u32 at +2, the height at +6, the colour depth at +10. `InitSystem` reads the
+  size from there (1.2 0x5BF814, 1.0 0x5FA58C). `game_launch {"resolution": [w, h]}` answers that read with another
+  size for the one run (host/start.cpp AskResolution), the registry left as it is.
 
 ## Actors made new, taken out (host/world.cpp; read 2026-10-14 in both builds, run in both labs)
 
