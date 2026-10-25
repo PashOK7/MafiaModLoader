@@ -12,9 +12,9 @@
   "pipeline": true,        // DLSS works on a frame while the game draws the next (the picture a frame behind); off:
                            // each frame waits for its own (the frame rate is DLSS's then)
   "frame_gen": 0,          // DLSS Frame Generation (an RTX 40 or newer and nvngx_dlssg.dll): the frames made between two,
-                           // 0 off, 1 2x, 2 3x, 3 4x (3x and 4x: an RTX 50). They are shown from the bridge's own thread
-                           // in a window (the game's full screen as a borderless window), spaced over the game's frame and
-                           // never faster than the display: the game runs at the refresh rate / (n + 1) at most
+                           // 0 off, 1 2x, 2 3x, 3 4x (3x and 4x: an RTX 50): the most made. The game always runs at
+                           // its own rate; only as many are made as fit between two of its frames under the display's
+                           // refresh (none when the game alone fills it), shown from the bridge's own thread, spaced
   "intensity": 1.0,        // InIntensity: how much of DLSS-NR's picture (0 the game's own)
   "tone": 0.3,             // InLocalToneStrength: how much it may change the local tones (light and shade)
   "structure": 0.7,        // InLocalStructureStrength: how much it may change the local structure (detail)
