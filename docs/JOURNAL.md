@@ -3973,3 +3973,9 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   scene and a missing profile refused.
 - **Seen**: all four in both labs; 1.2's and 1.0's frames of the same scene alike (the street, the night street's
   lamps, the crowd walking).
+- **Made** (the same day): `bench {picture: true, threshold}`: after each configuration's warm-up its frame is taken
+  raw and the two compared per channel, R G B (mcp/src/shot.rs read_raw, compare: the mean and the worst of 255, the
+  pixels over the threshold, default 8, the difference times 8 as a JPEG beside both frames). A unit test of the
+  comparison. **Seen** (1.2, the far scene, lod_quality 1 against 100, counters off): mean 0.39 0.31 0.24, worst 227
+  (a hoarding's finer texture), 0.51 % of the pixels over 8; 76.1 against 79.8 ms, +3.7 ms (95 % interval 2.2; the
+  lab with dlss_nr on: not a baseline).

@@ -543,6 +543,14 @@ struct BenchArgs {
     /// The calls made at the end (default A's).
     #[serde(default)]
     after: Option<Vec<BenchCall>>,
+    /// Each configuration's frame taken after its warm-up and the two compared (default false): `picture` gives
+    /// both as JPEGs and the difference per channel, R G B (the mean and the worst of 255, the pixels over
+    /// `threshold`, the difference as an image). For a still world (`state.time` 0, `scene`): what moves differs.
+    #[serde(default)]
+    picture: Option<bool>,
+    /// The difference a channel may have before its pixel counts as changed (default 8 of 255).
+    #[serde(default)]
+    threshold: Option<u8>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -696,6 +704,12 @@ impl Server {
 
     /// The next frame the game presents, as a JPEG in `<game>\mml\shots` (the loader writes it raw).
     async fn take_shot(&self, max_width: u32, quality: u8) -> Result<shot::Shot, String> {
+        let path = self.take_raw().await?;
+        tokio::task::spawn_blocking(move || shot::convert(&path, max_width, quality)).await.map_err(|e| e.to_string())?
+    }
+
+    /// The next frame the game presents, raw (`<game>\mml\shots\<id>.bgra`, shot.rs).
+    async fn take_raw(&self) -> Result<std::path::PathBuf, String> {
         let asked = self.call_value("screenshot", Value::Null, Some(3000)).await?;
         let id = asked["id"].as_u64().ok_or("screenshot: no id")?;
         let start = std::time::Instant::now();
@@ -705,8 +719,7 @@ impl Server {
                 if s["ok"].as_bool() != Some(true) {
                     return Err(format!("screenshot: {}", s["error"].as_str().unwrap_or("failed")));
                 }
-                let path = std::path::PathBuf::from(s["path"].as_str().ok_or("screenshot: no path")?);
-                return tokio::task::spawn_blocking(move || shot::convert(&path, max_width, quality)).await.map_err(|e| e.to_string())?;
+                return Ok(std::path::PathBuf::from(s["path"].as_str().ok_or("screenshot: no path")?));
             }
             if start.elapsed().as_millis() > 3000 {
                 return Err("screenshot: the game presented no frame in 3 s (minimised? loading? `where` tells)".into());
@@ -1184,10 +1197,16 @@ impl Server {
         let run = format!("bench{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() % 100000).unwrap_or(0));
         let mut segs = vec![];
         let mut flags = [0usize; 2];   // frames Present answered otherwise, frames the sampler stopped
+        let mut pictures: Vec<(shot::Frame, std::path::PathBuf)> = vec![];
         let result: Result<(), String> = async {
-            // each configuration once first: hooks made, shaders compiled, caches filled
+            // each configuration once first: hooks made, shaders compiled, caches filled; its frame then, when asked
             for c in 0..2 {
                 self.bench_segment(&calls[c], &format!("{run}/warmup/{c}"), settle, settle.max(30) as usize, &mut since).await?;
+                if a.picture.unwrap_or(false) {
+                    let raw = self.take_raw().await?;
+                    pictures.push(tokio::task::spawn_blocking(move || shot::read_raw(&raw).map(|f| (f, raw)))
+                        .await.map_err(|e| e.to_string())??);
+                }
             }
             for b in 0..blocks {
                 let order = if b % 2 == 0 { [0, 1, 1, 0] } else { [1, 0, 0, 1] };
@@ -1246,6 +1265,14 @@ impl Server {
         if !gpu_note.is_null() { warnings.push(gpu_note.as_str().unwrap_or("").to_string()); }
         out["conditions"] = json!({"game_processes": games.len(), "cpu": cpu, "in_front": state["in_front"],
                                    "frames_present_not_ok": flags[0], "frames_sampled": flags[1], "warnings": warnings});
+        if let [(fa, ra), (fb, rb)] = &pictures[..] {
+            let image = ra.with_file_name(format!("{run}-difference.jpg"));
+            let mut p = shot::compare(fa, fb, a.threshold.unwrap_or(8), &image)?;
+            for (k, (f, raw)) in [(&names[0], (fa, ra)), (&names[1], (fb, rb))] {
+                p[k.as_str()] = json!(shot::convert_frame(f, raw, 0, 90)?.path.display().to_string());
+            }
+            out["picture"] = p;
+        }
         out["names"] = json!(names);
         out["settings"] = json!({"blocks": blocks, "frames": frames, "settle": settle, "counters": counters, "same": same,
                                  "a": calls[0].iter().map(|c| json!({"method": c.method, "params": c.params})).collect::<Vec<_>>(),

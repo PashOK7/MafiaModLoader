@@ -15,10 +15,15 @@ pub struct Shot {
 /// How many JPEGs the folder keeps (the oldest go).
 const KEEP: usize = 200;
 
-/// The raw frame at `raw` as `<id>.jpg` beside it, at most `max_width` wide (0: as it is): shrunk by a whole factor,
-/// each pixel the mean of its block. The raw file is deleted.
-pub fn convert(raw: &Path, max_width: u32, quality: u8) -> Result<Shot, String> {
-    let data = std::fs::read(raw).map_err(|e| format!("{}: {e}", raw.display()))?;
+/// A raw frame of the loader's: its width, height and BGRA pixels (rows top first).
+pub struct Frame {
+    pub width: usize,
+    pub height: usize,
+    pub bgra: Vec<u8>,
+}
+
+pub fn read_raw(raw: &Path) -> Result<Frame, String> {
+    let mut data = std::fs::read(raw).map_err(|e| format!("{}: {e}", raw.display()))?;
     if data.len() < 16 || &data[0..4] != b"MMLS" {
         return Err(format!("{}: not a frame of the loader's", raw.display()));
     }
@@ -27,7 +32,56 @@ pub fn convert(raw: &Path, max_width: u32, quality: u8) -> Result<Shot, String> 
     if w == 0 || h == 0 || w > 16384 || h > 16384 || data.len() < 16 + w * h * 4 {
         return Err(format!("{}: {w}x{h} does not fit its {} bytes", raw.display(), data.len()));
     }
-    let px = &data[16..];
+    data.drain(..16);
+    data.truncate(w * h * 4);
+    Ok(Frame { width: w, height: h, bgra: data })
+}
+
+/// Two frames of one size compared, channel by channel (R, G, B): the mean and the worst absolute difference, the
+/// pixels where any channel differs by more than `threshold`; the difference written to `image` as a JPEG (each
+/// channel's difference times 8: a difference of 1 seen, 32 and more white).
+pub fn compare(a: &Frame, b: &Frame, threshold: u8, image: &Path) -> Result<serde_json::Value, String> {
+    if (a.width, a.height) != (b.width, b.height) {
+        return Err(format!("the pictures differ in size: {}x{} and {}x{}", a.width, a.height, b.width, b.height));
+    }
+    let n = a.width * a.height;
+    let mut sum = [0u64; 3];
+    let mut worst = [0u8; 3];
+    let mut over = 0usize;
+    let mut rgb = Vec::with_capacity(n * 3);
+    for (pa, pb) in a.bgra.chunks_exact(4).zip(b.bgra.chunks_exact(4)) {
+        let mut any = false;
+        for (c, i) in [2usize, 1, 0].into_iter().enumerate() {   // (R, G, B from BGRA)
+            let d = pa[i].abs_diff(pb[i]);
+            sum[c] += d as u64;
+            worst[c] = worst[c].max(d);
+            any |= d > threshold;
+            rgb.push(d.saturating_mul(8));
+        }
+        over += any as usize;
+    }
+    let mean: Vec<f64> = sum.iter().map(|s| (*s as f64 / n as f64 * 1000.0).round() / 1000.0).collect();
+    let mut jpeg = Vec::new();
+    jpeg_encoder::Encoder::new(&mut jpeg, 90)
+        .encode(&rgb, a.width as u16, a.height as u16, jpeg_encoder::ColorType::Rgb)
+        .map_err(|e| format!("JPEG: {e}"))?;
+    std::fs::write(image, &jpeg).map_err(|e| format!("{}: {e}", image.display()))?;
+    Ok(serde_json::json!({"mean": mean, "worst": worst, "threshold": threshold, "over": over,
+                          "over_percent": (over as f64 / n as f64 * 10000.0).round() / 100.0,
+                          "image": image.display().to_string()}))
+}
+
+/// The raw frame at `raw` as `<id>.jpg` beside it, at most `max_width` wide (0: as it is): shrunk by a whole factor,
+/// each pixel the mean of its block. The raw file is deleted.
+pub fn convert(raw: &Path, max_width: u32, quality: u8) -> Result<Shot, String> {
+    let f = read_raw(raw)?;
+    convert_frame(&f, raw, max_width, quality)
+}
+
+/// A frame read (read_raw) as `<raw's id>.jpg`, as `convert`; the raw file deleted.
+pub fn convert_frame(frame: &Frame, raw: &Path, max_width: u32, quality: u8) -> Result<Shot, String> {
+    let (w, h) = (frame.width, frame.height);
+    let px = &frame.bgra[..];
     let f = if max_width == 0 { 1 } else { w.div_ceil(max_width as usize).max(1) };
     let (ow, oh) = (w / f, h / f);
     let mut rgb = Vec::with_capacity(ow * oh * 3);
@@ -80,6 +134,25 @@ mod tests {
         assert!(shot.path.ends_with("7.jpg") && shot.path.exists() && !raw.exists());
         std::fs::write(&raw, b"MMLS\x04\0\0\0\x02\0\0\0").unwrap();
         assert!(convert(&raw, 0, 85).is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn two_frames_compared_by_channel() {
+        let dir = std::env::temp_dir().join(format!("mml-shot-cmp-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let a = Frame { width: 2, height: 2, bgra: vec![10, 20, 30, 255, 0, 0, 0, 255, 5, 5, 5, 255, 100, 100, 100, 255] };
+        let mut b = a.bgra.clone();
+        b[0] = 14;   // pixel 0: blue +4
+        b[14] = 140; // pixel 3: red +40
+        let b = Frame { width: 2, height: 2, bgra: b };
+        let r = compare(&a, &b, 8, &dir.join("d.jpg")).unwrap();
+        assert_eq!(r["worst"], serde_json::json!([40, 0, 4]));
+        assert_eq!(r["mean"], serde_json::json!([10.0, 0.0, 1.0]));
+        assert_eq!((r["over"].as_u64(), r["over_percent"].as_f64()), (Some(1), Some(25.0)));
+        assert!(dir.join("d.jpg").exists());
+        let c = Frame { width: 1, height: 4, bgra: a.bgra.clone() };
+        assert!(compare(&a, &c, 8, &dir.join("e.jpg")).is_err());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
