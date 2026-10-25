@@ -1261,8 +1261,13 @@ merged, sorted by importance):
   mod has "gfx": true (host/fullscreen.cpp); seen on a third monitor in both labs (9Ex) and in the pack's layout on
   DXVK. Not seen: the Reset path (LS3D resets with its full screen's parameters after the options' resolution: made a
   window again there, untested), the game's exclusive full screen without a gfx mod since `game_launch`'s
-  `fullscreen` (a monitor and the focus taken). DXVK numbers its adapters otherwise than Direct3D 9 (`adapter` 2 was
-  the primary monitor there).
+  `fullscreen` (a monitor and the focus taken). DXVK numbers its adapters otherwise than Direct3D 9 (`adapter` 0, 1
+  and 2 all gave the primary monitor there: the borderless window always lands on it under DXVK).
+- **Frame generation on Direct3D 9Ex costs the game's thread its waits** (2026-10-25): the showing never holds the
+  game (its own thread, its own Direct3D 11 swap chain), but on 9Ex the frame is handed to Direct3D 11 by waiting on
+  the CPU for Direct3D 9 to finish it and for Direct3D 11 to have read it (no fences: the 9Ex gap above), 1.9 + 1.0
+  ms a frame measured at 1280x960 (the game capped at 60: 57.2 fps with 4x against 59.8 without; at 90: 75.6 against
+  88.7 at 1920x1080). On DXVK none (89.2 against 88.7). The way out is the same as the 9Ex gap's.
 - **DLSS on an RTX 50 with the upscaler** (2026-10-24): the render-size world, the mip bias and the GPU-ordered DXVK
   path are seen on the RTX 3070 (SR alone, frame generation's stand-in); DLSS-NR at the render size, DLSS-FG itself
   and the frame rate on the friend's RTX 5060 laptop wait for his next logs (the log's minute line now says whether

@@ -46,6 +46,8 @@
 #include <d3d11_1.h>
 #include <d3d11_4.h>   // (ID3D11Device5::OpenSharedFence: the halves' shared fences)
 #include <dxgi.h>
+#include <dwmapi.h>
+#include <dxgi1_3.h>
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -1705,14 +1707,13 @@ void NoMultisampling(DWORD *pp, const char *when) {
 HRESULT STDMETHODCALLTYPE hkReset8(void *dev, DWORD *pp) {
     NoMultisampling(pp, "Reset");
     FullscreenReset(pp);
-    ShowThreadStop();   // (its swap chain and slots are the device's default pool: gone before a Reset)
+    ShowThreadStop();   // (the showing anew after it: the back buffer's size may change)
     GammaReset();
     return oReset8(dev, pp);
 }
 HRESULT STDMETHODCALLTYPE hkCreateDevice8(void *self, UINT adapter, DWORD type, HWND focus, DWORD flags, DWORD *pp, void **device) {
     NoMultisampling(pp, "CreateDevice");
     FullscreenCreate(self, adapter, focus, pp);   // (fullscreen.cpp: a full screen made a borderless window for the showing)
-    if (!ModsWantingGfx().empty()) flags |= D3DCREATE_MULTITHREADED;   // (the showing's own thread presents on it)
     HRESULT hr = oCreateDevice8(self, adapter, type, focus, flags, pp, device);
     if (SUCCEEDED(hr) && device && *device) GammaDevice(*device);   // (gamma.cpp: the brightness in a window on DXVK)
     if (SUCCEEDED(hr) && device && *device && !oReset8) {
@@ -1735,27 +1736,36 @@ void *WINAPI hkDirect3DCreate8(UINT sdk) {
     return d3d;
 }
 
-// ---- the frame at its showing (gfx_show): a mod's pictures shown before the frame by the game's own Present, spaced
-// evenly over the time between the game's frames (frame generation's in-between frames). The back buffer, whole (the
-// HUD on it), is copied into a texture both devices share; the mod draws its pictures on the bridge's device into
-// targets the bridge shares too; each is copied into the back buffer and shown, a wait between them, then the frame
-// itself (copied back: the back buffer's content is gone after a Present). The waits are on the game's thread (only it
-// may use the device and its back buffer): the game's frame takes them in.
+// ---- the frame at its showing (gfx_show): a mod's pictures shown before the frame, spaced evenly over the time
+// between the game's frames (frame generation's in-between frames). The game is never held for them: it runs at its
+// own rate, and the mod is asked for only as many pictures as fit between two of its frames at the display's refresh
+// (ShowFit). Nothing fits when the game alone fills the refresh: then nothing is done at all, the game shows its frames
+// by its own Present. Else the back buffer, whole (the HUD on it), is copied into a texture both devices share, the mod
+// draws its pictures on the bridge's device, and the bridge's own thread shows them and then the frame through a swap
+// chain of the bridge's Direct3D 11 device (below): never through the game's device. (Measured 2026-10-25: shown from
+// the game's thread the waits between the pictures were the game's, its rate divided by the pictures + 1; through a
+// swap chain of the game's Direct3D 9 device from another thread its Presents held the game's device, the game 15 to
+// 20 % slower on DXVK and on 9Ex with its swap chain's vertical sync.)
 struct ShowFn { MmlMod *mod = nullptr; MmlGfxShowFn fn = nullptr; void *user = nullptr; } g_showFn;
-IDirect3DTexture9 *g_show9, *g_extra9[MML_GFX_SHOW_MAX];
-IDirect3DSurface9 *g_showSurf9, *g_extraSurf9[MML_GFX_SHOW_MAX];
+IDirect3DTexture9 *g_show9;
+IDirect3DSurface9 *g_showSurf9;
 ID3D11Texture2D *g_show11, *g_extra11[MML_GFX_SHOW_MAX];
 ID3D11ShaderResourceView *g_showSRV;
 ID3D11RenderTargetView *g_extraRTV[MML_GFX_SHOW_MAX];
-gfxvk::Link *g_showLink, *g_extraLink[MML_GFX_SHOW_MAX];
+gfxvk::Link *g_showLink;
 UINT g_showW, g_showH;
 bool g_showTried;                  // made (or failed) at this size: a failure is not tried again every frame
 std::string g_showError;
 double g_showStart, g_showEnd;     // the last Present's start and end (ms)
 double g_interval, g_work;         // smoothed: the time between the game's Presents, and of it the time outside them
-double g_showMs;                   // smoothed: the bridge's own time on a frame with pictures (the copies, the mod's, the waits for the devices)
+double g_showMs;                   // smoothed: the bridge's own time on a frame it shows (the copies, the mod's, the waits for the devices)
 uint64_t g_shows, g_showFrames, g_showPictures, g_showLate;
-HANDLE g_showTimer;
+uint64_t g_showDropped;            // the game's frames replaced by a newer one before the thread took them
+uint64_t g_showCut;                // pictures left out: a newer frame came while the thread showed them
+int g_fit;                         // the pictures that fit between two of the game's frames now (ShowFit)
+double g_fitNoneSince;             // since when none fits while the thread still shows (ms; 0: one fits)
+double g_refreshMs;                // the display's period (0: not known): two things are not shown closer than it
+double g_refreshAt;                // when it was read (ms)
 double g_lastShown;                // when the last picture or frame was handed to Present (ms)
 double g_gap, g_gapErr;            // smoothed: the time between two things shown, and its distance from the spacing meant
 
@@ -1763,16 +1773,13 @@ void ReleaseShow() {
     ShowThreadStop();
     gfxvk::Free(g_showLink);
     SafeRelease(g_showSRV); SafeRelease(g_show11); SafeRelease(g_showSurf9); SafeRelease(g_show9);
-    for (int i = 0; i < MML_GFX_SHOW_MAX; i++) {
-        gfxvk::Free(g_extraLink[i]);
-        SafeRelease(g_extraRTV[i]); SafeRelease(g_extra11[i]); SafeRelease(g_extraSurf9[i]); SafeRelease(g_extra9[i]);
-    }
+    for (int i = 0; i < MML_GFX_SHOW_MAX; i++) { SafeRelease(g_extraRTV[i]); SafeRelease(g_extra11[i]); }
     g_showW = g_showH = 0;
     g_showTried = false;
 }
 
-// The shared textures at the back buffer's size: the frame (Direct3D 9 writes, 11 reads) and the pictures (11 writes,
-// 9 reads), A8R8G8B8 (B8G8R8A8_UNORM on Direct3D 11).
+// The textures at the back buffer's size: the frame (Direct3D 9 writes, 11 reads: shared) and the mod's pictures
+// (Direct3D 11's own), A8R8G8B8 (B8G8R8A8_UNORM on Direct3D 11).
 bool EnsureShow(UINT w, UINT h) {
     if (w == g_showW && h == g_showH && g_showTried) return g_showSRV != nullptr;
     ReleaseShow();
@@ -1781,12 +1788,14 @@ bool EnsureShow(UINT w, UINT h) {
     std::string why;
     bool ok = MakePair(w, h, D3DFMT_A8R8G8B8, &g_show9, &g_show11, &g_showLink, &why) &&
               SUCCEEDED(g_show9->GetSurfaceLevel(0, &g_showSurf9)) && SUCCEEDED(g_dev11->CreateShaderResourceView(g_show11, nullptr, &g_showSRV));
+    D3D11_TEXTURE2D_DESC td{};
+    td.Width = w, td.Height = h, td.MipLevels = td.ArraySize = 1, td.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    td.SampleDesc.Count = 1, td.Usage = D3D11_USAGE_DEFAULT, td.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
     for (int i = 0; ok && i < MML_GFX_SHOW_MAX; i++)
-        ok = MakePair(w, h, D3DFMT_A8R8G8B8, &g_extra9[i], &g_extra11[i], &g_extraLink[i], &why) &&
-             SUCCEEDED(g_extra9[i]->GetSurfaceLevel(0, &g_extraSurf9[i])) &&
+        ok = SUCCEEDED(g_dev11->CreateTexture2D(&td, nullptr, &g_extra11[i])) &&
              SUCCEEDED(g_dev11->CreateRenderTargetView(g_extra11[i], nullptr, &g_extraRTV[i]));
     if (!ok) {
-        g_showError = "the showing's shared textures: " + (why.empty() ? std::string("a view was refused") : why);
+        g_showError = "the showing's textures: " + (why.empty() ? std::string("a texture or a view was refused") : why);
         HWARN("gfx: %s", g_showError.c_str());
         ReleaseShow();
         g_showW = w, g_showH = h;
@@ -1794,7 +1803,7 @@ bool EnsureShow(UINT w, UINT h) {
         return false;
     }
     g_showError.clear();
-    HLOG("gfx: the showing at %ux%u: the frame and %d pictures shared", w, h, MML_GFX_SHOW_MAX);
+    HLOG("gfx: the showing at %ux%u: the frame shared, %d pictures", w, h, MML_GFX_SHOW_MAX);
     return true;
 }
 
@@ -1812,100 +1821,52 @@ void WaitUntil(double targetMs, HANDLE *timer) {
     while (NowMs() < targetMs) YieldProcessor();
 }
 
-struct ShowCall { const MmlGfxShow *show; int n; };
-void CallShow(void *p) {
-    auto *c = static_cast<ShowCall *>(p);
-    c->n = g_showFn.fn(c->show, g_showFn.user);
+// The desktop composition's period (DwmGetCompositionTimingInfo's rateRefresh; 0: not known).
+double DwmRefreshMs() {
+    using TimingFn = HRESULT(WINAPI *)(HWND, DWM_TIMING_INFO *);
+    static TimingFn timing = [] {
+        HMODULE m = LoadLibraryExW(L"dwmapi.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+        return m ? reinterpret_cast<TimingFn>(GetProcAddress(m, "DwmGetCompositionTimingInfo")) : nullptr;
+    }();
+    DWM_TIMING_INFO ti{};
+    ti.cbSize = sizeof ti;
+    if (!timing || FAILED(timing(nullptr, &ti)) || !ti.rateRefresh.uiNumerator || !ti.rateRefresh.uiDenominator) return 0;
+    const double hz = static_cast<double>(ti.rateRefresh.uiNumerator) / ti.rateRefresh.uiDenominator;
+    return hz >= 24 ? 1000.0 / hz : 0;
 }
 
-// The back buffer to the mod and its pictures back: how many to show before the frame (0: the frame alone).
-int ShowPrepare() {
-    double t0 = NowMs();
-    IDirect3DSurface9 *bb = nullptr;
-    if (FAILED(g_dev9->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &bb)) || !bb) return 0;
-    D3DSURFACE_DESC d{};
-    bb->GetDesc(&d);
-    if (d.MultiSampleType != D3DMULTISAMPLE_NONE || !EnsureShow(d.Width, d.Height)) { SafeRelease(bb); return 0; }
-    g_frameError.clear();
-    g_frameLate = false;
-    bool ok = Settled() && SUCCEEDED(g_dev9->StretchRect(bb, nullptr, g_showSurf9, nullptr, D3DTEXF_NONE)) && (GpuSync() || Wait9()) &&
-              Hand(true, {g_showLink});
-    SafeRelease(bb);
-    if (!ok) { g_showLate++; return 0; }
-    // the mod's pictures, its state as the passes have it (the frame's constants, samplers, full-screen shader)
-    g_ctx->UpdateSubresource(g_frameCB, 0, nullptr, &g_k, 0, 0);
-    MmlGfxFrame f{};
-    f.size = sizeof f;
-    f.device = g_dev11;
-    f.context = g_ctx;
-    f.generation = g_generation;
-    f.k = &g_k;
-    f.constants = g_frameCB;
-    f.depth = d.Width != g_w || d.Height != g_h ? nullptr : g_upMade ? g_upDepthSRV : g_depthSRV;   // (the frame's at its size)
-    f.color = g_showSRV;
-    f.point = g_point;
-    f.linear = g_linear;
-    f.target = nullptr;
-    f.full_screen = g_vsFull;
-    f.width = d.Width;
-    f.height = d.Height;
-    memcpy(f.view, g_viewM, sizeof f.view);
-    memcpy(f.proj, g_projM, sizeof f.proj);
-    ID3D11ShaderResourceView *motion = g_motionReady && f.depth ? (g_upMade ? g_upMotionSRV : g_motionSRV) : nullptr;
-    f.motion = motion;
-    f.render_width = d.Width, f.render_height = d.Height;
-    f.jitter[0] = g_jitNow[0], f.jitter[1] = g_jitNow[1];
-    MmlGfxShow s{};
-    s.size = sizeof s;
-    s.frame = &f;
-    s.max_extra = MML_GFX_SHOW_MAX;
-    for (int i = 0; i < MML_GFX_SHOW_MAX; i++) s.extra[i] = g_extraRTV[i];
-    s.interval_ms = g_interval;
-    s.work_ms = g_work;
-    s.shows = g_shows;
-    D3D11_VIEWPORT vp{0, 0, static_cast<float>(d.Width), static_cast<float>(d.Height), 0, 1};
-    g_ctx->RSSetViewports(1, &vp);
-    ID3D11ShaderResourceView *srv[4] = {static_cast<ID3D11ShaderResourceView *>(f.depth), g_showSRV, nullptr, motion};
-    ID3D11SamplerState *smp[2] = {g_point, g_linear};
-    g_ctx->PSSetShaderResources(0, 4, srv);
-    g_ctx->PSSetSamplers(0, 2, smp);
-    g_ctx->PSSetConstantBuffers(0, 1, &g_frameCB);
-    g_ctx->VSSetShader(g_vsFull, nullptr, 0);
-    g_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    g_ctx->IASetInputLayout(nullptr);
-    ShowCall call{&s, 0};
-    g_inPasses = true;   // (gfx_shared_texture and gfx_shared_fence answer inside it, as in a pass)
-    ModCall(g_showFn.mod, CallShow, &call, "its showing (gfx_show)");
-    g_inPasses = false;
-    int n = std::clamp(call.n, 0, MML_GFX_SHOW_MAX);
-    g_ctx->ClearState();   // the shared textures are Direct3D 9's again
-    std::vector<gfxvk::Link *> back;
-    for (int i = 0; i < n; i++) back.push_back(g_extraLink[i]);
-    ok = GpuSync() || Wait11();
-    if (ok && gfxvk::On() && (n || GpuSync())) {   // (with the fences, To9 also queues Direct3D 11's signal)
-        std::string why;
-        ok = gfxvk::To9(back.data(), n, &why);
-        if (!ok) g_frameError = "the pictures' copy on DXVK's queue: " + why, g_frameLate = gfxvk::Busy();
-    }
-    if (!ok) { g_showLate++; return 0; }
-    double ms = NowMs() - t0;
-    g_showMs = g_showMs > 0 ? g_showMs * 0.95 + ms * 0.05 : ms;
-    return n;
+// The display's period, read again every 2 s (the window may go to another monitor): the monitor's mode, or the
+// desktop's composition when it is slower (a window is shown by it, on Windows 10 at the primary monitor's rate with
+// monitors of several rates: seen, a 240 Hz monitor's window shown at the 200 Hz primary's).
+void ReadRefresh(double now) {
+    if (g_refreshAt > 0 && now - g_refreshAt < 2000) return;
+    g_refreshAt = now;
+    D3DDISPLAYMODE dm{};
+    double mode = SUCCEEDED(g_dev9->GetDisplayMode(0, &dm)) && dm.RefreshRate >= 24 ? 1000.0 / dm.RefreshRate : 0;
+    const double dwm = DwmRefreshMs();
+    const double ms = std::max(mode, dwm);
+    if (ms > 0 && std::fabs(ms - g_refreshMs) > 0.01)
+        HLOG("gfx: the showing's display at %.1f Hz (the monitor's mode %u Hz, the desktop's composition %.1f Hz)", 1000.0 / ms,
+             dm.RefreshRate, dwm > 0 ? 1000.0 / dwm : 0.0);
+    g_refreshMs = ms;
 }
 
-// ---- the showing from the bridge's own thread: the game's thread copies the frame and the pictures into a slot and
-// goes on at once (the game's Present itself is left out); the thread shows them, spaced, through a swap chain of its
-// own on the game's window. Direct3D 9 lets a swap chain present between another thread's BeginScene and EndScene as
-// long as its back buffer is not the device's target: the game's back buffer never reaches this one. The device is
-// made thread-safe for it (D3DCREATE_MULTITHREADED, hkCreateDevice8). Two slots: one shown, one waiting; the game
-// waits only for the one waiting to be taken (it runs at most a frame ahead of what is seen). Its swap chain waits for
-// the display's refresh, and the thread keeps a refresh between two things shown itself (DXVK's Present returns at
-// once): what is shown never outruns the display. Not for a full-screen device (one swap chain alone may show there):
-// the game's thread shows them then, as before.
-struct ShowSlot { IDirect3DSurface9 *pic[MML_GFX_SHOW_MAX + 1] = {}; int n = 0; double interval = 0; };
-IDirect3DSwapChain9 *g_showChain;
-IDirect3DSurface9 *g_showChainBB;
-ShowSlot g_slots[2];
+// ---- the showing's thread: the game's thread copies the frame and the pictures into a slot (Direct3D 11 textures)
+// and goes on at once (the game's Present itself is left out); the thread shows them, spaced, through a flip-model
+// swap chain of the bridge's Direct3D 11 device in a window of its own laid over the game's picture (a child of the
+// game's window, through which the mouse goes: the game reads it by DirectInput). The game's device is not touched by
+// the thread. Its swap chain keeps one frame in flight (a waitable object, waited for outside every lock), so each
+// Present waits for the display; the bridge's context is made thread-safe (ID3D11Multithread) and the thread holds it
+// only for a copy and a Present. Three slots: one shown, one waiting, one the game writes; the game never waits for the
+// thread: its frame takes the waiting one's place when that was not taken yet (the newest frame shown), and a newer
+// frame cuts the pictures still to be shown before the one being shown.
+struct ShowSlot { ID3D11Texture2D *pic[MML_GFX_SHOW_MAX + 1] = {}; int n = 0; double interval = 0; };
+HWND g_showWnd, g_showParent;
+RECT g_showRect;                   // the window's place in its parent's client area
+IDXGISwapChain2 *g_chain;
+ID3D11Texture2D *g_chainBB;
+HANDLE g_chainWait;                // the swap chain's frame latency waitable object
+ShowSlot g_slots[3];
 UINT g_slotW, g_slotH;
 std::mutex g_slotMx;
 std::condition_variable g_slotCv;
@@ -1913,15 +1874,19 @@ int g_slotQueued = -1, g_slotShowing = -1;
 bool g_presenterStop;
 HANDLE g_presenter;                // (a Windows thread: a std::thread left joinable at the process's end terminates it)
 HANDLE g_presenterTimer;
-HRESULT g_presenterHr = S_OK;      // the thread's last Present (a lost device: the game's own Present shows it)
-double g_refreshMs;                // the display's period (0: not known): two things are not shown closer than it
-std::string g_threadWhy;           // why the showing is on the game's thread (gfx.state show.thread)
+HRESULT g_presenterHr = S_OK;      // the thread's last Present
+std::string g_threadWhy;           // why the showing has no thread (gfx.state show.thread)
 bool g_threadTried;
-std::atomic<bool> g_threadOff;     // gfx.state {"show_thread": false}: the game's thread shows (a test of that way)
+std::atomic<bool> g_threadOff;     // gfx.state {"show_thread": false}: no thread (a test of that way: no pictures)
 bool g_threadOffSeen;              // (the game's thread's copy: a change starts the showing anew)
 
+bool NewerQueued() {
+    std::lock_guard<std::mutex> lk(g_slotMx);
+    return g_slotQueued >= 0;
+}
+
 DWORD WINAPI Presenter(void *) {
-    double lastEnd = 0, lastPresent = 0;
+    double lastEnd = 0;
     for (;;) {
         int idx;
         {
@@ -1931,17 +1896,19 @@ DWORD WINAPI Presenter(void *) {
             idx = g_slotShowing = g_slotQueued;
             g_slotQueued = -1;
         }
-        g_slotCv.notify_all();
         const ShowSlot &s = g_slots[idx];
         double interval = std::clamp(s.interval > 0 ? s.interval : 16.7, 2.0, 100.0);
         double slot = interval / (s.n + 1);
         double t0 = std::max(NowMs(), lastEnd);
+        bool cut = false;
         for (int i = 0; i <= s.n; i++) {
-            if (i) WaitUntil(t0 + slot * i, &g_presenterTimer);
-            // (the display's period at least since the last: DXVK's Present does not wait for the refresh, its own
-            // thread shows; the slots then hold the game at the refresh / (pictures + 1) as vsync does on Direct3D 9)
-            if (g_refreshMs > 0 && lastPresent > 0) WaitUntil(lastPresent + g_refreshMs * 0.98, &g_presenterTimer);
-            g_dev9->StretchRect(s.pic[i], nullptr, g_showChainBB, nullptr, D3DTEXF_NONE);
+            if (i && i < s.n && NewerQueued()) {   // (late: the frame itself at once, the next one's pictures after it)
+                g_showCut += s.n - i;
+                i = s.n, cut = true;
+            }
+            if (i && !cut) WaitUntil(t0 + slot * i, &g_presenterTimer);
+            WaitForSingleObjectEx(g_chainWait, 100, FALSE);   // (a buffer free: the display took the one before)
+            g_ctx->CopyResource(g_chainBB, s.pic[i]);
             double at = NowMs();
             if (g_lastShown > 0 && at - g_lastShown < 250) {
                 double gap = at - g_lastShown, err = std::fabs(gap - slot);
@@ -1949,20 +1916,25 @@ DWORD WINAPI Presenter(void *) {
                 g_gapErr = g_gapErr > 0 ? g_gapErr * 0.98 + err * 0.02 : err;
             }
             g_lastShown = at;
-            g_presenterHr = g_showChain->Present(nullptr, FullscreenDest(), nullptr, nullptr, 0);
-            lastPresent = NowMs();
+            g_presenterHr = g_chain->Present(1, 0);
             if (i < s.n) g_showPictures++;
         }
         g_showFrames++;
-        lastEnd = t0 + slot * s.n;   // (the next frame's pictures not before this one)
+        lastEnd = std::min(t0 + slot * s.n, NowMs());   // (the next frame's pictures not before this one)
         {
             std::lock_guard<std::mutex> lk(g_slotMx);
             g_slotShowing = -1;
         }
-        g_slotCv.notify_all();
     }
 }
 
+LRESULT CALLBACK ShowWndProc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
+    if (msg == WM_NCHITTEST) return HTTRANSPARENT;   // (the mouse goes to the game's window)
+    if (msg == WM_ERASEBKGND) return 1;
+    return DefWindowProcW(w, msg, wp, lp);
+}
+
+// The game's thread (the window's): the thread, its swap chain and window gone, the game's own Present again.
 void ShowThreadStop() {
     if (g_presenter) {
         {
@@ -1977,14 +1949,28 @@ void ShowThreadStop() {
     g_presenterStop = false;
     g_slotQueued = g_slotShowing = -1;
     for (auto &s : g_slots) for (auto *&p : s.pic) SafeRelease(p);
-    SafeRelease(g_showChainBB);
-    SafeRelease(g_showChain);
+    SafeRelease(g_chainBB);
+    SafeRelease(g_chain);
+    if (g_chainWait) CloseHandle(g_chainWait), g_chainWait = nullptr;
+    if (g_showWnd) DestroyWindow(g_showWnd), g_showWnd = nullptr;
     g_slotW = g_slotH = 0;
     g_threadTried = false;
     g_presenterHr = S_OK;
+    g_lastShown = 0;
 }
 
-// The thread, its swap chain and its slots at the back buffer's size: false (and why) to show on the game's thread.
+// The window over the game's picture: its whole client area, or the picture's place when a full screen was made a
+// window (fullscreen.cpp). Read at each frame (the game's window may change).
+void PlaceShowWnd() {
+    RECT r{};
+    if (const RECT *d = FullscreenDest()) r = *d;
+    else GetClientRect(g_showParent, &r);
+    if (EqualRect(&r, &g_showRect) && IsWindowVisible(g_showWnd)) return;
+    g_showRect = r;
+    SetWindowPos(g_showWnd, HWND_TOP, r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+}
+
+// The thread, its swap chain, window and slots at the back buffer's size: false (and why) when the showing has none.
 bool EnsureShowThread(UINT w, UINT h) {
     if (g_threadOff != g_threadOffSeen) g_threadOffSeen = g_threadOff, ShowThreadStop();
     if (g_presenter && w == g_slotW && h == g_slotH) return true;
@@ -1992,98 +1978,209 @@ bool EnsureShowThread(UINT w, UINT h) {
     ShowThreadStop();
     g_threadTried = true;
     g_slotW = w, g_slotH = h;
-    auto no = [](const std::string &why) { g_threadWhy = why; HLOG("gfx: the showing on the game's thread: %s", why.c_str()); return false; };
+    auto no = [w, h](const std::string &why) {
+        ShowThreadStop();
+        g_threadTried = true, g_slotW = w, g_slotH = h;
+        g_threadWhy = why;
+        HLOG("gfx: the showing has no thread of its own (%s): no pictures between the frames", why.c_str());
+        return false;
+    };
     if (g_threadOffSeen) return no("gfx.state {\"show_thread\": false} (a test)");
     D3DDEVICE_CREATION_PARAMETERS cp{};
-    if (FAILED(g_dev9->GetCreationParameters(&cp)) || !(cp.BehaviorFlags & D3DCREATE_MULTITHREADED))
-        return no("the device is not thread-safe (made before the loader, or without a mod with \"gfx\": true)");
     IDirect3DSwapChain9 *own = nullptr;
     D3DPRESENT_PARAMETERS pp{};
-    if (FAILED(g_dev9->GetSwapChain(0, &own)) || !own) return no("no swap chain of the game's");
+    if (FAILED(g_dev9->GetCreationParameters(&cp)) || FAILED(g_dev9->GetSwapChain(0, &own)) || !own) return no("no swap chain of the game's");
     own->GetPresentParameters(&pp);
     own->Release();
-    if (!pp.Windowed) return no("a full-screen device");
-    D3DPRESENT_PARAMETERS mine{};
-    mine.BackBufferWidth = w, mine.BackBufferHeight = h, mine.BackBufferFormat = pp.BackBufferFormat;
-    mine.BackBufferCount = 1;
-    mine.SwapEffect = D3DSWAPEFFECT_DISCARD;
-    mine.hDeviceWindow = pp.hDeviceWindow ? pp.hDeviceWindow : cp.hFocusWindow;
-    mine.Windowed = TRUE;
-    // each Present waits for the display's refresh: what is shown never outruns it, and the slots (the game waits for
-    // the one waiting to be taken) hold the game at the refresh / (pictures + 1)
-    mine.PresentationInterval = D3DPRESENT_INTERVAL_ONE;
-    D3DDISPLAYMODE dm{};
-    g_refreshMs = SUCCEEDED(g_dev9->GetDisplayMode(0, &dm)) && dm.RefreshRate >= 24 ? 1000.0 / dm.RefreshRate : 0;
-    HRESULT hr = g_dev9->CreateAdditionalSwapChain(&mine, &g_showChain);
-    if (FAILED(hr) || !g_showChain) return no(Fmt("CreateAdditionalSwapChain failed (0x%08X)", static_cast<unsigned>(hr)));
-    if (FAILED(g_showChain->GetBackBuffer(0, D3DBACKBUFFER_TYPE_MONO, &g_showChainBB))) { ShowThreadStop(); g_threadTried = true; return no("its back buffer"); }
+    if (!pp.Windowed) return no("an exclusive full screen");
+    g_showParent = pp.hDeviceWindow ? pp.hDeviceWindow : cp.hFocusWindow;
+    if (!g_showParent) return no("the game's window was not found");
+    ID3D11Multithread *mt = nullptr;
+    if (FAILED(g_ctx->QueryInterface(__uuidof(ID3D11Multithread), reinterpret_cast<void **>(&mt))) || !mt)
+        return no("Direct3D 11 without ID3D11Multithread (before Windows 10)");
+    mt->SetMultithreadProtected(TRUE);
+    mt->Release();
+    static ATOM cls = [] {
+        WNDCLASSEXW wc{sizeof wc};
+        wc.lpfnWndProc = ShowWndProc;
+        wc.hInstance = GetModuleHandleW(nullptr);
+        wc.lpszClassName = L"MafiaModLoaderShow";
+        return RegisterClassExW(&wc);
+    }();
+    if (!cls) return no("its window class was refused");
+    g_showWnd = CreateWindowExW(WS_EX_NOREDIRECTIONBITMAP | WS_EX_NOPARENTNOTIFY, L"MafiaModLoaderShow", L"", WS_CHILD | WS_CLIPSIBLINGS,
+                                0, 0, 1, 1, g_showParent, nullptr, GetModuleHandleW(nullptr), nullptr);
+    if (!g_showWnd) return no(Fmt("its window was not made (%lu)", GetLastError()));
+    IDXGIDevice *dd = nullptr;
+    IDXGIAdapter *ad = nullptr;
+    IDXGIFactory2 *fac = nullptr;
+    if (SUCCEEDED(g_dev11->QueryInterface(__uuidof(IDXGIDevice), reinterpret_cast<void **>(&dd)))) dd->GetAdapter(&ad);
+    if (ad) ad->GetParent(__uuidof(IDXGIFactory2), reinterpret_cast<void **>(&fac));
+    SafeRelease(ad), SafeRelease(dd);
+    if (!fac) return no("no DXGI 1.2 factory");
+    DXGI_SWAP_CHAIN_DESC1 sd{};
+    sd.Width = w, sd.Height = h, sd.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    sd.SampleDesc.Count = 1;
+    sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    sd.BufferCount = 2;
+    sd.Scaling = DXGI_SCALING_STRETCH;   // (the back buffer's size over the window's: the picture's place)
+    sd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+    sd.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
+    sd.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+    IDXGISwapChain1 *c1 = nullptr;
+    HRESULT hr = fac->CreateSwapChainForHwnd(g_dev11, g_showWnd, &sd, nullptr, nullptr, &c1);
+    if (hr == DXGI_ERROR_INVALID_CALL) {   // (Windows 8: no FLIP_DISCARD)
+        sd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+        hr = fac->CreateSwapChainForHwnd(g_dev11, g_showWnd, &sd, nullptr, nullptr, &c1);
+    }
+    if (SUCCEEDED(hr)) fac->MakeWindowAssociation(g_showWnd, DXGI_MWA_NO_WINDOW_CHANGES | DXGI_MWA_NO_ALT_ENTER);
+    SafeRelease(fac);
+    if (FAILED(hr) || !c1) return no(Fmt("CreateSwapChainForHwnd failed (0x%08X)", static_cast<unsigned>(hr)));
+    c1->QueryInterface(__uuidof(IDXGISwapChain2), reinterpret_cast<void **>(&g_chain));
+    c1->Release();
+    if (!g_chain) return no("no IDXGISwapChain2");
+    g_chain->SetMaximumFrameLatency(1);
+    g_chainWait = g_chain->GetFrameLatencyWaitableObject();
+    if (!g_chainWait || FAILED(g_chain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void **>(&g_chainBB))))
+        return no("its swap chain's buffer or waitable object");
+    D3D11_TEXTURE2D_DESC td{};
+    td.Width = w, td.Height = h, td.MipLevels = td.ArraySize = 1, td.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    td.SampleDesc.Count = 1, td.Usage = D3D11_USAGE_DEFAULT, td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
     for (auto &s : g_slots)
         for (auto *&p : s.pic)
-            if (FAILED(g_dev9->CreateRenderTarget(w, h, pp.BackBufferFormat, D3DMULTISAMPLE_NONE, 0, FALSE, &p, nullptr))) {
-                ShowThreadStop();
-                g_threadTried = true, g_slotW = w, g_slotH = h;
-                return no("its slots' surfaces");
-            }
+            if (FAILED(g_dev11->CreateTexture2D(&td, nullptr, &p))) return no("its slots' textures");
+    SetRectEmpty(&g_showRect);
+    PlaceShowWnd();
     g_presenter = CreateThread(nullptr, 0, Presenter, nullptr, 0, nullptr);
-    if (!g_presenter) { ShowThreadStop(); g_threadTried = true, g_slotW = w, g_slotH = h; return no("its thread was not made"); }
+    if (!g_presenter) return no("its thread was not made");
     g_threadWhy.clear();
-    HLOG("gfx: the showing from the bridge's own thread (%ux%u, a swap chain of its own)", w, h);
+    HLOG("gfx: the showing from the bridge's own thread (%ux%u, a flip-model swap chain of Direct3D 11 in a window over the game's)", w, h);
     return true;
 }
 
-// The game's thread: the frame (the back buffer, not yet shown) and its n pictures into the free slot, handed to the
-// thread
-HRESULT ShowQueue(int n) {
+// How many pictures fit between two of the game's frames: its own interval (it is never held for them) over the
+// display's period is how many things the display can show a frame; one is the frame. Up only once it fits with 4 %
+// to spare, down once it no longer fits by 2 % (no back and forth at a border).
+int ShowFit(double now) {
+    ReadRefresh(now);
+    if (g_interval <= 0) return g_fit = 0;
+    if (g_refreshMs <= 0) return g_fit = MML_GFX_SHOW_MAX;   // (the display's refresh not known: the mod's own count)
+    const double q = g_interval / g_refreshMs;   // (things the display shows in one of the game's frames)
+    int fit = g_fit;
+    while (fit < MML_GFX_SHOW_MAX && q >= (fit + 2) * 1.04) fit++;
+    while (fit > 0 && q < (fit + 1) * 0.98) fit--;
+    return g_fit = fit;
+}
+
+struct ShowCall { const MmlGfxShow *show; int n; };
+void CallShow(void *p) {
+    auto *c = static_cast<ShowCall *>(p);
+    c->n = g_showFn.fn(c->show, g_showFn.user);
+}
+
+// The game's thread, at its Present: true when the thread shows this frame (handed to it in a slot, with the mod's
+// pictures before it), false when the game's own Present shows it. The thread runs while pictures fit, and 1 s after
+// none does (no making and unmaking at a border); then it goes and the game shows its frames itself, at no cost.
+bool ShowFrame() {
+    const double t0 = NowMs();
     IDirect3DSurface9 *bb = nullptr;
-    if (FAILED(g_dev9->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &bb)) || !bb) return D3D_OK;
-    int idx;
-    {
-        std::unique_lock<std::mutex> lk(g_slotMx);
-        g_slotCv.wait(lk, [] { return g_slotQueued < 0; });   // (the one waiting taken: the other slot is free)
-        idx = g_slotShowing == 0 ? 1 : 0;
+    if (FAILED(g_dev9->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &bb)) || !bb) return false;
+    D3DSURFACE_DESC d{};
+    bb->GetDesc(&d);
+    const int fit = ShowFit(t0);
+    if (fit) g_fitNoneSince = 0;
+    else if (g_presenter && !g_fitNoneSince) g_fitNoneSince = t0;
+    const bool keep = g_presenter && g_fitNoneSince && t0 - g_fitNoneSince < 1000;
+    if ((!fit && !keep) || d.MultiSampleType != D3DMULTISAMPLE_NONE || !EnsureShow(d.Width, d.Height) || !EnsureShowThread(d.Width, d.Height)) {
+        SafeRelease(bb);
+        if (g_presenter) ShowThreadStop();
+        return false;
     }
-    ShowSlot &s = g_slots[idx];
-    g_quiet++;
-    for (int i = 0; i < n; i++) g_dev9->StretchRect(g_extraSurf9[i], nullptr, s.pic[i], nullptr, D3DTEXF_NONE);
-    g_dev9->StretchRect(bb, nullptr, s.pic[n], nullptr, D3DTEXF_NONE);
-    g_quiet--;
-    bb->Release();
-    s.n = n, s.interval = g_interval;
+    PlaceShowWnd();
+    g_frameError.clear();
+    g_frameLate = false;
+    bool ok = Settled() && SUCCEEDED(g_dev9->StretchRect(bb, nullptr, g_showSurf9, nullptr, D3DTEXF_NONE)) && (GpuSync() || Wait9()) &&
+              Hand(true, {g_showLink});
+    SafeRelease(bb);
+    if (!ok) { g_showLate++; return true; }   // (the frame not handed over: the one shown before stays)
+    int n = 0;
+    if (fit) {   // the mod's pictures, its state as the passes have it (the frame's constants, samplers, full-screen shader)
+        g_ctx->UpdateSubresource(g_frameCB, 0, nullptr, &g_k, 0, 0);
+        MmlGfxFrame f{};
+        f.size = sizeof f;
+        f.device = g_dev11;
+        f.context = g_ctx;
+        f.generation = g_generation;
+        f.k = &g_k;
+        f.constants = g_frameCB;
+        f.depth = d.Width != g_w || d.Height != g_h ? nullptr : g_upMade ? g_upDepthSRV : g_depthSRV;   // (the frame's at its size)
+        f.color = g_showSRV;
+        f.point = g_point;
+        f.linear = g_linear;
+        f.target = nullptr;
+        f.full_screen = g_vsFull;
+        f.width = d.Width;
+        f.height = d.Height;
+        memcpy(f.view, g_viewM, sizeof f.view);
+        memcpy(f.proj, g_projM, sizeof f.proj);
+        ID3D11ShaderResourceView *motion = g_motionReady && f.depth ? (g_upMade ? g_upMotionSRV : g_motionSRV) : nullptr;
+        f.motion = motion;
+        f.render_width = d.Width, f.render_height = d.Height;
+        f.jitter[0] = g_jitNow[0], f.jitter[1] = g_jitNow[1];
+        MmlGfxShow s{};
+        s.size = sizeof s;
+        s.frame = &f;
+        s.max_extra = static_cast<uint32_t>(fit);
+        for (int i = 0; i < MML_GFX_SHOW_MAX; i++) s.extra[i] = g_extraRTV[i];
+        s.interval_ms = g_interval;
+        s.work_ms = g_work;
+        s.shows = g_shows;
+        D3D11_VIEWPORT vp{0, 0, static_cast<float>(d.Width), static_cast<float>(d.Height), 0, 1};
+        g_ctx->RSSetViewports(1, &vp);
+        ID3D11ShaderResourceView *srv[4] = {static_cast<ID3D11ShaderResourceView *>(f.depth), g_showSRV, nullptr, motion};
+        ID3D11SamplerState *smp[2] = {g_point, g_linear};
+        g_ctx->PSSetShaderResources(0, 4, srv);
+        g_ctx->PSSetSamplers(0, 2, smp);
+        g_ctx->PSSetConstantBuffers(0, 1, &g_frameCB);
+        g_ctx->VSSetShader(g_vsFull, nullptr, 0);
+        g_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        g_ctx->IASetInputLayout(nullptr);
+        ShowCall call{&s, 0};
+        g_inPasses = true;   // (gfx_shared_texture and gfx_shared_fence answer inside it, as in a pass)
+        ModCall(g_showFn.mod, CallShow, &call, "its showing (gfx_show)");
+        g_inPasses = false;
+        n = std::clamp(call.n, 0, fit);
+        g_ctx->ClearState();
+    }
+    // the pictures and the frame into a slot neither shown nor waiting (Direct3D 11's copies: the thread's copies out
+    // of it come after them on the same context), handed to the thread in place of the one waiting
+    int idx = 0;
     {
         std::lock_guard<std::mutex> lk(g_slotMx);
+        while (idx == g_slotShowing || idx == g_slotQueued) idx++;   // (three slots: one is free)
+    }
+    ShowSlot &sl = g_slots[idx];
+    for (int i = 0; i < n; i++) g_ctx->CopyResource(sl.pic[i], g_extra11[i]);
+    g_ctx->CopyResource(sl.pic[n], g_show11);
+    sl.n = n, sl.interval = g_interval;
+    // Direct3D 9 writes the frame's texture again only after Direct3D 11 has read it (DXVK: queued on the GPU; 9Ex:
+    // waited for)
+    ok = GpuSync() || Wait11();
+    if (ok && gfxvk::On() && GpuSync()) {
+        std::string why;
+        ok = gfxvk::To9(nullptr, 0, &why);
+        if (!ok) g_frameError = "the hand-over back on DXVK's queue: " + why, g_frameLate = gfxvk::Busy();
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_slotMx);
+        if (g_slotQueued >= 0) g_showDropped++;
         g_slotQueued = idx;
     }
     g_slotCv.notify_all();
-    return g_presenterHr == D3DERR_DEVICELOST ? D3DERR_DEVICELOST : D3D_OK;
-}
-
-// The pictures, then the frame, each copied into the back buffer and shown, spaced evenly over the frames' interval.
-HRESULT ShowPictures(int n, const std::function<HRESULT()> &present) {
-    double interval = std::clamp(g_interval > 0 ? g_interval : 16.7, 2.0, 100.0);
-    double slot = interval / (n + 1);
-    double t0 = NowMs();
-    HRESULT hr = S_OK;
-    for (int i = 0; i <= n; i++) {
-        if (i) WaitUntil(t0 + slot * i, &g_showTimer);
-        IDirect3DSurface9 *bb = nullptr;
-        if (SUCCEEDED(g_dev9->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &bb)) && bb) {
-            g_quiet++;
-            g_dev9->StretchRect(i < n ? g_extraSurf9[i] : g_showSurf9, nullptr, bb, nullptr, D3DTEXF_NONE);
-            g_quiet--;
-            bb->Release();
-        }
-        double at = NowMs();
-        if (g_lastShown > 0 && at - g_lastShown < 250) {   // (the spacing measured: each one shown against the one before)
-            double gap = at - g_lastShown, err = std::fabs(gap - slot);
-            g_gap = g_gap > 0 ? g_gap * 0.98 + gap * 0.02 : gap;
-            g_gapErr = g_gapErr > 0 ? g_gapErr * 0.98 + err * 0.02 : err;
-        }
-        g_lastShown = at;
-        hr = present();
-        if (i < n) g_showPictures++;
-    }
-    g_showFrames++;
-    return hr;
+    if (!ok) g_showLate++;
+    const double ms = NowMs() - t0;
+    g_showMs = g_showMs > 0 ? g_showMs * 0.95 + ms * 0.05 : ms;
+    return true;
 }
 } // namespace
 
@@ -2201,23 +2298,16 @@ HRESULT GfxShow(void *dev8, const std::function<HRESULT()> &present) {
         g_tm.presentMs += NowMs() - t0;
         return r;
     };
-    int n = 0;
     const bool held = g_showFn.fn && ModAlive(g_showFn.mod) && !g_failed && g_dev11 && g_dev9 && dev8 == g_d3d8 && g_frames;
+    bool shown = false;
     if (held) {
         g_quiet++;
-        n = ShowPrepare();
+        shown = ShowFrame();   // (the thread shows it, the pictures before it: the game goes on)
         g_quiet--;
+    } else if (g_presenter) {
+        ShowThreadStop();   // (the showing let go: the game's own Present again)
     }
-    HRESULT hr;
-    if (held && (n > 0 || g_presenter) && g_showW && EnsureShowThread(g_showW, g_showH)) {
-        double t0 = NowMs();
-        hr = ShowQueue(n);   // (the thread shows them, a frame alone too while the showing is held: the game goes on)
-        g_tm.presentMs += NowMs() - t0;   // (its wait for a free slot: the game held by the showing)
-    } else {
-        if (g_presenter) ShowThreadStop();   // (a frame without pictures: the game's own Present again)
-        if (n <= 0) g_lastShown = 0;   // (a frame alone: the spacing is not measured across it)
-        hr = n > 0 ? ShowPictures(n, timed) : timed();
-    }
+    HRESULT hr = shown ? D3D_OK : timed();
     g_showEnd = NowMs();
     g_shows++;
     if (gfxvk::On()) g_tm.handMs += gfxvk::TakeMs();
@@ -2810,6 +2900,8 @@ bool GfxMethod(const std::string &method, const std::string &params, std::string
                             {"now", {g_jitNow[0], g_jitNow[1]}}}},
                 {"show", {{"mod", g_showFn.fn ? ModIdOf(g_showFn.mod) : std::string()}, {"shows", g_shows}, {"frames", g_showFrames},
                           {"pictures", g_showPictures}, {"late", g_showLate}, {"interval_ms", r2(g_interval)}, {"work_ms", r2(g_work)},
+                          {"refresh_hz", g_refreshMs > 0 ? r2(1000.0 / g_refreshMs) : 0.0}, {"fit", g_fit},
+                          {"dropped", g_showDropped}, {"cut", g_showCut},
                           {"ms", r2(g_showMs)}, {"gap_ms", r2(g_gap)}, {"gap_error_ms", r2(g_gapErr)}, {"size", {g_showW, g_showH}},
                           {"thread", g_presenter ? std::string("on") : g_threadWhy},
                           {"thread_present", Fmt("0x%08X", static_cast<unsigned>(g_presenterHr))}, {"error", g_showError}}},

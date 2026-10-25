@@ -807,12 +807,16 @@ int StandIn(ID3D11DeviceContext *c, ID3D11Device *d, const MmlGfxFrame *f, const
     static_cast<ID3D11Texture2D *>(cur)->GetDesc(&td);
     D3D11_TEXTURE2D_DESC have{};
     if (G.prevShow) G.prevShow->GetDesc(&have);
-    bool before = G.prevShow && have.Width == td.Width && have.Height == td.Height && have.Format == td.Format;
-    if (!before) {
+    const bool same = G.prevShow && have.Width == td.Width && have.Height == td.Height && have.Format == td.Format;
+    if (!same) {
         SafeRelease(G.prevShowSrv), SafeRelease(G.prevShow);
         td.BindFlags = D3D11_BIND_SHADER_RESOURCE, td.MiscFlags = 0, td.CPUAccessFlags = 0, td.Usage = D3D11_USAGE_DEFAULT;
         if (SUCCEEDED(d->CreateTexture2D(&td, nullptr, &G.prevShow))) d->CreateShaderResourceView(G.prevShow, nullptr, &G.prevShowSrv);
     }
+    // (the frame before only when it was the one just shown: the bridge asks for nothing while no picture fits)
+    static uint64_t lastShows;
+    const bool before = same && s->shows == lastShows + 1;
+    lastShows = s->shows;
     if (before && G.prevShowSrv) {
         c->PSSetShaderResources(6, 1, &G.prevShowSrv);
         for (uint32_t i = 0; i < n; i++) {

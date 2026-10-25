@@ -3790,3 +3790,29 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   thread: 1.2 2x 99.7 shown 200.0, 4x 49.8 / 199.4; 1.0 2x 96.8 / 193.7, 4x 50.0 / 200.0. The pack's layout (Ultimate
   ASI Loader 10's d3d8to9 over DXVK 3.1.1, swapped into the 1.2 lab and back): the same, 2x 72.4 / 144.8, 4x 36.8 /
   147.4 (the primary monitor's refresh: DXVK's adapter 2 was the primary monitor), the bars black on DXVK too.
+
+## 2026-10-25: frame generation never slows the game
+
+- **Asked** (the owner): frame generation must not lower the game's own frame rate (the game at refresh / 4 with 4x
+  felt like 15 fps: the controls, the input lag, the artifacts); the game runs as fast as it can, the generated frames
+  only add smoothness.
+- **Made** (host/gfx.cpp): the mod is asked for as many pictures as fit between two of the game's frames at the
+  display's refresh (ShowFit: the game's own interval over the display's period, minus the frame; up at 4 % to spare,
+  down at 2 % short); none fitting, the showing stops after 1 s and the game shows its frames by its own Present. The
+  game never waits for the showing: three slots, its frame takes the waiting one's place (`dropped`), a newer frame cuts
+  the pictures not yet shown (`cut`). The display's rate is the monitor's mode or the desktop composition's when slower
+  (DwmGetCompositionTimingInfo: the right monitor here is 240 Hz, its windows are composed at the 200 Hz primary's).
+  The showing went from a Direct3D 9 swap chain of the game's device to a flip-model swap chain of the bridge's
+  Direct3D 11 device (FLIP_DISCARD, a frame latency waitable object waited for outside every lock, the context
+  ID3D11Multithread-protected) in a child window laid over the game's picture (WS_EX_NOREDIRECTIONBITMAP, HTTRANSPARENT:
+  the mouse goes to the game's window); the pictures stay on Direct3D 11 (no copy back to Direct3D 9), and the game's
+  device is no longer made D3DCREATE_MULTITHREADED. dlss_nr's stand-in blends only with the frame just before.
+- **Measured** (fps_unlock's max_fps caps the game; `fg_caps`/`fg_ab` scripts: the game's own rate with 4x asked):
+  the Direct3D 9 swap chain from a second thread held the game's device: on DXVK the game 139..146 -> 114..121 fps with
+  no picture at all, 146 with the thread's Direct3D 9 calls left out; on 9Ex its vertical sync inside the device's lock
+  88.5 -> 72 (IMMEDIATE: 86.4). With the Direct3D 11 swap chain, DXVK (the pack's layout, 1.2, 1920x1080): capped 90:
+  88.7 without, 89.2 with (shown 178.5, 2x fits); 60: 59.4 / 60.0 (179.9, 3x); 45: 45.0 / 45.0 (180.0, 4x); uncapped
+  142.1 / 142.9 (none fits). 9Ex 1.2: 60: 59.6 / 60.0 (borderless 1920x1080), 59.8 / 57.2 in a 1280x960 window; 45:
+  44.6 / 45.0; 90: 88.7 / 75.6 (9Ex's CPU waits: ROADMAP). 9Ex 1.0 at 800x600: 90: 87.0 / 86.1, 60: 60.1 / 60.0, 45:
+  45.0 / 45.0. The child window's picture read with PrintWindow: whole, letterboxed at 800x600; dlss_nr reloaded while
+  showing: the showing made again.

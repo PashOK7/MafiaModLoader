@@ -251,11 +251,12 @@ impl<'a> GfxShow<'a> {
     pub fn frame(&self) -> GfxFrame<'a> {
         GfxFrame(unsafe { &*self.0.frame })
     }
-    /// the pictures' targets (ID3D11RenderTargetView, B8G8R8A8_UNORM at the frame's size)
+    /// the pictures' targets (ID3D11RenderTargetView, B8G8R8A8_UNORM at the frame's size): as many as fit between two
+    /// of the game's frames at the display's refresh
     pub fn extra(&self) -> &'a [*mut c_void] {
         &self.0.extra[..(self.0.max_extra as usize).min(self.0.extra.len())]
     }
-    /// the time between the game's last frames shown (ms, smoothed)
+    /// the time between the game's last frames (ms, smoothed: its own rate)
     pub fn interval_ms(&self) -> f64 {
         self.0.interval_ms
     }

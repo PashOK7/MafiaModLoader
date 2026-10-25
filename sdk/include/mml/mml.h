@@ -456,18 +456,18 @@ typedef struct MmlSharedTexture {
 } MmlSharedTexture;
 /* The frame at its showing (gfx_show; docs/MODDING.md "Pictures shown between the frames"): the game's back buffer,
  * whole (the HUD on it), on the graphics bridge's device, and up to MML_GFX_SHOW_MAX pictures a mod may draw to be
- * shown before it (frame generation's in-between frames). The bridge shows them in turn by the game's own Present,
- * spaced evenly over the time between the game's frames, the frame last. The pictures are shown from the game's
- * thread, so the waits between them are the game's: they add frames only where the game has time to spare (a frame
- * rate held by a limit, a vertical sync), not where it draws as fast as it can (interval_ms and work_ms tell which). */
+ * shown before it (frame generation's in-between frames). The bridge shows them in turn from a thread of its own,
+ * spaced evenly over the time between the game's frames, the frame last. The game is never held for them: it runs at
+ * its own rate, and max_extra is how many fit between two of its frames at the display's refresh (0: the function is
+ * not called, nothing to add; a newer frame cuts the pictures not shown yet). */
 #define MML_GFX_SHOW_MAX 3
 typedef struct MmlGfxShow {
     uint32_t size;                    /* sizeof(MmlGfxShow) of the loader that made it */
     const MmlGfxFrame *frame;         /* the frame: its color the back buffer (B8G8R8A8: the HUD on it); its depth,
                                          motion and camera as the frame's passes had them; target NULL */
-    uint32_t max_extra;               /* how many pictures may be drawn (MML_GFX_SHOW_MAX) */
+    uint32_t max_extra;               /* how many pictures may be drawn: as many as fit (1..MML_GFX_SHOW_MAX) */
     void *extra[MML_GFX_SHOW_MAX];    /* ID3D11RenderTargetView, B8G8R8A8_UNORM at the frame's size: the pictures */
-    double interval_ms;               /* the time between the game's last frames shown (smoothed, the pictures' waits in it) */
+    double interval_ms;               /* the time between the game's last frames (smoothed: its own rate) */
     double work_ms;                   /* of it, the time the game spent outside Present (its own work and its limit) */
     uint64_t shows;                   /* the frames shown so far */
 } MmlGfxShow;

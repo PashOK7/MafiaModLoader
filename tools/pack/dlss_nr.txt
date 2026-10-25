@@ -94,13 +94,14 @@ Esc > Options > Mods > DLSS
   Pipelined         DLSS works on one frame while the game draws the
                     next one (the picture is one frame behind): much
                     faster. Off: every frame waits for DLSS.
-  Frame generation  Off, 2x, 3x, 4x (an RTX 40 or 50): DLSS makes the
+  Frame generation  Off, 2x, 3x, 4x (an RTX 40 or 50): DLSS makes
                     frames between two of the game's and shows them
-                    evenly spaced, at most at the monitor's refresh
-                    rate: the game then runs at the refresh rate
-                    divided by 2, 3 or 4 (144 Hz and 2x: 72 fps). Pick
-                    the one that keeps the game's own frame rate where
-                    it runs smoothly.
+                    evenly spaced. The game always runs at its own
+                    frame rate (frame generation never slows it): the
+                    setting is the most frames made, and only as many
+                    as fit under the monitor's refresh rate are made
+                    (144 Hz and the game at 50 fps: 2x; at 30 fps: 4x;
+                    at 80 fps or more: none, the game alone fills it).
 
   Picture           strength, tone, detail, model A/B/C.
   Compare           a split screen with and without.
