@@ -10,7 +10,7 @@
       │  log on disk, crash dumps (minidump)                   ├─ hook chains (MinHook once per function)
       │  deploy (build → game folder → mod.reload)             ├─ bridge (NDJSON, token)
       │  knowledge base (knowledge/, MafiaReverse)              │
-      │                                                         ├─ crash filter (full dumps), `where`, `tap`
+      │                                                         ├─ crash filter (dumps of a few MB), `where`, `tap`
       │                                                         ├─ the start (logos, profile, menus)
       │                                                         ├─ input, screenshots; for mods: drawing in the
       │                                                         │  frame, the game's menus extended, keys and
@@ -54,7 +54,9 @@ except the intro videos), on the game thread, where `LoadLibrary` is safe.
 - **The bridge** (`bridge.cpp`): see `PROTOCOL.md`. Memory and log methods answer on the bridge's thread (even while
   the game thread hangs); mod commands wait for the game thread's next frame.
 - **Crashes** (`crash.cpp`): an unhandled exception is logged (module+offset, registers, a stack scan) and written as
-  a minidump with the heaps and every region's state (`mml\crash\`). The game's own filter is chained, and ours is put
+  a minidump of a few MB (`mml\crash\`: every thread's stack, every region's state, the globals of the game, the
+  loader and the mods, and the memory around the faulting thread's registers three pointers deep; the heaps whole
+  with `MML_FULL_DUMP=1` in the game's environment). The game's own filter is chained, and ours is put
   back in front every frame.
 
 - **The start** (`start.cpp`): `<game>\mml\start.json` (`{"skip_logos", "profile", "go":
@@ -197,7 +199,7 @@ and the mods' by their PDBs.
 
 A crash (host/crash.cpp, mcp/src/crash.rs): the host's filter reads the faulting thread's calls so (`calls` in the
 report: each with its target, "frame" for the walked ones), logs its rough check of them (a direct call's target
-within 32 KiB below a frame kept), writes the minidump (without the heaps when the full one fails) and, on a thread
+within 32 KiB below a frame kept), writes the minidump (without the ranges around the registers when it fails) and, on a thread
 of its own with a time limit (the crashing thread may hold a lock), `Game_<pid>_<time>.json` beside it: what dies
 with the process (the stack with the mods named, its calls, the log's last lines, the taps' last calls, the last
 events, the mods, the mission). `crash_triage` reads both and the log, keeps the checked frames and names them (a

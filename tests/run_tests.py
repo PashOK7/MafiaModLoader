@@ -792,6 +792,9 @@ def run_crash(trigger, tap_crash=False, setup=None, tap=True):
     reports = sorted(glob.glob(os.path.join(crash_dir, '*.json')))
     check(tag + 'its dump and the report beside it', len(dumps) == 1 and len(reports) == 1 and
           reports[0][:-5] == dumps[0][:-4], (dumps, reports, out[-600:]))
+    if dumps:   # (without the heaps whole: the stacks, the globals, the memory around the registers; a player sends it)
+        size = os.path.getsize(dumps[0])
+        check(tag + 'the dump a few MB, not the heaps whole', 0 < size < 48 << 20, size)
     return out, json.load(open(reports[0])) if reports else None
 
 

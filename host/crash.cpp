@@ -2,14 +2,18 @@
 //
 // An exception nobody handles (the game would die) is logged (module and offset, the access, the registers, the call
 // stack: the faulting thread's calls, stack.cpp's walk as the sampler's) and written as a minidump
-// to <game>\mml\crash\Game_<pid>_<time>.dmp with the heaps and every region's state, so an object a crash points into
-// can be looked at afterwards; beside it Game_<pid>_<time>.json, what dies with the process: the stack with the mods
+// to <game>\mml\crash\Game_<pid>_<time>.dmp with every thread's stack, the modules' globals, every region's state and
+// the memory the crash points into: around each register of the faulting thread and around the pointers found there
+// (the objects a crash is in and what they hold: a dump of a few MB a player can send, where the heaps whole were 1 to
+// 2.5 GB; MML_FULL_DUMP=1 in the game's environment writes them whole again); beside it Game_<pid>_<time>.json, what
+// dies with the process: the stack with the mods
 // named and its calls with their targets (`calls`: MCP's crash_triage keeps the checked ones and names them), the
 // log's last lines, the taps' last calls, the last events, the mods and the mission (mcp: crash_triage,
 // crash_list, crash_inspect). Exceptions caught by __try never get here (a mod's fault: mods.cpp, with its stack too).
 // The game or a wrapper may install a filter later: SetUnhandledExceptionFilter is hooked, theirs goes after ours
 // (CrashFilterStart; without the hook, ours is set again every frame).
 #include "host.h"
+#include <dbghelp.h>   // (the dump's callback types: dbghelp.dll itself is loaded when a dump is written)
 #include <cstdio>
 #include <cstring>
 #include "json.hpp"
@@ -84,6 +88,87 @@ DWORD WINAPI WriteReport(void *arg) {
 
 typedef BOOL(WINAPI *MiniDumpWriteDumpFn)(HANDLE, DWORD, HANDLE, int, void *, void *, void *);
 
+// ---- the memory a crash points into: windows around the faulting thread's registers (level 1), around the pointers
+// in them (level 2: an object's members, an array) and, smaller, around the pointers in those (level 3: an array's
+// elements), each clamped to its committed, readable region; static (the filter allocates nothing)
+struct Range { uintptr_t base; uint32_t size; };
+Range g_ranges[4096];
+int g_rangeN, g_rangeAt;
+uint32_t g_rangeBytes;
+constexpr uint32_t kRangeCap = 16u << 20;   // (16 MB the most)
+
+bool Readable(uintptr_t a, MEMORY_BASIC_INFORMATION *mi) {
+    if (a < 0x10000 || !VirtualQuery(reinterpret_cast<const void *>(a), mi, sizeof *mi) || mi->State != MEM_COMMIT) return false;
+    const DWORD p = mi->Protect & 0xFF;
+    return !(mi->Protect & PAGE_GUARD) && p != PAGE_NOACCESS && p != PAGE_EXECUTE;
+}
+
+// A window [a - before, a + after) inside a's region; a module's code is left out (the dump has the modules by name)
+bool AddWindow(uintptr_t a, uint32_t before, uint32_t after) {
+    MEMORY_BASIC_INFORMATION mi;
+    if (g_rangeN >= static_cast<int>(sizeof g_ranges / sizeof *g_ranges) || g_rangeBytes >= kRangeCap || !Readable(a, &mi)) return false;
+    if (mi.Type == MEM_IMAGE && (mi.Protect & (PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY))) return false;
+    const uintptr_t lo = reinterpret_cast<uintptr_t>(mi.BaseAddress), hi = lo + mi.RegionSize;
+    const uintptr_t b = a - before < lo || a < before ? lo : a - before, e = a + after > hi ? hi : a + after;
+    for (int i = 0; i < g_rangeN; i++)   // (inside one already kept)
+        if (b >= g_ranges[i].base && e <= g_ranges[i].base + g_ranges[i].size) return true;
+    g_ranges[g_rangeN++] = {b, static_cast<uint32_t>(e - b)};
+    g_rangeBytes += static_cast<uint32_t>(e - b);
+    return true;
+}
+
+void CollectRanges(const CONTEXT *c) {
+    g_rangeN = g_rangeAt = 0;
+    g_rangeBytes = 0;
+    const uintptr_t regs[] = {c->Eax, c->Ebx, c->Ecx, c->Edx, c->Esi, c->Edi, c->Ebp};
+    for (uintptr_t r : regs) AddWindow(r, 0x400, 0x1000);
+    // the pointers the objects hold: one level more (the registers' objects first), then one more, smaller
+    struct Level { uint32_t before, after; } levels[] = {{0x40, 0x400}, {0x10, 0x100}};
+    int from = 0;
+    for (const Level &l : levels) {
+        const int to = g_rangeN;
+        for (int i = from; i < to; i++) {
+            const Range r = g_ranges[i];
+            __try {
+                for (uintptr_t a = (r.base + 3) & ~uintptr_t(3); a + 4 <= r.base + r.size; a += 4) {
+                    const uintptr_t p = *reinterpret_cast<const uint32_t *>(a);
+                    if (p >= 0x10000 && (p & 3) == 0) AddWindow(p, l.before, l.after);
+                }
+            } __except (EXCEPTION_EXECUTE_HANDLER) {}
+        }
+        from = to;
+    }
+}
+
+// The modules whose globals a dump keeps: the game's, the loader's, the mods' (their live copies under mml\); not a
+// driver's or a wrapper's (an NVIDIA driver's are 25 MB of the dump)
+bool KeepsGlobals(const wchar_t *path) {
+    if (!path) return false;
+    const wchar_t *name = wcsrchr(path, L'\\');
+    name = name ? name + 1 : path;
+    for (const wchar_t *keep : {L"game.exe", L"ls3df.dll", L"rw_data.dll", L"ijoy.dll", L"mafiamodloader.asi"})
+        if (!_wcsicmp(name, keep)) return true;
+    for (const wchar_t *p = path; *p; p++)
+        if (!_wcsnicmp(p, L"\\mml\\", 5)) return true;
+    return !_wcsicmp(name, L"mml_harness.exe");   // (the offline tests' stand-in game)
+}
+
+// MiniDumpWriteDump's callback: every thread and module (a module's globals only for KeepsGlobals), and at
+// MemoryCallback one range a call until there are none
+BOOL CALLBACK DumpCallback(void *, const MINIDUMP_CALLBACK_INPUT *in, MINIDUMP_CALLBACK_OUTPUT *out) {
+    if (!in || !out) return TRUE;
+    if (in->CallbackType == ModuleCallback) {
+        if (!KeepsGlobals(in->Module.FullPath)) out->ModuleWriteFlags &= ~ModuleWriteDataSeg;
+        return TRUE;
+    }
+    if (in->CallbackType != MemoryCallback) return TRUE;
+    if (g_rangeAt >= g_rangeN) return FALSE;
+    out->MemoryBase = g_ranges[g_rangeAt].base;
+    out->MemorySize = g_ranges[g_rangeAt].size;
+    g_rangeAt++;
+    return TRUE;
+}
+
 // The threads inside the filter now, by id: a filter we chain to may chain back to us (it saw ours as its previous
 // one), and that loop stops at the second entry. Not thread_local: the filter runs on whichever thread faults, and a
 // thread without a TLS vector (made with SkipThreadAttach: a player's game had one) faulted again on reading it, so
@@ -133,10 +218,14 @@ LONG WINAPI CrashFilter(EXCEPTION_POINTERS *ep) {
         if (write && f != INVALID_HANDLE_VALUE) {
             struct { DWORD tid; EXCEPTION_POINTERS *ep; BOOL client; } info = {GetCurrentThreadId(), ep, FALSE};
             // WithDataSegs 0x1 | WithHandleData 0x4 | WithUnloadedModules 0x20 | WithIndirectlyReferencedMemory 0x40 |
-            // WithProcessThreadData 0x100 | WithPrivateReadWriteMemory 0x200 (the heaps) | WithFullMemoryInfo 0x800
-            // (every region's state) | WithThreadInfo 0x1000
-            const int type = 0x1 | 0x4 | 0x20 | 0x40 | 0x100 | 0x200 | 0x800 | 0x1000;
-            BOOL ok = write(GetCurrentProcess(), GetCurrentProcessId(), f, type, &info, nullptr, nullptr);
+            // WithProcessThreadData 0x100 | WithFullMemoryInfo 0x800 (every region's state) | WithThreadInfo 0x1000,
+            // and the ranges the callback gives; WithPrivateReadWriteMemory 0x200 (the heaps whole) on MML_FULL_DUMP
+            char fullEnv[8] = "";
+            const bool full = GetEnvironmentVariableA("MML_FULL_DUMP", fullEnv, sizeof fullEnv) && fullEnv[0] == '1';
+            const int type = 0x1 | 0x4 | 0x20 | 0x40 | 0x100 | 0x800 | 0x1000 | (full ? 0x200 : 0);
+            CollectRanges(c);
+            MINIDUMP_CALLBACK_INFORMATION cb = {reinterpret_cast<MINIDUMP_CALLBACK_ROUTINE>(&DumpCallback), nullptr};
+            BOOL ok = write(GetCurrentProcess(), GetCurrentProcessId(), f, type, &info, nullptr, full ? nullptr : &cb);
             DWORD why = ok ? 0 : GetLastError();
             bool lean = false;
             if (!ok) {
@@ -147,7 +236,10 @@ LONG WINAPI CrashFilter(EXCEPTION_POINTERS *ep) {
                 ok = write(GetCurrentProcess(), GetCurrentProcessId(), f, 0x1 | 0x4 | 0x20 | 0x100 | 0x800 | 0x1000, &info, nullptr, nullptr);
                 lean = ok != FALSE;
             }
-            if (ok) Log(MML_LOG_ERROR, "crash", "dump %s written%s", file, lean ? " without the heaps (the full dump failed)" : "");
+            if (ok)
+                Log(MML_LOG_ERROR, "crash", "dump %s written (%s)", file,
+                    lean ? "the stacks and the regions: the dump with more failed"
+                    : full ? "the heaps whole: MML_FULL_DUMP" : "the stacks, the globals and the memory around the registers");
             else Log(MML_LOG_ERROR, "crash", "dump %s failed (error 0x%08X)", file, static_cast<unsigned>(why));
         } else {
             Log(MML_LOG_ERROR, "crash", "no dump (MiniDumpWriteDump %s, file %s)", write ? "found" : "missing",

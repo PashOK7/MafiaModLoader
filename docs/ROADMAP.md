@@ -563,7 +563,9 @@ What is done, what comes next and later, and what is known to be missing or wron
   dropped), and beside each dump a report of what dies with the process (the stack with the mods named, the log's
   last lines, the taps' last calls, the last events, the mods, the mission), written on a thread of its own with a
   time limit; the dump again without the heaps when the full one fails (a partial copy, seen in the stand-in and in
-  1.2); a mod's fault with its stack (log, `MOD_FAULTED`). MCP `crash_triage`: the verdict (what, where, the nearest
+  1.2); since 2026-10-25 a dump of a few MB (the stacks, the globals of the game's and ours, the memory around the
+  faulting thread's registers three pointers deep; the heaps whole only with MML_FULL_DUMP=1: a tester's were 0.3 to
+  2.3 GB); a mod's fault with its stack (log, `MOD_FAULTED`). MCP `crash_triage`: the verdict (what, where, the nearest
   code not the game's: a mod, the loader, another ASI), the named stack, the access, the registers, the log, the taps,
   the events, the mods; with the game running, the mods that faulted in this run. Seen in both labs on a crash made on
   purpose (the player's frame pointer spoiled): `C_game::Tick+0x328` (1.2) and its 1.0 twin `+0x302`, called from
@@ -1486,8 +1488,10 @@ merged, sorted by importance):
   line and a mod's fault (`MOD_FAULTED`) carry the host's rough check (a direct call's target within 32 KiB below a
   frame kept), not MCP's. Not yet seen on a crash in the labs (offline only, the stand-in game: the labs were busy).
   A crash on a thread whose stack the filter cannot see (a stack overflow's guard page) has only the faulting
-  address. The full dump fails with a partial copy (0x8007012B) in the stand-in game and
-  sometimes in 1.2: it is written again without the heaps, so an object a crash points into may be missing. A hang
+  address. The dump keeps the memory around the faulting thread's registers and three pointers deep (enough for the
+  tester's traffic crash: the manager, its slots, each slot's car), not the heaps: an object reached only from another
+  thread or a global (beyond the globals themselves) is missing unless MML_FULL_DUMP=1 was set before the game
+  started. A dump that fails is written again without those ranges. A hang
   is not a crash: `where` stays the tool for it. A fault that kills the process without an exception (a fast fail)
   writes nothing.
 - **The structures** (knowledge/structs, `inspect`): st0rm94's fields are carried to 1.2 only where the paired

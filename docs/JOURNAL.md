@@ -3921,3 +3921,15 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   the loader taken out and with UAL 10 as d3d8.dll (A/B in the copy of his folder: 0x5A3955 the game's bytes each
   time). A trial with .text made writable by the loader let the call in and the .rdata write still faulted; taken
   out again (ROADMAP Known gaps).
+
+## 2026-10-25: crash dumps of a few MB
+
+- **Asked** (the owner): do the dumps need to be so heavy (the tester's: 0.3 to 2.3 GB, a 922 MB archive to send)?
+- **Measured**: what the traffic crash needed from its 2.3 GB: the object in EBX, the array it points to, the slots'
+  cars. **Made** (host/crash.cpp): no WithPrivateReadWriteMemory; a MemoryCallback gives windows around the faulting
+  thread's registers (-1 KB, +4 KB), around the pointers in them (+1 KB) and in those (+256 B), within committed
+  readable regions, 16 MB the most; a ModuleCallback keeps the globals of Game.exe, LS3DF, rw_data, IJoy, the loader
+  and the mods only (an NVIDIA driver's were 25 MB of a 43 MB first try). MML_FULL_DUMP=1 writes the heaps whole.
+- **Seen** (C_traffic_car::AI's first bytes made `mov eax, [0]` in both labs: ECX the traffic manager): 1.2 5.2 MB,
+  1.0 5.3 MB; the manager, its slots and every slot's car read from the dump; crash_triage's verdict and named stack,
+  crash_inspect's region, as before. Offline: the stand-in's dumps under 48 MB (a check).
