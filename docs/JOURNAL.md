@@ -3979,3 +3979,39 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   comparison. **Seen** (1.2, the far scene, lod_quality 1 against 100, counters off): mean 0.39 0.31 0.24, worst 227
   (a hoarding's finer texture), 0.51 % of the pixels over 8; 76.1 against 79.8 ms, +3.7 ms (95 % interval 2.2; the
   lab with dlss_nr on: not a baseline).
+
+## 2026-10-26: the baselines of item 31 (ROADMAP 31a)
+
+- **The labs made clean** (the owner's rule: the labs are a workbench): dlss_nr, fusion_fix, gravity_gun, ragdoll
+  (and 1.0's devtools) switched off in both labs' mod.json; core and fps_unlock (`max_fps` 0, its line hidden) left.
+  One lab running at a time; each scene by the MCP `scene` tool, then `bench` A/A' (2 blocks of 4 segments of 100
+  frames, the counters on) and `profile` (3 s). RTX 3070, 1280x960 window, dxwrapper (Direct3D 8 on 9Ex).
+
+  | scene | build | frame ms | game thread CPU | GPU | draws | triangles | locks (ms) | driver under draws | noise |
+  |---|---|---|---|---|---|---|---|---|---|
+  | near | 1.2 | 1.41 | 1.22 | 0.70 | 444 | 4 974 | 36 (0.30) | 0.19 | 0.02 |
+  | near | 1.0 | 1.38 | 1.22 | 0.59 | 444 | 4 974 | 36 (0.19) | 0.19 | 0.08 |
+  | night | 1.2 | 1.65 | 1.43 | 0.75 | 462 | 5 389 | 36 (0.19) | 0.20 | 0.06 |
+  | night | 1.0 | 1.83 | 1.62 | 0.77 | 476 | 5 580 | 36 (0.26) | 0.20 | 0.23 |
+  | crowd | 1.2 | 6.42 | 5.79 | 1.44 | 684 | 26 965 | 69 (0.74) | 0.29 | 0.10 |
+  | crowd | 1.0 | 7.74 | 6.24 | 2.08 | 682 | 25 608 | 66 (2.12) | 0.29 | 0.39 |
+  | far | 1.2 | 39.5 | 38.0 | 32.1 | 34 870 | 416 732 | 221 (2.63) | 12.4 | 0.37 |
+  | far | 1.0 | 40.3 | 39.1 | 33.2 | 34 738 | 416 315 | 224 (2.38) | 12.6 | 0.43 |
+
+  Where the game thread goes (`profile`): near and night, LS3D's visibility (SetVisibleRecMainPass 15 %, 1.0's
+  CTP_EnumProcFirst 16 %) and the occluders (`Occlusion` 15 to 20 %); the crowd, the people's skinning on the CPU
+  (hot_ms: visuals.singlemesh 1.0 to 1.1 ms, skin.update_lod 0.4, skin.lighting 0.3, skin.copy 0.2: about 2 ms of
+  6.4), I3D_frame::UpdateChildren 5 %; far, the draws themselves (m_RenderFGroup 57 % in total, d3d9.dll 35 % self,
+  the driver 12.4 ms under 35 000 draws, SetTransform 3.7 ms), visibility 9 %, the vertex locks 2.5 ms. So far is
+  draw-bound (31g first there), the crowd skinning-bound (31d), near and night visibility-bound (31h).
+- **The reference shaders on every draw against the game's own** (`bench` A: `shader.remove {all}`, B: that and
+  `shader.add` reference.hlsl, `picture: true`): near 1.2 1.52 to 5.20 ms (+3.6 ± 1.0), 1.0 1.66 to 6.04 (+4.4);
+  far 1.2 42.7 to 301 ms (+258), 1.0 42.9 to 303 (+260 ± 0.1). The game thread's CPU carries it (41.6 to 299 ms):
+  the price of today's way, the number 31b and 31c must beat.
+- **Found and fixed** (the pictures): the reference drew the far scene's untextured ground twice too bright (the game
+  (28, 19, 14), the reference (56, 38, 28); `shader.survey`: 250 draws `modulate2x(texture, diffuse)` with no texture
+  bound, which the game's fixed pipeline gives as the vertex colour). game.hlsli's mml_FixedStage took a stage with no
+  texture as white; now it passes what came before. Far: the mean difference 0.99 0.72 0.55 to 0.23 0.20 0.16 of 255,
+  the pixels over 8 from 3.74 % to 0.87 % (both builds alike); near 0.05, 0.09 %. What is left: thin edges (the
+  vertices transformed in the shader, the depth at near 0.05 and far 5000) and the bridge's shadow on the water (the
+  owner).

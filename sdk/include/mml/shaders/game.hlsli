@@ -134,10 +134,12 @@ float4 mml_FixedOp(float op, float4 tex, float4 cur, float4 diffuse) {
     if (op < 14.5) return lerp(cur, tex, mml_TFactor.a);    // blendfactoralpha
     return tex * cur;
 }
+// A stage with no texture passes what came before (measured 2026-10-26, both builds' far scene: the game's
+// untextured ground, modulate2x(texture, diffuse) with no texture, comes out as its vertex colour, not twice it).
 float4 mml_FixedStage(float4 stage, float4 tex, float4 cur, float4 diffuse) {
-    float4 t = stage.w > 0.5 ? tex : float4(1, 1, 1, 1);   // (a stage with no texture: white)
-    float3 rgb = mml_FixedOp(stage.x, t, cur, diffuse).rgb;
-    float a = mml_FixedOp(stage.y, t, cur, diffuse).a;
+    if (stage.w < 0.5) return cur;
+    float3 rgb = mml_FixedOp(stage.x, tex, cur, diffuse).rgb;
+    float a = mml_FixedOp(stage.y, tex, cur, diffuse).a;
     return float4(rgb, a);
 }
 

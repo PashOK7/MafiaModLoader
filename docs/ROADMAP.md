@@ -954,7 +954,9 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
       out by its last LOD's distance, the game camera's far plane held at 5000 m, all given back by `false`
       (host/render.cpp); `render.set {occlusion, lod_quality}`, `camera.set {near, far}`, prof's `hot_ms` per visual
       class. The MCP `scene` tool: near, far, night, crowd, alike in both labs (seen); `bench {picture: true}`:
-      each configuration's frame and their difference per channel. Still to do: the baselines on a clean lab.)* (1) Standard scenes, made by one call and alike in both builds: the
+      each configuration's frame and their difference per channel; the baselines of four scenes in both clean labs
+      and the reference shaders' price, in the journal (2026-10-26): far is draw-bound (31g), the crowd
+      skinning-bound (31d), near visibility-bound (31h); the reference on every draw costs +4 ms near, +259 ms far.)* (1) Standard scenes, made by one call and alike in both builds: the
       freeride's start (near), the city with the far plane pushed to 1000 m and beyond (`I3D_camera::SetRange`,
       ls3d+B7B0: a call to set it, held while measured), the city by night (1053 lights), and a crowd of 48 walking
       people (the time going). (2) The picture compared: `bench` with `picture: true` takes each configuration's
@@ -1234,6 +1236,10 @@ merged, sorted by importance):
   maps, `_Find_last`) 11 % self. Fine at the freeride's start (500 draws), not at a far view: a lookup a draw kept
   flat (an index stored on the visual, or one table probed once per visual) is the fix; measured on a clean lab
   first (dlss_nr and fusion_fix off).
+- **The reference shaders' picture: what is left** (2026-10-26, item 31a; both builds alike). In the far scene 0.87 %
+  of the pixels differ by more than 8 of 255 from the game's: thin edges (the vertices transformed in the shader
+  against the fixed pipeline's, the depth at near 0.05 and far 5000) and the bridge's shadow on the water (the owner
+  told what it is), which the reference draws otherwise: a shadow's draw state not yet read (shader.survey).
 - **The whole city's far frame: what is not looked at yet** (2026-10-26). Whatever the game hides by other rules
   than the city's blocks, the occluders and the LODs' distances (a frame's own hide distance, the portals of
   sectors other than the street's) was not searched for: no far object was seen missing (the owner compared the
