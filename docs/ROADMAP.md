@@ -1230,7 +1230,7 @@ merged, sorted by importance):
   never writing there. A Sniper Mode key that does conflict with another is still reset at the load (the game's
   intent). The key names were seen in a Russian layout and a joystick in the system's Russian; another language's
   font (a Czech or Russian edition) keeps DirectInput's names whenever they are in its code page. game_fixes is not
-  in the dlss_nr pack yet.
+  in the dlss_nr pack since 2026-10-25 (switched on); not yet seen on the tester's machine.
 - **A gamepad plugged in while the game runs: not seen with a real pad** (2026-10-24, host/joyplug.cpp): the
   opening again is seen in both labs (`joy.drop`, `joy.rescan`), the device's arrival with real hardware and the poll
   thread (no CM_Register_Notification: Windows 7, Wine) are not. The running mission's force feedback effects stay on
