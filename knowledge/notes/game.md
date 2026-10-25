@@ -414,6 +414,31 @@ autosplitter; kept outside it, not ported). Checked against the above:
 - **game** The frame limiter (`frameLimit`, `ls3d+0x72100`) is called once per frame by the main loop: the loader's
   frame event hangs on it.
 
+### What leaves the far city out (read 2026-10-25/26 in both builds' code, seen in both labs; host/render.cpp whole_city)
+
+Four things, each the game's own, all needed for the whole city in one frame:
+- **The city's blocks are streamed around the camera.** C_cache_base_block (1.2 `0x63D268`, 1.0 `0x6EFD80`; cache.bin):
+  328 blocks of buildings in the city, a vector at `+4..+8`, `0x74` a block (`+4` active, `+0x18` its 2D centre,
+  `+0x20` its radius); `+0x24` nonzero once the mission has a city cache (read by many others: telephones, people's
+  actions, not a switch to hold the streaming with). CacheTick (`0x4020B0`, `0x5A85C0`; from GameLoopSingle while
+  `+0x24`) re-centres on the scene's camera frame (I3D_scene `+0x17C`) every 100 ms or after a jump: blocks within 200
+  m made active (550 with the CUMDAL cheat's bit 0x200 of C_game `+0x2F14`), the others put away. ActivateBlock
+  (`0x4025D0`, `0x5A8A20`, thiscall(cache, i)) takes a pooled instance of the block's model or makes one, puts it in
+  its sector and gives each object visual to `C_mission::AddTimeTransparentObject(visual, 700)`: a fade-in from alpha 0
+  by the game's time. With the time held (`state.time {scale: 0}`) the blocks activated stay invisible: the "far walls
+  missing" of 2026-10-25. `C_mission::FinishTimeTransparentObjects` (`0x5459B0`, `0x604EF0`, thiscall on the mission)
+  ends them all; CacheTick calls it after a jump.
+- **The occluders** (RS_USE_OCCLUSION, 39): ProcessOccluders (ls3d+3C070) per visible sector; each occluder's shadow
+  from the current camera's position (UpdateShadow, OCCL_PrepareSector2). Correct for the camera, but with them on the
+  near buildings of a view from 120 m above the start were hidden; off, they came back (the owner's "ideal" frame).
+- **A visual's last LOD has a distance.** GetObjectLOD (ls3d+61E30, 1.0 +5EB80) compares dist² / (RSLodQuality * the
+  visual's `+0x114`)² with each LOD's `+0x38` (squared metres); past the last's (when above 0) it returns the count of
+  LODs and m_AddFGroups draws nothing. Each caller fades the last LOD from alpha 1 at `0.5 * L + the LOD before's` to
+  0 at `L` (SetFade, ls3d+37EA0). RS_LOD_QUALITY 100 (render.set lod_quality) moves every distance out but also
+  draws the finest LODs everywhere (from 120 m above the start: 35 883 draws, 512 k triangles against 34 991, 417 k).
+- **The game camera's far plane**: 600 m in the city, set once at the mission's load (I3D_camera::SetRange, its
+  vtable +0x58, is not called each frame).
+
 ## The frame rate (mods/examples/fps_unlock; read and measured 2026-10-14, 1.2 lab)
 
 - **game** The limiter is the game's only clock: stdcall(IGraph, min, max) -> ms; it reads LS3D's millisecond clock

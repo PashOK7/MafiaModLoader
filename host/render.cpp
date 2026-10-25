@@ -310,7 +310,187 @@ int RenderCamera(MmlRenderCamera *out) {
     return ok ? 1 : 0;
 }
 
-bool RenderMethod(const std::string &method, const std::string &, std::string *reply, bool *ok) {
+// ---- LS3D's driver states a measure changes (render.set): I3D_driver's SetState and GetState (its vtable +0x14,
+// +0x18, stdcall(driver, id[, value])); RS_USE_OCCLUSION (39: the occluders hide what is behind them, a sector's
+// visuals tested against them every frame) and RS_LOD_QUALITY (20: a float, 1 by default, the levels of detail's
+// distance scale). Game thread.
+namespace {
+constexpr int kRsLodQuality = 20, kRsOcclusion = 39;
+using DrvSetFn = int(__stdcall *)(void *self, int id, int value);
+using DrvGetFn = int(__stdcall *)(void *self, int id);
+void *Driver() {
+    if (!game::g_exe || !game::Exe().i3dDriver) return nullptr;
+    void *d = nullptr;
+    __try { d = *reinterpret_cast<void **>(game::Exe().i3dDriver); } __except (EXCEPTION_EXECUTE_HANDLER) { d = nullptr; }
+    return d;
+}
+int DrvGet(void *d, int id) { return (*reinterpret_cast<DrvGetFn **>(d))[0x18 / 4](d, id); }
+void DrvSet(void *d, int id, int v) { (*reinterpret_cast<DrvSetFn **>(d))[0x14 / 4](d, id, v); }
+float AsFloat(int v) { float f; memcpy(&f, &v, 4); return f; }
+int AsInt(float f) { int v; memcpy(&v, &f, 4); return v; }
+
+// ---- The whole city (render.set's whole_city), everything the game would leave out of a far view put in:
+// - the city's buildings (cache.bin's blocks), streamed by the game within 200 m of the camera (game_build.h
+//   cityCache): held, CacheTick does not run; in its place every block not active is made so by the game's own
+//   ActivateBlock and their fade-ins ended at once (they are timed by the game's time, which a measure may hold).
+//   After a mission's load the new cache's blocks are made active at its first tick. Given back, the game's tick
+//   puts the far blocks away itself at its next turn;
+// - the occluders (RS_USE_OCCLUSION off: what they hide is tested by the frustum alone; their state given back);
+// - the draw distance of each visual, its last LOD's (hkGetLod below);
+// - the game camera's far plane (HoldFar below; camera.set's camera has its own `far`).
+constexpr int kBlockSize = 0x74;
+using CacheTickFn = char(__fastcall *)(void *cache, void *edx, int dtMs);
+using ActivateFn = void(__thiscall *)(void *cache, int block);
+using FinishFadesFn = void(__thiscall *)(void *mission);
+CacheTickFn oCacheTick;
+bool g_wholeCity, g_cacheHooked;
+int g_occlusionBefore = 1;
+uint64_t g_blocksActivated;
+
+struct Blocks { uint8_t *begin; int count; };
+Blocks CityBlocks() {
+    Blocks b{};
+    if (!game::g_exe || !game::Exe().cityCache) return b;
+    __try {
+        uint8_t *cache = reinterpret_cast<uint8_t *>(game::Exe().cityCache);
+        if (!cache[0x24]) return b;   // (no city cache in this mission)
+        uint8_t *begin = *reinterpret_cast<uint8_t **>(cache + 4), *end = *reinterpret_cast<uint8_t **>(cache + 8);
+        if (begin && end > begin) b = {begin, static_cast<int>((end - begin) / kBlockSize)};
+    } __except (EXCEPTION_EXECUTE_HANDLER) { b = {}; }
+    return b;
+}
+int ActiveBlocks(const Blocks &b) {
+    int n = 0;
+    for (int i = 0; i < b.count; i++) n += b.begin[i * kBlockSize + 4] != 0;
+    return n;
+}
+// Every block active, their fade-ins ended: the count made active now.
+int ActivateAll() {
+    const Blocks b = CityBlocks();
+    const game::ExeBuild &e = game::Exe();
+    int made = 0;
+    for (int i = 0; i < b.count; i++)
+        if (!b.begin[i * kBlockSize + 4]) { reinterpret_cast<ActivateFn>(e.cacheActivate)(reinterpret_cast<void *>(e.cityCache), i); made++; }
+    if (made) {
+        void *mission = *reinterpret_cast<void **>(e.missionPtr);
+        if (mission) reinterpret_cast<FinishFadesFn>(e.missionFinishFades)(mission);
+        g_blocksActivated += made;
+    }
+    return made;
+}
+// The game camera's far plane (the mission's scene's camera, I3D_scene +0x17C: the one CacheTick streams around),
+// set by the game once at a mission's load (600 m in the city): held at g_cityFar by its own SetRange (I3D_camera's
+// vtable +0x58), the game's put back after. A far plane the game sets meanwhile (a mission's load) is the one put back.
+constexpr int kCamNearZ = 0x144, kCamFarZ = 0x148, kCamSetRange = 0x58 / 4;
+using CamSetRangeFn = int(__stdcall *)(void *cam, float lo, float hi);
+float g_cityFar = 5000.0f, g_gameFar;
+void *SceneCamera() {
+    void *mission = *reinterpret_cast<void **>(game::Exe().missionPtr);
+    void *scene = mission ? game::at<void *>(mission, 0x10) : nullptr;
+    return scene ? game::at<void *>(scene, 0x17C) : nullptr;
+}
+void HoldFar(bool hold) {
+    void *cam = SceneCamera();
+    if (!cam) return;
+    const float nearZ = game::at<float>(cam, kCamNearZ), farZ = game::at<float>(cam, kCamFarZ);
+    auto setRange = (*reinterpret_cast<CamSetRangeFn **>(cam))[kCamSetRange];
+    if (hold && farZ != g_cityFar) { g_gameFar = farZ; setRange(cam, nearZ, g_cityFar); }
+    else if (!hold && farZ == g_cityFar && g_gameFar > nearZ) setRange(cam, nearZ, g_gameFar);
+}
+char __fastcall hkCacheTick(void *cache, void *edx, int dtMs) {
+    if (!g_wholeCity) return oCacheTick(cache, edx, dtMs);
+    ActivateAll();
+    HoldFar(true);
+    return 0;
+}
+// No visual left out by its distance: past the start of its last LOD's fade (0.5 * the last LOD's distance + the LOD
+// before's, or the last LOD's own when that is nearer: game_build.h getObjectLod) the caller's squared distance is
+// made that start, so the game's own code picks its last LOD and draws it whole (alpha 1); the levels of detail
+// nearer are the game's. The caller's variable is written: m_AddFGroups reads its fade from it after.
+using GetLodFn = int(__fastcall *)(void *visual, float *dist2);
+GetLodFn oGetLod;
+bool g_lodHooked;
+const float *g_lodQuality;   // LS3D's RSLodQuality
+uint64_t g_lodKept;   // visuals drawn past their last LOD's distance (or its fade), all frames
+int __fastcall hkGetLod(void *visual, float *dist2) {
+    if (g_wholeCity) {
+        const uint8_t *mesh = game::at<uint8_t *>(visual, 0x1E0);
+        const int n = mesh ? *reinterpret_cast<const int *>(mesh + 8) : 0;
+        const uint8_t *last = n > 0 ? *reinterpret_cast<uint8_t *const *>(mesh + 0xC + (n - 1) * 4) : nullptr;
+        const float far2 = last ? *reinterpret_cast<const float *>(last + 0x38) : 0.0f;
+        if (far2 > 0) {
+            float fade = 0.5f * far2;
+            if (n > 1)
+                if (const uint8_t *before = *reinterpret_cast<uint8_t *const *>(mesh + 0xC + (n - 2) * 4))
+                    fade += *reinterpret_cast<const float *>(before + 0x38);
+            const float q = *g_lodQuality * game::at<float>(visual, 0x114);
+            const float limit = std::min(fade, far2) * 0.999f * q * q;
+            if (*dist2 > limit && limit > 0) { *dist2 = limit; g_lodKept++; }
+        }
+    }
+    return oGetLod(visual, dist2);
+}
+json CityJson() {
+    const Blocks b = CityBlocks();
+    json j = {{"whole", g_wholeCity}, {"blocks", b.count}, {"active", ActiveBlocks(b)}, {"activated", g_blocksActivated},
+              {"lods_kept", g_lodKept}, {"far", g_cityFar}};
+    if (g_gameFar > 0) j["game_far"] = g_gameFar;
+    return j;
+}
+} // namespace
+
+bool RenderMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok) {
+    if (method == "render.set") {
+        json p = json::parse(paramsJson.empty() ? "null" : paramsJson, nullptr, false);
+        if (!p.is_object()) p = json::object();
+        void *d = Driver();
+        if (!d) { *ok = false; *reply = "render.set: no LS3D driver (no game known, or not made yet)"; return true; }
+        if (p.contains("occlusion")) DrvSet(d, kRsOcclusion, p["occlusion"].get<bool>() ? 1 : 0);
+        if (p.contains("lod_quality")) {
+            const float q = p["lod_quality"].get<float>();
+            if (!(q > 0.001f && q < 1000.0f)) { *ok = false; *reply = "render.set: lod_quality 0.001..1000 (1 the game's)"; return true; }
+            DrvSet(d, kRsLodQuality, AsInt(q));
+        }
+        if (p.contains("whole_city")) {
+            const game::ExeBuild &e = game::Exe();
+            const game::Ls3dBuild &l = game::Ls3d();
+            if (!e.cacheTick || !l.getObjectLod) { *ok = false; *reply = "render.set: whole_city: the city's streaming is not known in this build"; return true; }
+            std::string err;
+            if (!g_cacheHooked) {
+                if (!HookAdd(nullptr, e.cacheTick, reinterpret_cast<void *>(&hkCacheTick), reinterpret_cast<void **>(&oCacheTick), &err)) {
+                    *ok = false; *reply = "render.set: whole_city: CacheTick not hooked (" + err + ")"; return true;
+                }
+                g_cacheHooked = true;
+            }
+            if (!g_lodHooked) {
+                const uintptr_t ls = ModuleBase("LS3DF.dll");
+                g_lodQuality = reinterpret_cast<const float *>(ls + l.rsLodQuality);
+                if (!HookAdd(nullptr, ls + l.getObjectLod, reinterpret_cast<void *>(&hkGetLod), reinterpret_cast<void **>(&oGetLod), &err)) {
+                    *ok = false; *reply = "render.set: whole_city: GetObjectLOD not hooked (" + err + ")"; return true;
+                }
+                g_lodHooked = true;
+            }
+            const bool on = p["whole_city"].get<bool>();
+            if (p.contains("far")) {
+                const float f = p["far"].get<float>();
+                if (!(f >= 100.0f && f <= 100000.0f)) { *ok = false; *reply = "render.set: far 100..100000 (metres)"; return true; }
+                if (g_wholeCity) HoldFar(false);   // (the game's put back first: the new one held from it)
+                g_cityFar = f;
+            }
+            if (on && !g_wholeCity) g_occlusionBefore = DrvGet(d, kRsOcclusion);   // (the occluders' state given back after)
+            if (on != g_wholeCity && !p.contains("occlusion")) DrvSet(d, kRsOcclusion, on ? 0 : g_occlusionBefore);
+            g_wholeCity = on;
+            HoldFar(on);
+            if (on) ActivateAll();
+            HLOG("render: the whole city %s", on ? "held (every block of the city's cache active, no occluders, no visual left out by its distance)"
+                                                 : "given back to the game (its streaming, its occluders, its distances)");
+        }
+        *reply = json({{"occlusion", DrvGet(d, kRsOcclusion) != 0}, {"lod_quality", AsFloat(DrvGet(d, kRsLodQuality))},
+                       {"city", CityJson()}})
+                     .dump(-1, ' ', false, json::error_handler_t::replace);
+        *ok = true;
+        return true;
+    }
     if (method != "render.state") return false;
     void *dev = Device8();
     json out = {{"hooked", g_hooked}, {"renders", g_renders}, {"world_renders", g_worldRenders}, {"stage1", g_stage1},
@@ -327,6 +507,8 @@ bool RenderMethod(const std::string &method, const std::string &, std::string *r
         out["camera"] = {{"eye", {c.eye.x, c.eye.y, c.eye.z}}, {"fwd", {c.fwd.x, c.fwd.y, c.fwd.z}},
                          {"fov_y_deg", c.fov_y * 57.29578f}, {"near", c.near_z}, {"far", c.far_z},
                          {"viewport", {c.width, c.height}}};
+    if (void *d = Driver()) out["ls3d"] = {{"occlusion", DrvGet(d, kRsOcclusion) != 0}, {"lod_quality", AsFloat(DrvGet(d, kRsLodQuality))}};
+    if (game::g_exe && game::Exe().cityCache) out["city"] = CityJson();
     if (!g_hooked) out["note"] = "no game known: nothing is drawn here";
     *reply = out.dump(-1, ' ', false, json::error_handler_t::replace);
     *ok = true;

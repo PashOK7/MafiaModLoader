@@ -268,6 +268,10 @@ pub struct Exe {
     pub sniperConflictTest: usize,
     pub sniperRTest: usize,
     pub trafficSlotTest: usize,
+    pub cityCache: usize,
+    pub cacheTick: usize,
+    pub cacheActivate: usize,
+    pub missionFinishFades: usize,
 }
 
 /// LS3DF.dll's, as RVAs (add the module's base; the int members are offsets): game_build.h Ls3dBuild.
@@ -334,6 +338,13 @@ pub struct Ls3d {
     pub showRenderUntilKey: usize,
     pub sndDriver: usize,
     pub readKey: usize,
+    pub addObject: usize,
+    pub addLitObject: usize,
+    pub addBillboard: usize,
+    pub addMorph: usize,
+    pub addSinglemesh: usize,
+    pub getObjectLod: usize,
+    pub rsLodQuality: usize,
 }
 
 /// The race of mission 6: racing.h RacingLayout.
@@ -615,6 +626,10 @@ pub static EXE_12: Exe = Exe {
     sniperConflictTest: 0x60592F,
     sniperRTest: 0x60595E,
     trafficSlotTest: 0x4AFEF8,
+    cityCache: 0x63D268,
+    cacheTick: 0x4020B0,
+    cacheActivate: 0x4025D0,
+    missionFinishFades: 0x5459B0,
 };
 
 pub static EXE_10: Exe = Exe {
@@ -880,6 +895,10 @@ pub static EXE_10: Exe = Exe {
     sniperConflictTest: 0,
     sniperRTest: 0,
     trafficSlotTest: 0x4FBD38,
+    cityCache: 0x6EFD80,
+    cacheTick: 0x5A85C0,
+    cacheActivate: 0x5A8A20,
+    missionFinishFades: 0x604EF0,
 };
 
 pub static LS3D_12: Ls3d = Ls3d {
@@ -944,6 +963,13 @@ pub static LS3D_12: Ls3d = Ls3d {
     showRenderUntilKey: 0x74D70,
     sndDriver: 0x1C529C,
     readKey: 0x71960,
+    addObject: 0x38020,
+    addLitObject: 0x27880,
+    addBillboard: 0x073C0,
+    addMorph: 0x354F0,
+    addSinglemesh: 0x55930,
+    getObjectLod: 0x61E30,
+    rsLodQuality: 0x1C4CA4,
 };
 
 pub static LS3D_10: Ls3d = Ls3d {
@@ -1008,6 +1034,13 @@ pub static LS3D_10: Ls3d = Ls3d {
     showRenderUntilKey: 0x70A10,
     sndDriver: 0x1C123C,
     readKey: 0x6DE40,
+    addObject: 0x369E0,
+    addLitObject: 0x27500,
+    addBillboard: 0x071C0,
+    addMorph: 0x34750,
+    addSinglemesh: 0x53030,
+    getObjectLod: 0x5EB80,
+    rsLodQuality: 0x1C0C54,
 };
 
 pub static RACING_12: Racing = Racing {

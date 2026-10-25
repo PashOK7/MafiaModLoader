@@ -508,6 +508,16 @@ struct ExeBuild {
     // asked for one (ai_police_action's NoTakMiTedaDajTuPleckuJaJuOdvezu filled its list): it reads each of the
     // manager's slots (+0x74, +0x220 of them) without testing for an empty one, which the other loops do (both builds).
     uintptr_t trafficSlotTest;
+    // The city's streaming (host/render.cpp, render.set's whole_city; ROADMAP item 31a). cityCache: the game's
+    // C_cache_base_block (cache.bin's blocks of buildings: its vector of blocks at +4..+8, 0x74 bytes a block, the
+    // block's `active` byte at +4; +0x24 nonzero once the mission has a city cache). cacheTick: CacheTick,
+    // thiscall(cache, int dt_ms) -> char ret 4, from the game's loop: every 100 ms (or after a jump of the camera) the
+    // blocks within 200 m of the camera's frame (550 with the CUMDAL cheat) made active, the others put away.
+    // cacheActivate: C_cache_base_block::ActivateBlock, thiscall(cache, int block) ret 4 (a pooled instance of the
+    // block's model put into its sector, each object visual given a 700 ms fade-in from alpha 0 by the game's time).
+    // missionFinishFades: C_mission::FinishTimeTransparentObjects, thiscall(mission): every fade-in ended at once
+    // (CacheTick calls it after a jump; with the time held the fades never end and the blocks stay unseen).
+    uintptr_t cityCache, cacheTick, cacheActivate, missionFinishFades;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -641,6 +651,19 @@ struct Ls3dBuild {
     // +0x64 on are 4 bytes lower in 1.0 (it has no GetResInitDesc): keyboardUpdate and ReadKey +0x98 and +0x9C in
     // 1.2, +0x94 and +0x98 in 1.0.
     uintptr_t showOpen, showClose, showRenderUntilKey, sndDriver, readKey;
+    // What LS3D does for each visual it draws, by class (host/prof.cpp, prof.frames' hot_ms; ROADMAP item 31a): the
+    // m_AddFGroups (thiscall(visual), plain ret, its vtable's +0x68) of I3D_object ('OBJ_'), I3D_lit_object ('LMAP'),
+    // I3D_billboard ('BBRD'), I3D_morph ('MRPH') and I3D_singlemesh ('SNGM', the people's too): the visual's LOD
+    // chosen, its vertices lit on the CPU (LightVertices) and copied into the pooled vertex buffer, its face groups
+    // queued. Read in both builds' code (the twins by their callers and strings).
+    uintptr_t addObject, addLitObject, addBillboard, addMorph, addSinglemesh;
+    // The draw distance of a visual (host/render.cpp, render.set's whole_city). getObjectLod: GetObjectLOD,
+    // fastcall(visual, const float *dist2) -> int, called by each class's m_AddFGroups with the squared distance from
+    // the camera to the visual's bounding sphere: the LOD whose distance (the mesh +0x0C + 4 * lod, its +0x38, squared)
+    // holds dist2 / (RS_LOD_QUALITY * the visual's +0x114)^2; past the last LOD's (when it is above 0) the count of
+    // LODs, which m_AddFGroups takes for nothing to draw. Their caller fades the last LOD's alpha from 1 at 0.5 * its
+    // distance + the LOD before's to 0 at its own. rsLodQuality: RSLodQuality, the float RS_LOD_QUALITY sets.
+    uintptr_t getObjectLod, rsLodQuality;
 };
 
 inline const ExeBuild kExe12 = {
@@ -762,6 +785,9 @@ inline const ExeBuild kExe12 = {
     0x5BF465, 0x60592F, 0x60595E,
     // (2026-10-25: the tester's crash after 1.5 h of the freeride, C_traffic_car::AI+0x2B8: slot 24 of 25 empty)
     0x4AFEF8,
+    // the city's streaming (2026-10-26: GameLoopSingle's call at 0x5496D3; CacheTick's own calls at 0x40250A and
+    // 0x402521)
+    0x63D268, 0x4020B0, 0x4025D0, 0x5459B0,
 };
 
 inline const ExeBuild kExe10 = {
@@ -903,6 +929,8 @@ inline const ExeBuild kExe10 = {
     0, 0, 0,
     // (2026-10-25: 1.2's twin, the same bytes, C_traffic_car::AI+0x2B8)
     0x4FBD38,
+    // the city's streaming (2026-10-26: 1.2's twins, the same code; CacheTick's calls at 0x5A89EE and 0x5A8A05)
+    0x6EFD80, 0x5A85C0, 0x5A8A20, 0x604EF0,
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,
@@ -925,7 +953,11 @@ inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1
                                   // (2026-10-20: m_AddFGroups' call at 0x56025; its globals read in it)
                                   0x65A70, 0x1C4D80, 0x1C5000, 0x1C4D30, 0x1C563C,
                                   // (2026-10-21: IShow's vtable 0x9D670 +0x0C, +0x10, +0x50; the open's reads of pISndDriver)
-                                  0x73BA0, 0x740F0, 0x74D70, 0x1C529C, 0x71960};
+                                  0x73BA0, 0x740F0, 0x74D70, 0x1C529C, 0x71960,
+                                  // (2026-10-25: LightVertices' callers 0x388ED, 0x2870F, 0x7A23, 0x35C48, 0x56025)
+                                  0x38020, 0x27880, 0x073C0, 0x354F0, 0x55930,
+                                  // (2026-10-26: the m_AddFGroups' calls, e.g. 0x3810F; its loads of RSLodQuality)
+                                  0x61E30, 0x1C4CA4};
 // LS3D 3.84.5 (31.7.2002): the vertex buffer has no flags word, everything after +0x04 sits 4 bytes lower.
 inline const Ls3dBuild kLs3d10 = {"1.0", 0x5ED80, 0x1A8A0, 0x305B0, 0x5D070, 0x1C350, 0x6E580, 0, 0,
                                   0x1AE00, 0x1BD60, 0x1C030, 0x2B540, 0x04, 0x14, 0x18,
@@ -950,7 +982,11 @@ inline const Ls3dBuild kLs3d10 = {"1.0", 0x5ED80, 0x1A8A0, 0x305B0, 0x5D070, 0x1
                                   0x62640, 0x1C0D30, 0x1C0FB0, 0x1C0CE0, 0x1C15DC,
                                   // (2026-10-21: IShow's vtable 0x995F8 +0x0C, +0x10, +0x4C; the open's reads of
                                   // pISndDriver)
-                                  0x6FB70, 0x70050, 0x70A10, 0x1C123C, 0x6DE40};
+                                  0x6FB70, 0x70050, 0x70A10, 0x1C123C, 0x6DE40,
+                                  // (2026-10-25: 1.2's twins by their callers and strings; m_AddFGroups as above)
+                                  0x369E0, 0x27500, 0x071C0, 0x34750, 0x53030,
+                                  // (2026-10-26: 1.2's twin, the same code)
+                                  0x5EB80, 0x1C0C54};
 
 // The builds found (null until Detect succeeds).
 inline const ExeBuild *g_exe;

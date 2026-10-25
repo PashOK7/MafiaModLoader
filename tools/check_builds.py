@@ -1215,6 +1215,13 @@ def main(a):
             call = t - after - 5
             dest = call + 5 + struct.unpack('<i', gexe.at(call + 1 - 0x400000, 4))[0]
             check(dest == 0x607460, f'{name} {f}: the call is loadsave_binding_find_conflict')
+    # Each visual class's m_AddFGroups (host/prof.cpp): it calls LightVertices.
+    for name, (exe, ls, gexe, gls) in builds.items():
+        for f in ('addObject', 'addLitObject', 'addBillboard', 'addMorph', 'addSinglemesh'):
+            a = ls[f]
+            targets = {int(i.op_str, 16) for i in gls.md.disasm(gls.at(a, 0x1600), gls.base + a)
+                       if i.mnemonic == 'call' and i.op_str.startswith('0x')}
+            check(gls.base + ls['lightingProcess'] in targets, f'{name} {f}: a visual\'s m_AddFGroups calling LightVertices')
     # The traffic's slots (host/fixes.cpp): mov edx, [ebx + 0x74]; dec esi; mov eax, [edx + esi*4]; lea ecx, [edx +
     # esi*4]; cmp byte ptr [eax], 0; jz <next>, the next a `test esi, esi; jnz` back to the loop's start.
     for name, (exe, ls, gexe, gls) in builds.items():
@@ -1224,6 +1231,35 @@ def main(a):
         check(ok and gexe.at(nxt - 0x400000, 4) == b'\x85\xf6\x0f\x85' and
               nxt + 8 + struct.unpack('<i', gexe.at(nxt + 4 - 0x400000, 4))[0] == t - 10,
               f'{name} trafficSlotTest: the slots\' loop, cmp byte ptr [eax], 0; jz to its next turn')
+    # The city's streaming (host/render.cpp): the game's loop calls CacheTick on the cache (mov ecx, cache; push a
+    # register; call), and CacheTick calls ActivateBlock and, with the mission in ecx, FinishTimeTransparentObjects.
+    for name, (exe, ls, gexe, gls) in builds.items():
+        tick, cache = exe['cacheTick'], exe['cityCache']
+        text = gexe.at(0x1000, 0x240000)
+        seen = False
+        at = text.find(b'\xb9' + struct.pack('<I', cache))
+        while at >= 0 and not seen:
+            seen = (0x50 <= text[at + 5] <= 0x57 and text[at + 6] == 0xE8 and
+                    0x401000 + at + 11 + struct.unpack('<i', text[at + 7:at + 11])[0] == tick)
+            at = text.find(b'\xb9' + struct.pack('<I', cache), at + 1)
+        check(seen, f'{name} cityCache, cacheTick: the game\'s loop calls CacheTick on the cache')
+        calls = {(i.address, int(i.op_str, 16)) for i in gexe.md.disasm(gexe.at(tick - 0x400000, 0x480), tick)
+                 if i.mnemonic == 'call' and i.op_str.startswith('0x')}
+        check(any(t == exe['cacheActivate'] for _, t in calls), f'{name} cacheActivate: called by CacheTick')
+        fin = [a for a, t in calls if t == exe['missionFinishFades']]
+        check(len(fin) == 1 and gexe.at(fin[0] - 6 - 0x400000, 2) == b'\x8b\x0d' and
+              struct.unpack('<I', gexe.at(fin[0] - 4 - 0x400000, 4))[0] == exe['missionPtr'],
+              f'{name} missionFinishFades: CacheTick calls it on the mission')
+    # A visual's draw distance (host/render.cpp): GetObjectLOD reads RSLodQuality times the visual's +0x114 (fld;
+    # fmul [ebx + 0x114]), and I3D_object's m_AddFGroups calls it.
+    for name, (exe, ls, gexe, gls) in builds.items():
+        g = ls['getObjectLod']
+        code = gls.at(g, 0x200)
+        check(b'\xd9\x05' + struct.pack('<I', gls.base + ls['rsLodQuality']) + b'\xd8\x8b\x14\x01\x00\x00' in code,
+              f'{name} getObjectLod, rsLodQuality: RSLodQuality times the visual\'s scale')
+        targets = {int(i.op_str, 16) for i in gls.md.disasm(gls.at(ls['addObject'], 0x200), gls.base + ls['addObject'])
+                   if i.mnemonic == 'call' and i.op_str.startswith('0x')}
+        check(gls.base + g in targets, f'{name} getObjectLod: called by I3D_object::m_AddFGroups')
     print('ALL PASSED' if not fails else f'{fails} FAILED')
     return 1 if fails else 0
 

@@ -949,7 +949,11 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
     for the device's calls (draws, state calls by caller, Get*, locks, switches, the driver's time); `profile` for
     where the game thread goes; the picture against the game's (a difference per channel: mean, the worst, the
     image). A step is done when its picture is the game's and its own target is met in both labs.
-    - **31a, the ground to measure on.** (1) Standard scenes, made by one call and alike in both builds: the
+    - **31a, the ground to measure on.** *(2026-10-26: the far scene's ground done in both labs: `render.set
+      {whole_city: true}` draws the whole city, every block of the city's cache active, no occluders, no visual left
+      out by its last LOD's distance, the game camera's far plane held at 5000 m, all given back by `false`
+      (host/render.cpp); `render.set {occlusion, lod_quality}`, `camera.set {near, far}`, prof's `hot_ms` per visual
+      class. Still to do: the `scene` tool, `bench`'s pictures, the baselines on a clean lab.)* (1) Standard scenes, made by one call and alike in both builds: the
       freeride's start (near), the city with the far plane pushed to 1000 m and beyond (`I3D_camera::SetRange`,
       ls3d+B7B0: a call to set it, held while measured), the city by night (1053 lights), and a crowd of 48 walking
       people (the time going). (2) The picture compared: `bench` with `picture: true` takes each configuration's
@@ -1223,6 +1227,17 @@ merged, sorted by importance):
 
 ## Known gaps
 
+- **The motion vectors cost a third of a far frame** (2026-10-26, item 31a; seen in the 1.2 lab with dlss_nr on, the
+  whole city from 120 m up: about 35 000 draws a frame, 91 ms). `profile`: host/motion.cpp's MotionAfterDraw and
+  DrawAgain about 17 % of the game thread, its per-draw hash lookups (the visuals' `Key` and the skins' `SkinKey`
+  maps, `_Find_last`) 11 % self. Fine at the freeride's start (500 draws), not at a far view: a lookup a draw kept
+  flat (an index stored on the visual, or one table probed once per visual) is the fix; measured on a clean lab
+  first (dlss_nr and fusion_fix off).
+- **The whole city's far frame: what is not looked at yet** (2026-10-26). Whatever the game hides by other rules
+  than the city's blocks, the occluders and the LODs' distances (a frame's own hide distance, the portals of
+  sectors other than the street's) was not searched for: no far object was seen missing (the owner compared the
+  frame, 1.2 and 1.0), and LOD quality 100 adds only finer LODs (892 draws more, no new object in the picture's
+  difference). The depth buffer's precision at near 0.05 and far 5000 was not looked at (no fighting seen).
 - **The game's own bugs: what host/fixes.cpp leaves** (2026-10-25, knowledge/notes/game.md; always on). The options
   are written only when the game quits by its menu's Quit (not at Alt+F4 or a closed window: the game's own way).
   1.0 writes HKEY_LOCAL_MACHINE where it reads it: in the 1.0 lab the write is refused (RegCreateKeyExA 5, no

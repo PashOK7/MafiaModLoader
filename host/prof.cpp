@@ -23,6 +23,7 @@
 #include <mutex>
 #include <thread>
 #include <vector>
+#include "mml/game/game_build.h"
 #include "json.hpp"
 
 using json = nlohmann::json;
@@ -380,6 +381,38 @@ void ProfPhase(int phase) {   // 0 restores the phase before the matching call w
 bool g_profHotOn;
 uint64_t g_profHotTicks[kHotCount];
 uint32_t g_profHotCalls[kHotCount];
+int g_profVisual = -1;
+
+// ---- the visuals' m_AddFGroups timed by class (game_build.h addObject..addSinglemesh): hooked the first time the
+// counters are on, and left (with the counters off a call costs the detour's jump and one test)
+namespace {
+using AddFn = void(__fastcall *)(void *visual, void *edx);
+AddFn g_addOrig[5];
+bool g_addHooked;
+template <int K> void __fastcall AddHooked(void *visual, void *edx) {
+    const int was = g_profVisual;
+    g_profVisual = K;
+    {
+        ProfHotScope t(kHotVisual + K);
+        g_addOrig[K](visual, edx);
+    }
+    g_profVisual = was;
+}
+void HookVisuals() {
+    if (g_addHooked || !game::g_ls3d) return;
+    g_addHooked = true;
+    const uintptr_t ls3d = ModuleBase("LS3DF.dll");
+    const game::Ls3dBuild &l = game::Ls3d();
+    const uintptr_t at[5] = {l.addObject, l.addLitObject, l.addBillboard, l.addMorph, l.addSinglemesh};
+    void *detours[5] = {reinterpret_cast<void *>(&AddHooked<0>), reinterpret_cast<void *>(&AddHooked<1>), reinterpret_cast<void *>(&AddHooked<2>),
+                        reinterpret_cast<void *>(&AddHooked<3>), reinterpret_cast<void *>(&AddHooked<4>)};
+    int n = 0;
+    std::string err;
+    for (int k = 0; k < 5; k++)
+        if (ls3d && at[k] && HookAdd(nullptr, ls3d + at[k], detours[k], reinterpret_cast<void **>(&g_addOrig[k]), &err)) n++;
+    HLOG("prof: %d of the 5 visual classes' m_AddFGroups timed (prof.frames' hot_ms visuals.*)%s%s", n, err.empty() ? "" : ": ", err.c_str());
+}
+} // namespace
 
 uint32_t ProfFrameSeq() { return g_seq; }
 double ProfTscPerMs() { return g_tscPerMs; }
@@ -598,6 +631,7 @@ bool ProfMethod(const std::string &method, const std::string &paramsJson, std::s
         bool gpu = p.value("gpu", on);
         std::string why;
         bool done = D3dStatsSet(on, gpu, &why);
+        if (on && done) HookVisuals();
         g_profHotOn = on && done;
         for (int i = 0; i < kHotCount; i++) g_profHotTicks[i] = 0, g_profHotCalls[i] = 0;
         json r = {{"on", D3dStatsOn()}, {"gpu", D3dStatsWhyGpu().empty() ? json("measured") : json(D3dStatsWhyGpu())}};
@@ -627,7 +661,9 @@ bool ProfMethod(const std::string &method, const std::string &paramsJson, std::s
         bool counted = std::any_of(rs.begin(), rs.end(), [](const FrameRec *r) { return r->flags & kFlagCounted; });
         if (counted) {
             static const char *hot[kHotCount] = {"skin.update_lod", "skin.update_lod.game", "skin.copy", "skin.copy.game",
-                                                 "skin.lighting", "skin.lighting.game"};
+                                                 "skin.lighting", "skin.lighting.game",
+                                                 "visuals.object", "visuals.lit_object", "visuals.billboard", "visuals.morph", "visuals.singlemesh",
+                                                 "lighting.object", "lighting.lit_object", "lighting.billboard", "lighting.morph", "lighting.singlemesh"};
             json h = json::object();
             for (int i = 0; i < kHotCount; i++)
                 if (std::any_of(rs.begin(), rs.end(), [&](const FrameRec *r) { return r->hotMs[i] > 0; }))

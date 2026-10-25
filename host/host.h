@@ -862,8 +862,16 @@ double ProfTscPerMs();                    // the time stamp counter's rate (0 un
 bool ProfFrameStats(const MmlMod *mod, MmlFrameStats *out);   // mml.h frame_stats
 // The host's own costly sites, timed while the device's calls are counted (prof.counters): a hook's whole time and the
 // game's own function it calls (its share), so the host's part is the difference.
-enum ProfHot { kHotSkinLod, kHotSkinLodGame, kHotSkinCopy, kHotSkinCopyGame, kHotSkinLight, kHotSkinLightGame, kHotCount };
+// The visuals' sites (item 31a): each class's m_AddFGroups whole (LS3D's work for a visual drawn: its LOD, its
+// lighting, its vertices' copy, its face groups queued) and the LightVertices under it (skin.cpp's hook, told the
+// class by g_profVisual).
+enum ProfHot {
+    kHotSkinLod, kHotSkinLodGame, kHotSkinCopy, kHotSkinCopyGame, kHotSkinLight, kHotSkinLightGame,
+    kHotVisual, kHotVisualEnd = kHotVisual + 5, kHotLighting = kHotVisualEnd, kHotLightingEnd = kHotLighting + 5,
+    kHotCount = kHotLightingEnd
+};
 extern bool g_profHotOn;
+extern int g_profVisual;   // the class whose m_AddFGroups runs now (0..4), -1 none (game thread)
 extern uint64_t g_profHotTicks[kHotCount];
 extern uint32_t g_profHotCalls[kHotCount];
 struct ProfHotScope {

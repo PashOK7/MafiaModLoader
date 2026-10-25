@@ -794,6 +794,8 @@ uint32_t LightingHooked(void *dest, int destStride, void *level, void *posNorm, 
 uint32_t __fastcall hkLighting(void *dest, int destStride, void *level, void *posNorm, int stride, void *visual, void *invWorld,
                                uint32_t mask, uint32_t changed, void *lodRec) {
     ProfHotScope t(kHotSkinLight);
+    ProfHotScope byClass(g_profVisual >= 0 ? kHotLighting + g_profVisual : kHotSkinLight);   // (the visual's class: prof.cpp)
+    if (g_profVisual < 0) byClass.t0 = 0;   // (no class known: counted once, as skin.lighting)
     return LightingHooked(dest, destStride, level, posNorm, stride, visual, invWorld, mask, changed, lodRec);
 }
 

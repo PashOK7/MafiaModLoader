@@ -448,7 +448,7 @@ namespace {
 struct Override { MmlMod *mod; MmlViewFn fn; void *user; } g_ov;
 // follow: an actor whose model frame carries the camera (eye and at offsets in its space, each frame: a train, a
 // tram, a person, anything the game's own camera does not follow); level: its yaw alone (a car's roll left out)
-struct HeldCam { bool on; float eye[3], fwd[3], up[3], fovY; DWORD until; void *follow; float offEye[3], offAt[3]; bool level; } g_heldCam;
+struct HeldCam { bool on; float eye[3], fwd[3], up[3], fovY; DWORD until; void *follow; float offEye[3], offAt[3]; bool level; float nearZ, farZ; } g_heldCam;
 CamSaved g_frameSaved;
 uint8_t *g_frameCam;
 bool g_framePut;
@@ -511,6 +511,9 @@ void ApplyHeld(MmlViewCamera *c) {
         c->tan_left *= k; c->tan_right *= k; c->tan_up = c->tan_down = t;
     }
     c->flags |= MML_VIEW_OWN_SECTOR;   // (anywhere in the city: its own room)
+    // the range asked (a measure's far scene: the whole city in view); else the game camera's
+    if (g_heldCam.nearZ > 0.001f) c->near_z = g_heldCam.nearZ;
+    if (g_heldCam.farZ > c->near_z + 0.01f) c->far_z = g_heldCam.farZ;
 }
 DWORD SafePutFrame(uint8_t *cam, const MmlViewCamera &c, std::string *why, bool *ok) {
     __try { *ok = PutCamera(cam, c, &g_frameSaved, why); return 0; } __except (EXCEPTION_EXECUTE_HANDLER) { *ok = false; return GetExceptionCode(); }
@@ -607,6 +610,8 @@ bool CameraMethod(const std::string &method, const std::string &paramsJson, std:
         else if (!v3("dir", h.fwd)) { *ok = false; *reply = "camera.set: `at` (a point to look at) or `dir`"; return true; }
         if (!v3("up", h.up)) { h.up[0] = 0; h.up[1] = 1; h.up[2] = 0; }
         h.fovY = p.value("fov", 0.0f);
+        h.nearZ = p.value("near", 0.0f);
+        h.farZ = p.value("far", 0.0f);
         h.until = GetTickCount() + static_cast<DWORD>(std::min(std::max(p.value("ms", 10000), 0), 3600000));
         h.on = true;
         float f[3] = {h.fwd[0], h.fwd[1], h.fwd[2]};

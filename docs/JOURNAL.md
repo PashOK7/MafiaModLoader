@@ -3933,3 +3933,30 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Seen** (C_traffic_car::AI's first bytes made `mov eax, [0]` in both labs: ECX the traffic manager): 1.2 5.2 MB,
   1.0 5.3 MB; the manager, its slots and every slot's car read from the dump; crash_triage's verdict and named stack,
   crash_inspect's region, as before. Offline: the stand-in's dumps under 48 MB (a check).
+
+## 2026-10-26: the whole city in one frame (ROADMAP 31a)
+
+- **Asked** (the owner): draw the whole city, without culling, occluders, sectors or a draw distance; far objects
+  were still missing, maybe something follows the player's position.
+- **Found**: four rules of the game's own leave the far city out (knowledge/notes/game.md "What leaves the far city
+  out"): the city's blocks streamed within 200 m of the scene's camera (CacheTick) and each block's objects faded in
+  over 700 ms of game time (left at alpha 0 while the time is held: the missing far walls of 2026-10-25); the
+  occluders (with them on, from 120 m above the start, near buildings stayed hidden); each visual's last LOD
+  distance (GetObjectLOD returns no LOD past it); the game camera's far plane, 600 m in the city, set once at the
+  load. The dark ground left in the frame is real: the middle of a block nobody built (the owner), and the void past
+  the city's west edge (a ray straight down found nothing).
+- **Made**: `render.set {whole_city: true}` (host/render.cpp): CacheTick hooked and held, every block made active by
+  the game's ActivateBlock and FinishTimeTransparentObjects called (again after a mission's load), the occluders off,
+  GetObjectLOD hooked (a visual past its last LOD's fade start given that start: drawn whole at its last LOD, the
+  nearer LODs the game's), the scene camera's far plane held at 5000 m (`far`); `false` gives all of it back
+  (the far blocks put away by the game's next tick, the occluders and the far plane as they were). render.state's
+  `city` (`blocks`, `active`, `activated`, `lods_kept`, `far`, `game_far`). game_build.h cityCache, cacheTick,
+  cacheActivate, missionFinishFades, getObjectLod, rsLodQuality, checked by tools/check_builds.py (ALL PASSED).
+  Before: `render.set {occlusion, lod_quality}`, `camera.set {near, far}`, prof's hot sites per visual class.
+- **Seen**: 1.2 and 1.0, the camera at (-2100, 120, 0) towards (0, 0, 300): the whole city to the hills, the same in
+  both; given back: 85 (1.2) and 60 (1.0) blocks active, far 600, occluders on; a mission reloaded (restore) while
+  held: the new cache's 328 blocks active, far 5000. Offline tests ALL PASSED.
+- **Measured** (1.2 alone, the lab with dlss_nr and fusion_fix on: not a baseline): that view 16.7 ms with the game's
+  own (capped at 60), 91 ms whole (11 fps); the process 1.03 GB of address space, 548 MB private, the same either
+  way (the blocks' instances are pooled). The profile: host/motion.cpp's redraws for dlss_nr's motion vectors about
+  17 % of the game thread at 35 000 draws (ROADMAP Known gaps).
