@@ -78,6 +78,8 @@ void LogV(MmlLogLevel level, const char *who, const char *fmt, va_list ap);
 #define HLOG(...) ::host::Log(MML_LOG_INFO, "host", __VA_ARGS__)
 #define HWARN(...) ::host::Log(MML_LOG_WARN, "host", __VA_ARGS__)
 std::vector<std::string> LogTail(size_t lines);   // the last lines (any thread)
+void GatherStart();   // (gather.cpp) the other parts' logs (DXVK's, NGX's, LS3D's log.txt...) read into this one as they grow
+void GatherFinal();   // ... once more: the process ends or crashed
 void LogQuiet();                                  // no log file from now on (main.cpp: a second game of a folder)
 
 // ---- memory (memory.cpp): any thread, never faults
@@ -743,6 +745,7 @@ int GfxPassAdd(MmlMod *mod, int order, MmlGfxPassFn fn, void *user);
 void GfxPassRemove(MmlMod *mod, int handle);
 bool GfxPassViews(MmlMod *mod, int handle, bool on);   // mml.h gfx_pass_views
 int GfxStateNow(std::string *why);        // mml.h gfx_state: 1 on, 0 off (why), -1 not yet
+void GfxShowStats(MmlGfxShowStats *out);  // mml.h gfx_show_stats (out's size checked by the caller)
 void GfxRemove(MmlMod *mod);              // its mod unloads: its passes go
 void GfxQuiet(bool on);                   // drawing that is not the game's (not tallied as the world's light)
 void GfxDrawnSize(float out[4]);          // the size this frame's world is drawn at: w, h, 1/w, 1/h (gfx_upscale's, else the frame's)

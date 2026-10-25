@@ -473,6 +473,18 @@ typedef struct MmlGfxShow {
 } MmlGfxShow;
 /* returns how many pictures it drew into extra[0..n-1] (0: the frame alone), shown in that order before the frame */
 typedef int (*MmlGfxShowFn)(const MmlGfxShow *show, void *user);
+/* What reached the display (gfx_show_stats): counts since the game started, a mod takes their differences over a
+ * time (a frame counter: the game's own rate against what is shown with frame generation's pictures). */
+typedef struct MmlGfxShowStats {
+    uint32_t size;          /* sizeof(MmlGfxShowStats), set by the caller */
+    uint32_t fit;           /* the pictures that fit between two of the game's frames now (0: none, the game alone) */
+    int32_t thread;         /* 1: the bridge's own thread shows (pictures between the frames); 0: the game's Present */
+    uint32_t reserved;
+    double refresh_hz;      /* the display's rate (the monitor's mode, or the desktop composition's when slower); 0 unknown */
+    uint64_t game_frames;   /* the game's frames (its Presents) */
+    uint64_t shown;         /* things shown: the game's frames and the pictures between them */
+    uint64_t pictures;      /* of them, the pictures (frame generation's) */
+} MmlGfxShowStats;
 
 /* A hook in the middle of a function (hook_mid): the registers when the game reached the address, in PUSHAD's
  * order. The function may change any of them but esp (read only: the stack the hooked code had there, its values at
@@ -1831,6 +1843,10 @@ typedef struct MmlHost {
      * at `at` taken back). A patch may not overlap another patch nor a hook's first 5 bytes. 1 done, 0 refused (the
      * log says why: the bytes found). Game thread. */
     int (*code_patch)(MmlMod *mod, uintptr_t at, const void *expect, const void *bytes, size_t n);
+    /* ---- what reached the display (both builds): gfx_show_stats fills out (its size set by the caller) with the
+     * game's frames, the things shown and the pictures among them (frame generation's, gfx_show), the pictures that
+     * fit now and the display's rate. 1 filled, 0 out NULL or too small. Game thread. */
+    int (*gfx_show_stats)(MmlMod *mod, MmlGfxShowStats *out);
 } MmlHost;
 
 #define MML_ZONE_PLAYER 0x1u

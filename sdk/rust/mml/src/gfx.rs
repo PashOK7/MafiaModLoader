@@ -9,7 +9,8 @@ use core::ffi::{c_char, c_int, c_void};
 use core::ptr;
 
 pub use sys::{
-    MmlFrameStats as FrameStats, MmlGameCamera as GameCamera, MmlGfxConstants as GfxConstants, MmlGfxView as GfxView,
+    MmlFrameStats as FrameStats, MmlGameCamera as GameCamera, MmlGfxConstants as GfxConstants, MmlGfxShowStats as GfxShowStats,
+    MmlGfxView as GfxView,
     MmlRenderCamera as RenderCamera, MmlShadowSettings as ShadowSettings, MmlSharedFence as SharedFence, MmlSharedTexture as SharedTexture,
     MmlViewCamera as ViewCamera,
 };
@@ -363,6 +364,15 @@ impl Host {
             0 => Some(Err(unsafe { core::ffi::CStr::from_ptr(why.as_ptr()) }.to_string_lossy().into_owned())),
             _ => None,
         }
+    }
+    /// What reached the display (mml.h gfx_show_stats): the game's frames, the things shown and the pictures among
+    /// them (frame generation's), counted since the start; the pictures that fit now and the display's rate. None: a
+    /// loader without it
+    pub fn gfx_show_stats(&self) -> Option<GfxShowStats> {
+        let f = host_fn!(self, gfx_show_stats)?;
+        let mut s: GfxShowStats = unsafe { core::mem::zeroed() };
+        s.size = core::mem::size_of::<GfxShowStats>() as u32;
+        (unsafe { f(self.module, &mut s) } != 0).then_some(s)
     }
     /// The mod's 64-bit half's texture of that name (side.h texture_create) on the bridge's device, inside a pass:
     /// its ID3D11Texture2D and view (the loader's: valid in this pass), size, format and the half's generation;

@@ -114,6 +114,7 @@ void Init() {
              " (Game.exe is not Large Address Aware: the 4 GB patch would double it, for texture packs, DXVK, ReShade)");
     }
     DpiAware();
+    GatherStart();   // (before the game loads its Direct3D 9: DXVK's log goes to mml\logs)
     CrashFilterStart();
     if (GameHooksInstall()) {
         HLOG("game: Mafia %s", GameBuild());
@@ -157,6 +158,7 @@ BOOL WINAPI DllMain(HINSTANCE, DWORD reason, LPVOID reserved) {
                  GetCurrentThreadId() == host::MainThread() ? ", the game's" : "", host::ExitStack().c_str());
         else
             HLOG("process exiting (ExitProcess on thread %lu, a thread without TLS)", GetCurrentThreadId());
+        host::GatherFinal();
     }
     return TRUE;
 }

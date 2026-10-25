@@ -4,7 +4,9 @@
   // <game>\mml\data\fps_unlock\config.json, which holds the changes only. Both take effect at once.
   "enabled": true,   // the game's 62.5 fps limit taken away (false: the game's own pacing)
   "max_fps": 0,      // a cap of the mod's own, frames a second (0: none; the game's time stays real either way)
-  "show": true,      // the line at the top left: frames a second, the frame's time, the game's clock step
+  "show": true,      // the line at the top left: frames a second, the frame's time, the game's clock step, and with
+                     // frame generation what the display gets ("shown 180 fps (3x at 200 Hz)")
+  "show_hotkey": "Shift+F11",   // switches "show"
   "fix_menu_camera": true,   // the main menu camera's spring stepped by the time, not once a frame (1.2)
   "fix_walk": true,  // a person's sweep made with lengths of its step's time: curbs, stairs and walls as at 62.5 fps
   "fix_rotation": true,   // LS3D's turns under 0.00049 rad kept: a stopped car comes to rest and steers as at 62.5 fps

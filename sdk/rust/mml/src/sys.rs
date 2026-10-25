@@ -1017,6 +1017,39 @@ pub type MmlGfxShowFn = ::core::option::Option<
 >;
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone)]
+pub struct MmlGfxShowStats {
+    pub size: u32,
+    pub fit: u32,
+    pub thread: i32,
+    pub reserved: u32,
+    pub refresh_hz: f64,
+    pub game_frames: u64,
+    pub shown: u64,
+    pub pictures: u64,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of MmlGfxShowStats"][::core::mem::size_of::<MmlGfxShowStats>() - 48usize];
+    ["Alignment of MmlGfxShowStats"][::core::mem::align_of::<MmlGfxShowStats>() - 8usize];
+    ["Offset of field: MmlGfxShowStats::size"]
+        [::core::mem::offset_of!(MmlGfxShowStats, size) - 0usize];
+    ["Offset of field: MmlGfxShowStats::fit"]
+        [::core::mem::offset_of!(MmlGfxShowStats, fit) - 4usize];
+    ["Offset of field: MmlGfxShowStats::thread"]
+        [::core::mem::offset_of!(MmlGfxShowStats, thread) - 8usize];
+    ["Offset of field: MmlGfxShowStats::reserved"]
+        [::core::mem::offset_of!(MmlGfxShowStats, reserved) - 12usize];
+    ["Offset of field: MmlGfxShowStats::refresh_hz"]
+        [::core::mem::offset_of!(MmlGfxShowStats, refresh_hz) - 16usize];
+    ["Offset of field: MmlGfxShowStats::game_frames"]
+        [::core::mem::offset_of!(MmlGfxShowStats, game_frames) - 24usize];
+    ["Offset of field: MmlGfxShowStats::shown"]
+        [::core::mem::offset_of!(MmlGfxShowStats, shown) - 32usize];
+    ["Offset of field: MmlGfxShowStats::pictures"]
+        [::core::mem::offset_of!(MmlGfxShowStats, pictures) - 40usize];
+};
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
 pub struct MmlMidContext {
     pub edi: u32,
     pub esi: u32,
@@ -3796,10 +3829,13 @@ pub struct MmlHost {
             n: usize,
         ) -> ::core::ffi::c_int,
     >,
+    pub gfx_show_stats: ::core::option::Option<
+        unsafe extern "C" fn(mod_: *mut MmlMod, out: *mut MmlGfxShowStats) -> ::core::ffi::c_int,
+    >,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 820usize];
+    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 824usize];
     ["Alignment of MmlHost"][::core::mem::align_of::<MmlHost>() - 4usize];
     ["Offset of field: MmlHost::size"][::core::mem::offset_of!(MmlHost, size) - 0usize];
     ["Offset of field: MmlHost::api_version"]
@@ -4151,6 +4187,8 @@ const _: () = {
     ["Offset of field: MmlHost::hook_mid"][::core::mem::offset_of!(MmlHost, hook_mid) - 812usize];
     ["Offset of field: MmlHost::code_patch"]
         [::core::mem::offset_of!(MmlHost, code_patch) - 816usize];
+    ["Offset of field: MmlHost::gfx_show_stats"]
+        [::core::mem::offset_of!(MmlHost, gfx_show_stats) - 820usize];
 };
 pub type MmlModLoadFn = ::core::option::Option<
     unsafe extern "C" fn(host: *const MmlHost, mod_: *mut MmlMod) -> ::core::ffi::c_int,

@@ -388,6 +388,11 @@ int H_GfxState(MmlMod *, char *why, int cap) {
     }
     return s;
 }
+int H_GfxShowStats(MmlMod *, MmlGfxShowStats *out) {
+    if (!out || out->size < sizeof(MmlGfxShowStats)) return 0;
+    GfxShowStats(out);
+    return 1;
+}
 int H_SceneView(MmlMod *m, int w, int h, MmlViewFn fn, void *user) {
     if (!Alive(m)) return 0;
     std::string err;
@@ -1206,6 +1211,7 @@ void ModsInit() {
     g_host.unhook = H_Unhook;
     g_host.hook_mid = H_HookMid;
     g_host.code_patch = H_CodePatch;
+    g_host.gfx_show_stats = H_GfxShowStats;
     g_host.subscribe = H_Subscribe;
     g_host.command = H_Command;
     g_host.reply_append = H_ReplyAppend;

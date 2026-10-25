@@ -7,5 +7,18 @@
   "enabled": false,
   "builds": ["1.2", "1.0"],
   "load_order": 100,
-  "depends": []
+  "depends": [],
+  "settings": {
+    "title": "FPS",
+    "controls": [
+      {"key": "enabled", "label": "Unlocked"},
+      {"key": "hotkey", "label": "Unlocked on and off", "kind": "key"},
+      {"key": "max_fps", "label": "Cap (0: none)", "min": 0, "max": 360, "step": 5, "unit": "fps"},
+      {"key": "show", "label": "Frame rate shown"},
+      {"key": "show_hotkey", "label": "Shown on and off", "kind": "key"},
+      {"key": "fix_menu_camera", "label": "Menu camera fix"},
+      {"key": "fix_walk", "label": "Walking fix"},
+      {"key": "fix_rotation", "label": "Small turns fix"}
+    ]
+  }
 }

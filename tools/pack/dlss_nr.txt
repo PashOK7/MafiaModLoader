@@ -157,11 +157,11 @@ with d3d8.ini unless another mod needs them. No game files were changed.
 
 IF SOMETHING GOES WRONG
 -----------------------
-Send these files (the ones that exist):
-  <game>\mml\logs\mml.log and mml.prev.log
-  <game>\Game_d3d9.log (DXVK's)
-  <game>\mml\data\dlss_nr\nvngx.log
-  everything in <game>\mml\crash\
+Send one file: <game>\mml\logs\mml.log (the last run's; mml.prev.log is
+the run before it). It holds DXVK's, NVIDIA DLSS's and the game's own
+logs too. After a crash, also everything in <game>\mml\crash\.
+If mml.log is missing, the loader did not start at all: then send
+<game>\Game_d3d9.log and a screenshot of the error, if there was one.
 
 
 WHAT IS INSIDE

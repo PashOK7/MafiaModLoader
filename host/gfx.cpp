@@ -1759,7 +1759,9 @@ std::string g_showError;
 double g_showStart, g_showEnd;     // the last Present's start and end (ms)
 double g_interval, g_work;         // smoothed: the time between the game's Presents, and of it the time outside them
 double g_showMs;                   // smoothed: the bridge's own time on a frame it shows (the copies, the mod's, the waits for the devices)
-uint64_t g_shows, g_showFrames, g_showPictures, g_showLate;
+uint64_t g_shows, g_showLate;
+std::atomic<uint64_t> g_showFrames, g_showPictures;   // (counted by the showing's thread)
+std::atomic<uint64_t> g_shownTotal;   // everything shown: the game's own Presents and the thread's (gfx_show_stats)
 uint64_t g_showDropped;            // the game's frames replaced by a newer one before the thread took them
 uint64_t g_showCut;                // pictures left out: a newer frame came while the thread showed them
 int g_fit;                         // the pictures that fit between two of the game's frames now (ShowFit)
@@ -1917,6 +1919,7 @@ DWORD WINAPI Presenter(void *) {
             }
             g_lastShown = at;
             g_presenterHr = g_chain->Present(1, 0);
+            g_shownTotal++;
             if (i < s.n) g_showPictures++;
         }
         g_showFrames++;
@@ -2308,6 +2311,7 @@ HRESULT GfxShow(void *dev8, const std::function<HRESULT()> &present) {
         ShowThreadStop();   // (the showing let go: the game's own Present again)
     }
     HRESULT hr = shown ? D3D_OK : timed();
+    if (!shown) g_shownTotal++;
     g_showEnd = NowMs();
     g_shows++;
     if (gfxvk::On()) g_tm.handMs += gfxvk::TakeMs();
@@ -2470,6 +2474,17 @@ int GfxStateNow(std::string *why) {
         return 0;
     }
     return g_dev11 && g_frames ? 1 : -1;
+}
+
+void GfxShowStats(MmlGfxShowStats *out) {
+    if (g_dev9) ReadRefresh(NowMs());   // (read again every 2 s; known also while nothing is shown by the thread)
+    out->fit = static_cast<uint32_t>(g_presenter ? g_fit : 0);
+    out->thread = g_presenter ? 1 : 0;
+    out->reserved = 0;
+    out->refresh_hz = g_refreshMs > 0 ? 1000.0 / g_refreshMs : 0;
+    out->game_frames = g_shows;
+    out->shown = g_shownTotal.load();
+    out->pictures = g_showPictures.load();
 }
 
 void GfxUiAsk(MmlMod *mod, int mode) {
@@ -2898,8 +2913,8 @@ bool GfxMethod(const std::string &method, const std::string &params, std::string
                 {"ui", {{"mode", UiMode()}, {"frames", g_uiFrames}}},
                 {"jitter", {{"mod", g_jitter.mod && ModAlive(g_jitter.mod) ? ModIdOf(g_jitter.mod) : std::string()},
                             {"now", {g_jitNow[0], g_jitNow[1]}}}},
-                {"show", {{"mod", g_showFn.fn ? ModIdOf(g_showFn.mod) : std::string()}, {"shows", g_shows}, {"frames", g_showFrames},
-                          {"pictures", g_showPictures}, {"late", g_showLate}, {"interval_ms", r2(g_interval)}, {"work_ms", r2(g_work)},
+                {"show", {{"mod", g_showFn.fn ? ModIdOf(g_showFn.mod) : std::string()}, {"shows", g_shows}, {"frames", g_showFrames.load()},
+                          {"pictures", g_showPictures.load()}, {"late", g_showLate}, {"interval_ms", r2(g_interval)}, {"work_ms", r2(g_work)},
                           {"refresh_hz", g_refreshMs > 0 ? r2(1000.0 / g_refreshMs) : 0.0}, {"fit", g_fit},
                           {"dropped", g_showDropped}, {"cut", g_showCut},
                           {"ms", r2(g_showMs)}, {"gap_ms", r2(g_gap)}, {"gap_error_ms", r2(g_gapErr)}, {"size", {g_showW, g_showH}},

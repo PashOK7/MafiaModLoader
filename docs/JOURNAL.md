@@ -3816,3 +3816,23 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   44.6 / 45.0; 90: 88.7 / 75.6 (9Ex's CPU waits: ROADMAP). 9Ex 1.0 at 800x600: 90: 87.0 / 86.1, 60: 60.1 / 60.0, 45:
   45.0 / 45.0. The child window's picture read with PrintWindow: whole, letterboxed at 800x600; dlss_nr reloaded while
   showing: the showing made again.
+
+## 2026-10-25: one log to send; fps_unlock's settings and what reaches the display
+
+- **Asked** (the owner): a player sends many logs from many places (mml.log, DXVK's Game_d3d9.log in the game's
+  folder, five NGX logs in mml\data\dlss_nr, the sidecar's, LS3D's log.txt): one log. And fps_unlock without a page in
+  Options > Mods, without the frames shown with frame generation, without a key for its line.
+- **Made**: host/gather.cpp: DXVK_LOG_PATH set to mml\logs at the loader's start when the player has not set it (DXVK
+  reads it when d3d9.dll loads: after the loader under Ultimate ASI Loader's d3d8to9); a thread reads every other
+  log as it grows (mml\logs\*.log, the game's folder's *.log and log.txt, mml\data\<mod>\*.log) into mml.log under its
+  file's tag ([dxvk], [ls3d], [nvngx]...), an earlier run's file only from what is added now; once more at the exit
+  and in the crash report's thread. The sidecar's own file is left out (its lines are in mml.log). The pack's README
+  asks for mml.log alone (and mml\crash). mml.h `gfx_show_stats` (MmlGfxShowStats: the game's frames, the things shown,
+  the pictures among them, the pictures that fit, the display's rate; the Rust crate's `gfx_show_stats`). fps_unlock:
+  its settings page (mod.json), `show_hotkey` (Shift+F11) switching its line, the line's "shown 180 fps (3x at 200 Hz)"
+  with frame generation, `fps_unlock.status`'s shown_fps, pictures_fps, showing_thread, fit, refresh_hz.
+- **Seen** (1.2 lab in the pack's DXVK layout): Game_d3d9.log written in mml\logs, 354 [dxvk] lines, 29 [ls3d],
+  NGX's [nvngx] lines in mml.log; the FPS page in Options > Mods (panel.state); Shift+F11 by the game's input showed
+  "61 fps 16.7 ms (17.2 max) shown 180 fps (3x at 200 Hz)" (capped at 60, the stand-in at 4x); status the same.
+- **Heard** (The Renegade, 2026-10-25 14:18): the pack of the day "doesn't run, the setup.exe as well", after he
+  removed the old files; he suspects d3d8.dll, d3d8.ini, d3d9.dll. Not reproduced: his logs awaited.

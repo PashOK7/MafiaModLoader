@@ -62,6 +62,7 @@ DWORD WINAPI WriteReport(void *arg) {
     j["mission"] = {{"name", MissionName()}, {"state", MissionState()}};
     j["mods"] = json::parse(ModsList(), nullptr, false);
     j["log"] = LogTail(60);
+    GatherFinal();   // (the other parts' last lines into mml.log: gather.cpp)
     std::string taps = tap::Command("list");
     json shown = json::array();
     for (int i = 0; i < 16; i++) {

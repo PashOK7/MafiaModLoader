@@ -26,7 +26,8 @@
 //                                            game's own function at load, everything else handed to it unchanged
 //   pacing frames precisely    Pace         a frame-rate cap of its own, on a high-resolution waitable timer (the
 //                              game's Sleep has a 1 ms grain at best)
-//   measuring the frame        Measure       frames a second, the frame's time, the game's own clock step
+//   measuring the frame        Measure       frames a second, the frame's time, the game's own clock step, and what
+//                                            reached the display (gfx_show_stats: frame generation's pictures)
 //   a setting switched live    OnKey, ReadSettings   the hotkey flips "enabled" with config_set; the change comes back
 //                              as MML_EVENT_CONFIG_CHANGED like an edit of the file or the bridge's config.set
 #include <windows.h>
@@ -58,6 +59,7 @@ struct Settings {
     bool fixWalk = true;     // a person's sweep made with lengths of its step's time (humanSweep): curbs as at 62.5 fps
     bool fixRotation = true; // LS3D's quaternion-to-matrix keeps rotations under 0.00049 rad (RotationMatrix)
     std::string hotkey = "F11";
+    std::string showHotkey = "Shift+F11";   // switches "show"
 } S;
 
 // ---- the two places
@@ -656,6 +658,10 @@ void Pace() {
 // ---- measuring, over each second
 struct Window { int frames = 0; double sumMs = 0, maxMs = 0; unsigned dtMin = ~0u, dtMax = 0, dtZero = 0; };
 Window g_win, g_last;
+// what reached the display over the last second: everything shown and the pictures among it, the pictures that fit
+// between two of the game's frames and the display's rate (known false: a loader without gfx_show_stats)
+struct Shown { bool known = false, thread = false; double fps = 0, pictures = 0, hz = 0; unsigned fit = 0; } g_shown;
+MmlGfxShowStats g_statsAt{};
 LARGE_INTEGER g_prev, g_winStart;
 unsigned g_prevClock;
 
@@ -682,6 +688,18 @@ void Measure() {
     }
     if (!g_winStart.QuadPart) g_winStart = now;
     if (now.QuadPart - g_winStart.QuadPart >= g_freq.QuadPart) {
+        MmlGfxShowStats st{};
+        st.size = sizeof st;
+        if (MML_HAS(H, gfx_show_stats) && H->gfx_show_stats(M, &st)) {
+            const double secs = static_cast<double>(now.QuadPart - g_winStart.QuadPart) / g_freq.QuadPart;
+            if (g_statsAt.size) {
+                g_shown.fps = static_cast<double>(st.shown - g_statsAt.shown) / secs;
+                g_shown.pictures = static_cast<double>(st.pictures - g_statsAt.pictures) / secs;
+                g_shown.known = true;
+            }
+            g_shown.thread = st.thread != 0, g_shown.fit = st.fit, g_shown.hz = st.refresh_hz;
+            g_statsAt = st;
+        }
         g_last = g_win;
         g_win = Window{};
         g_winStart = now;
@@ -695,9 +713,11 @@ void OnFrame(const MmlEvent *, void *) {
     TraceCamera();
     TracePath();
     if (!S.show) return;
-    char line[160];
+    char line[220], shown[80] = "";
     double avg = g_last.frames ? g_last.sumMs / g_last.frames : 0;
-    snprintf(line, sizeof line, "%d fps  %.1f ms (%.1f max)  game step %u..%u ms  %s", g_last.frames, avg, g_last.maxMs,
+    if (g_shown.known && g_shown.thread)   // (frame generation: what the display gets, the pictures that fit now)
+        snprintf(shown, sizeof shown, "  shown %.0f fps (%ux at %.0f Hz)", g_shown.fps, g_shown.fit + 1, g_shown.hz);
+    snprintf(line, sizeof line, "%d fps  %.1f ms (%.1f max)%s  game step %u..%u ms  %s", g_last.frames, avg, g_last.maxMs, shown,
              g_last.dtMin == ~0u ? 0 : g_last.dtMin, g_last.dtMax,
              g_owner == Owner::us ? "unlocked" : g_owner == Owner::other ? "unlocked by another tool" : "locked");
     H->draw_rect(M, 4, 4, H->draw_text_width(MML_FONT_SMALL, 12, line) + 10, 16, 0x90000000u, 1);
@@ -706,6 +726,7 @@ void OnFrame(const MmlEvent *, void *) {
 
 // ---- settings and the hotkey
 void OnKey(void *) { H->config_set(M, "enabled", S.enabled ? "false" : "true"); }   // told back as CONFIG_CHANGED
+void OnShowKey(void *) { H->config_set(M, "show", S.show ? "false" : "true"); }
 
 void ReadSettings() {
     S.enabled = H->config_number(M, "enabled", 1) != 0;
@@ -716,6 +737,8 @@ void ReadSettings() {
     S.fixRotation = H->config_number(M, "fix_rotation", 1) != 0;
     S.hotkey = H->config_string(M, "hotkey", "F11");
     H->hotkey(M, S.hotkey.c_str(), OnKey, nullptr);
+    S.showHotkey = H->config_string(M, "show_hotkey", "Shift+F11");
+    H->hotkey(M, S.showHotkey.c_str(), OnShowKey, nullptr);
     if (S.enabled) Apply();
     else Restore();
     Cam10(S.enabled && S.fixCamera);
@@ -725,12 +748,13 @@ void ReadSettings() {
 void OnConfig(const MmlEvent *, void *) { ReadSettings(); }
 
 int Status(const char *, MmlReply *r, void *) {
-    char out[900];
+    char out[1200];
     double avg = g_last.frames ? g_last.sumMs / g_last.frames : 0;
     snprintf(out, sizeof out,
              "{\"build\":\"%s\",\"known\":%s,\"enabled\":%s,\"unlocked\":\"%s\",\"why\":\"%s\",\"max_fps\":%d,"
              "\"fps\":%d,\"frame_ms\":%.2f,\"frame_ms_max\":%.2f,\"game_step_ms\":[%u,%u],\"game_steps_zero\":%u,"
-             "\"menu_camera\":\"%s\",\"walk\":\"%s\",\"walk_sweeps_scaled\":[%u,%u],\"car_tick\":\"%s\",\"rotation\":\"%s\",\"rotations_kept\":%u}",
+             "\"menu_camera\":\"%s\",\"walk\":\"%s\",\"walk_sweeps_scaled\":[%u,%u],\"car_tick\":\"%s\",\"rotation\":\"%s\",\"rotations_kept\":%u,"
+             "\"shown_fps\":%.1f,\"pictures_fps\":%.1f,\"showing_thread\":%s,\"fit\":%u,\"refresh_hz\":%.1f}",
              H->game_build(), g_known ? "true" : "false", S.enabled ? "true" : "false",
              g_owner == Owner::us ? "by this mod" : g_owner == Owner::other ? "by another tool" : "no", g_why, S.maxFps,
              g_last.frames, avg, g_last.maxMs, g_last.dtMin == ~0u ? 0 : g_last.dtMin, g_last.dtMax, g_last.dtZero,
@@ -742,7 +766,7 @@ int Status(const char *, MmlReply *r, void *) {
              g_stepsScaled, g_stepsGround,
              g_vehicleTickHooked ? "hooked (the step probe only)" : "not known for this build",
              g_rotMatHooked ? (S.enabled && S.fixRotation ? "fixed: small rotations kept" : "hooked, fix off") : "not hooked",
-             g_rotMatKept);
+             g_rotMatKept, g_shown.fps, g_shown.pictures, g_shown.thread ? "true" : "false", g_shown.fit, g_shown.hz);
     H->reply_append(r, out, static_cast<size_t>(-1));
     return 0;
 }
