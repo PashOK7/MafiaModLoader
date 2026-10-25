@@ -3960,3 +3960,16 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   own (capped at 60), 91 ms whole (11 fps); the process 1.03 GB of address space, 548 MB private, the same either
   way (the blocks' instances are pooled). The profile: host/motion.cpp's redraws for dlss_nr's motion vectors about
   17 % of the game thread at 35 000 draws (ROADMAP Known gaps).
+
+## 2026-10-26: the standard scenes (ROADMAP 31a)
+
+- **Made**: the MCP `scene` tool (mcp/src/main.rs): `near` (the street east of the city freeride's start, eye
+  (-1985, -2, -4) towards (-1935, -4, -4)), `far` (whole_city, eye (-2100, 120, 0) towards (0, 0, 300)), `night` (the
+  street in freeridenoc), `crowd` (48 people of four models, Paulie, Sam, SalMan01K, Tommy, in six rows across the
+  street, each sent 45 m east by human.go, the time going); the game started in the scene's freeride with no police,
+  traffic or pedestrians when it is elsewhere (`profile`, `fresh`); the camera held an hour, the world still
+  (`state.time` 0) but in the crowd, the game's HUD hidden (the freeride's opening hints stay on a still world); an
+  earlier scene's camera, whole_city, people and HUD put back first. tests/mcp_smoke.py: the tool listed, an unknown
+  scene and a missing profile refused.
+- **Seen**: all four in both labs; 1.2's and 1.0's frames of the same scene alike (the street, the night street's
+  lamps, the crowd walking).

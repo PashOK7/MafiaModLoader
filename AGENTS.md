@@ -122,7 +122,11 @@ to learn what the game does. **Wait for what happens** with `wait {"types": "MIS
 `"filter": {"killed": true}`, `SCRIPT_ENDED`, `MOD_FAULTED`...; `call events.since` lists what came) instead of
 sleeping. **Where the time goes**: `profile {seconds}` (each mod's cost by site, the game thread sampled: its functions' self,
 calls out and total, the loader's named by its PDB). **Is B faster than A**: `bench {a, b}` (each a list of calls;
-they take turns in one run: B less A with a 95 % interval; without `b` the measure's own noise); `call state.time
+they take turns in one run: B less A with a 95 % interval; without `b` the measure's own noise), in a standard
+scene alike in both builds (`scene {"name": "near" | "far" | "night" | "crowd", "profile"}`: a street, the whole city
+from 120 m up, the night street, 48 people walking; the game started without police, traffic or pedestrians when
+needed; measure with one lab running); `render.set {"whole_city": true}` draws the whole city (every block, no
+occluders, no LOD distance, far plane 5000 m); `call state.time
 {"scale": 0}` holds the world still while it is drawn; `call prof.counters` counts the device's calls a frame
 (`prof.frames`). A server just built: `python tools/mcp_call.py <tool> '<json>'`.
 **Who writes a field**: `watch {"set": "0x..."}`, let the game run, `watch {"show": id}` (the code named, its

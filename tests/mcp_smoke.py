@@ -137,7 +137,7 @@ def main():
     want = {'game_status', 'call', 'commands_list', 'mem_read', 'mem_write', 'log_tail', 'mods_list', 'mod_reload',
             'where', 'game_launch', 'game_close', 'crash_list', 'crash_inspect', 'deploy', 'kb_search', 'kb_function', 'tap',
             'screenshot', 'input', 'script', 'script_commands', 'spawn', 'teleport', 'give', 'profile', 'wait', 'watch',
-            'inspect', 'crash_triage', 'restore', 'ghidra_read', 'ghidra_find', 'ghidra_write'}
+            'inspect', 'crash_triage', 'restore', 'ghidra_read', 'ghidra_find', 'ghidra_write', 'bench', 'scene'}
     check('tools/list has every tool', want <= tools, want - tools)
 
     if os.path.exists(os.path.join(ROOT, 'knowledge', 'game.exe', 'strings.local.csv')):   # (tools/kb_strings.py made it)
@@ -233,6 +233,10 @@ def main():
               ok and 'machine_busy_percent' in r['conditions']['cpu'] and any('no GPU time' in w for w in r['conditions']['warnings']), text[:600])
         ok, text = c.tool('bench', {'blocks': 2, 'frames': 30, 'settle': 5})
         check('bench with the counters and no device: refused, saying why', not ok and 'Direct3D 9' in text, text)
+        ok, text = c.tool('scene', {'name': 'dawn'})
+        check('scene: an unknown one refused, the scenes named', not ok and 'near, far, night, crowd' in text, text)
+        ok, text = c.tool('scene', {'name': 'near'})
+        check('scene in another mission, no profile: refused, saying a start is needed', not ok and 'give `profile`' in text, text)
         ok, text = c.tool('call', {'method': 'state.time', 'params': {'scale': 0.5}})
         check('state.time: the game\'s time scaled (no game: only kept)', ok and '"scale": 0.5' in text, text)
         ok, text = c.tool('call', {'method': 'state.time', 'params': {'scale': 9}})

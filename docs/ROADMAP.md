@@ -953,7 +953,8 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
       {whole_city: true}` draws the whole city, every block of the city's cache active, no occluders, no visual left
       out by its last LOD's distance, the game camera's far plane held at 5000 m, all given back by `false`
       (host/render.cpp); `render.set {occlusion, lod_quality}`, `camera.set {near, far}`, prof's `hot_ms` per visual
-      class. Still to do: the `scene` tool, `bench`'s pictures, the baselines on a clean lab.)* (1) Standard scenes, made by one call and alike in both builds: the
+      class. The MCP `scene` tool: near, far, night, crowd, alike in both labs (seen). Still to do: `bench`'s
+      pictures, the baselines on a clean lab.)* (1) Standard scenes, made by one call and alike in both builds: the
       freeride's start (near), the city with the far plane pushed to 1000 m and beyond (`I3D_camera::SetRange`,
       ls3d+B7B0: a call to set it, held while measured), the city by night (1053 lights), and a crowd of 48 walking
       people (the time going). (2) The picture compared: `bench` with `picture: true` takes each configuration's

@@ -546,6 +546,25 @@ struct BenchArgs {
 }
 
 #[derive(Deserialize, JsonSchema)]
+struct SceneArgs {
+    /// "near" (a street by the city freeride's start, the game's own drawing, the world still), "far" (the whole
+    /// city from 120 m up, render.set whole_city, still), "night" (the street of "near" in the night city), "crowd"
+    /// (48 people walking down that street, the time going).
+    name: String,
+    /// The profile a launch takes (its number or name; the labs' differ). Needed only when the game must be
+    /// (re)started: not running, in another mission, or `fresh`.
+    #[serde(default)]
+    profile: Option<Value>,
+    /// Start the game again even when it is already in the scene's mission (its traffic, pedestrians and police are
+    /// the scene's only after a start made by this tool: all 0).
+    #[serde(default)]
+    fresh: Option<bool>,
+    /// A screenshot of the scene once it is set (default true).
+    #[serde(default)]
+    screenshot: Option<bool>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 struct ProfileArgs {
     /// How long the game thread is sampled (seconds, default 3, 0.5..30): let the game do the thing meanwhile.
     seconds: Option<f64>,
@@ -1234,6 +1253,100 @@ impl Server {
         out["segments"] = json!(segs.iter().map(|s| json!({"config": names[s.config], "block": s.block, "frames": s.frames,
             "wall_ms": s.stats.get("wall_ms"), "cpu_ms": s.stats.get("cpu_ms")})).collect::<Vec<_>>());
         Ok(pretty(&out))
+    }
+
+    /// One of the standard scenes measures are made in (ROADMAP item 31a), alike in both builds: "near" (a street
+    /// by the city freeride's start as the game draws it), "far" (the whole city from 120 m up: render.set
+    /// whole_city), "night" (that street in the night city: its lights), "crowd" (48 people walking down that
+    /// street). The game is started in the scene's freeride when it is not there (`profile`), with no police, traffic
+    /// or pedestrians: nothing random in the frame. The camera is held at the scene's place for an hour, the world
+    /// held still (`state.time` 0) except in "crowd", the game's HUD hidden; what an earlier scene set (its camera,
+    /// whole_city, its people, the HUD) is put back first. Then `bench`, `profile`, `screenshot` in it.
+    #[tool]
+    async fn scene(&self, Parameters(a): Parameters<SceneArgs>) -> Result<CallToolResult, String> {
+        // the street: by the start's parking lot, looking east down the tram lines
+        const EYE: [f64; 3] = [-1985.0, -2.0, -4.0];
+        const AT: [f64; 3] = [-1935.0, -4.0, -4.0];
+        const HOLD_MS: u64 = 3_600_000;
+        let (mission, kind) = match a.name.as_str() {
+            "near" | "far" | "crowd" => ("freeride", "city"),
+            "night" => ("freeridenoc", "city-night"),
+            n => return Err(format!("scene: {n}: one of near, far, night, crowd")),
+        };
+        let now = self.call_value("game", Value::Null, Some(2000)).await.ok();
+        let here = now.as_ref().and_then(|g| g["mission_name"].as_str()).is_some_and(|m| m.eq_ignore_ascii_case(mission));
+        let mut launched = false;
+        if !here || a.fresh.unwrap_or(false) {
+            let Some(profile) = a.profile.clone() else {
+                return Err(format!("scene {}: the game must be started in the {kind} freeride ({}): give `profile`", a.name,
+                                   if now.is_some() { "it is in another mission" } else { "it is not running" }));
+            };
+            if self.bridge.call("ping", json!({}), 1500).await.is_ok() {
+                self.game_close(Parameters(CloseArgs { force: None })).await?;
+            }
+            let la: LaunchArgs = serde_json::from_value(json!({"profile": profile, "go": "freeride", "kind": kind,
+                                                                "police": 0, "traffic": 0, "pedestrians": 0}))
+                .map_err(|e| e.to_string())?;
+            self.game_launch(Parameters(la)).await?;
+            launched = true;
+        }
+        // what an earlier scene set, put back
+        for (m, p) in [("camera.release", json!({})), ("render.set", json!({"whole_city": false})), ("state.time", json!({"scale": 1})),
+                       ("hud.game", json!({"show": true}))] {
+            self.call_value(m, p, None).await.map_err(|e| format!("scene: {m}: {e}"))?;
+        }
+        let spawned = self.call_value("world.spawned", Value::Null, None).await?;
+        for s in spawned["spawned"].as_array().into_iter().flatten().filter(|s| s["by"] == "bridge") {
+            let _ = self.call_value("world.remove", json!({"actor": s["actor"]}), None).await;
+        }
+        let mut out = json!({"scene": a.name, "mission": mission, "launched": launched});
+        let (eye, at) = match a.name.as_str() {
+            "far" => {
+                out["city"] = self.call_value("render.set", json!({"whole_city": true}), None).await?["city"].clone();
+                ([-2100.0, 120.0, 0.0], [0.0, 0.0, 300.0])
+            }
+            "crowd" => {
+                // 48 people in six rows across the street, each sent 45 m east by the game's own order
+                const MODELS: [&str; 4] = ["Paulie", "Sam", "SalMan01K", "Tommy"];
+                let mut people = vec![];
+                let mut failed = vec![];
+                for i in 0..48 {
+                    let (x, z) = (-1975.0 + (i / 8) as f64 * 1.5, -9.0 + (i % 8) as f64 * 1.4);
+                    let model = MODELS[i % MODELS.len()];
+                    match self.call_value("world.spawn", json!({"human": model, "at": [x, -3.0, z], "dir": [1, 0, 0]}), None).await {
+                        Ok(s) => {
+                            let actor = s["actor"].clone();
+                            let go = self.call_value("human.go", json!({"actor": actor, "to": [x + 45.0, -5.0, z]}), None).await;
+                            if let Err(e) = go { failed.push(format!("{model}: human.go: {e}")); }
+                            people.push(actor);
+                        }
+                        Err(e) => failed.push(format!("{model}: {e}")),
+                    }
+                }
+                out["people"] = json!(people.len());
+                if !failed.is_empty() { out["failed"] = json!(failed); }
+                ([-1990.0, 4.0, -4.0], [-1955.0, -4.0, -4.0])
+            }
+            _ => (EYE, AT),
+        };
+        out["camera"] = json!({"eye": eye, "at": at});
+        self.call_value("camera.set", json!({"eye": eye, "at": at, "ms": HOLD_MS}), None).await?;
+        // the game's HUD hidden: the freeride's opening hints would stay on a still world, the radar follows the player
+        self.call_value("hud.game", json!({"show": false}), None).await?;
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;   // (the frame drawn from it, the blocks' fades ended)
+        if a.name != "crowd" {
+            self.call_value("state.time", json!({"scale": 0}), None).await?;
+            out["still"] = json!(true);
+        }
+        let mut content = vec![];
+        if a.screenshot.unwrap_or(true) {
+            let s = self.take_shot(1280, 85).await?;
+            let (info, image) = Self::shot_content(&s);
+            out["shot"] = info;
+            content.push(image);
+        }
+        content.insert(0, ContentBlock::text(pretty(&out)));
+        Ok(CallToolResult::success(content))
     }
 
     /// Run a program on the game's own script machine (the mission scripts' language, compiled and run by the game's
