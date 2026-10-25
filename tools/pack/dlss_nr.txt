@@ -42,27 +42,25 @@ and dxwrapper.ini: delete those three. If the game folder has d3d8.dll
 or dinput8.dll from other mods, back them up first: this archive
 replaces them.
 
-MAFIA FUSION FIX works with it (ThirteenAG's widescreen fix and more):
-unpack Fusion Fix and this archive in any order. Both use the same
-Ultimate ASI Loader as d3d8.dll with its d3d8.ini (UseD3D8to9=1), so
-either one's copy is fine. Delete Mafia.WidescreenFix.asi (Fusion Fix
-replaces it). In Mafia.FusionFix.ini:
-  - BorderlessWindowed = 1 with Setup's Fullscreen off and your
-    screen's resolution (with Fullscreen on the loader makes the window
-    borderless itself),
-  - WriteSettingsToFile = 1 keeps the settings in savegame\settings.bin:
-    run Setup.exe once after installing and press Save and exit, or the
-    game opens Setup.exe instead of starting,
-  - ConsoleGamma = 1 is its "Xbox 360" gamma curve: the whole picture,
-    the loading screens too, darker and harsher (measured: the frame's
-    mean brightness 86 -> 73, its darkest twentieth 21 -> 9 of 255).
-    ConsoleGamma = 0 gives the game's own look back, exactly.
-  - SMAA = 1 smooths edges after DLSS, which smooths them already:
-    SMAA = 0 with DLSS on.
-  - its DrawDistance makes the game draw more of the city (the fog
-    moved from 84..280 m to 240..800 m; the look measured the same):
-    the processor's work grows with it. Enable = 0 in [DRAW_DISTANCE]
-    gives the game's own distance back if the frame rate drops.
+MAFIA FUSION FIX is part of this archive: ThirteenAG's widescreen fix
+and more, ported to the loader (mml\mods\fusion_fix). Do not install
+ThirteenAG's own Fusion Fix beside it: if scripts\Mafia.FusionFix.asi
+or Mafia.WidescreenFix.asi is in the game's folder, delete it (and its
+.ini); beside them the built-in one does nothing (mml\logs\mml.log says
+why). Its settings are in the game: Options > Mods > Fusion Fix, each
+applied at once. What it does, as the original:
+  - the HUD, the map, the menus and the videos at your screen's shape,
+    the picture wider on a wide screen (Hor+), cutscene borders,
+  - the Xbox's radar with the city's map in it,
+  - a free camera round the car (the mouse, the right stick),
+  - the draw distance (600 m; Draw distance off gives the game's own
+    back if the frame rate drops: the processor's work grows with it),
+  - the moving eyes and 1.0's car scratches, a pad's dead zones.
+Not in it: its savegame\settings.bin (the game keeps Setup.exe's
+settings in the registry, as without Fusion Fix: if you used
+WriteSettingsToFile, run Setup.exe once and press Save and exit),
+ConsoleGamma (its darker "Xbox 360" curve: the game's own look stays)
+and SMAA (DLSS smooths the edges itself).
 
 This archive includes DXVK's d3d9.dll (the game's Direct3D 9 on Vulkan)
 and dxvk.conf (textures filtered anisotropically, 16x: sharp at a
@@ -154,7 +152,7 @@ UNINSTALL
 ---------
 Delete from the game's folder: MafiaModLoader.asi, d3d9.dll,
 dxvk.conf, the "mml" folder (and README.txt, licenses), and d3d8.dll
-with d3d8.ini unless Fusion Fix stays. No game files were changed.
+with d3d8.ini unless another mod needs them. No game files were changed.
 
 
 IF SOMETHING GOES WRONG

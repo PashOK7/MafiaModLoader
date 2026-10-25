@@ -41,7 +41,7 @@ DIST = os.path.join(ROOT, 'build', 'dist')
 PACKS = {
     'dlss_nr': {
         'name': 'Mafia-DLSS5-NR-RTX50',
-        'mods': ['core', 'dlss_nr', 'fps_unlock'],
+        'mods': ['core', 'dlss_nr', 'fps_unlock', 'fusion_fix'],
         # NVIDIA's DLL (tools/deps.py ngx): beside the mod's mod.json, where the half looks for it
         'files': {'mml/mods/dlss_nr/nvngx_dlssnr.dll': os.path.join(DEPS, 'ngx', 'bin', 'nvngx_dlssnr.dll'),
                   'mml/mods/dlss_nr/nvngx_dlss.dll': os.path.join(DEPS, 'ngx', 'bin', 'nvngx_dlss.dll'),
@@ -51,9 +51,18 @@ PACKS = {
                   # DLSS on the GPU (shared fences) and the game's thread waits for neither; on Windows' Direct3D 9Ex
                   # it waits for both devices each frame (docs/MODDING.md "Effects over the frame")
                   'd3d9.dll': os.path.join(DEPS, 'dxvk', 'x32', 'd3d9.dll'),
-                  'licenses/DXVK-LICENSE.txt': os.path.join(DEPS, 'dxvk', 'LICENSE')},
+                  'licenses/DXVK-LICENSE.txt': os.path.join(DEPS, 'dxvk', 'LICENSE'),
+                  'licenses/MafiaFusionFix-LICENSE.txt': os.path.join(ROOT, 'mods', 'fusion_fix', 'LICENSE')},
         'inside': ['NVIDIA nvngx_dlssnr.dll, nvngx_dlss.dll and nvngx_dlssg.dll 310.9.16.0 (NVIDIA RTX SDKs license).',
-                   'DXVK 3.1.1 d3d9.dll (Direct3D 9 on Vulkan; zlib license).'],
+                   'DXVK 3.1.1 d3d9.dll (Direct3D 9 on Vulkan; zlib license).',
+                   'Mafia Fusion Fix by ThirteenAG, ported to the loader (mml\\mods\\fusion_fix; MIT).'],
+        # UPDATE.txt's words before its list of files (an update over an archive without a Fusion Fix of its own)
+        'update_notes': ['Mafia Fusion Fix is now part of this archive (mml\\mods\\fusion_fix). If ThirteenAG\'s own',
+                         'Fusion Fix is in the game\'s folder, delete scripts\\Mafia.FusionFix.asi and',
+                         'scripts\\Mafia.FusionFix.ini (and Mafia.WidescreenFix.asi if you have it): beside it the',
+                         'built-in one does nothing (mml\\logs\\mml.log says why). Then run Setup.exe once and press',
+                         'Save and exit: the game keeps its settings in the registry again, not in',
+                         'savegame\\settings.bin. Fusion Fix\'s settings: Options > Mods > Fusion Fix in the game.'],
         # Ultimate ASI Loader as d3d8.dll with its d3d8to9 over DXVK, as Mafia Fusion Fix ships it (its d3d8.dll and
         # d3d8.ini are the same: either may be unpacked over the other), no dxwrapper: one ASI loader for both, in the
         # game and in its Setup.exe (Fusion Fix writes its settings.bin from there; the loader stays out of Setup).
@@ -215,10 +224,11 @@ def main():
                 zip_write(z, path, os.path.relpath(path, dest))
     print('pack: %s (%.1f MB)' % (os.path.relpath(archive, ROOT), os.path.getsize(archive) / 1e6))
     if '--since' in sys.argv:
-        update(dest, options('--since')[0], [p.replace('\\', '/').strip('/') + '/' for p in options('--include')])
+        update(dest, options('--since')[0], [p.replace('\\', '/').strip('/') + '/' for p in options('--include')],
+               pack.get('update_notes', ()))
 
 
-def update(dest, old_archive, include=()):
+def update(dest, old_archive, include=(), notes=()):
     """<dest>-update.zip: the files of the new pack that the old archive lacks or holds otherwise (and every file under
     the paths of `include`), and UPDATE.txt."""
     with zipfile.ZipFile(need(old_archive)) as z:
@@ -232,8 +242,10 @@ def update(dest, old_archive, include=()):
                      if any(rel.startswith(p) for p in include) or old.get(rel) != open(path, 'rb').read())
     gone = sorted(rel for rel in old if rel not in new)
     note = ['Update for %s' % os.path.basename(dest), '',
-            'Unpack into the game\'s folder over the previous version (replace the files).', '',
-            'Changed or new:'] + ['  ' + rel for rel in changed]
+            'Unpack into the game\'s folder over the previous version (replace the files).', '']
+    if notes:
+        note += list(notes) + ['']
+    note += ['Changed or new:'] + ['  ' + rel for rel in changed]
     if gone:
         note += ['', 'Delete (no longer part of it):'] + ['  ' + rel for rel in gone]
     archive = dest + '-update.zip'
