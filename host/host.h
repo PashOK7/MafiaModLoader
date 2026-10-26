@@ -691,7 +691,17 @@ float PedestrianHealth(void *element);
 bool PedestriansMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 // a frame's release told (framelife.cpp): LS3D's frames' and meshes' Release hooked once something is watched
 void FrameLifeInit();
-void FixesInit();                         // (fixes.cpp, after the game's hooks) bugs of the game itself, always fixed
+void FixesInit();
+// ---- the world's static geometry in batches (batch.cpp; render.set's batch)
+int BatchGroup(const void *visual, const uint8_t *entry, bool inFrame);   // (geom.cpp) 1 taken, 2 captured, 0 LS3D's
+void BatchCaptured();                                                     // (geom.cpp) LS3D's call under capture returned
+void BatchDip(void *dev9, int type, int base, unsigned minIndex, unsigned verts, unsigned start, unsigned prims);
+bool BatchDrawing();                                                      // our own draws now: hkDip passes them through
+void BatchFrameEnd(void *dev9);                                           // (geom.cpp) the frame's world drawn
+void BatchMissionClosed();
+bool BatchSet(bool on, std::string *err);
+std::string BatchStateJson();
+std::string BatchProbeJson(const float *at, float radius);   // (render.batch_probe)                         // (fixes.cpp, after the game's hooks) bugs of the game itself, always fixed
 // the size things are drawn at (scale.cpp): an actor's or a pedestrian's model frame scaled for the world's drawing
 // alone (render.cpp around the world's Render); actor.scale, actors.scaled
 int ActorScale(MmlMod *mod, void *actor, const MmlActorScale *s, std::string *err);   // s null: its own size

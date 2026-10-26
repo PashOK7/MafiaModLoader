@@ -181,12 +181,14 @@ bool ReadDraw(IDirect3DDevice9 *d, D3DPRIMITIVETYPE type, INT base, UINT start, 
 
 HRESULT DrawOn(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex, UINT verts, UINT start, UINT n) {
     HRESULT hr;
+    BatchDip(d, t, base, minIndex, verts, start, n);   // (batch.cpp: a capture's draw read; the batches before a blended one)
     if (ShadersDraw(d, t, base, minIndex, verts, start, n, reinterpret_cast<void *>(oDip), &hr)) return hr;   // (shaders.cpp)
     MirrorGiveBack(d);   // (a draw no rule takes: the game's shaders, if a rule's were lent)
     return oDip(d, t, base, minIndex, verts, start, n);
 }
 
 HRESULT STDMETHODCALLTYPE hkDip(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex, UINT verts, UINT start, UINT n) {
+    if (BatchDrawing()) return oDip(d, t, base, minIndex, verts, start, n);   // (batch.cpp's own: no group's)
     Now *now = g_now;
     if (!now) {
         HRESULT hr = DrawOn(d, t, base, minIndex, verts, start, n);
@@ -298,7 +300,18 @@ void DrawGroup(void *visual, void *edx, uint8_t *entry) {
 }
 
 template <RenderFgFn *orig, int kind>
+void HkRenderFg(void *visual, void *edx, uint8_t *entry);
+template <RenderFgFn *orig, int kind>
 void __fastcall hkRenderFg(void *visual, void *edx, uint8_t *entry) {
+    if constexpr (kind == 1) {   // (an object's group: batch.cpp takes it, or captures it while LS3D draws it)
+        const int b = BatchGroup(visual, entry, g_inFrame);
+        if (b == 1) return;
+        if (b == 2) { HkRenderFg<orig, kind>(visual, edx, entry); BatchCaptured(); return; }
+    }
+    HkRenderFg<orig, kind>(visual, edx, entry);
+}
+template <RenderFgFn *orig, int kind>
+void HkRenderFg(void *visual, void *edx, uint8_t *entry) {
     if (g_rules.empty() && !g_surveyWanted && g_captures.empty()) { DrawGroup<orig, kind>(visual, edx, entry); return; }
     Now now{};
     bool hide = false;
@@ -424,7 +437,10 @@ void GeomFrameBegin() {
     for (Rule &r : g_rules) { r.groupsNow = r.facesNow = 0; }
     if (!g_captures.empty() || ShadersWanted()) EnsureDip();
 }
-void GeomFrameDrawing(bool on) { g_inFrame = on; }
+void GeomFrameDrawing(bool on) {
+    if (!on && g_inFrame) BatchFrameEnd(RenderDevice(9));   // (batch.cpp: what is asked for and not drawn yet)
+    g_inFrame = on;
+}
 void GeomFrameEnd() {
     g_frames++;
     for (Rule &r : g_rules) { r.groupsLast = r.groupsNow; r.facesLast = r.facesNow; }

@@ -4080,3 +4080,33 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
 - **Seen**: 1.0 and 1.2, the crowd: the people as LS3D draws them (a still crowd, CPU against GPU: 0.13 % of the
   pixels over 8); moving: 1.0 -0.4 ± 1.2 ms, 1.2 -0.1 ± 0.5 (even); still: +0.68 ms (the host's work a person's
   draw, LS3D doing nothing while the bones stand). Offline tests ALL PASSED.
+
+## 2026-10-26: the world's static objects in batches (ROADMAP 31f, 31g)
+
+- **Why**: the far scene is draw-bound (31a): 34 800 draws, LS3D's m_RenderFGroup 57 % of the frame, the driver
+  12.4 ms. A static object's group is the same from frame to frame (LS3D lights it only when the lights change), so
+  it can be drawn with every group of its state at once.
+- **Made** (host/batch.cpp; geom.cpp's hkRenderFg and DrawOn, render.cpp's render.set and render.state, game_hooks.cpp):
+  `render.set {batch: true}`. A group of an I3D_object ('OBJ_' at +0x1D4) not yet captured is drawn by LS3D with the
+  capture listening: its one DrawIndexedPrimitive read (the pool's vertices with D3DLOCK_NOOVERWRITE: a READONLY lock
+  alone waited for the GPU, 0.5 ms a group), put into the world by the device's world matrix, appended to the batch
+  of the device's state then (`Sig`: both stages' textures (held by a reference: LS3D frees textures and another takes
+  the address, which once drew the sky on a tower), their operations, the alpha test, culling, depth and its bias,
+  the fog Render sets an entry from its sector, the samplers). After: LS3D's call for a group whose world matrix,
+  LOD record and its stamps, texture (an animated material's frame) and fog are as captured is not made; it is asked
+  for. Before the frame's first blended draw and at the end of its world, each batch asked for is drawn once, its
+  index buffer the groups asked for (LS3D's own visibility), in LS3D's order of first asking, with D3DRS_CLIPPING on
+  (an entry's +0x08 is Render's clipping flag, not a portal's) and every state put back (LS3D's cache of the states).
+  Captures cost at most 3 ms a frame; a batch whose dead groups pass half is made again of its live ones. Left to
+  LS3D: blended, environment-mapped (a second stage), the backdrop (a view without a place), no depth write or
+  test, more than one draw, a moving object (moved twice within 60 frames: a city block's pooled instance moved by
+  the streaming once is captured again), and an object any of whose groups is LS3D's (its coplanar layers keep
+  LS3D's order). Counters: render.state's batch (`left_last_frame`, `changed`), render.batch_probe {at, radius}.
+- **Seen** (one lab at a time, `bench` with pictures): the whole city 1.2 41.2 -> 25.3 ms (34 800 draws -> 6 200 +
+  913 batches), 1.0 40.2 -> 24.1 ms; near 1.6 / 1.6, night 1.7 / 1.7, the crowd 6.6 / 6.7 (even: few draws there).
+  The picture: 1.2 far mean 0.53 / 0.45 / 0.39 of 255, 1.04 % of the pixels over 8 (the silhouettes' edges), near
+  0.03; 1.0 far 0.79, near 0.19 (a texture's noise: ROADMAP Known gaps). Driving with the game's own camera: the
+  groups taken (85 to 240 a frame near the ground), no artefact seen. Found on the way and fixed: the sky box batched
+  (in the world, cut through the city), environment maps frozen, the fog of the flush's moment, a tower's facade layers
+  out of LS3D's order, the people captured each frame (+3.7 ms in the crowd), Render's clipping flag taken for a
+  portal's (nothing batched with the game's camera).

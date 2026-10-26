@@ -151,6 +151,7 @@ int __fastcall hkMissionClose(void *self, void *edx) {
     LightsMissionClosed();   // (its lights too)
     EffectsMissionClosed();
     HappenMissionClosed();
+    BatchMissionClosed();   // (its visuals go with it)
     if (g_inOpen && !g_openSent) SendOpen();
     return r;
 }

@@ -451,6 +451,10 @@ bool RenderMethod(const std::string &method, const std::string &paramsJson, std:
             if (!(q > 0.001f && q < 1000.0f)) { *ok = false; *reply = "render.set: lod_quality 0.001..1000 (1 the game's)"; return true; }
             DrvSet(d, kRsLodQuality, AsInt(q));
         }
+        if (p.contains("batch")) {
+            std::string err;
+            if (!BatchSet(p["batch"].get<bool>(), &err)) { *ok = false; *reply = "render.set: batch: " + err; return true; }
+        }
         if (p.contains("whole_city")) {
             const game::ExeBuild &e = game::Exe();
             const game::Ls3dBuild &l = game::Ls3d();
@@ -486,8 +490,16 @@ bool RenderMethod(const std::string &method, const std::string &paramsJson, std:
                                                  : "given back to the game (its streaming, its occluders, its distances)");
         }
         *reply = json({{"occlusion", DrvGet(d, kRsOcclusion) != 0}, {"lod_quality", AsFloat(DrvGet(d, kRsLodQuality))},
-                       {"city", CityJson()}})
+                       {"city", CityJson()}, {"batch", json::parse(BatchStateJson())}})
                      .dump(-1, ' ', false, json::error_handler_t::replace);
+        *ok = true;
+        return true;
+    }
+    if (method == "render.batch_probe") {
+        json p = json::parse(paramsJson.empty() ? "null" : paramsJson, nullptr, false);
+        float at[3] = {0, 0, 0};
+        if (p.is_object() && p.contains("at")) for (int i = 0; i < 3; i++) at[i] = p["at"][i].get<float>();
+        *reply = BatchProbeJson(at, p.is_object() ? p.value("radius", 30.0f) : 30.0f);
         *ok = true;
         return true;
     }
@@ -509,6 +521,7 @@ bool RenderMethod(const std::string &method, const std::string &paramsJson, std:
                          {"viewport", {c.width, c.height}}};
     if (void *d = Driver()) out["ls3d"] = {{"occlusion", DrvGet(d, kRsOcclusion) != 0}, {"lod_quality", AsFloat(DrvGet(d, kRsLodQuality))}};
     if (game::g_exe && game::Exe().cityCache) out["city"] = CityJson();
+    out["batch"] = json::parse(BatchStateJson());
     if (!g_hooked) out["note"] = "no game known: nothing is drawn here";
     *reply = out.dump(-1, ' ', false, json::error_handler_t::replace);
     *ok = true;
