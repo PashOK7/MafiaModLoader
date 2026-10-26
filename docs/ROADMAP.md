@@ -1018,7 +1018,11 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
       nothing it would do changes (`render.set {batch_objects}`, on with `batch`): its groups asked for at once, the
       batches drawn at their place in LS3D's sort; the whole city from 120 m up 1.2 21.96 to 18.48 ms, 1.0 21.90 to
       18.56 (the picture the batches' reference: 1.0 against LS3D 0.276 of 255, 1.04 %); near -0.05 ms, night
-      -0.03 to -0.04, the crowd the same, in both builds. 10 262 objects, 26 800 groups a frame not through LS3D.)*
+      -0.03 to -0.04, the crowd the same, in both builds. 10 262 objects, 26 800 groups a frame not through LS3D.
+      The batches' memory held: a group not asked for in 30 s is dead (the city's streaming makes its blocks' objects
+      again elsewhere), a batch a quarter dead is rebuilt, every 300 frames whatever its size: far, near and far
+      again three times in 1.0 keeps 3.6 million vertices and 845 MB of address space free (it was 6.5 million and
+      608 MB).)*
       Opt-in until it has been driven through the missions. Not done: the lightmapped objects (I3D_lit_object), a
       Reset on DXVK (the batches' buffers are D3DPOOL_DEFAULT), the rules' shaders on batches.
     - **31f, vertex data that stays put.** Each LOD's vertices uploaded once into buffers of the host's (positions,
@@ -1313,13 +1317,6 @@ merged, sorted by importance):
   countryside freeride). The page stays writable for the run (such a plugin writes again later); a plugin that
   writes the game's data while the game reads it on another thread is not made safe by this. Not seen with another
   such plugin, nor in 1.0 with a real one (this one supports 1.2 alone: 1.0 is the offline test's).
-- **The batches' memory grows when objects are captured again** (2026-10-27, host/batch.cpp, both builds): a group
-  captured again (relit, moved, another LOD) leaves its old vertices in its batch until the batch is compacted; far,
-  near and far again in 1.0 took the batches from 3.6 to 6.5 million vertices (25 593 captured again, 24 249 of them
-  relit: the street's lights) and the process's free address space from 857 to 608 MB. 1.0's Game.exe is not
-  large-address-aware (2 GB): after the whole city, a scene change and a drive a screenshot's copy failed with
-  E_OUTOFMEMORY. To do: compact by the memory dead, not only by the indices; the batches' CPU copies dropped once
-  uploaded (they are read again only when compacted).
 - **`vb.set {rename: false}` under `render.set {batch: true}`: 0.57 % of the far frame's pixels differ** (2026-10-27,
   1.2, host/vbrename.cpp): at the silhouettes (worst 213 of 255), stable in each mode. The batched picture with the
   renaming is batch.cpp's reference exactly (0.271 / 0.228 / 0.187 of 255 against LS3D's, 1.02 %), and `vb.check`

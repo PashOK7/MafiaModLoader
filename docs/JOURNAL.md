@@ -4305,3 +4305,18 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   (`vb.state` `address_space_free_mb`, `refused_space`).
 - **Asked on the way** (the owner): is the city behind the camera drawn? No: LS3D's frustum culling stays in the whole
   city's scene; looking up from the same place the frame is 1.3 ms, 10 draws.
+
+## 2026-10-27: the batches' memory held (host/batch.cpp)
+
+- **Found**: in 1.0 (Game.exe not large-address-aware: 2 GB) after the whole city, the street and a drive a
+  screenshot's copy failed with E_OUTOFMEMORY; far, near, far took the batches from 3.6 to 6.5 million vertices and
+  the free address space from 857 to 608 MB. Not the dead groups alone: members 41 778 against 29 600 asked for a
+  frame. The city's streaming makes its blocks' objects again (`activated` 618 after 314): the old objects' groups
+  were never asked for again and never dead, their vertices held until the mission closed. And a batch was compacted
+  only at its draw, only past half dead and 4096 indices: after one round of captures again exactly half were dead;
+  the dead spread over a thousand small batches stayed.
+- **Made**: a group not asked for in 30 s (by the clock: frames a sweep apart) is dead; every 300 frames every batch
+  more than a quarter dead is rebuilt of its live groups (at a draw: 4096 indices at least), a batch with none lets
+  its buffers go. render.state's batch `compacted`, `stale`.
+- **Seen**: 1.0, far, near (45 s), far, three rounds: 3.6 million vertices each time far (3 605 528 in 1.2, the same
+  round), 174 dead indices, 845 to 850 MB free; the pictures as before. Offline tests ALL PASSED.

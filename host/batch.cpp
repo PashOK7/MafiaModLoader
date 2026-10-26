@@ -239,7 +239,7 @@ bool g_drawing;                                         // (our own draws, throu
 struct Capture { bool on; const void *visual, *group, *texture, *texture8; int draws; bool ok; std::unique_ptr<Member> m; Sig sig; };
 Capture g_cap;
 // counted
-uint64_t g_taken, g_captured, g_recaptured, g_refusedCount, g_flushes;
+uint64_t g_taken, g_captured, g_recaptured, g_refusedCount, g_flushes, g_compacted, g_stale;
 // why groups were LS3D's this frame and the last (BatchGroup's answers 0): render.state's batch.left
 enum { kLeftNotFrame, kLeftView, kLeftShaders, kLeftType, kLeftRefused, kLeftBlended, kLeftBudget, kLeftMoved, kLeftCount };
 unsigned g_left[kLeftCount], g_leftLast[kLeftCount];
@@ -398,14 +398,17 @@ bool ReadDraw(IDirect3DDevice9 *d, INT base, UINT minIndex, UINT verts, UINT sta
 }
 
 // A batch's vertices and indices made again of its live groups alone, when the dead ones (moved, relit, another
-// frame of a texture: captured again elsewhere) hold more than half of them
-void Compact(Batch &b) {
+// frame of a texture: captured again elsewhere; not asked for in kStaleMs) hold more than a quarter of them: its CPU
+// copies and, at its next draw, its vertex buffer (a batch with none left lets its buffers go)
+// (at a draw: 4096 indices at least, not to rebuild a batch in the frame for a few; the sweep a few seconds apart takes
+// any batch, a small one too: the dead spread over a thousand small batches held half the city again)
+bool Dying(const Batch &b, bool sweep) { return b.deadIdx > (sweep ? 0u : 4096u) && b.deadIdx * 4 > b.idx.size(); }
+void Rebuild(Batch &b, const std::vector<Member *> &live) {
     std::vector<Vtx> verts;
     std::vector<uint32_t> idx;
     std::vector<uint32_t> map(b.verts.size(), UINT32_MAX);
-    for (auto &kv : g_members) {
-        Member &m = *kv.second;
-        if (m.batch != &b || m.dead) continue;
+    for (Member *pm : live) {
+        Member &m = *pm;
         const uint32_t first = static_cast<uint32_t>(idx.size());
         for (uint32_t i = 0; i < m.nIdx; i++) {
             const uint32_t v = b.idx[m.firstIdx + i];
@@ -414,20 +417,60 @@ void Compact(Batch &b) {
         }
         m.firstIdx = first;
     }
-    g_memberEpoch++;
-    for (auto it = g_members.begin(); it != g_members.end();)   // (the dead ones of this batch forgotten)
-        it = it->second->batch == &b && it->second->dead ? g_members.erase(it) : std::next(it);
-    FlatRebuild();
     b.verts.swap(verts);
     b.idx.swap(idx);
     b.deadIdx = 0;
     b.vbVerts = 0;   // (the vertex buffer made again)
     b.askedLast.clear();
+    if (live.empty()) {
+        if (b.vb) b.vb->Release(), b.vb = nullptr;
+        if (b.ib) b.ib->Release(), b.ib = nullptr;
+        b.ibCap = 0;
+    }
+    g_compacted++;
+}
+// The groups not asked for in kStaleMs: dead (the city's streaming makes its blocks' objects again elsewhere: the old
+// ones' groups were never asked for again, their vertices held until the mission closed). The frames' times are
+// kept a sweep apart.
+constexpr double kStaleMs = 30000;
+std::vector<std::pair<unsigned, double>> g_sweeps;   // (frame, ms)
+void Age() {
+    const double now = NowMs();
+    g_sweeps.push_back({g_frame, now});
+    unsigned before = 0;   // the last frame of a sweep kStaleMs ago
+    for (auto &[f, ms] : g_sweeps) if (ms < now - kStaleMs) before = f;
+    while (g_sweeps.size() > 2 && g_sweeps[1].second < now - kStaleMs) g_sweeps.erase(g_sweeps.begin());
+    if (!before) return;
+    for (auto &kv : g_members) {
+        Member &m = *kv.second;
+        if (m.dead || m.askedFrame >= before) continue;
+        m.dead = true;
+        if (m.batch) m.batch->deadIdx += m.nIdx;
+        g_stale++;
+    }
+}
+// The batches given (all that are dying when `only` is null): rebuilt, their dead members forgotten
+void Compact(Batch *only) {
+    std::unordered_map<Batch *, std::vector<Member *>> live;
+    if (only) live[only];
+    else for (auto &kv : g_batches) if (Dying(*kv.second, true)) live[kv.second.get()];
+    if (live.empty()) return;
+    for (auto &kv : g_members) {
+        Member &m = *kv.second;
+        if (m.dead) continue;
+        auto it = live.find(m.batch);
+        if (it != live.end()) it->second.push_back(&m);
+    }
+    for (auto &[b, ms] : live) Rebuild(*b, ms);
+    g_memberEpoch++;
+    for (auto it = g_members.begin(); it != g_members.end();)   // (the dead ones of these batches forgotten)
+        it = it->second->dead && live.count(it->second->batch) ? g_members.erase(it) : std::next(it);
+    FlatRebuild();
 }
 
 // A batch's buffers: the vertices made again when it grew, the indices of this frame's groups when they changed
 bool Upload(IDirect3DDevice9 *d, Batch &b) {
-    if (b.deadIdx > 4096 && b.deadIdx * 2 > b.idx.size()) Compact(b);
+    if (Dying(b, false)) Compact(&b);
     if (!b.vb || b.vbVerts != b.verts.size()) {
         if (b.vb) b.vb->Release(), b.vb = nullptr;
         const UINT bytes = static_cast<UINT>(b.verts.size() * sizeof(Vtx));
@@ -719,6 +762,7 @@ bool Capture1(IDirect3DDevice9 *d, const D3dMirror &mi, int base, unsigned minIn
         mem->group = g_cap.group;
         mem->texture = g_cap.texture;
         mem->texture8 = g_cap.texture8;
+        mem->askedFrame = g_frame;   // (as seen now: its age counts from its capture)
         if (const void *mat = At<const void *>(g_cap.group, kGroupMaterial)) mem->matAlpha = At<float>(mat, kMaterialAlpha);
         WorldOf(g_cap.visual, mem->world);
         mem->lodRec = LodRecord(g_cap.visual);
@@ -788,6 +832,7 @@ void BatchFrameEnd(void *dev) {
     g_curKey = 0;
     g_entrySeen = false;
     g_objsSkippedLast = g_objsSkippedNow, g_objsSkippedNow = 0;
+    if (g_frame % 300 == 299) Age(), Compact(nullptr);   // (the batches no longer asked for too: their memory)
     g_groupsSkippedLast = g_groupsSkippedNow, g_groupsSkippedNow = 0;
     g_drawsLast = g_drawsNow, g_drawsNow = 0;
     g_takenLast = g_takenNow, g_takenNow = 0;
@@ -936,7 +981,7 @@ std::string BatchStateJson() {
     return json({{"left_last_frame", left}, {"changed", died}, {"on", g_on}, {"batches", g_batches.size()}, {"members", g_members.size()}, {"vertices", verts},
                  {"indices", idx}, {"dead_indices", dead}, {"refused", g_refused.size()}, {"refused_objects", g_refusedVisuals.size()}, {"taken_last_frame", g_takenLast},
                  {"draws_last_frame", g_drawsLast}, {"captured", g_captured}, {"captured_again", g_recaptured},
-                 {"flushes", g_flushes}, {"objects", g_skip}, {"objects_known", g_objs.size()},
+                 {"flushes", g_flushes}, {"compacted", g_compacted}, {"stale", g_stale}, {"objects", g_skip}, {"objects_known", g_objs.size()},
                  {"objects_skipped_last_frame", g_objsSkippedLast}, {"groups_skipped_last_frame", g_groupsSkippedLast},
                  {"objects_skipped", g_objsSkipped}}).dump(-1, ' ', false, json::error_handler_t::replace);
 }
