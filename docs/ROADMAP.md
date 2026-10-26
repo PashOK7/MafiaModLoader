@@ -1288,9 +1288,11 @@ merged, sorted by importance):
 - **The exit crash writes a dump at every quit** (seen in the tester's crashes of 2026-10-25: four of five at the
   menu's Quit, LS3DF+0x5AC2E in C_IBManager::m_FreeAllIBuffers from IGraph::Close; knowledge/notes/game.md "The exit
   crash"): the game is closing anyway, but each leaves a dump of hundreds of MB that a player then sends. Not fixed.
-- **ASI mods that write Game.exe without VirtualProtect** (libMafiaCountrysideMap 2.0, 2026-10-25): its code and
-  .rdata writes fault in every layout, with or without the loader. Making the whole image writable before scripts\
-  loads would let it work: not done (the owner's call; its fullmap.bmp was not in the copy of the tester's folder).
+- **ASI mods that write Game.exe without VirtualProtect: only the pages they write are opened** (2026-10-26,
+  host/asi_compat.cpp): libMafiaCountrysideMap 2.0's countryside map works in 1.2 (seen in the lab: Tab in the
+  countryside freeride). The page stays writable for the run (such a plugin writes again later); a plugin that
+  writes the game's data while the game reads it on another thread is not made safe by this. Not seen with another
+  such plugin, nor in 1.0 with a real one (this one supports 1.2 alone: 1.0 is the offline test's).
 - **A gamepad plugged in while the game runs: not seen with a real pad** (2026-10-24, host/joyplug.cpp): the
   opening again is seen in both labs (`joy.drop`, `joy.rescan`), the device's arrival with real hardware and the poll
   thread (no CM_Register_Notification: Windows 7, Wine) are not. The running mission's force feedback effects stay on
@@ -1324,7 +1326,8 @@ merged, sorted by importance):
   (2026-10-25: as d3d8.dll Ultimate ASI Loader loaded the tester's ASI mods into Setup.exe, which they stopped). Seen
   in a copy of his folder with his mods: Setup.exe's dialog, the game, the brightness drawn in a window; fusion_fix's
   part `ijoy` (a pad's dead zones) not found there (one of his mods patches IJoy.dll first); his
-  libMafiaCountrysideMap2.0.asi faults once at the start (caught, the game goes on). Not seen there: frame
+  libMafiaCountrysideMap2.0.asi faulted once at the start (caught, the game went on; since 2026-10-26 its writes
+  are let through: host/asi_compat.cpp). Not seen there: frame
   generation's caps, the memory with his textures. The trees' leaves look white in that copy whatever the layout
   (without his ASI mods, his maps\, DXVK, on 9Ex alike; green in the 1.2 lab): his game's own files, not looked into.
 - **Frame generation on a full-screen device** (2026-10-25, the RTX 5060 friend's log of 2026-10-24: 800x600 full

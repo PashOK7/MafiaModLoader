@@ -116,6 +116,7 @@ void Init() {
     DpiAware();
     GatherStart();   // (before the game loads its Direct3D 9: DXVK's log goes to mml\logs)
     CrashFilterStart();
+    AsiCompatStart();   // (asi_compat.cpp: before the ASI mods' timers and threads write the game)
     if (GameHooksInstall()) {
         HLOG("game: Mafia %s", GameBuild());
         StartInit();

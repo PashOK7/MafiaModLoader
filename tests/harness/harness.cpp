@@ -49,6 +49,19 @@ extern "C" __declspec(dllexport) __declspec(naked) int harness_seven() {
     }
 }
 
+// What an old ASI mod writes without VirtualProtect (scripts\writer.asi, tests/harness/writer_asi.cpp): a page of
+// constants each (.rdata: read-only), and harness_eight's `mov eax, 8` (.text). harness_ro_c is the harness's own
+// write (`crash_rdata`): not an ASI's, it still faults.
+extern "C" __declspec(dllexport) __declspec(align(4096)) const unsigned harness_ro_a[1024] = {0xA};
+extern "C" __declspec(dllexport) __declspec(align(4096)) const unsigned harness_ro_b[1024] = {0xB};
+extern "C" __declspec(dllexport) __declspec(align(4096)) const unsigned harness_ro_c[1024] = {0xC};
+extern "C" __declspec(dllexport) __declspec(naked) int harness_eight() {
+    __asm {
+        mov eax, 8
+        ret
+    }
+}
+
 // A filter of the harness's own, set after the loader's (as a wrapper or an overlay sets one): the loader's runs
 // first and chains to it.
 LONG WINAPI HarnessFilter(EXCEPTION_POINTERS *) {
@@ -93,6 +106,16 @@ int main(int argc, char **argv) {
     LoadLibraryW((dir + L"rw_data.dll").c_str());   // (the game's file layer, there before the loader as Game.exe imports it)
     HMODULE loader = LoadLibraryW((dir + L"MafiaModLoader.asi").c_str());
     if (!loader) { printf("harness: cannot load MafiaModLoader.asi (%lu)\n", GetLastError()); return 1; }
+    // the ASI mods of scripts\, after the loader, as Ultimate ASI Loader loads them
+    WIN32_FIND_DATAW fd;
+    HANDLE find = FindFirstFileW((dir + L"scripts\\*.asi").c_str(), &fd);
+    if (find != INVALID_HANDLE_VALUE) {
+        do {
+            if (!LoadLibraryW((dir + L"scripts\\" + fd.cFileName).c_str()))
+                printf("harness: scripts\\%ls not loaded (%lu)\n", fd.cFileName, GetLastError());
+        } while (FindNextFileW(find, &fd));
+        FindClose(find);
+    }
     auto pump = reinterpret_cast<void (*)()>(GetProcAddress(loader, "mml_host_pump"));
     if (!pump) { printf("harness: no mml_host_pump\n"); return 1; }
     // a frame's end as the game's Present makes it (prof.frames), 1 ms blocked in it
@@ -160,6 +183,10 @@ int main(int argc, char **argv) {
                 GetModuleFileNameW(of, name, MAX_PATH);
             printf("harness: its own filter set (it was given %p in %ls)\n", reinterpret_cast<void *>(before), name);
             fflush(stdout);
+        }
+        if (GetFileAttributesW((dir + L"crash_rdata").c_str()) != INVALID_FILE_ATTRIBUTES) {
+            DeleteFileW((dir + L"crash_rdata").c_str());
+            const_cast<volatile unsigned *>(harness_ro_c)[0] = 1;   // (the game's own write into its constants)
         }
         if (GetFileAttributesW((dir + L"crash_notls").c_str()) != INVALID_FILE_ATTRIBUTES) {
             DeleteFileW((dir + L"crash_notls").c_str());

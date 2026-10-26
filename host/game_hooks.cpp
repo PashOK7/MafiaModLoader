@@ -237,6 +237,7 @@ void Frame() {
     float dt = g_last.QuadPart ? static_cast<float>(now.QuadPart - g_last.QuadPart) / static_cast<float>(g_freq.QuadPart) : 0.0f;
     g_last = now;
     CrashFrame();
+    AsiCompatFrame();
     if (!g_modsStarted) {
         g_modsStarted = true;
         ModsInit();

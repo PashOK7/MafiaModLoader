@@ -636,6 +636,21 @@ Four things, each the game's own, all needed for the whole city in one frame:
   half done). The same without the loader and with Ultimate ASI Loader 10 as d3d8.dll. With Game.exe's .text made
   writable (a trial) the call went in and the .rdata write faulted. It is not Fusion Fix's radar map (whose
   coordinates are the city's 0mapar.bmp, in its own code).
+- **game** **What the plugin does** (read 2026-10-26, 1.2; its exports name it): from DllMain a timer (onTimer), which
+  tells the exe by a dword (three exes; 1.2 is its third, `Game` = 2) and then (inject) writes `call enableMap; nop`
+  over C_game::Init's `add esp, 0xD4; ret` (0x5A3955; enableMap does the `add esp` itself), the city map's transform
+  for the whole map (0x623B08 the window's height in the texture, 0x627908, 0x62791C..0x627928: world x, z to u, v)
+  and "fullmap.bmp" over "0mapar.bmp" (0x639310, .data). enableMap sets `hud + 0x46EC` (what the scripts' ENABLEMAP
+  sets: G_IndicatorsClass::MapEnable) in the missions it lists by the id at 0x6D46A4 (570 = freekrajina...).
+  G_IndicatorsClass::NahrajMapu loads the map's texture at `hud + 0x4090` once 0x46EC is set; DrawAll draws it
+  (0x5FF9F1) only while the HUD's flag 0x2000 is on, which C_player::InputDriving sets while "City Map" (Tab, action
+  31) is held: the map is the Tab map, not the radar (the radar in the corner is the cars' 3D radar). With the
+  loader's asi_compat (host/asi_compat.cpp) it works: Tab in the countryside freeride shows the whole map, the
+  player's arrow on the road north of Chinatown.
+- **game** **A presaved map from another game draws invisible**: the `fullmap_1.565` of a downloaded pack (its header
+  holds its bmp's time, 2016-12-30) loaded as the map's texture and was drawn as nothing (the map's quad drawn every
+  frame, its texture set: no picture); fullmap.bmp alone made the game write its own (`TEX` header, today's time)
+  and the map showed. A player copies the .bmp, not another game's `_1.565`.
 
 ## The exit crash (seen in mafia-ragdoll, not solved)
 

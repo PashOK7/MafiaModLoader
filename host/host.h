@@ -692,6 +692,10 @@ bool PedestriansMethod(const std::string &method, const std::string &paramsJson,
 // a frame's release told (framelife.cpp): LS3D's frames' and meshes' Release hooked once something is watched
 void FrameLifeInit();
 void FixesInit();
+// ---- ASI mods that write Game.exe's or LS3DF.dll's code or constants without VirtualProtect (asi_compat.cpp): the
+// write let through (the page made writable, the instruction run again), logged once a page; any other fault as before
+void AsiCompatStart();   // at start: the vectored handler, first in the process's list
+void AsiCompatFrame();   // each frame: the pages opened on threads without TLS logged
 // ---- the world's static geometry in batches (batch.cpp; render.set's batch)
 int BatchGroup(const void *visual, const uint8_t *entry, bool inFrame);   // (geom.cpp) 1 taken, 2 captured, 0 LS3D's
 void BatchCaptured();                                                     // (geom.cpp) LS3D's call under capture returned

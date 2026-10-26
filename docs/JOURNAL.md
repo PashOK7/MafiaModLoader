@@ -4139,3 +4139,28 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   it. Checked: ffmpeg, dav1d, Ultimate ASI Loader (a GitHub redirect) and its raw licence by their SHA-256, DXVK
   through deps.py; badssl.com's expired, untrusted-root and wrong-host refused with the right reasons; a 404; an
   unknown host. Offline test: fetch_tests (127.0.0.1: 3 MB in 64 KB reads after a redirect, a 404).
+
+## 2026-10-26: old ASI mods' unprotected writes let through (host/asi_compat.cpp); the countryside map
+
+- **Asked** (the owner): make the ASI mods that write Game.exe without VirtualProtect work (libMafiaCountrysideMap
+  2.0, the tester's), properly, and see the countryside map with fullmap.bmp in the 1.2 lab.
+- **Read** (the plugin's exports and code): a timer from DllMain tells the exe and writes a call into C_game::Init's
+  end, the map's transform into .rdata and "fullmap.bmp" over "0mapar.bmp" (knowledge/notes/game.md). Nothing else
+  is needed from the loader than letting those writes happen.
+- **Made**: host/asi_compat.cpp, a vectored handler first in the process's list: an access violation writing into
+  Game.exe's or LS3DF.dll's image, on a committed page that is only not writable, by an instruction of an .asi other
+  than the loader, gets that page made writable (execute kept) and the write run again; anything else goes on as
+  before. No TLS, no allocation in the handler; each page logged once (a thread without TLS: at the frame). The
+  stand-in game loads scripts\*.asi after the loader; tests/harness/writer_asi.cpp writes its .rdata and code from
+  DllMain and from a thread without TLS; the harness's own write into its .rdata (`crash_rdata`) still crashes with
+  its dump. Offline tests ALL PASSED (517).
+- **Seen** (1.2 lab, the plugin and the pack's fullmap.bmp): the three pages logged (.text 0x5A3000, .rdata 0x623000
+  and 0x627000), dxwrapper's log without a fault, `hud + 0x46EC` 1 in freekrajina. The radar in the corner showed
+  no map, and that is not the plugin's place: the map is the Tab map (DrawAll draws it while flag 0x2000 is on, set
+  by C_player::InputDriving while "City Map" is held: a `watch` on the flags, a `tap` on its DrawPrimitive). Held,
+  it was drawn and invisible: the pack's fullmap_1.565 (another game's presave, copied beside the .bmp) was the
+  texture; with 0mapar.bmp put back by hand the city map showed, with the .bmp under a new name (no presave) the
+  whole map. A clean start with the plugin and fullmap.bmp alone: Tab shows the countryside map, the arrow on the
+  road north of Chinatown. 1.0 lab: the handler installed, the countryside freeride loaded (the plugin supports 1.2
+  only). The plugin and the map taken out of the lab again.
+- **The tester's copy** (W:/MafiaDLSS, mml.config.json's new `players`, AGENTS.md): his maps\ has no fullmap.bmp.

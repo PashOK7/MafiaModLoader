@@ -798,6 +798,28 @@ def run_crash(trigger, tap_crash=False, setup=None, tap=True):
     return out, json.load(open(reports[0])) if reports else None
 
 
+def asi_compat_checks(b):
+    """An old ASI mod's writes into the game's constants and code without VirtualProtect (scripts\\writer.asi, as
+    libMafiaCountrysideMap 2.0 writes Game.exe's): let through by the loader (host/asi_compat.cpp), each page logged,
+    the one written from a thread without TLS at the frame."""
+    exe = os.path.join(HARNESS, 'mml_harness.exe')
+
+    def u32(name, off=0):
+        r = b.call('mem.read', {'addr': 'mml_harness.exe+0x%X' % (export_rva(exe, name) + off), 'size': 4, 'as': 'u32'})
+        return r['result'].get('value', [None])[0] if r['ok'] else r
+    check("asi compat: writer.asi's DllMain wrote harness_ro_a (.rdata) without VirtualProtect: 0xA2",
+          u32('harness_ro_a') == 0xA2, u32('harness_ro_a'))
+    check("asi compat: ... and harness_eight's code (.text): mov eax, 9", (u32('harness_eight') or 0) & 0xFFFF == 0x09B8,
+          hex(u32('harness_eight') or 0))
+    check("asi compat: its thread without TLS wrote harness_ro_b: 0xB2", u32('harness_ro_b') == 0xB2, u32('harness_ro_b'))
+    lines = [l for l in b.call('log.tail', {'lines': 2000})['result'] if 'asi compat: writer.asi' in l]
+    check('asi compat: each page logged once, writer.asi named, the sections .rdata and .text',
+          len(lines) == 3 and sum('(.rdata, read-only)' in l for l in lines) == 2 and
+          sum('(.text, execute-read)' in l for l in lines) == 1, lines)
+    check('asi compat: the write on the thread without TLS logged at the frame',
+          sum('thread without TLS' in l for l in lines) == 1, lines)
+
+
 def crash_tests():
     """A crash nobody handles (the harness's `crash` file): the dump and, beside it, the report of what dies with the
     process (the stack, the log, the taps' calls, the events, the mods). Then the same on a thread made without TLS
@@ -857,6 +879,13 @@ def crash_tests():
     given = out.split('its own filter set (it was given')[1].split(')')[0] if 'its own filter set (it was given' in out else ''
     check("another's filter after ours: the dump written, then its filter called; it was given what came before it, not ours",
           'its own filter called' in out and given and r is not None and 'MafiaModLoader.asi' not in given, out[-800:])
+
+    # the game's own write into its constants is not an ASI mod's: it still faults (asi_compat lets only those through)
+    out, r = run_crash('crash_rdata', tap=False)
+    ro_c = export_rva(exe, 'harness_ro_c')
+    check("the game's own write into its .rdata: still a crash (not an ASI mod's write), at harness_ro_c",
+          r is not None and r.get('access', {}).get('kind') == 'write' and
+          r['access'].get('address') == 'mml_harness.exe+0x%X' % ro_c, r and r.get('access'))
 
     out, r = run_crash('crash_notls', tap_crash=True)
     check('a thread without TLS: the harness made it (fs:[0x2C] 0)', 'fs:[0x2C] = 00000000' in out, out[-600:])
@@ -1764,6 +1793,7 @@ def main():
         check('mem.write into a read-only page (the same bytes back)', r['ok'], r)
         r = b.call('mem.read', {'addr': '0x10', 'size': 4})
         check('mem.read of an unmapped address: an error, no crash', not r['ok'], r)
+        asi_compat_checks(b)
 
         # tap: a link of the same chain, outermost
         r = b.call('tap', {'cmd': 'mml_harness.exe+0 n=2 ret'})
