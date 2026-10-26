@@ -18,7 +18,8 @@
 // GetStreamSource and GetIndices give the game's buffer back, a state block's Apply and a new copy while the buffer
 // is bound are followed. Every copy keeps the pages changed since it was last written and is brought up to date when
 // its turn comes. All copies busy or the copies' budget spent: the copy drawn now is written in place, waiting as the
-// game did. The game's own promises kept: a lock with NOOVERWRITE or DISCARD alone is written into the copy drawn now
+// game did; and none taken, none made, with less than 384 MB of the process's address space free (1.0's 2 GB). The
+// game's own promises kept: a lock with NOOVERWRITE or DISCARD alone is written into the copy drawn now
 // with the same flag (a discarded copy written whole: a plain lock may draw it later); a buffer written only so (1.2's
 // shadows, the particles: rings) is given back to the game after 8 such unlocks, nothing of ours left on it.
 //
@@ -128,7 +129,7 @@ Entry *g_boundIb;
 
 struct Stats {
     uint64_t adopted = 0, adoptedBytes = 0, released = 0, copiesMade = 0, copyBytes = 0, refusedBudget = 0,
-             locks = 0, commits = 0, renames = 0, inPlace = 0, appends = 0, discards = 0, givenBack = 0, waits = 0, failures = 0,
+             locks = 0, commits = 0, renames = 0, inPlace = 0, appends = 0, discards = 0, givenBack = 0, refusedSpace = 0, waits = 0, failures = 0,
              pagesWritten = 0, bytesWritten = 0;
     double waitMs = 0, commitMs = 0;
 } g_st;
@@ -200,8 +201,17 @@ bool OursCaller(void *ra) {
 void SetBit(std::vector<uint32_t> &v, size_t i) { v[i >> 5] |= 1u << (i & 31); }
 inline bool Bit(const std::vector<uint32_t> &v, size_t i) { return (v[i >> 5] >> (i & 31)) & 1; }
 
+// The process's free address space (a 32-bit game: 1.0's Game.exe is not large-address-aware, 2 GB, and the whole
+// city drawn at once fills most of it): below kMinFreeVa no buffer is taken and no copy made (written in place)
+constexpr uint64_t kMinFreeVa = 384ull << 20;
+uint64_t FreeVa() {
+    MEMORYSTATUSEX ms{sizeof ms};
+    return GlobalMemoryStatusEx(&ms) ? ms.ullAvailVirtual : 0;
+}
+
 // ---- a buffer the game made: its copy in memory and its first Direct3D buffer (its own)
 void Adopt(IDirect3DDevice9 *d, int kind, void *buf, UINT bytes, DWORD usage, DWORD format) {
+    if (FreeVa() < kMinFreeVa + bytes) { g_st.refusedSpace++; return; }
     auto *e = new Entry;
     e->kind = kind, e->game = buf, e->dev = d, e->bytes = bytes, e->usage = usage, e->format = format;
     e->pages = (bytes + kPage - 1) / kPage;
@@ -240,6 +250,7 @@ int AddCopy(Entry &e) {
     const int cap = std::max(kMinCopies, std::min<int>(kMaxCopies, static_cast<int>(kCopiesBytes / std::max(e.bytes, 1u))));
     if (static_cast<int>(e.copies.size()) >= cap) return -1;
     if (g_st.copyBytes + e.bytes > kCopyBudget) { g_st.refusedBudget++; return -1; }
+    if (FreeVa() < kMinFreeVa + e.bytes) { g_st.refusedSpace++; return -1; }
     const DWORD usage = (e.usage & ~D3DUSAGE_WRITEONLY) | D3DUSAGE_DYNAMIC | (g_test ? 0 : D3DUSAGE_WRITEONLY);
     IUnknown *b = nullptr;
     HRESULT hr;
@@ -663,7 +674,8 @@ json StateJson() {
               {"copies_budget_mb", kCopyBudget >> 20}, {"refused_budget", g_st.refusedBudget}, {"released", g_st.released},
               {"locks", g_st.locks}, {"commits", g_st.commits}, {"renames", g_st.renames}, {"in_place", g_st.inPlace}, {"appends", g_st.appends}, {"discards", g_st.discards}, {"given_back", g_st.givenBack},
               {"waits", g_st.waits}, {"wait_ms", g_st.waitMs}, {"commit_ms", g_st.commitMs}, {"pages_written", g_st.pagesWritten},
-              {"mb_written", g_st.bytesWritten / 1048576.0}, {"failures", g_st.failures}, {"slots_used", g_used}};
+              {"mb_written", g_st.bytesWritten / 1048576.0}, {"failures", g_st.failures}, {"slots_used", g_used}, {"refused_space", g_st.refusedSpace},
+              {"address_space_free_mb", FreeVa() / 1048576.0}, {"address_space_min_mb", kMinFreeVa >> 20}};
     return j;
 }
 

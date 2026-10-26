@@ -1260,6 +1260,17 @@ def main(a):
         targets = {int(i.op_str, 16) for i in gls.md.disasm(gls.at(ls['addObject'], 0x200), gls.base + ls['addObject'])
                    if i.mnemonic == 'call' and i.op_str.startswith('0x')}
         check(gls.base + g in targets, f'{name} getObjectLod: called by I3D_object::m_AddFGroups')
+    # What m_AddFGroups reads besides the visual (host/batch.cpp): the camera's place (fsub [addFgCamera]), the sector
+    # (its +0x140), the last LOD's fading threshold (fcomp); Render writes the camera's place, the scene, the sector,
+    # pViewProjMatrix (the camera's +0x1E4) and tests the fog's switch at each entry.
+    for name, (exe, ls, gexe, gls) in builds.items():
+        add = ' '.join(f'{i.mnemonic} {i.op_str}' for i in gls.md.disasm(gls.at(ls['addObject'], 0x300), gls.base + ls['addObject']))
+        for f in ('addFgCamera', 'addFgSector', 'lodFadeMin'):
+            check(f'[{gls.base + ls[f]:#x}]' in add, f'{name} {f}: read by I3D_object::m_AddFGroups')
+        ren = ' '.join(f'{i.mnemonic} {i.op_str}' for i in gls.md.disasm(gls.at(ls['render'], 0x3600), gls.base + ls['render']))
+        for f in ('addFgCamera', 'addFgSector', 'renderScene', 'currentCamera', 'viewProj', 'fogOn'):
+            check(f'[{gls.base + ls[f]:#x}]' in ren, f'{name} {f}: used by I3D_driver::Render')
+        check(f'mov dword ptr [{gls.base + ls["viewProj"]:#x}]' in ren, f'{name} viewProj: Render sets pViewProjMatrix')
     print('ALL PASSED' if not fails else f'{fails} FAILED')
     return 1 if fails else 0
 

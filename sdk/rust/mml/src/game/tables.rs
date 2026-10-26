@@ -345,6 +345,13 @@ pub struct Ls3d {
     pub addSinglemesh: usize,
     pub getObjectLod: usize,
     pub rsLodQuality: usize,
+    pub addFgCamera: usize,
+    pub addFgSector: usize,
+    pub renderScene: usize,
+    pub currentCamera: usize,
+    pub viewProj: usize,
+    pub lodFadeMin: usize,
+    pub fogOn: usize,
 }
 
 /// The race of mission 6: racing.h RacingLayout.
@@ -970,6 +977,13 @@ pub static LS3D_12: Ls3d = Ls3d {
     addSinglemesh: 0x55930,
     getObjectLod: 0x61E30,
     rsLodQuality: 0x1C4CA4,
+    addFgCamera: 0x1C4C60,
+    addFgSector: 0x1C4C74,
+    renderScene: 0x1C4C78,
+    currentCamera: 0x1C4CF8,
+    viewProj: 0x1C4CD0,
+    lodFadeMin: 0x9B310,
+    fogOn: 0xBFCEC,
 };
 
 pub static LS3D_10: Ls3d = Ls3d {
@@ -1041,6 +1055,13 @@ pub static LS3D_10: Ls3d = Ls3d {
     addSinglemesh: 0x53030,
     getObjectLod: 0x5EB80,
     rsLodQuality: 0x1C0C54,
+    addFgCamera: 0x1C0C10,
+    addFgSector: 0x1C0C24,
+    renderScene: 0x1C0C28,
+    currentCamera: 0x1C0CA8,
+    viewProj: 0x1C0C80,
+    lodFadeMin: 0x972D0,
+    fogOn: 0xBBCBC,
 };
 
 pub static RACING_12: Racing = Racing {

@@ -4273,3 +4273,35 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   the game's (a mode against itself differs as much: the scenes' own flicker). `vb.check` 0 of 5252 (1.2) and 5556
   (1.0) pages. The A mode under batches differs at the silhouettes (ROADMAP Known gaps). fps_unlock's line costs
   nothing measurable (the crowd, 0.005 +- 0.109 ms). Offline tests ALL PASSED.
+
+## 2026-10-27: objects whole in batches not given to LS3D (host/batch.cpp; ROADMAP 31f/31g)
+
+- **Measured first** (1.2's batched far frame, `profile`): the request a group (batch.cpp's Group, ~29 700 a frame)
+  19.7 %, the batches' draws 16 %, LS3D's render loop 15.4 %, the visibility 13.8 %, I3D_object::m_AddFGroups 6.6 %,
+  RadixSort32 1.6 %: an object that never reaches m_AddFGroups takes all of these off but the draws and the
+  visibility.
+- **Read** (both builds, the same code): m_AddFGroups picks the LOD (GetObjectLOD from the camera's place
+  AddFGHlpStruct), fades the last LOD, relights the vertices when the sector's lights' stamp (+0x140) or the
+  visual's +0x118 differ from the LOD record's +0x04, +0x08, animates the uv, the environment maps, then queues an
+  entry a face group (32 bytes: +0x04 the sort key, +0x10 the group, +0x14 the sector). Render sorts them, sets
+  each one's sector fog, clipping and depth bias, and calls the visual's +0x6C. Render draws the backdrop sector
+  first with another projection (pViewProjMatrix the camera's +0x324 in 1.0) and each mirror's reflection with its
+  own camera before the main pass (the camera's +0x1E4): the skip only in the main pass, only without mirrors.
+  game_build.h: addFgCamera, addFgSector, renderScene, currentCamera, viewProj, lodFadeMin, fogOn (check_builds.py:
+  read by m_AddFGroups, used by Render, ALL PASSED).
+- **Made**: an object all of whose groups were taken in a frame is learnt (its LOD record and stamps, its world
+  matrix, its sector and the sector's fog as one number, each group's sort key); the frames after, its m_AddFGroups
+  (hooked) is not made while all of that stays (GetObjectLOD through the host's chain, no fade, no uv animation, no
+  animated material or environment map): its groups are asked for at once. The batches keep LS3D's order by rank
+  (the least sort key they were asked with): those asked early are drawn before an entry of a greater key, all
+  before the first blended draw, the rest at the frame's end. A batch drawn and asked for again later in the frame
+  is drawn again (it was not: a latent loss). `render.set {batch_objects}`; render.state's batch `objects_*`.
+- **Measured** (one lab at a time, `bench` A/B `batch_objects`, batches on): far 1.2 21.96 to 18.48 ms (-3.48 +-
+  0.03), 1.0 21.90 to 18.56 (-3.30 +- 0.16); near -0.049 and -0.064; night -0.036 and -0.030; the crowd unchanged.
+  The pictures: 1.2 the same but for the FPS line's digits; 1.0 against LS3D 0.276 / 0.233 / 0.191 of 255, 1.04 %,
+  the batches' own reference (31f/g). The whole city in 1.0: LS3D 36.5 ms, batched and skipped 18.55.
+- **Found**: the batches' memory grows with captures again (ROADMAP Known gaps); 1.0's Game.exe is not
+  large-address-aware: host/vbrename.cpp now takes no buffer and makes no copy below 384 MB of free address space
+  (`vb.state` `address_space_free_mb`, `refused_space`).
+- **Asked on the way** (the owner): is the city behind the camera drawn? No: LS3D's frustum culling stays in the whole
+  city's scene; looking up from the same place the frame is 1.3 ms, 10 draws.

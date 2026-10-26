@@ -704,6 +704,9 @@ bool BatchDrawing();                                                      // our
 void BatchFrameEnd(void *dev9);                                           // (geom.cpp) the frame's world drawn
 void BatchMissionClosed();
 bool BatchSet(bool on, std::string *err);
+void BatchSkip(bool on);                  // (render.set's batch_objects) objects whole in batches not given to m_AddFGroups
+void BatchEntry(const uint8_t *entry, bool inFrame);   // (geom.cpp) an entry of LS3D's render loop about to be drawn
+bool GeomInFrame();                       // (geom.cpp) the frame's own Render is drawing
 std::string BatchStateJson();
 std::string BatchProbeJson(const float *at, float radius);   // (render.batch_probe)                         // (fixes.cpp, after the game's hooks) bugs of the game itself, always fixed
 // the size things are drawn at (scale.cpp): an actor's or a pedestrian's model frame scaled for the world's drawing

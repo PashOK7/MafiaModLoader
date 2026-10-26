@@ -19,6 +19,14 @@
 //     identity (the vertices are the world's), the fixed pipeline does the rest as for LS3D's draw (its vertex fog
 //     from the view's depth, the stages, the alpha test); every state changed is put back after (LS3D's cache of the
 //     states must stay true).
+//   - an object all of whose groups were taken (an I3D_object whole in batches) is not given to LS3D's m_AddFGroups
+//     the frames after, while nothing it would do changes: its LOD (GetObjectLOD from the same distance), its LOD's
+//     record and the lights' stamps (no relighting), no fading, no uv animation, its sector and that sector's fog,
+//     its world matrix. Its groups are asked for at once, each with its sort key in LS3D's list (an entry's +0x04):
+//     the batches are drawn at their place in LS3D's order (before an entry of a greater key, all of them before the
+//     first blended draw), not at the first draw LS3D makes. No render list entries, no sorting, no request a group:
+//     the far scene's own cost of the batches. Only in Render's main pass of a scene without mirrors (the backdrop
+//     sector's pass and the mirrors' draw with other cameras).
 // Only the frame's own world (not a scene view's, not the shadow map's), only while no shader rule draws (the fixed
 // pipeline's: the rules' batches are later work). Everything is dropped when the mission closes or the device changes.
 #include "host.h"
@@ -39,9 +47,9 @@ namespace {
 
 // (+0x08: Render's clipping state (ls3d+333D0 in 1.2), D3DRS_CLIPPING on for an entry crossing the frustum's sides; the batches are drawn
 // with it on, always right)
-constexpr int kEntryGroup = 0x10, kEntryTexture = 0x18;
+constexpr int kEntryKey = 0x04, kEntryGroup = 0x10, kEntrySector = 0x14, kEntryTexture = 0x18;
 constexpr int kGroupMaterial = 0x04, kMaterialFlags = 0x08, kMaterialAlpha = 0x38;
-constexpr int kVisFlags = 0x1D8, kVisSource = 0x08, kVisLods = 0x1E4, kVisLod = 0x20C, kVisFade = 0x214, kVisFade2 = 0x218;
+constexpr int kVisFlags = 0x1D8, kVisSource = 0x08, kVisMesh = 0x1E0, kVisLods = 0x1E4, kVisLod = 0x20C, kVisFade = 0x214, kVisFade2 = 0x218;
 constexpr uint32_t kVisInstance = 0x10000;
 // a visual's class (+0x1D4): only I3D_object's own ('OBJ_' in memory) are batched; the people's single meshes, the
 // morphs, the billboards come through the same m_RenderFGroup or move each frame
@@ -103,6 +111,23 @@ struct Vtx { float pos[3]; DWORD color; float uv0[2], uv1[2]; };   // (FVF XYZ |
 constexpr DWORD kFvf = D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX2;
 
 struct Batch;
+struct Member;
+// An object whose groups are captured (its m_AddFGroups not made while it stays whole): what it was learnt with
+struct Obj {
+    const void *lodRec = nullptr;      // its LOD's record, the LOD, the record's stamps (+0x04 the sector's lights',
+    int lod = -1;                      // +0x08 the visual's +0x118)
+    uint32_t stamp[2] = {};
+    unsigned groups = 0;               // its LOD's face groups (LS3D's entries for it)
+    bool never = false;                // an environment map, an animated material: LS3D's each frame
+    float world[12];
+    const void *sector = nullptr;      // the sector it was queued from, its fog as one number
+    uint32_t fog = 0;
+    std::vector<Member *> members;     // its groups taken the frame it was learnt, and their sort keys
+    std::vector<uint32_t> keys;
+    unsigned frame = 0, taken = 0;     // the frame learnt, the groups taken then
+    unsigned wholeFrame = 0;           // the last frame all its groups were batched (taken, or asked without LS3D)
+    unsigned epoch = 0;                // (g_memberEpoch then: the members' pointers good)
+};
 // A face group of an object, captured
 struct Member {
     const void *visual, *group;
@@ -116,6 +141,7 @@ struct Member {
     float matAlpha = 1;                // its material's alpha (a material's blending flags do not change: checked once)
     unsigned askedFrame = 0;
     bool dead = false;
+    Obj *obj = nullptr;                // (g_objs' node: stable)
 };
 struct Batch {
     Sig sig;
@@ -127,7 +153,8 @@ struct Batch {
     IDirect3DIndexBuffer9 *ib = nullptr;
     UINT ibCap = 0, ibCount = 0;       // its capacity and this frame's indices
     std::vector<Member *> asked, askedLast;   // the groups asked for this frame, and the last frame's drawn
-    unsigned askedFrame = 0, order = 0;
+    unsigned askedFrame = 0;
+    uint32_t rank = 0;                 // its place in LS3D's order this frame: the least sort key it was asked with
     uint32_t deadIdx = 0;
 };
 
@@ -195,6 +222,17 @@ std::unordered_map<const void *, unsigned> g_refusedVisuals;
 // city block's pooled instance put elsewhere by the streaming moves once, rarely
 std::unordered_map<const void *, unsigned> g_moves;
 std::vector<Batch *> g_asked;                           // the batches asked for this frame, in LS3D's order
+// asked before LS3D's render loop (objects not given to m_AddFGroups): drawn at their place, by their rank
+std::vector<Batch *> g_early;
+size_t g_earlyNext;
+bool g_earlySorted;
+uint32_t g_curKey;                                      // the sort key of the entry LS3D draws now (its main pass)
+bool g_entrySeen;
+unsigned g_memberEpoch = 1;                             // members freed (captured again, compacted): objects learnt again
+std::unordered_map<const void *, Obj> g_objs;
+bool g_skip = true;                                     // (render.set's batch_objects)
+unsigned g_objsSkippedNow, g_objsSkippedLast, g_groupsSkippedNow, g_groupsSkippedLast;
+uint64_t g_objsSkipped;
 unsigned g_frame;
 bool g_drawing;                                         // (our own draws, through the device's chain)
 // the capture under way: the group LS3D draws now, its draws seen
@@ -244,6 +282,39 @@ void WorldOf(const void *visual, float *out) {
     for (int i = 0; i < 3; i++) memcpy(out + i * 4, w + i * 4, 12), out[i * 4 + 3] = w[12 + i];
 }
 
+// LS3D's globals (game_build.h addFgCamera...)
+uintptr_t Ls3dAt(uintptr_t rva) {
+    static uintptr_t base;
+    if (!base) base = ModuleBase("LS3DF.dll");
+    return base + rva;
+}
+// Render's main pass of a scene without mirrors: pViewProjMatrix the camera's own (the backdrop sector's pass and a
+// mirror's draw with other cameras)
+bool MainPass() {
+    const game::Ls3dBuild &l = game::Ls3d();
+    if (!l.viewProj) return false;
+    const uint8_t *cam = *reinterpret_cast<uint8_t *const *>(Ls3dAt(l.currentCamera));
+    const void *vp = *reinterpret_cast<void *const *>(Ls3dAt(l.viewProj));
+    const void *scene = *reinterpret_cast<void *const *>(Ls3dAt(l.renderScene));
+    return cam && vp == cam + 0x1E4 && scene && At<int>(scene, 0x170) == 0;
+}
+// The fog Render sets for an entry from its sector (its fog object +0x1F0: the kind +0x154, the colour, start, end,
+// density; the camera's +0x148 for the exponential kind; the fog's switch; the visual's own no-fog flag) as one number
+uint32_t FogOf(const void *sector, const void *visual) {
+    const game::Ls3dBuild &l = game::Ls3d();
+    uint32_t h = 2166136261u;
+    auto mix = [&](uint32_t v) { h = (h ^ v) * 16777619u; };
+    mix(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(sector)));
+    const void *fog = sector ? At<const void *>(sector, 0x1F0) : nullptr;
+    mix(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(fog)));
+    if (fog) for (int off : {0x154, 0x15C, 0x160, 0x164, 0x168, 0x19C, 0x1D0}) mix(At<uint32_t>(fog, off));
+    mix(*reinterpret_cast<const uint32_t *>(Ls3dAt(l.fogOn)));
+    mix(At<uint32_t>(visual, kVisFlags) & 0x8000u);
+    const void *cam = *reinterpret_cast<void *const *>(Ls3dAt(l.currentCamera));
+    mix(cam ? At<uint32_t>(cam, 0x148) : 0);
+    return h;
+}
+
 void Release(Batch &b) {
     if (b.vb) b.vb->Release(), b.vb = nullptr;
     if (b.ib) b.ib->Release(), b.ib = nullptr;
@@ -262,6 +333,10 @@ void DropAll() {
     g_refusedVisuals.clear();
     g_moves.clear();
     g_asked.clear();
+    g_early.clear();
+    g_earlyNext = 0;
+    g_objs.clear();
+    g_memberEpoch++;
     g_cap = Capture{};
 }
 
@@ -339,6 +414,7 @@ void Compact(Batch &b) {
         }
         m.firstIdx = first;
     }
+    g_memberEpoch++;
     for (auto it = g_members.begin(); it != g_members.end();)   // (the dead ones of this batch forgotten)
         it = it->second->batch == &b && it->second->dead ? g_members.erase(it) : std::next(it);
     FlatRebuild();
@@ -385,12 +461,28 @@ bool Upload(IDirect3DDevice9 *d, Batch &b) {
     return true;
 }
 
-// Every batch asked for, drawn; the states put back as they were
-void Flush(IDirect3DDevice9 *d) {
-    if (g_asked.empty() || g_drawing) return;
+// The batches asked for whose place in LS3D's order is reached (rank up to `limit`; the early ones only when `early`),
+// drawn in that order; the states put back as they were
+std::vector<Batch *> g_todo;
+void Flush(IDirect3DDevice9 *d, uint32_t limit, bool early) {
+    if (g_drawing) return;
+    if (!g_earlySorted && g_early.size() > g_earlyNext) {
+        std::stable_sort(g_early.begin() + g_earlyNext, g_early.end(), [](const Batch *a, const Batch *b) { return a->rank < b->rank; });
+        g_earlySorted = true;
+    }
+    g_todo.clear();
+    size_t e = g_earlyNext;
+    for (Batch *b : g_asked) {   // (in LS3D's order; the early ones merged in by their rank)
+        while (early && e < g_early.size() && g_early[e]->rank <= limit && g_early[e]->rank <= b->rank) g_todo.push_back(g_early[e++]);
+        g_todo.push_back(b);
+    }
+    while (early && e < g_early.size() && g_early[e]->rank <= limit) g_todo.push_back(g_early[e++]);
+    g_earlyNext = e;
+    g_asked.clear();
+    if (g_todo.empty()) return;
     MirrorGiveBack(d);   // (the fixed pipeline's)
     const D3dMirror *m = MirrorOf(d);
-    if (!m) { g_asked.clear(); return; }
+    if (!m) { g_todo.clear(); return; }
     // what LS3D set: put back after (the states a batch sets, the world, clipping)
     const Sig was = SigOf(*m);
     const D3DMATRIX wasWorld = m->world;
@@ -410,7 +502,8 @@ void Flush(IDirect3DDevice9 *d) {
     d->SetFVF(kFvf);
     if (!wasClip) d->SetRenderState(D3DRS_CLIPPING, TRUE);   // (a batch reaches past the frustum)
     const D3dMirror *cur = MirrorOf(d);
-    for (Batch *b : g_asked) {
+    for (Batch *b : g_todo) {
+        b->askedFrame = 0;   // (drawn: a group of it asked for later this frame asks for it again)
         if (!Upload(d, *b) || !b->ibCount) { b->asked.clear(); continue; }
         // its state, set where it differs from the device's now
         const Sig &s = b->sig;
@@ -444,7 +537,7 @@ void Flush(IDirect3DDevice9 *d) {
     d->SetIndices(ib0);
     if (ib0) ib0->Release();
     g_drawing = false;
-    g_asked.clear();
+    g_todo.clear();
     g_flushes++;
 }
 
@@ -457,6 +550,62 @@ bool SafeCapture(IDirect3DDevice9 *d, const D3dMirror &m, int base, unsigned min
 // m_RenderFGroup of an object (kind 1) about to be called: 1 taken (LS3D's call not made), 2 LS3D draws it with the
 // capture listening (BatchCaptured after), 0 nothing of ours.
 namespace {
+// A captured group asked for this frame: its batch drawn at its place in LS3D's order (the entry's sort key)
+void Ask(Member &m, uint32_t key, bool early) {
+    if (m.askedFrame == g_frame) return;
+    m.askedFrame = g_frame;
+    Batch &b = *m.batch;
+    if (b.askedFrame != g_frame) {
+        b.askedFrame = g_frame;
+        b.rank = key;
+        (early ? g_early : g_asked).push_back(&b);
+        if (early) g_earlySorted = false;
+    } else if (key < b.rank) {
+        b.rank = key;
+    }
+    b.asked.push_back(&m);
+}
+// What an object's LOD is made of (learnt again when its record changes): its face groups, whether LS3D's always
+void Survey(Obj &o, const void *visual, const void *rec) {
+    o.lodRec = rec;
+    o.lod = -1;
+    o.groups = 0;
+    o.never = false;
+    const void *mesh = At<const void *>(visual, kVisMesh);
+    const uint32_t n = mesh ? At<uint32_t>(mesh, 8) : 0;
+    for (uint32_t i = 0; i < n && i < 9; i++) if (At<const void *>(visual, kVisLods + 4 * i) == rec) { o.lod = static_cast<int>(i); break; }
+    if (o.lod < 0) { o.never = true; return; }
+    const void *lv = At<const void *>(mesh, 0x0C + 4 * o.lod);   // (its I3D_mesh_level: +0x1C its groups, +0x3C bit 8 an environment map)
+    if (!lv || (At<uint32_t>(lv, 0x3C) & 8)) { o.never = true; return; }
+    for (const void *g = At<const void *>(lv, 0x1C); g && o.groups < 4096; g = At<const void *>(g, 0x0C)) {
+        o.groups++;
+        const void *mat = At<const void *>(g, kGroupMaterial);
+        if (mat && (At<uint32_t>(mat, kMaterialFlags) & 0x4000000u)) o.never = true;   // (animated: its frame each frame)
+    }
+}
+// A group taken in LS3D's own frame: its object learnt (whole when all its groups were taken this frame)
+void Learn(const void *visual, const uint8_t *entry, Member &m, uint32_t key, const void *rec, const float *w) {
+    if (!g_skip || !MainPass()) return;
+    Obj &o = m.obj ? *m.obj : *(m.obj = &g_objs[visual]);
+    if (o.frame != g_frame || o.epoch != g_memberEpoch) {
+        if (o.lodRec != rec || o.epoch != g_memberEpoch) Survey(o, visual, rec);
+        o.frame = g_frame;
+        o.epoch = g_memberEpoch;
+        o.taken = 0;
+        o.members.clear();
+        o.keys.clear();
+        o.sector = At<const void *>(entry, kEntrySector);
+        o.fog = FogOf(o.sector, visual);
+        memcpy(o.world, w, sizeof o.world);
+        o.stamp[0] = At<uint32_t>(rec, 4);
+        o.stamp[1] = At<uint32_t>(rec, 8);
+    }
+    if (At<const void *>(entry, kEntrySector) != o.sector) return;
+    o.taken++;
+    o.members.push_back(&m);
+    o.keys.push_back(key);
+    if (o.taken == o.groups && !o.never) o.wholeFrame = g_frame;
+}
 int Group(const void *visual, const uint8_t *entry) {
     {
         const void *group = At<const void *>(entry, kEntryGroup);
@@ -482,12 +631,9 @@ int Group(const void *visual, const uint8_t *entry) {
             }
             if (fog && !memcmp(w, m.world, sizeof w) && rec == m.lodRec && rec && At<uint32_t>(rec, 4) == m.stamp[0] &&
                 At<uint32_t>(rec, 8) == m.stamp[1] && tex == m.texture && tex8 == m.texture8) {
-                Batch &b = *m.batch;
-                if (m.askedFrame != g_frame) {
-                    m.askedFrame = g_frame;
-                    if (b.askedFrame != g_frame) { b.askedFrame = g_frame; b.order = static_cast<unsigned>(g_asked.size()); g_asked.push_back(&b); }
-                    b.asked.push_back(&m);
-                }
+                const uint32_t key = At<uint32_t>(entry, kEntryKey);
+                Ask(m, key, false);
+                Learn(visual, entry, m, key, rec, w);
                 g_takenNow++;
                 g_taken++;
                 return 1;
@@ -544,7 +690,9 @@ void BatchDip(void *dev, int type, int base, unsigned minIndex, unsigned verts, 
     if (!m) return;
     // the batches asked for so far drawn before anything LS3D draws itself: their place in LS3D's order kept (a road's
     // marks, a shadow, a decal lie on what was drawn before them: the ground batched and drawn later covered them)
-    if (!g_asked.empty()) Flush(d);
+    // (the early ones up to the entry drawn now, all of them before the first blended draw; only in the main pass)
+    const bool early = g_entrySeen && g_earlyNext < g_early.size() && MainPass();
+    if (!g_asked.empty() || early) Flush(d, m->rs[D3DRS_ALPHABLENDENABLE] ? UINT32_MAX : g_curKey, early);
     if (!g_cap.on) return;
     // left to LS3D: more than one draw, not a triangle list, blended, shaded, a third stage, lit by Direct3D, drawn
     // without writing or testing the depth (its place in the order matters: the sky first, decals), and the backdrop
@@ -617,6 +765,8 @@ void BatchCaptured() {
     if (g_cap.ok && g_cap.draws == 1 && g_cap.m) {
         g_captured++;
         Member *m = g_cap.m.get();
+        auto old = g_members.find(k);
+        if (old != g_members.end()) g_memberEpoch++;   // (the one it replaces freed)
         g_members[k] = std::move(g_cap.m);
         FlatPut(k.visual, k.group, m);
     } else if (g_cap.draws) {
@@ -630,7 +780,15 @@ void BatchCaptured() {
 // The frame's world drawn (render.cpp through geom.cpp): what is asked for and not yet drawn, drawn
 void BatchFrameEnd(void *dev) {
     if (!g_on) return;
-    if (dev && !g_asked.empty()) Flush(static_cast<IDirect3DDevice9 *>(dev));
+    if (dev && (!g_asked.empty() || g_earlyNext < g_early.size())) Flush(static_cast<IDirect3DDevice9 *>(dev), UINT32_MAX, true);
+    g_asked.clear();
+    g_early.clear();
+    g_earlyNext = 0;
+    g_earlySorted = false;
+    g_curKey = 0;
+    g_entrySeen = false;
+    g_objsSkippedLast = g_objsSkippedNow, g_objsSkippedNow = 0;
+    g_groupsSkippedLast = g_groupsSkippedNow, g_groupsSkippedNow = 0;
     g_drawsLast = g_drawsNow, g_drawsNow = 0;
     g_takenLast = g_takenNow, g_takenNow = 0;
     g_captureMs = 0;
@@ -640,7 +798,82 @@ void BatchFrameEnd(void *dev) {
 }
 void BatchMissionClosed() { DropAll(); }
 
+// ---- objects whole in batches not given to LS3D (I3D_object::m_AddFGroups, game_build.h addObject)
+namespace {
+using AddFn = void(__fastcall *)(void *, void *);
+using LodFn = int(__fastcall *)(const void *, const float *);
+AddFn oAddObject;
+bool g_addHooked;
+// Whether the object stays as it was learnt; then its groups asked for, LS3D's m_AddFGroups not made
+bool Skip(const void *v) {
+    auto it = g_objs.find(v);
+    if (it == g_objs.end()) return false;
+    Obj &o = it->second;
+    if (o.never || o.wholeFrame + 1 != g_frame || o.epoch != g_memberEpoch || o.members.empty()) return false;
+    const uint32_t flags = At<uint32_t>(v, kVisFlags);
+    if (flags & (kVisInstance | 0x2000000u)) return false;   // (an instance; a morph's copy pending)
+    const void *mesh = At<const void *>(v, kVisMesh);
+    if (!mesh) return false;
+    float w[12];
+    WorldOf(v, w);
+    if (memcmp(w, o.world, sizeof w)) return false;
+    // the LOD from the same distance m_AddFGroups measures (GetObjectLOD through the host's hooks: render.cpp's)
+    const game::Ls3dBuild &l = game::Ls3d();
+    const float *cam = reinterpret_cast<const float *>(Ls3dAt(l.addFgCamera));
+    const float dx = At<float>(v, 0x19C) - cam[0], dy = At<float>(v, 0x1A0) - cam[1], dz = At<float>(v, 0x1A4) - cam[2];
+    const float d2 = dx * dx + dy * dy + dz * dz;
+    const int lod = reinterpret_cast<LodFn>(Ls3dAt(l.getObjectLod))(v, &d2);
+    if (lod != o.lod) return false;
+    const uint8_t *rec = At<const uint8_t *>(v, kVisLods + 4 * lod);
+    if (rec != o.lodRec || !rec || rec[0x2C] || rec[0x2D] || !At<uint32_t>(rec, 0x14)) return false;   // (made again, relit for a fade)
+    // no relighting: the sector's lights and the visual's own stamp as the record has them, and as learnt
+    const void *sector = *reinterpret_cast<void *const *>(Ls3dAt(l.addFgSector));
+    if (sector != o.sector || !sector) return false;
+    const uint32_t s0 = At<uint32_t>(rec, 4), s1 = At<uint32_t>(rec, 8);
+    if (s0 != At<uint32_t>(sector, 0x140) || s1 != At<uint32_t>(v, 0x118) || s0 != o.stamp[0] || s1 != o.stamp[1]) return false;
+    // no fading (the last LOD's, by its distance), no uv animation (the mesh's +0x5C, +0x60 as the record's)
+    const void *lv = At<const void *>(mesh, 0x0C + 4 * lod);
+    if (!lv || (lod == static_cast<int>(At<uint32_t>(mesh, 8)) - 1 && At<float>(lv, 0x38) > *reinterpret_cast<const float *>(Ls3dAt(l.lodFadeMin))))
+        return false;
+    if (At<float>(v, kVisFade2) != 1.0f || At<float>(v, kVisFade) != 1.0f) return false;
+    if (At<float>(rec, 0x1C) != At<float>(mesh, 0x5C) || At<float>(rec, 0x20) != At<float>(mesh, 0x60)) return false;
+    if (FogOf(sector, v) != o.fog) return false;
+    for (Member *m : o.members) if (m->dead || m->lodRec != rec || !m->batch) return false;
+    for (size_t i = 0; i < o.members.size(); i++) Ask(*o.members[i], o.keys[i], true);
+    o.wholeFrame = g_frame;
+    g_objsSkippedNow++;
+    g_objsSkipped++;
+    g_groupsSkippedNow += static_cast<unsigned>(o.members.size());
+    g_takenNow += static_cast<unsigned>(o.members.size());
+    return true;
+}
+bool SafeSkip(const void *v) {
+    __try { return Skip(v); } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
+void __fastcall hkAddObject(void *visual, void *edx) {
+    if (g_on && g_skip && GeomInFrame() && !ViewDrawingNow() && !ShadowViewNow() && !ShadersWanted() && !MotionWanted() &&
+        MainPass() && SafeSkip(visual))
+        return;
+    oAddObject(visual, edx);
+}
+} // namespace
+
+// An entry of LS3D's render loop about to be drawn (geom.cpp, every class hooked): its sort key, the batches' limit
+void BatchEntry(const uint8_t *entry, bool inFrame) {
+    if (!g_on || !inFrame || g_early.empty() || ViewDrawingNow() || ShadowViewNow() || !MainPass()) return;
+    g_curKey = At<uint32_t>(entry, kEntryKey);
+    g_entrySeen = true;
+}
+void BatchSkip(bool on) { g_skip = on; }
+
 bool BatchSet(bool on, std::string *err) {
+    if (on && !g_addHooked && game::g_ls3d && game::Ls3d().addObject && game::Ls3d().viewProj) {
+        std::string e;
+        if (HookAdd(nullptr, ModuleBase("LS3DF.dll") + game::Ls3d().addObject, reinterpret_cast<void *>(&hkAddObject), reinterpret_cast<void **>(&oAddObject), &e))
+            g_addHooked = true;
+        else
+            HWARN("batch: I3D_object::m_AddFGroups not hooked (%s): every object goes through it", e.c_str());
+    }
     if (on && !g_on) {
         if (!GeomEnsureHooks(err) || !GeomEnsureDip(err)) return false;
         MirrorUse(true);
@@ -649,6 +882,8 @@ bool BatchSet(bool on, std::string *err) {
         MirrorUse(false);
         for (auto &kv : g_batches) kv.second->asked.clear(), kv.second->askedFrame = 0;
         g_asked.clear();
+        g_early.clear();
+        g_earlyNext = 0;
     }
     if (on != g_on) HLOG("batch: the world's static groups %s", on ? "drawn in batches" : "drawn by LS3D again");
     g_on = on;
@@ -701,7 +936,9 @@ std::string BatchStateJson() {
     return json({{"left_last_frame", left}, {"changed", died}, {"on", g_on}, {"batches", g_batches.size()}, {"members", g_members.size()}, {"vertices", verts},
                  {"indices", idx}, {"dead_indices", dead}, {"refused", g_refused.size()}, {"refused_objects", g_refusedVisuals.size()}, {"taken_last_frame", g_takenLast},
                  {"draws_last_frame", g_drawsLast}, {"captured", g_captured}, {"captured_again", g_recaptured},
-                 {"flushes", g_flushes}}).dump(-1, ' ', false, json::error_handler_t::replace);
+                 {"flushes", g_flushes}, {"objects", g_skip}, {"objects_known", g_objs.size()},
+                 {"objects_skipped_last_frame", g_objsSkippedLast}, {"groups_skipped_last_frame", g_groupsSkippedLast},
+                 {"objects_skipped", g_objsSkipped}}).dump(-1, ' ', false, json::error_handler_t::replace);
 }
 
 } // namespace host

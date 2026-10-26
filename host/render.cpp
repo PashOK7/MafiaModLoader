@@ -451,6 +451,7 @@ bool RenderMethod(const std::string &method, const std::string &paramsJson, std:
             if (!(q > 0.001f && q < 1000.0f)) { *ok = false; *reply = "render.set: lod_quality 0.001..1000 (1 the game's)"; return true; }
             DrvSet(d, kRsLodQuality, AsInt(q));
         }
+        if (p.contains("batch_objects")) BatchSkip(p["batch_objects"].get<bool>());
         if (p.contains("batch")) {
             std::string err;
             if (!BatchSet(p["batch"].get<bool>(), &err)) { *ok = false; *reply = "render.set: batch: " + err; return true; }

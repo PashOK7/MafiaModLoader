@@ -664,6 +664,16 @@ struct Ls3dBuild {
     // LODs, which m_AddFGroups takes for nothing to draw. Their caller fades the last LOD's alpha from 1 at 0.5 * its
     // distance + the LOD before's to 0 at its own. rsLodQuality: RSLodQuality, the float RS_LOD_QUALITY sets.
     uintptr_t getObjectLod, rsLodQuality;
+    // What I3D_object's m_AddFGroups reads besides the visual (host/batch.cpp: an object whole in batches not given to
+    // it; ROADMAP 31): addFgCamera, the camera's place it measures the LOD's distance from (AddFGHlpStruct, 3 floats
+    // Render copies from the camera's world matrix); addFgSector, the sector the visual is queued from (its +0x140 the
+    // lights' stamp a LOD's record keeps at +0x04, its +0x1F0 its fog); renderScene, the scene Render draws (its
+    // +0x168 its mirrors, +0x170 their count: each one's reflection drawn in the same Render, its own camera);
+    // currentCamera (pCurrentCamera) and viewProj (pViewProjMatrix): the camera's +0x1E4 in Render's main pass, +0x324
+    // in the backdrop sector's pass, a mirror's own in its; lodFadeMin, the float a last LOD's distance (+0x38) is
+    // above for its fading (else the visual's alpha +0x218 is set to 1); fogOn, the fog drawn at all (Render's test for
+    // an entry's sector fog).
+    uintptr_t addFgCamera, addFgSector, renderScene, currentCamera, viewProj, lodFadeMin, fogOn;
 };
 
 inline const ExeBuild kExe12 = {
@@ -957,7 +967,9 @@ inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1
                                   // (2026-10-25: LightVertices' callers 0x388ED, 0x2870F, 0x7A23, 0x35C48, 0x56025)
                                   0x38020, 0x27880, 0x073C0, 0x354F0, 0x55930,
                                   // (2026-10-26: the m_AddFGroups' calls, e.g. 0x3810F; its loads of RSLodQuality)
-                                  0x61E30, 0x1C4CA4};
+                                  0x61E30, 0x1C4CA4,
+                                  // (2026-10-27: m_AddFGroups' reads at 0x380D5, 0x3807F..; Render's writes at 0x62E44..0x62EBA)
+                                  0x1C4C60, 0x1C4C74, 0x1C4C78, 0x1C4CF8, 0x1C4CD0, 0x9B310, 0xBFCEC};
 // LS3D 3.84.5 (31.7.2002): the vertex buffer has no flags word, everything after +0x04 sits 4 bytes lower.
 inline const Ls3dBuild kLs3d10 = {"1.0", 0x5ED80, 0x1A8A0, 0x305B0, 0x5D070, 0x1C350, 0x6E580, 0, 0,
                                   0x1AE00, 0x1BD60, 0x1C030, 0x2B540, 0x04, 0x14, 0x18,
@@ -986,7 +998,9 @@ inline const Ls3dBuild kLs3d10 = {"1.0", 0x5ED80, 0x1A8A0, 0x305B0, 0x5D070, 0x1
                                   // (2026-10-25: 1.2's twins by their callers and strings; m_AddFGroups as above)
                                   0x369E0, 0x27500, 0x071C0, 0x34750, 0x53030,
                                   // (2026-10-26: 1.2's twin, the same code)
-                                  0x5EB80, 0x1C0C54};
+                                  0x5EB80, 0x1C0C54,
+                                  // (2026-10-27: m_AddFGroups' reads at 0x36A95..; Render's writes at 0x5FB94..0x5FBC7)
+                                  0x1C0C10, 0x1C0C24, 0x1C0C28, 0x1C0CA8, 0x1C0C80, 0x972D0, 0xBBCBC};
 
 // The builds found (null until Detect succeeds).
 inline const ExeBuild *g_exe;

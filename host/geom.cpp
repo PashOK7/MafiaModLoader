@@ -303,6 +303,7 @@ template <RenderFgFn *orig, int kind>
 void HkRenderFg(void *visual, void *edx, uint8_t *entry);
 template <RenderFgFn *orig, int kind>
 void __fastcall hkRenderFg(void *visual, void *edx, uint8_t *entry) {
+    BatchEntry(entry, g_inFrame);   // (batch.cpp: its place in LS3D's order, for the batches asked for before)
     if constexpr (kind == 1) {   // (an object's group: batch.cpp takes it, or captures it while LS3D draws it)
         const int b = BatchGroup(visual, entry, g_inFrame);
         if (b == 1) return;
@@ -327,6 +328,7 @@ void HkRenderFg(void *visual, void *edx, uint8_t *entry) {
 // entry is not a face group's, so no rules and no survey (game_build.h fgRenderShadow). The entry is a copy in
 // Render's list, elsewhere each frame: the group is told by its sort key (+0x04), one of the visual's two halves
 void __fastcall hkRenderShadow(void *visual, void *edx, uint8_t *entry) {
+    BatchEntry(entry, g_inFrame);
     if (!MotionWanted()) { oShadow(visual, edx, entry); return; }
     MotionGroupBegin(4, visual, reinterpret_cast<const void *>(static_cast<uintptr_t>(At<uint32_t>(entry, 0x04))),
                      !ViewDrawingNow() && g_inFrame);
@@ -437,6 +439,7 @@ void GeomFrameBegin() {
     for (Rule &r : g_rules) { r.groupsNow = r.facesNow = 0; }
     if (!g_captures.empty() || ShadersWanted()) EnsureDip();
 }
+bool GeomInFrame() { return g_inFrame; }
 void GeomFrameDrawing(bool on) {
     if (!on && g_inFrame) BatchFrameEnd(RenderDevice(9));   // (batch.cpp: what is asked for and not drawn yet)
     g_inFrame = on;
