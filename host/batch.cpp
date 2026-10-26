@@ -37,7 +37,7 @@ using json = nlohmann::json;
 namespace host {
 namespace {
 
-// (+0x08: Render's setNewClipState, D3DRS_CLIPPING on for an entry crossing the frustum's sides; the batches are drawn
+// (+0x08: Render's clipping state (ls3d+333D0 in 1.2), D3DRS_CLIPPING on for an entry crossing the frustum's sides; the batches are drawn
 // with it on, always right)
 constexpr int kEntryGroup = 0x10, kEntryTexture = 0x18;
 constexpr int kGroupMaterial = 0x04, kMaterialFlags = 0x08, kMaterialAlpha = 0x38;
@@ -58,7 +58,7 @@ constexpr D3DRENDERSTATETYPE kSigRs[] = {
     D3DRS_ZFUNC, D3DRS_FOGENABLE, D3DRS_LIGHTING, D3DRS_TEXTUREFACTOR, D3DRS_COLORVERTEX, D3DRS_SHADEMODE,
     D3DRS_SPECULARENABLE, D3DRS_DEPTHBIAS, D3DRS_SLOPESCALEDEPTHBIAS, D3DRS_COLORWRITEENABLE, D3DRS_SRCBLEND,
     D3DRS_DESTBLEND, D3DRS_DITHERENABLE, D3DRS_STENCILENABLE,
-    // the fog: LS3D sets it a render list entry from the visual's sector (Render's setNewFogState: its colour, start,
+    // the fog: LS3D sets it a render list entry from the visual's sector (Render's fog state, ls3d+4E390 in 1.2: its colour, start,
     // end, density, kind); kFogFirst on, compared at each request too
     D3DRS_FOGCOLOR, D3DRS_FOGSTART, D3DRS_FOGEND, D3DRS_FOGDENSITY, D3DRS_FOGVERTEXMODE, D3DRS_FOGTABLEMODE,
     D3DRS_RANGEFOGENABLE,
