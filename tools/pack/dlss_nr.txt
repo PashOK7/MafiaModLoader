@@ -44,7 +44,9 @@ it, Setup.exe does not, so ASI mods in scripts\ run in the game alone.
 If the game folder has d3d8.dll or dinput8.dll from other mods, back
 them up first: this archive replaces them. Windows asks for
 administrator rights for Setup.exe (it does so for any program named
-"setup"): that is expected.
+"setup"): that is expected. Older ASI mods that change the game's
+code without asking Windows first (MafiaCountrysideMap 2.0) work: the
+loader lets their writes through and names them in mml\logs\mml.log.
 
 MAFIA FUSION FIX is part of this archive: ThirteenAG's widescreen fix
 and more, ported to the loader (mml\mods\fusion_fix). Do not install
@@ -55,7 +57,9 @@ why). Its settings are in the game: Options > Mods > Fusion Fix, each
 applied at once. What it does, as the original:
   - the HUD, the map, the menus and the videos at your screen's shape,
     the picture wider on a wide screen (Hor+), cutscene borders,
-  - the Xbox's radar with the city's map in it,
+  - the Xbox's radar with the game's map in it (the city's; with
+    MafiaCountrysideMap 2.0 in scripts\ the whole map, the countryside
+    too: the plugin needs its maps\fullmap.bmp),
   - a free camera round the car (the mouse, the right stick),
   - the draw distance (600 m; Draw distance off gives the game's own
     back if the frame rate drops: the processor's work grows with it),

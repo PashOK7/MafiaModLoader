@@ -56,23 +56,19 @@ PACKS = {
         'inside': ['NVIDIA nvngx_dlssnr.dll, nvngx_dlss.dll and nvngx_dlssg.dll 310.9.16.0 (NVIDIA RTX SDKs license).',
                    'DXVK 3.1.1 d3d9.dll (Direct3D 9 on Vulkan; zlib license).',
                    'Mafia Fusion Fix by ThirteenAG, ported to the loader (mml\\mods\\fusion_fix; MIT).'],
-        # UPDATE.txt's words before its list of files (an update over the archives of 2026-10-24 and 25, which had
-        # Ultimate ASI Loader as d3d8.dll: it loaded the player's ASI mods into Setup.exe too, where they refused to run)
-        'update_notes': ['New: the loader fixes bugs of the game itself, always. Steam\'s 1.2 now keeps the options',
-                         'set in the game (details, draw distance, shadows...) after a restart and Sniper Mode\'s',
-                         'key; key names in the controls are readable in any keyboard layout. FPS unlock: the',
-                         'intro\'s cutscene no longer starts with people in a T-pose.',
+        # UPDATE.txt's words before its list of files (an update over the archive of 2026-10-25's evening)
+        'update_notes': ['New: MafiaCountrysideMap 2.0 (scripts\\libMafiaCountrysideMap2.0.asi) works. It changes',
+                         'the game\'s code without asking Windows first, which failed before; the loader now lets',
+                         'its writes through (mml\\logs\\mml.log names them). Hold Tab in the countryside: the whole',
+                         'map.',
                          '',
-                         'Ultimate ASI Loader is dinput8.dll again and dxwrapper d3d8.dll (as before 24 October):',
-                         'your ASI mods in scripts\\ load into the game alone, no longer into Setup.exe, where they',
-                         'stopped it ("exe version isn\'t supported"). d3d8.dll is replaced; delete d3d8.ini.',
+                         'Fusion Fix\'s radar shows the game\'s own map: with that plugin the whole map, the',
+                         'countryside too, at the right place (it showed the city\'s map at the wrong place).',
                          '',
-                         'Mafia Fusion Fix is part of this archive (mml\\mods\\fusion_fix). If ThirteenAG\'s own',
-                         'Fusion Fix is in the game\'s folder, delete scripts\\Mafia.FusionFix.asi and',
-                         'scripts\\Mafia.FusionFix.ini (and Mafia.WidescreenFix.asi if you have it): beside it the',
-                         'built-in one does nothing (mml\\logs\\mml.log says why). Then run Setup.exe once and press',
-                         'Save and exit: the game keeps its settings in the registry again, not in',
-                         'savegame\\settings.bin. Fusion Fix\'s settings: Options > Mods > Fusion Fix in the game.'],
+                         'The plugin needs maps\\fullmap.bmp. The copy of your game folder we have lacks it, and',
+                         'about a hundred more files of Project Upscaled 3.0 (the trees\' bark and needles among',
+                         'them: trees drawn white). If your maps\\ lacks them too, unpack Project Upscaled 3.0\'s',
+                         'maps\\ into it again, without overwriting.'],
         # dxwrapper's settings for the pack (over the build's dxwrapper.ini): Direct3D 8 on DXVK's plain Direct3D 9, not
         # 9Ex (the bridge orders DXVK's device and Direct3D 11 on the GPU; 9Ex is for Windows' own Direct3D 9). The
         # game's full screen is made a borderless window by the loader (host/fullscreen.cpp), not by dxwrapper.

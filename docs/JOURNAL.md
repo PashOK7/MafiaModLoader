@@ -4193,3 +4193,7 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   Chinatown); driven off the road to the right, the radar's mark is right of the red road. 1.2 and 1.0 labs (no
   plugin, the city freeride): the city map in the radar as before, the player on the parking lot by the Shopping
   Center. fusion_fix switched off in the labs again.
+- **The tester's update** (`tools/pack.py dlss_nr --since` the archive of 2026-10-25's evening, built from the
+  commits alone: batch.cpp's work in progress stashed): the loader, core, dlss_nr, fps_unlock, fusion_fix, the
+  README (the old ASI mods let through, the radar's map); 2.0 MB. Run in his copy from the build packed: the
+  plugin's pages logged, the radar's countryside map, DLSS SR on the 3070.
