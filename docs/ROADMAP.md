@@ -1323,7 +1323,8 @@ merged, sorted by importance):
   registry's settings in savegame\settings.bin: with an empty file the game started at 800x600, the tester's case),
   ConsoleGamma and SMAA (shaders on d3d8to9's device at LS3D's render's end: for the loader, graphics passes to be).
   Seen in both labs at 1920x1080 and 2560x1080 (`game_launch` resolution): the HUD and radar round and in the
-  corners, the FOV Hor+ (and the game's own Vert- back when the mod unloads), the pause menu, the radar's map, the
+  corners, the FOV Hor+ (and the game's own Vert- back when the mod unloads), the pause menu, the radar's map (the
+  game's own map's name and transform: a countryside map plugin's whole map on the radar too, 2026-10-26), the
   free camera, the settings applied live, a hot reload. Not seen: a cutscene's borders, the credits' missing line,
   every menu at a wide screen (the main menu's panels, the garage, the race's), the eyes at a mission's load, the
   scratches, a pad's dead zones, the borderless window (whether the labs ran in a window was not looked at), the HUD's texts at 1.1's layout

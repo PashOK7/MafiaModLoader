@@ -111,6 +111,33 @@ namespace RestoredFeatures
     static RadarUpdateFn radarUpdateHook;
     static RadarDrawFn radarDrawHook;
 
+    // The map the game's own map (Tab) draws: G_IndicatorsClass::NahrajMapu's file name and DrawAll's world x, z to
+    // u, v. The Xbox HUD's constants are these very values of the PC city map; read from the game, the radar follows
+    // a mod that gives the game another map (libMafiaCountrysideMap 2.0 writes "fullmap.bmp" over the name and the
+    // whole map's transform over the numbers: the countryside on the radar too). The Tab map shows a window of the
+    // texture (width, height) from u - uHalf, v - vHalf and puts the player's arrow at the window's middle: the
+    // point it shows the player at is u + width / 2 - uHalf, v + height / 2 - vHalf. In the game's own numbers that
+    // is u, v (0.4 / 2 = 0.2, 0.55 / 2 = 0.275); the countryside plugin makes the window 0.1833 high and leaves 0.275,
+    // its offsets set for where the Tab map puts the arrow: the radar puts the world where the Tab map does.
+    struct RadarMapSource
+    {
+        const char* name = "0mapar.bmp";
+        const float* xScale = nullptr;
+        const float* xOffset = nullptr;
+        const float* zScale = nullptr;
+        const float* zOffset = nullptr;
+        const float* uHalf = nullptr;
+        const float* vHalf = nullptr;
+        const float* width = nullptr;
+        const float* height = nullptr;
+    };
+    static RadarMapSource mapSource;
+
+    float MapNumber(const float* game, float xbox)
+    {
+        return game ? *game : xbox;
+    }
+
     float GetRadarZoom(uintptr_t hud)
     {
         float zoom = Field<float>(hud, radar.scale);
@@ -280,7 +307,7 @@ namespace RestoredFeatures
             if (lastFailure && now - lastFailure < 1000)
                 return;
             using OpenTexture = int(__stdcall*)(void*, const char*, const char*, uint32_t, void**);
-            if (Virtual<OpenTexture>(igraph, 4)(igraph, "0mapar.bmp", nullptr, 0, &texture) != 0 || !texture)
+            if (Virtual<OpenTexture>(igraph, 4)(igraph, mapSource.name, nullptr, 0, &texture) != 0 || !texture)
             {
                 lastFailure = now;
                 return;
@@ -292,6 +319,13 @@ namespace RestoredFeatures
         const auto origin = reinterpret_cast<const float*>(regs.esp + radar.origin);
         const auto dimensions = reinterpret_cast<const float*>(regs.esp + radar.dimensions);
         const auto center = reinterpret_cast<const float*>(regs.esp + radar.center);
+        // Xbox HUD 0x142900's world coordinates -> 0mapar.bmp UV coordinates, the game's own map's when it was found
+        const float xScale = MapNumber(mapSource.xScale, 0.00022986f), xOffset = MapNumber(mapSource.xOffset, 0.73464239f);
+        float zScale = MapNumber(mapSource.zScale, -0.00050728f), zOffset = MapNumber(mapSource.zOffset, 0.47024599f);
+        // (where the Tab map shows the player: 0 in the game's own numbers)
+        const float uShift = MapNumber(mapSource.width, 0.4f) * 0.5f - MapNumber(mapSource.uHalf, 0.2f);
+        const float vShift = MapNumber(mapSource.height, 0.55f) * 0.5f - MapNumber(mapSource.vHalf, 0.275f);
+        zOffset += vShift;
         std::array<RadarVertex, 12> polygon;
         constexpr std::array<std::pair<float, float>, 4> corners = { {{0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f}} };
         for (size_t i = 0; i < corners.size(); ++i)
@@ -307,9 +341,8 @@ namespace RestoredFeatures
             float z = (center[2] - vertex.y) / scale - matrix[14];
             float worldX = x * matrix[0] + y * matrix[1] + z * matrix[2];
             float worldZ = x * matrix[8] + y * matrix[9] + z * matrix[10];
-            // Xbox HUD 0x142900: world coordinates -> 0mapar.bmp UV coordinates.
-            vertex.u = worldX * 0.00022986f + 0.73464239f;
-            vertex.v = worldZ * -0.00050728f + 0.47024599f;
+            vertex.u = worldX * xScale + xOffset + uShift;
+            vertex.v = worldZ * zScale + zOffset;
             if (!std::isfinite(vertex.u) || !std::isfinite(vertex.v))
                 return;
         }
@@ -359,6 +392,34 @@ namespace RestoredFeatures
             radarMap = false;
             return;
         }
+        // The game's own map (both builds, one each): NahrajMapu's `push <name>` for IGraph's texture loader, and
+        // DrawAll's map code: fmul [x scale], fmul [z scale], fadd [x offset], fadd [z offset] on the frame's world
+        // position. Not found: the Xbox's constants (the same as the PC city map's).
+        auto pName = find_pattern("8B 8D ? ? 00 00 8D 85 ? ? 00 00 3B CB 75 14 8B 0D ? ? ? ? 50 53 53 8B 11 68 ? ? ? ? 51 FF 52 04");
+        auto pUv = find_pattern("8B 06 89 44 24 ? 8B 4E 04 8B 56 08 D9 44 24 ? D8 0D ? ? ? ? 89 4C 24 ? 89 54 24 ? D9 44 24 ? "
+            "D8 0D ? ? ? ? D9 44 24 ? D8 0D ? ? ? ? D9 5C 24 ? D9 C9 D8 05 ? ? ? ? D9 5C 24 ? D9 5C 24 ? D9 44 24 ? D8 05");
+        // ... and the Tab map's window: fsub [u half], fsub [v half], fadd [width], fadd [height]
+        auto pWindow = find_pattern("D9 44 24 ? D8 25 ? ? ? ? D9 5C 24 ? D9 44 24 ? D8 25 ? ? ? ? D9 5C 24 ? D9 44 24 ? "
+            "D8 1D ? ? ? ? DF E0 F6 C4 05 7A ? C7 44 24 ? 00 00 00 00 D9 44 24 ? D8 1D ? ? ? ? DF E0 F6 C4 05 7A ? "
+            "C7 44 24 ? 00 00 00 00 D9 44 24 ? D8 05 ? ? ? ? D8 1D ? ? ? ? DF E0 25 00 41 00 00 75 ? C7 44 24 ? "
+            "9A 99 19 3F D9 44 24 ? D8 05");
+        const bool own = pName.size() == 1 && pUv.size() == 1 && pWindow.size() == 1;
+        if (own)   // (all or none: a name and numbers of one map)
+        {
+            mapSource.name = *pName.get_first<const char*>(28);
+            mapSource.xScale = *pUv.get_first<const float*>(18);
+            mapSource.zScale = *pUv.get_first<const float*>(46);
+            mapSource.xOffset = *pUv.get_first<const float*>(58);
+            mapSource.zOffset = *pUv.get_first<const float*>(76);
+            mapSource.uHalf = *pWindow.get_first<const float*>(6);
+            mapSource.vHalf = *pWindow.get_first<const float*>(20);
+            mapSource.width = *pWindow.get_first<const float*>(84);
+            mapSource.height = *pWindow.get_first<const float*>(117);
+        }
+        Log(own ? MML_LOG_INFO : MML_LOG_WARN, "radar map: %s (the name at %p, the transform at %p)",
+            own ? "the game's own map's name and transform" : "not all of the game's own map found: the city map's constants",
+            static_cast<const void*>(mapSource.name), static_cast<const void*>(mapSource.xScale));
+
         void* target;
         if (old.size() == 1)
         {

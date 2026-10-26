@@ -4177,3 +4177,19 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   the whole map, with the pack's presave too (8 s held, six frames). Fusion Fix's RadarMap (on in his copy) now
   draws the full map's texture with the city's transform: the radar shows the wrong place (it opens "0mapar.bmp"
   into the full map's slot and maps x, z with the Xbox's numbers, which are the game's own city transform).
+
+## 2026-10-26: Fusion Fix's radar map follows the game's own map (the countryside on the radar)
+
+- **Asked** (the owner): Fusion Fix's radar with the countryside map plugin in the tester's copy.
+- **Made** (mods/fusion_fix/restored.cpp): the radar's map takes the game's own map instead of the Xbox's constants:
+  its file name (G_IndicatorsClass::NahrajMapu's `push`, 1.2 0x639310, 1.0 0x64D48C), DrawAll's world x, z to u, v
+  (1.2 0x62791C..0x627928, 1.0 0x63D28C..0x63D298) and the Tab map's window (u half, v half, width, height), found
+  by patterns once each in both builds (and the tester's exe) and read at every draw, so a plugin that writes them
+  later is followed. The radar puts the world where the Tab map puts the player's arrow (the window's middle):
+  `u + width / 2 - uHalf`, `v + height / 2 - vHalf`, 0 in the game's own numbers; the plugin's window (0.1833 high,
+  0.275 kept) moves v by -0.183. Not all found: the Xbox's constants, as before (logged).
+- **Seen**: the tester's copy (W:/MafiaDLSS, the plugin, fullmap.bmp): the log names the game's map; in the
+  countryside freeride the radar shows the full map, the road through its middle where Tab's arrow stands (north of
+  Chinatown); driven off the road to the right, the radar's mark is right of the red road. 1.2 and 1.0 labs (no
+  plugin, the city freeride): the city map in the radar as before, the player on the parking lot by the Shopping
+  Center. fusion_fix switched off in the labs again.

@@ -644,7 +644,8 @@ Four things, each the game's own, all needed for the whole city in one frame:
   sets: G_IndicatorsClass::MapEnable) in the missions it lists by the id at 0x6D46A4 (570 = freekrajina...).
   G_IndicatorsClass::NahrajMapu loads the map's texture at `hud + 0x4090` once 0x46EC is set; DrawAll draws it
   (0x5FF9F1) only while the HUD's flag 0x2000 is on, which C_player::InputDriving sets while "City Map" (Tab, action
-  31) is held: the map is the Tab map, not the radar (the radar in the corner is the cars' 3D radar). With the
+  31) is held: the map is the Tab map, not the radar (the radar in the corner is the cars' 3D radar; fusion_fix's
+  radar map reads the same name and numbers, so it shows the whole map too). With the
   loader's asi_compat (host/asi_compat.cpp) it works: Tab in the countryside freeride shows the whole map, the
   player's arrow on the road north of Chinatown.
 - **ours?** **The packs' presaved map drew invisible in the 1.2 lab, not in the tester's copy** (2026-10-26, not
