@@ -1432,6 +1432,53 @@ def sidecar_tests(b):
           h and r['ok'] and st2.get('pid') not in (None, st.get('pid')), (h, r, st2.get('pid')))
 
 
+def fetch_tests():
+    """tools/fetch.py (the downloads of deps.py through WinHTTP) against a server on 127.0.0.1: a body of several
+    reads, a redirect followed, a 404 refused. (The certificates' checks are Windows' own: not tested here.)"""
+    import http.server
+    import tempfile
+    import threading
+    sys.path.insert(0, os.path.join(ROOT, 'tools'))
+    import fetch
+    body = os.urandom(3 << 20 | 12345)
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == '/moved':
+                self.send_response(302)
+                self.send_header('Location', '/file?x=1')
+                self.end_headers()
+            elif self.path == '/file?x=1':
+                self.send_response(200)
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            else:
+                self.send_error(404)
+
+        def log_message(self, *args):
+            pass
+    server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = 'http://127.0.0.1:%d' % server.server_address[1]
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, 'got.bin')
+        try:
+            fetch.download(base + '/moved', path, chunk=1 << 16)
+            got = open(path, 'rb').read()
+        except fetch.FetchError as e:
+            got = str(e)
+        check('fetch: 3 MB in 64 KB reads after a redirect, byte for byte', got == body,
+              got if isinstance(got, str) else len(got))
+        try:
+            fetch.download(base + '/missing', path)
+            err = None
+        except fetch.FetchError as e:
+            err = str(e)
+        check('fetch: a 404 refused, said so', err is not None and err.endswith('HTTP 404'), err)
+    server.shutdown()
+
+
 def ghidra_names_tests():
     """What the Ghidra projects are given (tools/ghidra_names.py), with no Ghidra: the ranks, the SDK's aliases, 1.0's
     names through the twins, the prototypes made from the decompile's signatures, a name and an annotation written
@@ -1586,6 +1633,7 @@ def new_mod_tests(b, built):
 
 
 def main():
+    fetch_tests()
     ghidra_names_tests()
     new_mods = new_mod_build()
     # the harness's game folder: the loader, the test mods and the shipped ones

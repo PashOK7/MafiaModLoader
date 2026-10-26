@@ -298,6 +298,9 @@ Rendering over the game's frame, NGX through Vulkan in the sidecar; a GeForce RT
   pack left that layout). In a window the loader draws the game's gamma ramp (the brightness) on any Direct3D 9 unless
   dxwrapper.ini has dxwrapper draw it (host/gamma.cpp). Test the pack's layout by swapping a lab's files
   (`third_party/_deps/dxvk`, dxwrapper.ini's D3d9to9Ex) and put them back.
+- **Downloads go through `tools/fetch.py`** (WinHTTP: Windows checks the certificate), never `urllib`: Python's ssl
+  trusts a copy of Windows' stores, expired intermediates included, and a stale ISRG Root X2 cross-sign there failed
+  a player's every Let's Encrypt download as "certificate has expired" (2026-10-26).
 - **The MCP server's own binary is locked while your session runs it**: to build a new one, rename
   `mcp/target/release/mml-mcp.exe` first (Windows allows that), build, and test the new one with a client of your
   own (`tests/mcp_smoke.py` shows how); the session gets it at its next start.

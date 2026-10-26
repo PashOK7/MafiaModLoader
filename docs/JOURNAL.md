@@ -4120,3 +4120,22 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   by material: still 922 batch draws). Far 0.27 / 0.23 / 0.19 in both builds (1.03 % of the pixels over 8: edges),
   near 0.04, night 0.015; 1.2 40.1 -> 22.7 ms, 1.0 40.1 -> 22.8. The "1.0 texture noise" written in Known gaps an hour
   earlier was this: taken out.
+
+## 2026-10-26: the downloads checked by Windows (tools/fetch.py)
+
+- **A player's `cmake --preset x86` stopped at `deps.py ffmpeg`**: `CERTIFICATE_VERIFY_FAILED: certificate has
+  expired`. ffmpeg.org's and videolan.org's chains were valid (Let's Encrypt YE1/YE2, Root YE, ISRG Root X2
+  cross-signed by X1 until 2032). Reproduced here: Python's ssl given ISRG Root X1 and the old X2 cross-sign (expired
+  2025-09-15) fails on ffmpeg.org with exactly that message, while Windows' CertGetCertificateChain given the same old
+  cross-sign beside the server's certificates builds a valid chain (status 0), even with the old one alone above
+  Root YE. Python on Windows hands OpenSSL every certificate of the ROOT and CA stores as an anchor, expired ones too
+  (the CA store is Windows' cache of the intermediates it has seen: one appeared there in this very test), and never
+  fetches a missing root.
+- **tools/fetch.py**: a download through WinHTTP (ctypes, standard library only), so Windows' own chain engine checks
+  the server, as its browsers do: the time-valid path, roots from Windows Update, the machine's own (a proxy's, an
+  antivirus') roots, the system's proxy. A refused certificate is said in words from WinHTTP's secure-failure flags
+  (out of its dates: the clock, with the time it says; an unknown root: a proxy or an antivirus; another name);
+  any status but 200 stops it; redirects followed (GitHub's releases), HTTPS to HTTP never. deps.py and kb_demo.py use
+  it. Checked: ffmpeg, dav1d, Ultimate ASI Loader (a GitHub redirect) and its raw licence by their SHA-256, DXVK
+  through deps.py; badssl.com's expired, untrusted-root and wrong-host refused with the right reasons; a 404; an
+  unknown host. Offline test: fetch_tests (127.0.0.1: 3 MB in 64 KB reads after a redirect, a 404).

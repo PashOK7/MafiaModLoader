@@ -13,14 +13,17 @@
     python tools/deps.py ghidra     # an optional one: Ghidra and its Python bridge (tools/ghidra_cli.py)
     python tools/deps.py --force    # again, from scratch
 
-Only standard library. A hash that does not match stops everything: the archive is not used.
+Only standard library. A hash that does not match stops everything: the archive is not used. The archives come through
+tools/fetch.py: Windows' own HTTP stack, so the servers' certificates are checked by Windows, not by OpenSSL over a
+copy of its stores (a stale certificate there made a player's every download fail).
 """
 import hashlib
 import os
 import shutil
 import sys
-import urllib.request
 import zipfile
+
+from fetch import FetchError, download as fetch_file
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEPS = os.path.join(ROOT, 'third_party', '_deps')
@@ -190,8 +193,10 @@ OPTIONAL = {'ghidra', 'cuda', 'flow', 'ngx', 'vulkan', 'dxwrapper', 'dxvk', 'ffm
 
 def download(name, url, sha, archive):
     print('%-7s %s' % (name, url))
-    with urllib.request.urlopen(url) as r, open(archive, 'wb') as f:
-        shutil.copyfileobj(r, f, 1 << 20)
+    try:
+        fetch_file(url, archive)
+    except FetchError as e:
+        sys.exit('%s: %s' % (name, e))
     h = hashlib.sha256()
     with open(archive, 'rb') as f:
         for chunk in iter(lambda: f.read(1 << 20), b''):

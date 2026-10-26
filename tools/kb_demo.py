@@ -55,12 +55,13 @@ import shutil
 import struct
 import subprocess
 import sys
-import urllib.request
 from bisect import bisect_right
 from collections import Counter, defaultdict
 
 import capstone
 import pefile
+
+from fetch import FetchError, download as fetch_file
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KB = os.path.join(ROOT, 'knowledge', 'ls3df.dll')
@@ -776,8 +777,10 @@ def fetch_demo(dest):
     if not (os.path.exists(setup) and hashlib.sha256(open(setup, 'rb').read()).hexdigest() == DEMO_SHA):
         print('the demo: %s (188 MB)' % DEMO_URL, flush=True)
         part = setup + '.part'
-        with urllib.request.urlopen(DEMO_URL) as r, open(part, 'wb') as f:
-            shutil.copyfileobj(r, f, 1 << 20)
+        try:
+            fetch_file(DEMO_URL, part)
+        except FetchError as e:
+            sys.exit('the demo: %s' % e)
         got = hashlib.sha256(open(part, 'rb').read()).hexdigest()
         if got != DEMO_SHA:
             os.remove(part)
