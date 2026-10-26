@@ -4110,3 +4110,13 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   (in the world, cut through the city), environment maps frozen, the fog of the flush's moment, a tower's facade layers
   out of LS3D's order, the people captured each frame (+3.7 ms in the crowd), Render's clipping flag taken for a
   portal's (nothing batched with the game's camera).
+- **Then** (the same night): `profile` of the batched far frame: the request's own check 25 % (the members' hash map,
+  the fog compared value by value with a call to the mirror each group). Now a flat table (open addressing) finds
+  a group's member and the fog is one key made again only when the mirror's state changed: 25.3 to 22.4 ms. The
+  picture had gone to 0.79 of 255 once groups flagged for clipping (Render's +0x08) were batched too: an A/B (those
+  objects refused again: 0.53) put it on them, the city's ground among them; drawn at the first blended draw, the
+  ground covered what LS3D had drawn on it before (a road's marks, decals, shadows). The batches asked for are now
+  drawn before every draw LS3D makes itself, which keeps LS3D's order exactly and costs nothing (its list is sorted
+  by material: still 922 batch draws). Far 0.27 / 0.23 / 0.19 in both builds (1.03 % of the pixels over 8: edges),
+  near 0.04, night 0.015; 1.2 40.1 -> 22.7 ms, 1.0 40.1 -> 22.8. The "1.0 texture noise" written in Known gaps an hour
+  earlier was this: taken out.

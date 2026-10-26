@@ -118,6 +118,7 @@ struct Member {
 };
 struct Batch {
     Sig sig;
+    uint32_t fogKey = 0;               // (FogKey of its state: compared at each request)
     std::vector<Vtx> verts;
     std::vector<uint32_t> idx;
     IDirect3DVertexBuffer9 *vb = nullptr;
@@ -132,9 +133,57 @@ struct Batch {
 struct Key { const void *visual, *group; bool operator==(const Key &o) const { return visual == o.visual && group == o.group; } };
 struct KeyHash { size_t operator()(const Key &k) const { return std::hash<const void *>()(k.visual) * 31 ^ std::hash<const void *>()(k.group); } };
 
+// The fog of a state as one number (FNV of D3DRS_FOGENABLE and the fog's own: Render sets them an entry)
+template <class Rs> uint32_t FogKey(const Rs &rs, bool fromSig) {
+    uint32_t h = 2166136261u;
+    for (int i = 7; i < kNRs; i++) {
+        if (i != 7 && i < kFogFirst) continue;
+        h = (h ^ (fromSig ? rs[i] : rs[kSigRs[i]])) * 16777619u;
+    }
+    return h;
+}
+
 bool g_on;
 IDirect3DDevice9 *g_dev;
-std::unordered_map<Key, std::unique_ptr<Member>, KeyHash> g_members;
+std::unordered_map<Key, std::unique_ptr<Member>, KeyHash> g_members;   // (they own the members)
+// the members found by their key at each request (some 30 000 a frame): open addressing, a power of two, half full at
+// most, made again when it fills or members are forgotten
+struct Slot { const void *visual, *group; Member *m; };
+std::vector<Slot> g_flat;
+size_t g_flatUsed;
+inline size_t SlotOf(const void *v, const void *g, size_t mask) {
+    uint32_t x = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(v)) * 0x9E3779B1u ^ static_cast<uint32_t>(reinterpret_cast<uintptr_t>(g) >> 2) * 0x85EBCA6Bu;
+    return (x ^ (x >> 15)) & mask;
+}
+void FlatRebuild() {
+    size_t n = 1024;
+    while (n < g_members.size() * 2 + 2) n *= 2;
+    g_flat.assign(n, Slot{nullptr, nullptr, nullptr});
+    g_flatUsed = 0;
+    for (auto &kv : g_members) {
+        size_t i = SlotOf(kv.first.visual, kv.first.group, n - 1);
+        while (g_flat[i].m) i = (i + 1) & (n - 1);
+        g_flat[i] = {kv.first.visual, kv.first.group, kv.second.get()};
+        g_flatUsed++;
+    }
+}
+Member *FlatFind(const void *v, const void *g) {
+    if (g_flat.empty()) return nullptr;
+    const size_t mask = g_flat.size() - 1;
+    for (size_t i = SlotOf(v, g, mask);; i = (i + 1) & mask) {
+        const Slot &s = g_flat[i];
+        if (!s.m) return nullptr;
+        if (s.visual == v && s.group == g) return s.m;
+    }
+}
+void FlatPut(const void *v, const void *g, Member *m) {
+    if (g_flat.empty() || (g_flatUsed + 1) * 2 > g_flat.size()) { FlatRebuild(); return; }   // (it is in g_members already)
+    const size_t mask = g_flat.size() - 1;
+    size_t i = SlotOf(v, g, mask);
+    while (g_flat[i].m && !(g_flat[i].visual == v && g_flat[i].group == g)) i = (i + 1) & mask;
+    if (!g_flat[i].m) g_flatUsed++;
+    g_flat[i] = {v, g, m};
+}
 std::unordered_map<Sig, std::unique_ptr<Batch>, SigHash> g_batches;
 std::unordered_map<Key, unsigned, KeyHash> g_refused;   // groups left to LS3D for good (why: their count of refusals)
 // objects left to LS3D whole: one group of theirs is LS3D's (an environment map's, a clipped one), so all of them are,
@@ -206,6 +255,8 @@ void DropAll() {
     for (auto &kv : g_batches) Release(*kv.second);
     g_batches.clear();
     g_members.clear();
+    g_flat.clear();
+    g_flatUsed = 0;
     g_refused.clear();
     g_refusedVisuals.clear();
     g_moves.clear();
@@ -289,6 +340,7 @@ void Compact(Batch &b) {
     }
     for (auto it = g_members.begin(); it != g_members.end();)   // (the dead ones of this batch forgotten)
         it = it->second->batch == &b && it->second->dead ? g_members.erase(it) : std::next(it);
+    FlatRebuild();
     b.verts.swap(verts);
     b.idx.swap(idx);
     b.deadIdx = 0;
@@ -338,7 +390,10 @@ void Flush(IDirect3DDevice9 *d) {
     MirrorGiveBack(d);   // (the fixed pipeline's)
     const D3dMirror *m = MirrorOf(d);
     if (!m) { g_asked.clear(); return; }
-    const D3dMirror was = *m;   // (what LS3D set: put back after)
+    // what LS3D set: put back after (the states a batch sets, the world, clipping)
+    const Sig was = SigOf(*m);
+    const D3DMATRIX wasWorld = m->world;
+    const DWORD wasClip = m->rs[D3DRS_CLIPPING];
     IDirect3DVertexBuffer9 *vb0 = nullptr;
     UINT off0 = 0, stride0 = 0;
     d->GetStreamSource(0, &vb0, &off0, &stride0);
@@ -352,7 +407,7 @@ void Flush(IDirect3DDevice9 *d) {
     static const D3DMATRIX kIdentity = {{{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}}};
     d->SetTransform(D3DTS_WORLD, &kIdentity);
     d->SetFVF(kFvf);
-    if (!was.rs[D3DRS_CLIPPING]) d->SetRenderState(D3DRS_CLIPPING, TRUE);   // (a batch reaches past the frustum)
+    if (!wasClip) d->SetRenderState(D3DRS_CLIPPING, TRUE);   // (a batch reaches past the frustum)
     const D3dMirror *cur = MirrorOf(d);
     for (Batch *b : g_asked) {
         if (!Upload(d, *b) || !b->ibCount) { b->asked.clear(); continue; }
@@ -374,13 +429,13 @@ void Flush(IDirect3DDevice9 *d) {
     // put back: LS3D's cache of the states holds what it set
     cur = MirrorOf(d);
     for (int t = 0; t < 2; t++) if (cur->tex[t] != was.tex[t]) d->SetTexture(t, was.tex[t]);
-    for (int i = 0; i < kNRs; i++) if (cur->rs[kSigRs[i]] != was.rs[kSigRs[i]]) d->SetRenderState(kSigRs[i], was.rs[kSigRs[i]]);
+    for (int i = 0; i < kNRs; i++) if (cur->rs[kSigRs[i]] != was.rs[i]) d->SetRenderState(kSigRs[i], was.rs[i]);
     for (int t = 0; t < 2; t++) {
-        for (int i = 0; i < kNTss; i++) if (cur->tss[t][kSigTss[i]] != was.tss[t][kSigTss[i]]) d->SetTextureStageState(t, kSigTss[i], was.tss[t][kSigTss[i]]);
-        for (int i = 0; i < kNSamp; i++) if (cur->samp[t][kSigSamp[i]] != was.samp[t][kSigSamp[i]]) d->SetSamplerState(t, kSigSamp[i], was.samp[t][kSigSamp[i]]);
+        for (int i = 0; i < kNTss; i++) if (cur->tss[t][kSigTss[i]] != was.tss[t][i]) d->SetTextureStageState(t, kSigTss[i], was.tss[t][i]);
+        for (int i = 0; i < kNSamp; i++) if (cur->samp[t][kSigSamp[i]] != was.samp[t][i]) d->SetSamplerState(t, kSigSamp[i], was.samp[t][i]);
     }
-    d->SetTransform(D3DTS_WORLD, &was.world);
-    if (!was.rs[D3DRS_CLIPPING]) d->SetRenderState(D3DRS_CLIPPING, FALSE);
+    d->SetTransform(D3DTS_WORLD, &wasWorld);
+    if (!wasClip) d->SetRenderState(D3DRS_CLIPPING, FALSE);
     if (fvf0) d->SetFVF(fvf0); else d->SetVertexDeclaration(decl0);
     if (decl0) decl0->Release();
     d->SetStreamSource(0, vb0, off0, stride0);
@@ -411,17 +466,20 @@ int Group(const void *visual, const uint8_t *entry) {
         if (Blended(visual, group)) { g_left[kLeftBlended]++; return 0; }   // (drawn after everything opaque: its order kept)
         const void *tex = At<const void *>(entry, kEntryTexture);
         const void *tex8 = tex ? At<const void *>(tex, 8) : nullptr;
-        auto it = g_members.find(k);
-        if (it != g_members.end() && !it->second->dead) {
-            Member &m = *it->second;
+        Member *found = FlatFind(visual, group);
+        if (found && !found->dead) {
+            Member &m = *found;
             float w[12];
             WorldOf(visual, w);
             const void *rec = LodRecord(visual);
-            // the fog Render set for this entry (its sector's) as the batch's
+            // the fog Render set for this entry (its sector's) as the batch's: the state's key made again only when the
+            // mirror's state changed
+            static uint32_t fogSerial, fogNow;
             bool fog = true;
-            if (const D3dMirror *mi = MirrorOf(static_cast<IDirect3DDevice9 *>(g_dev)))
-                for (int i = 7; i < kNRs && fog; i++)   // (D3DRS_FOGENABLE, index 7, and the fog's own)
-                    if (i == 7 || i >= kFogFirst) fog = mi->rs[kSigRs[i]] == m.batch->sig.rs[i];
+            if (const D3dMirror *mi = MirrorOf(static_cast<IDirect3DDevice9 *>(g_dev))) {
+                if (mi->serial != fogSerial || !fogSerial) { fogSerial = mi->serial; fogNow = FogKey(mi->rs, false); }
+                fog = fogNow == m.batch->fogKey;
+            }
             if (fog && !memcmp(w, m.world, sizeof w) && rec == m.lodRec && rec && At<uint32_t>(rec, 4) == m.stamp[0] &&
                 At<uint32_t>(rec, 8) == m.stamp[1] && tex == m.texture && tex8 == m.texture8) {
                 Batch &b = *m.batch;
@@ -480,7 +538,9 @@ void BatchDip(void *dev, int type, int base, unsigned minIndex, unsigned verts, 
     if (g_dev != d) { DropAll(); g_dev = d; }
     const D3dMirror *m = MirrorOf(d);
     if (!m) return;
-    if (!g_asked.empty() && m->rs[D3DRS_ALPHABLENDENABLE]) Flush(d);
+    // the batches asked for so far drawn before anything LS3D draws itself: their place in LS3D's order kept (a road's
+    // marks, a shadow, a decal lie on what was drawn before them: the ground batched and drawn later covered them)
+    if (!g_asked.empty()) Flush(d);
     if (!g_cap.on) return;
     // left to LS3D: more than one draw, not a triangle list, blended, shaded, a third stage, lit by Direct3D, drawn
     // without writing or testing the depth (its place in the order matters: the sky first, decals), and the backdrop
@@ -526,6 +586,7 @@ bool Capture1(IDirect3DDevice9 *d, const D3dMirror &mi, int base, unsigned minIn
         if (!bp) {
             bp = std::make_unique<Batch>();
             bp->sig = g_cap.sig;
+            bp->fogKey = FogKey(bp->sig.rs, true);
             for (IDirect3DBaseTexture9 *t : bp->sig.tex) if (t) t->AddRef();   // (Release takes them)
         }
         Batch &b = *bp;
@@ -550,7 +611,9 @@ void BatchCaptured() {
     const Key k{g_cap.visual, g_cap.group};
     if (g_cap.ok && g_cap.draws == 1 && g_cap.m) {
         g_captured++;
+        Member *m = g_cap.m.get();
         g_members[k] = std::move(g_cap.m);
+        FlatPut(k.visual, k.group, m);
     } else if (g_cap.draws) {
         if (g_cap.m && g_cap.m->batch) g_cap.m->batch->deadIdx += g_cap.m->nIdx;   // (read, then refused: its indices left)
         Refuse(k);

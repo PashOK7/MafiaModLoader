@@ -1006,9 +1006,11 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
       pool with a NOOVERWRITE lock, put into the world, kept in the host's buffers: 31f), then drawn with every group
       of the same state in one draw (a batch a state: textures, stages, alpha test, depth and its bias, fog, samplers;
       the index buffer of the groups LS3D asked for this frame: its visibility kept exactly), LS3D's own call for the
-      group not made (31g). The whole city from 120 m up: 1.2 41.2 to 25.3 ms (34 800 draws to 6 200 and 913
-      batches), 1.0 40.2 to 24.1; near, night, the crowd even (their few hundred draws). The picture: far 0.53 of 255
-      (1.2), 1.04 % of the pixels over 8: the silhouettes' edges (the vertices put into the world on the CPU). Left to
+      group not made (31g); the batches asked for so far drawn before anything LS3D draws itself (its order kept: a
+      road's marks and decals on the batched ground). The whole city from 120 m up: 1.2 40.1 to 22.7 ms (34 800 draws
+      to 5 100 and 922 batches), 1.0 40.1 to 22.8; near, night, the crowd even (their few hundred draws). The
+      picture: far 0.27 of 255 in both builds, 1.03 % of the pixels over 8 (the silhouettes' edges: the vertices put
+      into the world on the CPU), near 0.04, night 0.015. Left to
       LS3D: blended groups, environment maps, the backdrop, depth not written or tested, objects that move (twice in a
       second), objects with one such group (their layers keep LS3D's order), the people and every other visual class.
       Opt-in until it has been driven through the missions. Not done: the lightmapped objects (I3D_lit_object), a
@@ -1263,11 +1265,6 @@ merged, sorted by importance):
   maps, `_Find_last`) 11 % self. Fine at the freeride's start (500 draws), not at a far view: a lookup a draw kept
   flat (an index stored on the visual, or one table probed once per visual) is the fix; measured on a clean lab
   first (dlss_nr and fusion_fix off).
-- **Batches in 1.0: a texture's noise** (2026-10-26, item 31g). With render.set's batch 1.0's picture differs by 1
-  to 5 of 255 inside the batched objects' textures (near: mean 0.19, 1.2's 0.03; far 0.79 against 0.53), as a texture
-  sampled at another mip level would; 1.0 alone is the same frame to frame (A against A': 0.02 % of the pixels). The
-  batches' state carries the samplers' MAXMIPLEVEL, LOD bias, anisotropy, filters, dithering, stencil: not it. Not
-  found yet; not seen by eye.
 - **The reference shaders' picture: what is left** (2026-10-26, item 31a; both builds alike). In the far scene 0.87 %
   of the pixels differ by more than 8 of 255 from the game's: thin edges (the vertices transformed in the shader
   against the fixed pipeline's, the depth at near 0.05 and far 5000) and the bridge's shadow on the water (the owner

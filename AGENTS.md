@@ -127,7 +127,7 @@ scene alike in both builds (`scene {"name": "near" | "far" | "night" | "crowd", 
 from 120 m up, the night street, 48 people walking; the game started without police, traffic or pedestrians when
 needed; measure with one lab running); `render.set {"whole_city": true}` draws the whole city (every block, no
 occluders, no LOD distance, far plane 5000 m), `render.set {"batch": true}` draws the static objects in batches (the
-whole city 41 to 24 ms); `call state.time
+whole city 40 to 23 ms); `call state.time
 {"scale": 0}` holds the world still while it is drawn; `call prof.counters` counts the device's calls a frame
 (`prof.frames`). A server just built: `python tools/mcp_call.py <tool> '<json>'`.
 **Who writes a field**: `watch {"set": "0x..."}`, let the game run, `watch {"show": id}` (the code named, its
