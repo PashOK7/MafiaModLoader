@@ -974,7 +974,13 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
       the projection once a frame, the fog once, a draw's world). Measure: the host's Get* calls a frame 0; the
       constants' calls a draw; `bench` of the reference on every draw against 31a's (the 4 ms of 1.0 should mostly
       go); the picture unchanged.
-    - **31c, shaders that stay bound.** With the GPU path on, every draw of the frame goes through shaders (the
+    - **31c, shaders that stay bound.** *(2026-10-26, done in both labs: d3dmirror.cpp lends a rule's shaders,
+      the game's given back lazily; the game's SetTransform kept while a vertex shader is lent; constants made once a
+      state and compared only where a draw changes them. The reference on every draw: all 34 800 draws of the far
+      scene through shaders, switches 0, the driver's time under the draws 12.7 to 7.7 ms; +258 ms in the morning to
+      +5.5 (41.0 against 46.6) far, +0.23 near, +0.27 night, both builds; the picture: mean 0.23 of 255 far, 0.05 near.
+      Not met: "equal or faster": one constants call a draw (4.9 ms far) and the host's work a draw remain; static
+      geometry without a world matrix a draw (31f, 31g) is where it goes.)* With the GPU path on, every draw of the frame goes through shaders (the
       reference for each kind of draw the game makes, or a mod's rule); the fixed pipeline is not put back between
       draws, a shader or a constant set only when it differs from the bound one; the game's own fixed-pipeline state
       is still followed (31b) and becomes the shaders' inputs. The 2D pass (the HUD, the menus) and what the game

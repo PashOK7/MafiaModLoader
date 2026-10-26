@@ -13,6 +13,7 @@
 // Bridge methods (game thread): geom.hide {pattern, where}, geom.show {handle}, geom.state, geom.survey (what the
 // frame draws, by texture: {} starts one, {id} reads it), geom.capture ({pattern} starts one, {id} reads it).
 #include "host.h"
+#include "d3dmirror.h"
 #include <d3d9.h>
 #include <algorithm>
 #include <cctype>
@@ -181,6 +182,7 @@ bool ReadDraw(IDirect3DDevice9 *d, D3DPRIMITIVETYPE type, INT base, UINT start, 
 HRESULT DrawOn(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex, UINT verts, UINT start, UINT n) {
     HRESULT hr;
     if (ShadersDraw(d, t, base, minIndex, verts, start, n, reinterpret_cast<void *>(oDip), &hr)) return hr;   // (shaders.cpp)
+    MirrorGiveBack(d);   // (a draw no rule takes: the game's shaders, if a rule's were lent)
     return oDip(d, t, base, minIndex, verts, start, n);
 }
 

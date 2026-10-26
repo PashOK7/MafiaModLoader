@@ -1424,8 +1424,13 @@ int h = H->shader_add(M, &r, err, sizeof err);   /* 0: refused, err says why (th
 - **People** skinned on the GPU (`skin_gpu`, "People's skinning" above) reach a rule's pixel shader with the world's
   normal (`TEXCOORD2`) and tangent (`TEXCOORD3`); its vertex shader takes them only with `MML_SHADE_SKINNED`
   (`mml/skin.hlsli`).
-- **Cost**: each draw a rule takes reads the device's states for the constants (some 60 calls): measured, a rule
-  over every object (about 750 draws) cost 1.0 some 4 ms a frame (ROADMAP Known gaps).
+- **Cost** (ROADMAP items 31b, 31c; measured 2026-10-26, RTX 3070): the host follows the device's state from its Set*
+  calls (host/d3dmirror.cpp: no Get* call a draw), writes only the registers your shaders read (their constant table)
+  and that changed, and leaves your shaders bound from one draw to the next (the game's fixed pipeline given back
+  only before a draw no rule takes, a shader asked, a state block, Present); while your vertex shader is bound the
+  game's SetTransform is kept, not sent. The reference over every draw: the freeride's street 1.6 against 1.9 ms,
+  the whole city (35 000 draws) 41 against 46.6 ms, in both builds. So do not count on the fixed pipeline's state
+  being on the device during your draw: read it from game.hlsli's registers.
 - `call shader.add {"source", "vs", "ps", "pattern", "kinds", "classes", "where", "all_passes", "skinned", "vertex_data"}` (an agent
   tries a shader in the running game without building anything), `shader.remove`, `shader.state` (each rule's draws
   in the last frame), `shader.survey`, `shader.constants {"handle", "reg", "values"}`, `shader.vertex_data {"visual", "lod", "values"}`.

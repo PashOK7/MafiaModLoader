@@ -83,6 +83,7 @@ struct Rule {
     // the float registers each of its shaders reads (a bit a register, c0..c255; from the code's constant table):
     // only those are written at its draws; a stage it leaves to the game reads none
     uint32_t vsReads[8], psReads[8];
+    bool readsLights = true, readsShadows = true, readsNear = true;   // (their union's groups: Constants)
 };
 
 // The float registers a Direct3D 9 shader's code reads, from the constant table the compiler leaves in it (a comment
@@ -117,6 +118,11 @@ bool ReadsOf(const std::vector<uint8_t> &code, uint32_t out[8]) {
     }
     return false;
 }
+// Whether a shader reads any register of [from, to) (`reads`: a bit a register).
+bool Reads(const uint32_t *reads, int from, int to) {
+    for (int r = from; r < to; r++) if (reads[r >> 5] >> (r & 31) & 1) return true;
+    return false;
+}
 std::vector<std::unique_ptr<Rule>> g_rules;
 int g_nextHandle = 1;
 unsigned g_faults;
@@ -142,6 +148,7 @@ uint32_t ClassOf(const D3dMirror &m) {
 }
 
 D3dMirror g_scratch;   // (StateOf's without the mirror: game thread)
+float g_frameSeconds;   // the time the shaders get (game.hlsli mml_Camera.w), taken once a frame
 
 // The state a draw's work reads: the mirror's (d3dmirror.cpp), or, without it, what is read asked of the device into
 // `scratch` (the transforms, the render states, stages 0 and 1, their textures, the material, the lights, the viewport,
@@ -294,7 +301,7 @@ void CommonConstants(const D3dMirror &s, float *c) {
     c[64] = -(tx * v._11 + ty * v._12 + tz * v._13);
     c[65] = -(tx * v._21 + ty * v._22 + tz * v._23);
     c[66] = -(tx * v._31 + ty * v._32 + tz * v._33);
-    c[67] = static_cast<float>((GetTickCount64() % 3600000ull) / 1000.0);
+    c[67] = g_frameSeconds;
     const DWORD fog = s.rs[D3DRS_FOGENABLE], table = s.rs[D3DRS_FOGTABLEMODE], vert = s.rs[D3DRS_FOGVERTEXMODE];
     const DWORD mode = table != D3DFOG_NONE ? table : vert;
     c[68] = AsFloat(s.rs[D3DRS_FOGSTART]); c[69] = AsFloat(s.rs[D3DRS_FOGEND]); c[70] = AsFloat(s.rs[D3DRS_FOGDENSITY]);
@@ -302,9 +309,36 @@ void CommonConstants(const D3dMirror &s, float *c) {
     Rgba(s.rs[D3DRS_FOGCOLOR], c + 72);
     c[75] = fog ? 1.0f : 0.0f;
 }
-void Constants(const D3dMirror &s, float *c) {
-    memset(c, 0, kRegs * 16);
+// Every register of game.hlsli for a rule's draw; the groups its shaders do not read left out (`lights`: the
+// Direct3D lights c27..c74; `shadows`: the shadow map's c76..c83, `nearLights` the game's lights c84..c116). What is
+// not written there is not read.
+// What the last full making was made from (Constants reuses its registers while it holds): the mirror's serial, the
+// groups, the draw's kind and pass.
+struct ConstKey { const D3dMirror *state; uint32_t serial; bool lights, shadows, nearLights; int kind, pass; };
+ConstKey g_constKey;
+D3DMATRIX g_viewProj;
+float g_c[kRegs * 4 + 4];   // the registers of the draws (kept: Constants reuses them while its key holds)
+// True when only the world, the textures' flags and (nearLights) the lights near were made anew: the rest is the last
+// draw's.
+bool Constants(const D3dMirror &s, float *c, bool lights, bool shadows, bool nearLights) {
+    const ConstKey key{&s, s.serial, lights, shadows, nearLights, g_group.kind, g_group.pass};
+    const ConstKey &k = g_constKey;
+    if (&s != &g_scratch && s.serial && k.state == key.state && k.serial == key.serial && k.lights == lights &&
+        k.shadows == shadows && k.nearLights == nearLights && k.kind == key.kind && k.pass == key.pass) {
+        // the same state but the world and the textures: those registers alone (c is the last draw's)
+        const D3DMATRIX &w = s.world;
+        D3DMATRIX wvp;
+        Mul(w, g_viewProj, &wvp);
+        memcpy(c + 0, &w, 64);
+        memcpy(c + 48, &wvp, 64);
+        c[99] = s.tex[0] ? 1.0f : 0.0f;
+        c[103] = s.tex[1] ? 1.0f : 0.0f;
+        if (nearLights) ShadowsConstants(g_group.visual, c, true);
+        return true;
+    }
+    g_constKey = key;
     CommonConstants(s, c);
+    Mul(s.view, s.proj, &g_viewProj);   // (kept for the next draws)
     memcpy(c + 76, &s.material.Diffuse, 16);
     memcpy(c + 80, &s.material.Ambient, 16);
     memcpy(c + 84, &s.material.Emissive, 16);
@@ -320,7 +354,8 @@ void Constants(const D3dMirror &s, float *c) {
     }
     const D3DVIEWPORT9 &vpo = s.viewport;
     int n = 0;
-    for (DWORD i = 0; i < 8 && n < 8; i++) {
+    if (lights) memset(c + 108, 0, 8 * 24 * 4);   // (the slots past the lights on: zeros, as they are compared)
+    for (DWORD i = 0; i < 8 && n < 8 && lights; i++) {   // (the lights only for a shader that reads them)
         if (!s.lightOn[i]) continue;
         const D3DLIGHT9 &l = s.light[i];
         float *o = c + 108 + n * 24;
@@ -337,13 +372,15 @@ void Constants(const D3dMirror &s, float *c) {
     c[105] = s.rs[D3DRS_RANGEFOGENABLE] ? 1.0f : 0.0f;
     c[106] = static_cast<float>(vpo.Width);
     c[107] = static_cast<float>(vpo.Height);
-    ShadowsConstants(g_group.visual, c);
+    if (shadows || nearLights) ShadowsConstants(g_group.visual, c, nearLights);
+    return false;
 }
 
 // What the host's own skinned shaders read of game.hlsli (VsSkin, PsSkin: the transforms, the eye, the fog, the
 // draw, the stages, the viewport, the texture factor), c0..c26 and c75: a person's draw no rule takes writes these
 // alone (there are hundreds of such draws a frame).
 void CoreConstants(const D3dMirror &s, float *c) {
+    g_constKey = {};   // (the shared registers written otherwise: Constants makes them whole next)
     memset(c, 0, 27 * 16);
     CommonConstants(s, c);
     c[92] = static_cast<float>(g_group.kind);
@@ -456,8 +493,10 @@ HRESULT SkinnedDip(IDirect3DDevice9 *d, const SkinGpuDraw &s, IDirect3DVertexSha
                    UINT minIndex, UINT verts, UINT start, UINT n, DipFn dip) {
     SkinGpuSaved k{};
     SkinGpuBind(d, s, &k);
-    d->SetVertexShader(vs);
-    d->SetPixelShader(ps);
+    if (!MirrorLend(d, vs, ps)) {   // (lent: they stay bound; else set here, put back by the caller)
+        d->SetVertexShader(vs);
+        d->SetPixelShader(ps);
+    }
     HRESULT hr = dip(d, t, 0, minIndex, verts, start, n);   // (the LOD's vertices from 0 in the skin's buffers)
     SkinGpuUnbind(d, k);
     return hr;
@@ -476,24 +515,29 @@ bool ShadowDraw(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex
         Mul(v, p, reinterpret_cast<D3DMATRIX *>(g_shadowVP));
         g_shadowVPSet = true;
     }
-    float c[kRegs * 4];
-    Constants(st, c);
+    float *const c = g_c;
+    Constants(st, c, true, true, true);
     IDirect3DVertexShader9 *const oldVs = st.vs;   // (the device holds them: set back, not released)
     IDirect3DPixelShader9 *const oldPs = st.ps;
     MirrorConstants(d, false, 0, c, kRegs);
     MirrorConstants(d, true, 0, c, kRegs);
     SkinGpuDraw skin;
     const bool skinned = SkinGpuFor(d, g_group.visual, base, &skin);
-    d->SetVertexShader(g_shadowVs);
-    d->SetPixelShader(g_shadowPs);
+    const bool lent = !skinned && MirrorLend(d, g_shadowVs, g_shadowPs);
+    if (!lent && !skinned) {
+        d->SetVertexShader(g_shadowVs);
+        d->SetPixelShader(g_shadowPs);
+    }
     if (blend) { d->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE); g_shadowCut++; }   // (a fence's cut-outs: tested, not blended)
     if (skinned)
         *hr = SkinnedDip(d, skin, static_cast<IDirect3DVertexShader9 *>(SkinGpuShader(2)), g_shadowPs, t, minIndex, verts, start, n, dip);
     else
         *hr = dip(d, t, base, minIndex, verts, start, n);
     if (blend) d->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);   // (as LS3D left it: its own cache of the states holds)
-    d->SetVertexShader(oldVs);
-    d->SetPixelShader(oldPs);
+    if (!lent && !MirrorOf(d)) {   // (no mirror: the game's put back at once)
+        d->SetVertexShader(oldVs);
+        d->SetPixelShader(oldPs);
+    }
     g_shadowDraws++;
     g_shadowFaces += n;
     return true;
@@ -510,17 +554,35 @@ bool Draw(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex, UINT
     Rule *r = g_rules.empty() || !g_group.where ? nullptr : RuleFor(st);   // (the rules: the frame's and the views' draws)
     if (r && !Make(*r, d)) r = nullptr;
     if (!r && !skinned) return false;
-    float c[kRegs * 4];
-    if (r) Constants(st, c);
+    float *const c = g_c;
+    // the registers to compare: the shaders' reads; only the ones a draw changes when the rule, the state and the
+    // device's constants are as at the last draw (what was written then is there)
+    static const Rule *lastRule;
+    static uint32_t lastConstSerial;
+    bool sameAsLast = false;
+    bool all = false;
+    if (r) {
+        all = (skinned && !(r->vs && (r->flags & MML_SHADE_SKINNED))) || !r->vs || !r->ps;   // (a shader not the rule's: all)
+        const bool fast = Constants(st, c, all || r->readsLights, all || r->readsShadows, all || r->readsNear);
+        sameAsLast = fast && !all && r == lastRule && lastConstSerial == MirrorConstSerial();
+    }
     else CoreConstants(st, c);   // (a person no rule takes: the host's shaders read these alone)
     IDirect3DVertexShader9 *const oldVs = st.vs;   // (the device holds them: set back, not released)
     IDirect3DPixelShader9 *const oldPs = st.ps;
     // only the registers that differ from what the device holds (MirrorConstants)
     if (r) {
         static const uint32_t kAll[8] = {~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u};
+        // (what a draw on the same state changes: the world c0..c3, its product c12..c15, the stages' textures c24, c25,
+        // the game's lights near it c84..c116)
+        static const uint32_t kDraw[8] = {0x0300F00Fu, 0, 0xFFF00000u, 0x001FFFFFu, 0, 0, 0, 0};
+        uint32_t vsMask[8], psMask[8];
         const bool hostVs = skinned && !(r->vs && (r->flags & MML_SHADE_SKINNED));   // (the host's skinning shader: reads them all)
-        MirrorConstants(d, false, 0, c, kRegs, hostVs ? kAll : r->vsReads);
-        MirrorConstants(d, true, 0, c, kRegs, r->ps ? r->psReads : kAll);
+        for (int i = 0; i < 8; i++) {
+            vsMask[i] = (hostVs ? kAll[i] : r->vsReads[i]) & (sameAsLast ? kDraw[i] : ~0u);
+            psMask[i] = (r->ps ? r->psReads[i] : kAll[i]) & (sameAsLast ? kDraw[i] : ~0u);
+        }
+        MirrorConstants(d, false, 0, c, kRegs, vsMask);
+        MirrorConstants(d, true, 0, c, kRegs, psMask);
     } else {
         MirrorConstants(d, false, 0, c, 27);
         MirrorConstants(d, true, 0, c, 27);
@@ -530,8 +592,15 @@ bool Draw(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex, UINT
         MirrorConstants(d, false, 160 + r->constLo, r->consts + r->constLo * 4, r->constHi - r->constLo, r->vsReads);
         MirrorConstants(d, true, 160 + r->constLo, r->consts + r->constLo * 4, r->constHi - r->constLo, r->psReads);
     }
-    if (!skinned && r->vs) d->SetVertexShader(r->vs);
-    if (!skinned && r->ps) d->SetPixelShader(r->ps);
+    lastRule = r;
+    lastConstSerial = MirrorConstSerial();
+    // the rule's shaders lent (d3dmirror.cpp: left bound for the next draw, the game's given back when something else
+    // draws or asks); without the mirror set here and put back below
+    const bool lent = !skinned && MirrorLend(d, r->vs, r->ps);
+    if (!skinned && !lent) {
+        if (r->vs) d->SetVertexShader(r->vs);
+        if (r->ps) d->SetPixelShader(r->ps);
+    }
     // the shadow map at sampler 2 (shadows.cpp), the sampler's state put back after
     IDirect3DBaseTexture9 *map = r ? ShadowsTexture() : nullptr, *oldTex = nullptr;
     DWORD ss[5] = {};
@@ -561,8 +630,10 @@ bool Draw(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex, UINT
         d->SetTexture(2, oldTex);
         for (int i = 0; i < 5; i++) d->SetSamplerState(2, kSs[i], ss[i]);
     }
-    d->SetVertexShader(oldVs);
-    d->SetPixelShader(oldPs);
+    if (!MirrorOf(d)) {   // (no mirror: the game's put back at once)
+        d->SetVertexShader(oldVs);
+        d->SetPixelShader(oldPs);
+    }
     if (r) r->drawsNow++;
     return true;
 }
@@ -692,6 +763,13 @@ int ShaderAdd(MmlMod *mod, const MmlShaderRule *in, std::string *err) {
     if (r->vsCode.empty() && r->psCode.empty()) { *err = "no shader: source with vs_entry and/or ps_entry, or vs_code / ps_code"; return 0; }
     if (r->vsCode.empty()) memset(r->vsReads, 0, sizeof r->vsReads); else ReadsOf(r->vsCode, r->vsReads);
     if (r->psCode.empty()) memset(r->psReads, 0, sizeof r->psReads); else ReadsOf(r->psCode, r->psReads);
+    {
+        uint32_t u[8];
+        for (int i = 0; i < 8; i++) u[i] = r->vsReads[i] | r->psReads[i];
+        r->readsLights = Reads(u, 27, 75);
+        r->readsShadows = Reads(u, 76, 117);
+        r->readsNear = Reads(u, 84, 117);
+    }
     if (!GeomEnsureHooks(err)) return 0;
     r->handle = g_nextHandle++;
     int h = r->handle;
@@ -728,6 +806,8 @@ int ShaderConstants(MmlMod *mod, int handle, int reg, const float *values, int c
 
 void ShadersFrameEnd() {   // (render.cpp, after the frame's own drawing)
     VdataFrameEnd();
+    g_frameSeconds = static_cast<float>((GetTickCount64() % 3600000ull) / 1000.0);   // (mml_Camera.w: once a frame)
+    MirrorGiveBack(nullptr);   // (the game's shaders for what it draws after its world: the 2D pass)
     MirrorFrame();   // (the mirror read again from the device at the next frame's first draw)
     for (auto &r : g_rules) { r->drawsLast = r->drawsNow; r->drawsNow = 0; }
     if (g_surveyWanted) {

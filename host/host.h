@@ -555,7 +555,8 @@ void ShadowsTune(float sunDistance, int casters);   // (shader.shadows) sun_dist
 void ShadowsModGone(MmlMod *mod);
 void ShadowsBeforeWorld(void *driver, void *scene, int(__stdcall *render)(void *, void *));   // (render.cpp) the pass, before the world
 void ShadowsMissionClose();
-void ShadowsConstants(const void *visual, float *c);   // game.hlsli's c76..c116 for a draw of this visual
+void ShadowsConstants(const void *visual, float *c, bool nearLights);   // game.hlsli's c76..c116 for a draw of this visual
+                                                                       // (nearLights: c84..c116, the game's lights near it)
 ::IDirect3DBaseTexture9 *ShadowsTexture();  // the map drawn this frame, or null
 // the map drawn this frame as gfx.cpp opens it in Direct3D 11: its shared handle, a count of the maps made (a new
 // map, a new handle; the handle null when the map is not shared: DXVK's device, ShadowsTexture copied then), its

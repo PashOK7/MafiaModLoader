@@ -22,6 +22,9 @@ struct D3dMirror {
     IDirect3DVertexShader9 *vs;          // (not referenced)
     IDirect3DPixelShader9 *ps;
     float vsc[256][4], psc[224][4];      // the shaders' constant registers
+    // changes with every state kept but the world transform, the textures, the shaders and their constants (a user's
+    // values made from the rest are still good while it is the same)
+    uint32_t serial;
 };
 
 // Users: while one wants it, the device's Set* calls are followed (the hooks made at the first use, on the device's
@@ -35,6 +38,14 @@ const D3dMirror *MirrorOf(IDirect3DDevice9 *d);
 // without the mirror, written whole. `pixel`: the pixel shader's. `reads`: the registers the shader reads (a bit a
 // register, c0..c255): the others are not written (null: all of them).
 void MirrorConstants(IDirect3DDevice9 *d, bool pixel, UINT start, const float *v, UINT count, const uint32_t *reads = nullptr);
+// A rule's draw: its shaders bound (null: the stage the game's) and left bound after it, the game's kept aside and
+// given back when something else would see them (d3dmirror.cpp). False: no mirror (set and put back by the caller).
+bool MirrorLend(IDirect3DDevice9 *d, IDirect3DVertexShader9 *vs, IDirect3DPixelShader9 *ps);
+// The game's shaders back now, if lent (a draw no rule takes, the frame's end; null: the device followed).
+void MirrorGiveBack(IDirect3DDevice9 *d);
+// Changes when the shaders' constants on the device change otherwise than by MirrorConstants (another writer, the
+// mirror read again): while it holds, what MirrorConstants wrote is still there.
+uint32_t MirrorConstSerial();
 // The next frame's start (Present): the mirror is read again from the device at its next use.
 void MirrorFrame();
 // The mirror against the device's own answers at the next `draws` draws (shader.mirror's check): what differs, by name.

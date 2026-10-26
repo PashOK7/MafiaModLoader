@@ -460,7 +460,7 @@ void ShadowsMissionClose() {   // (the meshes' buffers keyed by pointers meshes.
 }
 
 // game.hlsli's registers c76.. for a draw of `visual` (shaders.cpp writes c0..c75): the map, the sun, the lights.
-void ShadowsConstants(const void *visual, float *c) {
+void ShadowsConstants(const void *visual, float *c, bool nearLights) {
     LightsNow();
     float *o = c + 76 * 4;
     memcpy(o, g_lightVP, 64);
@@ -471,6 +471,8 @@ void ShadowsConstants(const void *visual, float *c) {
     o[20] = g_sun[0]; o[21] = g_sun[1]; o[22] = g_sun[2]; o[23] = g_haveSun ? 1.0f : 0.0f;
     o[24] = g_sunColor[0]; o[25] = g_sunColor[1]; o[26] = g_sunColor[2]; o[27] = 0;
     o[28] = g_ambient[0]; o[29] = g_ambient[1]; o[30] = g_ambient[2]; o[31] = 0;
+    if (!nearLights) return;   // (a shader that does not read them)
+    memset(o + 32, 0, (117 - 84) * 16);   // (the slots past the lights near: zeros, as they are compared)
     // the lights whose far range reaches the visual's bounding sphere, nearest first
     V3 bc{0, 0, 0};
     float br = 0;

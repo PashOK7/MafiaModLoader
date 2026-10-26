@@ -4044,3 +4044,22 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   to +51.7 (41.3 against 93.0); near: +1.1 to +0.9 in both; the pictures unchanged; the mirror's check 300 draws, no
   mismatch. From +258 ms at the morning's baseline to +52: what is left is the Set* calls themselves (the shaders set
   and put back at every draw: 31c).
+
+## 2026-10-26: shaders that stay bound (ROADMAP 31c)
+
+- **Made** (host/d3dmirror.cpp, shaders.cpp, shadows.cpp, geom.cpp): a rule's shaders lent (MirrorLend): left bound
+  after its draw, the game's shaders kept aside and given back only before a draw no rule takes (DrawPrimitive, UP,
+  IndexedUP, a DrawIndexedPrimitive without a rule), a Get*Shader, a state block made, begun, captured (none holds a
+  lent shader; one applied ends the loan of the stage it sets), Present and the frame's end; a shader the game sets
+  ends the loan. While a vertex shader is lent the game's SetTransform of the world, view and projection is kept and
+  sent only when it matters (given back, asked, multiplied, a state block). The constants: the groups a rule reads
+  decided at its making (Direct3D's lights, the shadow map, the game's lights near), the time once a frame, a
+  serial of the mirror's state (all but the world and the textures) so a draw on the same state makes only the world,
+  its product and the stages' textures anew and compares only those (when the rule and the device's constants are
+  as at the last draw); runs written over short gaps in one call.
+- **Seen** (one lab at a time; `shader.mirror {check}` 500 to 800 draws, no mismatch, far, crowd with GPU skinning,
+  night, both builds): the far scene's 34 800 draws all through shaders, 12 shader sets a frame, switches 0; the
+  driver's time under the draws 12.7 to 7.7 ms; the game's transform calls 3.9 to 1.2 ms. The reference on every draw
+  against the game's own drawing: far 1.2 +5.5 ± 0.2 ms (41.0 against 46.6), 1.0 +5.6; near +0.23 / +0.18; night
+  1.0 +0.27; the pictures as before (far 0.89 % of the pixels over 8, night 0.05 %). From the morning's +258 ms.
+  What is left: 32 400 constants calls a frame (4.9 ms, the world's matrix a draw) and the host's own work a draw.
