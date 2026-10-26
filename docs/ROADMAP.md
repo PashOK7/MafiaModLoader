@@ -790,11 +790,6 @@ What is done, what comes next and later, and what is known to be missing or wron
   restore point: the same within the input's timing). Seen in both labs: cars, a parked traffic car, Paulie, a tram.
   `camera.set {follow}` films any actor from its own space. `mods/examples/bounce` pulses everything near the player
   (knowledge/notes/scale.md).
-- **A presaved 4096x4096 map drew invisible on 9Ex** (2026-10-26, knowledge/notes/game.md): the packs'
-  `fullmap_1.565` as the Tab map's texture was drawn and showed nothing in the 1.2 lab (9Ex, our dxwrapper's
-  managed textures in video memory), while the same file showed in the tester's copy on DXVK and the .bmp showed
-  in the lab. Suspect: MmlManaged (third_party/dxwrapper/patch.py) with how LS3D fills a presaved texture. Not
-  isolated: an A/B in the lab with the presave (MmlManaged on and off), then the texture's levels read back.
 - **A gamepad plugged in while the game runs** (2026-10-24; the owner: the first of the game's bugs fixed through
   the loader): both builds open their DirectInput controllers once at the start (IJoy.dll; none attached: no base at
   all), and the profile's bindings of a joystick that is not open are dropped. host/joyplug.cpp watches the HID
@@ -1002,7 +997,8 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
       (0.67 to 1.22 ms, the vertex texture fetches). Still world: +0.68 ms, the picture the same (0.13 %).)* Item 28b's palette and lighting in the bound shaders (no
       switch a person); LS3D's skinning, copies and lighting skipped. Measure: the crowd scene, CPU skinning
       against GPU: the GPU's faster (28b's +0.9 / +1.3 ms becomes a gain); `hot_ms` skin.* (LS3D's share gone).
-    - **31e, objects lit on the GPU.** The normals from 31's vertex data (item 28c's second stream), LS3D's choice of
+    - **31e, objects lit on the GPU.** *(2026-10-26: weighed, waits: LightVertices about 0.3 ms of the night scene.)*
+      The normals from 31's vertex data (item 28c's second stream), LS3D's choice of
       lights for a visual taken as for people (its LightVertices run on one vertex, or the sector's lights read),
       LS3D's lighting of objects skipped. Measure: LightVertices's time a frame (31a's widened `hot_ms`) to 0; the
       night scene (the most lights); the picture.
@@ -1026,7 +1022,21 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
     - **31g, fewer draws.** What stays the same from frame to frame merged: a sector's static face groups by
       material into one buffer and one draw, repeated models (lamps, trees, cars of one model) instanced. Measure:
       draws a frame, the driver's time, the far scene's frame (item 29's 30 fps).
-    - **31h, the visibility.** Not the GPU's work but the far scene's other bottleneck: LS3D's portals and frame
+    - **31i, the game's buffers renamed.** *(2026-10-27, done in both labs: host/vbrename.cpp, `vb.state`, `vb.set`,
+      `vb.check`, `vb.selftest`.)* LS3D locks its vertex and index pools whole with no flags (1.2 lod::SetUV for the
+      env-mapped objects, 1.0's pool lock ls3d+A9D0; 1.0's DrawIndexedPrimitiveList once for each person's shadow): each
+      lock waited for the GPU. Every D3DPOOL_DEFAULT buffer the game makes (64 KB and more) gets a copy in memory
+      (MEM_WRITE_WATCH) its locks are given, and copies of ours on the GPU the pages written go into at the Unlock, one
+      the GPU no longer reads (event queries), drawn from then on; NOOVERWRITE and DISCARD kept as the game asked, rings
+      given back. A/B against the game's own locks (`vb.set {rename: false}`), one lab at a time, a quiet machine: the
+      menu 1.2 0.750 to 0.694 ms, 1.0 0.761 to 0.713; near 1.2 1.435 to 1.206, 1.0 1.548 to 1.264; the crowd 1.2 6.77
+      to 6.16, 1.0 6.94 to 5.87; far 1.2 37.08 to 34.69, 1.0 39.77 to 36.88; far batched (1.2) 24.49 to 22.00. The
+      picture the game's (the scenes' own flicker); `vb.check` 0 pages differing in both. With the GPU busy (other
+      programs) far more: near 6.9 to 2.2 ms. The whole city: 176 buffers, 22 MB in memory, 40 MB of copies.
+    - **31h, the visibility.** *(2026-10-26: measured on the batched far frame, 1.2: SetVisibleRecMainPass about
+      13 %, 3 ms (near 15 %); it tests each child against the four planes again whatever its parent's result: an
+      "inside" mask handed down is the first step. Before it: m_AddFGroups skipped for objects whole in batches
+      (JOURNAL, 2026-10-26, "the request made cheaper").)* Not the GPU's work but the far scene's other bottleneck: LS3D's portals and frame
       walk on the CPU. After 31a's numbers: cached per camera cell, made cheaper, or occlusion moved to the GPU
       (queries, a depth pyramid). Measure: the profile's share of `SetVisibleRecMainPass` and the portals at 1000 m.
     Under a Direct3D 9 wrapper only (dxwrapper, DXVK), as items 27 and 28; plain Direct3D 8 keeps the game's own
@@ -1298,6 +1308,16 @@ merged, sorted by importance):
   countryside freeride). The page stays writable for the run (such a plugin writes again later); a plugin that
   writes the game's data while the game reads it on another thread is not made safe by this. Not seen with another
   such plugin, nor in 1.0 with a real one (this one supports 1.2 alone: 1.0 is the offline test's).
+- **`vb.set {rename: false}` under `render.set {batch: true}`: 0.57 % of the far frame's pixels differ** (2026-10-27,
+  1.2, host/vbrename.cpp): at the silhouettes (worst 213 of 255), stable in each mode. The batched picture with the
+  renaming is batch.cpp's reference exactly (0.271 / 0.228 / 0.187 of 255 against LS3D's, 1.02 %), and `vb.check`
+  finds every buffer's copy drawn equal to what the game wrote in both modes: the A mode alone (a measure's
+  baseline) draws otherwise there. Not found why; without batches both modes' pictures are the game's.
+- **A presaved 4096x4096 map drew invisible on 9Ex** (2026-10-26, knowledge/notes/game.md): the packs'
+  `fullmap_1.565` as the Tab map's texture was drawn and showed nothing in the 1.2 lab (9Ex, our dxwrapper's
+  managed textures in video memory), while the same file showed in the tester's copy on DXVK and the .bmp showed
+  in the lab. Suspect: MmlManaged (third_party/dxwrapper/patch.py) with how LS3D fills a presaved texture. Not
+  isolated: an A/B in the lab with the presave (MmlManaged on and off), then the texture's levels read back.
 - **A gamepad plugged in while the game runs: not seen with a real pad** (2026-10-24, host/joyplug.cpp): the
   opening again is seen in both labs (`joy.drop`, `joy.rescan`), the device's arrival with real hardware and the poll
   thread (no CM_Register_Notification: Windows 7, Wine) are not. The running mission's force feedback effects stay on

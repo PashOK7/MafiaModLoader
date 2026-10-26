@@ -516,6 +516,16 @@ def frames_tests(b):
     b.call('prof.mark', {'label': ''})
     r = b.call('prof.counters', {'on': True})
     check('prof.counters with no game: refused, saying why', not r['ok'] and 'Direct3D 9' in str(r), r)
+    # the game's buffers renamed (host/vbrename.cpp) on a device of the test's own: locks never wait, the copy drawn
+    # holds everything written, the device draws from it, GetStreamSource and a state block's Apply follow it
+    r = b.call('vb.selftest')
+    res = r.get('result') if isinstance(r.get('result'), dict) else {}
+    check('vb.selftest: a buffer made as the game\'s renamed (copies drawn in turn, its locks never waited, what was written in the copy drawn, released: forgotten)',
+          r['ok'] and res.get('ok') and res.get('renames', 0) >= 20 and not res.get('lock_waited') and res.get('forgotten')
+          and 2 <= res.get('copies', 0) <= 32 and res.get('ring_given_back') and res.get('released') == 1, r)
+    r = b.call('vb.state')
+    check('vb.state: the buffers released and their copies given back after the test', r['ok'] and r['result']['buffers'] == 0
+          and r['result']['copies_mb'] == 0 and r['result']['commits'] >= 25, r)
     r = b.call('prof.state')
     check('prof.state: the frame\'s record\'s state (no label, not counting, the GPU off)',
           r['ok'] and r['result']['label'] == '' and r['result']['counters'] is False and r['result']['gpu'] != 'measured', r)

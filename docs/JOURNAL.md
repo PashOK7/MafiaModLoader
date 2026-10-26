@@ -4121,6 +4121,26 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   near 0.04, night 0.015; 1.2 40.1 -> 22.7 ms, 1.0 40.1 -> 22.8. The "1.0 texture noise" written in Known gaps an hour
   earlier was this: taken out.
 
+## 2026-10-26: the request made cheaper, and where block 31 stands (ROADMAP 31e, 31g, 31h)
+
+- **The request's fast path** (host/batch.cpp's Group): a group already captured is looked up first and only what may
+  change is checked (the visual's two fades times the material's alpha kept at capture, the world matrix, the LOD
+  record and its stamps, the textures, the fog key); the visual's type, the refusals, the material's blending and the
+  capture budget are read only for a group not captured. 1.2's far scene (one lab): LS3D 41.7 ms, batched 23.25,
+  B - A -18.58 +- 0.49 ms; the picture 0.271 / 0.228 / 0.187 of 255 as before. Not yet seen in 1.0.
+- **What the batched far frame still spends** (`profile`, 1.2): LS3D's Render's own loop 15 %, the request (before
+  the fast path) about 20 %, I3D_object::m_AddFGroups 6 to 7 %, the visibility (I3D_frame::SetVisibleRecMainPass,
+  ls3d+41DF0) about 13 % (3 ms; near 15 %). SetVisibleRecMainPass tests each child against the camera's four planes
+  again, whatever its parent's result: an "inside" mask handed down would spare most of the tests (31h).
+- **31e weighed**: LS3D's LightVertices are about 0.3 ms of a frame in the night scene: a small share, it waits
+  (the roadmap's own rule) unless the batches make it larger.
+- **Next, the idea under study**: an object whose groups are all in batches and unchanged need not go through
+  m_AddFGroups at all (ls3d 1.2 0x38020, 1.0 0x369E0, game_build.h's addObject): its groups asked for at once. What
+  must be kept is the relight m_AddFGroups makes inside: `if (lit flag || lodRecord[+4] != sector[+0x140]) {
+  lodRecord[+4] = sector[+0x140]; LightingSetSector(sector); ... }` (the sector at ls3d's DAT_101c4c74 in 1.2), and the
+  LOD it picks (GetObjectLOD with the squared distance from the visual's +0x19C to the camera) and the fade. Then
+  measure far, near, night and the crowd, one lab at a time, with pictures, in both builds.
+
 ## 2026-10-26: the downloads checked by Windows (tools/fetch.py)
 
 - **A player's `cmake --preset x86` stopped at `deps.py ffmpeg`**: `CERTIFICATE_VERIFY_FAILED: certificate has
@@ -4197,3 +4217,59 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   commits alone: batch.cpp's work in progress stashed): the loader, core, dlss_nr, fps_unlock, fusion_fix, the
   README (the old ASI mods let through, the radar's map); 2.0 MB. Run in his copy from the build packed: the
   plugin's pages logged, the radar's countryside map, DLSS SR on the 3070.
+
+## 2026-10-26: the batches in the main menu (asked: what they give there)
+
+- **Measured** (1.2 lab alone, the main menu, `bench` batch off against on, 10 blocks of 600 frames): the frame
+  1.20 ms with LS3D's drawing (about 830 fps, 169 draws), 1.28 with the batches: +0.08 +- 0.04 ms, slower. The
+  office has 2.5 batches a frame to make, and the batched path asks the device 593 Get* a frame (0.06 ms): a cost
+  that pays off only with thousands of draws (the whole city: 40 to 22.7 ms). The pictures differ by the menu
+  camera's sway alone. The batches are opt-in: a player's menu is as it was. To look at: the Get* the batched path
+  makes (host) where it has little to batch.
+- **Where the menu's 1.2 ms go** (1.2 lab alone, the main menu, `bench` counters and `profile` at 0.25 ms): the game
+  thread's work 0.76 ms, Present 0.39 ms (0.11 of it on the CPU: the rest waiting), the GPU 0.12 ms. The locks:
+  12 a frame, 0.32 ms. The profile (its sampling slows the frame to 3.5 ms, so shares only): half the samples in
+  ZwWaitForSingleObject under lod::SetUV+0x108 (ls3d 1.2 0x36D00), its pool vertex buffer's
+  `Lock(0, 0, &data, 0)`: the whole buffer, no flags, once a frame (cVBMan's list, unlocked by
+  C_VBManager::m_UnlockAllVBuffers), called by I3D_object::m_AddFGroups+0x6E7 for the env-mapped objects
+  (EnvMapCoords on the CPU: the office's metal). A lock without flags on a buffer the GPU drew from last frame
+  waits for that frame: the CPU never runs ahead of the GPU. win32u's D3DKMT Lock2, Unlock2,
+  WaitForSynchronizationObjectFromCpu beside it. Then Present (the host's hook calling the real one, windowed:
+  14.7 %), EnvMapCoords 4.9 %, LS3D's visibility 2.7 %, LightVertices 1.9 %, the particles 1.4 %.
+- **The same locks in the scenes** (31a's table, the clean run of 2026-10-26): near 36 a frame, 0.30 ms of 1.41;
+  night 0.19 to 0.26 of 1.65 to 1.83; crowd 0.74 of 6.42 (1.2), 2.12 of 7.74 (1.0); far 221, 2.6 ms of 39.5. A far
+  run today with the machine busy (33 % other processes, the GPU's span 61 ms) had the same 211 locks take 22 to
+  25 ms: the wait grows with how far the GPU is behind. Only measured, nothing changed.
+
+## 2026-10-27: the game's buffers renamed (host/vbrename.cpp; ROADMAP 31i)
+
+- **Asked** (the owner): take the vertex buffers' lock stall out properly, measure the menu, near, the crowd and far in
+  both labs, one lab at a time.
+- **Read**: LS3D's pools (C_VBuffer, 1.2 ls3d+688B0 and its creator ls3d+68CF0; 1.0 C_VBuffer::m_Init ls3d+65750,
+  m_Lock ls3d+A9D0): 0x20000 bytes or more, DEFAULT unless managed for the meshes' sources, locked whole with no flags
+  (1.0: NOSYSLOCK), unlocked together by C_VBManager::m_UnlockAllVBuffers. dxwrapper's d3d8to9 and its Direct3D 9
+  wrapper pass Lock and SetStreamSource straight on (d3d8to9 drops DISCARD from a buffer not dynamic and write-only).
+- **Made**: host/vbrename.cpp, installed at the game's CreateDevice (gfx.cpp) on the Direct3D 9 device under the
+  wrapper: CreateVertexBuffer and CreateIndexBuffer outermost (the caller's return address: the game's, not the host's
+  or a mod's), the rest innermost. A copy in memory with MEM_WRITE_WATCH, copies of ours (dynamic, from 3 up to 8 MB a
+  buffer, 192 MB in all), event queries, the bindings followed (Set/Get, a state block's Apply, Reset); NOOVERWRITE and
+  DISCARD written into the copy drawn with the same flag, a discarded copy written whole; buffers written only so
+  given back after 8 unlocks. `vb.set {rename: false}`: the game's own buffer locked at the game's Lock with its
+  flags (its wait where it was), written at the Unlock and drawn: the A of the A/B (near in it: 1.435 ms, 31a's
+  baseline 1.41). `vb.check` reads every copy drawn back (only the pages it holds). `vb.selftest` (offline): a device
+  of its own, 24 frames written and drawn, the copy drawn against what was written, GetStreamSource, a state block,
+  a DISCARD between plain locks, a ring given back, the release.
+- **Found on the way**: (1) the first measures ran with the machine busy (the GPU 83 %, other programs): every wait
+  for the GPU grew (near 6.9 ms with the game's locks, 2.2 renamed); the menu's 1.2 ms of the day before was partly
+  that. (2) The first version renamed at every Unlock: LS3D's rings (1.2's shadows, NOOVERWRITE appends and a
+  DISCARD) ran out of copies and waited, worse than the game; and the A mode then took their flags off. (3) 1.0's
+  people's shadows: IGraph::DrawIndexedPrimitiveList (ls3d 1.0 0x69F30) locks its one vertex buffer and its index
+  buffer whole with NOSYSLOCK for each shadow, writes at the same place and draws: each waited for the shadow before
+  (about 1 ms of the crowd's frame); three copies were too few, so a buffer gets more, up to 8 MB. (4) A copy
+  written with DISCARD kept only the pages written after it; a plain lock drawing it later would have lost the rest:
+  now written whole (vb.check had found an index buffer's 17 pages differing).
+- **Measured** (one lab at a time, `bench` A/B, counters off, a quiet machine): see ROADMAP 31i: the menu -7 %,
+  near -16 % (1.2) and -18 % (1.0), the crowd -10 % and -18 %, far -6.5 % and -7 %, far batched -10 %. The pictures
+  the game's (a mode against itself differs as much: the scenes' own flicker). `vb.check` 0 of 5252 (1.2) and 5556
+  (1.0) pages. The A mode under batches differs at the silhouettes (ROADMAP Known gaps). fps_unlock's line costs
+  nothing measurable (the crowd, 0.005 +- 0.109 ms). Offline tests ALL PASSED.

@@ -1716,6 +1716,14 @@ HRESULT STDMETHODCALLTYPE hkCreateDevice8(void *self, UINT adapter, DWORD type, 
     FullscreenCreate(self, adapter, focus, pp);   // (fullscreen.cpp: a full screen made a borderless window for the showing)
     HRESULT hr = oCreateDevice8(self, adapter, type, focus, flags, pp, device);
     if (SUCCEEDED(hr) && device && *device) GammaDevice(*device);   // (gamma.cpp: the brightness in a window)
+    if (SUCCEEDED(hr) && device && *device) {   // (vbrename.cpp: before LS3D makes its pools; under a Direct3D 9 wrapper only)
+        void *d9 = nullptr;
+        auto qi = (*reinterpret_cast<HRESULT(STDMETHODCALLTYPE ***)(void *, REFIID, void **)>(*device))[0];
+        if (SUCCEEDED(qi(*device, __uuidof(IDirect3DDevice9), &d9)) && d9) {
+            static_cast<IUnknown *>(d9)->Release();   // (the wrapper's device holds it)
+            VbRenameInstall(d9);
+        }
+    }
     if (SUCCEEDED(hr) && device && *device && !oReset8) {
         std::string err;
         void *reset = (*reinterpret_cast<void ***>(*device))[14];

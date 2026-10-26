@@ -813,6 +813,15 @@ Four things, each the game's own, all needed for the whole city in one frame:
 
 ## How the game's world reaches Direct3D (measured 2026-10-17, both labs; host/shaders.cpp shader.survey)
 
+- **ls3d** LS3D's vertex pools (C_VBuffer; read 2026-10-26 in both builds, host/vbrename.cpp): 0x20000 bytes or more,
+  D3DPOOL_DEFAULT (MANAGED only for a mesh's source data: SOFTWAREPROCESSING without DYNAMIC), locked whole with no
+  flags whenever something in them is written (1.2 lod::SetUV ls3d+36D00 for the env-mapped objects' uv, every frame;
+  1.0's pool lock ls3d+A9D0 with NOSYSLOCK), unlocked together by C_VBManager::m_UnlockAllVBuffers before the draws: the
+  lock waits for the GPU to finish the last frame's draws from the pool. 1.0's IGraph::DrawIndexedPrimitiveList
+  (ls3d 1.0 0x69F30) locks its one global vertex buffer and index buffer whole with
+  NOSYSLOCK for every call (each person's shadow), writes at the same place and draws; 1.2's shadows go through a
+  ring of NOOVERWRITE appends and a DISCARD (IGraph::DrawIndexedPrimitive).
+
 - **ours** The game thread's x87 control word as the game enters the loader's frame: `0x007F` in both builds (24
   bits of precision, round to nearest, every exception masked): the game's Direct3D made without
   `D3DCREATE_FPU_PRESERVE` (measured 2026-10-17, `fpu.state`; host/fpu.cpp raises it to `0x027F` around the mods).

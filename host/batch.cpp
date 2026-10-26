@@ -113,6 +113,7 @@ struct Member {
     uint32_t stamp[2] = {};
     const void *texture = nullptr;     // the entry's texture (an animated material's frame), and its Direct3D 8 one (+8,
     const void *texture8 = nullptr;    // what m_RenderFGroup binds): both compared (an address taken again by another)
+    float matAlpha = 1;                // its material's alpha (a material's blending flags do not change: checked once)
     unsigned askedFrame = 0;
     bool dead = false;
 };
@@ -461,14 +462,13 @@ int Group(const void *visual, const uint8_t *entry) {
         const void *group = At<const void *>(entry, kEntryGroup);
         if (!group) return 0;
         const Key k{visual, group};
-        if (At<uint32_t>(visual, kVisType) != kTypeObject) { g_left[kLeftType]++; return 0; }
-        if (g_refusedVisuals.count(visual)) { g_left[kLeftRefused]++; return 0; }
-        if (Blended(visual, group)) { g_left[kLeftBlended]++; return 0; }   // (drawn after everything opaque: its order kept)
         const void *tex = At<const void *>(entry, kEntryTexture);
         const void *tex8 = tex ? At<const void *>(tex, 8) : nullptr;
+        // a captured group (most of them, each frame): only what may change is looked at
         Member *found = FlatFind(visual, group);
         if (found && !found->dead) {
             Member &m = *found;
+            if (At<float>(visual, kVisFade2) * At<float>(visual, kVisFade) * m.matAlpha < 1.0f) { g_left[kLeftBlended]++; return 0; }
             float w[12];
             WorldOf(visual, w);
             const void *rec = LodRecord(visual);
@@ -505,6 +505,10 @@ int Group(const void *visual, const uint8_t *entry) {
                 if (again) { g_left[kLeftMoved]++; RefuseVisual(visual); return 0; }   // (a moving one: LS3D's)
             }
         }
+        // not captured (or changed): the rest
+        if (At<uint32_t>(visual, kVisType) != kTypeObject) { g_left[kLeftType]++; return 0; }
+        if (g_refusedVisuals.count(visual)) { g_left[kLeftRefused]++; return 0; }
+        if (Blended(visual, group)) { g_left[kLeftBlended]++; return 0; }   // (drawn after everything opaque: its order kept)
         if (g_refused.count(k) && g_refused[k] > 3) return 0;
         if (g_captureMs >= kCaptureBudgetMs) { g_left[kLeftBudget]++; return 0; }   // (this frame's time for captures spent)
         g_capStart = NowMs();
@@ -567,6 +571,7 @@ bool Capture1(IDirect3DDevice9 *d, const D3dMirror &mi, int base, unsigned minIn
         mem->group = g_cap.group;
         mem->texture = g_cap.texture;
         mem->texture8 = g_cap.texture8;
+        if (const void *mat = At<const void *>(g_cap.group, kGroupMaterial)) mem->matAlpha = At<float>(mat, kMaterialAlpha);
         WorldOf(g_cap.visual, mem->world);
         mem->lodRec = LodRecord(g_cap.visual);
         if (mem->lodRec) { mem->stamp[0] = At<uint32_t>(mem->lodRec, 4); mem->stamp[1] = At<uint32_t>(mem->lodRec, 8); }

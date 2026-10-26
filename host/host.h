@@ -753,6 +753,9 @@ void RenderPresent(void *dev8);           // (screenshot.cpp) the device's Prese
 void *RenderDevice(int version);          // mml.h render_device
 int RenderCamera(MmlRenderCamera *out);   // mml.h render_camera
 bool RenderMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+// The game's vertex and index buffers renamed (vbrename.cpp): installed on its Direct3D 9 device when it is made
+void VbRenameInstall(void *device9);   // (an IDirect3DDevice9)
+bool VbRenameMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);   // vb.*
 bool Subscribed(MmlEventType type);       // (mods.cpp) a live mod subscribed to it
 
 // ---- the graphics bridge (gfx.cpp): Direct3D 11 passes of mods over the frame; gfx.state, gfx.reset

@@ -1524,6 +1524,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (WorldMethod(method, paramsJson, reply, &ok)) return ok;
     if (FilesMethod(method, paramsJson, reply, &ok)) return ok;
     if (RenderMethod(method, paramsJson, reply, &ok)) return ok;
+    if (VbRenameMethod(method, paramsJson, reply, &ok)) return ok;
     if (GfxMethod(method, paramsJson, reply, &ok)) return ok;
     if (ViewMethod(method, paramsJson, reply, &ok)) return ok;
     if (GeomMethod(method, paramsJson, reply, &ok)) return ok;
