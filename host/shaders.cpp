@@ -67,6 +67,45 @@ struct Group {
 Group g_group;
 
 // ---- rules
+// The float registers a shader reads (a bit a register) and the groups of game.hlsli among them Constants makes only
+// when read: Direct3D's lights c27..c74, the shadow map c76..c83, the game's lights near c84..c116. A stage that is the
+// game's (no shader) reads none.
+struct ShaderReads { uint32_t m[8] = {}; bool lights = false, shadows = false, nearLights = false; };
+bool Reads(const uint32_t *reads, int from, int to);
+ShaderReads ReadsInfo(const uint32_t m[8]) {
+    ShaderReads r;
+    memcpy(r.m, m, sizeof r.m);
+    r.lights = Reads(m, 27, 75);
+    r.shadows = Reads(m, 76, 84);
+    r.nearLights = Reads(m, 84, 117);
+    return r;
+}
+bool ReadsOf(const std::vector<uint8_t> &code, uint32_t out[8]);
+// Another shader's reads (the host's skinning shaders), from its code, kept by its address.
+const ShaderReads &ReadsOfShader(IUnknown *shader) {
+    static const ShaderReads kNone;
+    static std::vector<std::pair<IUnknown *, ShaderReads>> known;
+    if (!shader) return kNone;
+    for (auto &k : known) if (k.first == shader) return k.second;
+    UINT size = 0;
+    std::vector<uint8_t> code;
+    IDirect3DVertexShader9 *vs = nullptr;
+    IDirect3DPixelShader9 *ps = nullptr;
+    uint32_t m[8];
+    memset(m, 0xFF, sizeof m);   // (not read: all of them)
+    if (SUCCEEDED(shader->QueryInterface(__uuidof(IDirect3DVertexShader9), reinterpret_cast<void **>(&vs))) && vs) {
+        if (SUCCEEDED(vs->GetFunction(nullptr, &size)) && size) { code.resize(size); vs->GetFunction(code.data(), &size); }
+        vs->Release();
+    } else if (SUCCEEDED(shader->QueryInterface(__uuidof(IDirect3DPixelShader9), reinterpret_cast<void **>(&ps))) && ps) {
+        if (SUCCEEDED(ps->GetFunction(nullptr, &size)) && size) { code.resize(size); ps->GetFunction(code.data(), &size); }
+        ps->Release();
+    }
+    if (!code.empty()) ReadsOf(code, m);
+    if (known.size() > 64) known.clear();   // (shaders made again after a device's loss)
+    known.push_back({shader, ReadsInfo(m)});
+    return known.back().second;
+}
+
 struct Rule {
     MmlMod *mod = nullptr;
     int handle = 0;
@@ -83,7 +122,7 @@ struct Rule {
     // the float registers each of its shaders reads (a bit a register, c0..c255; from the code's constant table):
     // only those are written at its draws; a stage it leaves to the game reads none
     uint32_t vsReads[8], psReads[8];
-    bool readsLights = true, readsShadows = true, readsNear = true;   // (their union's groups: Constants)
+    ShaderReads vsInfo, psInfo;      // (the same with the groups they read: Constants)
 };
 
 // The float registers a Direct3D 9 shader's code reads, from the constant table the compiler leaves in it (a comment
@@ -555,44 +594,39 @@ bool Draw(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex, UINT
     if (r && !Make(*r, d)) r = nullptr;
     if (!r && !skinned) return false;
     float *const c = g_c;
-    // the registers to compare: the shaders' reads; only the ones a draw changes when the rule, the state and the
+    // the shaders this draw takes: the rule's; a person the GPU skins the host's skinning vertex shader (unless the
+    // rule's reads the skin's inputs: MML_SHADE_SKINNED) and, without a rule's, its pixel shader; a stage left: the game's
+    IDirect3DVertexShader9 *const vsUse = skinned && !(r && r->vs && (r->flags & MML_SHADE_SKINNED))
+                                              ? static_cast<IDirect3DVertexShader9 *>(SkinGpuShader(0)) : r ? r->vs : nullptr;
+    IDirect3DPixelShader9 *const psUse = r && r->ps ? r->ps : skinned ? static_cast<IDirect3DPixelShader9 *>(SkinGpuShader(1)) : nullptr;
+    const ShaderReads &vsR = r && vsUse == r->vs ? r->vsInfo : ReadsOfShader(vsUse);
+    const ShaderReads &psR = r && psUse == r->ps ? r->psInfo : ReadsOfShader(psUse);
+    // the registers to compare: the shaders' reads; only the ones a draw changes when the shaders, the state and the
     // device's constants are as at the last draw (what was written then is there)
-    static const Rule *lastRule;
+    static const void *lastVs, *lastPs;
     static uint32_t lastConstSerial;
-    bool sameAsLast = false;
-    bool all = false;
-    if (r) {
-        all = (skinned && !(r->vs && (r->flags & MML_SHADE_SKINNED))) || !r->vs || !r->ps;   // (a shader not the rule's: all)
-        const bool fast = Constants(st, c, all || r->readsLights, all || r->readsShadows, all || r->readsNear);
-        sameAsLast = fast && !all && r == lastRule && lastConstSerial == MirrorConstSerial();
-    }
-    else CoreConstants(st, c);   // (a person no rule takes: the host's shaders read these alone)
+    const bool fast = Constants(st, c, vsR.lights || psR.lights, vsR.shadows || psR.shadows, vsR.nearLights || psR.nearLights);
+    const bool sameAsLast = fast && vsUse == lastVs && psUse == lastPs && lastConstSerial == MirrorConstSerial();
     IDirect3DVertexShader9 *const oldVs = st.vs;   // (the device holds them: set back, not released)
     IDirect3DPixelShader9 *const oldPs = st.ps;
-    // only the registers that differ from what the device holds (MirrorConstants)
-    if (r) {
-        static const uint32_t kAll[8] = {~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u};
+    {   // only the registers that differ from what the device holds (MirrorConstants)
         // (what a draw on the same state changes: the world c0..c3, its product c12..c15, the stages' textures c24, c25,
         // the game's lights near it c84..c116)
         static const uint32_t kDraw[8] = {0x0300F00Fu, 0, 0xFFF00000u, 0x001FFFFFu, 0, 0, 0, 0};
         uint32_t vsMask[8], psMask[8];
-        const bool hostVs = skinned && !(r->vs && (r->flags & MML_SHADE_SKINNED));   // (the host's skinning shader: reads them all)
         for (int i = 0; i < 8; i++) {
-            vsMask[i] = (hostVs ? kAll[i] : r->vsReads[i]) & (sameAsLast ? kDraw[i] : ~0u);
-            psMask[i] = (r->ps ? r->psReads[i] : kAll[i]) & (sameAsLast ? kDraw[i] : ~0u);
+            vsMask[i] = vsR.m[i] & (sameAsLast ? kDraw[i] : ~0u);
+            psMask[i] = psR.m[i] & (sameAsLast ? kDraw[i] : ~0u);
         }
         MirrorConstants(d, false, 0, c, kRegs, vsMask);
         MirrorConstants(d, true, 0, c, kRegs, psMask);
-    } else {
-        MirrorConstants(d, false, 0, c, 27);
-        MirrorConstants(d, true, 0, c, 27);
-        MirrorConstants(d, true, 75, c + 300, 1);
     }
     if (r && r->constHi > r->constLo) {   // (the mod's own registers)
         MirrorConstants(d, false, 160 + r->constLo, r->consts + r->constLo * 4, r->constHi - r->constLo, r->vsReads);
         MirrorConstants(d, true, 160 + r->constLo, r->consts + r->constLo * 4, r->constHi - r->constLo, r->psReads);
     }
-    lastRule = r;
+    lastVs = vsUse;
+    lastPs = psUse;
     lastConstSerial = MirrorConstSerial();
     // the rule's shaders lent (d3dmirror.cpp: left bound for the next draw, the game's given back when something else
     // draws or asks); without the mirror set here and put back below
@@ -617,9 +651,7 @@ bool Draw(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex, UINT
         d->SetSamplerState(2, D3DSAMP_BORDERCOLOR, 0xFFFFFFFF);
     }
     if (skinned) {   // (a rule's vertex shader only when it reads the skin's inputs: MML_SHADE_SKINNED)
-        auto *vs = r && r->vs && (r->flags & MML_SHADE_SKINNED) ? r->vs : static_cast<IDirect3DVertexShader9 *>(SkinGpuShader(0));
-        auto *ps = r && r->ps ? r->ps : static_cast<IDirect3DPixelShader9 *>(SkinGpuShader(1));
-        *hr = SkinnedDip(d, skin, vs, ps, t, minIndex, verts, start, n, dip);
+        *hr = SkinnedDip(d, skin, vsUse, psUse, t, minIndex, verts, start, n, dip);
     } else {
         VdataSaved vs{};   // (the rule's second stream: the normals, tangents and the mod's attributes)
         const bool vdata = (r->flags & MML_SHADE_VERTEX_DATA) && VdataBind(d, g_group.visual, base, verts, &vs);
@@ -763,13 +795,8 @@ int ShaderAdd(MmlMod *mod, const MmlShaderRule *in, std::string *err) {
     if (r->vsCode.empty() && r->psCode.empty()) { *err = "no shader: source with vs_entry and/or ps_entry, or vs_code / ps_code"; return 0; }
     if (r->vsCode.empty()) memset(r->vsReads, 0, sizeof r->vsReads); else ReadsOf(r->vsCode, r->vsReads);
     if (r->psCode.empty()) memset(r->psReads, 0, sizeof r->psReads); else ReadsOf(r->psCode, r->psReads);
-    {
-        uint32_t u[8];
-        for (int i = 0; i < 8; i++) u[i] = r->vsReads[i] | r->psReads[i];
-        r->readsLights = Reads(u, 27, 75);
-        r->readsShadows = Reads(u, 76, 117);
-        r->readsNear = Reads(u, 84, 117);
-    }
+    r->vsInfo = ReadsInfo(r->vsReads);
+    r->psInfo = ReadsInfo(r->psReads);
     if (!GeomEnsureHooks(err)) return 0;
     r->handle = g_nextHandle++;
     int h = r->handle;

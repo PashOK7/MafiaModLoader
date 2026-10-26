@@ -4063,3 +4063,20 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   against the game's own drawing: far 1.2 +5.5 ± 0.2 ms (41.0 against 46.6), 1.0 +5.6; near +0.23 / +0.18; night
   1.0 +0.27; the pictures as before (far 0.89 % of the pixels over 8, night 0.05 %). From the morning's +258 ms.
   What is left: 32 400 constants calls a frame (4.9 ms, the world's matrix a draw) and the host's own work a draw.
+
+## 2026-10-26: people skinned on the GPU, on that base (ROADMAP 31d)
+
+- **Measured first** (1.0's crowd scene, one lab): the GPU's skinning against LS3D's on the CPU +1.8 ms without a
+  rule, +0.9 with the reference: LS3D's skinning gone (visuals.singlemesh 0.96 to 0.25 ms) but the host's draws of
+  people cost more. `profile`: the device asked at every person's draw (no rule: the mirror not on), a dynamic
+  texture locked a person a frame for the palette and another for the one before.
+- **Made** (host/skin.cpp, shaders.cpp, skin.hlsli, skin9.hlsl): the mirror on while the GPU skins; every person's
+  palette a row of one texture (`Atlas`: rows kept by GpuLod, grown by halves), the rows posed this frame gathered at
+  its first skinned draw and filled with one lock, again only for a person posed after it (a view's); the one
+  before (motion vectors) only when they are asked; skin.hlsli's mml_PaletteTexel reads the row from
+  mml_SkinEnv.w. The people's light block (c120..c155) through MirrorConstants; a person no rule takes goes the
+  rules' way for game.hlsli's registers (the host's skinning shaders' reads from their code, GetFunction).
+  A first version gathered every row at every draw (37 % of a still frame): gathered once a frame now.
+- **Seen**: 1.0 and 1.2, the crowd: the people as LS3D draws them (a still crowd, CPU against GPU: 0.13 % of the
+  pixels over 8); moving: 1.0 -0.4 ± 1.2 ms, 1.2 -0.1 ± 0.5 (even); still: +0.68 ms (the host's work a person's
+  draw, LS3D doing nothing while the bones stand). Offline tests ALL PASSED.

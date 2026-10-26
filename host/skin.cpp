@@ -19,6 +19,7 @@
 //
 // Bridge methods: skin.state, skin.export, skin.set, skin.reload.
 #include "host.h"
+#include "d3dmirror.h"
 #include <windows.h>
 #include <d3d9.h>
 #include <algorithm>
@@ -310,7 +311,7 @@ struct GpuLod {
     uint32_t verts = 0;
     std::vector<float> pal, palDrawn;  // 24 floats a bone: the position's matrix's columns, then the normal's
     unsigned palVersion = 0, drawnFrame = 0;
-    std::vector<float> texData[2];     // what the palette textures hold (now, before)
+    int row = -1;                      // its row of the palettes' atlas (PaletteAtlas)
     std::vector<float> rest;           // 6 floats a vertex: the rest pose's position and normal
     unsigned restVersion = 0, restUploaded = 0;
     float light[36 * 4] = {};          // c120..c155 (skin.hlsli)
@@ -319,9 +320,8 @@ struct GpuLod {
     float envScale = 1, envU = 0, envV = 0;
     IDirect3DDevice9 *dev = nullptr;
     IDirect3DVertexBuffer9 *restVb = nullptr;
-    IDirect3DTexture9 *tex[2] = {};
     void *attrKeyMesh = nullptr;       // (the attributes' buffer is the mesh's, shared: g_attrs)
-    ~GpuLod() { SafeRelease(restVb); SafeRelease(tex[0]); SafeRelease(tex[1]); }
+    ~GpuLod();
 };
 
 // ---- the single meshes seen, each bound to its skin
@@ -955,11 +955,13 @@ std::map<std::tuple<const void *, int, const void *>, Attrs> g_attrs;
 std::map<std::string, std::vector<ModelSkinLod>> g_rests;   // the .4ds's LODs (their triangles), by model|mesh
 constexpr UINT kRestStride = 24, kAttrStride = 72;
 
+void AtlasRelease();
 void ReleaseDevice() {
     SafeRelease(g_decl); SafeRelease(g_vsSkin); SafeRelease(g_vsDepth); SafeRelease(g_vsMotion); SafeRelease(g_psSkin);
     for (auto &kv : g_attrs) SafeRelease(kv.second.vb);
     g_attrs.clear();
-    for (auto &kv : g_vis) for (auto &g : kv.second.gpu) if (g) { SafeRelease(g->restVb); SafeRelease(g->tex[0]); SafeRelease(g->tex[1]); g->dev = nullptr; }
+    for (auto &kv : g_vis) for (auto &g : kv.second.gpu) if (g) { SafeRelease(g->restVb); g->dev = nullptr; }
+    AtlasRelease();
     g_shDev = nullptr;
 }
 
@@ -1060,42 +1062,106 @@ Attrs *AttrsFor(IDirect3DDevice9 *d, void *mesh, const Vis &v, GpuLod &g, int lo
 
 // The palettes and the rest pose into the LOD's textures and buffer (the palette as last drawn becomes "before" at
 // the frame's first draw: the motion vectors')
+// ---- the people's palettes, every one in one texture (31d): a row each (a GpuLod's `row`, kept while it lives), a
+// texel's float4 as skin.hlsli reads it; the rows drawn this frame written into the CPU's copy and the texture filled
+// with one lock (D3DLOCK_DISCARD) at the frame's first skinned draw, again only if a palette changes after it (a scene
+// view's). With the motion vectors asked, a second one holds each row as it was drawn the frame before (a row not drawn
+// then: the one now). A lock a person a frame cost 5 to 10 us on Direct3D 9Ex (1.0's crowd, 48 people).
+struct Atlas {
+    IDirect3DTexture9 *tex = nullptr;
+    UINT w = 0, h = 0;                 // texels a row, rows
+    std::vector<float> data;           // what it holds (w * h * 4 floats)
+    bool dirty = true;
+};
+Atlas g_atlas[2];                      // [0] now, [1] the frame before
+IDirect3DDevice9 *g_atlasDev;
+unsigned g_atlasFrame;                 // the frame its rows were last gathered for
+// (made once, never destroyed: GpuLods held by g_vis are destroyed after these at the process's exit)
+struct Rows { std::vector<int> free; std::vector<GpuLod *> owner; };   // owner: row -> its GpuLod
+Rows &RowsOf() { static Rows *r = new Rows; return *r; }
+int g_rows;
+
+GpuLod::~GpuLod() {
+    SafeRelease(restVb);
+    if (row >= 0) { Rows &r = RowsOf(); r.free.push_back(row); if (row < static_cast<int>(r.owner.size())) r.owner[row] = nullptr; }
+}
+void AtlasRelease() {
+    for (Atlas &a : g_atlas) { SafeRelease(a.tex); a.w = a.h = 0; a.data.clear(); a.dirty = true; }
+    g_atlasDev = nullptr;
+}
+bool AtlasMake(IDirect3DDevice9 *d, Atlas &a, UINT w, UINT h) {
+    if (a.tex && a.w == w && a.h == h) return true;
+    SafeRelease(a.tex);
+    std::vector<float> old = std::move(a.data);
+    const UINT ow = a.w, oh = a.h;
+    a.data.assign(size_t(w) * h * 4, 0.0f);
+    for (UINT y = 0; y < oh && y < h; y++)   // (what it held, kept: the rows are the same people's)
+        memcpy(&a.data[size_t(y) * w * 4], &old[size_t(y) * ow * 4], size_t(std::min(ow, w)) * 16);
+    a.w = w, a.h = h, a.dirty = true;
+    return SUCCEEDED(d->CreateTexture(w, h, 1, D3DUSAGE_DYNAMIC, D3DFMT_A32B32G32R32F, D3DPOOL_DEFAULT, &a.tex, nullptr));
+}
+bool AtlasFill(Atlas &a) {
+    if (!a.dirty) return true;
+    D3DLOCKED_RECT r{};
+    if (FAILED(a.tex->LockRect(0, &r, nullptr, D3DLOCK_DISCARD))) return false;
+    for (UINT y = 0; y < a.h; y++) memcpy(static_cast<uint8_t *>(r.pBits) + size_t(y) * r.Pitch, &a.data[size_t(y) * a.w * 4], size_t(a.w) * 16);
+    a.tex->UnlockRect(0);
+    a.dirty = false;
+    return true;
+}
+float *AtlasRow(Atlas &a, int row) { return &a.data[size_t(row) * a.w * 4]; }
+// g's palette in the atlas as this frame's (and every other person's posed this frame: one lock for all of them)
+bool AtlasFor(IDirect3DDevice9 *d, GpuLod &g) {
+    if (g_atlasDev != d) { AtlasRelease(); g_atlasDev = d; }
+    Rows &rows = RowsOf();
+    if (g.row < 0) {
+        if (!rows.free.empty()) { g.row = rows.free.back(); rows.free.pop_back(); }
+        else g.row = g_rows++;
+        if (g.row >= static_cast<int>(rows.owner.size())) rows.owner.resize(g.row + 1);
+        rows.owner[g.row] = &g;
+    }
+    // the size: the widest palette, every row; grown by halves (a texture made again seldom)
+    UINT w = g_atlas[0].w, h = g_atlas[0].h;
+    const UINT need = static_cast<UINT>(g.pal.size() / 4);
+    if (need > w) w = std::max(need, w + w / 2);
+    if (static_cast<UINT>(g_rows) > h) h = std::max<UINT>(g_rows, std::max<UINT>(16, h + h / 2));
+    const bool motion = MotionWanted();
+    if (!AtlasMake(d, g_atlas[0], w, h) || (motion && !AtlasMake(d, g_atlas[1], w, h))) return false;
+    if (g_atlasFrame != g_frame) {   // (the frame's first: every row posed is gathered now)
+        if (motion) {
+            for (GpuLod *o : rows.owner) {
+                if (!o || o->palDrawn.empty() || o->palDrawn.size() / 4 > w) continue;
+                const std::vector<float> &before = o->drawnFrame + 1 == g_frame && o->palDrawn.size() == o->pal.size() ? o->palDrawn : o->pal;
+                float *dst = AtlasRow(g_atlas[1], o->row);
+                if (memcmp(dst, before.data(), before.size() * 4)) { memcpy(dst, before.data(), before.size() * 4); g_atlas[1].dirty = true; }
+            }
+        }
+        for (GpuLod *o : rows.owner) {   // (the palettes now: each person's posed this frame, whether drawn yet or not)
+            if (!o || o->pal.empty() || o->pal.size() / 4 > w) continue;
+            float *dst = AtlasRow(g_atlas[0], o->row);
+            if (memcmp(dst, o->pal.data(), o->pal.size() * 4)) { memcpy(dst, o->pal.data(), o->pal.size() * 4); g_atlas[0].dirty = true; }
+        }
+        g_atlasFrame = g_frame;
+    } else {   // (later in the frame: this one's row alone, posed again since: a scene view's)
+        float *dst = AtlasRow(g_atlas[0], g.row);
+        if (memcmp(dst, g.pal.data(), g.pal.size() * 4)) { memcpy(dst, g.pal.data(), g.pal.size() * 4); g_atlas[0].dirty = true; }
+    }
+    if (g.drawnFrame != g_frame) { g.palDrawn = g.pal; g.drawnFrame = g_frame; }
+    else g.palDrawn = g.pal;
+    return AtlasFill(g_atlas[0]) && (!motion || AtlasFill(g_atlas[1]));
+}
+
 bool Upload(IDirect3DDevice9 *d, GpuLod &g) {
     const UINT width = static_cast<UINT>(g.pal.size() / 4);
     if (g.dev != d) {
-        SafeRelease(g.restVb); SafeRelease(g.tex[0]); SafeRelease(g.tex[1]);
-        g.texData[0].clear(), g.texData[1].clear();
+        SafeRelease(g.restVb);
         g.restUploaded = 0;
         g.dev = d;
     }
+    (void)width;
     if (!g.restVb && FAILED(d->CreateVertexBuffer(g.verts * kRestStride, D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, 0, D3DPOOL_DEFAULT, &g.restVb, nullptr)))
         return false;
-    for (int t = 0; t < 2; t++) {
-        D3DSURFACE_DESC desc{};
-        if (g.tex[t] && (FAILED(g.tex[t]->GetLevelDesc(0, &desc)) || desc.Width != width)) { SafeRelease(g.tex[t]); g.texData[t].clear(); }
-        if (!g.tex[t] && FAILED(d->CreateTexture(width, 1, 1, D3DUSAGE_DYNAMIC, D3DFMT_A32B32G32R32F, D3DPOOL_DEFAULT, &g.tex[t], nullptr))) return false;
-    }
-    if (g.drawnFrame != g_frame) {
-        const std::vector<float> &before = g.drawnFrame + 1 == g_frame && g.palDrawn.size() == g.pal.size() ? g.palDrawn : g.pal;
-        const std::vector<float> *want[2] = {&g.pal, &before};
-        for (int t = 1; t >= 0; t--) {   // (before first: it may be the one about to be replaced)
-            if (g.texData[t] == *want[t]) continue;
-            D3DLOCKED_RECT r{};
-            if (FAILED(g.tex[t]->LockRect(0, &r, nullptr, D3DLOCK_DISCARD))) return false;
-            memcpy(r.pBits, want[t]->data(), want[t]->size() * sizeof(float));
-            g.tex[t]->UnlockRect(0);
-            g.texData[t] = *want[t];
-        }
-        g.palDrawn = g.pal;
-        g.drawnFrame = g_frame;
-    } else if (g.texData[0] != g.pal) {   // (skinned again within the frame: a scene view's)
-        D3DLOCKED_RECT r{};
-        if (FAILED(g.tex[0]->LockRect(0, &r, nullptr, D3DLOCK_DISCARD))) return false;
-        memcpy(r.pBits, g.pal.data(), g.pal.size() * sizeof(float));
-        g.tex[0]->UnlockRect(0);
-        g.texData[0] = g.pal;
-        g.palDrawn = g.pal;
-    }
+    if (!AtlasFor(d, g)) return false;
     if (g.restUploaded != g.restVersion) {
         void *p = nullptr;
         if (FAILED(g.restVb->Lock(0, 0, &p, D3DLOCK_DISCARD)) || !p) return false;
@@ -1131,6 +1197,10 @@ void SkinFrameBegin() {
     g_gpuDrawsLast = g_gpuDraws, g_gpuDraws = 0;
     g_gpuMsLast = g_gpuMs, g_gpuMs = 0;
     g_gpuDrawMsLast = g_gpuDrawMs, g_gpuDrawMs = 0;
+    // the device's state followed while the GPU skins (d3dmirror.cpp: its draws ask the device nothing, their shaders
+    // lent from one person to the next)
+    static bool mirrored;
+    if (SkinGpuWanted() != mirrored) { mirrored = !mirrored; MirrorUse(mirrored); }
     if (!GpuWanted() || g_gpuChecked) return;
     auto *d = static_cast<IDirect3DDevice9 *>(RenderDevice(9));
     if (!d) { g_gpuWhy = "no Direct3D 9 device (the GPU's skinning needs a wrapper's Direct3D 9: dxwrapper, DXVK)"; g_gpuChecked = true; return; }
@@ -1165,8 +1235,8 @@ bool SkinGpuFor(void *dev9, const void *visual, int base, SkinGpuDraw *out) {
         out->decl = g_decl;
         out->rest = g.restVb;
         out->attrs = a->vb;
-        out->palette = g.tex[0];
-        out->paletteBefore = g.tex[1];
+        out->palette = g_atlas[0].tex;
+        out->paletteBefore = g_atlas[1].tex ? g_atlas[1].tex : g_atlas[0].tex;
         out->restStride = kRestStride;
         out->attrStride = kAttrStride;
         memcpy(out->c, g.light, sizeof g.light);
@@ -1177,10 +1247,10 @@ bool SkinGpuFor(void *dev9, const void *visual, int base, SkinGpuDraw *out) {
         void *mat = group ? F<void *>(group, 4) : nullptr;
         float alpha = F<float>(mesh, 0x218) * F<float>(mesh, 0x214) * (mat ? F<float>(mat, 0x38) : 1.0f);
         alpha = static_cast<float>(static_cast<int>(alpha * 255.0f + 0.5f) & 0xFF) / 255.0f;
-        float width = static_cast<float>(g.pal.size() / 4);
+        float width = static_cast<float>(g_atlas[0].w);
         float *c = out->c;
         c[4] = alpha, c[5] = static_cast<float>(g.env), c[6] = width, c[7] = 1.0f / width;
-        c[8] = g.envScale, c[9] = g.envU, c[10] = g.envV, c[11] = 0;
+        c[8] = g.envScale, c[9] = g.envU, c[10] = g.envV, c[11] = (g.row + 0.5f) / static_cast<float>(g_atlas[0].h);
         g_gpuDraws++;
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
@@ -1236,7 +1306,7 @@ void SkinGpuBind(void *dev9, const SkinGpuDraw &s, SkinGpuSaved *k) {
     d->SetStreamSource(1, static_cast<IDirect3DVertexBuffer9 *>(s.attrs), 0, s.attrStride);
     d->SetTexture(D3DVERTEXTEXTURESAMPLER0, static_cast<IDirect3DBaseTexture9 *>(s.palette));
     d->SetTexture(D3DVERTEXTEXTURESAMPLER1, static_cast<IDirect3DBaseTexture9 *>(s.paletteBefore));
-    d->SetVertexShaderConstantF(120, s.c, 36);
+    MirrorConstants(d, false, 120, s.c, 36);   // (only what differs from the last person's: d3dmirror.cpp)
 }
 void SkinGpuUnbind(void *dev9, SkinGpuSaved &k) {
     auto *d = static_cast<IDirect3DDevice9 *>(dev9);
@@ -1376,10 +1446,8 @@ bool SkinMethod(const std::string &method, const std::string &paramsJson, std::s
                     else if (g) offGpu++, whyNot[g->why]++;
             // the palettes drawn now and before differ by this much at most (a moving person's limbs: not 0)
             float most = 0;
-            for (auto &kv : g_vis)
-                for (auto &g : kv.second.gpu)
-                    if (g && g->ok && g->texData[0].size() == g->texData[1].size())
-                        for (size_t i = 0; i < g->texData[0].size(); i++) most = std::max(most, std::fabs(g->texData[0][i] - g->texData[1][i]));
+            if (g_atlas[1].data.size() == g_atlas[0].data.size())
+                for (size_t i = 0; i < g_atlas[0].data.size(); i++) most = std::max(most, std::fabs(g_atlas[0].data[i] - g_atlas[1].data[i]));
             json gpu = {{"palette_motion_most", most}, {"frame", g_frame}, {"wanted", GpuWanted()}, {"on", SkinGpuWanted()}, {"why", g_gpuWhy}, {"lods", onGpu}, {"lods_cpu", offGpu},
                         {"why_cpu", whyNot}, {"skinned", g_gpuSkins}, {"lit", g_gpuLights}, {"fallbacks", g_gpuFallback},
                         {"draws_last_frame", g_gpuDrawsLast}, {"ms_last_frame", g_gpuMsLast}, {"draw_ms_last_frame", g_gpuDrawMsLast},

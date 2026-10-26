@@ -987,7 +987,14 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
       draws outside the world keep the fixed pipeline, switched once at their start. Measure: `switches` near 0 a
       frame; the driver's time a draw; `bench` against the game's own drawing: equal or faster (the target: no
       price for being programmable); the picture the game's (mean under 0.5 of 255).
-    - **31d, people skinned on the GPU, on that base.** Item 28b's palette and lighting in the bound shaders (no
+    - **31d, people skinned on the GPU, on that base.** *(2026-10-26, in both labs: the GPU's skinning follows the
+      device through the mirror and lends its shaders; every person's palette in one texture, a row each, filled
+      with one lock a frame (a lock a person before: 5 to 10 us each on 9Ex), the one before only for the motion
+      vectors; the host's skinning shaders' constants made and compared as the rules'. The moving crowd: the GPU
+      against LS3D's CPU skinning 1.0 -0.4 ± 1.2 ms (was +1.8), 1.2 -0.1 ± 0.5 (+0.9): even, not yet faster.
+      LS3D's share gone (visuals.singlemesh 0.98 to 0.27 ms, skin.* to 0.2); what is left is the host's own work a
+      person's draw (some 1.6 us and ten calls: the streams, the declaration, the palette) and the GPU's time
+      (0.67 to 1.22 ms, the vertex texture fetches). Still world: +0.68 ms, the picture the same (0.13 %).)* Item 28b's palette and lighting in the bound shaders (no
       switch a person); LS3D's skinning, copies and lighting skipped. Measure: the crowd scene, CPU skinning
       against GPU: the GPU's faster (28b's +0.9 / +1.3 ms becomes a gain); `hot_ms` skin.* (LS3D's share gone).
     - **31e, objects lit on the GPU.** The normals from 31's vertex data (item 28c's second stream), LS3D's choice of

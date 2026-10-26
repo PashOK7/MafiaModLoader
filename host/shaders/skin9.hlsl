@@ -60,9 +60,9 @@ float3 SkinBefore(MmlSkinIn i) {
     [unroll] for (int k = 0; k < 8; k++) {
         if (w[k] > 0) {
             float t = b[k] * 6;
-            float4 c0 = tex2Dlod(g_paletteBefore, float4((t + 0.5) * mml_SkinInfo.w, 0.5, 0, 0));
-            float4 c1 = tex2Dlod(g_paletteBefore, float4((t + 1.5) * mml_SkinInfo.w, 0.5, 0, 0));
-            float4 c2 = tex2Dlod(g_paletteBefore, float4((t + 2.5) * mml_SkinInfo.w, 0.5, 0, 0));
+            float4 c0 = tex2Dlod(g_paletteBefore, float4((t + 0.5) * mml_SkinInfo.w, mml_SkinEnv.w, 0, 0));
+            float4 c1 = tex2Dlod(g_paletteBefore, float4((t + 1.5) * mml_SkinInfo.w, mml_SkinEnv.w, 0, 0));
+            float4 c2 = tex2Dlod(g_paletteBefore, float4((t + 2.5) * mml_SkinInfo.w, mml_SkinEnv.w, 0, 0));
             o += w[k] * float3(dot(p, c0), dot(p, c1), dot(p, c2));
         }
     }

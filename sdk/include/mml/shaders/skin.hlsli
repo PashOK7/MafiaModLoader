@@ -27,7 +27,8 @@ struct MmlSkinIn {
 float4 mml_SkinAmbient : register(c120);   // rgb the ambient light (the material's ambient and emissive in), w the lights
 float4 mml_SkinInfo : register(c121);      // x the vertices' alpha (material and fading), y the environment map's mode
                                            // (-1 none, 0, 1), z the palette's width in texels, w 1 / z
-float4 mml_SkinEnv : register(c122);       // the environment map: x its scale, y and z its offsets
+float4 mml_SkinEnv : register(c122);       // the environment map: x its scale, y and z its offsets; w the palette's
+                                           // row (v of its texels' centres: every person's palette is a row of one texture)
 struct MmlSkinLight {   // LS3D's lights for this mesh, in the mesh's space (LightVertices's own choice)
     float4 pos;     // xyz, w the type (1 point, 2 spot, 3 directional)
     float4 dir;     // xyz (a spot's and a directional's, towards the light), w the near range
@@ -39,7 +40,7 @@ MmlSkinLight mml_SkinLights[8] : register(c124);
 // the bones: 6 texels a bone (the position's matrix's three columns, then the normal's), R32G32B32A32F
 sampler2D mml_Palette : register(s0);   // (a vertex sampler: D3DVERTEXTEXTURESAMPLER0)
 
-float4 mml_PaletteTexel(float i) { return tex2Dlod(mml_Palette, float4((i + 0.5) * mml_SkinInfo.w, 0.5, 0, 0)); }
+float4 mml_PaletteTexel(float i) { return tex2Dlod(mml_Palette, float4((i + 0.5) * mml_SkinInfo.w, mml_SkinEnv.w, 0, 0)); }
 
 struct MmlSkinned { float3 pos; float3 normal; float3 tangent; };
 
