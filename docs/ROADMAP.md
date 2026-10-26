@@ -790,6 +790,11 @@ What is done, what comes next and later, and what is known to be missing or wron
   restore point: the same within the input's timing). Seen in both labs: cars, a parked traffic car, Paulie, a tram.
   `camera.set {follow}` films any actor from its own space. `mods/examples/bounce` pulses everything near the player
   (knowledge/notes/scale.md).
+- **A presaved 4096x4096 map drew invisible on 9Ex** (2026-10-26, knowledge/notes/game.md): the packs'
+  `fullmap_1.565` as the Tab map's texture was drawn and showed nothing in the 1.2 lab (9Ex, our dxwrapper's
+  managed textures in video memory), while the same file showed in the tester's copy on DXVK and the .bmp showed
+  in the lab. Suspect: MmlManaged (third_party/dxwrapper/patch.py) with how LS3D fills a presaved texture. Not
+  isolated: an A/B in the lab with the presave (MmlManaged on and off), then the texture's levels read back.
 - **A gamepad plugged in while the game runs** (2026-10-24; the owner: the first of the game's bugs fixed through
   the loader): both builds open their DirectInput controllers once at the start (IJoy.dll; none attached: no base at
   all), and the profile's bindings of a joystick that is not open are dropped. host/joyplug.cpp watches the HID

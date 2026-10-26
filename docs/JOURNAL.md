@@ -4158,9 +4158,22 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   and 0x627000), dxwrapper's log without a fault, `hud + 0x46EC` 1 in freekrajina. The radar in the corner showed
   no map, and that is not the plugin's place: the map is the Tab map (DrawAll draws it while flag 0x2000 is on, set
   by C_player::InputDriving while "City Map" is held: a `watch` on the flags, a `tap` on its DrawPrimitive). Held,
-  it was drawn and invisible: the pack's fullmap_1.565 (another game's presave, copied beside the .bmp) was the
-  texture; with 0mapar.bmp put back by hand the city map showed, with the .bmp under a new name (no presave) the
-  whole map. A clean start with the plugin and fullmap.bmp alone: Tab shows the countryside map, the arrow on the
+  it was drawn and invisible with the pack's fullmap_1.565 (its presave, copied beside the .bmp) as the texture;
+  with 0mapar.bmp put back by hand the city map showed, with the .bmp under a new name (no presave) the whole map.
+  (Later the same day the same presave showed in the tester's copy, on DXVK: not "another game's presave", but the
+  lab's 9Ex path; not isolated, ROADMAP Known gaps.) A clean start with the plugin and fullmap.bmp alone: Tab shows
+  the countryside map, the arrow on the
   road north of Chinatown. 1.0 lab: the handler installed, the countryside freeride loaded (the plugin supports 1.2
   only). The plugin and the map taken out of the lab again.
 - **The tester's copy** (W:/MafiaDLSS, mml.config.json's new `players`, AGENTS.md): his maps\ has no fullmap.bmp.
+
+## 2026-10-26: the tester's copy made whole (W:/MafiaDLSS)
+
+- **Found**: Project Upscaled 3.0 Final (the tester's own texture pack, moddb) in his copy without 107 of its maps\
+  files (4770 the same, 4 its "en textures" variants), among them fullmap.bmp, fullmap_1.565 and the trees' bark,
+  birch, stems and needles (kora*, breza, stonka*, konare*, ihl*). **Made**: the 107 copied in (none overwritten),
+  the new loader put in (the pack's kept aside). **Seen**: the city freeride's trees green (they were white: the
+  missing textures); the plugin's three pages logged, dxwrapper's log without a fault; Tab in the countryside shows
+  the whole map, with the pack's presave too (8 s held, six frames). Fusion Fix's RadarMap (on in his copy) now
+  draws the full map's texture with the city's transform: the radar shows the wrong place (it opens "0mapar.bmp"
+  into the full map's slot and maps x, z with the Xbox's numbers, which are the game's own city transform).

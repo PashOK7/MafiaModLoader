@@ -647,10 +647,13 @@ Four things, each the game's own, all needed for the whole city in one frame:
   31) is held: the map is the Tab map, not the radar (the radar in the corner is the cars' 3D radar). With the
   loader's asi_compat (host/asi_compat.cpp) it works: Tab in the countryside freeride shows the whole map, the
   player's arrow on the road north of Chinatown.
-- **game** **A presaved map from another game draws invisible**: the `fullmap_1.565` of a downloaded pack (its header
-  holds its bmp's time, 2016-12-30) loaded as the map's texture and was drawn as nothing (the map's quad drawn every
-  frame, its texture set: no picture); fullmap.bmp alone made the game write its own (`TEX` header, today's time)
-  and the map showed. A player copies the .bmp, not another game's `_1.565`.
+- **ours?** **The packs' presaved map drew invisible in the 1.2 lab, not in the tester's copy** (2026-10-26, not
+  isolated): `fullmap_1.565` (the same file in "mafia community" and Project Upscaled 3.0; its header holds its
+  bmp's time, 2016-12-30) as the map's texture: in the 1.2 lab (Direct3D 9Ex through our dxwrapper, its managed
+  textures in video memory: third_party/dxwrapper/patch.py MmlManaged) the map's quad was drawn every frame while
+  Tab was held and nothing showed (frames taken 0.6 to 3 s into the hold, several holds); fullmap.bmp alone (the
+  game then writes its own presave) showed. In W:/MafiaDLSS (DXVK's Direct3D 9) the same presave showed. Suspect:
+  MmlManaged with the way LS3D fills a presaved texture; not measured yet (ROADMAP Known gaps).
 
 ## The exit crash (seen in mafia-ragdoll, not solved)
 
