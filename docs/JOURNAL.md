@@ -4898,3 +4898,7 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   check clean. Existing full offline, final C/C++/Rust SDK smoke and native 39/36 passing results are retained.
 - Publish this complete snapshot to origin/codex/atmosphere-sdk; no history rewrite or main-branch merge is part
   of this step. Machine configuration, game files, backups and benchmark artifacts remain ignored and local.
+- Publication correction: the agent chose the feature branch; project rules did not require it. The owner
+  clarified that all work should be published to main. Fast-forwarded local main to the exact reviewed snapshot
+  18b6a54 and will push main normally, with this documentation correction. No production code changed.
+  Continue this owner's work on main unless they request a separate branch.
