@@ -134,7 +134,8 @@ void __stdcall MidDispatch(MidEntry *e, MmlMidContext *c, uintptr_t at) {
     c->esp += 8;
     c->eip = static_cast<uint32_t>(at);
     MidCall call{e, c};
-    ModCallAnyThread(e->mod, CallMid, &call, "its hook in the middle of a function");
+    if (e->mod) ModCallAnyThread(e->mod, CallMid, &call, "its hook in the middle of a function");
+    else CallMid(&call);   // a host-owned mid hook has no mod lifetime/fault guard (as host-owned entry hooks)
     c->eip = c->eip != at ? c->eip : static_cast<uint32_t>(reinterpret_cast<uintptr_t>(e->next));
 }
 

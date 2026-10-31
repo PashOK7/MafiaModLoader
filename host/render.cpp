@@ -39,6 +39,8 @@ uint64_t g_renders, g_worldRenders, g_stage1, g_presents;
 bool g_stage1ThisRender;
 void *g_lastScene;
 bool g_lastWorld;
+void DistanceBeforeFrame();
+bool SyncFogHooks(std::string *err);
 
 // Direct3D 8 by its vtable (no headers): the slots used here.
 enum { kDev8GetTransform = 38, kDev8GetViewport = 41 };
@@ -143,6 +145,7 @@ int __stdcall hkRender(void *driver, void *scene) {
         SkinFrameBegin();   // (skin.cpp: the frame's count, for the palettes drawn before)
         GeomFrameBegin();   // (geom.cpp: the game's geometry hidden, surveyed, captured)
         GameCameraFrame();   // (gamecam.cpp: a mod's field of view held on the game's camera)
+        DistanceBeforeFrame();
         FrameCameraBegin(scene);   // (view.cpp: the frame drawn from a mod's camera; the views start from it)
         ScaleBeforeRender();   // (scale.cpp: the actors drawn at the mods' sizes: the shadows and the views too)
         ShadowsBeforeWorld(driver, scene, oRender);   // (shadows.cpp: the map from the sun, LS3D drawing it, before the views)
@@ -344,6 +347,12 @@ using ActivateFn = void(__thiscall *)(void *cache, int block);
 using FinishFadesFn = void(__thiscall *)(void *mission);
 CacheTickFn oCacheTick;
 bool g_wholeCity, g_cacheHooked;
+bool g_customDistance, g_distanceTick, g_cacheUpdated, g_streamHooked;
+using InRangeFn = char(__fastcall *)(void *cache, void *edx, int block, float x, float z, float radius);
+using DeactivateFn = void(__fastcall *)(void *cache, void *edx, int block);
+InRangeFn oInRange;
+DeactivateFn oDeactivate;
+float g_streamRadius = 1000.0f;
 int g_occlusionBefore = 1;
 uint64_t g_blocksActivated;
 
@@ -384,6 +393,7 @@ int ActivateAll() {
 constexpr int kCamNearZ = 0x144, kCamFarZ = 0x148, kCamSetRange = 0x58 / 4;
 using CamSetRangeFn = int(__stdcall *)(void *cam, float lo, float hi);
 float g_cityFar = 5000.0f, g_gameFar;
+void *g_farCamera;
 void *SceneCamera() {
     void *mission = *reinterpret_cast<void **>(game::Exe().missionPtr);
     void *scene = mission ? game::at<void *>(mission, 0x10) : nullptr;
@@ -393,12 +403,63 @@ void HoldFar(bool hold) {
     void *cam = SceneCamera();
     if (!cam) return;
     const float nearZ = game::at<float>(cam, kCamNearZ), farZ = game::at<float>(cam, kCamFarZ);
+    if (cam != g_farCamera) { g_farCamera = cam; g_gameFar = farZ; }
     auto setRange = (*reinterpret_cast<CamSetRangeFn **>(cam))[kCamSetRange];
     if (hold && farZ != g_cityFar) { g_gameFar = farZ; setRange(cam, nearZ, g_cityFar); }
     else if (!hold && farZ == g_cityFar && g_gameFar > nearZ) setRange(cam, nearZ, g_gameFar);
 }
+void DistanceBeforeFrame() {
+    std::string why;
+    if (SyncFogHooks(&why)) AtmosphereFrameBegin();
+    else { AtmosphereSceneClosed(); Log(MML_LOG_WARN, "render", "native fog hooks: %s", why.c_str()); }
+    HoldFar(g_wholeCity || g_customDistance);
+    if (g_customDistance) if (void *cam = SceneCamera()) {
+        const float px = game::at<float>(cam, 0x1A4), py = game::at<float>(cam, 0x1B8);
+        if (px != 0 && py != 0) g_streamRadius = g_cityFar * std::sqrt(1.0f + 1.0f / (px * px) + 1.0f / (py * py));
+    }
+}
+
+// Keep native pool cleanup, the 100 ms cadence, quad tests and 30 m hysteresis. Only a custom-distance tick's
+// activation radius changes. Its old 230/580 m deactivation test is replaced by the same native quad test at
+// the new radius + 30, after activation. Other callers (mission teardown included) retain native behavior.
+char __fastcall hkInRange(void *cache, void *edx, int block, float x, float z, float radius) {
+    if (g_distanceTick) { radius = g_streamRadius; g_cacheUpdated = true; }
+    return oInRange(cache, edx, block, x, z, radius);
+}
+void __fastcall hkDeactivate(void *cache, void *edx, int block) {
+    if (!g_distanceTick) oDeactivate(cache, edx, block);
+}
+// While a mod's camera (or camera.set's) is drawn, the city's blocks are streamed around it, not around the game's
+// camera it stands in for: CacheTick reads the scene camera frame's world position (its matrix's translation, +0x40,
+// with the world matrix valid: flag 0x20), so for the tick that translation is the drawn eye, put back after. (Without
+// it a free camera flew over an empty city: only what is within 200 m of the player was there.)
+constexpr int kFrameWorldPos = 0x40, kFrameFlagsAt = 0xAC;
+char CacheTickAround(void *cache, void *edx, int dtMs) {
+    float eye[3];
+    void *cam = FrameCameraEye(eye) ? SceneCamera() : nullptr;
+    if (!cam || !(game::at<uint32_t>(cam, kFrameFlagsAt) & 0x20)) return oCacheTick(cache, edx, dtMs);
+    float *pos = &game::at<float>(cam, kFrameWorldPos), was[3] = {pos[0], pos[1], pos[2]};
+    for (int i = 0; i < 3; i++) pos[i] = eye[i];
+    char r = oCacheTick(cache, edx, dtMs);
+    for (int i = 0; i < 3; i++) pos[i] = was[i];
+    return r;
+}
 char __fastcall hkCacheTick(void *cache, void *edx, int dtMs) {
-    if (!g_wholeCity) return oCacheTick(cache, edx, dtMs);
+    if (!g_wholeCity) {
+        g_cacheUpdated = false;
+        g_distanceTick = g_customDistance;
+        char r = CacheTickAround(cache, edx, dtMs);
+        g_distanceTick = false;
+        if (g_customDistance && g_cacheUpdated) {
+            const Blocks b = CityBlocks();
+            const float x = game::at<float>(cache, 0x2C), z = game::at<float>(cache, 0x34);
+            for (int i = 0; i < b.count; i++)
+                if (b.begin[i * kBlockSize + 4] && !oInRange(cache, nullptr, i, x, z, g_streamRadius + 30.0f))
+                    oDeactivate(cache, nullptr, i);
+        }
+        HoldFar(g_customDistance);
+        return r;
+    }
     ActivateAll();
     HoldFar(true);
     return 0;
@@ -413,7 +474,7 @@ bool g_lodHooked;
 const float *g_lodQuality;   // LS3D's RSLodQuality
 uint64_t g_lodKept;   // visuals drawn past their last LOD's distance (or its fade), all frames
 int __fastcall hkGetLod(void *visual, float *dist2) {
-    if (g_wholeCity) {
+    if (g_wholeCity || g_customDistance) {
         const uint8_t *mesh = game::at<uint8_t *>(visual, 0x1E0);
         const int n = mesh ? *reinterpret_cast<const int *>(mesh + 8) : 0;
         const uint8_t *last = n > 0 ? *reinterpret_cast<uint8_t *const *>(mesh + 0xC + (n - 1) * 4) : nullptr;
@@ -433,11 +494,109 @@ int __fastcall hkGetLod(void *visual, float *dist2) {
 json CityJson() {
     const Blocks b = CityBlocks();
     json j = {{"whole", g_wholeCity}, {"blocks", b.count}, {"active", ActiveBlocks(b)}, {"activated", g_blocksActivated},
-              {"lods_kept", g_lodKept}, {"far", g_cityFar}};
+              {"lods_kept", g_lodKept}, {"far", g_cityFar}, {"distance_mode", g_wholeCity ? 2 : g_customDistance ? 1 : 0},
+              {"stream_radius", g_customDistance ? json(g_streamRadius) : json(nullptr)}};
     if (g_gameFar > 0) j["game_far"] = g_gameFar;
     return j;
 }
+bool HookCacheTick(std::string *err) {
+    if (g_cacheHooked) return true;
+    const game::ExeBuild &e = game::Exe();
+    if (!e.cacheTick) { *err = "the city's streaming is not known in this build"; return false; }
+    if (!HookAdd(nullptr, e.cacheTick, reinterpret_cast<void *>(&hkCacheTick), reinterpret_cast<void **>(&oCacheTick), err)) return false;
+    g_cacheHooked = true;
+    return true;
+}
+
+// Hardware/table fog and the software vertex-fog path must agree. Intercept LS3D's own fog setter, preserving
+// its enable/disable decisions for HUD, backdrop and fog-free sectors. No D3D state or IGraph cache is bypassed.
+// Software fog uses the light's percent-of-camera-far fields: borrow ONLY those two derived fields for its call,
+// restoring them immediately. The scene's light, color and mission data remain intact.
+using FogFn = void(__fastcall *)(int state, int type, float start, float end, uint32_t color);
+using FogProcessFn = void(__fastcall *)(uint8_t *alpha, float *vertices, unsigned stride, unsigned count, void *light, int mode);
+FogFn oFog;
+FogProcessFn oFogProcess;
+bool g_fogHooked;
+int g_fogMode;
+float g_fogStart = 100.0f, g_fogEnd = 1000.0f;
+uint64_t g_fogCalls, g_fogVertexCalls;
+void __fastcall hkFog(int state, int type, float start, float end, uint32_t color) {
+    if (g_depth && g_world && (g_fogMode || AtmosphereReady()) && state == 1) {
+        g_fogCalls++;
+        if (g_fogMode == 1 || AtmosphereReady()) state = 0;
+        else { type = 0; start = g_fogStart; end = g_fogEnd; }
+    }
+    oFog(state, type, start, end, color);
+}
+void __fastcall hkFogProcess(uint8_t *alpha, float *vertices, unsigned stride, unsigned count, void *light, int mode) {
+    if (!g_depth || !g_world || (!g_fogMode && !AtmosphereReady()) || !light || (mode != 0 && mode != 1)) {
+        oFogProcess(alpha, vertices, stride, count, light, mode);
+        return;
+    }
+    g_fogVertexCalls++;
+    if (g_fogMode == 1 || AtmosphereReady()) {
+        for (unsigned i = 0; i < count; i++) alpha[i * stride] = mode == 0 ? 255 : 0;
+        return;
+    }
+    void *cam = *reinterpret_cast<void **>(ModuleBase("LS3DF.dll") + game::Ls3d().currentCamera);
+    const float farZ = cam ? game::at<float>(cam, kCamFarZ) : 0;
+    if (!(farZ > 0)) { oFogProcess(alpha, vertices, stride, count, light, mode); return; }
+    float &nearRatio = game::at<float>(light, 0x19C), &farRatio = game::at<float>(light, 0x1D0);
+    const float wasNear = nearRatio, wasFar = farRatio;
+    nearRatio = g_fogStart / g_fogEnd;
+    farRatio = g_fogEnd / farZ;
+    oFogProcess(alpha, vertices, stride, count, light, mode);
+    nearRatio = wasNear;
+    farRatio = wasFar;
+}
+json FogJson() {
+    return {{"mode", g_fogMode}, {"start", g_fogStart}, {"end", g_fogEnd},
+            {"atmosphere_ready", AtmosphereReady()},
+            {"hardware_calls", g_fogCalls}, {"vertex_calls", g_fogVertexCalls}};
+}
+bool HookFog(std::string *err) {
+    if (g_fogHooked) return true;
+    const uintptr_t ls = ModuleBase("LS3DF.dll");
+    const auto &l = game::Ls3d();
+    if (!l.setFog || !l.fogProcess) { *err = "native fog is not known in this build"; return false; }
+    if (!HookAdd(nullptr, ls + l.setFog, reinterpret_cast<void *>(&hkFog), reinterpret_cast<void **>(&oFog), err)) return false;
+    if (!HookAdd(nullptr, ls + l.fogProcess, reinterpret_cast<void *>(&hkFogProcess), reinterpret_cast<void **>(&oFogProcess), err)) {
+        HookRemoveLink(nullptr, ls + l.setFog, reinterpret_cast<void *>(&hkFog));
+        return false;
+    }
+    g_fogHooked = true;
+    return true;
+}
+bool SyncFogHooks(std::string *err) {
+    if (g_fogMode || AtmosphereActive() || AtmosphereReady()) return HookFog(err);
+    if (g_fogHooked) {
+        const uintptr_t ls = ModuleBase("LS3DF.dll");
+        HookRemoveLink(nullptr, ls + game::Ls3d().setFog, reinterpret_cast<void *>(&hkFog));
+        HookRemoveLink(nullptr, ls + game::Ls3d().fogProcess, reinterpret_cast<void *>(&hkFogProcess));
+        g_fogHooked = false;
+    }
+    return true;
+}
 } // namespace
+
+void RenderMissionClosed() { g_farCamera = nullptr; g_gameFar = 0; AtmosphereSceneClosed(); }
+
+void RenderDistanceCamera(MmlViewCamera *c) {
+    if (!c || (!g_customDistance && !g_wholeCity)) return;
+    c->far_z = g_cityFar;
+    // A horizontal streaming circle contains all far-frustum corners even when looking straight up/down.
+    const float tx = std::max(std::abs(c->tan_left), std::abs(c->tan_right));
+    const float ty = std::max(std::abs(c->tan_up), std::abs(c->tan_down));
+    g_streamRadius = g_cityFar * std::sqrt(1.0f + tx * tx + ty * ty);
+}
+
+void CityFollowsCamera() {
+    static bool tried;
+    if (g_cacheHooked || tried || !game::g_exe) return;
+    tried = true;   // (once: a build without the city's streaming known, or a hook refused, says so in the log)
+    std::string err;
+    if (!HookCacheTick(&err)) Log(MML_LOG_WARN, "render", "the city streamed around a mod's camera: off (%s)", err.c_str());
+}
 
 bool RenderMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok) {
     if (method == "render.set") {
@@ -445,6 +604,28 @@ bool RenderMethod(const std::string &method, const std::string &paramsJson, std:
         if (!p.is_object()) p = json::object();
         void *d = Driver();
         if (!d) { *ok = false; *reply = "render.set: no LS3D driver (no game known, or not made yet)"; return true; }
+        const int mode = p.value("distance_mode", p.contains("whole_city") ? (p["whole_city"].get<bool>() ? 2 : 0) : g_wholeCity ? 2 : g_customDistance ? 1 : 0);
+        const float farZ = p.value("far", g_cityFar);
+        const int fogMode = p.value("fog_mode", g_fogMode);
+        const float fogStart = p.value("fog_start", g_fogStart), fogEnd = p.value("fog_end", g_fogEnd);
+        if (mode < 0 || mode > 2 || !(farZ >= 100 && farZ <= 100000)) {
+            *ok = false; *reply = "render.set: distance_mode 0 (game), 1 (custom), 2 (whole city); far 100..100000 metres"; return true;
+        }
+        if (fogMode == 3 || p.contains("fog_density") || p.contains("fog_height") || p.contains("fog_base") ||
+            p.contains("fog_sun") || p.contains("fog_tint")) {
+            *ok = false; *reply = "Atmosphere is SDK-owned: use scene_atmosphere / atmosphere.set; migrate old loader settings with tools/migrate_atmosphere.py"; return true;
+        }
+        if (fogMode < 0 || fogMode > 2 || !(fogStart >= 0 && fogEnd > fogStart && fogEnd <= 100000)) {
+            *ok = false; *reply = "render.set: fog_mode 0 game, 1 off, 2 linear; 0 <= fog_start < fog_end <= 100000 metres"; return true;
+        }
+        if (p.contains("fog_mode") || p.contains("fog_start") || p.contains("fog_end")) {
+            const int wasMode = g_fogMode;
+            g_fogMode = fogMode;
+            std::string err;
+            if (!SyncFogHooks(&err)) { g_fogMode = wasMode; *ok = false; *reply = "render.set: fog: " + err; return true; }
+            g_fogStart = fogStart;
+            g_fogEnd = fogEnd;
+        }
         if (p.contains("occlusion")) DrvSet(d, kRsOcclusion, p["occlusion"].get<bool>() ? 1 : 0);
         if (p.contains("lod_quality")) {
             const float q = p["lod_quality"].get<float>();
@@ -456,17 +637,12 @@ bool RenderMethod(const std::string &method, const std::string &paramsJson, std:
             std::string err;
             if (!BatchSet(p["batch"].get<bool>(), &err)) { *ok = false; *reply = "render.set: batch: " + err; return true; }
         }
-        if (p.contains("whole_city")) {
+        if (p.contains("whole_city") || p.contains("distance_mode") || p.contains("far")) {
             const game::ExeBuild &e = game::Exe();
             const game::Ls3dBuild &l = game::Ls3d();
             if (!e.cacheTick || !l.getObjectLod) { *ok = false; *reply = "render.set: whole_city: the city's streaming is not known in this build"; return true; }
             std::string err;
-            if (!g_cacheHooked) {
-                if (!HookAdd(nullptr, e.cacheTick, reinterpret_cast<void *>(&hkCacheTick), reinterpret_cast<void **>(&oCacheTick), &err)) {
-                    *ok = false; *reply = "render.set: whole_city: CacheTick not hooked (" + err + ")"; return true;
-                }
-                g_cacheHooked = true;
-            }
+            if (!HookCacheTick(&err)) { *ok = false; *reply = "render.set: whole_city: CacheTick not hooked (" + err + ")"; return true; }
             if (!g_lodHooked) {
                 const uintptr_t ls = ModuleBase("LS3DF.dll");
                 g_lodQuality = reinterpret_cast<const float *>(ls + l.rsLodQuality);
@@ -475,23 +651,32 @@ bool RenderMethod(const std::string &method, const std::string &paramsJson, std:
                 }
                 g_lodHooked = true;
             }
-            const bool on = p["whole_city"].get<bool>();
+            if (mode == 1 && !g_streamHooked) {
+                if (!HookAdd(nullptr, e.cacheInRange, reinterpret_cast<void *>(&hkInRange), reinterpret_cast<void **>(&oInRange), &err) ||
+                    !HookAdd(nullptr, e.cacheDeactivate, reinterpret_cast<void *>(&hkDeactivate), reinterpret_cast<void **>(&oDeactivate), &err)) {
+                    *ok = false; *reply = "render.set: native distance streaming: " + err; return true;
+                }
+                g_streamHooked = true;
+            }
+            const bool on = mode == 2;
             if (p.contains("far")) {
-                const float f = p["far"].get<float>();
-                if (!(f >= 100.0f && f <= 100000.0f)) { *ok = false; *reply = "render.set: far 100..100000 (metres)"; return true; }
-                if (g_wholeCity) HoldFar(false);   // (the game's put back first: the new one held from it)
-                g_cityFar = f;
+                if (g_wholeCity || g_customDistance) HoldFar(false);
+                g_cityFar = farZ;
             }
             if (on && !g_wholeCity) g_occlusionBefore = DrvGet(d, kRsOcclusion);   // (the occluders' state given back after)
-            if (on != g_wholeCity && !p.contains("occlusion")) DrvSet(d, kRsOcclusion, on ? 0 : g_occlusionBefore);
+            // Preserve legacy benchmark behavior, while the saved distance control is independent of occluders.
+            if (p.contains("whole_city") && !p.contains("distance_mode") && on != g_wholeCity && !p.contains("occlusion"))
+                DrvSet(d, kRsOcclusion, on ? 0 : g_occlusionBefore);
             g_wholeCity = on;
-            HoldFar(on);
+            g_customDistance = mode == 1;
+            HoldFar(mode != 0);
+            g_streamRadius = g_cityFar * 2.0f;   // safe until the first main-camera frustum is available
+            if (const Blocks b = CityBlocks(); b.count) game::at<int>(reinterpret_cast<void *>(e.cityCache), 0x28) = 100;
             if (on) ActivateAll();
-            HLOG("render: the whole city %s", on ? "held (every block of the city's cache active, no occluders, no visual left out by its distance)"
-                                                 : "given back to the game (its streaming, its occluders, its distances)");
+            HLOG("render: distance mode %d, far %.0f m, occluders %s", mode, g_cityFar, DrvGet(d, kRsOcclusion) ? "on" : "off");
         }
         *reply = json({{"occlusion", DrvGet(d, kRsOcclusion) != 0}, {"lod_quality", AsFloat(DrvGet(d, kRsLodQuality))},
-                       {"city", CityJson()}, {"batch", json::parse(BatchStateJson())}})
+                       {"city", CityJson()}, {"fog", FogJson()}, {"batch", json::parse(BatchStateJson())}})
                      .dump(-1, ' ', false, json::error_handler_t::replace);
         *ok = true;
         return true;
@@ -522,6 +707,7 @@ bool RenderMethod(const std::string &method, const std::string &paramsJson, std:
                          {"viewport", {c.width, c.height}}};
     if (void *d = Driver()) out["ls3d"] = {{"occlusion", DrvGet(d, kRsOcclusion) != 0}, {"lod_quality", AsFloat(DrvGet(d, kRsLodQuality))}};
     if (game::g_exe && game::Exe().cityCache) out["city"] = CityJson();
+    out["fog"] = FogJson();
     out["batch"] = json::parse(BatchStateJson());
     if (!g_hooked) out["note"] = "no game known: nothing is drawn here";
     *reply = out.dump(-1, ' ', false, json::error_handler_t::replace);

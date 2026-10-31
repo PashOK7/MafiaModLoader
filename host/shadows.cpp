@@ -5,14 +5,12 @@
 // views), the host draws the depth of what is around the camera as seen from the scene's sun (lights.cpp scene_sun)
 // into a texture of its own on the game's Direct3D 9 device (R32F, an orthographic box following the camera, its
 // texels snapped so it does not shimmer). The casters, two ways:
-//   - "meshes" (the default): the scene's meshes around the camera (meshes.cpp, a box of the host's own) and the cars
-//     near it as they are posed now, drawn by the host (their vertices uploaded once a mesh into managed buffers),
-//     every Direct3D state put back after (a state block of everything, the render target, the depth buffer). No
-//     people, no billboards, alpha-tested faces whole (ROADMAP Known gaps).
-//   - "game" (shader.shadows casters "game", not yet the default): LS3D itself draws the scene from an orthographic
-//     camera of its own (view.cpp ViewDrawShadow), each face group written as its depth by shaders.cpp with the
-//     game's alpha test kept; only the target, depth buffer and viewport put back (LS3D keeps a cache of the states
-//     it set). LS3D leaves out most objects from such a camera (measured: Known gaps), so it stays an option.
+//   - "game" (default): LS3D draws current posed visuals from an orthographic camera (view.cpp ViewDrawShadow),
+//     each face group written as depth by shaders.cpp with its textures and alpha test. The shadow-only visibility
+//     hook supplies box planes, disables screen occlusion and removes artificial camera-distance LOD fading.
+//     Restore the target, depth buffer, viewport AND depth writes: LS3D's cached state reset omits ZWRITEENABLE.
+//   - "meshes" (diagnostic/fallback): the host draws cached scene meshes and posed cars. No alpha cut-outs,
+//     people or railway actors; not suitable for normal water shadows. Its full device state block is restored.
 // The rules' shaders find the map at sampler 2 with its matrix in game.hlsli's registers.
 //
 // The game's lights: the scene's point and spot lights that are on (lights.cpp), up to eight whose range reaches
@@ -28,15 +26,31 @@
 #include <vector>
 #include "json.hpp"
 #include "gfx_vk.h"
+#include "d3dmirror.h"
+#include "shaders/VsMeshShadow.h"
+#include "shaders/PsMeshShadow.h"
 #include "mml/game/game.h"
+#include "receiver_fit.h"
 
 namespace host {
 namespace {
 
 constexpr int kVisualBoundCentre = 0x19C, kVisualBoundRadius = 0x1A8;
 
-struct Want { MmlMod *mod; MmlShadowSettings s; };
+struct Want {
+    MmlMod *mod; MmlShadowSettings s; int source; bool fit = false; float minY = 0, maxY = 0;
+    std::vector<float> surface; float displacement = 0;
+};
 std::vector<Want> g_wants;
+bool g_surfaceFit = true;
+const Want *SourceRequest() {
+    for (auto it = g_wants.rbegin(); it != g_wants.rend(); ++it) if (it->source >= 0) return &*it;
+    return nullptr;
+}
+int RequestedSource() { const Want *w = SourceRequest(); return w ? w->source : MML_SHADOW_SCENE; }
+const char *SourceName(int source) { return source == MML_SHADOW_SUN ? "sun" : "scene"; }
+float g_shadowDirection[3];
+const char *g_sourceUsed = "none";
 
 // ---- the map
 IDirect3DDevice9 *g_dev;
@@ -58,24 +72,18 @@ constexpr float kDefaultBiasM = 0.05f;
 unsigned g_casters, g_triangles, g_frames;
 double g_passMs;
 std::string g_why;
+bool g_fitted, g_densityLimited;
+float g_receiverBounds[6];
+float g_halfX, g_halfY;
+bool g_depthEnabled = true, g_depthPending, g_depthActive, g_depthUsed;
+void *g_depthDriver, *g_depthScene;
+RenderFn g_depthRender;
+float g_depthBounds[6];
+unsigned g_depthFrames, g_depthFallbacks, g_depthSamples;
+double g_depthReduceMs;
 
 struct Buffers { IDirect3DVertexBuffer9 *vb = nullptr; IDirect3DIndexBuffer9 *ib = nullptr; int verts = 0, tris = 0; unsigned used = 0; };
 std::unordered_map<const float *, Buffers> g_buffers;   // by the mesh's positions (meshes.cpp keeps them while cached)
-
-const char kDepthHlsl[] = R"(
-row_major float4x4 m : register(c0);
-struct O { float4 pos : POSITION; float2 z : TEXCOORD0; };
-O vs(float3 p : POSITION) { O o; o.pos = mul(float4(p, 1), m); o.z = o.pos.zw; return o; }
-float4 ps(O i) : COLOR0 {
-    // a slope-scaled bias: the depth's own change across a texel added (a face the sun grazes is pushed back more,
-    // one it faces square hardly), so the receivers' constant bias stays small and no shadow comes loose
-    float z = i.z.x / i.z.y;
-    float slope = max(abs(ddx(z)), abs(ddy(z)));
-    return float4(z + slope * 1.5, 0, 0, 1);
-}
-)";
-
-using CompileFn = HRESULT(WINAPI *)(LPCVOID, SIZE_T, LPCSTR, const D3D_SHADER_MACRO *, ID3DInclude *, LPCSTR, LPCSTR, UINT, UINT, ID3DBlob **, ID3DBlob **);
 
 void ReleaseAll() {
     for (auto &kv : g_buffers) {
@@ -140,21 +148,8 @@ bool Make(IDirect3DDevice9 *d, int size) {
         g_why = "the device makes no depth buffer for the map";
         return false;
     }
-    static CompileFn compile = [] {
-        HMODULE m = LoadLibraryA("d3dcompiler_47.dll");
-        return m ? reinterpret_cast<CompileFn>(GetProcAddress(m, "D3DCompile")) : nullptr;
-    }();
-    if (!compile) { g_why = "no d3dcompiler_47.dll"; return false; }
-    ID3DBlob *v = nullptr, *p = nullptr, *e = nullptr;
-    compile(kDepthHlsl, sizeof kDepthHlsl - 1, "shadow", nullptr, nullptr, "vs", "vs_3_0", 0, 0, &v, &e);
-    if (e) e->Release();
-    e = nullptr;
-    compile(kDepthHlsl, sizeof kDepthHlsl - 1, "shadow", nullptr, nullptr, "ps", "ps_3_0", 0, 0, &p, &e);
-    if (e) e->Release();
-    bool ok = v && p && SUCCEEDED(d->CreateVertexShader(static_cast<const DWORD *>(v->GetBufferPointer()), &g_vs)) &&
-              SUCCEEDED(d->CreatePixelShader(static_cast<const DWORD *>(p->GetBufferPointer()), &g_ps));
-    if (v) v->Release();
-    if (p) p->Release();
+    bool ok = SUCCEEDED(d->CreateVertexShader(reinterpret_cast<const DWORD *>(kVsMeshShadow), &g_vs)) &&
+              SUCCEEDED(d->CreatePixelShader(reinterpret_cast<const DWORD *>(kPsMeshShadow), &g_ps));
     if (!ok) { g_why = "the depth shaders were not made"; return false; }
     D3DVERTEXELEMENT9 el[] = {{0, 0, D3DDECLTYPE_FLOAT3, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_POSITION, 0}, D3DDECL_END()};
     if (FAILED(d->CreateVertexDeclaration(el, &g_decl))) { g_why = "no vertex declaration"; return false; }
@@ -236,28 +231,32 @@ bool EnsureClear(IDirect3DDevice9 *d, std::string *why) {
     return true;
 }
 
-bool g_castersGame;            // LS3D drawing the casters (shader.shadows casters "game"): not yet the default, see ROADMAP
+bool g_castersGame = true;     // the live renderer: textures/alpha tests and all posed actors, every frame
 std::string g_mode = "none";   // "game": LS3D's drawing; "meshes": the host's own (when the game's could not be)
 std::string g_gameWhy;         // why the game's drawing was not used
 unsigned g_skipped, g_cut;
 float g_range = kDepth;        // the map's depth, metres
 
-bool PassGame(IDirect3DDevice9 *d, void *driver, void *scene, RenderFn render, const float eye[3], const float toSun[3], int size) {
+bool PassGame(IDirect3DDevice9 *d, void *driver, void *scene, RenderFn render, const float eye[3], const float toSun[3], int size,
+              float before = 0, float after = 0) {
     std::string why;
     if (!driver || !scene || !render) { g_gameWhy = "not inside the frame's drawing"; return false; }
     if (!GeomEnsureHooks(&why) || !GeomEnsureDip(&why) || !EnsureClear(d, &why)) { g_gameWhy = why; return false; }
     V3 z = Norm({-toSun[0], -toSun[1], -toSun[2]});
     V3 up = std::fabs(z.y) > 0.99f ? V3{1, 0, 0} : V3{0, 1, 0};
     V3 x = Norm(Cross(up, z)), y = Cross(z, x);
-    float texel = 2 * g_extent / static_cast<float>(size);
+    float texel = 2 * g_halfX / static_cast<float>(size), texelY = 2 * g_halfY / static_cast<float>(size);
     V3 c{eye[0], eye[1], eye[2]};
-    float cx = std::floor(Dot(c, x) / texel) * texel, cy = std::floor(Dot(c, y) / texel) * texel, cz = Dot(c, z);   // (snapped: no shimmer)
+    float cx = std::floor(Dot(c, x) / texel) * texel, cy = std::floor(Dot(c, y) / texelY) * texelY, cz = Dot(c, z);
     V3 focus{x.x * cx + y.x * cy + z.x * cz, x.y * cx + y.y * cy + z.y * cz, x.z * cx + y.z * cy + z.z * cz};
-    V3 sun{focus.x - z.x * g_sunDistance, focus.y - z.y * g_sunDistance, focus.z - z.z * g_sunDistance};
+    const float distance = std::max(g_sunDistance, before);
+    V3 sun{focus.x - z.x * distance, focus.y - z.y * distance, focus.z - z.z * distance};
     float world[16] = {x.x, x.y, x.z, 0, y.x, y.y, y.z, 0, z.x, z.y, z.z, 0, sun.x, sun.y, sun.z, 1};
-    const float nearZ = 1.0f, farZ = g_sunDistance + kBelow;
+    const float nearZ = 1.0f, farZ = distance + std::max(kBelow, after);
     IDirect3DSurface9 *rt = nullptr, *ds = nullptr;
     D3DVIEWPORT9 oldVp{};
+    DWORD oldZWrite = TRUE;
+    d->GetRenderState(D3DRS_ZWRITEENABLE, &oldZWrite);
     d->GetRenderTarget(0, &rt);
     d->GetDepthStencilSurface(&ds);
     d->GetViewport(&oldVp);
@@ -267,11 +266,14 @@ bool PassGame(IDirect3DDevice9 *d, void *driver, void *scene, RenderFn render, c
     d->SetViewport(&vp);
     oClear(d, 0, nullptr, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, 0xFFFFFFFF, 1.0f, 0);
     float viewProj[16], back[16];
-    bool ok = ViewDrawShadow(driver, scene, render, world, g_extent, nearZ, farZ, size, viewProj, back, &why);
+    bool ok = ViewDrawShadow(driver, scene, render, world, g_halfX, g_halfY, nearZ, farZ, size, viewProj, back, &why);
     // (only what was changed here is put back: LS3D keeps a cache of the states it set, and they are on the device)
     d->SetRenderTarget(0, rt);
     d->SetDepthStencilSurface(ds);
     d->SetViewport(&oldVp);
+    // LS3D ends its auxiliary Render with depth writes off. Its ResetRenderProps state block does not contain this
+    // state, so leaking it makes the following world draw in submission order and breaks water's depth mask too.
+    d->SetRenderState(D3DRS_ZWRITEENABLE, oldZWrite);
     if (rt) rt->Release();
     if (ds) ds->Release();
     if (!ok) { g_gameWhy = why; return false; }
@@ -366,12 +368,102 @@ void PassMeshes(IDirect3DDevice9 *d, const float eye[3], const float toSun[3], i
     g_range = kDepth;
 }
 
+// Clip the camera frustum to each requested receiver-height slab, then fit in light space. No distance cutoff
+// inside the visible water, and a growing texture keeps the requested world-space texel density unchanged.
+bool FitReceivers(IDirect3DDevice9 *d, const MmlRenderCamera &cam, const float toSun[3], int &size,
+                  float focus[3], float &before, float &after) {
+    g_fitted = std::any_of(g_wants.begin(), g_wants.end(), [](const Want &w) { return w.fit; });
+    g_densityLimited = false;
+    if (!g_fitted) return true;
+    if (g_depthActive && (g_depthBounds[0]>g_depthBounds[3] || g_depthBounds[1]>g_depthBounds[4] ||
+                         g_depthBounds[2]>g_depthBounds[5])) { g_why="no visible shadow receivers";return false; }
+    const V3 z = Norm({-toSun[0], -toSun[1], -toSun[2]});
+    const V3 x = Norm(Cross(std::fabs(z.y) > 0.99f ? V3{1, 0, 0} : V3{0, 1, 0}, z)), y = Cross(z, x);
+    float lo[3] = {1e30f, 1e30f, 1e30f}, hi[3] = {-1e30f, -1e30f, -1e30f};
+    auto add = [&](V3 p) {
+        const float v[3] = {Dot(p, x), Dot(p, y), Dot(p, z)};
+        for (int a = 0; a < 3; a++) { lo[a] = std::min(lo[a], v[a]); hi[a] = std::max(hi[a], v[a]); }
+    };
+    V3 corners[8];
+    for (int i = 0; i < 8; i++) {
+        const float depth = i < 4 ? cam.near_z : cam.far_z;
+        const float sx = ((i & 1 ? 1.0f : -1.0f) - cam.proj[8]) / cam.proj[0];
+        const float sy = ((i & 2 ? 1.0f : -1.0f) - cam.proj[9]) / cam.proj[5];
+        corners[i] = {cam.eye.x + depth * (cam.fwd.x + sx * cam.right.x + sy * cam.up.x),
+                      cam.eye.y + depth * (cam.fwd.y + sx * cam.right.y + sy * cam.up.y),
+                      cam.eye.z + depth * (cam.fwd.z + sx * cam.right.z + sy * cam.up.z)};
+    }
+    static const int edges[12][2] = {{0,1},{1,3},{3,2},{2,0},{4,5},{5,7},{7,6},{6,4},{0,4},{1,5},{2,6},{3,7}};
+    float texel = 1e30f;
+    for (const Want &w : g_wants) {
+        texel = std::min(texel, 2 * (w.s.extent > 1 ? w.s.extent : 60) / std::max<int>(w.s.size, 512));
+        if (g_depthActive) {
+            if(!w.surface.empty()) {
+                const receiver_fit::V axes[3]={{x.x,x.y,x.z},{y.x,y.y,y.z},{z.x,z.y,z.z}};
+                receiver_fit::IntersectLightBounds(w.surface.data(),static_cast<unsigned>(w.surface.size()/9),
+                    w.displacement,axes,g_depthBounds,lo,hi);
+            } else for(int a=0;a<3;a++){lo[a]=std::min(lo[a],g_depthBounds[a]);hi[a]=std::max(hi[a],g_depthBounds[a+3]);}
+            continue;
+        }
+        if (g_surfaceFit && !w.surface.empty()) {
+            const receiver_fit::V axes[3]={{x.x,x.y,x.z},{y.x,y.y,y.z},{z.x,z.y,z.z}};
+            receiver_fit::Include(cam,w.surface.data(),static_cast<unsigned>(w.surface.size()/9),w.displacement,axes,lo,hi);
+            continue;
+        }
+        if (!w.fit) {
+            const V3 p{cam.eye.x, cam.eye.y, cam.eye.z};
+            const float c[3] = {Dot(p, x), Dot(p, y), Dot(p, z)};
+            for (int a = 0; a < 3; a++) { lo[a] = std::min(lo[a], c[a] - w.s.extent); hi[a] = std::max(hi[a], c[a] + w.s.extent); }
+            continue;
+        }
+        for (const V3 &p : corners) if (p.y >= w.minY && p.y <= w.maxY) add(p);
+        for (const auto &edge : edges) for (float level : {w.minY, w.maxY}) {
+            const V3 &a = corners[edge[0]], &b = corners[edge[1]];
+            if (std::fabs(b.y - a.y) < 1e-7f) continue;
+            const float t = (level - a.y) / (b.y - a.y);
+            if (t >= 0 && t <= 1) add({a.x + (b.x - a.x) * t, level, a.z + (b.z - a.z) * t});
+        }
+    }
+    if (lo[0] > hi[0]) { g_why = "no visible shadow receivers"; return false; }
+    const float padding = 40 * texel + 0.05f; // maximum PCSS footprint (32 texels) plus snapping
+    const float needed = std::max(hi[0] - lo[0], hi[1] - lo[1]) * 0.5f + padding;
+    D3DCAPS9 caps{}; d->GetDeviceCaps(&caps);
+    const int limit = static_cast<int>(std::min(caps.MaxTextureWidth, caps.MaxTextureHeight));
+    int target = 512;
+    while (target < limit && target * texel * 0.5f < needed) target *= 2;
+    target = std::min(target, limit);
+    // A little hysteresis on shrinking, without changing the world texel size.
+    if (g_size > target && g_size <= limit && needed > g_size * texel * 0.225f) target = g_size;
+    size = std::max(size, target);
+    g_extent = std::max(size * texel * 0.5f, needed);
+    auto axisHalf = [&](float span) {
+        float half = 256 * texel;
+        // Texture dimensions still grow by powers of two. The world-space box need not: doubling each axis
+        // can include almost four times the required city area. Smaller stable steps retain full coverage.
+        while (half < span * 0.5f + padding) half *= g_surfaceFit ? 1.125f : 2.0f;
+        // Do not let quantization push actual texel density below the request when the texture can hold it.
+        return std::min(half, std::max(span * 0.5f + padding, size * texel * 0.5f));
+    };
+    g_halfX = axisHalf(hi[0] - lo[0]); g_halfY = axisHalf(hi[1] - lo[1]);
+    g_densityLimited = needed > size * texel * 0.5f;
+    float c[3];
+    for (int a = 0; a < 3; a++) { c[a] = (lo[a] + hi[a]) * 0.5f; g_receiverBounds[a] = lo[a]; g_receiverBounds[a + 3] = hi[a]; }
+    focus[0] = x.x * c[0] + y.x * c[1] + z.x * c[2];
+    focus[1] = x.y * c[0] + y.y * c[1] + z.y * c[2];
+    focus[2] = x.z * c[0] + y.z * c[1] + z.z * c[2];
+    before = c[2] - lo[2] + std::max(g_sunDistance, cam.far_z * 2);
+    after = hi[2] - c[2] + 10;
+    return true;
+}
+
 void Pass(IDirect3DDevice9 *d, void *driver, void *scene, RenderFn render) {
+    ProfScope scope(nullptr, "shadow map");
     LARGE_INTEGER f, t0, t1;
     QueryPerformanceFrequency(&f);
     QueryPerformanceCounter(&t0);
     g_valid = false;
     g_frames++;
+    g_passMs=0;g_casters=g_triangles=g_cut=g_skipped=0;g_mode="none";
     MmlShadowSettings s{};
     for (const Want &w : g_wants) {
         s.size = std::max(s.size, w.s.size);
@@ -380,14 +472,27 @@ void Pass(IDirect3DDevice9 *d, void *driver, void *scene, RenderFn render) {
     }
     int size = s.size >= 4096 ? 4096 : s.size >= 2048 ? 2048 : s.size >= 1024 ? 1024 : 512;
     g_extent = s.extent > 1 ? s.extent : 60.0f;
+    g_halfX = g_halfY = g_extent;
     g_biasM = s.bias > 0 ? s.bias : kDefaultBiasM;
     float toSun[3], col[3], amb[3];
-    if (!SceneSun(toSun, col, amb) || toSun[1] < 0.05f) { g_why = "no sun above the horizon"; return; }
+    g_sourceUsed = "none";
+    bool haveSun = false;
+    if (RequestedSource() == MML_SHADOW_SUN && SceneSunSeen(toSun)) {
+        haveSun = true;
+        g_sourceUsed = "sun";
+    } else if (SceneSun(toSun, col, amb)) {
+        haveSun = true;
+        g_sourceUsed = "scene";
+    }
+    if (!haveSun || toSun[1] < 0.05f) { g_why = "no selected shadow light above the horizon"; return; }
+    memcpy(g_shadowDirection, toSun, sizeof g_shadowDirection);
     MmlRenderCamera cam{};
     if (!RenderCamera(&cam)) { g_why = "no camera"; return; }
     float eye[3] = {cam.eye.x, cam.eye.y, cam.eye.z};
+    float before = 0, after = 0;
+    if (!FitReceivers(d, cam, toSun, size, eye, before, after)) return;
     if (!Make(d, size)) return;
-    if (g_castersGame && PassGame(d, driver, scene, render, eye, toSun, size)) {
+    if (g_castersGame && PassGame(d, driver, scene, render, eye, toSun, size, before, after)) {
         g_mode = "game";
     } else {
         if (!g_castersGame) g_gameWhy.clear();
@@ -428,15 +533,35 @@ void ShadowsTune(float sunDistance, int casters) {
     if (casters >= 0) g_castersGame = casters == 1;
 }
 
-bool ShaderShadows(MmlMod *mod, const MmlShadowSettings *s) {
+bool ShaderShadows(MmlMod *mod, const MmlShadowSettings *s, int source, const float *receiverY) {
+    if (source < -1 || source > MML_SHADOW_SUN) return false;
+    if (s && receiverY && (!std::isfinite(receiverY[0]) || !std::isfinite(receiverY[1]) || receiverY[0] > receiverY[1])) return false;
+    const bool had = !g_wants.empty();
     g_wants.erase(std::remove_if(g_wants.begin(), g_wants.end(), [&](const Want &w) { return w.mod == mod; }), g_wants.end());
-    if (s) g_wants.push_back({mod, *s});
+    if (s) g_wants.push_back({mod, *s, source, receiverY != nullptr, receiverY ? receiverY[0] : 0, receiverY ? receiverY[1] : 0});
+    if (had != !g_wants.empty()) MirrorUse(!g_wants.empty());   // follow Set*; never read the whole device per caster
+    g_valid = false;   // the next world frame redraws the map with the current request
     if (g_wants.empty()) {
         SceneFocus(kLoaderOwner, nullptr, nullptr);
         g_valid = false;
     }
     return true;
 }
+bool ShaderShadowSurface(MmlMod *mod, const MmlShadowSettings *s, int source, const float *tris, unsigned count, float displacement) {
+    if (source != MML_SHADOW_SCENE && source != MML_SHADOW_SUN) return false;
+    if (!s) return ShaderShadows(mod,nullptr,source);
+    if (!tris || !count || count>1000000 || !std::isfinite(displacement) || displacement<0) return false;
+    float y[2]={1e30f,-1e30f};
+    for(size_t i=0;i<size_t(count)*9;i++) {
+        if(!std::isfinite(tris[i])) return false;
+        if(i%3==1) {y[0]=std::min(y[0],tris[i]-displacement);y[1]=std::max(y[1],tris[i]+displacement);}
+    }
+    std::vector<float> copy(tris,tris+size_t(count)*9);
+    if(!ShaderShadows(mod,s,source,y)) return false;
+    Want &w=g_wants.back();w.surface=std::move(copy);w.displacement=displacement;
+    return true;
+}
+void ShadowsSurfaceEnable(bool on) { g_surfaceFit=on; }
 void ShadowsModGone(MmlMod *mod) {
     bool had = std::any_of(g_wants.begin(), g_wants.end(), [&](const Want &w) { return w.mod == mod; });
     if (had) ShaderShadows(mod, nullptr);
@@ -444,13 +569,75 @@ void ShadowsModGone(MmlMod *mod) {
 
 void ShadowsBeforeWorld(void *driver, void *scene, RenderFn render) {   // (render.cpp: before the mission's world is drawn)
     g_valid = false;
+    g_depthPending = g_depthUsed = false;
     if (g_wants.empty()) return;
+    MmlRenderCamera camera{};
+    if (g_depthEnabled && g_castersGame && !ShadersNeedEarlyShadow() && GfxShadowDepthAvailable() && ViewAllowsLateShadow(scene) &&
+        std::all_of(g_wants.begin(),g_wants.end(),[](const Want &w){return w.fit;}) &&
+        RenderCamera(&camera) && camera.far_z > 600) {
+        g_depthDriver=driver;g_depthScene=scene;g_depthRender=render;g_depthPending=true;
+        return;
+    }
     auto *d = static_cast<IDirect3DDevice9 *>(RenderDevice(9));
     if (!d) { g_why = "no Direct3D 9 device (a wrapper's)"; return; }
     __try { Pass(d, driver, scene, render); } __except (EXCEPTION_EXECUTE_HANDLER) { g_valid = false; g_why = "the pass faulted"; }
 }
 
+void ShadowsDepthEnable(bool on) { g_depthEnabled=on; }
+int ShadowsDepthPlan(float boxes[32][4], float basis[3][4]) {
+    if (!g_depthPending || g_wants.empty()) return 0;
+    float toSun[3], col[3], amb[3];
+    bool sun = RequestedSource()==MML_SHADOW_SUN && SceneSunSeen(toSun);
+    if (!sun && !SceneSun(toSun,col,amb)) return 0;
+    if (toSun[1]<0.05f) return 0;
+    const V3 z=Norm({-toSun[0],-toSun[1],-toSun[2]});
+    const V3 x=Norm(Cross(std::fabs(z.y)>.99f?V3{1,0,0}:V3{0,1,0},z)), y=Cross(z,x);
+    const V3 axes[3]={x,y,z};
+    for(int a=0;a<3;a++) {basis[a][0]=axes[a].x;basis[a][1]=axes[a].y;basis[a][2]=axes[a].z;basis[a][3]=0;}
+    int count=0;
+    for(const Want &w:g_wants) {
+        if(w.surface.empty()) {
+            if(count==16) return -1;
+            float *lo=boxes[count*2],*hi=boxes[count*2+1];count++;
+            lo[0]=lo[2]=-1e20f;hi[0]=hi[2]=1e20f;lo[1]=w.minY;hi[1]=w.maxY;lo[3]=hi[3]=0;
+            continue;
+        }
+        const int first=count;
+        float levels[16]={};
+        for(size_t t=0;t<w.surface.size();t+=9) {
+            const float level=w.surface[t+1];int b=first;
+            while(b<count && std::fabs(levels[b]-level)>.01f) b++;
+            if(b==count) {
+                if(count==16) return -1;
+                levels[b]=level;count++;
+                for(int a=0;a<3;a++){boxes[b*2][a]=1e30f;boxes[b*2+1][a]=-1e30f;}
+                boxes[b*2][3]=boxes[b*2+1][3]=0;
+            }
+            for(int v=0;v<3;v++)for(int a=0;a<3;a++) {
+                const float q=w.surface[t+v*3+a];
+                boxes[b*2][a]=std::min(boxes[b*2][a],q-w.displacement);
+                boxes[b*2+1][a]=std::max(boxes[b*2+1][a],q+w.displacement);
+            }
+        }
+    }
+    return count;
+}
+void ShadowsDepthFinish(const float *bounds, unsigned samples, double reduceMs) {
+    if (!g_depthPending) return;
+    g_depthPending=false; g_depthReduceMs=reduceMs; g_depthSamples=samples;
+    if(g_wants.empty()) return;
+    g_depthActive=bounds!=nullptr; g_depthUsed=g_depthActive;
+    if(bounds) {memcpy(g_depthBounds,bounds,sizeof g_depthBounds);g_depthFrames++;}
+    else g_depthFallbacks++;
+    auto *d=static_cast<IDirect3DDevice9 *>(RenderDevice(9));
+    if(d) {
+        __try {Pass(d,g_depthDriver,g_depthScene,g_depthRender);}
+        __except(EXCEPTION_EXECUTE_HANDLER) {g_valid=false;g_why="the late shadow pass faulted";}
+    }
+    g_depthActive=false;
+}
 void ShadowsMissionClose() {   // (the meshes' buffers keyed by pointers meshes.cpp lets go)
+    g_depthPending=false;g_depthDriver=g_depthScene=nullptr;g_depthRender=nullptr;
     for (auto &kv : g_buffers) {
         if (kv.second.vb) kv.second.vb->Release();
         if (kv.second.ib) kv.second.ib->Release();
@@ -525,6 +712,19 @@ void ShadowsState(std::string *out) {
               {"lights", g_lights.size()}, {"sun", g_haveSun}, {"shared", g_shared != nullptr},
               {"why", !g_wants.empty() && !g_valid && g_why.empty() ? std::string("no frame of the mission's world drawn since") : g_why}};
     if (!g_gameWhy.empty()) j["game_why"] = g_gameWhy;   // (why LS3D's drawing was not used: the host's own meshes then)
+    j["source"] = SourceName(RequestedSource());
+    const Want *source = SourceRequest();
+    j["source_owner"] = source ? ModIdOf(source->mod) : "default";
+    j["source_used"] = g_valid ? g_sourceUsed : "none";
+    j["direction"] = g_valid ? json({g_shadowDirection[0], g_shadowDirection[1], g_shadowDirection[2]}) : json(nullptr);
+    j["coverage"] = {{"fitted", g_fitted}, {"texel_m", g_size ? 2 * std::max(g_halfX, g_halfY) / g_size : 0},
+                     {"half", {g_halfX, g_halfY}},
+                     {"density_limited", g_densityLimited}, {"light_bounds", std::vector<float>(g_receiverBounds, g_receiverBounds + 6)}};
+    size_t receivers=0; for(const Want &w:g_wants) receivers+=w.surface.size()/9;
+    j["coverage"]["surface_fit"]=g_surfaceFit;
+    j["coverage"]["receiver_triangles"]=receivers;
+    j["depth_fit"]={{"enabled",g_depthEnabled},{"used",g_depthUsed},{"pending",g_depthPending},
+        {"frames",g_depthFrames},{"fallbacks",g_depthFallbacks},{"samples",g_depthSamples},{"reduce_ms",g_depthReduceMs}};
     *out = j.dump(-1, ' ', false, json::error_handler_t::replace);
 }
 

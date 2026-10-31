@@ -93,6 +93,18 @@ fn load(host: Host) -> Result<(), String> {
     });
 
     host.command("offline", "the safe layer's checks with no game (run_tests.py)", move |_| Ok(checks::offline(host).to_string()));
+    host.command("atmosphere", "safe SDK atmosphere request/query/release", move |args| {
+        let mut s=mml::AtmosphereSettings::neutral();
+        s.extinction=0.002;
+        s.priority=if args.contains("high") { 20 } else { 0 };
+        if args.contains("nan") { s.extinction=f32::NAN; }
+        let accepted=if args.contains("query") { true } else {
+            host.scene_atmosphere(if args.contains("off") { None } else { Some(s) })
+        };
+        let state=host.scene_atmosphere_state().ok_or("no atmosphere query")?;
+        Ok(format!("{{\"accepted\":{accepted},\"requested\":{},\"selected\":{},\"owners\":{}}}",
+            state.requested!=0,state.selected!=0,state.request_count))
+    });
     let live = checks::Live {
         particles: Rc::new(Cell::new(0)),
         vehicles: Rc::new(Cell::new(0)),

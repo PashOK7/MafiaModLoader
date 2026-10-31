@@ -110,6 +110,8 @@ void ReadSettings() {
     s.fgStandIn = Number("fg_stand_in", 0, 0, 1) >= 0.5f;
     s.mvScale = Number("mv_scale", 1, -4, 4);
     S = s;
+    // Motion replay is a separate scene pass: an installed but switched-off DLSS must not keep requesting it.
+    if (MML_HAS(H, gfx_motion)) H->gfx_motion(M, S.on ? 1 : 0);
     H->hotkey(M, S.hotkey.c_str(), KeyToggle, nullptr);   // (the same function again: the combination replaced)
     UpdateShow();
     UpdateUpscale();
@@ -1058,8 +1060,6 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     g_fgDoneCh = H->channel_open(mod, "fgdone", sizeof(dnr::FgDone));
     if (!g_viewCh || !g_doneCh || !g_statusCh || !g_fgViewCh || !g_fgDoneCh) return 1;
     ReadSettings();
-    // the bridge's motion vectors (the moving cars' and people's motion besides the camera's), where the loader has them
-    if (MML_HAS(H, gfx_motion) && !H->gfx_motion(mod, 1)) H->log(mod, MML_LOG_WARN, "no motion vectors from the bridge: the camera's alone");
     for (MmlEventType t : {MML_EVENT_CONFIG_CHANGED, MML_EVENT_MISSION_LOADED, MML_EVENT_RENDER_END, MML_EVENT_MISSION_CLOSE}) H->subscribe(mod, t, OnEvent, nullptr);
     // (first among the passes: its picture is the whole frame, so the other mods' effects are laid over it)
     if (H->gfx_pass(mod, 10, Pass, nullptr) <= 0) {

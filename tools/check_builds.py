@@ -395,6 +395,15 @@ def main(a):
         for o, offs in ((0x5C, ('0x158',)), (0x64, ('0x168', '0x16c')), (0x50, ('0x154',))):
             code = ' '.join(f'{i.mnemonic} {i.op_str}' for i in gls.md.disasm(gls.at(sl(gls, vt, o), 0x60), gls.base + sl(gls, vt, o)))
             check(all(f'+ {x}]' in code for x in offs), f'{name} LS3DF lightVtable+{o:#x} writes {offs}')
+    # The sun the sky shows (host/lights.cpp): I3D_lensflare's vtable is written by its constructor and its destructor;
+    # its Draw (1.2 +0x90, 1.0 +0x8C) reads the frame's world position (+0x40) and the flare's kind (+0x264).
+    for name, gls, slot in (('1.2', gl12, 0x90), ('1.0', gl10, 0x8C)):
+        vt = builds[name][1]['lensflareVtable']
+        imm = (gls.base + vt).to_bytes(4, 'little')
+        check(sum(bytes(gls.mem).count(b'\xc7' + bytes([r]) + imm) for r in range(8)) >= 2,
+              f'{name} LS3DF lensflareVtable written by its constructor and destructor')
+        code = ' '.join(f'{i.mnemonic} {i.op_str}' for i in gls.md.disasm(gls.at(sl(gls, vt, slot), 0x120), gls.base + sl(gls, vt, slot)))
+        check('+ 0x264]' in code and '+ 0x40]' in code, f'{name} LS3DF lensflareVtable+{slot:#x} (Draw) reads +0x264 and +0x40')
     # The exhaust (host/effects.cpp): its first instruction the same in both builds, ret 4; it reads every field
     # game_build.h names for it, the emitter table, and C_Vehicle::Update calls it. The particles' table: read in
     # 20 places and more (C_car::LoadParticles), its count beside it.
@@ -1246,6 +1255,8 @@ def main(a):
         calls = {(i.address, int(i.op_str, 16)) for i in gexe.md.disasm(gexe.at(tick - 0x400000, 0x480), tick)
                  if i.mnemonic == 'call' and i.op_str.startswith('0x')}
         check(any(t == exe['cacheActivate'] for _, t in calls), f'{name} cacheActivate: called by CacheTick')
+        for field in ('cacheInRange', 'cacheDeactivate'):
+            check(any(t == exe[field] for _, t in calls), f'{name} {field}: native CacheTick target')
         fin = [a for a, t in calls if t == exe['missionFinishFades']]
         check(len(fin) == 1 and gexe.at(fin[0] - 6 - 0x400000, 2) == b'\x8b\x0d' and
               struct.unpack('<I', gexe.at(fin[0] - 4 - 0x400000, 4))[0] == exe['missionPtr'],
@@ -1271,6 +1282,42 @@ def main(a):
         for f in ('addFgCamera', 'addFgSector', 'renderScene', 'currentCamera', 'viewProj', 'fogOn'):
             check(f'[{gls.base + ls[f]:#x}]' in ren, f'{name} {f}: used by I3D_driver::Render')
         check(f'mov dword ptr [{gls.base + ls["viewProj"]:#x}]' in ren, f'{name} viewProj: Render sets pViewProjMatrix')
+    # Native fog hooks: setter's cached state and software light percentages/camera far match in both builds.
+    for name, (_, ls, _, gls) in builds.items():
+        setter = gls.at(ls['setFog'], 439)
+        process = gls.at(ls['fogProcess'], 389)
+        check(struct.pack('<I', gls.base + ls['propFog']) in setter and
+              struct.pack('<I', gls.base + ls['propFogType']) in setter,
+              f'{name} setFog: native cached fog state/type')
+        check(struct.pack('<I', gls.base + ls['currentCamera']) in process and
+              b'\xd0\x01\x00\x00' in process and b'\x9c\x01\x00\x00' in process and
+              b'\x48\x01\x00\x00' in process, f'{name} fogProcess: light ratios and camera far')
+    # Shadow-view orthographic visibility: the mid hook is after CullThruPortal writes its last perspective plane,
+    # before both recursive visibility passes. Its EBP sector flags and camera frustum offsets were read in both.
+    for name, (_, ls, _, gls) in builds.items():
+        # Auxiliary cameras must bypass audio only, retaining the hardware-mirror preparation after it.
+        code = list(gls.md.disasm(gls.at(ls['graphResetProps'], 155), gls.base + ls['graphResetProps']))
+        destinations = [int(i.op_str.split('[')[1].split(']')[0], 16) - gls.base for i in code
+                        if i.mnemonic == 'mov' and re.match(r'(dword ptr )?\[0x[0-9a-f]+\],', i.op_str)]
+        names = ['propCull','propCullMode','propFog','propFogType','propFogEnd','propFogStart','propFogColor',
+                 'propClip','propAlpha','propBlend','propColorOp','propAlphaOp','propColorOp1','propColorOp2',
+                 'propZBias','propZCompare','propAddressU','propAddressV','propVertexFormat']
+        check(destinations == [ls[n] for n in names], f'{name} IGraph cached-state destinations exactly match ResetRenderProps')
+        audio = ls['renderAudioBegin']
+        target = ls['renderAudioEnd']
+        check(gls.at(audio, 2) == bytes.fromhex('ff15'), f'{name} audio block starts with timeGetTime import call')
+        end = list(gls.md.disasm(gls.at(target, 7), gls.base + target))
+        check(len(end) == 1 and end[0].mnemonic == 'test' and end[0].op_str.endswith(', 1'),
+              f'{name} audio resumes at hardware-mirror capability test')
+        site = ls['shadowCullDispatch']
+        check(gls.at(site, 6) == bytes.fromhex('8a86d0010000'), f'{name} shadow cull dispatch: mov al, [esi+0x1D0]')
+        before = list(gls.md.disasm(gls.at(site - 6, 6), gls.base + site - 6))
+        check(len(before) == 1 and before[0].mnemonic == 'fstp' and
+              f'[{gls.base + ls["cullDistances"] + 16:#x}]' in before[0].op_str,
+              f'{name} shadow cull dispatch follows the last plane distance')
+        tail = ' '.join(f'{i.mnemonic} {i.op_str}' for i in gls.md.disasm(gls.at(site - 40, 40), gls.base + site - 40))
+        check(f'[{gls.base + ls["cullNormals"] + 48:#x}]' in tail,
+              f'{name} shadow cull dispatch follows the last plane normal')
     print('ALL PASSED' if not fails else f'{fails} FAILED')
     return 1 if fails else 0
 

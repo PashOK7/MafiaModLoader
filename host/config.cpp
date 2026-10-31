@@ -15,9 +15,14 @@
 // Bridge methods (game thread): config.get {mod, key} (the merged value at the key, or the whole config, and which
 // keys were changed from the defaults), config.set {mod, key, value} (any JSON value; null: back to the default).
 // A key is a path through objects: "overlay.x".
+//
+// The loader's own settings (settings.cpp: Options > Mods' Rendering) are a config of the same kind under the id
+// "loader" (no mod may take it): their defaults given by the loader's code (ConfigOwn), their changes in
+// <game>\mml\data\loader\config.json, watched as a mod's; a change calls the loader back at the next frame.
 #include "host.h"
 #include <cstdio>
 #include <fstream>
+#include <functional>
 #include <map>
 #include <sstream>
 #include "json.hpp"
@@ -37,6 +42,8 @@ struct Config {
     bool unwritten = false;               // changes made live, not in the file yet
     DWORD editedAt = 0;
     std::map<std::string, std::string> handed;   // strings handed to the mod (config_string, config_json), by key
+    bool own = false;                     // the loader's own (ConfigOwn): defaults from its code, no folder of a mod
+    std::function<void()> told;           // and what is told of a change
 };
 std::map<std::string, Config> g_configs;   // by mod id
 std::map<std::string, std::string> g_dataDirs;
@@ -109,7 +116,8 @@ void MarkStale(const std::string &dirLower, const std::string &path, LONGLONG no
     for (auto &kv : g_configs) {
         Config &c = kv.second;
         if (!c.read) continue;
-        for (const std::string &file : {LowerAscii(c.dir + "config.json"), LowerAscii(DataDirOf(kv.first) + "config.json")}) {
+        for (const std::string &file : {c.own ? std::string() : LowerAscii(c.dir + "config.json"), LowerAscii(DataDirOf(kv.first) + "config.json")}) {
+            if (file.empty()) continue;
             if (file.compare(0, dirLower.size(), dirLower) != 0) continue;
             if (!path.empty() && file != path && file.compare(0, path.size() + 1, path + "\\") != 0) continue;
             c.stale = true;
@@ -185,7 +193,9 @@ bool Read(const std::string &id, Config *c, bool *busy = nullptr) {
     std::string defaultsPath = c->dir + "config.json", changesPath = DataDirOf(id) + "config.json", err;
     json d, u;
     bool held = false;
-    if (!ReadObject(defaultsPath, &d, &err, &held)) {
+    if (c->own) {
+        d = c->defaults;
+    } else if (!ReadObject(defaultsPath, &d, &err, &held)) {
         if (!held) Log(MML_LOG_WARN, id.c_str(), "%s: %s (the values in use stay)", defaultsPath.c_str(), err.c_str());
         d = c->defaults;
     }
@@ -209,16 +219,17 @@ bool Read(const std::string &id, Config *c, bool *busy = nullptr) {
 Config *Of(const std::string &id) {
     auto it = g_configs.find(id);
     if (it != g_configs.end() && it->second.read) return &it->second;
+    const bool own = it != g_configs.end() && it->second.own;
     std::string dir;
-    if (!ModDirById(id, &dir)) return nullptr;
+    if (!own && !ModDirById(id, &dir)) return nullptr;
     Config &c = g_configs[id];
-    c.dir = dir;
+    if (!own) c.dir = dir;
     bool busy = false;
     Read(id, &c, &busy);
     c.stale = busy;   // (a file held by its writer: read again at a frame)
     c.staleAt = NowMs();
     c.heldSince = 0;
-    WatchDir(c.dir);
+    if (!own) WatchDir(c.dir);
     WatchDir(DataDirOf(id));
     return &c;
 }
@@ -368,8 +379,8 @@ bool ConfigSet(MmlMod *mod, const char *key, const char *valueJson) {
     return false;
 }
 
-bool ConfigSetLive(MmlMod *mod, const char *key, const std::string &valueJson) {
-    Config *c = Of(mod);
+bool ConfigSetLive(const std::string &id, const char *key, const std::string &valueJson) {
+    Config *c = Of(id);
     if (!c || !key || !*key) return false;
     json value = json::parse(valueJson, nullptr, false);
     if (value.is_discarded()) return false;
@@ -377,52 +388,72 @@ bool ConfigSetLive(MmlMod *mod, const char *key, const std::string &valueJson) {
     return true;
 }
 
-void ConfigFlush(MmlMod *mod) {
-    if (Config *c = Of(mod)) Flush(ModIdOf(mod), c);
+void ConfigFlush(const std::string &id) {
+    if (Config *c = Of(id)) Flush(id, c);
 }
 
-std::string ConfigDefaultJson(MmlMod *mod, const char *key) {
-    Config *c = Of(mod);
+std::string ConfigDefaultJson(const std::string &id, const char *key) {
+    Config *c = Of(id);
     const json *j = c ? At(c->defaults, key) : nullptr;
     return j ? j->dump() : std::string();
 }
 
-std::string ConfigValueJson(MmlMod *mod, const char *key) {
-    Config *c = Of(mod);
+std::string ConfigValueJson(const std::string &id, const char *key) {
+    Config *c = Of(id);
     const json *j = c ? At(c->merged, key) : nullptr;
     return j ? j->dump() : std::string();
 }
+
+void ConfigOwn(const std::string &id, const std::string &defaultsJson, std::function<void()> told) {
+    Config &c = g_configs[id];
+    c.own = true;
+    c.defaults = json::parse(defaultsJson, nullptr, false, true);
+    if (!c.defaults.is_object()) c.defaults = json::object();
+    c.told = std::move(told);
+    c.read = false;
+    Of(id);
+    c.changed = true;   // (told at the first frame: what the files say is applied)
+}
+
+namespace {
+// A config's frame: live changes written once they stop, the files read again once quiet; true: its owner is told.
+bool Tend(const std::string &id, Config &c, DWORD now, LONGLONG nowMs) {
+    if (c.unwritten && now - c.editedAt >= 400) Flush(id, &c);   // (live changes: written once they stop)
+    if (c.stale && !c.unwritten && nowMs - c.staleAt >= kQuietMs) {
+        bool busy = false;
+        c.stale = false;
+        if (Read(id, &c, &busy)) {
+            c.changed = true;
+            Log(MML_LOG_INFO, "host", "config: %s's settings changed on disk", id.c_str());
+        }
+        if (!busy) {
+            c.heldSince = 0;
+        } else if (!c.heldSince || nowMs - c.heldSince < 5000) {   // a writer holds a file: read once it lets go
+            if (!c.heldSince) c.heldSince = nowMs;
+            c.stale = true;
+            c.staleAt = nowMs;
+        } else {
+            c.heldSince = 0;
+            Log(MML_LOG_WARN, id.c_str(), "config: a settings file could not be opened for 5 s (the values in use stay)");
+        }
+    }
+    if (!c.changed) return false;
+    c.changed = false;
+    return true;
+}
+} // namespace
 
 void ConfigFrame() {
     DWORD now = GetTickCount();
     LONGLONG nowMs = NowMs();
     LookAtWatches(nowMs);
+    for (auto &kv : g_configs)   // (the loader's own: told by a call)
+        if (kv.second.own && kv.second.read && Tend(kv.first, kv.second, now, nowMs) && kv.second.told) kv.second.told();
     for (MmlMod *mod : ModsLoaded()) {
         std::string id = ModIdOf(mod);
         auto it = g_configs.find(id);
-        if (it == g_configs.end() || !it->second.read) continue;   // a mod that never asked has no config to watch
-        Config &c = it->second;
-        if (c.unwritten && now - c.editedAt >= 400) Flush(id, &c);   // (live changes: written once they stop)
-        if (c.stale && !c.unwritten && nowMs - c.staleAt >= kQuietMs) {
-            bool busy = false;
-            c.stale = false;
-            if (Read(id, &c, &busy)) {
-                c.changed = true;
-                Log(MML_LOG_INFO, "host", "config: %s's settings changed on disk", id.c_str());
-            }
-            if (!busy) {
-                c.heldSince = 0;
-            } else if (!c.heldSince || nowMs - c.heldSince < 5000) {   // a writer holds a file: read once it lets go
-                if (!c.heldSince) c.heldSince = nowMs;
-                c.stale = true;
-                c.staleAt = nowMs;
-            } else {
-                c.heldSince = 0;
-                Log(MML_LOG_WARN, id.c_str(), "config: a settings file could not be opened for 5 s (the values in use stay)");
-            }
-        }
-        if (!c.changed) continue;
-        c.changed = false;
+        if (it == g_configs.end() || !it->second.read || it->second.own) continue;   // a mod that never asked has no config to watch
+        if (!Tend(id, it->second, now, nowMs)) continue;
         MmlEvent ev{};
         ev.size = sizeof ev;
         ev.type = MML_EVENT_CONFIG_CHANGED;
@@ -458,7 +489,7 @@ bool ConfigMethod(const std::string &method, const std::string &paramsJson, std:
     }
     const json *j = At(c->merged, key.c_str());
     json out = {{"mod", id}, {"value", j ? *j : json()}, {"changes", c->changes},
-                {"files", {{"defaults", c->dir + "config.json"}, {"changes", DataDirOf(id) + "config.json"}}}};
+                {"files", {{"defaults", c->own ? json() : json(c->dir + "config.json")}, {"changes", DataDirOf(id) + "config.json"}}}};
     if (!key.empty()) {
         out["key"] = key;
         out["known"] = j != nullptr;

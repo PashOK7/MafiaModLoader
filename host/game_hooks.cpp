@@ -149,6 +149,7 @@ int __fastcall hkMissionClose(void *self, void *edx) {
     int r = oMissionClose(self, edx);
     HumansMissionClosed();   // (its people went with it)
     LightsMissionClosed();   // (its lights too)
+    RenderMissionClosed();   // (the old scene's original camera range)
     EffectsMissionClosed();
     HappenMissionClosed();
     BatchMissionClosed();   // (its visuals go with it)
@@ -250,6 +251,7 @@ void Frame() {
     PanelFrame();     // (panel.cpp: a key taken for a mod's setting)
     InputFrame();     // (before the settings' events: a handler that binds its hotkey again must not lose a press)
     ConfigFrame();
+    SettingsFrame();  // (the loader's own settings changed: applied)
     FilesFrame();
     SoundFrame();
     VideoFrame();     // (video.cpp: video.play's video, played from the frame's own call)

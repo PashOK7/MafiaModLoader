@@ -272,6 +272,8 @@ pub struct Exe {
     pub cacheTick: usize,
     pub cacheActivate: usize,
     pub missionFinishFades: usize,
+    pub cacheInRange: usize,
+    pub cacheDeactivate: usize,
 }
 
 /// LS3DF.dll's, as RVAs (add the module's base; the int members are offsets): game_build.h Ls3dBuild.
@@ -352,6 +354,34 @@ pub struct Ls3d {
     pub viewProj: usize,
     pub lodFadeMin: usize,
     pub fogOn: usize,
+    pub lensflareVtable: usize,
+    pub shadowCullDispatch: usize,
+    pub cullNormals: usize,
+    pub cullDistances: usize,
+    pub renderAudioBegin: usize,
+    pub renderAudioEnd: usize,
+    pub graphResetProps: usize,
+    pub propCull: usize,
+    pub propCullMode: usize,
+    pub propFog: usize,
+    pub propFogType: usize,
+    pub propFogEnd: usize,
+    pub propFogStart: usize,
+    pub propFogColor: usize,
+    pub propClip: usize,
+    pub propAlpha: usize,
+    pub propBlend: usize,
+    pub propColorOp: usize,
+    pub propAlphaOp: usize,
+    pub propColorOp1: usize,
+    pub propColorOp2: usize,
+    pub propZBias: usize,
+    pub propZCompare: usize,
+    pub propAddressU: usize,
+    pub propAddressV: usize,
+    pub propVertexFormat: usize,
+    pub setFog: usize,
+    pub fogProcess: usize,
 }
 
 /// The race of mission 6: racing.h RacingLayout.
@@ -637,6 +667,8 @@ pub static EXE_12: Exe = Exe {
     cacheTick: 0x4020B0,
     cacheActivate: 0x4025D0,
     missionFinishFades: 0x5459B0,
+    cacheInRange: 0x402F90,
+    cacheDeactivate: 0x402A50,
 };
 
 pub static EXE_10: Exe = Exe {
@@ -906,6 +938,8 @@ pub static EXE_10: Exe = Exe {
     cacheTick: 0x5A85C0,
     cacheActivate: 0x5A8A20,
     missionFinishFades: 0x604EF0,
+    cacheInRange: 0x5A93C0,
+    cacheDeactivate: 0x5A8E80,
 };
 
 pub static LS3D_12: Ls3d = Ls3d {
@@ -984,6 +1018,34 @@ pub static LS3D_12: Ls3d = Ls3d {
     viewProj: 0x1C4CD0,
     lodFadeMin: 0x9B310,
     fogOn: 0xBFCEC,
+    lensflareVtable: 0x9B5C8,
+    shadowCullDispatch: 0x445C9,
+    cullNormals: 0x1B45A4,
+    cullDistances: 0x1B43F0,
+    renderAudioBegin: 0x624C9,
+    renderAudioEnd: 0x62DBC,
+    graphResetProps: 0x6CCA0,
+    propCull: 0x1C558C,
+    propCullMode: 0x1C5944,
+    propFog: 0x1C5930,
+    propFogType: 0x1C55F4,
+    propFogEnd: 0x1C55A8,
+    propFogStart: 0x1C5968,
+    propFogColor: 0x1C52F8,
+    propClip: 0x1C5934,
+    propAlpha: 0x1C5704,
+    propBlend: 0x1C5474,
+    propColorOp: 0x1C545C,
+    propAlphaOp: 0x1C5974,
+    propColorOp1: 0x1C5960,
+    propColorOp2: 0x1C5964,
+    propZBias: 0x1C52FC,
+    propZCompare: 0xA9950,
+    propAddressU: 0x1C5980,
+    propAddressV: 0x1C5984,
+    propVertexFormat: 0x1C5480,
+    setFog: 0x4E390,
+    fogProcess: 0x685D0,
 };
 
 pub static LS3D_10: Ls3d = Ls3d {
@@ -1062,6 +1124,34 @@ pub static LS3D_10: Ls3d = Ls3d {
     viewProj: 0x1C0C80,
     lodFadeMin: 0x972D0,
     fogOn: 0xBBCBC,
+    lensflareVtable: 0x97588,
+    shadowCullDispatch: 0x42839,
+    cullNormals: 0x1B056C,
+    cullDistances: 0x1B03B8,
+    renderAudioBegin: 0x5F219,
+    renderAudioEnd: 0x5FB0C,
+    graphResetProps: 0x69580,
+    propCull: 0x1C152C,
+    propCullMode: 0x1C1648,
+    propFog: 0x1C1634,
+    propFogType: 0x1C1594,
+    propFogEnd: 0x1C1548,
+    propFogStart: 0x1C166C,
+    propFogColor: 0x1C1298,
+    propClip: 0x1C1638,
+    propAlpha: 0x1C1620,
+    propBlend: 0x1C1410,
+    propColorOp: 0x1C13F8,
+    propAlphaOp: 0x1C1678,
+    propColorOp1: 0x1C1664,
+    propColorOp2: 0x1C1668,
+    propZBias: 0x1C129C,
+    propZCompare: 0xA5B48,
+    propAddressU: 0x1C1680,
+    propAddressV: 0x1C1684,
+    propVertexFormat: 0x1C141C,
+    setFog: 0x4BE00,
+    fogProcess: 0x65180,
 };
 
 pub static RACING_12: Racing = Racing {
@@ -1148,6 +1238,9 @@ pub const kFrameFlags: i32 = 0xAC;
 pub const kFrameName: i32 = 0x100;
 pub const kFrameParent: i32 = 0x120;
 pub const kFrameType: i32 = 0x110;
+pub const kSectorScene: i32 = 0x214;
+pub const kScenePrimary: i32 = 0x210;
+pub const kSceneBackdrop: i32 = 0x214;
 pub const kModelFile: i32 = 0x154;
 pub const kFlagScaled: u32 = 0x4;
 pub const kFlagRotValid: u32 = 0x8;

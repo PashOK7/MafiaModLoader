@@ -1,0 +1,5 @@
+{
+  // The defaults of camera_capture's settings (shipped with the mod; a deploy replaces this file in the game's folder).
+  // A screenshot and the camera poses of the last second, saved together at Present; rebind in Options > Mods.
+  "hotkey": "Ctrl+F11"
+}

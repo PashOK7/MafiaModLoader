@@ -1,5 +1,11 @@
 # Architecture
 
+Rendering features follow **host mechanism / public SDK / mod policy**. The atmosphere service in
+`host/atmosphere.cpp` owns copied, validated requests, arbitration and frame snapshots; `render.cpp`/`gfx.cpp`
+own native-state restoration, depth and composition. `mods/examples/atmosphere` owns its settings, palette and
+weather tuning and uses only the public C ABI. No example id is referenced by the host. The same shared HLSL
+handles water's outgoing reflected ray and the bridge's incoming camera leg. See `docs/ATMOSPHERE_SDK.md`.
+
 ```
    agent (Claude Code, Codex, ...)                          the game process (32-bit)
    ───────────────────────────────                          ───────────────────────────────────────────

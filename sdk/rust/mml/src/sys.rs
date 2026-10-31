@@ -68,6 +68,8 @@ pub const MML_SHADE_ALL_PASSES: u32 = 1;
 pub const MML_SHADE_SKINNED: u32 = 2;
 pub const MML_SHADE_VERTEX_DATA: u32 = 4;
 pub const MML_SKIN_INFLUENCES: u32 = 8;
+pub const MML_SHADOW_SCENE: u32 = 0;
+pub const MML_SHADOW_SUN: u32 = 1;
 pub const MML_WEB_LINKS: u32 = 8;
 pub const MML_WEB_ONE_WAY: u32 = 128;
 pub const MML_EXHAUST_PIPES: u32 = 8;
@@ -798,6 +800,94 @@ const _: () = {
 };
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone)]
+pub struct MmlAtmosphereSettings {
+    pub size: u32,
+    pub priority: i32,
+    pub clear_distance: f32,
+    pub extinction: f32,
+    pub base_height: f32,
+    pub scale_height: f32,
+    pub color: [f32; 3usize],
+    pub sun_scattering: f32,
+    pub sky_distance: f32,
+    pub max_opacity: f32,
+    pub sky_blend: f32,
+    pub anisotropy: f32,
+    pub sky_falloff: f32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of MmlAtmosphereSettings"][::core::mem::size_of::<MmlAtmosphereSettings>() - 60usize];
+    ["Alignment of MmlAtmosphereSettings"]
+        [::core::mem::align_of::<MmlAtmosphereSettings>() - 4usize];
+    ["Offset of field: MmlAtmosphereSettings::size"]
+        [::core::mem::offset_of!(MmlAtmosphereSettings, size) - 0usize];
+    ["Offset of field: MmlAtmosphereSettings::priority"]
+        [::core::mem::offset_of!(MmlAtmosphereSettings, priority) - 4usize];
+    ["Offset of field: MmlAtmosphereSettings::clear_distance"]
+        [::core::mem::offset_of!(MmlAtmosphereSettings, clear_distance) - 8usize];
+    ["Offset of field: MmlAtmosphereSettings::extinction"]
+        [::core::mem::offset_of!(MmlAtmosphereSettings, extinction) - 12usize];
+    ["Offset of field: MmlAtmosphereSettings::base_height"]
+        [::core::mem::offset_of!(MmlAtmosphereSettings, base_height) - 16usize];
+    ["Offset of field: MmlAtmosphereSettings::scale_height"]
+        [::core::mem::offset_of!(MmlAtmosphereSettings, scale_height) - 20usize];
+    ["Offset of field: MmlAtmosphereSettings::color"]
+        [::core::mem::offset_of!(MmlAtmosphereSettings, color) - 24usize];
+    ["Offset of field: MmlAtmosphereSettings::sun_scattering"]
+        [::core::mem::offset_of!(MmlAtmosphereSettings, sun_scattering) - 36usize];
+    ["Offset of field: MmlAtmosphereSettings::sky_distance"]
+        [::core::mem::offset_of!(MmlAtmosphereSettings, sky_distance) - 40usize];
+    ["Offset of field: MmlAtmosphereSettings::max_opacity"]
+        [::core::mem::offset_of!(MmlAtmosphereSettings, max_opacity) - 44usize];
+    ["Offset of field: MmlAtmosphereSettings::sky_blend"]
+        [::core::mem::offset_of!(MmlAtmosphereSettings, sky_blend) - 48usize];
+    ["Offset of field: MmlAtmosphereSettings::anisotropy"]
+        [::core::mem::offset_of!(MmlAtmosphereSettings, anisotropy) - 52usize];
+    ["Offset of field: MmlAtmosphereSettings::sky_falloff"]
+        [::core::mem::offset_of!(MmlAtmosphereSettings, sky_falloff) - 56usize];
+};
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct MmlAtmosphereState {
+    pub size: u32,
+    pub requested: ::core::ffi::c_int,
+    pub selected: ::core::ffi::c_int,
+    pub ready: ::core::ffi::c_int,
+    pub request_count: ::core::ffi::c_int,
+    pub owner: [::core::ffi::c_char; 64usize],
+    pub settings: MmlAtmosphereSettings,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of MmlAtmosphereState"][::core::mem::size_of::<MmlAtmosphereState>() - 144usize];
+    ["Alignment of MmlAtmosphereState"][::core::mem::align_of::<MmlAtmosphereState>() - 4usize];
+    ["Offset of field: MmlAtmosphereState::size"]
+        [::core::mem::offset_of!(MmlAtmosphereState, size) - 0usize];
+    ["Offset of field: MmlAtmosphereState::requested"]
+        [::core::mem::offset_of!(MmlAtmosphereState, requested) - 4usize];
+    ["Offset of field: MmlAtmosphereState::selected"]
+        [::core::mem::offset_of!(MmlAtmosphereState, selected) - 8usize];
+    ["Offset of field: MmlAtmosphereState::ready"]
+        [::core::mem::offset_of!(MmlAtmosphereState, ready) - 12usize];
+    ["Offset of field: MmlAtmosphereState::request_count"]
+        [::core::mem::offset_of!(MmlAtmosphereState, request_count) - 16usize];
+    ["Offset of field: MmlAtmosphereState::owner"]
+        [::core::mem::offset_of!(MmlAtmosphereState, owner) - 20usize];
+    ["Offset of field: MmlAtmosphereState::settings"]
+        [::core::mem::offset_of!(MmlAtmosphereState, settings) - 84usize];
+};
+impl Default for MmlAtmosphereState {
+    fn default() -> Self {
+        let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::core::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
 pub struct MmlGfxConstants {
     pub eye: [f32; 4usize],
     pub right: [f32; 4usize],
@@ -813,10 +903,15 @@ pub struct MmlGfxConstants {
     pub ambient: [f32; 4usize],
     pub sun_shadow_view_proj: [f32; 16usize],
     pub sun_shadow_info: [f32; 4usize],
+    pub sun_seen: [f32; 4usize],
+    pub atmosphere: [f32; 4usize],
+    pub atmosphere_color: [f32; 4usize],
+    pub atmosphere_info: [f32; 4usize],
+    pub atmosphere_phase: [f32; 4usize],
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of MmlGfxConstants"][::core::mem::size_of::<MmlGfxConstants>() - 272usize];
+    ["Size of MmlGfxConstants"][::core::mem::size_of::<MmlGfxConstants>() - 352usize];
     ["Alignment of MmlGfxConstants"][::core::mem::align_of::<MmlGfxConstants>() - 4usize];
     ["Offset of field: MmlGfxConstants::eye"]
         [::core::mem::offset_of!(MmlGfxConstants, eye) - 0usize];
@@ -846,6 +941,16 @@ const _: () = {
         [::core::mem::offset_of!(MmlGfxConstants, sun_shadow_view_proj) - 192usize];
     ["Offset of field: MmlGfxConstants::sun_shadow_info"]
         [::core::mem::offset_of!(MmlGfxConstants, sun_shadow_info) - 256usize];
+    ["Offset of field: MmlGfxConstants::sun_seen"]
+        [::core::mem::offset_of!(MmlGfxConstants, sun_seen) - 272usize];
+    ["Offset of field: MmlGfxConstants::atmosphere"]
+        [::core::mem::offset_of!(MmlGfxConstants, atmosphere) - 288usize];
+    ["Offset of field: MmlGfxConstants::atmosphere_color"]
+        [::core::mem::offset_of!(MmlGfxConstants, atmosphere_color) - 304usize];
+    ["Offset of field: MmlGfxConstants::atmosphere_info"]
+        [::core::mem::offset_of!(MmlGfxConstants, atmosphere_info) - 320usize];
+    ["Offset of field: MmlGfxConstants::atmosphere_phase"]
+        [::core::mem::offset_of!(MmlGfxConstants, atmosphere_phase) - 336usize];
 };
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -876,10 +981,11 @@ pub struct MmlGfxFrame {
     pub jitter: [f32; 2usize],
     pub render_width: ::core::ffi::c_uint,
     pub render_height: ::core::ffi::c_uint,
+    pub temporal_target: *mut ::core::ffi::c_void,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of MmlGfxFrame"][::core::mem::size_of::<MmlGfxFrame>() - 228usize];
+    ["Size of MmlGfxFrame"][::core::mem::size_of::<MmlGfxFrame>() - 232usize];
     ["Alignment of MmlGfxFrame"][::core::mem::align_of::<MmlGfxFrame>() - 4usize];
     ["Offset of field: MmlGfxFrame::size"][::core::mem::offset_of!(MmlGfxFrame, size) - 0usize];
     ["Offset of field: MmlGfxFrame::device"][::core::mem::offset_of!(MmlGfxFrame, device) - 4usize];
@@ -922,6 +1028,8 @@ const _: () = {
         [::core::mem::offset_of!(MmlGfxFrame, render_width) - 220usize];
     ["Offset of field: MmlGfxFrame::render_height"]
         [::core::mem::offset_of!(MmlGfxFrame, render_height) - 224usize];
+    ["Offset of field: MmlGfxFrame::temporal_target"]
+        [::core::mem::offset_of!(MmlGfxFrame, temporal_target) - 228usize];
 };
 impl Default for MmlGfxFrame {
     fn default() -> Self {
@@ -3832,10 +3940,48 @@ pub struct MmlHost {
     pub gfx_show_stats: ::core::option::Option<
         unsafe extern "C" fn(mod_: *mut MmlMod, out: *mut MmlGfxShowStats) -> ::core::ffi::c_int,
     >,
+    pub scene_sun_seen: ::core::option::Option<
+        unsafe extern "C" fn(mod_: *mut MmlMod, to_sun: *mut f32) -> ::core::ffi::c_int,
+    >,
+    pub shader_shadows_from: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            settings: *const MmlShadowSettings,
+            source: ::core::ffi::c_int,
+        ) -> ::core::ffi::c_int,
+    >,
+    pub shader_shadows_fit: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            settings: *const MmlShadowSettings,
+            source: ::core::ffi::c_int,
+            min_y: f32,
+            max_y: f32,
+        ) -> ::core::ffi::c_int,
+    >,
+    pub shader_shadows_surface: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            settings: *const MmlShadowSettings,
+            source: ::core::ffi::c_int,
+            tris: *const f32,
+            triangle_count: ::core::ffi::c_uint,
+            displacement: f32,
+        ) -> ::core::ffi::c_int,
+    >,
+    pub scene_atmosphere: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            settings: *const MmlAtmosphereSettings,
+        ) -> ::core::ffi::c_int,
+    >,
+    pub scene_atmosphere_state: ::core::option::Option<
+        unsafe extern "C" fn(mod_: *mut MmlMod, out: *mut MmlAtmosphereState) -> ::core::ffi::c_int,
+    >,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 824usize];
+    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 848usize];
     ["Alignment of MmlHost"][::core::mem::align_of::<MmlHost>() - 4usize];
     ["Offset of field: MmlHost::size"][::core::mem::offset_of!(MmlHost, size) - 0usize];
     ["Offset of field: MmlHost::api_version"]
@@ -4189,6 +4335,18 @@ const _: () = {
         [::core::mem::offset_of!(MmlHost, code_patch) - 816usize];
     ["Offset of field: MmlHost::gfx_show_stats"]
         [::core::mem::offset_of!(MmlHost, gfx_show_stats) - 820usize];
+    ["Offset of field: MmlHost::scene_sun_seen"]
+        [::core::mem::offset_of!(MmlHost, scene_sun_seen) - 824usize];
+    ["Offset of field: MmlHost::shader_shadows_from"]
+        [::core::mem::offset_of!(MmlHost, shader_shadows_from) - 828usize];
+    ["Offset of field: MmlHost::shader_shadows_fit"]
+        [::core::mem::offset_of!(MmlHost, shader_shadows_fit) - 832usize];
+    ["Offset of field: MmlHost::shader_shadows_surface"]
+        [::core::mem::offset_of!(MmlHost, shader_shadows_surface) - 836usize];
+    ["Offset of field: MmlHost::scene_atmosphere"]
+        [::core::mem::offset_of!(MmlHost, scene_atmosphere) - 840usize];
+    ["Offset of field: MmlHost::scene_atmosphere_state"]
+        [::core::mem::offset_of!(MmlHost, scene_atmosphere_state) - 844usize];
 };
 pub type MmlModLoadFn = ::core::option::Option<
     unsafe extern "C" fn(host: *const MmlHost, mod_: *mut MmlMod) -> ::core::ffi::c_int,

@@ -4,6 +4,8 @@
   // <game>\mml\data\fps_unlock\config.json, which holds the changes only. Both take effect at once.
   "enabled": true,   // the game's 62.5 fps limit taken away (false: the game's own pacing)
   "max_fps": 0,      // a cap of the mod's own, frames a second (0: none; the game's time stays real either way)
+  "zero_ms": false,  // frames under 1 ms not waited for: no ceiling near 1000 fps, to see a light scene's real limit;
+                     // the game is given steps of 0 ms then, which none of its systems expects (not for playing)
   "show": true,      // the line at the top left: frames a second, the frame's time, the game's clock step, and with
                      // frame generation what the display gets ("shown 180 fps (3x at 200 Hz)")
   "show_hotkey": "Shift+F11",   // switches "show"

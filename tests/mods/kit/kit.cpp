@@ -10,6 +10,8 @@
 #include <cstring>
 #include <string>
 #include "mml/mml.h"
+#include "mml/atmosphere.h"
+extern "C" int kit_atmosphere_c(const MmlHost *, MmlMod *, const MmlAtmosphereSettings *);
 #include "mml/path.h"
 
 namespace {
@@ -530,6 +532,48 @@ int Models(const char *, MmlReply *r, void *) {
     return 0;
 }
 
+int Atmosphere(const char *args, MmlReply *r, void *) {
+    if (!MML_HAS(H,scene_atmosphere_state)) return 1;
+    auto settings=mml_atmosphere_defaults();
+    settings.extinction=0.001f;
+    settings.priority=args && strstr(args,"high") ? 10 : 0;
+    if(args && strstr(args,"nan")) settings.extinction=NAN;
+    if(args && strstr(args,"tiny")) settings.scale_height=1e-40f;
+    if(args && strstr(args,"small")) settings.size=4;
+    if(args && strstr(args,"future")) settings.size+=32;
+    if(args && strstr(args,"color")) settings.color[0]=2;
+    int accepted=1;
+    if(args && strstr(args,"worker")) {
+        struct Work { const MmlAtmosphereSettings *s; int result; } work{&settings,-1};
+        HANDLE thread=CreateThread(nullptr,0,[](void *p)->DWORD {
+            auto *w=static_cast<Work *>(p); w->result=kit_atmosphere_c(H,M,w->s); return 0;
+        },&work,0,nullptr);
+        if(thread) { WaitForSingleObject(thread,INFINITE); CloseHandle(thread); }
+        accepted=work.result;
+    } else if(!(args && strstr(args,"query")))
+        accepted=kit_atmosphere_c(H,M,args && strstr(args,"off") ? nullptr : &settings);
+    MmlAtmosphereState state{}; state.size=sizeof state;
+    H->scene_atmosphere_state(M,&state);
+    char text[256]; snprintf(text,sizeof text,"{\"accepted\":%d,\"requested\":%d,\"selected\":%d,\"owners\":%d,\"extinction\":%.6f}",
+        accepted,state.requested,state.selected,state.request_count,state.settings.extinction);
+    H->reply_append(r,text,static_cast<size_t>(-1)); return 0;
+}
+int ShadowSource(const char *args, MmlReply *r, void *) {
+    MmlShadowSettings ss{1024, 40.0f, 0.003f};
+    int source = args && strstr(args, "invalid") ? 99 : args && strstr(args, "scene") ? MML_SHADOW_SCENE : MML_SHADOW_SUN;
+    bool off = args && strstr(args, "off");
+    int accepted;
+    if (args && strstr(args, "fit")) {
+        bool bad = strstr(args, "bad_fit") != nullptr;
+        accepted = MML_HAS(H, shader_shadows_fit) ? H->shader_shadows_fit(M, off ? nullptr : &ss, source,
+                                                                       bad ? 10.0f : -10.0f, -9.0f) : -1;
+    } else {
+        accepted = MML_HAS(H, shader_shadows_from) ? H->shader_shadows_from(M, off ? nullptr : &ss, source) : -1;
+    }
+    char out[64]; snprintf(out, sizeof out, "{\"accepted\":%d}", accepted);
+    H->reply_append(r, out, static_cast<size_t>(-1)); return 0;
+}
+
 // People with no game: none, no skeleton, bone_set refused, no player.
 int Humans(const char *, MmlReply *r, void *) {
     if (!MML_HAS(H, human_player)) { H->reply_error(r, "the loader has no human_player"); return 1; }
@@ -668,6 +712,8 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->command(mod, "water", "world_water, zone_watch with no game", Water, nullptr);
     host->command(mod, "prop_more", "a prop's animation and physics with no game", PropMore, nullptr);
     host->command(mod, "models", "the game's files and models with no game", Models, nullptr);
+    host->command(mod, "shadow_source", "shared shadow direction request: sun, scene, invalid or off", ShadowSource, nullptr);
+    host->command(mod, "atmosphere", "SDK atmosphere ownership, invalid/worker/future-size requests and release", Atmosphere, nullptr);
     host->command(mod, "fpu", "the x87's precision in a mod's callback: 1/3 divided on the x87", Fpu, nullptr);
     host->command(mod, "gamecam", "the game's camera with no game: none, refused", GameCam, nullptr);
     host->command(mod, "hits", "hit_filter ({\"off\": true}: taken away), human_hit, pedestrians_list with no game", Hits, nullptr);

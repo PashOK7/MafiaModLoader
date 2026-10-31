@@ -1,0 +1,16 @@
+{
+  "on": true,
+  "start": 100,
+  "distance": 900,
+  "density": 1,
+  "height": 60,
+  "base": -10,
+  "sun": 0.6,
+  "tint": 0,
+  "priority": 0,
+  "anisotropy": 0.55,
+  "sky_distance": 8000,
+  "sky_blend": 1,
+  "sky_falloff": 8,
+  "max_opacity": 0.995
+}

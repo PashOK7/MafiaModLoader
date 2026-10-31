@@ -157,6 +157,12 @@ impl Host {
         let (mut d, mut c, mut a) = ([0f32; 3], [0f32; 3], [0f32; 3]);
         if unsafe { f!(self, scene_sun)(self.module, d.as_mut_ptr(), c.as_mut_ptr(), a.as_mut_ptr()) } != 0 { Some((d, c, a)) } else { None }
     }
+    /// The sun the sky shows (the backdrop's lens flare), towards it: not where scene_sun's light comes from (the
+    /// game lights the world from elsewhere in the sky); a reflection of the sun, glare, light through water go here
+    pub fn scene_sun_seen(&self) -> Option<[f32; 3]> {
+        let mut d = [0f32; 3];
+        if unsafe { f!(self, scene_sun_seen)(self.module, d.as_mut_ptr()) } != 0 { Some(d) } else { None }
+    }
 
     // ---- the game's effects
     /// a car's exhaust now

@@ -371,6 +371,32 @@ typedef struct MmlRenderCamera {
 
 /* The graphics bridge's frame (gfx_pass). Its constants are cbuffer MmlFrame of mml/gfx/frame.hlsli (b0), which a
  * pass's shaders include. */
+/* Owned atmospheric aerial perspective (scene_atmosphere). Explicit physical/display parameters; no weather
+ * presets or automatic tint policy in the host. Initialize EVERY field (mml/atmosphere.h has neutral defaults).
+ * Game thread only. The host copies settings; the caller may free them immediately. */
+typedef struct MmlAtmosphereSettings {
+    uint32_t size;              /* sizeof(MmlAtmosphereSettings); larger future structs accepted */
+    int32_t priority;           /* highest wins; equal: most recently acquired request, updates keep its order */
+    float clear_distance;       /* metres, excluded on the incoming camera leg only, >= 0 */
+    float extinction;           /* extinction per metre at/below base_height, >= 0 (0: clear air) */
+    float base_height;          /* world Y, metres */
+    float scale_height;         /* density falls exponentially above base; metres, 0: uniform, otherwise >= .001 */
+    float color[3];             /* display-space RGB, 0..1 (converted to linear light by the shared shader) */
+    float sun_scattering;       /* broad scattering towards scene_sun_seen, >= 0 */
+    float sky_distance;         /* integration distance for painted sky, metres, > 0 */
+    float max_opacity;          /* 0..1 */
+    float sky_blend;            /* 0..1: extra haze over the already painted sky's horizon */
+    float anisotropy;           /* Henyey-Greenstein asymmetry, -0.95..0.95 */
+    float sky_falloff;          /* extra sky opacity times exp(-max(ray.y,0)*sky_falloff), >= 0 */
+} MmlAtmosphereSettings;
+typedef struct MmlAtmosphereState {
+    uint32_t size;              /* caller sets sizeof(MmlAtmosphereState) */
+    int requested, selected;    /* this caller holds a request / its request currently wins */
+    int ready, request_count;   /* bridge available at last frame boundary / live requests */
+    char owner[64];             /* selected mod id, "bridge" for atmosphere.set, empty if none */
+    MmlAtmosphereSettings settings; /* selected request; zeroed if none */
+} MmlAtmosphereState;
+
 typedef struct MmlGfxConstants {
     float eye[4];           /* the camera's position, w: the time in seconds */
     float right[4], up[4], fwd[4];   /* its axes in the world */
@@ -386,6 +412,13 @@ typedef struct MmlGfxConstants {
     float sun_shadow_view_proj[16];   /* the world to the map's clip space (row vectors; x, y -1..1, z 0..1 its depth) */
     float sun_shadow_info[4];   /* x 1 when the map was drawn for this frame, y one texel (1 / size), z the depth's
                                    bias, w its size */
+    float sun_seen[4];      /* towards the sun the sky shows (the backdrop's lens flare: scene_sun_seen), unit; w: 1
+                               found, 0 none (then `sun`). Not where `sun` comes from: the game lights the world (and
+                                 its lightmaps' shadows) from its directional light, elsewhere in the sky */
+    float atmosphere[4];   /* atmospheric fog: clear distance, extinction / m, base height, inverse scale height */
+    float atmosphere_color[4]; /* display-space tint, w: directional sun scattering strength */
+    float atmosphere_info[4];  /* x enabled, y sky integration distance, z maximum opacity, w sky horizon blend */
+    float atmosphere_phase[4]; /* anisotropy, painted-sky angular falloff; z/w reserved */
 } MmlGfxConstants;
 typedef struct MmlGfxView MmlGfxView;   /* a scene view as the passes get it (below) */
 typedef struct MmlGfxFrame {
@@ -436,6 +469,11 @@ typedef struct MmlGfxFrame {
                                call (gfx_upscale), where depth, color and motion hold the world at its render size in
                                their top-left render_width x render_height (k->size that size too; the motion in its
                                pixels) and the upscaler draws the frame at width x height into target */
+    /* Optional MRT for negative-order replacement surfaces, before temporal upscaling. Bind beside target at
+     * SV_Target1: float4(linear view depth, motion x, motion y, 1). Depth > 0 marks covered pixels; motion is in
+     * render pixels, previous unjittered position minus current unjittered position. Cleared each frame. The host
+     * merges these inputs with the original world's depth/motion for the upscaler. Null outside this phase. */
+    void *temporal_target;  /* ID3D11RenderTargetView*, RGBA32_FLOAT; MML_GFX_HAS(frame, temporal_target) */
 } MmlGfxFrame;
 #define MML_GFX_HAS(f, member) ((size_t)(f)->size >= offsetof(MmlGfxFrame, member) + sizeof((f)->member))
 #define MML_GFX_UI_OFF 0     /* gfx_ui: the 2D pass as the game draws it */
@@ -772,6 +810,9 @@ typedef struct MmlShadowSettings {
     float bias;             /* metres along the sun's ray a receiver is taken to be nearer the sun than it is, on top
                                of the slope-scaled bias the map is drawn with (0: the default, 0.05) */
 } MmlShadowSettings;
+/* shader_shadows_from: the direction used to draw the shared shadow map */
+#define MML_SHADOW_SCENE 0   /* the scene's directional light (the game's baked shadows) */
+#define MML_SHADOW_SUN   1   /* the visible sky sun; scene light when no sky sun is present */
 /* game_files' function: one file's name (as the game opens it) and where it comes from ("a2.dta", "folder", a mod's
    id); return nonzero to stop */
 typedef int (*MmlFileFn)(const char *name, const char *source, void *user);
@@ -1293,15 +1334,17 @@ typedef struct MmlHost {
      * the file name of its material's texture as LS3D draws it now (the animation's frame of an animated one), without
      * folders, case-insensitive, '*' any run and '?' one character: "00test*.bmp". geom.survey on the bridge lists
      * what the game draws. Only LS3D's drawing is touched: the game's collision, its logic and its memory are not.
-     * geom_hide: every face group whose texture matches is not drawn in the drawings `where` names (MML_GEOM_*, 0:
-     * all); a handle (> 0), 0 refused. geom_show takes one back (0: all the mod's); a mod's go with its unload. */
+     * geom_hide: every face group whose texture matches ("frame:<pattern>": every group of the visuals whose frame's
+     * name matches, "frame:watercity.stin*", with a texture or none) is not drawn in the drawings `where` names
+     * (MML_GEOM_*, 0: all); a handle (> 0), 0 refused. geom_show takes one back (0: all the mod's); a mod's go with its unload. */
     int (*geom_hide)(MmlMod *mod, const char *pattern, int where);
     void (*geom_show)(MmlMod *mod, int handle);
     /* geom_capture: at the next frame of the mission's world, every face group the frame draws whose texture matches
      * (hidden or not) is read from the buffers LS3D draws it from, in the world's space; fn gets them after that
      * frame's drawing (game thread, behind the mod's fault guard), once. What LS3D did not draw that frame (out of
-     * view, culled) is not in it: ask again as the camera moves and keep the groups by their `group` key. 1: asked;
-     * 0 refused (no fn, an empty pattern). */
+     * view, culled) is not in it: ask again as the camera moves and keep the groups by their `group` key. Asked during
+     * a frame (a graphics pass, a frame's event), it waits for the whole next one. 1: asked; 0 refused (no fn, an
+     * empty pattern). */
     int (*geom_capture)(MmlMod *mod, const char *pattern, MmlGeomFn fn, void *user);
 
     /* ---- measuring the frame (docs/MODDING.md "Measuring the frame"): the frame's times and the mod's own cost, so
@@ -1847,6 +1890,41 @@ typedef struct MmlHost {
      * game's frames, the things shown and the pictures among them (frame generation's, gfx_show), the pictures that
      * fit now and the display's rate. 1 filled, 0 out NULL or too small. Game thread. */
     int (*gfx_show_stats)(MmlMod *mod, MmlGfxShowStats *out);
+    /* ---- the sun the sky shows (both builds; docs/MODDING.md "The scene's lights"): the backdrop's lens flare drawn
+     * infinitely far, the sun a player sees, its glare and its flare. It is not where scene_sun's light comes from: the
+     * game lights the world, and baked its lightmaps' shadows, from a directional light elsewhere in the sky (the
+     * city by day: the flare 14 degrees up, the light 65). What is seen in the sun (its reflection on water, glare,
+     * light through leaves or waves) goes towards this one; what is lit and shadowed as the world is, towards
+     * scene_sun's. to_sun: unit; 1 found, 0 none (night scenes may have none). Game thread. */
+    int (*scene_sun_seen)(MmlMod *mod, float to_sun[3]);
+    /* shader_shadows_from: shader_shadows with an explicit direction (MML_SHADOW_SCENE or MML_SHADOW_SUN).
+     * The map is shared: the most recent active explicit request selects its direction for all consumers;
+     * legacy shader_shadows requests do not override it. Removing that request restores the preceding one,
+     * or the scene light when none remain. NULL settings releases the mod's request. Existing scene lighting,
+     * lightmaps and glitter direction are unchanged. Invalid source: 0, prior request kept. Game thread. */
+    int (*shader_shadows_from)(MmlMod *mod, const MmlShadowSettings *settings, int source);
+    /* Fit the shared map to all visible receivers between min_y and max_y (world metres), rather than a fixed
+     * distance around the camera. Settings size/extent define the desired world-space texel density; resolution
+     * grows to preserve it, up to the device's limit. Fixed requests from other consumers remain covered too.
+     * The selected light and release semantics are shader_shadows_from's. Null settings releases this request. */
+    int (*shader_shadows_fit)(MmlMod *mod, const MmlShadowSettings *settings, int source, float min_y, float max_y);
+    /* Finite receiver surface instead of an infinite height slab. tris: triangle_count * 9 world-space floats,
+     * copied during the call. displacement bounds the absolute offset on EACH world axis, including choppiness.
+     * Fit clips the undeformed triangles against an expanded current frustum, then expands in light space.
+     * No distance cutoff, depth history or occlusion approximation. NULL settings releases. Game thread. */
+    int (*shader_shadows_surface)(MmlMod *mod, const MmlShadowSettings *settings, int source,
+                                  const float *tris, unsigned triangle_count, float displacement);
+    /* scene_atmosphere: one copied request per mod, selected by priority then acquisition order. Updating does
+     * NOT steal a tie from another owner. NULL releases; unload/fault releases automatically, restoring the next
+     * request or native fog. Invalid settings return 0 and preserve the previous request. Requests survive
+     * mission changes; the selected settings are snapshotted at the next world's RENDER_BEGIN, before views.
+     * Submit from load, FRAME, CONFIG_CHANGED or RENDER_BEGIN. Needs "gfx": true at startup for readable depth;
+     * while unavailable, native fog is retained. Main world/water before DLSS; reflection uses the same SDK HLSL.
+     * Game thread only. MML_HAS(host, scene_atmosphere) before use on an older loader. */
+    int (*scene_atmosphere)(MmlMod *mod, const MmlAtmosphereSettings *settings);
+    /* Query live ownership and the selected copied settings. ready refers to the last frame's bridge readiness;
+     * a late request update takes effect at the next frame boundary. 0: invalid output size. Game thread only. */
+    int (*scene_atmosphere_state)(MmlMod *mod, MmlAtmosphereState *out);
 } MmlHost;
 
 #define MML_ZONE_PLAYER 0x1u

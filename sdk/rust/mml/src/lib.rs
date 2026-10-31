@@ -1194,7 +1194,7 @@ pub mod world;
 
 pub use control::{VehicleBody, VehicleStep};
 pub use data::{Model, ModelMesh, Progress, Stats};
-pub use gfx::{GeomCapture, GfxFrame, MeshPiece, ShaderRule, ViewCamera};
+pub use gfx::{AtmosphereSettings, AtmosphereState, GeomCapture, GfxFrame, MeshPiece, ShaderRule, ViewCamera};
 pub use media::{Marker, MenuControl, SoundState};
 pub use people::{ActorScale, Bone, Capsule, DrawShape, HumanAnim, ItemDef, Pedestrian, SkinBone, SkinLod, SkinMesh};
 pub use world::{Exhaust, Light, Particle, ParticleDef, Shape, Water, WebNode};

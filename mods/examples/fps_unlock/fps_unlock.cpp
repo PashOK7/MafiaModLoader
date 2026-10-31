@@ -9,7 +9,10 @@
 // to 83 ms), and Present's `push 0; call Sleep` is jumped over. The game's time stays real: at 200 fps every system
 // gets 5 ms a frame instead of 16 ms every 16 ms. Never 0 ms: MafiaD3D11's A132 made the limiter's `jae` a `jmp`, which
 // gives the frame after a load a step of 0, and the intro's cutscene then starts with its people in their bind pose
-// for its first seconds (C_records::Update's tracks given 0 ms; seen in both builds, 2026-10-25).
+// for its first seconds (C_records::Update's tracks given 0 ms; seen in both builds, 2026-10-25). That 1 ms is also a
+// ceiling: the limiter's clock counts whole milliseconds, so a frame shorter than 1 ms waits for the next one and the
+// rate stops near 1000 fps. The setting `zero_ms` asks the limiter for 0 instead, to see how fast a light scene really
+// draws: the frames are not waited for and the game is given steps of 0 ms (not for playing).
 // What the game did once a frame instead of by the time breaks then; three are fixed here (the main menu's camera,
 // CamTick and 1.0's Cam10; a person's step at a curb, Swept; the small rotations LS3D drops, which left a car
 // creeping and its steering with a dead zone, RotationMatrix) and the others found go to knowledge/notes/game.md,
@@ -58,6 +61,7 @@ MmlMod *M;
 struct Settings {
     bool enabled = true;     // the two places patched
     int maxFps = 0;          // 0: no cap of the mod's own
+    bool zeroMs = false;     // the limiter asked for 0 ms, not 1: no ceiling near 1000 fps, steps of 0 ms given
     bool show = true;        // the line at the top left
     bool fixCamera = true;   // the main menu's camera stepped by the time (menuCamTick)
     bool fixWalk = true;     // a person's sweep made with lengths of its step's time (humanSweep): curbs as at 62.5 fps
@@ -83,12 +87,14 @@ uintptr_t g_clock;           // LS3D's millisecond clock (the limiter reads it)
 
 // The limiter (game_build.h frameLimit, IGraph::GetTimer: stdcall(IGraph*, min, max) -> ms): when the frame took less
 // than `min` it Sleeps the rest, moves its clock on by it and returns `min`. Asked for 1 ms, it returns the frame's
-// real time and waits only for a frame of 0 ms (above 1000 fps), which no system of the game expects.
+// real time and waits only for a frame of 0 ms (above 1000 fps), which no system of the game expects. Asked for 0
+// (`zero_ms`), it never waits and a frame under 1 ms is given 0.
 using LimiterFn = int(__stdcall *)(void *, int, int);
 LimiterFn g_limiterOriginal;
 bool g_limiterHooked;
 int __stdcall Limiter(void *graph, int min, int max) {
-    return g_limiterOriginal(graph, g_owner == Owner::us && min > 1 ? 1 : min, max);
+    const int least = S.zeroMs ? 0 : 1;
+    return g_limiterOriginal(graph, g_owner == Owner::us && min > least ? least : min, max);
 }
 
 enum class State { original, patched, other };
@@ -736,7 +742,7 @@ void OnFrame(const MmlEvent *, void *) {
         snprintf(shown, sizeof shown, "  shown %.0f fps (%ux at %.0f Hz)", g_shown.fps, g_shown.fit + 1, g_shown.hz);
     snprintf(line, sizeof line, "%d fps  %.1f ms (%.1f max)%s  game step %u..%u ms  %s", g_last.frames, avg, g_last.maxMs, shown,
              g_last.dtMin == ~0u ? 0 : g_last.dtMin, g_last.dtMax,
-             g_owner == Owner::us ? "unlocked" : g_owner == Owner::other ? "unlocked by another tool" : "locked");
+             g_owner == Owner::us ? (S.zeroMs ? "unlocked, steps of 0 ms" : "unlocked") : g_owner == Owner::other ? "unlocked by another tool" : "locked");
     H->draw_rect(M, 4, 4, H->draw_text_width(MML_FONT_SMALL, 12, line) + 10, 16, 0x90000000u, 1);
     H->draw_text(M, 9, 5, 12, 0xFFFFE070u, MML_FONT_SMALL, MML_DRAW_LEFT, line);
 }
@@ -748,6 +754,7 @@ void OnShowKey(void *) { H->config_set(M, "show", S.show ? "false" : "true"); }
 void ReadSettings() {
     S.enabled = H->config_number(M, "enabled", 1) != 0;
     S.maxFps = static_cast<int>(H->config_number(M, "max_fps", 0));
+    S.zeroMs = H->config_number(M, "zero_ms", 0) != 0;
     S.show = H->config_number(M, "show", 1) != 0;
     S.fixCamera = H->config_number(M, "fix_menu_camera", 1) != 0;
     S.fixWalk = H->config_number(M, "fix_walk", 1) != 0;
@@ -768,12 +775,12 @@ int Status(const char *, MmlReply *r, void *) {
     char out[1200];
     double avg = g_last.frames ? g_last.sumMs / g_last.frames : 0;
     snprintf(out, sizeof out,
-             "{\"build\":\"%s\",\"known\":%s,\"enabled\":%s,\"unlocked\":\"%s\",\"why\":\"%s\",\"max_fps\":%d,"
+             "{\"build\":\"%s\",\"known\":%s,\"enabled\":%s,\"unlocked\":\"%s\",\"why\":\"%s\",\"max_fps\":%d,\"zero_ms\":%s,"
              "\"fps\":%d,\"frame_ms\":%.2f,\"frame_ms_max\":%.2f,\"game_step_ms\":[%u,%u],\"game_steps_zero\":%u,"
              "\"menu_camera\":\"%s\",\"walk\":\"%s\",\"walk_sweeps_scaled\":[%u,%u],\"car_tick\":\"%s\",\"rotation\":\"%s\",\"rotations_kept\":%u,"
              "\"shown_fps\":%.1f,\"pictures_fps\":%.1f,\"showing_thread\":%s,\"fit\":%u,\"refresh_hz\":%.1f}",
              H->game_build(), g_known ? "true" : "false", S.enabled ? "true" : "false",
-             g_owner == Owner::us ? "by this mod" : g_owner == Owner::other ? "by another tool" : "no", g_why, S.maxFps,
+             g_owner == Owner::us ? "by this mod" : g_owner == Owner::other ? "by another tool" : "no", g_why, S.maxFps, S.zeroMs ? "true" : "false",
              g_last.frames, avg, g_last.maxMs, g_last.dtMin == ~0u ? 0 : g_last.dtMin, g_last.dtMax, g_last.dtZero,
              g_camHooked ? (S.enabled && S.fixCamera ? "fixed: TickCamera hooked" : "TickCamera hooked, fix off")
              : g_cam10 ? "fixed: the loop's operands on the mod's coefficients"

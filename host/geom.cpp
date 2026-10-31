@@ -37,6 +37,7 @@ constexpr int kGroupMaterial = 0x04, kGroupFaces = 0x08;
 constexpr int kMaterialFlags = 0x08, kMaterialTexture = 0x0C;
 constexpr int kTextureName = 0x1C;
 constexpr int kVisualType = 0x1D4;
+constexpr int kFrameName = 0x100;   // (game.h: an I3D_frame's name, a visual's too)
 constexpr int kVtDrawIndexedPrimitive = 82;   // IDirect3DDevice9's
 constexpr size_t kMaxRules = 64;
 
@@ -53,18 +54,22 @@ uintptr_t g_dipAt;
 struct Rule {
     MmlMod *mod;
     int handle;
-    std::string pattern;   // lower case
+    std::string pattern;   // lower case, without its "frame:"
     int where;             // MML_GEOM_*
+    bool byFrame;          // "frame:<pattern>": the visual's frame's name, not its texture's (any group of it, a texture
+                           // or none: the water's model's flat shadows under the bridges have none)
     unsigned groupsNow = 0, facesNow = 0, groupsLast = 0, facesLast = 0;
 };
 std::vector<Rule> g_rules;
 int g_nextHandle = 1;
 
-// What each texture matched this frame (a bit a rule); cleared at each frame and when the rules change.
-std::unordered_map<const void *, uint64_t> g_match;
+// What each texture, and each visual by its frame's name, matched this frame (a bit a rule); cleared at each frame and
+// when the rules change.
+std::unordered_map<const void *, uint64_t> g_match, g_frameMatch;
 
 // ---- one frame's state
 bool g_inFrame;        // the frame's own Render (not a scene view's) is drawing
+bool g_frameOpen;      // between GeomFrameBegin and GeomFrameEnd (the views, the frame, the passes)
 unsigned g_frames;
 
 // the survey: what the frame draws, by texture
@@ -82,7 +87,7 @@ struct Capture {
     std::string pattern;
     MmlGeomFn fn;
     void *user;
-    bool armed = true;     // waiting for its frame
+    bool armed = true;     // waiting for its frame (false: asked during a frame, armed by the next one's beginning)
     std::vector<float> tris;
     std::vector<MmlGeomGroup> groups;
     std::vector<std::string> names;
@@ -128,9 +133,27 @@ uint64_t MatchOf(const void *tex) {
     std::string name = Lower(TextureName(tex));
     if (!name.empty())
         for (size_t i = 0; i < g_rules.size() && i < kMaxRules; i++)
-            if (Glob(g_rules[i].pattern.c_str(), name.c_str())) m |= 1ull << i;
+            if (!g_rules[i].byFrame && Glob(g_rules[i].pattern.c_str(), name.c_str())) m |= 1ull << i;
     g_match[tex] = m;
     return m;
+}
+
+uint64_t FrameMatchOf(const void *visual) {
+    auto it = g_frameMatch.find(visual);
+    if (it != g_frameMatch.end()) return it->second;
+    uint64_t m = 0;
+    const char *n = At<const char *>(visual, kFrameName);
+    std::string name = n ? Lower(std::string(n, strnlen(n, 128)).c_str()) : std::string();
+    if (!name.empty())
+        for (size_t i = 0; i < g_rules.size() && i < kMaxRules; i++)
+            if (g_rules[i].byFrame && Glob(g_rules[i].pattern.c_str(), name.c_str())) m |= 1ull << i;
+    g_frameMatch[visual] = m;
+    return m;
+}
+bool AnyFrameRule() {
+    for (const Rule &r : g_rules)
+        if (r.byFrame) return true;
+    return false;
 }
 
 // The DrawIndexedPrimitive LS3D makes for a captured group: its triangles read back from what the device has bound.
@@ -235,11 +258,13 @@ bool Decide(void *visual, uint8_t *entry, Now *now) {
     const uint8_t *group = At<uint8_t *>(entry, kEntryGroup);
     const void *mat = group ? At<void *>(group, kGroupMaterial) : nullptr;
     const void *tex = mat ? At<void *>(mat, kMaterialTexture) : nullptr;
-    if (!tex) return false;
+    if (!tex && !AnyFrameRule()) return false;
     int view = ViewDrawingNow();
-    int bit = view ? MML_GEOM_VIEWS : (g_inFrame ? MML_GEOM_FRAME : 0);
+    // A shadow camera is an auxiliary view too. Otherwise hidden replacement water and the game's old flat
+    // bridge-shade meshes reappear as casters, projecting a second, baked-looking shadow onto the new water.
+    int bit = (view || ShadowViewNow()) ? MML_GEOM_VIEWS : (g_inFrame ? MML_GEOM_FRAME : 0);
     if (!bit) return false;   // (a menu's scene, or a drawing not the world's)
-    uint64_t m = g_rules.empty() ? 0 : MatchOf(tex);
+    uint64_t m = g_rules.empty() ? 0 : (tex ? MatchOf(tex) : 0) | FrameMatchOf(visual);
     bool hide = false;
     unsigned faces = At<uint32_t>(group, kGroupFaces);
     for (size_t i = 0; m && i < g_rules.size() && i < kMaxRules; i++)
@@ -248,6 +273,7 @@ bool Decide(void *visual, uint8_t *entry, Now *now) {
             g_rules[i].groupsNow++;
             g_rules[i].facesNow += faces;
         }
+    if (!tex) return hide;   // (the survey and the captures are by texture)
     if (bit == MML_GEOM_FRAME && g_surveyWanted) {
         Seen &s = g_seen[tex];
         if (!s.groups) {
@@ -328,6 +354,7 @@ void HkRenderFg(void *visual, void *edx, uint8_t *entry) {
 // entry is not a face group's, so no rules and no survey (game_build.h fgRenderShadow). The entry is a copy in
 // Render's list, elsewhere each frame: the group is told by its sort key (+0x04), one of the visual's two halves
 void __fastcall hkRenderShadow(void *visual, void *edx, uint8_t *entry) {
+    if (ShadowViewNow()) return;   // an already projected game shadow is not geometry that blocks the sun
     BatchEntry(entry, g_inFrame);
     if (!MotionWanted()) { oShadow(visual, edx, entry); return; }
     MotionGroupBegin(4, visual, reinterpret_cast<const void *>(static_cast<uintptr_t>(At<uint32_t>(entry, 0x04))),
@@ -372,13 +399,16 @@ std::string FourCC(uint32_t t) {
 
 int AddRule(MmlMod *mod, const char *pattern, int where, std::string *err) {
     std::string p = Lower(pattern);
+    bool byFrame = p.compare(0, 6, "frame:") == 0;
+    if (byFrame) p.erase(0, 6);
     if (p.empty()) { *err = "an empty pattern"; return 0; }
     if (g_rules.size() >= kMaxRules) { *err = "64 rules already"; return 0; }
     if (!EnsureHooks()) { *err = g_hookWhy; return 0; }
     if (!(where & (MML_GEOM_FRAME | MML_GEOM_VIEWS))) where = MML_GEOM_FRAME | MML_GEOM_VIEWS;
-    Rule r{mod, g_nextHandle++, p, where & (MML_GEOM_FRAME | MML_GEOM_VIEWS)};
+    Rule r{mod, g_nextHandle++, p, where & (MML_GEOM_FRAME | MML_GEOM_VIEWS), byFrame};
     g_rules.push_back(r);
     g_match.clear();
+    g_frameMatch.clear();
     return r.handle;
 }
 
@@ -386,7 +416,7 @@ void RemoveRules(MmlMod *mod, int handle) {
     size_t before = g_rules.size();
     g_rules.erase(std::remove_if(g_rules.begin(), g_rules.end(), [&](const Rule &r) { return r.mod == mod && (handle == 0 || r.handle == handle); }),
                   g_rules.end());
-    if (g_rules.size() != before) g_match.clear();
+    if (g_rules.size() != before) g_match.clear(), g_frameMatch.clear();
 }
 
 json Bounds(const std::vector<float> &t) {
@@ -424,6 +454,8 @@ bool GeomCapture(MmlMod *mod, const char *pattern, MmlGeomFn fn, void *user, std
     if (!fn || p.empty()) { *err = !fn ? "no function" : "an empty pattern"; return false; }
     if (!EnsureHooks()) { *err = g_hookWhy; return false; }
     g_captures.push_back(std::unique_ptr<Capture>(new Capture{mod, g_nextId++, p, fn, user}));
+    // asked during a frame (a graphics pass, after the world was drawn): the whole next frame, not this one's rest
+    g_captures.back()->armed = !g_frameOpen;
     return true;
 }
 
@@ -436,6 +468,10 @@ void GeomRemove(MmlMod *mod) {
 // (render.cpp) a frame of the mission's world begins (before the scene views), its own drawing, its end.
 void GeomFrameBegin() {
     g_match.clear();
+    g_frameMatch.clear();
+    g_frameOpen = true;
+    for (auto &c : g_captures)
+        if (!c->done) c->armed = true;
     for (Rule &r : g_rules) { r.groupsNow = r.facesNow = 0; }
     if (!g_captures.empty() || ShadersWanted()) EnsureDip();
 }
@@ -446,6 +482,7 @@ void GeomFrameDrawing(bool on) {
 }
 void GeomFrameEnd() {
     g_frames++;
+    g_frameOpen = false;
     for (Rule &r : g_rules) { r.groupsLast = r.groupsNow; r.facesLast = r.facesNow; }
     if (g_surveyWanted) {
         std::vector<const Seen *> list;

@@ -86,6 +86,7 @@ int NoteFault(EXCEPTION_POINTERS *x) {
 void Faulted(MmlMod *m, const char *where, DWORD code) {
     if (!m || m->entry->faulted) return;
     m->entry->faulted = true;
+    if (GetCurrentThreadId() == MainThread()) AtmosphereModGone(m); // other-thread faults unload at the next frame
     char touched[48] = "";
     if (code == EXCEPTION_ACCESS_VIOLATION)
         snprintf(touched, sizeof touched, ", touching 0x%08X", static_cast<unsigned>(t_faultData));
@@ -468,6 +469,7 @@ int H_LightSet(MmlMod *m, void *light, const float color[3], float power, float 
     return 0;
 }
 int H_SceneSun(MmlMod *m, float s[3], float c[3], float a[3]) { return Alive(m) ? SceneSun(s, c, a) : 0; }
+int H_SceneSunSeen(MmlMod *m, float s[3]) { return Alive(m) && s ? SceneSunSeen(s) : 0; }
 int H_CarExhaust(MmlMod *m, void *car, MmlExhaust *out) { return Alive(m) ? CarExhaust(car, out) : 0; }
 int H_ExhaustHook(MmlMod *m, MmlExhaustFn fn, void *user) { return Alive(m) ? ExhaustHook(m, fn, user) : 0; }
 int H_ParticleDef(MmlMod *m, int index, MmlParticleDef *out) { return Alive(m) ? ParticleDef(index, out) : 0; }
@@ -557,6 +559,16 @@ int H_ShaderAdd(MmlMod *m, const MmlShaderRule *rule, char *error, int cap) {
 }
 int H_ShaderRemove(MmlMod *m, int handle) { return Alive(m) && ShaderRemove(m, handle) ? 1 : 0; }
 int H_ShaderShadows(MmlMod *m, const MmlShadowSettings *s) { return Alive(m) && ShaderShadows(m, s) ? 1 : 0; }
+int H_ShaderShadowsFrom(MmlMod *m, const MmlShadowSettings *s, int source) {
+    return Alive(m) && (source == MML_SHADOW_SCENE || source == MML_SHADOW_SUN) && ShaderShadows(m, s, source) ? 1 : 0;
+}
+int H_ShaderShadowsFit(MmlMod *m, const MmlShadowSettings *s, int source, float minY, float maxY) {
+    const float y[2] = {minY, maxY};
+    return Alive(m) && (source == MML_SHADOW_SCENE || source == MML_SHADOW_SUN) && ShaderShadows(m, s, source, y) ? 1 : 0;
+}
+int H_ShaderShadowSurface(MmlMod *m, const MmlShadowSettings *s, int source, const float *tris, unsigned count, float displacement) {
+    return Alive(m) && ShaderShadowSurface(m, s, source, tris, count, displacement) ? 1 : 0;
+}
 int H_GameCamera(MmlMod *m, MmlGameCamera *out) { return Alive(m) ? GameCamera(out) : 0; }
 int H_GameCameraMode(MmlMod *m, int mode) { return Alive(m) ? GameCameraMode(m, mode) : 0; }
 int H_GameCameraFov(MmlMod *m, float fov) { return Alive(m) ? GameCameraFov(m, fov) : 0; }
@@ -814,6 +826,7 @@ bool ReadManifest(const std::string &dir, const std::string &folder, ModEntry *e
     try {
         json j = json::parse(f, nullptr, true, true);   // comments allowed
         e->id = j.value("id", folder);
+        if (e->id == kLoaderSettings) { *err = "the id \"loader\" is the loader's own settings'"; return false; }
         e->name = j.value("name", e->id);
         e->version = j.value("version", "0.0.0");
         e->type = j.value("type", "native");
@@ -977,6 +990,7 @@ bool UnloadMod(ModEntry *e, const char *why) {
     ScriptsRemove(m);
     DrawRemove(m);
     GfxRemove(m);
+    AtmosphereModGone(m);
     ViewRemove(m, 0);
     GeomRemove(m);
     EffectsModGone(m);
@@ -1212,6 +1226,20 @@ void ModsInit() {
     g_host.hook_mid = H_HookMid;
     g_host.code_patch = H_CodePatch;
     g_host.gfx_show_stats = H_GfxShowStats;
+    g_host.scene_sun_seen = H_SceneSunSeen;
+    g_host.shader_shadows_from = H_ShaderShadowsFrom;
+    g_host.shader_shadows_fit = H_ShaderShadowsFit;
+    g_host.shader_shadows_surface = H_ShaderShadowSurface;
+    g_host.scene_atmosphere = [](MmlMod *m, const MmlAtmosphereSettings *s) -> int {
+        if (!Alive(m)) return 0;
+        std::string err;
+        if (AtmosphereSet(m,s,&err)) return 1;
+        Log(MML_LOG_WARN,Who(m),"scene_atmosphere: %s",err.c_str());
+        return 0;
+    };
+    g_host.scene_atmosphere_state = [](MmlMod *m, MmlAtmosphereState *out) -> int {
+        return Alive(m) && AtmosphereState(m,out) ? 1 : 0;
+    };
     g_host.subscribe = H_Subscribe;
     g_host.command = H_Command;
     g_host.reply_append = H_ReplyAppend;
@@ -1524,6 +1552,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     if (WorldMethod(method, paramsJson, reply, &ok)) return ok;
     if (FilesMethod(method, paramsJson, reply, &ok)) return ok;
     if (RenderMethod(method, paramsJson, reply, &ok)) return ok;
+    if (AtmosphereMethod(method, paramsJson, reply, &ok)) return ok;
     if (VbRenameMethod(method, paramsJson, reply, &ok)) return ok;
     if (GfxMethod(method, paramsJson, reply, &ok)) return ok;
     if (ViewMethod(method, paramsJson, reply, &ok)) return ok;

@@ -518,6 +518,8 @@ struct ExeBuild {
     // missionFinishFades: C_mission::FinishTimeTransparentObjects, thiscall(mission): every fade-in ended at once
     // (CacheTick calls it after a jump; with the time held the fades never end and the blocks stay unseen).
     uintptr_t cityCache, cacheTick, cacheActivate, missionFinishFades;
+    // Native cache quad/radius test and release (thiscall(cache, block[, x, z, radius]), ret 16 / ret 4).
+    uintptr_t cacheInRange, cacheDeactivate;
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -674,6 +676,26 @@ struct Ls3dBuild {
     // above for its fading (else the visual's alpha +0x218 is set to 1); fogOn, the fog drawn at all (Render's test for
     // an entry's sector fog).
     uintptr_t addFgCamera, addFgSector, renderScene, currentCamera, viewProj, lodFadeMin, fogOn;
+    // The sun the sky shows (host/lights.cpp, mml.h scene_sun_seen): I3D_lensflare's vtable for I3D_frame (written by
+    // its constructor and destructor; frame type 1, a visual). Its Draw (the vtable's +0x90 in 1.2, +0x8C in 1.0) reads
+    // +0x264: 0 nothing drawn, 1 a flare at its place (a lamp's), else a flare infinitely far towards its world position
+    // (+0x40, normalised): the sun of the backdrop sector, not where the scene's directional light comes from (the city
+    // by day: 14 degrees up against the light's 65; the game's lightmaps and its lighting follow the light).
+    uintptr_t lensflareVtable;
+    // CullThruPortal's final dispatch, after its perspective side planes have been built. Shadow views replace
+    // those planes with the orthographic camera's real frustum (normals at cam+0x404, distances at +0x440).
+    // EBP is the sector flags (0x1000 backdrop, 0x4000 near); ESI the sector. Verified in both builds' disassembly.
+    uintptr_t shadowCullDispatch, cullNormals, cullDistances;
+    // Render's audio/environment block, from its timeGetTime call to the hardware-mirror preparation that follows.
+    // Auxiliary cameras skip this block only; detaching the listener alone still starts/stops all area sounds.
+    uintptr_t renderAudioBegin, renderAudioEnd;
+    // IGraph::ResetRenderProps' exact cached-state destinations (read in both builds, 2026-10-31).
+    // Restoring a D3D state block alone after re-entrant Render leaves these caches describing another pass.
+    uintptr_t graphResetProps, propCull, propCullMode, propFog, propFogType, propFogEnd, propFogStart, propFogColor;
+    uintptr_t propClip, propAlpha, propBlend, propColorOp, propAlphaOp, propColorOp1, propColorOp2;
+    uintptr_t propZBias, propZCompare, propAddressU, propAddressV, propVertexFormat;
+    // Native hardware fog and software vertex fog. Both fastcall, read in both builds (2026-10-31).
+    uintptr_t setFog, fogProcess;
 };
 
 inline const ExeBuild kExe12 = {
@@ -798,6 +820,7 @@ inline const ExeBuild kExe12 = {
     // the city's streaming (2026-10-26: GameLoopSingle's call at 0x5496D3; CacheTick's own calls at 0x40250A and
     // 0x402521)
     0x63D268, 0x4020B0, 0x4025D0, 0x5459B0,
+    0x402F90, 0x402A50,
 };
 
 inline const ExeBuild kExe10 = {
@@ -941,6 +964,7 @@ inline const ExeBuild kExe10 = {
     0x4FBD38,
     // the city's streaming (2026-10-26: 1.2's twins, the same code; CacheTick's calls at 0x5A89EE and 0x5A8A05)
     0x6EFD80, 0x5A85C0, 0x5A8A20, 0x604EF0,
+    0x5A93C0, 0x5A8E80,
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,
@@ -969,7 +993,14 @@ inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1
                                   // (2026-10-26: the m_AddFGroups' calls, e.g. 0x3810F; its loads of RSLodQuality)
                                   0x61E30, 0x1C4CA4,
                                   // (2026-10-27: m_AddFGroups' reads at 0x380D5, 0x3807F..; Render's writes at 0x62E44..0x62EBA)
-                                  0x1C4C60, 0x1C4C74, 0x1C4C78, 0x1C4CF8, 0x1C4CD0, 0x9B310, 0xBFCEC};
+                                  0x1C4C60, 0x1C4C74, 0x1C4C78, 0x1C4CF8, 0x1C4CD0, 0x9B310, 0xBFCEC,
+                                  // (2026-10-29: written by I3D_lensflare's constructor at 0x9594, its destructor 0x964F)
+                                  0x9B5C8,
+                                  0x445C9, 0x1B45A4, 0x1B43F0, 0x624C9, 0x62DBC,
+                                  0x6CCA0, 0x1C558C, 0x1C5944, 0x1C5930, 0x1C55F4, 0x1C55A8, 0x1C5968, 0x1C52F8,
+                                  0x1C5934, 0x1C5704, 0x1C5474, 0x1C545C, 0x1C5974, 0x1C5960, 0x1C5964,
+                                  0x1C52FC, 0xA9950, 0x1C5980, 0x1C5984, 0x1C5480,
+                                  0x4E390, 0x685D0};
 // LS3D 3.84.5 (31.7.2002): the vertex buffer has no flags word, everything after +0x04 sits 4 bytes lower.
 inline const Ls3dBuild kLs3d10 = {"1.0", 0x5ED80, 0x1A8A0, 0x305B0, 0x5D070, 0x1C350, 0x6E580, 0, 0,
                                   0x1AE00, 0x1BD60, 0x1C030, 0x2B540, 0x04, 0x14, 0x18,
@@ -1000,7 +1031,14 @@ inline const Ls3dBuild kLs3d10 = {"1.0", 0x5ED80, 0x1A8A0, 0x305B0, 0x5D070, 0x1
                                   // (2026-10-26: 1.2's twin, the same code)
                                   0x5EB80, 0x1C0C54,
                                   // (2026-10-27: m_AddFGroups' reads at 0x36A95..; Render's writes at 0x5FB94..0x5FBC7)
-                                  0x1C0C10, 0x1C0C24, 0x1C0C28, 0x1C0CA8, 0x1C0C80, 0x972D0, 0xBBCBC};
+                                  0x1C0C10, 0x1C0C24, 0x1C0C28, 0x1C0CA8, 0x1C0C80, 0x972D0, 0xBBCBC,
+                                  // (2026-10-29: written by I3D_lensflare's constructor at 0x9004, its destructor 0x90BF)
+                                  0x97588,
+                                  0x42839, 0x1B056C, 0x1B03B8, 0x5F219, 0x5FB0C,
+                                  0x69580, 0x1C152C, 0x1C1648, 0x1C1634, 0x1C1594, 0x1C1548, 0x1C166C, 0x1C1298,
+                                  0x1C1638, 0x1C1620, 0x1C1410, 0x1C13F8, 0x1C1678, 0x1C1664, 0x1C1668,
+                                  0x1C129C, 0xA5B48, 0x1C1680, 0x1C1684, 0x1C141C,
+                                  0x4BE00, 0x65180};
 
 // The builds found (null until Detect succeeds).
 inline const ExeBuild *g_exe;

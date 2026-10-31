@@ -27,6 +27,8 @@
 #include <vector>
 #include "json.hpp"
 #include "shaders_hlsli.inc"   // (kGameHlsli: sdk/include/mml/shaders/game.hlsli, made by the build)
+#include "shaders/VsSunShadow.h"
+#include "shaders/PsSunShadow.h"
 
 using json = nlohmann::json;
 
@@ -169,7 +171,8 @@ double g_t0;
 
 // ---- the survey
 int g_surveyWanted, g_nextSurvey = 1;
-struct Combo { unsigned draws = 0, faces = 0; std::vector<std::string> textures; json states; };
+bool g_surveyShadows;
+struct Combo { unsigned draws = 0, faces = 0; std::vector<std::string> textures; json states; json visuals = json::array(); };
 std::map<std::string, Combo> g_combos;
 struct SurveyDone { int id; json result; };
 std::vector<SurveyDone> g_surveys;
@@ -312,6 +315,18 @@ void Survey(IDirect3DDevice9 *d, UINT prims) {
     if (c.textures.size() < 4 && g_group.texture) {
         std::string t = g_group.texture;
         if (std::find(c.textures.begin(), c.textures.end(), t) == c.textures.end()) c.textures.push_back(t);
+    }
+    if (g_surveyShadows && g_group.visual && c.visuals.size() < 128) {
+        char id[24]; snprintf(id, sizeof id, "0x%08X", static_cast<unsigned>(reinterpret_cast<uintptr_t>(g_group.visual)));
+        bool known = false;
+        for (const auto &v : c.visuals) known = known || v["visual"] == id;
+        if (!known) {
+            const char *name = nullptr; char text[128] = {};
+            MemRead(reinterpret_cast<uintptr_t>(g_group.visual) + 0x100, &name, sizeof name);
+            if (name) MemRead(reinterpret_cast<uintptr_t>(name), text, sizeof text - 1);
+            D3DMATRIX world{}; d->GetTransform(D3DTS_WORLD, &world);
+            c.visuals.push_back({{"visual", id}, {"name", text}, {"world", std::vector<float>(&world._11, &world._11 + 16)}});
+        }
     }
 }
 
@@ -481,29 +496,11 @@ bool Compile(const std::string &src, const char *entry, const char *target, std:
 // ---- the scene drawn from the sun (shadows.cpp, view.cpp ViewDrawShadow): every face group into the map as its
 // depth, cut out where the game's alpha test cuts it; what lets light through (blended without a test, added) and the
 // backdrop (the sky: drawn with the camera's view without its position) left out
-const char kShadowHlsl[] = R"(
-#include "mml/game.hlsli"
-struct I { float3 pos : POSITION; float4 color : COLOR0; float2 uv0 : TEXCOORD0; float2 uv1 : TEXCOORD1; };
-struct O { float4 pos : POSITION; float4 color : COLOR0; float2 uv : TEXCOORD0; float z : TEXCOORD1; };
-O vs(I i) {
-    O o;
-    o.pos = mul(mul(mul(float4(i.pos, 1), mml_World), mml_View), mml_Proj);
-    o.color = i.color;
-    o.uv = mml_Stage0.z > 0.5 ? i.uv1 : i.uv0;
-    o.z = o.pos.z / o.pos.w;
-    return o;
-}
-float4 ps(O i) : COLOR0 {
-    float a = mml_FixedStage(mml_Stage0, tex2D(mml_Tex0, i.uv), i.color, i.color).a;   // (the game's alpha test cuts on it)
-    // a slope-scaled bias: the depth's own change across a texel added, so the receivers' constant bias stays small
-    float slope = max(abs(ddx(i.z)), abs(ddy(i.z)));
-    return float4(i.z + slope * 1.5, 0, 0, a);
-}
-)";
 IDirect3DVertexShader9 *g_shadowVs;
 IDirect3DPixelShader9 *g_shadowPs;
 IDirect3DDevice9 *g_shadowDev;
 bool g_shadowFailed;
+uint32_t g_shadowVsReads[8], g_shadowPsReads[8];
 std::string g_shadowWhy;
 float g_shadowBack[16];       // the backdrop's view for this drawing
 unsigned g_shadowDraws, g_shadowFaces, g_shadowSkipped, g_shadowCut;
@@ -515,15 +512,14 @@ bool MakeShadowShaders(IDirect3DDevice9 *d) {
     if (g_shadowFailed && g_shadowDev == d) return false;
     if (g_shadowDev != d) { g_shadowVs = nullptr; g_shadowPs = nullptr; }   // (another device: the old one's went with it)
     g_shadowDev = d;
-    std::vector<uint8_t> vs, ps;
-    std::string err;
-    if (!Compile(kShadowHlsl, "vs", "vs_3_0", &vs, &err) || !Compile(kShadowHlsl, "ps", "ps_3_0", &ps, &err) ||
-        FAILED(d->CreateVertexShader(reinterpret_cast<const DWORD *>(vs.data()), &g_shadowVs)) ||
-        FAILED(d->CreatePixelShader(reinterpret_cast<const DWORD *>(ps.data()), &g_shadowPs))) {
-        g_shadowWhy = err.empty() ? "the device refused the depth shaders" : err;
+    if (FAILED(d->CreateVertexShader(reinterpret_cast<const DWORD *>(kVsSunShadow), &g_shadowVs)) ||
+        FAILED(d->CreatePixelShader(reinterpret_cast<const DWORD *>(kPsSunShadow), &g_shadowPs))) {
+        g_shadowWhy = "the device refused the precompiled depth shaders";
         g_shadowFailed = true;
         return false;
     }
+    ReadsOf(std::vector<uint8_t>(kVsSunShadow, kVsSunShadow + sizeof kVsSunShadow), g_shadowVsReads);
+    ReadsOf(std::vector<uint8_t>(kPsSunShadow, kPsSunShadow + sizeof kPsSunShadow), g_shadowPsReads);
     return true;
 }
 
@@ -543,6 +539,7 @@ HRESULT SkinnedDip(IDirect3DDevice9 *d, const SkinGpuDraw &s, IDirect3DVertexSha
 
 bool ShadowDraw(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex, UINT verts, UINT start, UINT n, DipFn dip, HRESULT *hr) {
     const D3dMirror &st = StateOf(d, &g_scratch);
+    MirrorCheckDraw(d);   // validate the same mirror used by the main shader-rule path when requested
     const DWORD blend = st.rs[D3DRS_ALPHABLENDENABLE], test = st.rs[D3DRS_ALPHATESTENABLE], dst = st.rs[D3DRS_DESTBLEND];
     const D3DMATRIX v = st.view;
     bool sky = !memcmp(&v, g_shadowBack, sizeof g_shadowBack);
@@ -555,24 +552,30 @@ bool ShadowDraw(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex
         g_shadowVPSet = true;
     }
     float *const c = g_c;
-    Constants(st, c, true, true, true);
+    Constants(st, c, false, false, false);   // depth/alpha only: no lighting or shadow-map reads for a caster
     IDirect3DVertexShader9 *const oldVs = st.vs;   // (the device holds them: set back, not released)
     IDirect3DPixelShader9 *const oldPs = st.ps;
-    MirrorConstants(d, false, 0, c, kRegs);
-    MirrorConstants(d, true, 0, c, kRegs);
     SkinGpuDraw skin;
     const bool skinned = SkinGpuFor(d, g_group.visual, base, &skin);
+    MirrorConstants(d, false, 0, c, kRegs,
+                    skinned ? ReadsOfShader(static_cast<IUnknown *>(SkinGpuShader(2))).m : g_shadowVsReads);
+    MirrorConstants(d, true, 0, c, kRegs, g_shadowPsReads);
     const bool lent = !skinned && MirrorLend(d, g_shadowVs, g_shadowPs);
     if (!lent && !skinned) {
         d->SetVertexShader(g_shadowVs);
         d->SetPixelShader(g_shadowPs);
     }
-    if (blend) { d->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE); g_shadowCut++; }   // (a fence's cut-outs: tested, not blended)
+    if (test) g_shadowCut++;
+    if (blend) d->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);   // a fence's cut-outs: tested, not blended
+    const DWORD zwrite = st.rs[D3DRS_ZWRITEENABLE];
+    if (!zwrite) d->SetRenderState(D3DRS_ZWRITEENABLE, TRUE);   // cutout foliage must occlude farther casters too
+    if (g_surveyWanted && g_surveyShadows) Survey(d, n);
     if (skinned)
         *hr = SkinnedDip(d, skin, static_cast<IDirect3DVertexShader9 *>(SkinGpuShader(2)), g_shadowPs, t, minIndex, verts, start, n, dip);
     else
         *hr = dip(d, t, base, minIndex, verts, start, n);
     if (blend) d->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);   // (as LS3D left it: its own cache of the states holds)
+    if (!zwrite) d->SetRenderState(D3DRS_ZWRITEENABLE, zwrite);
     if (!lent && !MirrorOf(d)) {   // (no mirror: the game's put back at once)
         d->SetVertexShader(oldVs);
         d->SetPixelShader(oldPs);
@@ -584,7 +587,7 @@ bool ShadowDraw(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex
 
 bool Draw(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex, UINT verts, UINT start, UINT n, DipFn dip, HRESULT *hr) {
     if (ShadowViewNow()) return ShadowDraw(d, t, base, minIndex, verts, start, n, dip, hr);
-    if (g_surveyWanted && g_group.where == MML_GEOM_FRAME) Survey(d, n);
+    if (g_surveyWanted && !g_surveyShadows && g_group.where == MML_GEOM_FRAME) Survey(d, n);
     SkinGpuDraw skin;
     const bool skinned = g_group.kind == 1 && SkinGpuFor(d, g_group.visual, base, &skin);
     if (g_rules.empty() && !skinned) return false;
@@ -719,6 +722,7 @@ void Release(Rule &r) {
 
 } // namespace
 
+bool ShadersNeedEarlyShadow() { return !g_rules.empty() || g_surveyWanted; }
 bool ShadersWanted() { return !g_rules.empty() || g_surveyWanted || ShadowViewNow() || SkinGpuWanted(); }
 
 void ShadersShadowBegin(const float backView[16]) {
@@ -734,6 +738,7 @@ void ShadersShadowStats(unsigned *draws, unsigned *faces, unsigned *skipped, uns
     *cut = g_shadowCut;
     *why = g_shadowWhy;
 }
+void ShadersShadowEnd() { MirrorGiveBack(nullptr); }
 
 void ShadersGroupBegin(int kind, void *visual, uint8_t *entry, int where) {
     g_group = Group{};
@@ -848,11 +853,12 @@ void ShadersFrameEnd() {   // (render.cpp, after the frame's own drawing)
             j["draws"] = c->draws;
             j["faces"] = c->faces;
             j["textures"] = c->textures;
+            if (g_surveyShadows) j["visuals"] = c->visuals;
             out.push_back(j);
             draws += c->draws;
             faces += c->faces;
         }
-        g_surveys.push_back({g_surveyWanted, {{"combinations", out}, {"draws", draws}, {"faces", faces}}});
+        g_surveys.push_back({g_surveyWanted, {{"combinations", out}, {"draws", draws}, {"faces", faces}, {"shadows", g_surveyShadows}}});
         if (g_surveys.size() > 4) g_surveys.erase(g_surveys.begin());
         g_combos.clear();
         g_surveyWanted = 0;
@@ -890,6 +896,12 @@ bool ShadersMethod(const std::string &method, const std::string &paramsJson, std
             int h = ShaderAdd(nullptr, &r, &err);
             if (!h) { *reply = "shader.add: " + err; return true; }
             *reply = dump({{"handle", h}});
+        } else if (method == "shader.shadow_depth") {
+            if (p.contains("on")) ShadowsDepthEnable(p["on"].get<bool>());
+            ShadowsState(reply); *ok=true; return true;
+        } else if (method == "shader.shadow_surface") {
+            if (p.contains("on")) ShadowsSurfaceEnable(p["on"].get<bool>());
+            ShadowsState(reply); *ok=true; return true;
         } else if (method == "shader.constants") {
             std::vector<float> v;
             for (auto &x : p.value("values", json::array())) v.push_back(x.get<float>());
@@ -914,9 +926,13 @@ bool ShadersMethod(const std::string &method, const std::string &paramsJson, std
                 ShaderShadows(nullptr, nullptr);
             } else {
                 std::string casters = p.value("casters", "");
+                std::string source = p.value("source", "");
+                if (!source.empty() && source != "sun" && source != "scene") {
+                    *reply = "shader.shadows source must be sun or scene"; return true;
+                }
                 ShadowsTune(p.value("sun_distance", 0.0f), casters == "game" ? 1 : casters == "meshes" ? 0 : -1);
                 MmlShadowSettings ss{p.value("size", 2048), p.value("extent", 60.0f), p.value("bias", 0.0f)};
-                ShaderShadows(nullptr, &ss);
+                ShaderShadows(nullptr, &ss, source.empty() ? -1 : source == "sun" ? MML_SHADOW_SUN : MML_SHADOW_SCENE);
             }
             std::string sh;
             ShadowsState(&sh);
@@ -940,7 +956,7 @@ bool ShadersMethod(const std::string &method, const std::string &paramsJson, std
             int id = p.value("id", 0);
             if (!id) {
                 if (!GeomEnsureHooks(&err) || !GeomEnsureDip(&err)) { *reply = "shader.survey: " + err; return true; }
-                if (!g_surveyWanted) { g_surveyWanted = g_nextSurvey++; g_combos.clear(); }
+                if (!g_surveyWanted) { g_surveyWanted = g_nextSurvey++; g_combos.clear(); g_surveyShadows = p.value("shadows", false); }
                 *reply = dump({{"id", g_surveyWanted}, {"done", false}, {"next", "shader.survey {id} after a frame of the mission's world"}});
             } else {
                 json out = {{"id", id}, {"done", false}};

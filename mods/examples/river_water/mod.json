@@ -1,12 +1,35 @@
 {
   "id": "river_water",
-  "name": "River water: the game's river hidden and drawn anew on its own triangles, with a reflection",
-  "version": "0.1.0",
+  "name": "River water: the game's water drawn anew: the wind's ripples, the world reflected, the sun's glitter",
+  "version": "0.2.0",
   "type": "native",
   "entry": "river_water.dll",
   "enabled": false,
   "builds": ["1.2", "1.0"],
   "gfx": true,
   "load_order": 100,
-  "depends": []
+  "depends": [],
+  "settings": {
+    "title": "Water",
+    "controls": [
+      {"key": "on", "label": "On"},
+      {"key": "reflection", "label": "Reflection"},
+      {"key": "shadows", "label": "Shadows"},
+      {"key": "shadow_source", "label": "Shadows from", "options": [{"value": 0, "label": "Sun"}, {"value": 1, "label": "Scene light"}]},
+      {"key": "shadow_softness", "label": "Shadow softness", "min": 0, "max": 8, "step": 0.25, "show": "value"},
+      {"key": "wind", "label": "Wind", "min": 0, "max": 10, "step": 0.5, "unit": "m/s"},
+      {"key": "wind_from", "label": "Wind from", "min": 0, "max": 345, "step": 15, "unit": "deg"},
+      {"key": "waves", "label": "Ripples", "min": 0, "max": 2},
+      {"key": "geometry", "label": "3D waves"},
+      {"key": "wave_height", "label": "Wave height", "min": 0, "max": 8, "step": 0.25, "show": "value"},
+      {"key": "clarity", "label": "Clarity", "min": 0.5, "max": 8, "step": 0.5, "unit": "m"},
+      {"key": "scattering", "label": "Turbidity", "min": 0, "max": 3, "step": 0.1, "unit": "1/m"},
+      {"key": "crests", "label": "Light through crests", "min": 0, "max": 3},
+      {"key": "chop", "label": "Sharp crests", "min": 0, "max": 2},
+      {"key": "depth", "label": "Depth", "min": 0.5, "max": 50, "step": 0.5, "unit": "m"},
+      {"key": "glitter", "label": "Sun glitter", "min": 0, "max": 2},
+      {"key": "sun_radius", "label": "Sun glow radius", "min": 0.5, "max": 60, "step": 0.5, "unit": "deg"},
+      {"key": "foam", "label": "Foam", "min": 0, "max": 2}
+    ]
+  }
 }

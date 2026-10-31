@@ -9,6 +9,7 @@ use core::ffi::{c_char, c_int, c_void};
 use core::ptr;
 
 pub use sys::{
+    MmlAtmosphereSettings as AtmosphereSettings, MmlAtmosphereState as AtmosphereState,
     MmlFrameStats as FrameStats, MmlGameCamera as GameCamera, MmlGfxConstants as GfxConstants, MmlGfxShowStats as GfxShowStats,
     MmlGfxView as GfxView,
     MmlRenderCamera as RenderCamera, MmlShadowSettings as ShadowSettings, MmlSharedFence as SharedFence, MmlSharedTexture as SharedTexture,
@@ -60,6 +61,10 @@ impl<'a> GfxFrame<'a> {
     /// ID3D11SamplerState*: point (s0), linear (s1)
     pub fn samplers(&self) -> (*mut c_void, *mut c_void) {
         (self.0.point, self.0.linear)
+    }
+    /// Optional MRT for a replacement surface's depth and motion, before temporal upscaling.
+    pub fn temporal_target(&self) -> *mut c_void {
+        if gfx_has!(self, temporal_target) { self.0.temporal_target } else { ptr::null_mut() }
     }
     /// ID3D11RenderTargetView*: the effects target (premultiplied RGBA16F), bound
     pub fn target(&self) -> *mut c_void {
@@ -286,7 +291,27 @@ unsafe extern "C-unwind" fn on_geom<F: FnOnce(&GeomCapture) + 'static>(cap: *con
     })
 }
 
+impl AtmosphereSettings {
+    /// Fully initialized, neutral atmosphere request. Color is display-space RGB; extinction is per metre.
+    pub fn neutral() -> Self {
+        Self { size: core::mem::size_of::<Self>() as u32, scale_height: 60.0, color: [0.5; 3],
+            sky_distance: 8000.0, max_opacity: 0.995, sky_blend: 1.0, anisotropy: 0.55,
+            sky_falloff: 8.0, ..Self::default() }
+    }
+}
+
 impl Host {
+    /// One copied atmosphere request per mod. Higher priority wins; updates retain acquisition order.
+    /// None releases; unload/fault releases automatically. Submit before the world's frame boundary.
+    pub fn scene_atmosphere(&self, settings: Option<AtmosphereSettings>) -> bool {
+        let p = settings.as_ref().map_or(ptr::null(), |s| s as *const AtmosphereSettings);
+        unsafe { f!(self, scene_atmosphere)(self.module, p) != 0 }
+    }
+    /// This owner's request/selection and the shared selected parameters; readiness is from the last frame.
+    pub fn scene_atmosphere_state(&self) -> Option<AtmosphereState> {
+        let mut out = AtmosphereState { size: core::mem::size_of::<AtmosphereState>() as u32, ..Default::default() };
+        (unsafe { f!(self, scene_atmosphere_state)(self.module, &mut out) } != 0).then_some(out)
+    }
     // ---- the render events' device and camera
     /// The game's device: version 8 its IDirect3DDevice8, 9 its IDirect3DDevice9 (on a wrapper); null none. Valid
     /// while the game keeps it: ask each frame.
@@ -531,6 +556,28 @@ impl Host {
     pub fn shader_shadows(&self, settings: Option<ShadowSettings>) -> bool {
         let p = settings.as_ref().map_or(ptr::null(), |s| s as *const ShadowSettings);
         unsafe { f!(self, shader_shadows)(self.module, p) != 0 }
+    }
+    /// Explicit direction for the shared shadow map: visible sky sun (true), scene light (false).
+    /// The most recent active explicit request wins; None releases this mod's request.
+    pub fn shader_shadows_from(&self, settings: Option<ShadowSettings>, visible_sun: bool) -> bool {
+        let p = settings.as_ref().map_or(ptr::null(), |s| s as *const ShadowSettings);
+        unsafe { f!(self, shader_shadows_from)(self.module, p, if visible_sun { sys::MML_SHADOW_SUN as c_int } else { sys::MML_SHADOW_SCENE as c_int }) != 0 }
+    }
+
+    /// Fit shadows to visible receivers in a world-space height range; settings retain the desired texel density.
+    pub fn shader_shadows_fit(&self, settings: Option<ShadowSettings>, visible_sun: bool, min_y: f32, max_y: f32) -> bool {
+        let p = settings.as_ref().map_or(ptr::null(), |s| s as *const ShadowSettings);
+        unsafe { f!(self, shader_shadows_fit)(self.module, p,
+            if visible_sun { sys::MML_SHADOW_SUN as c_int } else { sys::MML_SHADOW_SCENE as c_int }, min_y, max_y) != 0 }
+    }
+
+    /// Finite shadow receivers, copied by the host; displacement bounds the absolute offset on each world axis.
+    pub fn shader_shadows_surface(&self, settings: Option<ShadowSettings>, visible_sun: bool, triangles: &[[f32; 9]], displacement: f32) -> bool {
+        if triangles.len() > 1_000_000 { return false; }
+        let p = settings.as_ref().map_or(ptr::null(), |s| s as *const ShadowSettings);
+        unsafe { f!(self, shader_shadows_surface)(self.module, p,
+            if visible_sun { sys::MML_SHADOW_SUN as c_int } else { sys::MML_SHADOW_SCENE as c_int },
+            triangles.as_ptr().cast(), triangles.len() as u32, displacement) != 0 }
     }
 
     // ---- the meshes the game draws

@@ -1,0 +1,36 @@
+{
+  "id": "atmosphere",
+  "name": "Atmosphere: weather policy through the shared SDK fog service",
+  "version": "0.1.0",
+  "type": "native",
+  "entry": "atmosphere.dll",
+  "enabled": false,
+  "builds": ["1.2", "1.0"],
+  "gfx": true,
+  "load_order": 90,
+  "depends": [],
+  "settings": {
+    "title": "Atmosphere",
+    "sections": [
+      {"title": "Fog", "controls": [
+        {"key": "on", "label": "On"},
+        {"key": "start", "label": "Clear distance", "min": 0, "max": 10000, "step": 50, "unit": "m"},
+        {"key": "distance", "label": "Fog fade distance", "min": 50, "max": 10000, "step": 50, "unit": "m"},
+        {"key": "density", "label": "Density", "min": 0, "max": 3, "step": 0.05, "show": "value"},
+        {"key": "height", "label": "Height (0: uniform)", "min": 0, "max": 500, "step": 5, "unit": "m"},
+        {"key": "base", "label": "Base height", "min": -500, "max": 1000, "step": 5, "unit": "m"},
+        {"key": "sun", "label": "Sun scattering", "min": 0, "max": 3, "step": 0.05, "show": "value"},
+        {"key": "tint", "label": "Fog tint", "options": [
+          {"value": 0, "label": "Sky"}, {"value": 1, "label": "Cool"}, {"value": 2, "label": "Warm"}, {"value": 3, "label": "Neutral"}]}
+      ]},
+      {"title": "Advanced", "controls": [
+        {"key": "priority", "label": "Request priority", "min": -100, "max": 100, "step": 1, "show": "value"},
+        {"key": "anisotropy", "label": "Directional scattering", "min": -0.9, "max": 0.9, "step": 0.05, "show": "value"},
+        {"key": "sky_distance", "label": "Sky distance", "min": 1000, "max": 20000, "step": 500, "unit": "m"},
+        {"key": "sky_blend", "label": "Sky horizon haze", "min": 0, "max": 1},
+        {"key": "sky_falloff", "label": "Upper sky preservation", "min": 0, "max": 20, "step": 1, "show": "value"},
+        {"key": "max_opacity", "label": "Maximum opacity", "min": 0, "max": 1}
+      ]}
+    ]
+  }
+}

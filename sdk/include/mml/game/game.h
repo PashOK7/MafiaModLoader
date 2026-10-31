@@ -34,6 +34,10 @@ constexpr int kFrameFlags  = 0xAC;
 constexpr int kFrameName   = 0x100;
 constexpr int kFrameParent = 0x120;
 constexpr int kFrameType   = 0x110;
+// A scene's sectors (I3D_scene's constructor, both builds): +0x210 the primary sector (the world's top frame), +0x214
+// the backdrop sector (the sky, its sun and flares: drawn first, from the camera's view without its place), +0x218
+// the omni sector, +0x21C the near sector; each sector's +0x214 is its scene.
+constexpr int kSectorScene = 0x214, kScenePrimary = 0x210, kSceneBackdrop = 0x214;
 constexpr int kModelFile   = 0x154;  // a model frame's (type 9) file, as its Open was given it ("Models\\Tommy.i3d"), or null
 constexpr uint32_t kFlagScaled = 0x4, kFlagRotValid = 0x8, kFlagLocalBuilt = 0x10, kFlagWorldValid = 0x20,
                    kFlagBoundValid = 0x100, kFlagConstructed = 0x40000000;

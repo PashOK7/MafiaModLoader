@@ -9,6 +9,9 @@
 // checked first), so LS3D works out what depends on it.
 // The sun: the brightest directional light that is on; the ambient light: the brightest ambient one that lights a
 // sector the sun lights (the backdrop's own white one lights only the backdrop), else the brightest.
+// The sun the sky shows (scene_sun_seen): the backdrop's lens flares drawn infinitely far (game_build.h
+// lensflareVtable: +0x264 neither 0 nor 1), towards their world position; found by the same walk. The city by day has
+// two at one place (the disc's glow and the flare), 55 degrees from the directional light.
 //
 // Bridge methods (game thread): lights.list {type, all, rescan}, light.set {light, color, power, range, on}.
 #include "host.h"
@@ -36,6 +39,8 @@ using SetPowerFn = void(__stdcall *)(void *light, float power);
 using SetRangeFn = void(__stdcall *)(void *light, float nearR, float farR);
 
 std::vector<void *> g_lights;
+std::vector<void *> g_flares;   // the lens flares drawn infinitely far (the sky's sun)
+constexpr int kFlareKind = 0x264;
 DWORD g_scanned;
 bool g_haveScan;
 
@@ -56,13 +61,28 @@ void *SceneTop() {
     return top;
 }
 
+bool IsFarFlare(void *f) {
+    uintptr_t vt = game::g_ls3d && game::Ls3d().lensflareVtable ? Ls3dBase() + game::Ls3d().lensflareVtable : 0;
+    if (!vt || !f || game::at<uintptr_t>(f, 0) != vt) return false;
+    uint32_t kind = game::at<uint32_t>(f, kFlareKind);
+    return kind != 0 && kind != 1;
+}
+
 void Scan() {
     g_lights.clear();
+    g_flares.clear();
     void *top = SceneTop();
     if (!top) return;
     std::vector<void *> all;
     game::EnumFramesDeep(top, &all);
-    for (void *f : all) if (IsLight(f) && std::find(g_lights.begin(), g_lights.end(), f) == g_lights.end()) g_lights.push_back(f);
+    // (the sky's frames hang under the scene's backdrop sector, beside the world's top)
+    void *scene = game::at<void *>(top, game::kSectorScene);
+    void *backdrop = scene && game::at<void *>(scene, game::kScenePrimary) == top ? game::at<void *>(scene, game::kSceneBackdrop) : nullptr;
+    if (backdrop) game::EnumFramesDeep(backdrop, &all);
+    for (void *f : all) {
+        if (IsLight(f) && std::find(g_lights.begin(), g_lights.end(), f) == g_lights.end()) g_lights.push_back(f);
+        if (IsFarFlare(f) && std::find(g_flares.begin(), g_flares.end(), f) == g_flares.end()) g_flares.push_back(f);
+    }
 }
 
 // The lights: scanned once a mission (the walk over every frame of the scene takes 13 ms in the 1.2 lab's freeride:
@@ -160,6 +180,7 @@ json LightJson(const MmlLight &l) {
 
 void LightsMissionClosed() {
     g_lights.clear();
+    g_flares.clear();
     g_haveScan = false;
 }
 
@@ -214,6 +235,26 @@ int SceneSun(float toSun[3], float sunColor[3], float ambient[3]) {
     return 1;
 }
 
+// The sun the sky shows: the first far flare that is on (its frame and its parents), towards its world position.
+int SceneSunSeen(float toSun[3]) {
+    Fresh();
+    int found = 0;
+    auto f = [&]() {
+        for (void *fl : g_flares) {
+            if (!IsFarFlare(fl) || !OnChain(fl)) continue;
+            const float *w = game::WorldMatrix(fl);
+            if (!w) continue;
+            float l = std::sqrt(w[12] * w[12] + w[13] * w[13] + w[14] * w[14]);
+            if (l < 1e-6f) continue;
+            for (int i = 0; i < 3; i++) toSun[i] = w[12 + i] / l;
+            found = 1;
+            return;
+        }
+    };
+    if (Guarded(f)) return 0;
+    return found;
+}
+
 bool LightsMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok) {
     if (method != "lights.list" && method != "light.set") return false;
     *ok = false;
@@ -258,6 +299,11 @@ bool LightsMethod(const std::string &method, const std::string &paramsJson, std:
             json out = {{"count", n}, {"kinds", kinds}, {"lights", list}};
             float s[3], sc[3], am[3];
             if (SceneSun(s, sc, am)) out["sun"] = {{"to_sun", R3(s)}, {"color", R3(sc)}, {"ambient", R3(am)}};
+            if (SceneSunSeen(s)) {
+                if (!out.contains("sun")) out["sun"] = json::object();
+                out["sun"]["seen"] = R3(s);   // the sun the sky shows (its lens flare)
+                out["sun"]["flares"] = g_flares.size();
+            }
             *reply = dump(out);
         }
         *ok = true;

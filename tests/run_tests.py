@@ -651,6 +651,17 @@ def ui_tests(b):
           % ', '.join(seen), len(seen) >= 4 and not all_problems, all_problems)
     r = b.call('panel.layout', {})
     check('panel.layout with no settings: the loaded mods\' pages and the list', r['ok'] and 'list' in r['result'], r)
+    # the loader's own settings (settings.cpp): the list's first row, a page laid out as a mod's, config.* by "loader"
+    own = [m for m in r['result'].get('mods', []) if m['mod'] == 'loader'] if r['ok'] else []
+    problems = [ui_layout_problems(page) for page in own[0]['pages']] if own else ['no page']
+    check('the loader\'s own settings: a page in Options > Mods, laid out cleanly',
+          own and r['result']['mods'][0]['mod'] == 'loader' and not any(problems), problems)
+    g = b.call('config.get', {'mod': 'loader', 'key': 'render.buffer_renaming'})
+    s = b.call('config.set', {'mod': 'loader', 'key': 'render.batch', 'value': True})
+    u = b.call('config.set', {'mod': 'loader', 'key': 'render.batch', 'value': None})
+    check('config.get / config.set {"mod": "loader"}: the defaults the loader\'s, a change and back',
+          g['ok'] and g['result']['value'] is True and g['result']['default'] is True and s['ok'] and
+          s['result']['value'] is True and u['ok'] and u['result']['value'] is False, [g, s, u])
     # the test sees what it should: a page made to fail is caught
     bad = {'sections': [{'title': 'A', 'controls': [
                {'key': 'a', 'label': 'A label far too long to fit into two lines of twenty characters each'},
@@ -1254,6 +1265,83 @@ def video_tests(b):
     check('video.find: a name with no file: no candidates', r['ok'] and r['result']['candidates'] == [], r)
 
 
+def atmosphere_sdk_tests(b):
+    """Real C/Rust SDK callers, bridge arbitration, faults and a policy-only example (no real game)."""
+    b.call('mod.load', {'id':'kit'})
+    if not any(m['id']=='atmosphere' and m.get('loaded') for m in b.call('mods.list')['result']):
+        b.call('mod.load', {'id':'atmosphere'})
+    state = lambda: b.call('atmosphere.state')['result']
+    check('atmosphere example requests the SDK without a game or GPU', state()['owner']=='atmosphere' and not state()['ready'])
+    c = b.call('kit.atmosphere')['result']
+    check('C atmosphere SDK owns copied settings', c['accepted']==1 and c['requested']==1 and c['selected']==1, c)
+    b.call('config.set', {'mod':'atmosphere','key':'density','value':0.5})
+    b.call('atmosphere.status')
+    check('atmosphere updates do not steal an equal-priority acquisition', state()['owner']=='kit')
+    for flag in ['nan','tiny','small','color','worker']:
+        c = b.call('kit.atmosphere', {flag:True})['result']
+        check('atmosphere rejects %s without changing the previous request' % flag,
+              c['accepted']==0 and c['selected']==1 and abs(c['extinction']-0.001)<1e-7, c)
+    c = b.call('kit.atmosphere', {'future':True})['result']
+    check('atmosphere accepts a future larger settings prefix', c['accepted']==1, c)
+    b.call('kit.atmosphere', {'high':True})
+    b.call('atmosphere.set', {'priority':0,'extinction':0.004,'color':[0.2,0.3,0.4]})
+    check('higher-priority SDK request beats a newer bridge request', state()['owner']=='kit')
+    b.call('atmosphere.set', {'priority':-1})
+    color=next(r for r in state()['requests'] if r['owner']=='bridge')['settings']['color']
+    check('partial bridge updates preserve its own copied values',
+          all(abs(a-b)<1e-6 for a,b in zip(color,[0.2,0.3,0.4])),color)
+    if RUST:
+        b.call('mod.load', {'id':'kit_rs'})
+        r = b.call('kit_rs.atmosphere', {'high':True})
+        check('safe Rust atmosphere request and query select the higher priority', r['ok'] and r['result']['selected'], r)
+        r = b.call('kit_rs.atmosphere', {'nan':True})
+        check('safe Rust preserves prior request on invalid floats', r['ok'] and not r['result']['accepted'] and r['result']['selected'], r)
+        b.call('kit_rs.panic')
+        check('a faulted atmosphere owner is removed automatically', state()['owner']=='kit' and
+              not any(r['owner']=='kit_rs' for r in state()['requests']))
+    b.call('mod.unload', {'id':'kit'})
+    check('unloading the winner restores the previous policy owner', state()['owner']=='atmosphere')
+    b.call('mod.reload', {'id':'atmosphere'})
+    check('policy hot reload leaves one request per live mod', state()['request_count']==2 and
+          sum(r['owner']=='atmosphere' for r in state()['requests'])==1)
+    b.call('mod.unload', {'id':'atmosphere'})
+    check('unload restores bridge owner', state()['owner']=='bridge')
+    b.call('atmosphere.set', {'on':False})
+    check('release leaves no atmosphere owners', state()['request_count']==0)
+    b.call('config.set', {'mod':'atmosphere','key':'density','value':None})
+    b.call('mod.load', {'id':'kit'})
+
+
+def atmosphere_migration_tests():
+    import copy
+    import tempfile
+    from pathlib import Path
+    sys.path.insert(0,os.path.join(ROOT,'tools'))
+    import migrate_atmosphere as migration
+    old = {'render':{'fog_mode':3,'fog_start':200,'fog_span':2000,'fog_density':0.7,'fog_height':0,
+                     'fog_base':0,'fog_sun':0.4,'fog_tint':0,'distance':1000,'occlusion':True},'other':42}
+    saved = copy.deepcopy(old)
+    loader, mod, changed, enabled = migration.moved(old,{'unrelated':'kept'})
+    check('atmosphere migration preserves selected appearance and unrelated settings',
+          changed and enabled and mod['start']==200 and mod['distance']==2000 and mod['density']==0.7 and
+          mod['height']==0 and mod['base']==0 and mod['sun']==0.4 and mod['unrelated']=='kept' and
+          loader['render']['fog_mode']==2 and loader['render']['distance']==1000 and loader['other']==42 and old==saved)
+    again = migration.moved(loader,mod)
+    check('atmosphere migration is idempotent', not again[2] and again[0]==loader and again[1]==mod)
+    check('explicit destination settings win during migration', migration.moved(old,{'density':2})[1]['density']==2)
+    with tempfile.TemporaryDirectory(dir=os.path.join(ROOT,'build')) as temp:
+        path=Path(temp)/'config.json'
+        path.write_bytes(b'foreign edit')
+        try:
+            migration.guarded_write(path,b'old',b'new')
+            refused=False
+        except RuntimeError:
+            refused=True
+        check('migration refuses concurrent edits without damage', refused and path.read_bytes()==b'foreign edit')
+        migration.guarded_write(path,b'foreign edit',b'new')
+        check('migration replaces the verified preimage', path.read_bytes()==b'new')
+
+
 def rust_tests(b):
     """The Rust mod kit (sdk/rust/mml): kit_rs (tests/mods/kit_rs) and the example hello_rust, through the bridge."""
     if not RUST:
@@ -1606,10 +1694,33 @@ def new_mod_build():
     run = lambda cmd: subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, errors='replace')
 
     def take_away():   # (also what an interrupted run left)
-        text = open(cmake_path, encoding='utf-8', newline='').read()
-        if new_mod_lines(text) != text:
-            with open(cmake_path, 'w', encoding='utf-8', newline='') as f:
-                f.write(new_mod_lines(text))
+        # MSBuild/CMake can briefly retain a reader after the child build exits on Windows. Never truncate the
+        # live build file: prepare an exclusive temporary, recheck the exact preimage and replace atomically.
+        from pathlib import Path
+        cmake=Path(cmake_path)
+        original=cmake.read_bytes()
+        replacement=new_mod_lines(original.decode('utf-8')).encode('utf-8')
+        if replacement != original:
+            temporary=cmake.with_name(cmake.name+'.test-cleanup.tmp')
+            with temporary.open('xb') as f:
+                f.write(replacement)
+            try:
+                for attempt in range(40):
+                    if cmake.read_bytes()!=original:
+                        raise RuntimeError('CMakeLists.txt changed during test cleanup; refusing overwrite')
+                    try:
+                        temporary.replace(cmake)
+                        break
+                    except OSError as err:
+                        if err.errno not in (13,22) or attempt==39:
+                            raise
+                        time.sleep(0.05)
+            finally:
+                if temporary.exists():
+                    temporary.unlink()
+        resolved=os.path.realpath(src_root)
+        if os.path.commonpath([os.path.realpath(ROOT),resolved])!=os.path.realpath(ROOT) or resolved==os.path.realpath(ROOT):
+            raise RuntimeError('test mod cleanup outside repository: '+resolved)
         shutil.rmtree(src_root, ignore_errors=True)
 
     take_away()
@@ -1672,12 +1783,34 @@ def new_mod_tests(b, built):
 
 
 def main():
+    water_mesh = os.path.join(HARNESS, 'water_mesh_test.exe')
+    if not os.path.exists(water_mesh):
+        raise RuntimeError('build water_mesh_test before running the offline suite')
+    mesh_result = subprocess.run([water_mesh], capture_output=True, text=True)
+    check('water mesh: preserved area, footprint, bounded patches and watertight shared edges',
+          mesh_result.returncode == 0, mesh_result.stdout + mesh_result.stderr)
+    sky_test = os.path.join(HARNESS, 'water_sky_test.exe')
+    if not os.path.exists(sky_test):
+        raise RuntimeError('build water_sky_test before running the offline suite')
+    sky_result = subprocess.run([sky_test], capture_output=True, text=True)
+    check('water sky: real compute shader preserves clouds, angular support, geometry and hue',
+          sky_result.returncode == 0, sky_result.stdout + sky_result.stderr)
+    atmosphere_result = subprocess.run([os.path.join(HARNESS, 'atmosphere_test.exe')], capture_output=True, text=True)
+    check('atmosphere: actual GPU height integral and displaced-water/opaque-depth composite',
+          atmosphere_result.returncode == 0, atmosphere_result.stdout + atmosphere_result.stderr)
     fetch_tests()
+    receiver_test = os.path.join(HARNESS, 'receiver_fit_test.exe')
+    receiver_result = subprocess.run([receiver_test], capture_output=True, text=True)
+    check('shadow receiver surface: conservative frustum/displacement bounds',
+          receiver_result.returncode == 0, receiver_result.stdout + receiver_result.stderr)
+    depth_result = subprocess.run([os.path.join(HARNESS, 'shadow_receivers_test.exe')], capture_output=True, text=True)
+    check('shadow receivers: actual GPU current-depth bounds, finite boxes, jitter and hidden surfaces',
+          depth_result.returncode == 0, depth_result.stdout + depth_result.stderr)
     ghidra_names_tests()
     new_mods = new_mod_build()
     # the harness's game folder: the loader, the test mods and the shipped ones
     mods = os.path.join(HARNESS, 'mml', 'mods')
-    shipped = ('core', 'hello_c', 'boxes') + (('hello_rust',) if RUST else ())
+    shipped = ('core', 'hello_c', 'boxes', 'atmosphere') + (('hello_rust',) if RUST else ())
     for mod in shipped:
         shutil.rmtree(os.path.join(mods, mod), ignore_errors=True)
         shutil.copytree(os.path.join(OUT, 'mml', 'mods', mod), os.path.join(mods, mod))
@@ -2080,6 +2213,35 @@ def main():
         check('shader.state shows the shadows\' state', r['ok'] and r['result']['shadows']['wanted'], r)
         r = b.call('shader.shadows', {'on': False})
         check('shader.shadows off: no longer wanted', r['ok'] and not r['result']['wanted'], r)
+        r = b.call('kit.shadow_source', {'source': 'sun'})
+        s = b.call('shader.state')['result']['shadows']
+        check('shader_shadows_from: an explicit sky-sun request through the SDK',
+              r['ok'] and r['result']['accepted'] == 1 and s['source'] == 'sun' and s['source_owner'] == 'kit', s)
+        r = b.call('shader.shadows', {'size': 1024})
+        check('legacy shadow requests preserve the active explicit source', r['ok'] and r['result']['source'] == 'sun', r)
+        r = b.call('kit.shadow_source', {'source': 'invalid'})
+        s = b.call('shader.state')['result']['shadows']
+        check('invalid SDK shadow source refused without losing the existing request',
+              r['result']['accepted'] == 0 and s['source'] == 'sun' and s['source_owner'] == 'kit', s)
+        r = b.call('shader.shadows', {'source': 'scene'})
+        check('the latest explicit shadow source wins', r['ok'] and r['result']['source'] == 'scene', r)
+        r = b.call('shader.shadows', {'source': 'invalid'})
+        s = b.call('shader.state')['result']['shadows']
+        check('invalid bridge shadow source preserves the active source', not r['ok'] and s['source'] == 'scene', r)
+        r = b.call('shader.shadows', {'on': False})
+        check('removing the latest request restores the preceding explicit source',
+              r['ok'] and r['result']['source'] == 'sun' and r['result']['source_owner'] == 'kit', r)
+        r = b.call('kit.shadow_source', {'off': True})
+        r = b.call('kit.shadow_source', {'fit': True})
+        check('SDK receiver-fitted shadow request accepted', r['ok'] and r['result']['accepted'] == 1, r)
+        r = b.call('kit.shadow_source', {'bad_fit': True})
+        s = b.call('shader.state')['result']['shadows']
+        check('invalid receiver range refused without losing the shadow request',
+              r['ok'] and r['result']['accepted'] == 0 and s['wanted'] and s['source_owner'] == 'kit', s)
+        r = b.call('kit.shadow_source', {'off': True})
+        s = b.call('shader.state')['result']['shadows']
+        check('removing all explicit requests restores the scene default',
+              r['result']['accepted'] == 1 and not s['wanted'] and s['source'] == 'scene', s)
         r = b.call('shader.survey')
         check('shader.survey with no game: an error, saying why', not r['ok'] and 'no game' in str(r), r)
         r = b.call('kit.gamecam')
@@ -2182,6 +2344,8 @@ def main():
         rust_tests(b)
         new_mod_tests(b, new_mods)
         sidecar_tests(b)
+        atmosphere_sdk_tests(b)
+        atmosphere_migration_tests()
         methods_tests(b)
         ui_tests(b)
         r = b.call('nonexistent.method')

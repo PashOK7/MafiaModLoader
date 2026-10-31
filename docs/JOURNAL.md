@@ -4320,3 +4320,581 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   its buffers go. render.state's batch `compacted`, `stale`.
 - **Seen**: 1.0, far, near (45 s), far, three rounds: 3.6 million vertices each time far (3 605 528 in 1.2, the same
   round), 174 dead indices, 845 to 850 MB free; the pictures as before. Offline tests ALL PASSED.
+
+## 2026-10-27: the loader's own settings in Options > Mods (host/settings.cpp)
+
+- **Asked**: the rendering's optimisations switched on and off in the game's own Options > Mods.
+- **Made**: a page "Rendering (loader)", the Mods list's first row, made by panel.cpp from a block of the loader's
+  as a mod's from its manifest: Batched drawing (render.set batch), Objects bypass LS3D (batch_objects), Buffer
+  renaming (vb.set rename), Whole city drawn (whole_city). config.cpp keeps it as a config of the same kind under the
+  id `loader` (ConfigOwn: the defaults the loader's code, the changes in mml\data\loader\config.json, watched as a
+  mod's; a mod with that id is refused); settings.cpp applies at the next frame only what changed, through render.set
+  and vb.set (before LS3D's driver is made it waits). The defaults are what the loader did with none: renaming on,
+  batches off (opt-in until driven through the missions), the whole city off. panel.cpp's config calls now take the
+  settings' id, not the mod.
+- **Seen**: 1.0: the page drawn (the game's paper, four check boxes, Defaults, Back); Batched drawing and Whole city
+  clicked: applied at once (render.state: batch on, 328 of 328 blocks); the game closed and started again: applied
+  at the first frame in the main menu, held through the freeride's load; Defaults: both given back; Buffer renaming
+  off and on: vb.state's rename followed. 1.2: config.set {"mod": "loader"} applied (vb.set, render.set), panel.state
+  lists the page first. Offline tests ALL PASSED (the page laid out cleanly, config.get / set by "loader").
+
+## 2026-10-27: fps_unlock's ceiling near 1000 fps lifted on request (`zero_ms`)
+
+- **Asked** (the owner): the main menu held at 990-997 fps; is there a cap? Yes, fps_unlock's own: it asks LS3D's
+  limiter (IGraph::GetTimer, ls3d+72100) for 1 ms at least, and the limiter's clock counts whole milliseconds, so a
+  frame inside one tick sleeps to the next.
+- **Made**: the setting `zero_ms` (off by default; "Frames under 1 ms (a test)" on its Options > Mods page) asks the
+  limiter for 0: no frame is waited for and the game is given steps of 0 ms, which none of its systems expects (the
+  intro's cutscene, JOURNAL 2026-10-25): for seeing a light scene's real limit, not for playing. The mod's fixes take
+  a step of 0 without a division (the menu camera's spring k = 0, the walk's lengths 0). The status and the line on
+  the screen say so.
+- **Seen**: 1.2 in a freeride, steps of 0 ms counted (13 a second); 1.0's profile screen 885 to 1092 fps, 146 steps
+  of 0 a second (both labs running).
+
+## 2026-10-28: beautiful water (mods/examples/river_water made anew)
+
+- **Asked** (the owner): beautiful water, a visual, not a physical simulation (two earlier tries in mafia-ragdoll:
+  one beautiful but overdone, one physics-first; the owner had liked that one's exact planar reflection and not its
+  stripes or its hard sun).
+- **Found** in the old example: its waves (eight sines) cut the reflection into regular stripes; its level was the
+  mean of every `00test*` triangle captured (the river at -9.99 and a fountain at 2.41: -8.61, the reflection's
+  plane 1.4 m off); its reflection was drawn even where no water was on the screen.
+- **A fault of the loader's** (host/geom.cpp): a `geom_capture` asked from a graphics pass (after the world was
+  drawn) ended with that frame, empty, every time. Now a capture asked during a frame waits for the whole next one
+  (`g_frameOpen`; mml.h says so). Seen: the mod's captures from its pass find both planes.
+- **Made** (river_water 0.2.0): the groups captured every 3 s, kept by their key, sorted into planes by level; an
+  occlusion query a plane counts its pixels (read a few frames late, never waited for); the reflection view placed
+  for the plane with the most, none drawn while none is seen (1.2 at the freeride's start: 0 views a frame). The
+  ripples: a JONSWAP spectrum for the wind and its fetch, spread about the wind, three cascades (37.3, 9.17, 2.31 m,
+  each its band of wavenumbers), turned and made into slopes by an inverse FFT on the GPU (Stockham, groupshared;
+  river_waves.hlsl), the slopes and their squares mipmapped: each pixel's mean slope is its normal, their variance
+  the roughness of what it cannot draw. The reflection followed along the reflected ray through the reflection's
+  depth (three steps), blurred by that roughness: a Gaussian of 2 sigma t / (dist + t), up and down whole, sideways
+  times the cosine (eight taps along the screen's vertical, jittered by interleaved gradient noise; the mip as wide
+  as the sideways spread). The body: Beer-Lambert absorption down to the bed and back (`clarity`, `tint`), the light
+  it scatters (`colour`) lit as the game lights its own (ambient + sun, display terms, clipped), the bed bent by the
+  ripples; the sun's glitter as Cox and Munk's facets (their slopes' distribution, the sun's disc and the pixel's
+  angle added), shadowed by the shadow map and where the reflected ray meets something; foam where the bed is under
+  45 cm; the fog (the reflection already holds its own). Settings on Options > Mods ("Water"); `debug` views 1..6.
+- **Tuned by looking**: JONSWAP's open-sea slopes (0.0275 at 3 m/s) and Cox and Munk's 0.003 at no wind (a sea's
+  swell) turned the far bank's reflection into sky and blur; a calm city river's slope variance is now 0.0012 a m/s
+  of wind, the default wind 1 m/s. The hardware's anisotropic filtering, asked for a footprint 8 to 30 times taller
+  than wide, blurred both ways (the far bank a smear): the explicit vertical taps give the streaks. The game's light
+  values are display multipliers (the sun 1.6, 1.19, 0.72): `Lin()` of them made the body two to three times too
+  bright.
+- **Seen**: 1.2 and 1.0, the city freeride at Little Italy's embankment: the bridges, their piers, the passing ship
+  and the opened bascule bridge reflected and streaked, the sun glittering on the ripples, the dark green body. Cost
+  (`bench`, one lab, the world held still, 1280x960): 1.2 8.03 to 16.1 ms (+8.0 ± 0.15; the reflection +7.1, the
+  shadow map +0.3, not significant; the water itself +0.9), 1.0 2.43 to 4.97 ms (+2.5 ± 0.2). Offline tests ALL
+  PASSED.
+- **Left** (ROADMAP Known gaps, "The water"): the game's dark layer under the bridges shows as black lines at the
+  waterline; the reflection's cost; one reflection plane.
+
+## 2026-10-29: the sun where the sky shows it; light in the water; choppy crests (river_water)
+
+- **Asked** (the owner): realistic water without heavy physics, the sun handled exactly and in the right place, a
+  thought-out shader with light scattered in the water's body and through the crests, shadows of objects on the
+  water; whatever the SDK lacks added to the loader.
+- **Found**: the game has two suns. The world is lit (and its lightmaps' shadows baked) from the directional light,
+  65 degrees up in the city by day; the sun the sky shows is the backdrop's lens flare, 14 degrees up, 55 degrees
+  away (knowledge/notes/water.md). The glitter was drawn towards the light: a path of light on the water under an
+  empty sky.
+- **Made in the loader**: game_build.h `lensflareVtable` (both builds, tools/check_builds.py checks its constructor,
+  destructor and Draw's reads), game.h the scene's sectors (`kScenePrimary`, `kSceneBackdrop`, `kSectorScene`);
+  lights.cpp walks the backdrop sector too and finds the far flares; mml.h `scene_sun_seen` (the Rust crate's too),
+  `MmlGfxConstants::sun_seen`, frame.hlsli `g_sunSeen`; `lights.list`'s `sun.seen`, gfx.state's `world.sun_seen`.
+- **Made in the SDK's water**: the ripples' FFT also gives the heights and Tessendorf's choppy displacement's
+  derivatives (a second pair of complex fields): the normal of the displaced surface and its Jacobian (sharper
+  crests, flatter troughs, whitecaps where it folds); `WaterSunScatter` (the sun scattered once in the water: the
+  slab's exact single scattering through the refracted rays, Henyey-Greenstein; and the crest's forward share
+  scattered out of a face in its crest's shadow), `WaterThroughCrest` (the sky and the sun seen through a steep
+  crest), `WaterSunSeen`, `WaterReflectionRise`; MakeSpectrum's slope variance grows like a clean sea's past 4 m/s
+  (the river's film torn up). river_water: the glitter and the light in the water towards the seen sun, shadows on
+  and in the water (the shadow map at the surface and a scattering length down), settings `scattering`, `phase`,
+  `crests`, `chop`.
+- **Fixed on the owner's reports**: a light band at the waterline under walls (the reflection's blur reached the
+  sky the reflection's clip plane leaves past its waterline: taps there left out); a bright wedge along walls, rocks
+  and hulls (the foam at walls lit by depth alone, on calm water too: now the waves' work, a few crest heights wide).
+  A gap between a thing and its reflection at the waterline, measured to its cause (the owner: "stop guessing"): the
+  reflection's clip plane 2 cm over the water cut the feet out (a band close to the water); the game's models end
+  8 mm under the water, so a plane under it showed the sky beneath them (a dashed line); at the plane itself the
+  foot's pixels are covered in part, and the dash pixels read sky (depth 100+) where the pixel beside held the rock at
+  the water point's own distance. Now the clip plane is the water's and the lookup fills such holes with the foot
+  beside them (water.hlsli `WaterFillFoot`); the dashed line gone in 1.2 at the owner's place.
+- **Seen**: 1.2 and 1.0 (both labs): the glitter path under the seen sun, the light at 8 m/s as wind-driven water;
+  `lights.list` finds the same two flares in both. Reflection's cost facing the city across the river (1.2, one
+  lab): +2.2 ms (CPU 2.2: 700 more draws; GPU 2.4) of a 6.1 ms frame. Offline tests ALL PASSED (before the last
+  fixes).
+- **Left**: the water is drawn by a Direct3D 11 pass over the finished frame: translucent things the game draws
+  over the water (glass, particles, smoke) are covered by it; see ROADMAP Known gaps "The water".
+
+## 2026-10-30: Claude-to-Codex handoff audit
+
+- **Asked**: check for Claude-specific setup and project rules missed during the first read.
+- **Found**: AGENTS.md was 42,480 bytes; Codex's default instruction budget is 32 KiB, and this chat's injected
+  prefix stopped during the intro-video note. Read the rest from disk. CLAUDE.md imports only AGENTS.md; the
+  separate Claude setting is a Bash escaping guard, not a Codex/PowerShell hook. README's claim that `.mcp.json`
+  registers the server for any MCP client was too broad: Codex uses config.toml.
+- **Checked**: Codex's configured servers and this chat's tools had no `mafia`. The existing terminal helper's
+  `game_status` and a lens-flare `kb_search` succeeded (names for both builds and the water notes); both labs were
+  stopped, the default 1.2 lab in loader mode. The helper prints text only: an image result through it does not
+  show the agent the frame. No game was started, closed or changed; no client configuration was changed.
+- **Documented**: docs/AGENT_SETUP.md has a concrete Codex config example, the full-read warning, fallback limits,
+  verification evidence and the easy-to-miss rules (both-build tests, generated SDK/Rust/methods, UTF-8, TLS,
+  graphics startup, tester copies, permission boundaries). AGENTS.md points there before the truncation boundary,
+  records the owner's re-read/hash and backup requirement, and labels the Bash fault as Claude-specific. README
+  and ROADMAP Known gaps now distinguish native client setup from a working standalone server.
+- **Scope**: documentation only; the existing water and loader changes and three old Claude worktrees were
+  preserved. No build or game regression test was run. Connecting native Mafia tools remains a client setup step.
+
+## 2026-10-30: Mafia MCP registered in Codex
+
+- **Asked and authorized**: the owner wants full game interaction and explicitly asked the agent to connect the
+  server itself. Registered `mafia` with `codex mcp add`, using the absolute existing executable and MML_REPO.
+- **Preserved**: checked the current global config's SHA-256 before writing, made and hash-verified
+  `C:/Users/PC/.codex/config.toml.before-mafia-20261030-171623.bak`, then used the supported CLI. Compared parsed
+  settings afterwards: existing settings equivalent (omitted empty STDIO args and numeric formatting normalized).
+- **Verified**: `codex mcp get mafia --json` and list report enabled, no tool allowlist/denylist. A separate client
+  using the saved command/environment from outside the repository initialized the MCP server, listed 35 tools
+  (including screenshots, input, launch/close, memory, deploy, Ghidra and crash triage), and queried both labs'
+  stopped state. No game was launched or changed.
+- **Left**: the existing chat's native tool inventory still lacks Mafia. The owner must restart the Codex app,
+  reopen the chat (or start a new project chat if needed), then verify native status and screenshot access. This
+  has not been called a live-game or visual test. AGENT_SETUP and ROADMAP now record registration and the pending
+  client activation. The instruction-size setting and game code were left unchanged.
+
+## 2026-10-30: native Codex MCP verified in both games after restart
+
+- **Checked**: the owner restarted Codex; native Mafia tools appeared. game_status first confirmed both labs
+  stopped. Launched 1.2 (profile 4, pid 11520) and 1.0 (profile Run, pid 15384) together into the city-small
+  freeride, in background windows, police/traffic/pedestrians zero. Both reached a live player in a car, with
+  start.state done and no start error, neither window in front.
+- **Input and eyes**: native input Accelerate 600 ms, Brake 1000 ms returned resolved action slots 33 and 35 and
+  player positions about 0.8 m from their launch positions in each lab. Both screenshot image blocks (1280x960)
+  arrived and were visually inspected in chat: the street, car HUD and game frame visible. Existing devtools free
+  camera was active in 1.2; its configuration was left alone. Screenshots remain in each lab's mml/shots/1.jpg.
+- **Cleanup**: confirmed the launched pids through game_status, closed only those labs with native game_close
+  (11520 and 15384), then game_status confirmed both stopped. No mode/default switch, configuration edit, build,
+  deploy, save or regression suite. Native connection and basic live interaction passed; not every tool tested.
+- **Documented**: AGENT_SETUP now records the live check; ROADMAP's pending client activation is resolved, with
+  the instruction-size limitation kept. Source code and the earlier water work were not changed.
+
+## 2026-10-30: current water inspected; free camera left for the owner
+
+- **Asked**: inspect the current water, then leave the free camera to the owner. Inspection only: no shader,
+  loader, build or deploy changes. Started only 1.2, profile 4, whole-city day freeride, police zero, background
+  window (pid 5856); the 1.0 lab remained stopped. Moved the player's car to the documented safe embankment.
+- **Found in live settings**: river_water on, reflection/shadows on, debug 0, wind 1 m/s, direction 210 degrees,
+  clarity 2 m, but waves=0 (default 1): the previous waterline-debug setting suppresses the ripples. Captured the
+  mirror-like current surface (shots/2.jpg and 3.jpg); temporarily set only waves=1 to inspect the intended ripples
+  (4.jpg and 5.jpg), the sun's glitter (6.jpg), and the contact with walls/piers (7.jpg). The reflection, moving
+  ripples and the glitter beneath the visible sun work in those views. A narrow pale strip remains along the wall
+  at the low view; its cause was not diagnosed. This does not close the water's remaining renderer-order issues.
+- **Telemetry, not a benchmark**: across the river with waves=1, river_water.status reported one 54-triangle plane
+  at -9.992 m, about 620k visible pixels, reflection active; frame avg 9.97 ms, views 3.25 ms, bridge 1.66 ms,
+  mod 0.017 ms. No A/B or GPU cost claim; these depend on the view and running scene.
+- **Handoff**: restored waves=0, preserving the owner's existing water settings. Seeded devtools's actual free
+  camera from the inspection view by toggling its existing freecam flag off/on while the bridge's camera was drawn,
+  then camera.release returned held=false, override=devtools. Verified devtools.state freecam=true and camera.state
+  eye [-1540,-6,-65], forward approximately [-0.4851,0.0485,0.8731]. Final image shots/10.jpg. Speed 10 m/s.
+  Live bindings: WASD move, mouse look, Space up, Q or RightCtrl down, Shift faster, wheel changes speed, F3 toggles.
+  The game remains running for the owner, with no bridge camera timer holding it. Default lab and mode unchanged.
+- **Documentation**: ROADMAP no longer says the old bridge shade's texture must be found: the frames and the
+  existing hide rule were already documented in knowledge/notes/water.md and present in the running mod.
+
+## 2026-10-30: DLSS enabled during the owner's water inspection
+
+- **Asked**: enable DLSS without losing the free camera. Loaded dlss_nr into the running 1.2 lab through mod.load;
+  its graphics bridge was already active for river_water, so no game restart or manifest change was needed.
+  The mod is loaded for this session; its manifest's enabled flag remains false.
+- **Verified**: dlss_nr.state/side identify an RTX 3070, DLSS SR DLL 310.9.16.0 available, the saved mode DLAA
+  (1280x960 in/out), pipeline on, frame generation off. The side reported hundreds of SR evaluations, host drawn
+  grew to 4195, late=0 and last_error empty; screenshot 11.jpg was inspected. Neural Rendering did not initialize:
+  nvngx_dlssnr.dll is absent (and this project's NR implementation requires RTX 50). Set the live nr request false
+  to leave the supported DLAA path selected; other DLSS settings were kept. No binaries downloaded or deployed.
+- **Free-camera question**: the owner expected E to rise because Q descends. Read devtools.cpp Wanted: vertical
+  movement uses Jump minus Crouch. Current input.actions binds Jump to Space, Crouch to Q/RightCtrl; E has no
+  separate camera binding. Explained the current controls; no global action rebinding or code change. Verified
+  devtools.state freecam=true while the owner continued moving it. The game was left running for them.
+
+## 2026-10-30: opaque uniform-depth water and the moving DLSS waterline fixed
+
+- **Owner's report**: submerged objects showed through a river with no complete bed; a gap opened where a wall
+  ended at the water when the camera rose. Especially visible at 10 FPS, like a frame of lag. The initial static
+  reflection-foot repair (contact probes up to three texels and a point sample at contact) did not solve the
+  motion problem; the owner correctly rejected that as a complete fix.
+- **Water body**: replaced refraction strength with a uniform virtual vertical depth, default 10 m. Refracted
+  ray length drives absorption/scattering; no underlying scene colour, geometry-derived bed depth, bed foam or
+  subsurface object shadows. Surface sunlight/shadows and whitecaps remain. Both labs checked with a scaled
+  2bbat1 prop above the river and below it: visible above, hidden below, then removed. The first attempted move
+  used the wrong prop.place key; repeated correctly with `pos` before accepting the result.
+- **Root cause and fix**: host/gfx.cpp ran the upscaler before all graphics passes. Pipelined DLSS returned the
+  previous colour frame, while river_water used this frame's camera, depth, mask and reflection. Graphics passes
+  with negative order now run at the render size first; a bridge shader composites their premultiplied colour
+  with the current world into a separate input texture before the upscaler. Water order is -120. Nonnegative
+  passes remain after it, the no-upscaler path keeps increasing order, and the initial/no-answer fallback retains
+  the prepared colour. Resources are released with the bridge's sized resources. No new ABI or game addresses.
+- **Validation**: x86-release loader and water built; full tests/run_tests.py returned ALL PASSED after the host
+  change. Installed loader/PDB in both stopped labs, then launched both together (1.2 pid 24256, 1.0 pid 21908).
+  Native graphics state on, fresh reflection views, no DLSS error. Actual upward free-camera input at a 10 FPS
+  cap with pipeline enabled: 1.2 DLAA (1280x960), 1.0 Quality (853x640 render to 1280x960). Moving contacts remained
+  joined in the inspected sequences (1.2 shots/19..21.jpg, 1.0 shots/11..13.jpg). Owner: "everything is fixed".
+  Colour synchronization is fixed; water-surface depth/motion replacement and translucent ordering remain future
+  work. No performance claim or new benchmark.
+- **Backups**: build/water-opaque-backup-20261030-174332 and build/render-sync-backup-20261030-181001 contain the
+  affected pre-edit sources/docs. Previous installed ASI/PDB saved in each lab's mml_lab/render-sync-20261030-18110x.
+  Unrelated uncommitted work preserved; no commit or push, no lab mode/default switch.
+- **Optional capture work**: the owner had also requested a screenshot plus the previous second of camera poses.
+  Added disabled-by-default camera_capture, Ctrl+F11, BMP/JSON in mml/data/camera_capture, commands capture/list/
+  replay/stop. Built and capture files checked in both builds; path traversal refused. Uses existing render,
+  hotkey and camera services, no addresses or ABI additions. Records per-frame poses, projection metadata and
+  settings; does not save world actors or wave time. Replay command accepted in 1.0, but exact replay validation
+  remains pending. It can capture a shorter history immediately after loading. Left unloaded after restart when
+  the owner redirected priority to fixing the lag; it was not required to diagnose or fix the cause.
+- **Handoff**: restored 1.2 max_fps=0, DLAA and pipeline on, waves=0 as before. Returned actual devtools freecam
+  to the owner's pre-restart eye [-1569.384,-1.891,7.412], released the bridge camera (held=false), verified
+  freecam=true. Restored 1.0's max_fps=0, upscale=5, pipeline=false and freecam=false, closed only its lab pid
+  21908. 1.2 remains running for the owner.
+
+## 2026-10-30: water shadows follow the visible sun by default; source selectable
+
+- **Requested**: choose whether water shadows follow the visible sun or the scene's directional light, since the
+  two do not coincide in Mafia. Default to the visible sun. Added Water's Shadows checkbox and Shadows from
+  selector: Sun (`shadow_source=0`, default), Scene light (`1`). Source changes are live; debug 8 shows the map's
+  visibility on the water. Existing baked scene shadows, scene illumination and glitter direction are unchanged.
+- **Implementation**: appended shader_shadows_from to MmlHost, preserving the old ABI layout and legacy
+  shader_shadows. Explicit MML_SHADOW_SUN requests use SceneSunSeen for the actual map camera, falling back to
+  SceneSun only when no sky sun exists; MML_SHADOW_SCENE uses SceneSun. A selected light below the horizon draws
+  no map. One map is shared: the latest active explicit request wins, legacy requests have no source preference,
+  release/unload restores the preceding request or scene default. Invalid source leaves the old request intact.
+  Added the Rust safe wrapper and regenerated sys.rs. Bridge shader.shadows accepts source sun/scene; shader.state
+  reports source, source_used, source_owner and actual unit direction. Updated PROTOCOL and generated methods.inc.
+- **Validation**: x86-release loader/water and testmod_kit/rust_kit_rs built. Full tests/run_tests.py ALL PASSED,
+  including explicit SDK selection, legacy coexistence, invalid request preservation, precedence and release,
+  generated C/Rust contracts and the existing rendering/loader tests. Log: build/test-shadow-source-20261030-rerun.log.
+  The first run used an old kit DLL (the runner does not build test mods); rebuilt it before the successful run.
+  git diff --check clean. No new addresses or layouts, no performance claim.
+- **Both labs together**: installed hash-matching ASI (875E749056911AA7098746AE565ECA9844FB0AC656300583321CC0E2D9BC5D80)
+  and water DLL, started 1.2 pid 20704/profile 4 and 1.0 pid 23252/profile Run, full-city day, police zero, background.
+  Both initially selected sun without a saved override, map drawn, source_owner river_water. Actual visible-sun
+  direction [-0.4623,0.2480,0.8513]; scene mode [-0.2431,0.9026,0.3552]. Same held camera
+  [-1490,30,20] looking at [-1590,-10,-25]: debug-8 sun maps showed long building shadows over the river, scene maps
+  short bank shadows. Both directions visually checked, then debug restored to 0 and Sun selected.
+- **Menu verification**: inspected both Water pages; labels fit. 1.2's selector cycles Sun/Scene light on click;
+  1.0's dropdown was opened and Scene light selected with native in-game input. Both changed the saved setting.
+  menu.value {id:303,value:1} did not set the selector, despite returning success/value 0: read start.cpp
+  SafeSetValue and the kind-aware setters in menus.cpp/menus10.cpp, recorded the bridge gap in ROADMAP. No tool
+  code changed. Native menu interaction confirmed the feature independently.
+- **Preservation**: source/docs/SDK/test backups in build/water-shadow-source-backup-20261030-1830; previous
+  installed ASI/PDB in each lab's mml_lab/water-shadow-source-20261030-1830. The first 1.2 deploy hit a closing
+  process's DLL lock; confirmed its old pid gone, retried, then verified hashes. No mode/default change, no save,
+  commit or push. Existing uncommitted work kept.
+- **Handoff**: both menus closed, debug 0, shadow source Sun. Closed only 1.0 pid 23252. Left 1.2 running, loaded
+  DLSS again after restart and verified DLAA/pipeline true with no error; frame generation off. Restored the owner's
+  pre-restart devtools camera [-1553.206,1.334,-20.439], released camera.set (held=false), freecam true.
+
+## 2026-10-30: current posed shadow casters, depth-state repair and persistent DLSS
+
+- The owner reported solid leaf/fence shadows, slow updates and a missing train wagon. The default mesh path
+  had no material alpha and refreshed scene snapshots every 0.25 s; railway actors were excluded. Switched the
+  default to LS3D's actual posed drawing every frame. Shadow-only box planes correct CullThruPortal's perspective
+  overwrite; camera-distance LOD and screen occlusion no longer discard nearby casters from the light camera.
+  New build-table fields/bytes verified in both games by tools/check_builds.py. Cut-out textures and alpha tests
+  are preserved; translucent non-cut-out groups are skipped. The owner independently verified both wagons.
+- During this implementation an auxiliary scene render leaked ZWRITEENABLE=0. The owner saw far city geometry
+  overwrite nearer surfaces. Surveys confirmed every opaque main-world group had depth writes off; restoring
+  that state immediately restored the city. LS3D's ResetRenderProps state block omits it. PassGame now explicitly
+  saves/restores depth writes, including failure paths, and returns the borrowed shaders. Added real-device
+  tests/game/test_shadow_render.py: repeated shadow off/on, opaque zwrite and actual textured cut-out casters.
+  Eight assertions passed in each lab. The owner confirmed the city fixed. shader.survey {shadows:true} records
+  actual caster groups/visuals and world matrices for future pose regressions.
+- Water's SunShadowSoft adds a bounded blocker search and contact-hardening PCF. Shadow softness scales the
+  solar angular radius (default 1); zero retains fixed PCF. Approximate filter, maximum 32 texel radius.
+- The owner also caught DLSS missing after our restart. Earlier mod.load was session-only while its installed
+  manifest remained disabled. Enabled dlss_nr in W:/MafiaLAB/mml/mods/dlss_nr/mod.json; the shipped example remains
+  opt-in. Automatic startup was verified on the next launch: DLAA, pipeline true, increasing drawn, no last_error.
+  No manual mod.load after that launch. Deploy preserves the lab's own enabled flag. This corrects the earlier
+  handoff practice, rather than repeatedly reloading DLSS by hand.
+- Built loader ASI B187B2BBDED309C98B22C4C7E54158A21211E80CC0EB265C0483964D0668DDAA, hash-matched in both labs.
+  Full offline suite passed after the host fixes: build/test-shadow-casters-final-20261030.log. Source backups in
+  build/water-shadow-casters-backup-20261030; preceding installed loader/PDB in each lab's
+  mml_lab/shadow-casters-20261030. Shared rendering changes tested in 1.2 and 1.0 together.
+
+## 2026-10-30: actual tessellated 3D waves
+
+- Requested: keep the water's appearance, but give waves real volume. The FFT already produced height; the
+  original water vertex shader left all captured triangles flat. The unused second complex FFT pair now packs
+  horizontal Dx+iDz. Resolve exports mipmapped height/Dx/Dz; no extra FFT pass or CPU readback per frame.
+- sdk/include/mml/water_mesh.h clips captured triangles to a fixed 16 m grid, preserving original footprint and
+  water levels. GPU hull/domain shaders tessellate by distance, use symmetric shared-edge factors, reject patches
+  outside the view conservatively and displace the actual vertices vertically and towards crests. Normals retain
+  the undisplaced material phase; fine wavelengths remain pixel shading, coarse geometry uses filtered waves.
+- Separate D32 water depth orders overlapping crests; main-world depth still clips city geometry. Render target,
+  depth target/state are restored and hull/domain shaders/resources unbound after drawing, preserving later
+  passes and DLSS. Reflection depth attenuates waves at cut wall feet; its camera stays on the mean plane. No
+  underwater renderer, physical water-level change, or water depth/motion replacement for DLSS in this block.
+  Those approximation limits are in ROADMAP and knowledge/notes/water.md.
+- Added live Water controls 3D waves (default on) and Wave height (0..8 multiplier, default 1). Debug 14 shows
+  actual wireframe; status reports patches and asynchronous GPU domain vertices/clipped triangles. The river's
+  54 triangles became 91946 bounded patches; the inspected low view in both builds reported about 704397 domain
+  vertices and 514275 clipped triangles. These counts describe that view, not a performance benchmark.
+- Verified visible crests/troughs and near-bank views in both running labs, solid/wireframe, menu labels fit in
+  both versions. The owner: "very beautiful"; kept the approved live 1.2 settings (wind 10, waves 1, wave_height 3).
+  New tests/game/test_water_geometry.py passed in both builds, including actual tessellation, fresh reflection,
+  nonzero height, live off/on and DLSS still drawing in 1.2. Offline water_mesh_test checks signed area, bounds,
+  maximum patch size and exact watertight shared edges; integrated into tests/run_tests.py. Full offline suite
+  ALL PASSED: build/test-water-geometry-20261030.log; diff --check clean. Build/install river DLL hashes match:
+  A6A1A946D8ECBC552D34E8E51503847CC5C611B414DD8F7586C6A76273A3BBCA in both labs.
+- Backed up affected sources before the geometry changes in build/water-geometry-backup-20261030. Existing work
+  preserved, no save/commit/push or lab mode/default change. Restored 1.0 wind/default height and closed only its
+  pid 25068. Left 1.2 pid 20848 running, DLSS autoload enabled, debug 0. Seeded actual devtools freecam at the
+  inspection view [-1510,-8.9,-25] and released the bridge camera (held=false, override=devtools); menus closed.
+
+## 2026-10-30/31: heavy water view, temporal inputs, auxiliary audio and fitted shadows
+
+- Saved the owner's exact settings and 35--40 FPS camera in docs/WATER_RENDER_PLAN.md and local evidence under
+  build/water-perf-20261030 before experiments. Backups of source/installed host retained. No quality controls
+  lowered, no feature disabled for the result. Root causes and remaining budget are recorded in the plan.
+- The second shadow was hidden baked watercity.stin geometry entering the unnamed light camera. Auxiliary hide
+  rules now include shadow rendering and projected game shadows are not recast. Shadow requests keep the tracked
+  device mirror alive; per-draw constants follow compiled shader read masks, including GPU skinning. Removed
+  about 75521 redundant device Get* calls/frame; native mirror checks 5000 draws, zero mismatches.
+- LS3D Render updated area/environment sound from every auxiliary camera even without a listener. A host-owned
+  mid hook skips only this block, preserving hardware mirror preparation. Both builds' audio RVAs disassembled
+  and guarded by check_builds; owner confirms sound no longer lags. view.state reports main/auxiliary counts.
+- Appended optional MmlGfxFrame temporal_target MRT and host merge before upscaling; displaced water supplies
+  linear depth and previous camera/FFT motion with matching city jitter. C/Rust ABI tails and wrappers updated.
+  Owner confirms DLSS works well; native depth view and both builds' Quality/pipeline checks agree.
+- Appended shader_shadows_fit API and Rust wrapper: fit visible frustum/receiver slab, rectangular orthographic
+  camera, density-preserving map growth up to device caps. Fixes the visible fixed-radius boundary. PCSS uses
+  independent X/Y world scales. Shader compilation moved to the build; nonblocking GPU queries split FFT/surface.
+- Full offline tests ALL PASSED; both live builds passed 22 shadow/depth/geometry/temporal checks each, concurrent.
+  Raised/turned coverage and upward freecam at a 10 FPS cap inspected in both. Final single-lab checkpoint sample
+  14.68 ms / 68.14 FPS versus baseline 26.96 ms / 37.09 FPS; not a paired estimate (world/load differ, DLSS now on
+  and shadow coverage larger). Static batching was slower by +0.427 +/- 0.204 ms (95%); kept off. Visibility,
+  reflection and required device ownership waits remain costs, not claimed perfectly optimized.
+- Hash-matched final loader FCEF199A9D8410A003EC5492F0EF826E2046E5548014596D9C4C10AB6CB27BA5 and river DLL
+  CE17573F64FEEFC34328DF3E46B65745A1D978D2AC357B62C9BAA44628DA2CAD in both labs. Restored 1.0 overrides,
+  closed only pid 11988. Left 1.2 pid 18456 at the checkpoint, owner's water settings intact, DLAA/pipeline on,
+  max_fps=0, no menu, actual devtools freecam active and bridge camera hold released. No commit/push/lab switch.
+
+## 2026-10-31: owner found the game closed after handoff
+
+- At 08:43 1.2 pid 18456 was gone; the owner says they had not closed it. The agent had closed only test 1.0
+  pid 11988. Crash triage returned an unrelated October 27 report; no new dump. Last normal log: 01:34:16,
+  DLAA running normally, no process-exit marker. Windows Application/System checks over ten hours found no
+  matching game failure, GPU reset, resource exhaustion or shutdown/sleep record. Cause/exit time unresolved;
+  documented in WATER_RENDER_PLAN rather than claiming a confirmed crash. MCP's detached launch retains no
+  process handle from which to obtain the ended process's exit code.
+- Saved previous run's log to build/water-unexpected-exit-20261031/mml.log, relaunched 1.2 only (pid 19916),
+  restored benchmark camera and owner's exact water settings, verified DLAA/pipeline drawing with no error.
+  Actual devtools freecam active, bridge hold released. No code changes or unsupported attribution of cause.
+
+## 2026-10-31: reviewed the owner's mafia-ragdoll water work
+
+- Read the sibling AGENTS, WATER/architecture notes and implementation of the surface, FFT, reflection, shore
+  maps, current and offline bench. Compared actual shader/resource paths with this repository's water. No sibling
+  edits, external builds or live game changes. Findings and source locations: docs/WATER_RAGDOLL_REVIEW.md.
+- Useful differences: Gaussian/EWA reflection footprint filtering, full slope covariance and variance-preserving
+  tiling/flow, a persistent geometry-derived shore distance map and supersampled motion-reference methodology.
+- Direct clipmap replacement is not a measured optimization: its configured 128x128x2x9 submits 294912 patches,
+  ours recorded 91946. Its position-only cached shadow buffer also lacks our material cut-outs; retain our live
+  posed path. Reflection culling to water remains unfinished there too. Added targeted candidates to the plan;
+  no claim of an FPS improvement or a ready drop-in port, no approved appearance/settings altered.
+
+## 2026-10-31: bookmarked the tiny-water slowdown, diagnosis deferred by owner
+
+- Captured the current camera, native screenshot and runtime/config state without changing the view or settings.
+  Owner reports about 19 to 5 FPS when a tiny lower-right piece of water enters the view; screenshot shows 5 FPS,
+  202.7 ms. Evidence: build/water-tiny-patch-20261031/checkpoint.json and frame.jpg. Eye [-1407.48035,7.42366,
+  -798.74927], forward [0.706159,0.129395,0.696129], FOV 55.4129, actual far 4993.269 m. This is a separate
+  reproduction from the earlier bridge view. Added the deferred checkpoint to WATER_RENDER_PLAN.
+- Sky work is ongoing separately: a painted-sky HDR prefilter replaced the independent analytic glitter; owner
+  liked the cloud shape and requested angular restriction. Live 1.2 has a soft sun_radius setting (default 18 deg).
+  Geometry visibility/recovery edits exist in source/build but have not been deployed or regression-tested yet.
+  These changes are not marked finished; both-build validation and documentation remain before completion.
+
+## 2026-10-31: completed painted sky light and conservative offscreen visibility
+
+- Owner steered the sibling review away from water physics and toward visibility and the sun/cloud painting.
+  Replaced the independently added analytic glitter with sky-depth HDR expansion before reflection mips. The
+  painting supplies the source's shape/hue; a soft cone around the visible sun limits it. New sun_radius control:
+  0.5..60 deg, default 18, Water 2/2. Owner confirms the current sun in the reflection looks good. LDR-to-HDR
+  expansion remains an explicit reconstruction assumption, not recovered physical radiance.
+- Original water triangles receive conservative expanded-frustum rejection before reflection/full surface/FFT.
+  Camera-epoch occlusion queries invalidate old zero counts on movement/settings changes; returning water gets
+  a current reflection without waiting for old queries. Pending GPU queries are not overwritten. No resolution,
+  visible update cadence, wave detail or feature reduction. Ordinary instancing cannot eliminate another camera's
+  projection and rasterization; shared scene resources are already reused. Tiny visible-patch cost stays deferred.
+- Actual CsPaintedSky tested on WARP (cloud/geometry mask, angular support/falloff, hue and off identity), integrated
+  into offline tests. Full suite ALL PASSED. Native visibility/recovery passed both builds concurrently; integrated
+  1.0 run passed 29 checks with initialized DLSS Quality/pipeline. Initial drawn=0 was the not-yet-ready sidecar,
+  confirmed by its state, not a rendering error. Final settings-invalidation delta rechecked in both builds.
+- Radius label fits the 1.0 second settings page. Opening another page while the same owner's page is open is
+  refused by MenuPageOpen; the existing native tab performs deferred close/reopen correctly (wait for its tick).
+  Source, log and UI inspected; no tool workaround/fix needed. Final DLL 4266CFDB8AFBE3DC6A7DBD333EE8428F07FD9BEFE72432F15A71BFFE2A0CF130
+  hash-matched in both labs. Evidence/source backup: build/water-sky-20261031. No physics work or tiny-patch
+  diagnosis; the owner's accepted settings and separate checkpoint are preserved.
+- Restored 1.0 DLSS overrides and closed only its test pid 21728. Left 1.2 pid 19916 running with the owner's
+  current settings, actual devtools freecam active, bridge hold released. The owner currently has DLSS processing
+  off for comparison; left that choice intact (autoload stays enabled). Final snapshot in the evidence folder.
+
+## 2026-10-31 — Infinite-distance tiny-water optimization and HUD regression
+
+- Reproduced the saved camera at all 328 blocks / about 5 km: 222 ms/frame, 103 ms shadow pass, 45 ms reflection;
+  the actual water surface GPU cost was under 0.5 ms. Source/installed-host backups and baseline archived in
+  build/water-tiny-opt-20261031. User's settings captured before measurement.
+- Rejected current-depth late shadow Render: it reduced shadow work to about 4 ms but corrupted radar and font
+  blending. The owner caught the font regression. Disabled it immediately; device/IGraph state restores did not
+  fix the architecture. Removed all late-path changes from gfx/view/render, its shader and target; rejected source
+  retained only in ignored evidence. No claim that the underlying re-entrant LS3D state problem is solved.
+- Added append-only shader_shadows_surface ABI and safe Rust wrapper: copied finite triangle footprint, a bound
+  on displacement per axis, current-frustum clipping with conservative expanded planes and light-space bounds.
+  The shadow pass remains before the main world. PCSS padding retained; smaller world-box quantization avoids
+  excessive unrelated city submissions. Texture size, wave detail, reflection and update cadence retained.
+- Tiny-view native caster groups about 53922 to 41263, shadow CPU about 103 to 70 ms; texel density improves despite
+  the hardware cap. First footprint-only A/B had no gain; tighter extents are necessary. Full-frame short A/B
+  medians 190.9 to 174.7 ms, but its 95% interval includes zero: no precise FPS claim. Reflection still about 41 ms.
+- Offline suite ALL PASSED. Both live builds: 29 integrated shadow/depth/alpha, wave, sky, DLSS Quality/pipeline
+  checks, plus 5 far-view bounds checks. An initial 1.2 tessellation run expected DLSS while owner had it off;
+  repeated after enabling and waiting for the sidecar. HUD screenshots in both builds show normal radar/text.
+  Final host 6546BC65C8284D30B6271B7A6012774F9BB0F87B811ABD57CC2D3C6278BD99C0 and water
+  BC6FB364AD06935BB500072425F76B643107FA1293419CC198B42A20B99DBCED installed/hash-verified in both labs.
+
+## 2026-10-31 — Current-depth shadow fit recovered with the native state contract
+
+- Continued at the owner's request and reproduced the additional freeride-start view: both water queries zero,
+  reflection stopped, but a full shadow camera still rendered about 78 ms. Disabling DLSS also left motion replay
+  requested unconditionally in mml_mod_load. ReadSettings now requests it only while S.on; native off-state shows
+  no motion owner, no replay draws and no motion passes. DLSS remains installed/enabled as the owner chose.
+- Used both Ghidra projects to identify the actual state left outside D3D: ResetRenderProps writes 19 cached
+  render properties, and GetViewPort returns LS3D's own 24-byte viewport. Restoring the former fixes fonts;
+  restoring the latter fixes the rectangular scene behind the radar. The rejected ResetRenderProps call alone
+  did not preserve the outer state. Addresses in game_build.h, all store destinations checked by check_builds;
+  Rust game tables regenerated. Native comparison now restores both caches plus a full D3D state block.
+- Receiver-only long-range shadows use the same frame's opaque depth and conservative finite receiver boxes,
+  followed by CPU intersection with the actual displaced triangle footprint. No history or stale zero gates.
+  Empty receivers skip the shadow camera. World rules/surveys, view-pass consumers and populated near sectors
+  retain early maps (Render consumes a mutable near queue after stage 1). Shadow children request no callbacks.
+- Same-run start-view ABBA/BAAB, one game, held camera and world, batch off, DLSS processing off: early finite-fit
+  109.648 ms, current-depth 56.392 ms; paired -53.268 ms +/-0.146 ms (95%), -48.6%. Picture comparison exactly
+  zero in every channel, including HUD/radar. This measures depth fitting separately from the earlier idle-DLSS
+  fix and is not a claim of an ideal-optimum renderer. Evidence: depth2-bench-start.json.
+- Evaluated existing static batches under the same conditions: 56.148 to 27.347 ms, -51.5% +/-3.65 ms. Image mean
+  difference 0.023/255 and 0.04% above 8/255, with isolated silhouette changes. Left batches OFF under the owner's
+  no-visual-loss requirement; no batch code changed. batch-evaluation.json and native difference image retained.
+- Final triangle intersection removes all shadow caster submissions in the hidden-water street view. Unit bounds
+  tests pass; final native run passed 41 checks per build, including current-frame fitting after camera changes,
+  density, opaque depth/cut-outs, waves, immediate visibility recovery and DLSS. The offline suite passed; binary
+  signatures/cache stores and generated Rust checked again. A cold hidden-only test probed 1.0 before its light
+  state was ready; subsequent state confirmed the active current-depth path and zero casters in both builds.
+- Final running-world profile, one lab, full city, batches/DLSS processing off: 58.24 ms / 17.17 FPS, shadow site
+  0.009 ms, scene views 0.004 ms. Main city is the remaining dominant cost. Restored settings, time scale 1, FPS
+  overlay and actual devtools freecam; bridge hold released at the reproduced start-facing street view. Closed
+  only 1.0 pid 26576. Full distance remains on for the owner's reproduction. Moving-camera reflection cost remains
+  an explicit next item, not hidden behind a quality or update-rate reduction.
+- Final host 81A8207F3486EE8D3D3D0C36DE4F699349540D8A45EC16760999A416F3357AA5; DLSS x86
+  15ACCF2DAF8EB33BEFF2E5839ABC3294E69DD7DF011D360FDC6718BE48E064B4; water remains BC6FB364AD06935BB500072425F76B643107FA1293419CC198B42A20B99DBCED.
+  Installed/hash-verified in both labs; final JSON/native frame and all measurements archived in
+  build/water-tiny-opt-20261031. No commit or push.
+
+## 2026-10-31 — Saved distance, occluders, fog and stronger foam
+
+- Owner requested normal draw-distance controls, occluders, native fog and twice the foam slider range.
+  Added Distance/Fog/Advanced tabs to Rendering (loader), saved in its own config. Distance modes Game, Custom
+  (100..10000 m), Whole city; occluders independent. Legacy whole_city remains compatible and migrates once.
+- Read native IsBlockInRange/DeactivateBlock and hardware/software fog in both Ghidra projects. Custom distance
+  keeps native streaming cleanup/cadence, uses native quad tests and 30 m hysteresis, covers all far-frustum
+  corners, follows freecam and holds final LODs. Original camera range is tracked per scene and forgotten at close.
+- Fog uses LS3D's own setter/cache and sector colors; Custom takes start plus fade distance in metres. Software
+  fog temporarily borrows the light's derived ratios; Off writes no-fog factors. Game removes both fog hooks,
+  so the default gains no per-draw hook. Current GPU exercises hardware fog; software code read in both builds.
+- Foam UI maximum 1 -> 2, saved multiplier unchanged (1 now shows 50%). Final shader coverage saturates so
+  100% cannot extrapolate blends. Fresh owner's wind 7.5, height 2.5, chop 2, foam 1 and other water values preserved.
+- Full offline suite ALL PASSED. Final native controls suite: 23 passed in 1.2, 22 in 1.0 (including actual water
+  fog constants/off, extended foam display and DLSS where enabled). Both labs restarted with saved custom
+  750 m/no occluders/fog 50..250 m and retained them; native load retained settings and Game restored 280 m.
+  Native UI Distance and Fog visually checked in both; 1.2 choice changed config through a native menu click.
+- SDK addresses, generated Rust and 228 method descriptions checked; signatures/cache targets verified in both
+  binary builds. Hash-matched installation: host 8C99882811EB25C244B2B5E05BABDE62A31DF46D32C218C9FF7B95C6D9E1CCCF,
+  water C4E447B0A30F2A39AADB9BE6C36F54BA54C9FE7B1EB3DF63C96CF3E2763FCEFE.
+  Backups, source snapshots and logs: build/render-controls-20261031 and each lab's mml_lab/render-controls-20261031.
+- Handoff: user's actual freecam seeded/released at its captured pose, DLSS on and no error, full-city/no occluders
+  retained and now saved, game fog retained, water config unchanged. Only the 1.0 test game closed. No commit/push.
+
+## 2026-10-31 — Atmosphere over city, displaced water and reflected rays
+
+- Owner requested a developed, atmospheric fog that also affects the water. Added loader Fog model Atmosphere
+  (3), retaining Game/Off/Linear. Saved controls: density, exponential height scale, base height, broad sun
+  scattering, Sky/Cool/Warm/Neutral tint. Sky tint follows ambient illumination; the phase uses sun_seen.
+- Shared shader integrates exact exponential-height optical depth (uniform below base), stable for horizontal
+  and base-crossing rays. Painted upper sky retained, horizon merged into haze; no second sun disc or temporal noise.
+  This is analytic aerial perspective, not shadowed ray-marched volumetrics; transparent surfaces without depth
+  inherit opaque depth, and the reflection uses its representative traced hit distance (knowledge/notes/atmosphere.md).
+- Native hardware/software fog off only while the bridge is ready, else native linear fallback. Main atmosphere
+  composes in linear light AFTER complete water using actual displaced surface depth, BEFORE DLSS. No-upscaler
+  path seeds the post effects with the same composed RGBA16F frame. Water fogs the outgoing reflection segment;
+  the bridge then applies camera-to-water extinction to reflection, foam, body and glitter together. No extra scene render.
+- Appended three float4s to MmlGfxConstants / frame.hlsli, regenerated Rust bindings. Graphics startup includes
+  saved Atmosphere as a bridge consumer. Actual WARP shaders: 45 integral/opacity/limit checks plus 3 pixel-composite
+  checks (5 m displaced water versus 1000 m opaque depth and disabled). Added to the offline suite.
+- Native suite passed 13 checks in 1.2 and 11 in 1.0: same fog constants, camera heights, native fog restored,
+  zero-density/off behavior, DLSS processing on/off and no upscaler. Native Fog UI inspected in both. Saved
+  Atmosphere restarted in both labs and requested MSAA-free graphics startup; 1.0 config restored and test game closed.
+- One game, original held camera/world, custom 750 m with occluders, DLAA on: ABBA/BAAB 2 blocks x 45 frames,
+  atmosphere versus fog off +0.285 +/-0.044 ms (95%) wall, +1.2%. GPU delta +0.256 +/-0.975 ms not significant.
+  Full JSON in build/atmosphere-20261031/bench.json; no inference of a universally fixed GPU cost.
+- Both full offline runs ALL PASSED; the final includes the actual water-depth composite regression check.
+  Final host EFD3DA620A89765788B0FEDA2ADC8AE0524BEB039B79E4981F8B75A52DE41C19;
+  water A534C6BC32C7D9C8D7D14116191A6D2F46CCEC53AB3C34B83204A2CF4813CF71, hash-matched in both labs.
+- Balanced Atmosphere selected/saved in 1.2: start 0, span 500, density .65, height 70, base -10, sun .5, Sky tint.
+  Owner's custom 750 m/occluders, water appearance, DLSS on, original freecam pose retained; bridge hold released,
+  world scale 1. Source/binary/config backups and evidence in build/atmosphere-20261031 and labs' mml_lab counterpart.
+  No commit or push.
+
+## 2026-10-31 — Shared atmosphere SDK extracted from renderer policy
+
+- Owner requested the correct host/SDK/mod boundary and a publishable foundation for future agents. Added
+  host/atmosphere.cpp as a copied-request service; append-only scene_atmosphere / scene_atmosphere_state C ABI,
+  C-compatible neutral helper, generated Rust bindings and safe Rust methods. All parameters explicit; no
+  weather palette, preset, example-id or example-config dependencies remain in host code.
+- Highest priority wins, ties use acquisition order; updates do not steal ties. Per-mod copied settings, finite/
+  range/size validation, frame snapshot after RENDER_BEGIN, automatic release on fault/unload, and previous owner/
+  native baseline restoration. Tiny positive scale heights refused to prevent reciprocal overflow; 0 stays uniform.
+  Backend snapshot enabled only after native fog hooks succeed. ABI old prefixes retained; phase/sky controls appended.
+- The policy-only atmosphere example has its own native settings page, ambient palette and density conversion.
+  It uses no game addresses/hooks/shaders/GPU resources/DLSS code. CMake tracks SDK HLSL additions/changes.
+- Added tools/migrate_atmosphere.py (dry run, configured labs only, game-closed check, exact backups and SHA-256
+  guards). Current 1.2 settings migrated unchanged: clear 200, span 2000, density .7, uniform height 0, base 0,
+  sun .4, Sky tint; native linear remains fallback. Repeat is a no-op. Distance 1000/occluders retained.
+- WARP actual integral/composite tests passed. Full offline suite passed after correcting its fixture to copy the
+  example and comparing float RGB with tolerance. C/C++/safe Rust SDK smoke passed, including invalid NaN/tiny/
+  undersized/color/thread requests, future size, copied state, arbitration, partial bridge updates, faults, reload,
+  unload, migration idempotence and concurrent-edit refusal. Plain C caller compiled/executed via kit/atmosphere_c.c.
+- Full-suite temporary-mod cleanup hit Windows EINVAL writing CMake after MSBuild; replaced destructive truncation
+  with exact-preimage guarded atomic replacement, bounded sharing retry and verified in-workspace cleanup. Full
+  offline run then ALL PASSED. tests/atmosphere_sdk_smoke.py supplies a fast service-only repeat for future agents.
+- Final native block on both builds: 39 passed in 1.2, 36 in 1.0, including ownership/reload/native restoration,
+  height/camera changes, water composite, DLSS on/off and native settings. Both restart/mission reload paths used.
+- Same selected physical parameters through policy mod versus explicit SDK bridge request: with static world,
+  DLSS/FPS overlay off and wind temporarily zero, native screenshots match EXACTLY (mean/worst/differing pixels 0).
+  Wind/DLSS/FPS settings restored. Animated-wave comparison naturally differed with wall-clock phase; no pixel
+  identity is claimed for that run. Neither timing run resolves a significant ownership-overhead difference.
+- docs/ATMOSPHERE_SDK.md documents C/C++/Rust examples, units, lifecycle, shader integration, migration, limits,
+  fast/full/native checks and extension rules; linked from AGENTS, ARCHITECTURE and MODDING. Branch
+  codex/atmosphere-sdk prepared; pre-existing water/runtime work preserved. No commit/push or PR performed.
+  Evidence and initial source/binary/config backups: build/atmosphere-sdk-20261031 and the labs' mml_lab folders.
+- Final handoff: water and DLSS configuration exactly match the latest owner snapshot (DLSS on); world scale 1,
+  native devtools freecam active without a bridge hold. Retained its current pose. Both labs' installed host and
+  atmosphere DLL hashes match the final reviewed build; 1.0 test game closed, 1.2 left running.
+
+## 2026-10-31 — Owner-authorized GitHub publication snapshot
+
+- Owner explicitly authorized committing and pushing all current work to GitHub. Collected all 87 changed/new
+  source, shader, configuration, test and documentation files on codex/atmosphere-sdk, including the earlier
+  water/shadow/DLSS/render-control work. The branch also carries seven existing local commits beyond origin/main.
+- Publication checks: no binary/game assets or credential patterns among the changed files; Python sources parse,
+  JSON manifests parse (three settings files intentionally use loader-supported JSON comments), diff whitespace
+  check clean. Existing full offline, final C/C++/Rust SDK smoke and native 39/36 passing results are retained.
+- Publish this complete snapshot to origin/codex/atmosphere-sdk; no history rewrite or main-branch merge is part
+  of this step. Machine configuration, game files, backups and benchmark artifacts remain ignored and local.

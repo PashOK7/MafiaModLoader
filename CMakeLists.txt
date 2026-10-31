@@ -32,7 +32,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     # ---- the loader
     add_library(MafiaModLoader SHARED
         host/main.cpp host/paths.cpp host/log.cpp host/memory.cpp host/crash.cpp host/stack.cpp host/hooks.cpp host/mods.cpp host/game_hooks.cpp
-        host/bridge.cpp host/tap.cpp host/start.cpp host/input.cpp host/joyplug.cpp host/fixes.cpp host/asi_compat.cpp host/screenshot.cpp host/draw.cpp host/config.cpp host/menus.cpp host/menus10.cpp host/script.cpp host/orders.cpp host/world.cpp host/lifecycle.cpp host/files.cpp host/render.cpp host/gfx.cpp host/gfx_vk.cpp host/gamma.cpp host/fullscreen.cpp host/gather.cpp host/motion.cpp host/view.cpp host/geom.cpp host/prof.cpp host/d3dstats.cpp host/d3dmirror.cpp host/vbrename.cpp host/batch.cpp host/events.cpp host/native.cpp host/humans.cpp host/watch.cpp host/happen.cpp host/collide.cpp host/state.cpp host/lights.cpp host/effects.cpp host/props.cpp host/sound.cpp host/control.cpp host/interact.cpp host/hud.cpp host/saves.cpp host/anims.cpp host/hits.cpp host/pedestrians.cpp host/framelife.cpp host/worlddraw.cpp host/scale.cpp host/items.cpp host/stats.cpp host/models.cpp host/meshes.cpp host/shaders.cpp host/skin.cpp host/vdata.cpp host/shadows.cpp host/panel.cpp host/fpu.cpp host/gamecam.cpp host/sidecar.cpp host/video.cpp host/video_hw.cpp)
+        host/bridge.cpp host/tap.cpp host/start.cpp host/input.cpp host/joyplug.cpp host/fixes.cpp host/asi_compat.cpp host/screenshot.cpp host/draw.cpp host/config.cpp host/menus.cpp host/menus10.cpp host/script.cpp host/orders.cpp host/world.cpp host/lifecycle.cpp host/files.cpp host/render.cpp host/atmosphere.cpp host/gfx.cpp host/gfx_vk.cpp host/gamma.cpp host/fullscreen.cpp host/gather.cpp host/motion.cpp host/view.cpp host/geom.cpp host/prof.cpp host/d3dstats.cpp host/d3dmirror.cpp host/vbrename.cpp host/settings.cpp host/batch.cpp host/events.cpp host/native.cpp host/humans.cpp host/watch.cpp host/happen.cpp host/collide.cpp host/state.cpp host/lights.cpp host/effects.cpp host/props.cpp host/sound.cpp host/control.cpp host/interact.cpp host/hud.cpp host/saves.cpp host/anims.cpp host/hits.cpp host/pedestrians.cpp host/framelife.cpp host/worlddraw.cpp host/scale.cpp host/items.cpp host/stats.cpp host/models.cpp host/meshes.cpp host/shaders.cpp host/skin.cpp host/vdata.cpp host/shadows.cpp host/panel.cpp host/fpu.cpp host/gamecam.cpp host/sidecar.cpp host/video.cpp host/video_hw.cpp)
     # ($<0:> keeps Visual Studio from adding a per-configuration folder)
     set_target_properties(MafiaModLoader PROPERTIES SUFFIX ".asi" RUNTIME_OUTPUT_DIRECTORY ${MML_OUT}/$<0:>)
     target_include_directories(MafiaModLoader PRIVATE third_party/json host ${CMAKE_BINARY_DIR}/gen)
@@ -143,7 +143,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
             endif()
             cmake_path(ABSOLUTE_PATH file BASE_DIRECTORY ${dir} NORMALIZE OUTPUT_VARIABLE src)
             cmake_path(GET src PARENT_PATH srcdir)
-            file(GLOB includes ${srcdir}/*.hlsli ${CMAKE_SOURCE_DIR}/sdk/include/mml/gfx/*.hlsli
+            file(GLOB includes CONFIGURE_DEPENDS ${srcdir}/*.hlsli ${CMAKE_SOURCE_DIR}/sdk/include/mml/gfx/*.hlsli
                  ${CMAKE_SOURCE_DIR}/sdk/include/mml/shaders/*.hlsli ${CMAKE_SOURCE_DIR}/sdk/include/mml/shaders/*.hlsl)
             set(out ${gen}/shaders/${name}.h)
             set(sdkinc ${CMAKE_SOURCE_DIR}/sdk/include)
@@ -170,8 +170,12 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     mml_shaders(MafiaModLoader host ${CMAKE_SOURCE_DIR}/host/shaders
         bridge9.hlsl:VsQuad:vs_3_0 bridge9.hlsl:PsDepth:ps_3_0 bridge9.hlsl:PsComposite:ps_3_0
         bridge9.hlsl:VsMotion:vs_3_0 bridge9.hlsl:VsMotionSkin:vs_3_0 bridge9.hlsl:PsMotion:ps_3_0 bridge9.hlsl:PsMotionAll:ps_3_0 bridge9.hlsl:PsGamma:ps_3_0
-        bridge11.hlsl:VsFullScreen:vs_5_0 bridge11.hlsl:PsStretch:ps_5_0 bridge11.hlsl:PsUpDepth:ps_5_0 bridge11.hlsl:PsUpMotion:ps_5_0
-        skin9.hlsl:VsSkin:vs_3_0 skin9.hlsl:PsSkin:ps_3_0 skin9.hlsl:VsSkinDepth:vs_3_0 skin9.hlsl:VsSkinMotion:vs_3_0)
+        bridge11.hlsl:VsFullScreen:vs_5_0 bridge11.hlsl:PsStretch:ps_5_0 bridge11.hlsl:PsPreComposite:ps_5_0
+        bridge11.hlsl:PsPreTemporal:ps_5_0 bridge11.hlsl:PsUpDepth:ps_5_0 bridge11.hlsl:PsUpMotion:ps_5_0
+        skin9.hlsl:VsSkin:vs_3_0 skin9.hlsl:PsSkin:ps_3_0 skin9.hlsl:VsSkinDepth:vs_3_0 skin9.hlsl:VsSkinMotion:vs_3_0
+        sun_shadow9.hlsl:VsSunShadow:vs_3_0 sun_shadow9.hlsl:PsSunShadow:ps_3_0
+        shadow_receivers11.hlsl:CsShadowReceivers:cs_5_0
+        mesh_shadow9.hlsl:VsMeshShadow:vs_3_0 mesh_shadow9.hlsl:PsMeshShadow:ps_3_0)
 
     # mml_add_mod(<id> <dir> <sources...> [SHADERS <file>:<entry>:<profile>[:<name>] ...]): a native mod:
     # <out>/mml/mods/<id>/<id>.dll, its mod.json and, when it has them, its config.json (the defaults of its settings)
@@ -289,10 +293,13 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     mml_add_mod(rear_mirror ${CMAKE_SOURCE_DIR}/mods/examples/rear_mirror mods/examples/rear_mirror/rear_mirror.cpp
         SHADERS rear_mirror.hlsl:PsMirror:ps_5_0)
     mml_add_mod(river_water ${CMAKE_SOURCE_DIR}/mods/examples/river_water mods/examples/river_water/river_water.cpp
-        SHADERS river_water.hlsl:VsWater:vs_5_0 river_water.hlsl:PsWater:ps_5_0)
+        SHADERS river_water.hlsl:VsWater:vs_5_0 river_water.hlsl:HsWater:hs_5_0 river_water.hlsl:DsWater:ds_5_0
+                river_water.hlsl:PsWater:ps_5_0 river_water.hlsl:CsPaintedSky:cs_5_0 river_waves.hlsl:CsSpectrum:cs_5_0
+                river_waves.hlsl:CsFftRows:cs_5_0 river_waves.hlsl:CsFftCols:cs_5_0 river_waves.hlsl:CsResolve:cs_5_0)
     mml_add_mod(sun_shafts ${CMAKE_SOURCE_DIR}/mods/examples/sun_shafts mods/examples/sun_shafts/sun_shafts.cpp
         SHADERS sun_shafts.hlsl:PsMarch:ps_5_0 sun_shafts.hlsl:PsBlurX:ps_5_0 sun_shafts.hlsl:PsBlurY:ps_5_0
         sun_shafts.hlsl:PsComposite:ps_5_0)
+    mml_add_mod(atmosphere ${CMAKE_SOURCE_DIR}/mods/examples/atmosphere mods/examples/atmosphere/atmosphere.cpp)
     mml_add_files_mod(freeride_picture ${CMAKE_SOURCE_DIR}/mods/examples/freeride_picture)
     # a mod with no 32-bit DLL, its 64-bit half alone (built by the x64 preset into build/x64/out; deploy merges them)
     mml_add_files_mod(hello_side ${CMAKE_SOURCE_DIR}/mods/examples/hello_side)
@@ -347,6 +354,8 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     mml_add_mod(fusion_fix ${CMAKE_SOURCE_DIR}/mods/fusion_fix mods/fusion_fix/fusion_fix.cpp mods/fusion_fix/ff.cpp
         mods/fusion_fix/widescreen.cpp mods/fusion_fix/ls3df.cpp mods/fusion_fix/cutscene.cpp mods/fusion_fix/ui.cpp
         mods/fusion_fix/camera.cpp mods/fusion_fix/restored.cpp mods/fusion_fix/ijoy.cpp)
+    mml_add_mod(camera_capture ${CMAKE_SOURCE_DIR}/mods/examples/camera_capture mods/examples/camera_capture/camera_capture.cpp)
+    target_include_directories(mod_camera_capture PRIVATE third_party/json)
     # (tools/new_mod.py adds a mod's line above this one)
 
     # The mods this build defines: <out>/mml/build_mods.txt, one id a line (written only when it changes), which deploy
@@ -372,6 +381,35 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:MafiaModLoader> $<TARGET_PDB_FILE:MafiaModLoader>
             ${CMAKE_BINARY_DIR}/harness/)   # (its PDB beside it, as deploy puts it: crash_triage names its frames)
     set_target_properties(mml_harness PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/harness/$<0:>)
+    add_executable(water_mesh_test tests/harness/water_mesh.cpp)
+    add_executable(receiver_fit_test tests/harness/receiver_fit.cpp)
+    add_executable(shadow_receivers_test tests/harness/shadow_receivers.cpp)
+    target_link_libraries(shadow_receivers_test PRIVATE mml_sdk d3d11)
+    target_include_directories(shadow_receivers_test PRIVATE ${CMAKE_BINARY_DIR}/shaders/host)
+    target_compile_options(shadow_receivers_test PRIVATE /UNDEBUG)
+    add_dependencies(shadow_receivers_test MafiaModLoader)
+    set_target_properties(shadow_receivers_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/harness/$<0:>)
+    target_link_libraries(receiver_fit_test PRIVATE mml_sdk)
+    target_compile_options(receiver_fit_test PRIVATE /UNDEBUG)
+    set_target_properties(receiver_fit_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/harness/$<0:>)
+    target_link_libraries(water_mesh_test PRIVATE mml_sdk)
+    target_compile_options(water_mesh_test PRIVATE /UNDEBUG)  # keep assertions in release test builds
+    set_target_properties(water_mesh_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/harness/$<0:>)
+    if(TARGET mod_river_water)
+        add_executable(atmosphere_test tests/harness/atmosphere.cpp)
+        target_link_libraries(atmosphere_test PRIVATE mml_sdk d3d11)
+        target_include_directories(atmosphere_test PRIVATE ${CMAKE_BINARY_DIR}/shaders/host)
+        add_dependencies(atmosphere_test MafiaModLoader)
+        target_compile_options(atmosphere_test PRIVATE /UNDEBUG)
+        mml_shaders(atmosphere_test atmosphere ${CMAKE_SOURCE_DIR}/tests/harness atmosphere.hlsl:CsAtmosphereTest:cs_5_0)
+        set_target_properties(atmosphere_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/harness/$<0:>)
+        add_executable(water_sky_test tests/harness/water_sky.cpp)
+        target_link_libraries(water_sky_test PRIVATE mml_sdk d3d11)
+        target_include_directories(water_sky_test PRIVATE ${CMAKE_BINARY_DIR}/shaders/river_water)
+        target_compile_options(water_sky_test PRIVATE /UNDEBUG)
+        add_dependencies(water_sky_test mod_river_water)
+        set_target_properties(water_sky_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/harness/$<0:>)
+    endif()
     add_library(harness_rw_data SHARED tests/harness/rw_data.cpp)   # the game's file layer, stood in for
     set_target_properties(harness_rw_data PROPERTIES OUTPUT_NAME rw_data RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/harness/$<0:>)
     add_dependencies(mml_harness harness_rw_data)
@@ -394,6 +432,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     mml_add_test_mod(hook_a)
     mml_add_test_mod(hook_b)
     mml_add_test_mod(kit)
+    target_sources(testmod_kit PRIVATE tests/mods/kit/atmosphere_c.c)
     mml_add_test_mod(heavy)
     mml_add_test_mod(files_b)   # (its files\ folder and files_a, a mod of files alone, are copied by run_tests.py)
     mml_add_test_mod(side_test) # its 32-bit half (the 64-bit one: the x64 preset; run_tests.py copies it into x64\)

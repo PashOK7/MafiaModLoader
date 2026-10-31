@@ -62,9 +62,12 @@
 #include "gfx_vk.h"
 #include "shaders/VsQuad.h"
 #include "shaders/PsDepth.h"
+#include "shaders/CsShadowReceivers.h"
 #include "shaders/PsComposite.h"
 #include "shaders/VsFullScreen.h"
 #include "shaders/PsStretch.h"
+#include "shaders/PsPreComposite.h"
+#include "shaders/PsPreTemporal.h"
 #include "shaders/PsUpDepth.h"
 #include "shaders/PsUpMotion.h"
 #include "shaders/PsMotionAll.h"
@@ -279,6 +282,23 @@ ID3D11Texture2D *g_upColor11, *g_upDepth11, *g_upMotion11;
 ID3D11ShaderResourceView *g_upColorSRV, *g_upDepthSRV, *g_upMotionSRV;
 ID3D11RenderTargetView *g_upDepthRTV, *g_upMotionRTV;
 ID3D11PixelShader *g_psStretch, *g_psUpDepth, *g_psUpMotion;
+// Current-frame geometry replacements (negative pass orders), composited into the colour DLSS receives.
+ID3D11Texture2D *g_preColor11;
+ID3D11ShaderResourceView *g_preColorSRV, *g_preEffectsSRV;
+ID3D11RenderTargetView *g_preColorRTV;
+ID3D11PixelShader *g_psPreComposite;
+ID3D11PixelShader *g_psPreTemporal;
+struct TemporalTarget {
+    ID3D11Texture2D *tex = nullptr;
+    ID3D11ShaderResourceView *srv = nullptr;
+    ID3D11RenderTargetView *rtv = nullptr;
+    void Release() { SafeRelease(srv); SafeRelease(rtv); SafeRelease(tex); }
+};
+TemporalTarget g_surfaceInputs, g_surfaceDepth, g_surfaceMotion;
+ID3D11ComputeShader *g_receiverCS;
+ID3D11Buffer *g_receiverCB, *g_receiverOut, *g_receiverRead;
+ID3D11UnorderedAccessView *g_receiverUAV;
+unsigned g_surfaceFrames;
 ID3D11Buffer *g_upCB;              // bridge11.hlsl's Up (b1): the render size, the frame's
 bool g_upMade;                     // this frame's g_up* written (the showing gives them too)
 
@@ -366,6 +386,8 @@ bool g_haveWorldFog, g_haveWorldSun;
 DWORD g_sceneSunAt;
 bool g_haveSceneSun;
 float g_sceneSun[3], g_sceneSunColor[3], g_sceneAmbient[3];
+bool g_haveSunSeen;
+float g_sunSeen[3];   // towards the sun the sky shows (lights.cpp SceneSunSeen)
 const char *g_sunFrom = "a default from above";
 
 void Tally(UINT prims) {
@@ -698,6 +720,10 @@ void ReleaseSized() {
     g_cameraBefore = false;
     g_motionTried = false;
     g_motionReady = false;
+    SafeRelease(g_preColorSRV); SafeRelease(g_preEffectsSRV); SafeRelease(g_preColorRTV); SafeRelease(g_preColor11);
+    g_surfaceInputs.Release(); g_surfaceDepth.Release(); g_surfaceMotion.Release();
+    SafeRelease(g_receiverCS); SafeRelease(g_receiverCB); SafeRelease(g_receiverUAV);
+    SafeRelease(g_receiverOut); SafeRelease(g_receiverRead);
     SafeRelease(g_colorSRV); SafeRelease(g_depthSRV); SafeRelease(g_fxRTV);
     SafeRelease(g_color11); SafeRelease(g_depth11); SafeRelease(g_fx11);
     SafeRelease(g_intzSurf); SafeRelease(g_intz);
@@ -745,7 +771,8 @@ void ReleaseAll() {
     MotionDeviceGone();
     SafeRelease(g_frameCB); SafeRelease(g_point); SafeRelease(g_linear); SafeRelease(g_vsFull); SafeRelease(g_over);
     SafeRelease(g_event11);
-    SafeRelease(g_psStretch); SafeRelease(g_psUpDepth); SafeRelease(g_psUpMotion); SafeRelease(g_upCB);
+    SafeRelease(g_psStretch); SafeRelease(g_psUpDepth); SafeRelease(g_psUpMotion); SafeRelease(g_psPreComposite);
+    SafeRelease(g_psPreTemporal); SafeRelease(g_upCB);
     for (Stamp &s : g_stamps) { SafeRelease(s.disjoint); SafeRelease(s.freq); SafeRelease(s.begin); SafeRelease(s.end); s = Stamp{}; }
     g_stampNow = nullptr;
     g_scaledNow = false;
@@ -846,6 +873,8 @@ bool MakeDevice11() {
     if (FAILED(g_dev11->CreateBlendState(&bl, &g_over))) return Fail("the passes' blend state");
     if (FAILED(g_dev11->CreateVertexShader(kVsFullScreen, sizeof kVsFullScreen, nullptr, &g_vsFull))) return Fail("the full-screen vertex shader");
     if (FAILED(g_dev11->CreatePixelShader(kPsStretch, sizeof kPsStretch, nullptr, &g_psStretch)) ||
+        FAILED(g_dev11->CreatePixelShader(kPsPreComposite, sizeof kPsPreComposite, nullptr, &g_psPreComposite)) ||
+        FAILED(g_dev11->CreatePixelShader(kPsPreTemporal, sizeof kPsPreTemporal, nullptr, &g_psPreTemporal)) ||
         FAILED(g_dev11->CreatePixelShader(kPsUpDepth, sizeof kPsUpDepth, nullptr, &g_psUpDepth)) ||
         FAILED(g_dev11->CreatePixelShader(kPsUpMotion, sizeof kPsUpMotion, nullptr, &g_psUpMotion)))
         return Fail("the upscaler's shaders");
@@ -1196,6 +1225,7 @@ void FillConstants(MmlGfxConstants &k, UINT w, UINT h, float *viewOut, float *pr
     if (GetTickCount() - g_sceneSunAt >= 100 || !g_sceneSunAt) {
         g_sceneSunAt = GetTickCount();
         g_haveSceneSun = SceneSun(g_sceneSun, g_sceneSunColor, g_sceneAmbient) != 0;
+        g_haveSunSeen = SceneSunSeen(g_sunSeen) != 0;
     }
     bool fromScene = false;
     if (!fromGame && g_haveSceneSun) {
@@ -1208,6 +1238,9 @@ void FillConstants(MmlGfxConstants &k, UINT w, UINT h, float *viewOut, float *pr
     for (int i = 0; i < 3; i++) { k.sun[i] = s[i] / n; k.sun_color[i] = sc[i]; k.ambient[i] = g_haveSceneSun ? g_sceneAmbient[i] : 0.5f; }
     k.sun[3] = k.sun_color[3] = fromGame ? 1.0f : 0.0f;
     k.ambient[3] = g_haveSceneSun ? 1.0f : 0.0f;   // (the scene's ambient light: LS3D's own, not a Direct3D state)
+    // the sun the sky shows (its lens flare): elsewhere than the light the world is drawn with; none: that light's
+    for (int i = 0; i < 3; i++) k.sun_seen[i] = g_haveSunSeen ? g_sunSeen[i] : k.sun[i];
+    k.sun_seen[3] = g_haveSunSeen ? 1.0f : 0.0f;
     k.depth_proj[0] = p._33; k.depth_proj[1] = p._43; k.depth_proj[2] = kFarDepth; k.depth_proj[3] = 0;
     DWORD on = 0, color = 0, table = 0, vertex = 0, start = 0, end = 0, density = 0;
     if (g_stateHooked && g_haveWorldFog) {
@@ -1231,6 +1264,7 @@ void FillConstants(MmlGfxConstants &k, UINT w, UINT h, float *viewOut, float *pr
     k.fog_color[1] = ((color >> 8) & 255) / 255.0f;
     k.fog_color[2] = (color & 255) / 255.0f;
     k.fog_color[3] = on && mode != D3DFOG_NONE ? 1.0f : 0.0f;
+    AtmosphereConstants(&k);
     memcpy(viewOut, &v, sizeof v);
     memcpy(projOut, &p, sizeof p);
 }
@@ -1301,6 +1335,23 @@ ID3D11ShaderResourceView *SunShadow(MmlGfxConstants &k, bool frame) {
     return g_sunSRV;
 }
 
+bool EnsureSurfaceInputs() {
+    if (g_surfaceInputs.tex) return true;
+    auto make = [](TemporalTarget &t, DXGI_FORMAT format) {
+        D3D11_TEXTURE2D_DESC td{};
+        td.Width = g_w; td.Height = g_h; td.MipLevels = td.ArraySize = td.SampleDesc.Count = 1;
+        td.Format = format; td.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+        return SUCCEEDED(g_dev11->CreateTexture2D(&td, nullptr, &t.tex)) &&
+               SUCCEEDED(g_dev11->CreateShaderResourceView(t.tex, nullptr, &t.srv)) &&
+               SUCCEEDED(g_dev11->CreateRenderTargetView(t.tex, nullptr, &t.rtv));
+    };
+    if (make(g_surfaceInputs, DXGI_FORMAT_R32G32B32A32_FLOAT) && make(g_surfaceDepth, DXGI_FORMAT_R32_FLOAT) &&
+        make(g_surfaceMotion, DXGI_FORMAT_R16G16_FLOAT)) return true;
+    g_surfaceInputs.Release(); g_surfaceDepth.Release(); g_surfaceMotion.Release();
+    g_frameError = "cannot make replacement surface temporal inputs";
+    return false;
+}
+
 // The frame at its size for the passes after the upscaler (made at the first frame that needs them).
 bool EnsureUp() {
     if (g_upColor11) return true;
@@ -1330,12 +1381,14 @@ bool EnsureUp() {
 
 // A bridge's own full-screen draw on Direct3D 11 (the upscaler's helpers): ps into rtv over the frame, srvs at t0..t3,
 // g_up's sizes at b1, no blending.
-void Draw11(ID3D11PixelShader *ps, ID3D11RenderTargetView *rtv, ID3D11ShaderResourceView *const srv[4]) {
+void Draw11(ID3D11PixelShader *ps, ID3D11RenderTargetView *rtv, ID3D11ShaderResourceView *const srv[4],
+            ID3D11RenderTargetView *second = nullptr) {
     const float up[4] = {static_cast<float>(g_dw), static_cast<float>(g_dh), static_cast<float>(g_w), static_cast<float>(g_h)};
     g_ctx->UpdateSubresource(g_upCB, 0, nullptr, up, 0, 0);
     D3D11_VIEWPORT vp{0, 0, static_cast<float>(g_w), static_cast<float>(g_h), 0, 1};
     g_ctx->RSSetViewports(1, &vp);
-    g_ctx->OMSetRenderTargets(1, &rtv, nullptr);
+    ID3D11RenderTargetView *outputs[2] = {rtv, second};
+    g_ctx->OMSetRenderTargets(second ? 2 : 1, outputs, nullptr);
     g_ctx->OMSetBlendState(nullptr, nullptr, 0xFFFFFFFFu);
     g_ctx->OMSetDepthStencilState(nullptr, 0);
     g_ctx->RSSetState(nullptr);
@@ -1343,6 +1396,7 @@ void Draw11(ID3D11PixelShader *ps, ID3D11RenderTargetView *rtv, ID3D11ShaderReso
     ID3D11SamplerState *smp[2] = {g_point, g_linear};
     g_ctx->PSSetSamplers(0, 2, smp);
     g_ctx->PSSetConstantBuffers(1, 1, &g_upCB);
+    g_ctx->PSSetConstantBuffers(0, 1, &g_frameCB);
     g_ctx->VSSetShader(g_vsFull, nullptr, 0);
     g_ctx->PSSetShader(ps, nullptr, 0);
     g_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -1393,7 +1447,7 @@ void RunUpscaler(MmlGfxConstants &k, const PassTarget &t, MmlGfxFrame &f, ID3D11
     g_ctx->ClearState();
     if (call.drew > 0) {
         g_upDrawn++;
-    } else if (scaled) {   // (nothing of the upscaler's: the smaller picture stretched over the frame)
+    } else if (scaled || f.color != t.color) {   // keep pre-upscale replacements even before DLSS has its first answer
         ID3D11ShaderResourceView *in[4] = {nullptr, f.color ? static_cast<ID3D11ShaderResourceView *>(f.color) : nullptr, nullptr, nullptr};
         Draw11(g_psStretch, t.rtv, in);
         g_upStretched++;
@@ -1463,11 +1517,12 @@ bool RunPasses(MmlGfxConstants &k, const PassTarget &t) {
     g_inPasses = true;
     ID3D11ShaderResourceView *srv[4] = {t.depth, t.color, sun, motion};
     g_upMade = false;
-    if (frame && g_upFrame && g_up.fn && ModAlive(g_up.mod)) RunUpscaler(k, t, f, srv, tf);
     std::vector<Pass> passes = g_passes;   // (a pass may add or take back passes)
+    auto drawPasses = [&](int phase) {
     for (const Pass &p : passes) {
         if (!ModAlive(p.mod) || (!frame && !p.inViews)) continue;
-        D3D11_VIEWPORT vp{0, 0, static_cast<float>(t.w), static_cast<float>(t.h), 0, 1};
+        if ((phase < 0 && p.order >= 0) || (phase > 0 && p.order < 0)) continue;
+        D3D11_VIEWPORT vp{0, 0, static_cast<float>(f.width), static_cast<float>(f.height), 0, 1};
         g_ctx->RSSetViewports(1, &vp);
         g_ctx->OMSetRenderTargets(1, &t.rtv, nullptr);
         g_ctx->OMSetBlendState(g_over, nullptr, 0xFFFFFFFFu);   // (a pass's 0 leaves the passes before it as they are)
@@ -1493,15 +1548,81 @@ bool RunPasses(MmlGfxConstants &k, const PassTarget &t) {
             if (q.handle == p.handle) q.cpuMs = q.cpuMs <= 0 ? ms : q.cpuMs * 0.9 + ms * 0.1;
         Mark(tf, p.handle);
     }
+    };
+    const bool upscale = frame && g_upFrame && g_up.fn && ModAlive(g_up.mod);
+    bool havePre = false, preOk = true;
+    for (const Pass &p : passes) havePre = havePre || (p.order < 0 && ModAlive(p.mod));
+    const bool atmosphere = frame && k.atmosphere_info[0] > 0.5f;
+    const bool preComposite = frame && ((upscale && havePre) || atmosphere);
+    if (preComposite) {
+        // A pipelined upscaler returns the previous frame. Water drawn after it with this frame's depth and camera
+        // opens a moving slit at the bank. Draw replacements into this frame before it enters that pipeline.
+        MmlGfxConstants native = k;
+        native.size[0] = static_cast<float>(g_dw); native.size[1] = static_cast<float>(g_dh);
+        native.size[2] = 1.0f / g_dw; native.size[3] = 1.0f / g_dh;
+        f.k = &native; f.width = g_dw; f.height = g_dh;
+        g_ctx->UpdateSubresource(g_frameCB, 0, nullptr, &native, 0, 0);
+        const bool temporal = EnsureSurfaceInputs();
+        if (temporal) {
+            g_ctx->ClearRenderTargetView(g_surfaceInputs.rtv, clear);
+            f.temporal_target = g_surfaceInputs.rtv;
+        }
+        drawPasses(-1);
+        f.temporal_target = nullptr;
+        g_ctx->ClearState();
+        if (!g_preColor11) {
+            D3D11_TEXTURE2D_DESC td{};
+            td.Width = g_w; td.Height = g_h; td.MipLevels = td.ArraySize = td.SampleDesc.Count = 1;
+            td.Format = DXGI_FORMAT_R16G16B16A16_FLOAT; td.Usage = D3D11_USAGE_DEFAULT;
+            td.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+            preOk = SUCCEEDED(g_dev11->CreateTexture2D(&td, nullptr, &g_preColor11)) &&
+                    SUCCEEDED(g_dev11->CreateRenderTargetView(g_preColor11, nullptr, &g_preColorRTV)) &&
+                    SUCCEEDED(g_dev11->CreateShaderResourceView(g_preColor11, nullptr, &g_preColorSRV)) &&
+                    SUCCEEDED(g_dev11->CreateShaderResourceView(g_fx11, nullptr, &g_preEffectsSRV));
+            if (!preOk) {
+                SafeRelease(g_preColorSRV); SafeRelease(g_preEffectsSRV); SafeRelease(g_preColorRTV); SafeRelease(g_preColor11);
+                g_frameError = "cannot make the pre-upscale colour target";
+            }
+        }
+        if (preOk) {
+            ID3D11ShaderResourceView *src[4] = {t.depth, t.color, nullptr, nullptr};
+            g_ctx->PSSetShaderResources(4, 1, &g_preEffectsSRV);
+            ID3D11ShaderResourceView *surface = temporal ? g_surfaceInputs.srv : nullptr;
+            g_ctx->PSSetShaderResources(5, 1, &surface);
+            Draw11(g_psPreComposite, g_preColorRTV, src);
+            ID3D11ShaderResourceView *none = nullptr; g_ctx->PSSetShaderResources(4, 1, &none);
+            g_ctx->PSSetShaderResources(5, 1, &none);
+            f.color = srv[1] = g_preColorSRV;
+            g_ctx->ClearRenderTargetView(t.rtv, clear);
+            if (temporal) {
+                ID3D11ShaderResourceView *input[4] = {srv[0], nullptr, nullptr, srv[3]};
+                g_ctx->PSSetShaderResources(4, 1, &g_surfaceInputs.srv);
+                Draw11(g_psPreTemporal, g_surfaceDepth.rtv, input, g_surfaceMotion.rtv);
+                g_ctx->PSSetShaderResources(4, 1, &none);
+                f.depth = srv[0] = g_surfaceDepth.srv;
+                f.motion = srv[3] = g_surfaceMotion.srv;
+                g_surfaceFrames++;
+            }
+            // Without an upscaler this complete, fogged world is the base for ordinary post effects. Negative
+            // replacements have already run; copying the RGBA16F target avoids a second blend/gamma conversion.
+            if (!upscale) g_ctx->CopyResource(g_fx11, g_preColor11);
+        }
+        f.k = &k; f.width = t.w; f.height = t.h;
+        g_ctx->UpdateSubresource(g_frameCB, 0, nullptr, &k, 0, 0);
+    }
+    if (preOk) {
+        if (upscale) RunUpscaler(k, t, f, srv, tf);
+        drawPasses(upscale || preComposite ? 1 : 0);
+    }
     g_inPasses = false;
     if (tf) EndTimers(tf);
     g_ctx->ClearState();   // the shared textures are Direct3D 9's again
-    if (GpuSync()) return true;   // (Hand's To9 queues Direct3D 11's signal and DXVK's wait for it)
+    if (GpuSync()) return preOk;   // (Hand's To9 queues Direct3D 11's signal and DXVK's wait for it)
     double t0 = NowMs();
     bool ok = Wait11();
     double w = NowMs() - t0;
     g_wait11 = g_wait11 <= 0 ? w : g_wait11 * 0.9 + w * 0.1;
-    return ok;
+    return ok && preOk;
 }
 
 // The bridge's own drawing inside LS3D's frame: what the block does not hold is saved by hand, the block captures
@@ -1514,14 +1635,7 @@ struct Saved9 {
     IDirect3DVertexBuffer9 *vb = nullptr;
     UINT vbOff = 0, vbStride = 0, freq = 1;
 };
-void SaveAndNeutral9(Saved9 &s) {
-    g_dev9->GetVertexShader(&s.vs);
-    g_dev9->GetPixelShader(&s.ps);
-    g_dev9->GetVertexDeclaration(&s.decl);
-    g_dev9->GetFVF(&s.fvf);
-    g_dev9->GetStreamSource(0, &s.vb, &s.vbOff, &s.vbStride);
-    g_dev9->GetStreamSourceFreq(0, &s.freq);
-    g_block->Capture();
+void Neutral9() {
     g_dev9->SetRenderState(D3DRS_ZENABLE, FALSE);
     g_dev9->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
     g_dev9->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
@@ -1543,7 +1657,17 @@ void SaveAndNeutral9(Saved9 &s) {
     g_dev9->SetSamplerState(0, D3DSAMP_SRGBTEXTURE, FALSE);
     g_dev9->SetStreamSourceFreq(0, 1);
 }
-void Restore9(Saved9 &s) {
+void SaveAndNeutral9(Saved9 &s) {
+    g_dev9->GetVertexShader(&s.vs);
+    g_dev9->GetPixelShader(&s.ps);
+    g_dev9->GetVertexDeclaration(&s.decl);
+    g_dev9->GetFVF(&s.fvf);
+    g_dev9->GetStreamSource(0, &s.vb, &s.vbOff, &s.vbStride);
+    g_dev9->GetStreamSourceFreq(0, &s.freq);
+    g_block->Capture();
+    Neutral9();
+}
+void Apply9(const Saved9 &s) {
     g_block->Apply();
     g_dev9->SetVertexShader(s.vs);
     g_dev9->SetPixelShader(s.ps);
@@ -1551,7 +1675,49 @@ void Restore9(Saved9 &s) {
     else g_dev9->SetVertexDeclaration(s.decl);
     g_dev9->SetStreamSource(0, s.vb, s.vbOff, s.vbStride);
     g_dev9->SetStreamSourceFreq(0, s.freq);
+}
+void Restore9(Saved9 &s) {
+    Apply9(s);
     SafeRelease(s.vs); SafeRelease(s.ps); SafeRelease(s.decl); SafeRelease(s.vb);
+}
+
+struct ReceiverConstants { float draw[4], range[4], basis[3][4], slabs[32][4]; };
+bool ReceiverBounds(const MmlGfxConstants &k, const ReceiverConstants &rc, float bounds[6], unsigned &samples) {
+    if (!g_receiverCS) {
+        D3D11_BUFFER_DESC cb{}; cb.ByteWidth=sizeof rc; cb.BindFlags=D3D11_BIND_CONSTANT_BUFFER;
+        D3D11_BUFFER_DESC b{}; b.ByteWidth=7*sizeof(unsigned); b.BindFlags=D3D11_BIND_UNORDERED_ACCESS;
+        b.MiscFlags=D3D11_RESOURCE_MISC_BUFFER_STRUCTURED; b.StructureByteStride=sizeof(unsigned);
+        D3D11_UNORDERED_ACCESS_VIEW_DESC u{}; u.ViewDimension=D3D11_UAV_DIMENSION_BUFFER; u.Buffer.NumElements=7;
+        bool ok=SUCCEEDED(g_dev11->CreateBuffer(&cb,nullptr,&g_receiverCB)) &&
+            SUCCEEDED(g_dev11->CreateBuffer(&b,nullptr,&g_receiverOut)) &&
+            SUCCEEDED(g_dev11->CreateUnorderedAccessView(g_receiverOut,&u,&g_receiverUAV));
+        b.BindFlags=b.MiscFlags=b.StructureByteStride=0; b.Usage=D3D11_USAGE_STAGING; b.CPUAccessFlags=D3D11_CPU_ACCESS_READ;
+        ok=ok && SUCCEEDED(g_dev11->CreateBuffer(&b,nullptr,&g_receiverRead)) &&
+            SUCCEEDED(g_dev11->CreateComputeShader(kCsShadowReceivers,sizeof kCsShadowReceivers,nullptr,&g_receiverCS));
+        if(!ok) {
+            SafeRelease(g_receiverCS);SafeRelease(g_receiverCB);SafeRelease(g_receiverUAV);
+            SafeRelease(g_receiverOut);SafeRelease(g_receiverRead); return false;
+        }
+    }
+    const unsigned empty[7]={~0u,~0u,~0u,0,0,0,0};
+    g_ctx->UpdateSubresource(g_frameCB,0,nullptr,&k,0,0);
+    g_ctx->UpdateSubresource(g_receiverCB,0,nullptr,&rc,0,0);
+    g_ctx->UpdateSubresource(g_receiverOut,0,nullptr,empty,0,0);
+    ID3D11Buffer *cb[2]={g_frameCB,g_receiverCB};
+    g_ctx->CSSetConstantBuffers(0,2,cb);g_ctx->CSSetShaderResources(0,1,&g_depthSRV);
+    g_ctx->CSSetUnorderedAccessViews(0,1,&g_receiverUAV,nullptr);g_ctx->CSSetShader(g_receiverCS,nullptr,0);
+    g_ctx->Dispatch((g_dw+7)/8,(g_dh+7)/8,1);
+    ID3D11ShaderResourceView *none=nullptr;ID3D11UnorderedAccessView *noUav=nullptr;
+    g_ctx->CSSetShaderResources(0,1,&none);g_ctx->CSSetUnorderedAccessViews(0,1,&noUav,nullptr);g_ctx->CSSetShader(nullptr,nullptr,0);
+    g_ctx->CopyResource(g_receiverRead,g_receiverOut);
+    D3D11_MAPPED_SUBRESOURCE m{};
+    // A deliberately small synchronous result (28 bytes), on the expensive far-view path only. It belongs to
+    // this exact frame: no delayed receiver mask, camera prediction, or shadow pop after an occluder moves.
+    if(FAILED(g_ctx->Map(g_receiverRead,0,D3D11_MAP_READ,0,&m))) return false;
+    const unsigned *v=static_cast<const unsigned *>(m.pData);samples=v[6];
+    for(int a=0;a<6;a++) {unsigned b=(v[a]&0x80000000)?(v[a]^0x80000000):~v[a];memcpy(bounds+a,&b,4);}
+    if(!samples) {for(int a=0;a<3;a++){bounds[a]=1;bounds[a+3]=-1;}}
+    g_ctx->Unmap(g_receiverRead,0);return true;
 }
 
 // The world drawn smaller and no upscaled frame over it (a frame the passes did not run): the smaller picture stretched
@@ -1633,7 +1799,27 @@ bool DoStage1() {
     // 2. the upscaler and the passes
     if (ok) {
         FillConstants(g_k, g_w, g_h, g_viewM, g_projM);
-        ok = RunPasses(g_k, {g_depthSRV, g_colorSRV, g_fxRTV, g_w, g_h, 0, g_viewM, g_projM});
+        ReceiverConstants receiver{};
+        const int slabs=ShadowsDepthPlan(receiver.slabs,receiver.basis);
+        if(slabs) {
+            MmlRenderCamera camera{};
+            float bounds[6];unsigned samples=0;
+            const double begin=NowMs();
+            receiver.draw[0]=static_cast<float>(g_dw);receiver.draw[1]=static_cast<float>(g_dh);
+            receiver.draw[2]=g_jitNow[0];receiver.draw[3]=g_jitNow[1];
+            const bool cameraOk=RenderFrameCamera(&camera);
+            receiver.range[0]=camera.near_z;receiver.range[1]=camera.far_z;receiver.range[2]=static_cast<float>(slabs);
+            bool fitted=slabs>0 && cameraOk && ReceiverBounds(g_k,receiver,bounds,samples);
+            const double reduceMs=NowMs()-begin;
+            Apply9(saved);g_dev9->SetRenderTarget(0,rt);g_dev9->SetDepthStencilSurface(g_intzSurf);g_dev9->SetViewport(&drawn);
+            ShadowsDepthFinish(fitted?bounds:nullptr,samples,reduceMs);
+            Apply9(saved);
+            g_dev9->SetTransform(D3DTS_VIEW,reinterpret_cast<const D3DMATRIX *>(g_viewM));
+            g_dev9->SetTransform(D3DTS_PROJECTION,&proj);
+            Neutral9();
+            ok=Wait9(); // the new map belongs to this same frame, on both sharing backends
+        }
+        if(ok) ok = RunPasses(g_k, {g_depthSRV, g_colorSRV, g_fxRTV, g_w, g_h, 0, g_viewM, g_projM});
     }
     ok = ok && Hand(false, {g_fxLink});
     double t2 = NowMs();
@@ -1670,6 +1856,7 @@ int NoteFault(EXCEPTION_POINTERS *ep) {
 bool SafeStage1() { __try { return DoStage1(); } __except (NoteFault(GetExceptionInformation())) { return false; } }
 
 bool Wants() {
+    if (AtmosphereActive() || AtmosphereReady()) return !g_failed;
     for (const Pass &p : g_passes) if (ModAlive(p.mod)) return !g_failed;
     return g_up.fn && ModAlive(g_up.mod) && !g_failed;
 }
@@ -2565,6 +2752,10 @@ void GfxUiEnd() {
     g_quiet--;
 }
 
+bool GfxShadowDepthAvailable() {
+    return g_dev11 && g_depthSRV && !g_failed &&
+        std::none_of(g_passes.begin(),g_passes.end(),[](const Pass &p){return p.inViews && ModAlive(p.mod);});
+}
 void GfxBeforeWorld() {
     g_fogTallies = g_sunTallies = 0;   // a new frame: the tallies start over
     g_framePrims = g_litPrims = 0;
@@ -2964,12 +3155,17 @@ bool GfxMethod(const std::string &method, const std::string &params, std::string
     }
     out["d3d9"] = gfxvk::On() ? gfxvk::Describe() : g_dev9 ? "Direct3D 9Ex: textures shared by handle" : "";
     out["sun_shadow"] = {{"bound", g_sunSRV != nullptr && g_k.sun_shadow_info[0] > 0.5f}, {"size", g_k.sun_shadow_info[3]}};
+    out["surface_temporal"] = {{"frames", g_surfaceFrames}, {"ready", g_surfaceInputs.tex != nullptr}};
     if (!g_sunError.empty()) out["sun_shadow"]["error"] = g_sunError;
     if (g_frames) {
         const MmlGfxConstants &k = g_k;
         out["world"] = {{"eye", {k.eye[0], k.eye[1], k.eye[2]}}, {"sun", {k.sun[0], k.sun[1], k.sun[2]}}, {"sun_from_game", k.sun[3] > 0.5f},
                         {"sun_color", {k.sun_color[0], k.sun_color[1], k.sun_color[2]}}, {"sun_from", g_sunFrom},
+                        {"sun_seen", {k.sun_seen[0], k.sun_seen[1], k.sun_seen[2]}}, {"sun_seen_found", k.sun_seen[3] > 0.5f},
                         {"ambient", {k.ambient[0], k.ambient[1], k.ambient[2]}}, {"ambient_from_scene", k.ambient[3] > 0.5f},
+                        {"atmosphere", {{"on", k.atmosphere_info[0] > 0.5f}, {"density", k.atmosphere[1]},
+                                        {"base", k.atmosphere[2]}, {"falloff", k.atmosphere[3]},
+                                        {"color", {k.atmosphere_color[0], k.atmosphere_color[1], k.atmosphere_color[2]}}}},
                         {"fog", {{"on", k.fog_color[3] > 0.5f}, {"mode", k.fog[3]}, {"start", k.fog[0]}, {"end", k.fog[1]},
                                  {"density", k.fog[2]}, {"color", {k.fog_color[0], k.fog_color[1], k.fog_color[2]}}}}};
     }

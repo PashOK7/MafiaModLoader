@@ -25,6 +25,9 @@
 // the window titled with the tab shown ("Debug views: Routes"). A tab makes the page again with its part (this one
 // closed, that one opened once the game has let the old one go: the game's own tabs are three menus too).
 //
+// The loader's own settings (settings.cpp: Rendering) have a page of the same kind, the list's first row: made from
+// their block as a mod's from its manifest, their values config.cpp's under the id "loader".
+//
 // The pages are the loader's own (menus.cpp's owners kLoaderOwner: the list, kLoaderPage: a mod's page over it), so
 // Esc on a mod's page returns to the list, and on the list to Options, as the game's own pages do. Both builds.
 //
@@ -234,12 +237,24 @@ bool ParseSettingsJson(const json &s, const std::string &id, const std::string &
 bool ParseSettings(MmlMod *mod, Settings *out, std::string *why) {
     std::string text = ModSettingsJson(mod);
     if (text.empty()) return false;
-    return ParseSettingsJson(json::parse(text, nullptr, false), ModIdOf(mod), ModNameOf(mod),
-                             [mod](const std::string &key) { return ConfigDefaultJson(mod, key.c_str()); }, out, why);
+    const std::string id = ModIdOf(mod);
+    return ParseSettingsJson(json::parse(text, nullptr, false), id, ModNameOf(mod),
+                             [id](const std::string &key) { return ConfigDefaultJson(id, key.c_str()); }, out, why);
+}
+// The loader's own (settings.cpp)
+bool ParseLoaderSettings(Settings *out, std::string *why) {
+    return ParseSettingsJson(json::parse(SettingsBlockJson(), nullptr, false), kLoaderSettings, "MafiaModLoader",
+                             [](const std::string &key) { return ConfigDefaultJson(kLoaderSettings, key.c_str()); }, out, why);
 }
 
 std::vector<Settings> AllSettings() {
     std::vector<Settings> all;
+    {
+        Settings s;
+        std::string why;
+        if (ParseLoaderSettings(&s, &why)) all.push_back(std::move(s));
+        else Log(MML_LOG_WARN, "host", "settings: the loader's own: %s", why.c_str());
+    }
     for (MmlMod *mod : ModsLoaded()) {
         Settings s;
         std::string why;
@@ -249,9 +264,11 @@ std::vector<Settings> AllSettings() {
     return all;
 }
 
+// A mod's settings (a loaded one's) or the loader's own, by the id
 bool Find(const std::string &id, Settings *out) {
-    MmlMod *mod = ModById(id);
     std::string why;
+    if (id == kLoaderSettings) return ParseLoaderSettings(out, &why);
+    MmlMod *mod = ModById(id);
     return mod && ParseSettings(mod, out, &why);
 }
 
@@ -271,8 +288,8 @@ json FromSlider(const Control &k, float s) {
     return std::round(v * 1e6) / 1e6;
 }
 
-std::string Shown(const Control &k, MmlMod *mod) {
-    std::string j = ConfigValueJson(mod, k.key.c_str());
+std::string Shown(const Control &k, const std::string &id) {
+    std::string j = ConfigValueJson(id, k.key.c_str());
     char b[64];
     if (k.kind == kCheck) return "";
     if (k.kind == kKey) {
@@ -354,7 +371,7 @@ const Control *PartControl(const Settings &s, const Part &p, size_t i) {
 }
 
 // The part's controls' values as the mod's settings have them now, and the texts beside the sliders.
-void ShowValues(const Settings &s, const std::vector<Part> &parts, size_t part, MmlMod *mod) {
+void ShowValues(const Settings &s, const std::vector<Part> &parts, size_t part, const std::string &mod) {
     if (part >= parts.size()) return;
     for (size_t i = 0; i < parts[part].count; i++) {
         const Control &k = *PartControl(s, parts[part], i);
@@ -378,8 +395,8 @@ void ShowValues(const Settings &s, const std::vector<Part> &parts, size_t part, 
 
 void OnModPage(int id, void *) {
     Settings s;
-    MmlMod *mod = ModById(g_pageMod);
-    if (!mod || !Find(g_pageMod, &s)) { MenuPageClose(kLoaderPage); return; }   // (the mod is gone)
+    const std::string mod = g_pageMod;
+    if (!Find(mod, &s)) { MenuPageClose(kLoaderPage); return; }   // (the mod is gone)
     const std::vector<Part> parts = Parts(s);
     if (g_pagePart >= parts.size()) { MenuPageClose(kLoaderPage); return; }     // (its manifest changed under the page)
     const Part &part = parts[g_pagePart];
@@ -527,8 +544,7 @@ std::vector<MmlMenuControl> Controls(const Page &page) {
 // A mod's page (one part of it), over the list (or over the open menu).
 bool OpenModPage(const std::string &modId, size_t partAt, std::string *err) {
     Settings s;
-    MmlMod *mod = ModById(modId);
-    if (!mod || !Find(modId, &s)) { *err = "no loaded mod \"" + modId + "\" with settings"; return false; }
+    if (!Find(modId, &s)) { *err = "no loaded mod \"" + modId + "\" with settings"; return false; }
     const std::vector<Part> parts = Parts(s);
     if (partAt >= parts.size()) { *err = "part " + std::to_string(partAt) + ": the page has " + std::to_string(parts.size()); return false; }
     Page page;
@@ -540,7 +556,7 @@ bool OpenModPage(const std::string &modId, size_t partAt, std::string *err) {
     }
     g_pageMod = modId;
     g_pagePart = partAt;
-    ShowValues(s, parts, partAt, mod);   // (applied when the game makes the page)
+    ShowValues(s, parts, partAt, modId);   // (applied when the game makes the page)
     return true;
 }
 
@@ -605,10 +621,10 @@ void PanelFrame() {
         return;
     }
     Settings s;
-    MmlMod *mod = ModById(g_pageMod);
+    const std::string mod = g_pageMod;
     int i = g_grabbing;
     g_grabbing = -1;
-    if (!mod || !Find(g_pageMod, &s)) return;
+    if (!Find(mod, &s)) return;
     const std::vector<Part> parts = Parts(s);
     if (g_pagePart >= parts.size() || i >= static_cast<int>(parts[g_pagePart].count)) return;
     const Control &k = *PartControl(s, parts[g_pagePart], static_cast<size_t>(i));
@@ -708,7 +724,7 @@ bool PanelMethod(const std::string &method, const std::string &paramsJson, std::
         *ok = true;
         return true;
     }
-    auto controlJson = [](const Control &k, MmlMod *mod) {
+    auto controlJson = [](const Control &k, const std::string &mod) {
         std::string v = ConfigValueJson(mod, k.key.c_str());
         json c = {{"key", k.key}, {"label", k.label}, {"kind", k.kind == kCheck ? "check" : k.kind == kChoice ? "choice" : k.kind == kKey ? "key" : "slider"},
                   {"value", v.empty() ? json() : json::parse(v, nullptr, false)}, {"shown", Shown(k, mod)}};
@@ -717,7 +733,7 @@ bool PanelMethod(const std::string &method, const std::string &paramsJson, std::
     };
     json mods = json::array();
     for (const Settings &s : AllSettings()) {
-        MmlMod *mod = ModById(s.mod);
+        const std::string &mod = s.mod;
         json controls = json::array(), sections = json::array(), parts = json::array();
         for (const Section &sec : s.sections) {
             json mine = json::array();

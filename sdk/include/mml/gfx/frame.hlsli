@@ -24,6 +24,14 @@ cbuffer MmlFrame : register(b0) {
     // the shadow map from the sun (mml.h shader_shadows: while a mod wants it), g_sunShadow
     row_major float4x4 g_sunShadowViewProj;   // the world to the map's clip space (x, y -1..1, z 0..1 its depth)
     float4 g_sunShadowInfo;   // x 1 when the map was drawn for this frame, y one texel (1 / size), z the depth's bias, w size
+    // towards the sun the sky shows (its lens flare), unit; w: 1 found, 0 none (then g_sun's). The game lights the world
+    // and baked its shadows from g_sun, elsewhere in the sky: what is seen in the sun (a reflection of it, glare, light
+    // through water or leaves) goes towards g_sunSeen, what is lit and shadowed as the world is towards g_sun.
+    float4 g_sunSeen;
+    float4 g_atmosphere;       // clear distance, extinction / m, base height, inverse scale height
+    float4 g_atmosphereColor;  // display-space tint, directional scattering
+    float4 g_atmosphereInfo;   // enabled, sky integration distance, maximum opacity, sky horizon blend
+    float4 g_atmospherePhase;  // anisotropy, painted-sky angular falloff, reserved, reserved
 };
 
 Texture2D<float> g_sceneDepth : register(t0);    // linear view depth, metres (the sky: g_depthProj.z)
@@ -74,6 +82,8 @@ float3 ApplyFog(float3 color, float z) { return lerp(color, g_fogColor.rgb, FogA
 float3 Lin(float3 c) { return pow(max(c, 0), 2.2); }
 float3 Enc(float3 c) { return pow(max(c, 0), 1 / 2.2); }
 
+#include "atmosphere.hlsli"
+
 // A world point on the screen (pixels); z: its linear view depth.
 float3 ToScreen(float3 p) {
     float3 d = p - g_eye.xyz;
@@ -117,4 +127,43 @@ float SunShadow(float3 world) {
             lit += (g_sunShadow.Load(int3(at, 0)) >= c.z ? 1 : 0) * wx[x] * wy[y];
         }
     return lit / 9;
+}
+
+// Directional-light PCSS: find blockers, then widen the filter by their distance from the receiving surface.
+// angularRadius is tan of the light's half-angle (the sun: 0.00465). Matrix scales supply metres without new ABI
+// constants; the sampling pattern is fixed, with no frame-random noise. Existing SunShadow stays a fixed PCF filter.
+float SunShadowSoft(float3 world, float angularRadius) {
+    if (g_sunShadowInfo.x < 0.5) return 1;
+    if (angularRadius <= 0) return SunShadow(world);
+    float3 c = SunShadowCoord(world);
+    if (any(c.xy <= 0) || any(c.xy >= 1)) return 1;
+    float depthScale = length(float3(g_sunShadowViewProj[0][2], g_sunShadowViewProj[1][2], g_sunShadowViewProj[2][2]));
+    float2 uvScale = 0.5 * float2(length(float3(g_sunShadowViewProj[0][0], g_sunShadowViewProj[1][0], g_sunShadowViewProj[2][0])),
+                                length(float3(g_sunShadowViewProj[0][1], g_sunShadowViewProj[1][1], g_sunShadowViewProj[2][1])));
+    if (depthScale < 1e-7 || any(uvScale < 1e-7)) return SunShadow(world);
+    float texel = g_sunShadowInfo.y;
+    float2 search = clamp(angularRadius * min(c.z / depthScale, 200) * uvScale, 2 * texel, 32 * texel);
+    float blockers = 0, sum = 0;
+    [unroll] for (int b = 0; b < 17; ++b) {
+        float r = b == 0 ? 0 : sqrt(max(0, (b - 0.5) / 16.0));
+        float angle = b * 2.39996323;
+        float2 uv = c.xy + float2(cos(angle), sin(angle)) * (r * search);
+        if (all(uv > 0) && all(uv < 1)) {
+            float z = g_sunShadow.Load(int3(uv * g_sunShadowInfo.w, 0));
+            if (z < c.z) { sum += z; blockers += 1; }
+        }
+    }
+    if (blockers == 0) return SunShadow(world);   // preserve thin alpha-tested details between search taps
+    float gapMetres = max(0, c.z - sum / blockers) / depthScale;
+    float2 radius = clamp(gapMetres * angularRadius * uvScale, texel, 32 * texel);
+    if (all(radius <= 1.5 * texel)) return SunShadow(world);
+    float lit = 0;
+    [unroll] for (int s = 0; s < 32; ++s) {
+        float r = sqrt((s + 0.5) / 32.0);
+        float angle = s * 2.39996323;
+        float2 uv = c.xy + float2(cos(angle), sin(angle)) * (r * radius);
+        lit += any(uv <= 0) || any(uv >= 1) ? 1 :
+               (g_sunShadow.Load(int3(uv * g_sunShadowInfo.w, 0)) >= c.z ? 1 : 0);
+    }
+    return lit / 32;
 }

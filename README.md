@@ -64,8 +64,9 @@ python tools/lab.py mode loader                       :: install into the game
 python tools/kb_strings.py                            :: the knowledge base's strings, from your own game
 ```
 
-`.mcp.json` registers the server as `mafia` for Claude Code or any MCP client. The agent starts with
-[AGENTS.md](AGENTS.md).
+`.mcp.json` registers the server as `mafia` for Claude Code and clients supporting that configuration format.
+For Codex, see [agent client setup](docs/AGENT_SETUP.md); it uses `config.toml`. The agent starts with
+[AGENTS.md](AGENTS.md), read in full (it exceeds Codex's default instruction size limit).
 
 ## Documents
 

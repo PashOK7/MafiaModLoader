@@ -39,6 +39,21 @@ What is done, what comes next and later, and what is known to be missing or wron
 
 ## Done
 
+- **Atmosphere SDK boundary** (2026-10-31): public C ABI and safe Rust owned requests, validation, arbitration,
+  frame snapshots and automatic unload/fault restoration; policy-only example with its own native settings page.
+  Host code has no dependency on example ids, palette presets or example config. Migration preserves old settings;
+  `docs/ATMOSPHERE_SDK.md` is the extension guide. Both builds' native lifecycle/graphics checks passed.
+- **Atmospheric height fog** (2026-10-31): Options > Mods > Atmosphere, saved density/height/base/tint/sun controls.
+  Shared analytic height integral over city, real displaced water depth, outgoing reflection rays and sky horizon,
+  in linear light before DLSS; works without an upscaler too. No extra scene rendering or temporal noise/history.
+  WARP tests actual math and water-depth composite; both native builds checked. Evidence build/atmosphere-20261031.
+
+- **Saved rendering controls** (2026-10-31): Options > Mods > Rendering has game/custom/whole-city distance,
+  100..10000 m custom range with native cache streaming and independent occluders, plus game/off/custom native
+  fog (start and fade distance in metres). Foam's range doubled: old 100% is now 50%, appearance/settings retained.
+  Hardware/software fog paths covered; native tests 23 (1.2) and 22 (1.0), restart/load and UI checked in both.
+  Offline suite passed; build/render-controls-20261031 and knowledge/notes/render-controls.md.
+
 - **The base** (2026-10-13): the host (game events, hook chains, native mods with hot reload, fault isolation,
   services, state across reloads, the bridge, crash dumps), the core mod (the game's live state), the MCP server
   (status, launch/close, any call, memory, log, mods, `where`, crash dumps, deploy), offline tests (a stand-in game)
@@ -810,6 +825,16 @@ What is done, what comes next and later, and what is known to be missing or wron
   Beside it: `game_launch {"resolution": [w, h]}` (the screen's size for one run, the registry left alone), the mods'
   2D space kept 800 wide over the screen when the HUD's units are not, MinHook's threads walked with NtGetNextThread
   (31 hooks: 1.2 s to 15 ms).
+- **Beautiful water** (2026-10-28; the owner: "a visual, no heavy physics"): `mods/examples/river_water` made anew.
+  The wind's ripples from a JONSWAP spectrum by an inverse FFT on the GPU (three cascades, their slopes' mipmaps:
+  a pixel's mean slope and the variance it cannot draw, scaled to a calm city river's slope variance); the planar
+  reflection followed through its depth and blurred by that variance, streaked up and down as real water is; the
+  body's absorption and scatter lit as the game lights its own; the sun's glitter (Cox and Munk's facets) out of the
+  shadow map's shadows; foam at walls; the water's planes found by level and the reflection drawn for the one the
+  screen shows most of, none while no water is on the screen (occlusion queries). Its settings on the game's Options
+  > Mods page. A fault of the loader's found on the way and fixed: a `geom_capture` asked during a frame ended with
+  that frame, empty (host/geom.cpp). Seen in the 1.2 and 1.0 labs; cost (bench, one lab, the embankment): 1.2 +8.0
+  ms (the reflection 7.1, the water 0.9), 1.0 +2.5 ms. What is left: Known gaps, "The water".
 
 ## Next, by importance
 
@@ -1283,6 +1308,70 @@ merged, sorted by importance):
 
 ## Known gaps
 
+- **Agent instruction size** (2026-10-30): AGENTS.md exceeds Codex's default 32 KiB instruction budget; read it
+  fully from disk. The early warning and docs/AGENT_SETUP.md explain the larger budget setting. The native Mafia
+  connection is now verified after restart (both labs launched, input and image blocks checked, both closed), so
+  client activation is resolved. The terminal helper remains text-only; use native image results for visual QA.
+
+- **The water: what is left** (2026-10-28; updated 2026-10-30, `mods/examples/river_water`). The game's old
+  bridge-shade layer has been identified as the untextured watercity.stin frames and is already hidden by
+  `shade: frame:water*.stin*` (knowledge/notes/water.md); the earlier instruction to find its texture was stale.
+  The moving wall/water gap is fixed (2026-10-30): the pipelined DLSS picture was a frame older than the water
+  pass's mask, depth and reflection. Negative-order graphics passes now run before the upscaler; water is -120,
+  composited with the current world before DLSS. Upward free-camera motion checked at 10 FPS in both builds,
+  DLAA in 1.2 and Quality in 1.0, pipeline on; the owner confirmed the fix. A separate static reflection-foot
+  repair samples contact texels without blending the adjacent sky; that alone had not fixed the motion problem.
+  Underwater scenery is no longer transmitted: a uniform virtual depth (default 10 m) replaces incomplete bed
+  depth, scene colour and subsurface geometry shadows. Both builds checked with a prop above/below the surface.
+  Water shadow direction is selectable (2026-10-30): Water > Shadows from > Sun (default, visible backdrop sun)
+  or Scene light (the light used for the original baked shadows). Both actual shadow directions and menu choices
+  checked in 1.2 and 1.0. The new SDK shader_shadows_from request selects the shared map's direction; independent
+  maps for simultaneous consumers wanting different suns are not implemented. The latest active explicit request
+  wins, legacy requests do not override it; missing visible sun falls back to the scene light.
+  Shadows now use LS3D's posed materials each frame, including alpha tests and complete railway models (owner
+  verified both wagons). Blocker-dependent PCSS softness is available. The old 0.25 s mesh scan is diagnostic only.
+  3D waves (2026-10-30): a grid-clipped, distance-tessellated surface uses the FFT's height and horizontal
+  displacement, with a separate water depth buffer for crest occlusion. Both builds checked at low/grazing views
+  and in wireframe; GPU geometry counters confirm actual displaced rendering. Settings: 3D waves and Wave height.
+  Contact attenuation uses fresh reflection depth and is view-dependent; it cannot pin cut wall feet without that
+  reflection. The reflection camera remains on the mean plane. Displaced water now supplies temporal depth and
+  previous-wave/camera motion before DLSS, with matching jitter; the owner confirms reconstruction works well.
+  Auxiliary renders skip LS3D's audio update block; the owner confirms sound no longer stutters.
+  Painted sun/cloud reflection is accepted by the owner (2026-10-31): sky-depth HDR expansion before roughness
+  filtering, soft `sun_radius` support (18 degrees default), no independent analytic disc. Offscreen water now
+  conservatively skips the full surface/FFT and reflection; asynchronous visibility is invalidated by camera or
+  displacement-setting changes. The owner resumed the saved 19-to-5 FPS case with infinite draw distance.
+  Finite receiver triangles and tighter light-camera box steps reduce unrelated caster draws without reducing
+  range or quality; both builds passed integrated tests. The initial mid-frame attempt exposed missing native
+  IGraph render-property and viewport restoration; both are now preserved, validated against both binaries.
+  Long-distance receiver-only consumers fit the map from SAME-frame opaque depth, then intersect the actual
+  finite water geometry. Near-sector visuals, world shader rules and view-pass consumers retain early shadows.
+  Start-view same-run A/B: 109.65 to 56.39 ms, -48.6% +/-0.146 ms; captured frames pixel-identical. Disabled DLSS
+  also releases motion replay now. Main city and moving-camera reflection costs remain; batching was evaluated
+  (56.15 to 27.35 ms) but left off because its silhouette differences violate this task's visual requirement.
+  Details/evidence and the earlier failed experiment are preserved in WATER_RENDER_PLAN.
+  Shadow hide rules now cover the light camera too, excluding baked watercity.stin shade from casters. A shared
+  tracked device mirror and shader-read constant masks remove redundant per-caster device queries. Receiver-fit
+  coverage replaces water's fixed 120 m shadow boundary while retaining density (up to the device's texture cap).
+  The measured 35--40 FPS camera and ongoing stage timings are in docs/WATER_RENDER_PLAN.md. Engine visibility,
+  reflection and required device ownership waits remain costs to investigate; this is not an ideal-optimum claim.
+  The reflection costs a whole second drawing of the scene (7.1 ms in 1.2 at the embankment, the GPU's mostly):
+  narrowing its culling to the water's part of the screen, or a smaller picture, not tried. Water at another level
+  (the fountain at 2.4 m) reflects the sky (one reflection view: the plane the screen shows most of). The night's
+  water, rain on it, wakes of boats and splashes are not done (the owner: no physics; a visual first).
+  Drawn by a graphics pass over the finished frame, the water covers what the game draws translucent over it (car
+  glass, particles, smoke) and writes no depth for them: the right place is the game's own drawing of its water,
+  after the opaque world and before the translucent (a Direct3D 9 shader rule with the reflection, the ripples and
+  the scene so far as its textures: no Direct3D 11 at all, no bridge's wait). At grazing views the ripples' normals
+  lift the reflected rays so much that a wall's reflection gives way to the body's colour near the waterline: to
+  be looked at (masking of facets turned away, the slopes' filtering along the view).
+
+- **menu.value on a settings selector** (2026-10-30): setting Water's shadow selector to 1 returned 0 and did not
+  change it in either build. start.cpp SafeSetValue calls the generic game menu setter, whereas the mod page's
+  MenuPageValue dispatches by control kind. The real menu interaction works (1.2 cycles on click; 1.0 opens a
+  dropdown, then the option is clicked). The generic bridge setter needs investigation and a separate authorized
+  tool fix; it was not changed as part of water rendering.
+
 - **The motion vectors cost a third of a far frame** (2026-10-26, item 31a; seen in the 1.2 lab with dlss_nr on, the
   whole city from 120 m up: about 35 000 draws a frame, 91 ms). `profile`: host/motion.cpp's MotionAfterDraw and
   DrawAgain about 17 % of the game thread, its per-draw hash lookups (the visuals' `Key` and the skins' `SkinKey`
@@ -1711,21 +1800,15 @@ merged, sorted by importance):
   thread"); a game function a mod calls from its callbacks runs with the mod's 53 bits (the game's x87 maths a little
   more precise there: nothing seen to change). The loader's own code outside the mods' calls and its pages (its
   hooks, the bridge's methods) keeps the game's word.
-- **The sun's shadow and the game's lights** (host/shadows.cpp, block 7c): the casters are block 6d's meshes drawn
-  by the host, not what the game draws: people cast no shadow (skinned on the CPU at their draw), billboards (the
-  countryside's far forest) none, and alpha-tested faces (leaves, fences) cast as whole quads (a tree's shadow is a
-  solid star: seen 2026-10-17). The proper way is built and kept as an option (`shader.shadows {"casters": "game"}`,
-  2026-10-17): LS3D draws the scene from the sun with its own orthographic camera (I3D_camera's SetOrthogonal, vtable
-  +0x64, and SetOrthoScale +0x60; 1000B930 and 1000B8D0 in 1.2's LS3DF; its update builds a box frustum for it), each
-  face group written as its depth with the game's alpha test kept (leaves cut out: seen), the sky and what lets light
-  through left out, LS3D's clear made "nothing"; the map read with the drawing's own matrices (the ground in the map
-  matched the ground: measured). What stops it: LS3D leaves out most objects from such a camera (101 face groups,
-  1953 triangles with its eye 250 m away; 63 with it 60 m away; the meshes' way finds about 200 and 10 000; houses,
-  cars and people missing: measured in both builds, the same with a perspective camera at that pose), so it is not the
-  default. Next: where LS3D's drawing drops a visual for a camera (its LOD by distance and size on the screen, its
-  sectors' visibility), read in Render's visibility pass. One map of a fixed extent around the camera (no
-  cascades: past it, lit); the box of the scene's meshes moves when the camera has gone a quarter of it, and a mesh
-  first met is in the map from meshes.cpp's next scan (0.25 s). The scene views (mirrors) sample the frame's map
+- **The sun's shadow and the game's lights** (host/shadows.cpp, block 7c): since 2026-10-30 the default is LS3D's
+  actual posed drawing, with alpha-tested textures and all railway parts. Shadow-only box visibility planes,
+  occlusion disabled and distance LOD corrected solve the old missing-caster camera problem in both builds.
+  No 0.25 s mesh scan drives this path; that limitation remains only in diagnostic/fallback `casters: "meshes"`.
+  The main pass's depth-write state is explicitly restored (LS3D's cached reset omits it); real-game regressions
+  check opaque zwrite after repeated on/off transitions in both builds. One map of a fixed extent around the camera
+  (no cascades: past it, lit); only streamed scene geometry is available, fractional glass transmission is not
+  modeled, PCSS softness is bounded to 32 texels. Interior portal visibility has not been exhaustively tested.
+  The scene views (mirrors) sample the frame's map
   (drawn around the game camera, not the view's eye); not looked at in a view. The lights a draw gets are the eight
   nearest its visual's bounding sphere's centre among those reaching it: a long piece (a street) may get far lamps
   before a near one. Seen in the city's freerides only (day and night), not in the rain, the countryside, the
@@ -1733,7 +1816,7 @@ merged, sorted by importance):
   groups LS3D draws (the night's survey has every face group at pass 0, no second pass), so no rule takes it: what
   draws it was not found (left for later).
 - **The sun's shafts** (mods/examples/sun_shafts): no rays past `distance` (the map's extent; the haze beyond is
-  even); the rays through trees are as solid as their shadows (above); single scattering only; translucent things
+  even); the rays now follow the alpha-tested tree shadows (2026-10-30); single scattering only; translucent things
   (glass) get the haze of what is behind them. Looked at in the city by day in both labs; the countryside's sun was
   found once its lights were read (the first query, before the scene's lights were scanned, had none).
 - **The tuning panel** (host/panel.cpp): sliders, check boxes, selectors and keys (no colour or text fields: a

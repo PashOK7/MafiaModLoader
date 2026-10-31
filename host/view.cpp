@@ -24,6 +24,7 @@
 // reason, the CPU time, the camera drawn), view.show {handle, rect: [x, y, w, h] in 800x600 units, or none} (an
 // agent's eyes: the view copied onto the frame).
 #include "host.h"
+#include <d3d9.h>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -80,6 +81,59 @@ const float *g_holdPos;
 void *g_holdSector;
 bool g_drawing;
 bool g_shadowDrawing;   // (the scene drawn from the sun for shadows.cpp: no mod's view, no stage-1 work)
+unsigned g_audioMain, g_audioSkipped;
+void ViewAudio(MmlMidContext *ctx, void *) {
+    if (g_drawing) {
+        ctx->eip = static_cast<uint32_t>(g_ls3d + game::Ls3d().renderAudioEnd);
+        g_audioSkipped++;
+    } else g_audioMain++;
+}
+bool g_shadowHooks;
+using ShadowLodFn = int(__fastcall *)(void *, float *);
+ShadowLodFn oShadowLod;
+int __fastcall hkShadowLod(void *visual, float *dist2) {
+    if (g_shadowDrawing) *dist2 = 0;   // casters do not disappear or fade at the distant light camera's LOD limit
+    return oShadowLod(visual, dist2);
+}
+void ShadowCull(MmlMidContext *ctx, void *) {
+    if (!g_shadowDrawing || ctx->ebp == 0x1000 || ctx->ebp == 0x4000) return;
+    const auto &l = game::Ls3d();
+    auto *cam = *reinterpret_cast<uint8_t **>(g_ls3d + l.currentCamera);
+    if (!cam || !cam[kCamOrtho]) return;
+    // CullThruPortal builds perspective side planes from stale ncp_x/ncp_y. Build the actual orthographic box from
+    // the drawn pose/projection instead; UpdateV's ortho side distances also fail the inside-box test in this game.
+    const float *world = reinterpret_cast<const float *>(cam + kCamWorld);
+    const float *proj = reinterpret_cast<const float *>(cam + kCamProj);
+    if (!(proj[0] > 0 && proj[5] > 0)) return;
+    float normals[15], distances[5];
+    for (int plane = 0; plane < 5; ++plane) {
+        const int axis = plane == 0 ? 8 : plane <= 2 ? 0 : 4;
+        const float sign = plane == 2 || plane == 4 ? -1.0f : 1.0f;
+        float d = plane == 0 ? 0 : 1 / proj[plane <= 2 ? 0 : 5];
+        for (int k = 0; k < 3; ++k) {
+            const float n = world[axis + k] * sign;
+            normals[plane * 3 + k] = n;
+            d -= n * world[12 + k];
+        }
+        distances[plane] = d;
+    }
+    memcpy(cam + 0x404, normals, sizeof normals);
+    memcpy(cam + 0x440, distances, sizeof distances);
+    memcpy(reinterpret_cast<void *>(g_ls3d + l.cullNormals), normals, sizeof normals);
+    memcpy(reinterpret_cast<void *>(g_ls3d + l.cullDistances), distances, sizeof distances);
+}
+bool EnsureShadowHooks(std::string *why) {
+    if (g_shadowHooks) return true;
+    const auto &l = game::Ls3d();
+    if (!l.shadowCullDispatch || !l.cullNormals || !l.cullDistances || !l.currentCamera || !l.getObjectLod) {
+        *why = "shadow visibility not known for this build"; return false;
+    }
+    if (!HookMid(nullptr, g_ls3d + l.shadowCullDispatch, ShadowCull, nullptr, why)) return false;
+    if (!HookAdd(nullptr, g_ls3d + l.getObjectLod, reinterpret_cast<void *>(&hkShadowLod),
+                 reinterpret_cast<void **>(&oShadowLod), why)) return false;
+    g_shadowHooks = true;
+    return true;
+}
 unsigned g_serial = 0xB0000000u;   // the views' camera serials: apart from the game camera's (and mafia-ragdoll's)
 LARGE_INTEGER g_freq;
 
@@ -97,11 +151,16 @@ bool EnsureHooks() {
     g_hooksTried = true;
     const game::Ls3dBuild &l = game::Ls3d();
     g_ls3d = ModuleBase("LS3DF.dll");
-    if (!l.cameraVtable || !l.sceneGetSector || !l.queueVisual || !l.camRecompute || !l.frameUpdateWMatrix) {
+    if (!l.cameraVtable || !l.sceneGetSector || !l.queueVisual || !l.camRecompute || !l.frameUpdateWMatrix ||
+        !l.renderAudioBegin || !l.renderAudioEnd) {
         g_hookWhy = "not known for this LS3DF.dll";
         return false;
     }
     std::string err;
+    if (!HookMid(nullptr, g_ls3d + l.renderAudioBegin, ViewAudio, nullptr, &err)) {
+        g_hookWhy = "the auxiliary camera's audio not isolated: " + err;
+        return false;
+    }
     if (!HookAdd(nullptr, g_ls3d + l.sceneGetSector, reinterpret_cast<void *>(&hkGetSector), reinterpret_cast<void **>(&oGetSector), &err)) {
         g_hookWhy = "I3D_scene::GetSector not hooked: " + err;
         return false;
@@ -367,13 +426,13 @@ using SetBoolFn = int(__stdcall *)(void *cam, char on);
 
 // The camera made orthographic at `world` (rows: right, up, forward, the eye), `half` metres each way, its depth from
 // nearZ to farZ; its sector held at the game camera's. False with why: nothing changed.
-bool PutOrtho(uint8_t *cam, const float world[16], float half, float nearZ, float farZ, CamSaved *saved, std::string *why) {
+bool PutOrtho(uint8_t *cam, const float world[16], float half, float halfY, float nearZ, float farZ, CamSaved *saved, std::string *why) {
     if (At<uint8_t>(cam, kCamOrtho)) { *why = "the game camera is orthographic"; return false; }
     if (!(half > 0.01f) || !(farZ > nearZ + 0.01f) || !(nearZ > 0.001f)) { *why = "an empty box"; return false; }
     SaveCam(cam, saved);
     Slot<SetBoolFn>(cam, kVtSetOrtho)(cam, 1);
     Slot<SetFloatFn>(cam, kVtSetOrthoScale)(cam, 1.0f / half);
-    Slot<SetFloatFn>(cam, kVtSetAspect)(cam, 1.0f);
+    Slot<SetFloatFn>(cam, kVtSetAspect)(cam, half / halfY);
     Slot<SetRangeFn>(cam, kVtSetRange)(cam, nearZ, farZ);
     memcpy(cam + kCamWorld, world, 64);
     At<uint32_t>(cam, kCamFlags) = saved->flags | kWorldValid;
@@ -386,8 +445,8 @@ bool PutOrtho(uint8_t *cam, const float world[16], float half, float nearZ, floa
     return true;
 }
 
-bool PutShadow(void *scene, uint8_t *cam, const float world[16], float half, float nearZ, float farZ, int size, std::string *why) {
-    if (!PutOrtho(cam, world, half, nearZ, farZ, &g_saved.cam, why)) return false;
+bool PutShadow(void *scene, uint8_t *cam, const float world[16], float half, float halfY, float nearZ, float farZ, int size, std::string *why) {
+    if (!PutOrtho(cam, world, half, halfY, nearZ, farZ, &g_saved.cam, why)) return false;
     g_saved.callback = At<void *>(scene, kSceneCallback);
     g_saved.mask = At<uint32_t>(scene, kSceneMask);
     g_saved.listener = At<void *>(scene, kSceneListener);
@@ -395,16 +454,16 @@ bool PutShadow(void *scene, uint8_t *cam, const float world[16], float half, flo
     memcpy(g_saved.rect, static_cast<uint8_t *>(scene) + kSceneRect, sizeof g_saved.rect);
     g_put = true;
     g_putScene = scene;
-    At<void *>(scene, kSceneCallback) = reinterpret_cast<void *>(&ViewStage);   // (stage 1: nothing in this view)
-    At<uint32_t>(scene, kSceneMask) = 1u << 1;
+    At<void *>(scene, kSceneCallback) = reinterpret_cast<void *>(&ViewStage);
+    At<uint32_t>(scene, kSceneMask) = 0; // depth only: do not alter Render's enclosing callback flag
     At<void *>(scene, kSceneListener) = nullptr;
     At<uint32_t>(scene, kSceneLensCount) = 0;
     int32_t rect[4] = {0, 0, size, size};
     memcpy(static_cast<uint8_t *>(scene) + kSceneRect, rect, sizeof rect);
     return true;
 }
-DWORD SafePutShadow(void *scene, uint8_t *cam, const float world[16], float half, float nearZ, float farZ, int size, std::string *why, bool *ok) {
-    __try { *ok = PutShadow(scene, cam, world, half, nearZ, farZ, size, why); return 0; } __except (EXCEPTION_EXECUTE_HANDLER) {
+DWORD SafePutShadow(void *scene, uint8_t *cam, const float world[16], float half, float halfY, float nearZ, float farZ, int size, std::string *why, bool *ok) {
+    __try { *ok = PutShadow(scene, cam, world, half, halfY, nearZ, farZ, size, why); return 0; } __except (EXCEPTION_EXECUTE_HANDLER) {
         *ok = false;
         DWORD code = GetExceptionCode();
         SafeRestore();
@@ -416,26 +475,61 @@ DWORD SafePutShadow(void *scene, uint8_t *cam, const float world[16], float half
 
 int ViewDrawingNow() { return g_drawing && !g_shadowDrawing ? g_stageHandle : 0; }
 bool ShadowViewNow() { return g_shadowDrawing; }
+bool ViewAllowsLateShadow(void *scene) {
+    // Render rebuilds/consumes a separate near-sector queue after stage 1. Its visibility stamps are mutable
+    // engine state too: keep the original pre-world path while first-person/near visuals need that queue.
+    __try {
+        void *nearSector=At<void *>(scene,0x21C);
+        return nearSector && At<unsigned>(nearSector,0x124)==0;
+    } __except(EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
 
-bool ViewDrawShadow(void *driver, void *scene, RenderFn render, const float world[16], float half, float nearZ, float farZ, int size,
+bool ViewDrawShadow(void *driver, void *scene, RenderFn render, const float world[16], float half, float halfY, float nearZ, float farZ, int size,
                     float viewProj[16], float backView[16], std::string *why) {
     if (!game::g_ls3d || !game::g_exe || g_drawing) { *why = "no game, or a view is being drawn"; return false; }
     if (!EnsureHooks()) { *why = g_hookWhy; return false; }
+    if (!EnsureShadowHooks(why)) return false;
     uint8_t *cam = nullptr;
     if (SafeCamera(scene, &cam) || !cam) { *why = "the scene's camera is not LS3D's I3D_camera"; return false; }
     bool ok = false;
-    DWORD code = SafePutShadow(scene, cam, world, half, nearZ, farZ, size, why, &ok);
-    if (!ok) { if (code) *why = "a fault while the camera was set"; return false; }
+    const auto &l = game::Ls3d();
+    const uintptr_t props[] = {l.propCull,l.propCullMode,l.propFog,l.propFogType,l.propFogEnd,l.propFogStart,l.propFogColor,
+        l.propClip,l.propAlpha,l.propBlend,l.propColorOp,l.propAlphaOp,l.propColorOp1,l.propColorOp2,
+        l.propZBias,l.propZCompare,l.propAddressU,l.propAddressV,l.propVertexFormat};
+    DWORD cached[19];
+    for(int i=0;i<19;i++) cached[i]=*reinterpret_cast<DWORD *>(g_ls3d+props[i]);
+    void *ig=*reinterpret_cast<void **>(game::Exe().igraph);
+    using GetViewport=void *(__stdcall *)(void *);
+    auto *cachedViewport=Slot<GetViewport>(ig,20*4)(ig);
+    DWORD viewport[6];memcpy(viewport,cachedViewport,sizeof viewport);
+    auto *device=static_cast<IDirect3DDevice9 *>(RenderDevice(9));
+    IDirect3DStateBlock9 *states=nullptr;
+    if (!device || FAILED(device->CreateStateBlock(D3DSBT_ALL,&states))) { *why="cannot preserve shadow render state";return false; }
+    DWORD code = SafePutShadow(scene, cam, world, half, halfY, nearZ, farZ, size, why, &ok);
+    if (!ok) { states->Apply();states->Release();if (code) *why = "a fault while the camera was set"; return false; }
     memcpy(viewProj, cam + kCamViewProj, 64);
     memcpy(backView, cam + kCamBackView, 64);
     ShadersShadowBegin(backView);   // (shaders.cpp: the sky told apart by its view)
     g_stageHandle = 0;
     g_drawing = true;
     g_shadowDrawing = true;
+    // The sun is not the player's eye: camera occluders cannot remove its casters. Give the driver's setting back
+    // before the frame and reflection views draw. LS3D handles materials, alpha tests and every live actor itself.
+    using GetRs = int(__stdcall *)(void *, int);
+    using SetRs = int(__stdcall *)(void *, int, int);
+    auto getRs = (*reinterpret_cast<GetRs **>(driver))[0x18 / 4];
+    auto setRs = (*reinterpret_cast<SetRs **>(driver))[0x14 / 4];
+    const int occlusion = getRs(driver, 39);
+    setRs(driver, 39, 0);
     DWORD rc = SafeRender(render, driver, scene);
+    setRs(driver, 39, occlusion);
+    ShadersShadowEnd();
     g_shadowDrawing = false;
     g_drawing = false;
     DWORD bc = SafeRestore();
+    states->Apply();states->Release();
+    for(int i=0;i<19;i++) *reinterpret_cast<DWORD *>(g_ls3d+props[i])=cached[i];
+    memcpy(cachedViewport,viewport,sizeof viewport);
     char hex[16];
     snprintf(hex, sizeof hex, "%08X", static_cast<unsigned>(rc ? rc : bc));
     if (rc) { *why = std::string("a fault inside LS3D's drawing (exception ") + hex + ")"; return false; }
@@ -453,6 +547,8 @@ CamSaved g_frameSaved;
 uint8_t *g_frameCam;
 bool g_framePut;
 unsigned g_ovFrames, g_ovSkipped, g_ovDeclined;
+float g_ovEye[3];        // the eye a mod's camera (or camera.set's) was last drawn from
+DWORD g_ovEyeAt;         // ... when (GetTickCount)
 std::string g_ovLast = "none";
 
 struct OvCall { MmlViewCamera *c; int r; };
@@ -551,6 +647,7 @@ void FrameCameraBegin(void *scene) {
         if (!oc.r) { g_ovDeclined++; g_ovLast = "the game's (its function returned 0)"; return; }
     }
     c.size = sizeof c;
+    RenderDistanceCamera(&c);
     std::string why;
     bool ok = false;
     DWORD code = SafePutFrame(cam, c, &why, &ok);
@@ -558,7 +655,16 @@ void FrameCameraBegin(void *scene) {
     g_frameCam = cam;
     g_framePut = true;
     g_ovFrames++;
+    for (int i = 0; i < 3; i++) g_ovEye[i] = c.world[12 + i];
+    g_ovEyeAt = GetTickCount();
+    CityFollowsCamera();   // (render.cpp: the city's blocks streamed around this eye, not the game camera's)
     g_ovLast = "drawn";
+}
+
+bool FrameCameraEye(float eye[3]) {
+    if (!g_ovEyeAt || GetTickCount() - g_ovEyeAt > 500) return false;   // (no mod's camera drawn lately)
+    for (int i = 0; i < 3; i++) eye[i] = g_ovEye[i];
+    return true;
 }
 
 void FrameCameraEnd() {
@@ -693,7 +799,8 @@ bool ViewMethod(const std::string &method, const std::string &paramsJson, std::s
         views.push_back({{"mod", ModIdOf(v.mod)}, {"handle", v.handle}, {"size", {v.w, v.h}}, {"drawn", v.drawn}, {"skipped", v.skipped},
                          {"faults", v.faults}, {"last", v.last}, {"cpu_ms", r3(v.ms)},
                          {"eye", {v.eye[0], v.eye[1], v.eye[2]}}, {"fwd", {v.fwd[0], v.fwd[1], v.fwd[2]}}});
-    json out = {{"views", views}, {"hooked", g_hooked}};
+    json out = {{"views", views}, {"hooked", g_hooked},
+                {"audio", {{"main_updates", g_audioMain}, {"aux_skipped", g_audioSkipped}}}};
     if (!game::g_ls3d) out["note"] = "no game known: no view is drawn";
     else if (g_hooksTried && !g_hooked) out["note"] = "no view is drawn: " + g_hookWhy;
     *reply = out.dump(-1, ' ', false, json::error_handler_t::replace);

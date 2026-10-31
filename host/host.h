@@ -287,10 +287,19 @@ void ConfigFrame();                       // every frame: files changed are read
 void ConfigForget(MmlMod *mod);           // the mod unloads: what was handed to it is dropped
 // panel.cpp's: a change made live (the mod told at the next frame, the file written once the changes stop; "null":
 // back to the default), written now, a key's default and its value now (JSON text, "": none)
-bool ConfigSetLive(MmlMod *mod, const char *key, const std::string &valueJson);
-void ConfigFlush(MmlMod *mod);
-std::string ConfigDefaultJson(MmlMod *mod, const char *key);
-std::string ConfigValueJson(MmlMod *mod, const char *key);
+// (by the settings' id: a mod's, or the loader's own kLoaderSettings)
+bool ConfigSetLive(const std::string &id, const char *key, const std::string &valueJson);
+void ConfigFlush(const std::string &id);
+std::string ConfigDefaultJson(const std::string &id, const char *key);
+std::string ConfigValueJson(const std::string &id, const char *key);
+// The loader's own settings: a config of the same kind, its defaults given here, `told` at the frame after a change
+// (and at the first: the files' values applied). No mod may have the id.
+void ConfigOwn(const std::string &id, const std::string &defaultsJson, std::function<void()> told);
+inline const char *const kLoaderSettings = "loader";
+// ---- the loader's own settings (settings.cpp): Options > Mods' Rendering, applied at the frame after a change
+void SettingsInit();
+void SettingsFrame();
+std::string SettingsBlockJson();          // their "settings" block, as a manifest's (panel.cpp)
 // the x87's precision around the mods' code (fpu.cpp): FpuDouble sets 53 bits (when it was 24) and returns the word
 // it found, FpuRestore gives it back; the game's own word as it entered the loader's frame
 uint16_t FpuWord();
@@ -549,8 +558,16 @@ void MikkTangents(uint32_t verts, const float *pos, int posStride, const float *
                   const uint32_t *idx, uint32_t faces, float *tan);
 bool SkinMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 // the shadow map from the sun and the game's lights near a draw (shadows.cpp)
-bool ShaderShadows(MmlMod *mod, const MmlShadowSettings *s);   // null s: the mod no longer wants it
+bool ShaderShadows(MmlMod *mod, const MmlShadowSettings *s, int source = -1, const float *receiverY = nullptr);
+bool ShaderShadowSurface(MmlMod *mod, const MmlShadowSettings *s, int source, const float *tris, unsigned count, float displacement);
 bool ShadowsWanted();
+int ShadowsDepthPlan(float boxes[32][4], float basis[3][4]);
+void ShadowsDepthFinish(const float *bounds, unsigned samples, double reduceMs);
+void ShadowsDepthEnable(bool on);
+bool ShadersNeedEarlyShadow();
+bool GfxShadowDepthAvailable();
+bool ViewAllowsLateShadow(void *scene);
+void ShadowsSurfaceEnable(bool on);
 void ShadowsTune(float sunDistance, int casters);   // (shader.shadows) sun_distance; casters 1 LS3D's drawing, 0 the meshes, -1 as it is
 void ShadowsModGone(MmlMod *mod);
 void ShadowsBeforeWorld(void *driver, void *scene, int(__stdcall *render)(void *, void *));   // (render.cpp) the pass, before the world
@@ -745,6 +762,7 @@ void LightsMissionClosed();
 int SceneLights(MmlLight *out, int max);
 bool LightSet(void *light, const float *color, float power, float rangeNear, float rangeFar, int on, std::string *err);
 int SceneSun(float toSun[3], float sunColor[3], float ambient[3]);
+int SceneSunSeen(float toSun[3]);   // the sun the sky shows: the backdrop's lens flare (mml.h scene_sun_seen)
 bool LightsMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 bool StateMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 bool CollideMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
@@ -818,15 +836,30 @@ int ViewDrawingNow();                     // the scene view LS3D is drawing now 
 // the scene drawn by LS3D from an orthographic camera at `world` (rows right, up, forward, eye), `half` metres each
 // way, depth nearZ..farZ, into the targets the caller has bound (size x size): its view x projection and the backdrop's
 // view out (shadows.cpp's map); ShadowViewNow: that drawing is under way
-bool ViewDrawShadow(void *driver, void *scene, RenderFn render, const float world[16], float half, float nearZ, float farZ, int size,
+bool ViewDrawShadow(void *driver, void *scene, RenderFn render, const float world[16], float half, float halfY, float nearZ, float farZ, int size,
                     float viewProj[16], float backView[16], std::string *why);
 bool ShadowViewNow();
 void ShadersShadowBegin(const float backView[16]);   // (shaders.cpp) the drawing from the sun begins
+void ShadersShadowEnd();   // give the game's borrowed shaders back before the frame and reflection views
 void ShadersShadowStats(unsigned *draws, unsigned *faces, unsigned *skipped, unsigned *cut, float viewProj[16], std::string *why);
 // the frame's camera overridden (view.cpp): camera_override; camera.state, camera.set, camera.release
 int CameraOverride(MmlMod *mod, MmlViewFn fn, void *user);
 void FrameCameraBegin(void *scene);       // (render.cpp) before the views and the frame's own drawing
 void FrameCameraEnd();                    // ... after the frame's drawing: the game's camera back
+bool FrameCameraEye(float eye[3]);        // the eye a mod's camera (or camera.set's) was drawn from in the last 0.5 s
+void CityFollowsCamera();                 // (render.cpp) CacheTick hooked: the city streamed around FrameCameraEye
+void RenderDistanceCamera(MmlViewCamera *camera);   // saved draw distance also governs a mod's main camera
+void RenderMissionClosed();                         // forget only the old scene's original camera range
+// Owner-scoped atmosphere service (atmosphere.cpp): weather/tint policy belongs to mods.
+bool AtmosphereSet(MmlMod *owner, const MmlAtmosphereSettings *settings, std::string *err);
+bool AtmosphereState(MmlMod *owner, MmlAtmosphereState *out);
+void AtmosphereModGone(MmlMod *owner);
+bool AtmosphereActive();
+bool AtmosphereReady();
+void AtmosphereFrameBegin();
+void AtmosphereSceneClosed();
+void AtmosphereConstants(MmlGfxConstants *constants);
+bool AtmosphereMethod(const std::string &method, const std::string &params, std::string *reply, bool *ok);
 int RenderProject(const float world[3], float screen[3]);   // mml.h camera_project (render.cpp)
 bool RenderFrameCamera(MmlRenderCamera *out);              // the camera the mission's world was last drawn with
 int RenderRay(float x, float y, float origin[3], float dir[3]);   // mml.h camera_ray

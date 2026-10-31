@@ -259,6 +259,20 @@ H->render_camera(&cam);          /* view, proj (the device's), eye, axes, fields
 
 ### Effects over the frame (the graphics bridge)
 
+The owner-scoped `scene_atmosphere` / `scene_atmosphere_state` SDK service accepts explicit, copied physical
+parameters; weather tuning and palette policy belong to mods (see `docs/ATMOSPHERE_SDK.md` and the small
+`mods/examples/atmosphere` example). Its frame constants append `atmosphere`, `atmosphere_color`, `atmosphere_info`,
+`atmosphere_phase` (also in frame.hlsli). The selected request disables native fog only while the backend is ready,
+then integrates exponential-height air
+over the complete world/replacement surfaces before the upscaler. Passes with negative order still precede this
+composition; ordinary post effects follow it. Replacement surfaces supply their real depth through temporal_target,
+even without an upscaler. Water uses `ApplyAtmosphere` for its outgoing reflected ray, then the bridge fogs the
+camera-to-water leg, including reflection, body and foam. Do not fog that incoming leg again in a replacement pass.
+`ApplyAtmosphere` takes linear light and an origin, unit direction, distance, clearNear and sky flags; height is the
+world's Y in metres. Without a selected request the constants are disabled and native Game/Off/Linear is retained.
+Highest priority wins; ties follow acquisition order, unchanged by updates. Release, unload and fault restore
+the previous owner or native baseline. Parameters are snapshotted after world RENDER_BEGIN for the entire frame.
+
 For effects that need the frame's depth (water, smoke, fog volumes, outlines, a scanner's wave) a mod draws with
 Direct3D 11 on one device the loader shares between every mod, beside the game's Direct3D 9Ex (the labs' wrapper):
 
@@ -448,7 +462,7 @@ float3 history = g_myHistory.SampleLevel(g_linear, before * g_size.zw, 0).rgb;
 
 A temporal upscaler is worth its name only when the game draws fewer pixels: `H->gfx_upscale(M, w, h, Upscale, NULL)`
 (Rust `host.gfx_upscale(w, h, |f| ...)`) has the frame's world drawn at `w` x `h` from the next frame on, and calls
-`Upscale` first at each frame's stage 1 to draw the whole frame from it:
+`Upscale` at each frame's stage 1, after negative-order graphics passes, to draw the whole frame from it:
 
 ```c
 int Upscale(const MmlGfxFrame *f, void *user) {
@@ -472,6 +486,12 @@ H->gfx_upscale(M, 1280, 720, Upscale, NULL);   /* again when the size changes; 0
   `AnisotropicFiltering`), with or without an upscaler.
 - **The jitter** (`gfx_jitter`, below) is then in the render size's pixels: the whole sample offset goes into the
   game's projection and the inputs are read one to one, as DLSS's guide has a renderer do it.
+- **Pass order**: negative `gfx_pass` orders run before the upscaler, at the render size (`width`, `height`,
+  `k->size`), and are composited with the current world into the upscaler's colour input. Use this for geometry
+  replacements such as water: a pipelined upscaler can return the previous frame, so applying the current water
+  mask over that picture opens a moving gap at the bank. Nonnegative orders run after the upscaler. Without an
+  upscaler, all passes run in increasing order as usual. This changes colour composition; it does not supply a
+  replacement surface's depth or motion vectors to the upscaler.
 - **The passes after it** get the frame at its size: its picture as `color`, the depth and the motion vectors
   brought up to it (the nearest render pixel's), `render_width`/`render_height` the frame's.
 - **A frame without its picture** (the upscaler returns 0: its history not there yet, a mode switched) is the smaller
@@ -780,7 +800,17 @@ for (int i = 0; i < n && i < 256; i++)
     }
 float toSun[3], sunColor[3], ambient[3];
 H->scene_sun(M, toSun, sunColor, ambient);       /* the level's sun and the ambient light beside it */
+float seen[3];
+if (MML_HAS(H, scene_sun_seen) && H->scene_sun_seen(M, seen)) { /* the sun the sky shows: its lens flare */ }
 ```
+
+- **Two suns.** The game lights the world (and baked its lightmaps' shadows) from its directional light
+  (`scene_sun`), while the sun a player sees in the sky, its glare and its lens flare are the backdrop's
+  `I3D_lensflare` drawn infinitely far, elsewhere: the city by day has the light 65 degrees up and the visible sun 14
+  degrees up, 55 degrees apart. What is seen in the sun (its reflection and glitter on water, glare, light through
+  waves or leaves) goes towards `scene_sun_seen`; what is lit and shadowed as the world is (the shadow map of
+  `shader_shadows`), towards `scene_sun`. A graphics pass has both: frame.hlsli's `g_sun` and `g_sunSeen`
+  (`lights.list`'s `sun.seen`). Both builds; a scene without a far flare (night) has none.
 
 - **The lights are the level's own light frames** (LS3D's `I3D_light`: point, spot, directional, ambient, fog);
   the freeride's city has about 40. A change goes through LS3D's own setters. In the labs a change of the sun and
@@ -1396,11 +1426,39 @@ int h = H->shader_add(M, &r, err, sizeof err);   /* 0: refused, err says why (th
   `mml_WorldViewProj` in one step. The game's models hide things inside one another: a shop's sign stands just
   behind a wall; from 80 m the depth buffer cannot tell them apart, and only the last bits of the arithmetic decide
   which wins. In the game's order the wall wins (as the game shows it); in another, the sign shows through the wall.
+- **Shadow direction**: `shader_shadows_from(mod, settings, MML_SHADOW_SUN)` draws from the visible sky sun;
+  `MML_SHADOW_SCENE` uses the scene's directional light. A missing sky sun falls back to the scene light; a selected
+  light below the horizon produces no map. The legacy `shader_shadows` makes no explicit direction request, and
+  the default remains scene light. One map is shared by all consumers: the most recent active explicit request
+  wins; its release/unload restores the previous request, then the scene default. Scene lighting and baked shadows
+  are unchanged. `shader.state.shadows` reports requested/used source, owner and actual direction. Rust:
+  `host.shader_shadows_from(settings, visible_sun)`.
+- **Visible receiver coverage**: `shader_shadows_fit(mod, settings, source, min_y, max_y)` fits the camera's
+  visible frustum clipped to this world-height slab. It retains `2*extent/size` metres per texel by growing the
+  map up to the device limit, and fits separate light-space X/Y extents to avoid unrelated casters. The legacy
+  fixed regions requested by other consumers remain covered. `coverage` reports fitted bounds, actual texel
+  size and whether the hardware limit reduces density; null settings release the request. Rust:
+  `host.shader_shadows_fit(settings, visible_sun, min_y, max_y)`.
+  `shader_shadows_surface(mod, settings, source, tris, triangle_count, displacement)` instead fits finite
+  receiver triangles (9 world-space floats each, copied). Supply a bound on absolute displacement along every
+  world axis, including horizontal wave choppiness. The host clips the original surface against the current
+  frustum expanded by that bound, expands the result in light space and reserves the maximum PCSS footprint.
+  No distance cutoff or depth history. Early consumers retain the normal pre-world caster pass.
+  `shader.shadow_surface {on}` is a diagnostic A/B toggle against the older height-slab fit.
+  At long camera range (>600 m), receiver-only requests can use current opaque depth to fit a later map, before
+  graphics passes consume it. The GPU clips each current pixel ray by finite receiver boxes and its opaque depth;
+  the CPU intersects the reduced bounds with the displaced triangle footprint. A 28-byte synchronous readback
+  belongs to this exact frame. No previous occlusion result controls shadows. The native shadow camera preserves
+  both D3D state and IGraph's render-property/viewport caches. World shader rules, view graphics passes and a
+  populated near sector require the established early map. Allocation/readback failure retains full coverage.
+  `shader.shadow_depth {on}` toggles this optimization; `depth_fit.samples` counts conservative candidate ray
+  intervals, not exact water pixels. Even a nonzero candidate count can intersect no actual water triangles.
 - **The sun's shadow and the game's lights** (`shader_shadows`): a mod that asks for it gets a shadow map from the
   scene's sun drawn before each frame of the mission's world (`MmlShadowSettings`: its size, 2048 texels; its
   extent, 60 m from the camera; the bias, metres along the sun's ray on top of the slope-scaled one the map is drawn
-  with), its casters the scene's meshes around the camera and the cars
-  near it (block 6d's `scene_pieces` and `actor_meshes`: people are not among them, nor billboards). The rules'
+  with). LS3D draws the current posed visuals from a shadow-only orthographic camera, preserving textures and
+  alpha tests, including railway parts and CPU-skinned people. This is the default `casters: "game"`; `"meshes"`
+  retains the legacy diagnostic/fallback, without cut-outs or people/railway actors. The rules'
   shaders read it with `mml_Shadow(worldPos)` (1 lit, 0 in the shadow, 1 when there is no map); the sun is
   `mml_SunDir`, `mml_SunColor`, `mml_SunAmbient`. Always there, asked for or not: the game's own point and spot
   lights that reach the drawn visual (up to eight, nearest to its bounding sphere's centre first; a car's
@@ -1462,15 +1520,60 @@ void OnWater(const MmlGeomCapture *c, void *user) {
   always: one capture is all of it.
 - **Replacing**: draw the captured triangles in a pass with your own vertex shader (`mul(float4(p, 1), view x proj)`
   from `MmlGfxFrame::view`, `proj`) and discard where `SceneDepth` is nearer (what stands in front); with the game's
-  water hidden, `SceneDepth` and `g_sceneColor` there are the riverbed, seen through your water. A planar reflection
+  water hidden, `SceneDepth` and `g_sceneColor` there are whatever the game draws below the surface. The city has
+  no complete riverbed, so these are unsuitable for a uniform water body's depth or transmitted colour. A planar reflection
   is a scene view of the camera mirrored in the water's level with that plane as its clip plane.
 - `call geom.hide {"pattern", "where"}`, `geom.show {"handle"}`, `geom.state` (rules, groups and faces hidden last
   frame), `geom.capture {"pattern"}` then `{"id"}` (the bounds, triangles by texture, the first few): the same from
   the bridge.
-- `mods/examples/river_water` (not enabled by default): the river hidden, captured and drawn anew: waves (each
-  fading where it would be shorter than a few pixels), the reflection bent by them, the bed darker the deeper it
-  lies, the sun's glint, the fog. In the labs at 1280x960 its reflection (a second drawing of the city, with
-  `depth_pulse`'s pass in it) costs about 7.7 ms of CPU.
+- A capture asked during a frame (from a graphics pass) waits for the whole next frame: the rest of the frame it was
+  asked in has drawn the water already.
+- `mods/examples/river_water` (not enabled by default; its page in Options > Mods, "Water"): the game's water hidden,
+  captured every few seconds (kept by group, sorted into planes by level: the river and a fountain) and drawn anew.
+  The wind's ripples are a JONSWAP spectrum made into slopes by an inverse FFT on the GPU each frame (three cascades,
+  their mipmaps giving each pixel its mean slope and the variance of what it cannot draw); the reflection is a scene
+  view mirrored in the plane the screen shows most of (each plane's pixels counted by occlusion queries; none on the
+  screen, none drawn), followed along the reflected ray through its depth and blurred by that variance, up and down
+  more than sideways (the streaks of real water); the body absorbs and scatters (`clarity`, `tint`, `colour`), the
+  sun glitters on the ripples out of the shadow map's shadows, with foam on whitecaps. The body uses a uniform
+  virtual vertical `depth` (10 m by default), with the refracted ray setting its optical path; no underlying scene
+  colour, bed depth or subsurface object shadows are used. Submerged objects therefore do not show through.
+  The former `refraction` setting is retired. Its graphics pass has order -120, before temporal upscaling, so the
+  current water mask, reflection and world enter a pipelined DLSS frame together.
+  "Shadows from" in the Water settings selects Sun (default, `shadow_source=0`) or Scene light (`1`). The city's
+  visible sun is about 14 degrees up, while its baked shadows follow a different light about 65 degrees up.
+  Shadow softness (default 1) scales the solar angular radius: `SunShadowSoft` searches blockers and widens its
+  PCF footprint with blocker-to-receiver separation, bounded to 32 shadow texels. Zero keeps the original PCF.
+  **3D waves** (`geometry=true`, default): captured triangles are clipped to a 16 m world grid, preserving their
+  footprint and levels, then tessellated on the GPU with shared-edge distance factors. The same FFT supplies
+  height and horizontal choppy displacement; material coordinates retain the undisplaced wave phase. Waves
+  smaller than a geometry edge are filtered; the pixel normals retain the fine ripples. `wave_height` (0..8,
+  default 1) scales physical height and slopes together. The water has its own depth buffer for crest occlusion;
+  main-world linear depth still clips it against the city. Reflection depth attenuates displacement at cut wall
+  feet, over approximately one metre. The reflection camera stays on the mean plane, an approximation for waves.
+  `debug=14` draws the actual tessellated wireframe; status reports patches, domain-shader vertices and clipped
+  triangles from asynchronous GPU queries. These are visual waves; the game's water/physics level is unchanged.
+  Before temporal upscaling, water also writes its linear depth and current-to-previous motion to the optional
+  `MmlGfxFrame::temporal_target` (RGBA32F RTV, MRT SV_Target1: depth, motion X/Y in render pixels, valid=1).
+  The host merges valid samples into depth/motion; a zero depth leaves the world inputs unchanged. This target
+  exists only for negative-order passes under an active upscaler. Check frame size before reading appended ABI
+  fields. Previous displacement and camera are retained and city projection jitter is applied to water too.
+  **Painted sky light**: the visible sun frame supplies a direction, while the cloudy sky painting supplies the
+  reflected source's shape. A bounded highlight expansion produces a linear RGBA16F reflection before its mips
+  are generated. Only sky-depth texels are boosted; city geometry is unchanged. A smooth angular support around
+  the visible sun is controlled by `sun_radius` (0.5..60 degrees, default 18, Water 2/2 > Sun glow radius).
+  `glitter` remains its strength. The HDR copy is filtered by the same wave roughness, and the surface shadow
+  attenuates its added light. This is a radiance reconstruction assumption for the game's clipped 8-bit painting,
+  not a recovered physical HDR environment; no separate clear solar disc is added. `painted_sky` reports readiness
+  and frames. With zero strength the extra copy is skipped.
+  **Visibility**: original water triangles are conservatively tested against the current expanded frustum before
+  drawing a reflection or the complete surface/FFT pass. This retains the hull shader's displacement margin.
+  Occlusion queries remain asynchronous and tagged with the camera epoch: a zero from an old view cannot hide
+  water after a turn. Settings changes invalidate that evidence too. `visibility.surface_skipped` and
+  `reflection_skipped` count rejected passes; this does not lower resolution or reduce detail when water is visible.
+  `river_water.status`, `debug` 1..6 (the reflection, the normal, the body, Fresnel, the roughness, the reflection
+  unblurred). Historical flat-water cost at the embankment, 1280x960, the world held still: 1.2 8.0 to 16.1 ms, of which the
+  reflection 7.1 (a second drawing of the scene, its GPU mostly) and the water itself 0.9; 1.0 2.4 to 5.0 ms.
 
 ### The game's own menus: an item, a page
 
@@ -1768,6 +1871,11 @@ seen while it is dragged; the file in the data folder is written once the change
 - **The page never runs off the screen**: a section (or the one list) whose rows do not fit in the 600 units is cut
   into parts of about the same height, "Race 1/2", "Race 2/2", tabs as the sections are (some 17 rows of one line
   fit a page). Short labels (20 characters: one line) keep a section whole.
+- **The loader's own page**, "Rendering (loader)", is the list's first row, made the same way (host/settings.cpp):
+  batched drawing (`render.set {batch}`), the batched objects kept from LS3D (`batch_objects`), the vertex buffers
+  renamed (`vb.set {rename}`), the whole city drawn (`whole_city`). Kept across runs in
+  `<game>\mml\data\loader\config.json` (`config.get {"mod": "loader"}`); a change is applied at the next frame, only
+  what changed (a `render.set` sent by hand stays until the setting itself changes). No mod may have the id `loader`.
 - `call panel.state` shows what the panel made of every mod's block (each control's kind, value and what is shown,
   its sections and the parts its page is cut into); `call panel.open {"mod": "<id>", "part": "Race 2/2"}` opens a
   page (a part by its number or its name) without the clicks. A control the panel cannot make (a slider with
