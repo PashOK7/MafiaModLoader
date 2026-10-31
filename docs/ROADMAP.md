@@ -5,6 +5,10 @@ What is done, what comes next and later, and what is known to be missing or wron
 
 ## Decisions (the owner's)
 
+- Workflow (2026-10-31): follow the applicable project rule or the owner's explicit instruction. If neither
+  covers the proposed action, or the instruction is ambiguous, ask before acting; do not invent an alternative
+  workflow. Work and authorized publication use `main`; another branch/worktree needs explicit authorization.
+  Existing authorization remains valid within its scope. AGENTS.md contains the full rule.
 - The host is a `.asi` loaded by Ultimate ASI Loader (`dinput8.dll`); it never unloads. Mods hot-reload.
 - The MCP server is a separate process (Rust), talking to the game over the bridge; it outlives the game.
 - Builds: 1.2 and 1.0 (per-build tables in `game_build.h`). The owner, 2026-10-15: the loader and the SDK must

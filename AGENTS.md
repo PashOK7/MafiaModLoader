@@ -13,6 +13,17 @@ alone does not configure the `mafia` server in Codex.
 
 ## Rules
 
+- **Follow an instruction; do not invent a workflow.** Before acting, find the applicable rule in this guide,
+  the referenced project documentation or the owner's explicit instructions in the current conversation. If no
+  applicable instruction is found, or its meaning is unclear, ask the owner BEFORE taking that action. Explain
+  the missing or ambiguous decision and your proposed action. An agent's habits, a client default or a presumed
+  "best practice" are not the owner's agreement. Existing explicit authorization remains valid within its scope;
+  do not ask again for the same authorized action. The owner's explicit instructions override project defaults.
+- **Git: work on `main`.** Do not create or switch to another branch or worktree without the owner's explicit
+  authorization. A request to commit/push this project's work means `main` unless the owner names another target;
+  publishing only a feature branch does not fulfill that request. Verify the destination remote, branch and
+  included changes before pushing; use a normal fast-forward push. Ask before a history rewrite or any different
+  publication workflow. Pushing still needs the authorization required below; this default alone grants none.
 - **Before every file write**, re-read the target and verify it has not changed since the version used for the edit
   (a hash comparison and an exact patch context); preserve unrelated work. Keep documentation current and make
   periodic backups before broad changes. Edit code with the editor's own tool (`apply_patch` in Codex) or this

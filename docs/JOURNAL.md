@@ -4902,3 +4902,14 @@ What was done, found and tried, in order (newest last). Agents: read the end fir
   clarified that all work should be published to main. Fast-forwarded local main to the exact reviewed snapshot
   18b6a54 and will push main normally, with this documentation correction. No production code changed.
   Continue this owner's work on main unless they request a separate branch.
+
+## 2026-10-31 — Explicit workflow rules and feature-branch cleanup
+
+- At the owner's request, deleted codex/atmosphere-sdk on GitHub and locally after checking that its exact tip
+  18b6a54 is already contained in main. No work was lost; main remains the working and publication branch.
+- Added rules near the start of AGENTS.md: find an applicable project rule or explicit owner instruction before
+  acting; if none is found or its meaning is unclear, ask before that action and explain the proposed choice.
+  Do not substitute agent habits or assumed best practices for agreement; do not repeat an already answered
+  authorization request. Work/authorized pushes target main; other branches/worktrees need explicit permission.
+- Recorded the decision in ROADMAP. Documentation-only change; reviewed exact diff and whitespace, with no
+  runtime changes or game restart required. Owner's existing authorization covers publishing this correction.
