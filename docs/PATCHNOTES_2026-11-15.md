@@ -1,6 +1,8 @@
 # November 2026 cumulative update
 
-Prepared 2026-11-15 against GitHub/local `main` at
+Published source update:
+[9d1be1f](https://github.com/PashOK7/MafiaModLoader/commit/9d1be1ffa0b22cc66d812c606ea7a303169de208),
+2026-11-15. Compared with the previous GitHub main at
 `294814bf8f6f72437c443c2c8c430929a9c2141e` (2026-10-31).
 This document describes the cumulative source changes and their migration requirements. See STATUS.md
 for the verified publication record. A source update is distinct from a tag/binary release or an installed host.

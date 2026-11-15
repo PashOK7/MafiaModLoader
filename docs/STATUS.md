@@ -6,13 +6,15 @@ Historical test counts and installed hashes elsewhere are dated receipts, not th
 
 ## Publication and artifacts
 
-- The directly queried GitHub `main` and local HEAD were both
+- Before the November 15 publication, the directly queried GitHub `main` and local HEAD were both
   `294814bf8f6f72437c443c2c8c430929a9c2141e` (commit dated 2026-10-31). GitHub listed no releases.
   November fixes were present in local sources/binaries but absent from that published main.
-- The owner authorized publication of the cumulative source update to
-  [PashOK7/MafiaModLoader main](https://github.com/PashOK7/MafiaModLoader/tree/main) on 2026-11-15.
-  The verified remote commit will be recorded here after the normal fast-forward push. No binary release/tag
-  is implied by source publication; installed ASI and MCP binaries still require the documented update cycle.
+- The owner-authorized cumulative source update was published on 2026-11-15 in
+  [9d1be1f](https://github.com/PashOK7/MafiaModLoader/commit/9d1be1ffa0b22cc66d812c606ea7a303169de208),
+  with all 268 reviewed paths. The normal fast-forward push to
+  [PashOK7/MafiaModLoader main](https://github.com/PashOK7/MafiaModLoader/tree/main) was verified directly
+  against the remote. This receipt is a documentation-only follow-up to that source commit.
+  No binary release/tag was created; installed ASI/MCP binaries still require the documented update cycle.
 - Host, SDK, MCP server and shipped examples live here. The ragdoll port lives in the separate
   `mafia-ragdoll-mml` checkout, which had no configured Git remote at this audit. Publishing this repository
   cannot deliver that separate mod's implementation or DLL.

@@ -9619,3 +9619,16 @@ water-only gain that still leaves the full frame above 33.3 ms is insufficient.
 - Publication includes the reviewed cumulative source, new headers/shaders/tests, generated bindings and
   English agent handoff. Build products, game assets/saves/dumps, local configuration/symbols and the sibling
   port remain excluded. The source publication receipt is recorded after verifying the normal main push.
+
+### 2026-11-15 — Cumulative source update published to main
+
+- Staged exactly the 268 source paths in the hash-verified publication manifest. The complete candidate
+  check included new files, generated bindings, local Markdown links and restricted-name checking.
+  No build products, game files, dumps, local config/symbols or sibling-port source entered the commit.
+- Commit 9d1be1ffa0b22cc66d812c606ea7a303169de208, "Publish the November cumulative host, SDK and agent update",
+  includes 31,082 insertions and 955 deletions. The working tree was clean before pushing.
+- Normal fast-forward push to https://github.com/PashOK7/MafiaModLoader.git main succeeded from 294814bf... .
+  A direct ls-remote returned the exact published 9d1be1f... commit. Updated STATUS/patch notes/roadmap with
+  this verified source identity. This follow-up changes documentation only; no binary release/tag was created.
+- Runtime validation remains the passing complete offline suite, MCP smoke and 55 native checks per build
+  on host B5FD1DE0... . Test labs are closed; owner game/settings and configured default are unchanged.

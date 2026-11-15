@@ -53,7 +53,8 @@ Historical owner PIDs and installed hashes are receipts, not instructions to con
   observed writers, with positive default-pool and conservative managed-pool cases. A separate native
   D3D9 probe verified the different Lock/Unlock classes. Complete offline suite and MCP smoke pass;
   both native builds pass 55 checks each. See knowledge/notes/release-validation-20261115.md and STATUS.md.
-  Earlier failed logs remain historical evidence. Owner authorized the normal main publication.
+  Earlier failed logs remain historical evidence. Source published by the owner-authorized normal
+  main push in 9d1be1ffa0b22cc66d812c606ea7a303169de208; remote verified. STATUS.md records the artifact boundary.
 
 - **Artificial car-impact launch and missing occupied car (2026-11-15, fixed):** removed the
   port's upwards/forwards fallback impulse and its setting. Car-hit bodies use native-mesh collision
