@@ -1348,6 +1348,8 @@ void SkinGpuChanged() {
 namespace {
 } // namespace
 
+void SkinBeforeReset() { ReleaseDevice(); }
+
 void SkinMissionClose() {
     g_vis.clear();
     for (auto &kv : g_attrs) SafeRelease(kv.second.vb);

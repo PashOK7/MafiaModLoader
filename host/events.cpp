@@ -127,6 +127,10 @@ void EventsFromDispatch(const MmlEvent &ev) {
         d["rounds"] = ev.item->rounds;
     }
     if (ev.type == MML_EVENT_MONEY_CHANGED) { d["money"] = ev.value; d["change"] = ev.change; }
+    if (ev.type == MML_EVENT_DEVICE_RESET_BEGIN || ev.type == MML_EVENT_DEVICE_RESET_END) {
+        d["device"] = Hex(ev.device);
+        if (ev.type == MML_EVENT_DEVICE_RESET_END) d["success"] = ev.value != 0;
+    }
     if (ev.other)
         d[ev.type == MML_EVENT_HUMAN_DIED ? "killer" : ev.type == MML_EVENT_PEDESTRIAN_HIT ? "model" : ev.type == MML_EVENT_CAR_CRASH ? "struck" : "vehicle"] =
             Hex(ev.other);

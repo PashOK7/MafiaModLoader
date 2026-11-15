@@ -3,6 +3,10 @@
 What is done, what comes next and later, and what is known to be missing or wrong. Agreed with the owner on
 2026-10-13, reordered on 2026-10-14 for the toolkit's goal ("Next"); agents keep it current (move items to Done with the date, add what they find to Known gaps).
 
+Current handoff: [STATUS.md](STATUS.md). Update/migration details: [PATCHNOTES_2026-11-15.md](PATCHNOTES_2026-11-15.md).
+Dated acceptance counts below belong to those specific runs, not an aggregate pass for today's complete tree.
+Historical owner PIDs and installed hashes are receipts, not instructions to control that process now.
+
 ## Decisions (the owner's)
 
 - Workflow (2026-10-31): follow the applicable project rule or the owner's explicit instruction. If neither
@@ -22,7 +26,8 @@ What is done, what comes next and later, and what is known to be missing or wron
   it hosts such libraries (PhysX 5, and the like: GPU and ML runtimes), connected to the game by shared memory.
 - Agents have full access, and may launch, drive and close the game themselves, from inside (never the owner's
   real mouse or keyboard).
-- The repository is English; it is a private GitHub repository (2026-10-13). Pushing,
+- The repository is English; the GitHub repository is public (verified 2026-11-15; it was private at the
+  original 2026-10-13 setup). Pushing,
   publishing and pull requests: ask the owner first.
 - The owner's 1.2 lab is shared with mafia-ragdoll (`tools/lab.py mode loader|ragdoll`).
 - The loader is measured by how easily another agent writes a mod with it (2026-10-13). Older mods
@@ -42,6 +47,115 @@ What is done, what comes next and later, and what is known to be missing or wron
   lights, the camera) is what both a faster renderer for the original look and Remix's API take.
 
 ## Done
+
+- **Final cumulative-update regression (2026-11-15):** fixed SIB absolute-jump call-target traversal
+  in the shared crash/profile reader. Corrected the native-index self-test to require proofs only for
+  observed writers, with positive default-pool and conservative managed-pool cases. A separate native
+  D3D9 probe verified the different Lock/Unlock classes. Complete offline suite and MCP smoke pass;
+  both native builds pass 55 checks each. See knowledge/notes/release-validation-20261115.md and STATUS.md.
+  Earlier failed logs remain historical evidence. Owner authorized the normal main publication.
+
+- **Artificial car-impact launch and missing occupied car (2026-11-15, fixed):** removed the
+  port's upwards/forwards fallback impulse and its setting. Car-hit bodies use native-mesh collision
+  with animation-driven muscle targets disabled. Nearby discovery and native-contact validation now
+  include the player's current/last vehicle outside the general lists. A striking car is registered
+  immediately. Both builds pass 29 checks including real hidden-root truck contacts. Installed host
+  34B23E81... / port 5505A21D... in the owner copy. See knowledge/notes/car-impact-20261115.md.
+
+- **Unrequested statistics companion files (2026-11-15, fixed):** collection is scoped to requesting
+  mods and does no automatic persistence. Explicit save_put records determine whether a .mml exists.
+  Legacy host counters are readable and omitted from new writes. Both builds verify empty saves,
+  legacy-only saves, consumer unload and actual mod state surviving reload.
+
+- **Soundscape 3D audio visualization** (2026-11-14): source PCM and native gain drive continuous
+  spherical fronts. Connected collision faces form a room cutaway with separate reflected pulses.
+  Native EAX3 parameters drive the modeled early level and late-envelope graph. Shift+F10 toggles
+  the mod. Both builds pass 22 live checks each and 18 offline checks pass. The owner's native D3D8
+  retained its 112-byte EAX property packet through the hot load. See mods/examples/soundscape/README.md.
+
+- **Ragdoll ground-readiness starvation** (2026-11-14): placement failures no longer monopolize
+  the host scenery scan. In Old Prison, the same lethal hit went from the five-second fallback
+  to 0.04–0.05 s with completed ground coverage. Verified in both builds and installed in Owner
+  1.0. See knowledge/notes/ragdoll-scenery-20261114.md.
+
+- **Vehicle launch from a misposed compound collider** (2026-11-09): the owner's trace isolated
+  the ragdoll contribution. The host now poses rigid actor meshes by the renderer's world-matrix flag,
+  and the port measures solver deltas from the actual clamped input. Both labs and Mafia10Fixes have the fix.
+- **Bullet world events through the capsule hook** (2026-11-09): restore reporting from the outer
+  ray hook after final hit selection. A static impact with capsules active emits once in both builds.
+  Installed in Mafia10Fixes with the vehicle fix.
+
+- **Vehicle incident recorder** (2026-11-09): bounded occupied-car history, automatic pre-trigger
+  capture on rapid acceleration or upward launch, and attribution across native and mod tick phases.
+  Tested in both labs and installed in Mafia10Fixes. `vehicle.trace` reports status and saves on request.
+
+- **Carried player retains the get-up service after mission transfer** (2026-11-09): keep the human
+  registry tied to actor lifetime and discard scene-local caches on close. Native blast after transfer
+  plays the fitted back get-up and returns control in both builds. Both labs have the fixed host.
+  The affected session was repaired live. The persistent owner fix shipped with the vehicle recorder.
+
+- **Ragdoll limb shots and palm contact** (2026-11-09): registered corpse capsules replace native bullet
+  volumes while keeping the game's obstruction and shot processing. The actual capsule and surface point
+  reach the mod. It applies the local impulse to that segment. The palm follows the wrist pose in both
+  bullet tests and Jolt contact. Both builds and native Mafia10Fixes passed actual shots into both palms.
+  Also fixed the ragdoll process-detach lifetime crash from Game_14248_20261109_000801.dmp.
+
+- **Ragdoll floor and checkpoint restart** (2026-11-09): Jolt includes the native collision slabs that have
+  no visual floor. Same-mission save loads report loading while the game can still render the previous actor.
+  The port suspends pose writes and clears physics and camera state on `GAME_LOADED`. The recorded garage blast
+  and the native off-map Game Over Retry passed in both builds. Installed in Mafia10Fixes.
+
+- **Native blast severity for Tommy** (2026-11-09): light and medium explosion damage keep their native
+  reactions. The ragdoll replaces a heavy fall selected by the engine. Tested in both builds and installed
+  in Mafia10Fixes.
+
+- **Ragdoll rest anatomy and finite walking contacts** (2026-11-08): full model rest-skeleton calibration
+  supersedes the narrow trunk-sign fix. Head/limb helper axes retain posed bone orientation; joint limits
+  are no longer permanently widened to a death pose. Walking contacts use anatomical segment masses and
+  one force budget per person for impacts and overlap pushes together. Pre-push assembly energy/work
+  attribution prevents self-induced knockdowns while preserving independent incoming impacts. Final port
+  ECB39D43... passes 43 assertions per build serially and a physical 9 m/s positive-impact check in each.
+  Installed in both labs and native-D3D8 Mafia10Fixes; native anatomy/contact/install checks passed.
+  Evidence and limits: docs/RAGDOLL_PORT_REVIEW.md. Rare car hard-stop/get-up outlier remain tracked below.
+
+- **Foreground mouse confinement** (2026-11-08): owner-selected fix for wheel input leaking to background
+  windows under the hidden system cursor. Windowed primary windows include the resize frame in their clip;
+  activation loss, modal sizing/menu loops and destruction release it. Native 1.0 gameplay and 1.2 lab pass
+  actual confinement/release checks, and all eight resize arrows remain correct. Existing crash recording
+  also reverified through five isolated crash regressions, including a thread without TLS.
+
+- **Original 1.0 fix-only copy** (2026-11-08): W:/Mafia10Fixes contains
+  the copied original archives and native Direct3D 8 game with only
+  the loader's built-in technical fixes. Initially no mods; the owner
+  subsequently requested ragdoll 0.1.0 as its only gameplay mod. It loads
+  live in 1.0 with its Jolt world and scenery active. Verified
+  native system renderer, gameplay start, crash-fix activation and
+  gamepad hotplug watching. A process-owned timer request now also fixes
+  the native periodic 30 ms frame waits. Evidence in build/native-frametime-20261108.
+
+- **Native frame wait precision** (2026-11-08): a process-owned
+  timeBeginPeriod(1) request precedes the first original limiter call
+  and is matched at host teardown. Native 16 ms steps and the 62.5 FPS
+  ceiling remain. A controlled request/release reproduces and removes
+  periodic 30 ms waits. Fresh 1.0 gameplay and both serial lab checks
+  have p95 at most 16.865 ms and no measured interval over 20 ms.
+
+- **Bounded CMake shader builds** (2026-11-03): owner stopped reflection work to fix the compilation loop.
+  FXC/DXC now have separate preprocessing/optimization deadlines (10/60 s), per-output non-waiting locks,
+  logs and atomic publication. Exact-input timeout records stop identical optimizer retries immediately.
+  Compiler-generated active include dependencies replace the all-HLSL glob; individual shader targets
+  allow the changed heavy entry to fail before unrelated shaders/C++ build. O3/WX and water quality retained.
+  Five focused tool tests pass; real FXC timeout/retry and FXC/DXC success checked. Full reflection builds,
+  game tests and deployment were deliberately stopped. This bounds failure, not the underlying heavy shader's
+  compilation cost; step20 remains unaccepted. Standalone Rust shader compilation is outside this change.
+
+- **Live window resizing** (2026-10-31): ordinary windows resize/maximize/restore after launch through native
+  ResetDevice, root/child synchronization, scene viewport/camera aspect and HUD/menu rebuild. Resize arrows now
+  appear on border hover even while the game hides the Windows cursor; borrowed visibility increments are
+  restored on client entry/leave, deactivation and sizing transitions. D3D9 resources
+  recover while D3D11/sidecar ownership stays alive; SDK reset events and rollback/suspended drawing on failure.
+  Fixed dxwrapper's windowed ResetEx forwarding. Native pixel/scene/liveness checks with DLSS: 59/59 passed in
+  1.2/1.0; water/reflection/atmosphere images checked after resize. Details: knowledge/notes/window.md.
 
 - **Atmosphere SDK boundary** (2026-10-31): public C ABI and safe Rust owned requests, validation, arbitration,
   frame snapshots and automatic unload/fault restoration; policy-only example with its own native settings page.
@@ -267,7 +381,7 @@ What is done, what comes next and later, and what is known to be missing or wron
 - **The 2D pass for mods** (2026-10-15; item 3, block 3c): `gfx_ui` takes the HUD and the menus into a shared target
   for the passes (`MmlGfxFrame::ui`), off the screen or also on it; `mods/examples/hud_panel` showed the HUD and the
   pause menu on a panel in the world in the 1.2 and 1.0 labs, and the HUD unchanged on the screen with `take`.
-- **The scene from another camera** (2026-10-15; item 4, block 4a): `scene_view` (up to eight views a process): LS3D
+- **The scene from another camera** (2026-10-15; item 4, block 4a): `scene_view` (currently eight per owner, 64 total): LS3D
   draws the mission's scene again before the frame, from a mod's camera (a pose, an asymmetric frustum of four
   tangents, a clip plane, the game camera's room or its own), into targets of the graphics bridge that the passes
   get (`MmlGfxFrame::views`: colour, linear depth, matrices); the game camera, the scene's callback, its listener and
@@ -344,13 +458,15 @@ What is done, what comes next and later, and what is known to be missing or wron
   1.0), the trout taken; ITEM_GAINED and _LOST for each; after a restart the ids kept (placeholders until defined).
 - **Statistics, the profile's progress** (2026-10-16; item 10, block 10c): `stats_get` (what the player did, counted
   by the loader from the events: kills, deaths, shots, hits, cars got into, crashes, falls that hurt, items, the
-  distance on foot and in vehicles with teleports left out, the time played, money gained and lost; the game's in
-  its saves, the profile's beside its .sav under the owner "mml"), `profile_progress` (the profile manager's own:
+  distance on foot and in vehicles with teleports left out, the time played, money gained and lost;
+  as of 2026-11-15 collection is opt-in and in memory, with persistence owned by the requesting mod),
+  `profile_progress` (the profile manager's own:
   the chapter of the newest story save, the race, steal and freeride bonus-car letters, the garage, the freeride's
   level word), `profile_saves`; `stats.state`, `profile.progress`. Seen alike in the 1.2 and 1.0 labs: profile 4
   (chapter 20, 105 saves, "ABCDEFGHIJPR" bonus cars) and the 1.0 lab's "Run" (chapter 6, French save names); a kill
   with the Thompson (and its hits and shots), a fall of 8 m, a crash into a wall, items given, money set; the
-  profile's totals kept after a restart, the freeride's game counts back at 0.
+  profile's totals kept after a restart in the original 2026-10-16 test. That automatic persistence contract
+  was replaced on 2026-11-15; explicit save_put records now determine durable state and companion files.
 - **The water, zones for everyone** (2026-10-16; items 8 and 15, block 6a of the order): `world_water` (the static
   world's faces of the water's surfaces 31 and 44 under a point, rays going on below what is above them: its
   height, the bed, covered), `zone_watch` (a zone watching every person, every car, or one actor; the crossings with
@@ -584,9 +700,9 @@ What is done, what comes next and later, and what is known to be missing or wron
   time limit; the dump again without the heaps when the full one fails (a partial copy, seen in the stand-in and in
   1.2); since 2026-10-25 a dump of a few MB (the stacks, the globals of the game's and ours, the memory around the
   faulting thread's registers three pointers deep; the heaps whole only with MML_FULL_DUMP=1: a tester's were 0.3 to
-  2.3 GB); a mod's fault with its stack (log, `MOD_FAULTED`). MCP `crash_triage`: the verdict (what, where, the nearest
-  code not the game's: a mod, the loader, another ASI), the named stack, the access, the registers, the log, the taps,
-  the events, the mods; with the game running, the mods that faulted in this run. Seen in both labs on a crash made on
+  2.3 GB); a mod's fault with its stack (log, `MOD_FAULTED`). MCP `crash_triage` summarizes the failure, named stack,
+  mission, mods, recent event types and mod faults in a running game. The `details` option includes the raw diagnostic
+  fields. Seen in both labs on a crash made on
   purpose (the player's frame pointer spoiled): `C_game::Tick+0x328` (1.2) and its 1.0 twin `+0x302`, called from
   `C_mission::Tick` under the loader's mission hook; in 1.0 also through `MafiaRagdolls.asi`'s.
 - **Restore points** (2026-10-17; "State snapshots" from Later, block 9c of the order): `restore.save` (the game's
@@ -829,6 +945,14 @@ What is done, what comes next and later, and what is known to be missing or wron
   Beside it: `game_launch {"resolution": [w, h]}` (the screen's size for one run, the registry left alone), the mods'
   2D space kept 800 wide over the screen when the HUD's units are not, MinHook's threads walked with NtGetNextThread
   (31 hooks: 1.2 s to 15 ms).
+  2026-10-31: enabled in the owner's 1.2 lab with borderless off to retain window resizing. Native screen-size
+  changes now refresh the port's aspect/HUD/map/menu/cursor constants through its owned Apply lifecycle. Existing
+  FOV/HUD controls in Developer tools > The camera verified through native controls and three resizes in both
+  builds (23/23 checks, including actual pixels); no duplicate controls needed.
+  Later the same day: those FOV checks proved only the stored angle, not the effective projection. Fixed the
+  reported water conflict: shared SDK projection ownership protects explicit scene-view/override frusta and
+  absolute held FOV; Fusion Fix refreshes native policy before views inherit it. Native actual-matrix tests pass
+  in both builds, including reload/unload and saved-game loads (knowledge/notes/camera-projection.md).
 - **Beautiful water** (2026-10-28; the owner: "a visual, no heavy physics"): `mods/examples/river_water` made anew.
   The wind's ripples from a JONSWAP spectrum by an inverse FFT on the GPU (three cascades, their slopes' mipmaps:
   a pixel's mean slope and the variance it cannot draw, scaled to a calm city river's slope variance); the planar
@@ -839,18 +963,170 @@ What is done, what comes next and later, and what is known to be missing or wron
   > Mods page. A fault of the loader's found on the way and fixed: a `geom_capture` asked during a frame ended with
   that frame, empty (host/geom.cpp). Seen in the 1.2 and 1.0 labs; cost (bench, one lab, the embankment): 1.2 +8.0
   ms (the reflection 7.1, the water 0.9), 1.0 +2.5 ms. What is left: Known gaps, "The water".
+  2026-10-31: added independent Small ripples (shared SDK spectral-band control) and Reflection softness
+  (explicit artistic lobe-width control). Large waves can retain sharp, distorted reflections; the wind no longer
+  forces the only possible material appearance. Defaults preserve the previous spectrum/softness. Native 1.0
+  12 checks and current 1.2 four checks passed, plus CPU/WARP and full offline tests; knowledge/notes/water.md.
+  The follow-up adds independent Wave width/animation speed, Wind fetch, Reflection strength and native RGB
+  controls for body/absorption colors. Shared SDK lengths keep FFT dispersion, slopes and geometry sampling
+  consistent; integrated phase avoids jumps when speed changes. Shared panel kind `color` stores one #RRGGBB
+  setting. Waves/Material/Lighting tabs; previous settings/default behavior preserved. Native 15 checks EACH
+  build plus CPU/WARP and full offline suite pass (build/water-controls-20261031).
+  Subsequent visual-reference iteration is IN PROGRESS: the owner rejected the uniform blue candidate despite
+  passing tests. Reduced UI to two tabs/12 rows, refitting wave energy, directional Fresnel/radiance filtering,
+  painted-sky brightness, crest foam and reflected ray tracing. See JOURNAL and build/water-reference-20261031.
+  Do not claim reference appearance achieved yet; compare images directly, then finish native/performance checks.
+  2026-11-01: owner accepts wave geometry but rejects lighting/reflection/sun glitter. Architecture audit found
+  finite camera-dependent environment coverage, uncalled direct-sun BRDF, broad painted-sky amplification and
+  uncoupled body scattering/double exit transmission. Native frozen-wave, DLAA-off pitch/sun evidence recorded.
+  Replacement design and ordered acceptance gates: docs/WATER_LIGHTING_ARCHITECTURE.md. Preserve wave geometry;
+  implement directional environment/valid hits, direct sun, then coupled volume transport.
+  Approved rebuild IN PROGRESS: an intermediate lighting preview is installed in both labs. Sky-only native
+  scene views and the optional C/C++/Rust capability query pass 15 native checks per build plus actual WARP
+  coherent-cube/reset tests. Water now samples world sky directions, a separate Beckmann/Smith finite-disc sun
+  and coupled homogeneous scattering with exit transmission once. Actual WARP optics and 15 native controls/
+  pixels/reload checks per build pass. Wave geometry and owner settings remain unchanged. This is not the full
+  fix: objects still use legacy planar queries; world geometry/material coverage with same-frame moving
+  occluders (including the barge), visible dark surface streaks, reference acceptance and cost remain pending.
+  Evidence/backups: build/water-lighting-rebuild-20261101. Owner offered to review this intermediate appearance.
+  Owner REJECTED that preview: black streaks, white edges, pitch-dependent bright waves and a red hull-colored
+  patch behind the barge. Follow-up build/water-artifacts-20261101 reproduces negative-depth hull hits in WARP
+  (fails before/ passes after validity fix). Camera-dependent ShoreWeight and discarded downward reflected rays
+  also need architectural treatment. The painted cloud opening cannot be replaced by an assumed point sun.
+  No new visual acceptance or completed world-geometry service is claimed.
+  Partial hull-depth/shore validity and image-driven cloud-opening emitter corrections are now installed in BOTH
+  labs (9EB96D6C...); the owner reports partial improvement, not acceptance. Camera-independent triangle/TLAS
+  query core passes actual WARP tests including moving occluders and explicit incomplete coverage. Native draw
+  source ABI (C/C++/safe Rust, UV/prelit colors/material states/posed buffers) passes 11 source/lifecycle checks
+  in BOTH labs (12 checks each after exact native mip transfer was added). Original material texture bytes/mips
+  now transfer to D3D11 without scene-image sampling. Complete native scene/material snapshot and production water integration
+  remain IN PROGRESS; the current water still uses the legacy finite object image. No added tuning sliders.
+  Explicit unculled native mesh preparation now passes 16 collection/context/pose/fault checks in EACH lab.
+  Fixed native buffer publication and LOD-selector side effects; all CPU packets read, including after 1.2
+  pitch/yaw changes. Real sector-lit buffers, no rasterization, inactive streaming/unsupported
+  geometry reported as unknown. Pitch/yaw preserve the source geometry hash; off-camera prop FOV/move/removal
+  pass. Full copy remains 38.8ms, metadata-only 10.2ms including diagnostic work: immutable geometry caching and
+  same-frame instances are next, alongside ray-hit material evaluation and production integration.
+  Targeted wave-visibility correction now installed in BOTH labs (896F21FA...): downward reflection rays
+  can hit/re-reflect from the actual FFT water field; fine back-facing normals trigger a front-surface query
+  instead of a zero-light material. Native A/B pixel tests pass 5 in EACH build, identical wave phase/shape:
+  nearly-black ROI pixels 8,923 -> 591 (1.2), 15,553 -> 233 (1.0); flat-water radiance retained within one byte.
+  This is a bounded height-field/two-additional-bounce approximation, not a complete folded-surface path tracer.
+  Native low-water cost is about +5ms GPU in 1.2; acceleration remains needed. No new artistic settings.
+  The object query is STILL the finite legacy image: city disocclusion/material integration is not completed.
+  Owner accepted the black-band fix and requested the completion plan: docs/WATER_REFLECTION_PLAN.md records
+  28 small gated steps, with early native hit/color checkpoints, material/streaming/lifetime coverage, caches,
+  production cutover, cost and spatial/DLSS acceptance in both labs. The checklist is pending, not a delivery claim.
+  Owner questioned software tracing cost: added prerequisite step0, an early hardware DXR capability/prototype
+  and end-to-end comparison before committing production traversal to D3D11 software. Existing software query
+  remains the correctness reference. Current slow water does NOT yet execute that object BVH; wave marching,
+  material/tessellation work, the old scene view and synchronization need separate measurements.
+  LATEST owner decision supersedes hardware-first: the CURRENT OVERALL WATER LOOK is accepted; first finish
+  reflection correctness, then restore the missing water shadows, and ONLY THEN optimize. Plan now records
+  explicit A/B/C order, shadow steps S1-S6, deferred hardware comparison O1 and image/motion regression gates.
+  Preserve waves/color/foam/highlights/lighting/filtering; an FPS gain cannot justify an unapproved quality loss.
+  Reflection block started: steps1-18 completed (repeatable native cases in both builds, actual missing-source
+  inventory, docs/SCENE_RADIANCE_SNAPSHOT.md contract, coherent SDK GPU upload and native CPU/GPU hit diagnostics:
+  14 checks per lab, off-camera depth layers/move/remove/camera invariance). debug22 exposes missing regions;
+  Initial1.0 streaming gaps are now closed by step14's owner-scoped native block residency. Added a diagnostic capture clock;
+  accepted shader code and normal optical parameters unchanged. No world-object reflection cutover yet.
+  Native texture pages, stable primitive attributes and encoded/prelit material reconstruction now pass both
+  builds (including real hull/tree/house/bridge samples). Step10 alpha/sidedness passes WARP,224 native D3D9
+  comparisons and both labs' real fence hole to a deeper material (0.049952 ->10.751377m).
+  Ordered blending, current instances, required billboard/SMMR deformation and independent streaming now pass
+  both builds (steps11-14). Step15's explicit raw colored reflection preview now passes native bank/actual-barge
+  captures in both builds; shader resource bindings exclude old image colors/depth. Full-copy preview is slow,
+  explicitly diagnostic; normal water still uses the legacy image until18. Subsequent cache/publication
+  work16/17 must preserve current source data, accepted optics and coherent owner/device/scene lifetimes.
+  Step16 owned content caches now pass native9/lab plus current WARP/native-texture mutation tests. Complete
+  current vertex/index/UV/prelit/mip validation precedes immutable reuse; no pointer/TTL assumption. Step17
+  is next: broad1.0 repeated texture-page allocation fails with E_OUTOFMEMORY and skips the water pass.
+  Dark triangles in that case are exposed underwater geometry, as the owner identified, not reflected objects.
+  Step17 now passes that broad allocation repro: unchanged GPU payloads share by exact current owned bytes/
+  texel identities, current instances/constants still publish coherently. Page staging is sized once and old
+  CPU scene leases retire. Native continuous10/lab + pose/geometry32/lab and full offline checks pass; source
+  validation remains expensive and optimization is deferred. Next18 is the normal-material world-query cutover.
+  Step18 complete: normal per-segment world material installed3804791D... both, native-normal-v1 inspected8
+  frames/lab plus current instance/pose32/lab pass. Resolved-camera region7/lab and complete prior residency
+ 12/lab pass; current host offline ALL PASSED. Finite total object path600m, no projected-depth object lookup
+  or silent old-image fallback. LOD0/unfogged native colors remain20/21; projected shore and old capture19/23.
+  Next19 is a local world-geometry waterline constraint, preserving accepted waves beyond contact.
+  Step19's first nested BVH prototype6D4B4530... failed the native barge gate: bridge late/off exposed the
+  underwater geometry. Exact local CSR candidate bins now pass the CPU/WARP distance/publication gate;
+  Step19 complete: CSR native bank/FOV/actual-barge cases pass both; compact-loop0ECC4EBF... installed both
+  fixes the1.2 barge-down shutdown (same3 inverse/7 refinement steps,96 search steps, rays and bounces).
+  Normal PS/DS use current world contact with no projected shore depth; native down frames inspected both.
+  Full spatial25 and production frame cost remain pending. Next20 is per-hit filtering/virtual observers.
+  Both labs restarted after shutdown, original owner settings checkpoint retained.
+  Owner override 2026-11-04: make the accepted-looking preview usable before resuming step20.
+  Both labs now run the same 14 accepted shaders with wrapper-verified texture revisions and reordered
+  texture-page reuse. Live 1.2 upload can fall from about120 MB to43 MB/frame, and held bank snapshots
+  reuse11 buffers with64 bytes uploaded. Native source preparation and geometry reads still dominate
+  the CPU, and the bank view also reached178 ms in the water surface pass. Lab usability remains open.
+  The owner subsequently resumed step20 and deferred final motion acceptance. The focused GPU gate now
+  checks the actual water material provider's per-hit mip and alpha selection. The isolated wave/object
+  path initially compiled alone in23.67 s. The new production split compiles in2.22/24.20/4.84 s
+  and renders water in both labs with the actual hit filter. Final motion and frame-cost gates remain open.
+  Separate PS/CS diagnostic entries remove the remaining shader build timeout. The standard x86
+  mod target builds and AD227F37... is installed and running in both labs.
+  Optimization is now authorized with fixed resolution and visual quality. Normal water skips the obsolete
+  mirror-camera render. The world query reuses slab reciprocals and avoids retracing a proven prefix.
+  Vertex/index updates skip read-only unlocks and byte-identical plain writes. Stage timings separate
+  ray preparation, transport and composition. Remaining costs include repeated native scene collection,
+  the game shadow pass and synchronization in the D3D9 bridge. See the 2026-11-04 journal measurements.
 
-## Next, by importance
+## Dated ragdoll follow-ups
+
+The entries in this block retain their investigation dates and explicit fixed/open status. They are not
+all pending work. Current priorities follow under "Next"; STATUS.md records the cumulative handoff.
+
+- **Airport shotgun misses (fixed 2026-11-09):** the capsule terminal mid-hook's entry altered EFLAGS before
+  saving them. The native branch rejected living candidates after any capsule registration. Reserving the
+  return slot with LEA preserves the flags. Same-save replay went from zero hits with active capsules to
+  1/1 single and 10/10 shotgun hits. Native living hits and corpse palm hits passed in both builds.
+- **Ragdoll interaction boundary (2026-11-09):** only dead actors publish bullet capsules. The car receives
+  solver velocity changes only after a solid ragdoll contact in that step. Pedestrian movement keeps native
+  sweep results, including world obstacles near moving cars. The dedicated car-hit correction and animated
+  proxy fallback remain. Verified drive with zero mod delta on a clear path and real reaction on body contact
+  in both builds. Installed and restored the live airport mission in W:/Mafia10Fixes.
+- **Sideways pedestrian seed after a crowd strike (fixed 2026-11-09):** overall velocity now comes from
+  consecutive samples of the native pedestrian position. Bone animation only contributes relative motion,
+  with zero net linear momentum. A 20 cm pose jump no longer seeds a 12 m/s launch. Both builds passed the
+  pedestrian handover and car-hit regressions. Installed in Mafia10Fixes. The exact crowd route and native
+  collision box versus Jolt wall geometry have not been replayed.
+- **Garage blast sequence and delayed recovery (fixed 2026-11-09):** a nonlethal blast moved Enemy1 via the
+  mod, so the next native blast left him alive and `detector_energy` never armed the car transfer. Living NPCs
+  keep native blast reactions. The original script now transfers `forVfor4` with Tommy seated in the 1.0 replay.
+  A quiet supported knockdown can hand off to native get-up even while Jolt is awake. Verified in both builds.
+- **Rare ragdoll car hard stop during dodge (owner, 2026-11-08; open):** reported once at low speed. Controlled
+  free-street dodge/strike did not reproduce it; a separate apparent reproduction was the native curb, confirmed
+  without the mod. New bounded hard-stop telemetry records native speed change, Jolt contribution and nearby
+  pedestrian animation/proxy gap. Preserve the next real incident before choosing a collision policy change.
+- **Get-up root-motion continuity (fixed 2026-11-08):** reproduced nearly four metres of visible displacement
+  after a successful one-frame fit. Rebase the native cached TCK trajectory and discard the obsolete fall's
+  root-track cross-fade; expanded 20-assertion block passed in both builds. docs/RAGDOLL_PORT_REVIEW.md.
+- **Ragdoll port parity (owner, completed 2026-11-08):** staged current-pose get-up, owner cancellation,
+  pedestrian grid following, reference car impulse location, solid striking hull and measured hull/capsule
+  fallback through native vehicle-hit handling. All 18 focused assertions passed in both builds serially;
+  missing-native-proxy taxi-wave contacts also passed in both. Final binaries installed and checked in
+  W:/Mafia10Fixes with original D3D8. Evidence and scope limits: docs/RAGDOLL_PORT_REVIEW.md.
 
 **The goal** (the owner, 2026-10-14): a toolkit strong enough for whatever mod a user can think of, written by another
 agent. The measuring cases span the range: engine-deep mods (**a ragdoll, shader water, realistic smoke, VR**) and
-gameplay mods (**fishing, skateboarding, a working airplane, achievements**). None of them is written here, and
-mafia-ragdoll is not ported: it already has a ragdoll (Jolt), water and smoke (a Direct3D 11 bridge, PhysX 2.8.4,
-NVIDIA Flow) on a host of its own, and its code is the reference for what several services below must do
+gameplay mods (**fishing, skateboarding, a working airplane, achievements**). This repository ships the shared
+services and examples, rather than promising finished versions of every measuring case;
+the ragdoll port now lives in the separate mafia-ragdoll-mml repository. The original mafia-ragdoll has a
+ragdoll (Jolt), water and smoke (a Direct3D 11 bridge, PhysX 2.8.4, NVIDIA Flow) on its own host;
+its code remains the reference for what several services below must do
 (its `src/`, read only). Every service lands with an example mod (`mods/examples`), a section in
 `docs/MODDING.md` and its offline test, and is seen working in both labs, 1.2 and 1.0, before it is done (the
 builds' decision; AGENTS.md "Builds"). Each item names who needs it (R ragdoll, W water, S smoke,
 V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselves) and its reference.
+
+## Next, by importance
+
+The current November work is publication/validation preparation and the explicitly open issues in STATUS.md.
+The original service roadmap below retains its completed markers and longer-term dependencies.
 
 **The order of work** (the owner, 2026-10-16; one block at a time, each seen in both labs): the functions themselves
 matter, not example mods for them (no "fishing" example for items 15 and 16).
@@ -1289,8 +1565,9 @@ matter, not example mods for them (no "fishing" example for items 15 and 16).
 2026-10-14, the second (the owner: the toolkit for a ragdoll, water, smoke and VR mod; old tasks kept, duplicates
 merged, sorted by importance):
 
-- **"mafia-ragdoll on the loader"** (Later): taken out. The ragdoll is not ported; what its host and core do for
-  themselves became items 1, 3 to 9 and 11 as services for any mod, mafia-ragdoll's code their reference.
+- **"mafia-ragdoll on the loader"** (Later, original 2026-10-14 decision): the monolithic port task was taken
+  out of this repository; its host/core needs became items 1, 3 to 9 and 11 as services for any mod.
+  The later ragdoll port lives in mafia-ragdoll-mml, with the original source retained as reference.
 - **"Events to MCP as they happen"** and the events for mods: the mods' events are items 6, 7 (people, what happens);
   the agents' stream is item 20, which carries them too.
 - **"Profiling"**, **"Hardware watchpoints"**, **"Crash triage"** moved up from Later (items 5, 22, 25): water and VR
@@ -1311,6 +1588,162 @@ merged, sorted by importance):
   `fn load(host) -> Result<(), E>`.
 
 ## Known gaps
+
+- **Pedestrian teleport at impact, 2026-11-14**: the second trace records a 2.4 m intermediate
+  native model rewrite and at most 0.185 m between consecutive post-world pelvis samples.
+  At capture time the visible displacement was unassigned. Subsequent draw observation isolated
+  one pre-physics native dodge rewind (see the separate fixed mechanism below). This does not assign
+  every earlier incident. See knowledge/notes/teleport-20261114-1637.md and STATUS.md.
+
+- **Owner's intermittent pedestrian-to-car teleport** (2026-11-11): fixed two concrete port defects:
+  the native sweep restored a position already committed by its hit handler, and a same-tick pose
+  change was lost when ragdoll initialization selected the previous tick. A controlled 1.5 m pose
+  change reproduced the latter; the corrected transition passes in both builds. The reported
+  incident had no pre-hit pose sample, so its exact cause remains unproven. The owner then reported an
+  unnatural fall and another teleport on the updated mod. Both had zero initial skeleton gap; first
+  solver displacements were 0.0414 and 0.0017 m. These numbers do not explain the visible anomaly.
+  The port now retains up to 128 samples per contact over 3.5 s, before/after tick and render-begin
+  pose application. `ragdoll.handover` reads them even after recovery; default state stays compact.
+  2026-11-12: the owner narrowed this to an apparent right-corner-to-left-corner transfer. Five initial
+  contacts had zero initial pose gaps. An added post-world matrix observer retained six more contacts
+  from the owner's confirmed recurrence, all with zero previous-world/pre-hit and initialization gaps.
+  Their post-world pelvis matrices match physics; the last body begins accelerating about 48 ms after
+  creation. This does not prove that the mesh pixels followed those matrices, or establish the cause.
+  Bounded per-body car contact records now include normal, depth, car axes/origin and dropped counts;
+  observer port 2F791D64... is installed in owner PID 21276 generation 3, pending another recurrence.
+  Same-model native corner runs in the labs have not reproduced the exact reported transfer.
+  Evidence: build/pedestrian-handover-20261111 and build/pedestrian-teleport-20261112.
+  Do not call the intermittent report resolved.
+
+- **Traffic pedestrian without ragdoll (2026-11-14)**: the `civil31.I3d!` model name was passed to
+  the native-asset SDK without conversion, so calibration failed and the native death animation
+  took over. SDK now resolves this alias to `civil31.4ds`. Skeleton equality and actual ragdoll
+  creation on a test actor with the exact marked name pass in both labs. Fix installed in the
+  owner's copy. Two incidents have matching pre/post hit positions and later displacements of
+  6.19 m and 6.86 m. The exact movement interval remains unresolved. The installed ragdoll
+  observer now records native and physical positions independently and persists large candidate
+  changes. Both builds passed the observer fixture with a simulated pose change, with and without
+  a physical body. Evidence: build/pedestrian-no-ragdoll-20261114 and build/pedestrian-trajectory-20261114.
+
+- **Bumper-camera car collision (2026-11-14, fixed)**: ragdoll used the visible-mesh list, so a
+  camera-hidden vehicle root could leave the physical world with no car shape and select OnHit's
+  fallback impulse. SDK actor_meshes_ex(HIDDEN_ROOT) supplies native visual geometry independently
+  of root visibility. Both labs verify preserved visibility behavior plus real truck/corpse contacts
+  under the bumper camera. Owner PID 19940 has a registered 3000 kg TruckBx00 with its root hidden.
+  Installed host 1BEB2DD9... / port 97B7E11E...; build/vehicle-hidden-root-20261114. Shapes use per-part
+  convex hulls of the loaded native mesh, not a box proxy. A separate native-animation root rewrite
+  was captured (5.202 m root movement versus 0.095 m physical movement). Its rendered effect remains open.
+  Owner reported another immediate-at-impact teleport at 16:04 on 2026-11-14. Evidence retained;
+  the current contact's tracked initial pose gap is zero and after-world pose error <=0.0158 m.
+  This does not explain the visible report. knowledge/notes/teleport-20261114-1604.md.
+
+- **Pedestrian dodge rewinds before car impact (2026-11-14, fixed in the ragdoll port):** matching
+  draw and contact traces record a 2.388 m visible jump before the first physics step. An A/B test in
+  both builds reproduces a roughly 2.4 m rewind from the native animation-start sweep. The port
+  sweeps from the last accepted root, preserving collision with obstacles ahead and native pose
+  handover. Earlier uncaptured or post-handover movements remain separate investigations.
+  See knowledge/notes/pedestrian-dodge-20261114.md.
+  On November 14, PID 27624 loaded port 87379006..., generation 2; sixteen live checks passed per build,
+  including the corrected living-pedestrian get-up fixture. November 15's newer port is recorded in Done.
+  Earlier unmatched/post-handover reports remain open; a short owner replay is not blanket acceptance.
+
+- **Engine gain/timbre after pause** (2026-11-12): cause isolated in a standalone synthetic-tone
+  reproduction: DSBCAPS_LOCDEFER Stop/Play restores old effective gain AND rate while getters report
+  the newer values. The owner correctly rejected the earlier gain-only workaround; it is removed.
+  Native Init now selects LS3D's existing software-buffer path when hardware 3D capacity is zero,
+  preserving real hardware/EAX providers. Actual buffers retain spatial/frequency/volume controls.
+  Standalone acoustic regression and five native-allocation assertions per build pass. FF4E79EC...
+  installed in both labs and Mafia10Fixes PID 10752. The owner's long recording retains the 161 Hz
+  line after pause; 80 Hz..20 kHz post-pause/post-throttle bands agree within 0.09 dB. Lowest-band
+  variation and approximate layer-fit residuals are documented; no identical-waveform claim.
+  Mission and exact sounds/music/cars/dialogue 1/0/1/0 restored, paused. Owner listening check of
+  this replacement is pending. knowledge/notes/audio.md; tests/dsound; build/engine-pause-20261112.
+  Separate stutter report below remains open.
+    Owner-requested EAX launch on 2026-11-13: game-local DSOAL/OpenAL Soft installed in Mafia10Fixes;
+    PID 24008 verifies native EAX3 flags 0x300002 and both live property interfaces. Native software-only
+    setting disabled with backup and owner-authorized elevation. Acoustic EAX A/B and pause regression
+    on this provider remain pending (build/eax-20261113); no host change or lab deployment in this step.
+
+- **EAX environment fidelity** (2026-11-14): owner reports accumulating indoor rumble and similar
+  outdoor echoes. Both native updaters select/blend sector sound blocks and submit a custom EAX3
+  environment; the active provider is pinned DSOAL/OpenAL Soft, not a host reverb implementation.
+  PID 19940's Primary sector readback has 1 s decay, 300 ms early-reflection delay, 100 ms additional
+  late delay, diffusion 0.4 and explicit echo depth 0. Native sector delay values agree. This does
+  not reproduce or explain the reported indoor event. Capture an affected sector/source/parameter
+  sequence and its audio before assigning fault or tuning. No settings/binaries changed.
+  knowledge/notes/eax-environments.md.
+
+- **Sound-dependent gameplay / speedrun audit** (2026-11-13, original 1.0 logic): engine start
+  has a real sound-position gate with a 300-ms margin; camera-distance sound disabling uses
+  60/110 m thresholds. Matched background DSOAL EAX3 on/off tests give 3119/3120 ms medians,
+  three trials each; no instant start or repeatable EAX3 gain established. Native channel eviction
+  saving the incoming buffer's cursor for the victim reproduced silently in background; byte/ms
+  queue mismatch verified in code. Naturally triggered strategies, resume consequences, other cars
+  and mission/dialogue timing remain open. Do not fix these research targets without an owner request.
+  Further research: background bridge only, no computer-use/window activation (owner clarification).
+  knowledge/notes/audio-logic.md; build/eax-20261113. Temporary lab provider/config removed, labs closed.
+
+- **Mission-transition hang** (2026-11-14, Mafia10Fixes 1.0): PID 21004 ended through Windows after
+  a long nonresponsive load; AppHangB1/cross-thread, no fresh exception dump. Last scene mise18-mesto,
+  no next open line. Historical cause remains unestablished. A separate, controlled scheduling test
+  proved native Ogg Close can kill its reader while it owns rw_data's shared critical section,
+  deadlocking ov_clear/dtaClose. Three induced-hang snapshots captured; exact test PID 9596 closed.
+  Cooperative stop/join implemented with native refill/backend/EOF semantics retained. Controlled
+  archive-lock regression, 32 immediate closes, and native buffer policy checks pass in BOTH labs
+  (12 checks/build). Also 100 eight-stream cycles and six restore loads/build. Installed in owner
+  EAX copy: controlled close passes, 12 alternating scene loads finish, flags 0x300002 retained;
+  final host BB4B59FD..., owner PID 5332 paused at save 495, both labs closed. Do not require a rare-event
+  route replay or equate this induced defect with the original event. knowledge/notes/hang-20261114.md;
+  build/hang-20261114-113358; build/ogg-shutdown-fix-20261114.
+
+- **sound.compat timeout metadata**: MCP call_value inserts timeout_ms into method params; the strict
+  read-only sound.compat rejects any nonempty object, including this transport metadata. Ordinary {}
+  diagnostic queries work. Observed in the Ogg regression; no tool behavior change in this fix.
+
+- **Audio stutter during the owner's run** (2026-11-11): preserved profiler state, p95 35.287 ms and
+  maximum frame 84.196 ms, with ragdoll callback cost about 0.361 ms/frame. No audio output/underrun
+  timing was captured. Concurrent lab and offline GPU testing is a possible confounder, not an
+  established cause. Both labs and the test stand-in were stopped; no audio fix is claimed.
+
+- **Launch completion with core disabled** (2026-11-11): MCP game_launch waits for core's `player`
+  command even after host start.state is done. A valid native run with only ragdoll loaded therefore
+  times out. Host restore successfully restored the saved mission; its optional MCP player result is
+  null. Add readiness independent of core before treating this timeout as a game/start failure.
+
+- **Source of a stale 1.0 vehicle shadow receiver** (2026-11-09): the observed crash at
+  `C_game::Done+0x669` is guarded in both builds. The original cause of the invalid ForAca vtable
+  remains unknown. See the journal entry for PID 15344 and the two-blast lab replays.
+
+- **1.2 lab forced ExitProcess** (2026-11-09): a direct call to the LS3DF ExitProcess import returned
+  `0xc0000409` (WER parameter 7, MafiaModLoader.asi) with and without the ragdoll loaded. No new loader dump
+  was written. This is a separate failure from the solved 1.0 Jolt destructor access violation. The normal
+  game-menu exit has not been shown to reproduce this lab-only observation.
+
+- **Intermittent get-up continuity sample** (2026-11-08): one repeated 1.0 check recorded a 0.721 m
+  horizontal step; the earlier and final runs passed. A timestamped follow-up trace had a largest step of
+  0.063 m and a correctly fitted native trajectory. The failing run did not retain timestamps/state for that
+  step, so neither sampling delay nor a real intermittent displacement has been established. Preserve a full
+  trace on the next failure; do not claim all get-up discontinuities eliminated. Evidence: build/ragdoll-joints-20261108.
+- **Native D3D8 screenshot with RTSS** (2026-11-08): the owner's active Mafia10Fixes process continued ticking
+  and answering memory queries while MCP screenshot timed out waiting for Present. Native D3D8 capture exists
+  in host/screenshot.cpp; the overlay/hook interaction is unconfirmed. Use provided images and memory for the
+  current ragdoll investigation. No computer use (owner instruction); capture-tool repair is separate work.
+- **RTSS focus-return hook scan (fixed 2026-11-08):** both dumps at RTSSHooks+12AB prove the scanner adds
+  thunk+6 to our x86 absolute FF 25 operand as if it were RIP-relative, exactly reproducing both invalid
+  read addresses. Chain thunks now use equivalent FF 24 25 abs32 (no-base/no-index SIB), retaining atomic
+  pointer relinking and all CPU state. Actual RTSS recognizer deterministically faults on the old encoding
+  under SEH and returns normally on the new one 20 times. Stand-in chain/mid-hook regression: 23 checks;
+  30 activation-message cycles pass in 1.0, 1.2 and native Mafia10Fixes. Owner reports manual focus return
+  works but stresses the previous rarity; acceptance is based on exact reproduction, not a short idle run.
+- **Same-mission restore and props** (2026-11-02): a native load into the same mission need not run
+  PropsMissionClose; bridge-created props remain registered/alive. Restore does not currently rewind that
+  separate host-owned prop registry. Native tests must explicitly remove their exact created props rather
+  than assuming restore cleans them. Two leftover off-map fade fixtures per lab were identified/removed;
+  the residency fixture now cleans its prop explicitly. Broader prop/save semantics are not changed here.
+
+- **Window resize scope** (2026-10-31): ordinary windowed mode only. A border drag commits after release;
+  continuous drawing inside Windows' native modal sizing loop is not implemented. Exclusive fullscreen and
+  graphics-bridge borderless mode retain their existing presentation behavior.
 
 - **Agent instruction size** (2026-10-30): AGENTS.md exceeds Codex's default 32 KiB instruction budget; read it
   fully from disk. The early warning and docs/AGENT_SETUP.md explain the larger budget setting. The native Mafia
@@ -1340,11 +1773,191 @@ merged, sorted by importance):
   Contact attenuation uses fresh reflection depth and is view-dependent; it cannot pin cut wall feet without that
   reflection. The reflection camera remains on the mean plane. Displaced water now supplies temporal depth and
   previous-wave/camera motion before DLSS, with matching jitter; the owner confirms reconstruction works well.
+  Owner follow-up (2026-10-31): in perfectly calm/flat water, fast camera motion with DLSS makes reflections
+  drift as if a static picture received the surface's strong motion vectors. Queue a separate temporal repro:
+  hold wind/height at zero, compare DLSS off/on and camera translation/rotation, inspect reflected-object versus
+  water-surface motion and disocclusion/history masks. Surface depth/motion alone may not describe reflected
+  radiance. Investigate after the current visual/material block; do not claim the cause is confirmed yet.
   Auxiliary renders skip LS3D's audio update block; the owner confirms sound no longer stutters.
   Painted sun/cloud reflection is accepted by the owner (2026-10-31): sky-depth HDR expansion before roughness
   filtering, soft `sun_radius` support (18 degrees default), no independent analytic disc. Offscreen water now
   conservatively skips the full surface/FFT and reflection; asynchronous visibility is invalidated by camera or
   displacement-setting changes. The owner resumed the saved 19-to-5 FPS case with infinite draw distance.
+  The current world-ray path has a separate 30 FPS gate at native 1440x810. The first CPU profile measured
+  about 280 ms in source collection at a 384 ms frame. A controlled single-lab A/B now isolates the largest
+  remaining cost to collecting about 16,000 native reflector draws every frame (133 to 139 ms). The same
+  view renders at 55.9 FPS with stock water. Remove redundant static source replay through verified native
+  state and content revisions, then compare the full-resolution GPU transport on equivalent hardware queries.
+  Local tree work and part of instance placement now use bounded CPU workers. In the 1.0 lab, compact
+  indexed decode and bounded staging also address expensive CPU reads from native buffers. Keep producer
+  reads on the game thread and cap x86 staging when building the retained static source path.
+  Native index revisions now prove nearly all index reads in the sampled 1.2 bank view, reducing the
+  observed geometry-copy stage to about 7 ms in 1.2 and 10 ms in 1.0. Native revision lifecycle tests
+  passed in both labs. In 1.2, a fresh-water diagnostic without DLAA averaged 4.41 FPS, with 63 ms
+  waiting for D3D11; with DLAA the D3D9 bridge still times out in the bank view. Native group replay
+  and the full-resolution GPU transport remain separate priorities.
+  A reversible DXVK run keeps DLAA and water active with zero Wait11. Ordinary managed-texture
+  revision stamps reduced collection from 536–561 ms to 74–79 ms in the moving 1.2 bank view.
+  The latest bounded texture upload and parallel TLAS run measured 3.34 FPS and 619 ms p95.
+  Geometry and texture counters isolated a 21.10 MB per-draw attribute/material update.
+  Shared mesh attributes pass WARP equivalence, and exact material interning reduced a
+  sampled table to 0.56 MB. One moving 1.2 DXVK/DLAA checkpoint reached 6.66 FPS at
+  166 ms p95. FVF reuse passed mirror checks in both labs and the late DXVK CPU
+  shadow wait is gone on the GPU-fence path. A later 16384-square shadow copy
+  took 178 ms on Vulkan; the shared R32F alias now removes it on supported DXVK
+  with exact samples and the native-copy fallback retained. Shared packed BLAS
+  and compact attribute leases cut frozen packing and placement from about
+  10 ms to 2.9 ms with pixel-exact water. A source-domain opt-in excludes
+  geometry beyond the existing optical and waterline reach. The frozen
+  1.2 comparison dropped 3,903 native draws with pixel-exact water. A
+  moving 1.2 DXVK/DLAA run reached 8.49 FPS and 136.53 ms p95, with 109.13
+  ms median game-thread CPU. Host-owned background finalization overlaps
+  the native bridge on 1.2. A moving comparison reached 8.69 FPS and
+  135.68 ms p95, at 102.65 ms median CPU. A volatile pose tail now keeps
+  stable BLAS prefixes available for exact partial uploads; sampled
+  upload medians fell from about 14 to 7 ms. Owned material/placement
+  staging cut the native collection median to 47.94 ms in a later
+  comparison. The same worker now also builds the current waterline
+  from checked plane heights. The latest 1.2 candidate sampled 10.45 FPS
+  with zero late frames and pixel-exact water in the fixed comparison.
+  Unresolved mesh preparation uses an 8 MiB owned staging budget and
+  the existing two mesh build workers. Both labs have this version.
+  Current-revision texture slot reuse passed both labs, with unchanged
+  frozen pixels. Private retired packed-archive reuse passed both labs.
+  In 1.2 A/B/A/B it reduced packed geometry from 8.3–9.8 to 2.7 ms,
+  with 10.12/10.52/10.28/10.58 FPS and exact frozen water pixels.
+  The one retired slot is capped at 32 MiB and uses sole ownership plus
+  exact stable content revisions. Eight-mesh worker grouping preserved
+  pixels but its in-process interval included zero, so it was removed.
+  Native static packet reuse remains a CPU target. An explicit metadata-only
+  prototype preserved native hashes but deferred warm-state restoration
+  still gave 10.29/10.21/10.30/10.15 FPS in A/B/A/B. Its SDK and host changes
+  were removed. The 30 FPS gate is open.
+  The full native-city x64 Vulkan fixture matches software and hardware
+  traversal bit-for-bit across 3,499,200 transport float4 vectors at 1440x810.
+  Fractional anisotropic cube sampling differs from D3D11 on Vulkan.
+  D3D12 preserves that sampler exactly and gives exact software/hardware
+  transport at 17.97/12.15 ms with GPU-shared native images. Rare DXC/FXC
+  arithmetic differences remain. D3D11-created NT textures pass two-frame
+  GPU-fenced roundtrips in every required format and full captured extent.
+  The full isolated GPU relay now returns all 3,499,200 transport float4
+  vectors per arm to D3D11 exactly, with the output wait queued only after
+  successful submission and signal. This is not production integration.
+  SDK cross-process producer/consumer helpers now pass four x86/x64 GPU
+  roundtrips, immutable replacement, mutable inputs and generation restart.
+  SDK DXR bounds construction is GPU-only and preserves the native fixture.
+  The persistent x64 water worker and same-frame fallback are connected
+  behind an unsaved opt-in diagnostic. Separate allocation/content revisions,
+  persistent NT texture ownership and one deferred flush remove the initial
+  live driver waits. A bounded preceding-frame completion wait avoids repeated
+  software work while a hardware result is pending. Paired full-river
+  1440x810 DLAA output improves 11.024 to 11.629 FPS, only 5.5 percent.
+  Seed about 23 ms plus actual transport about 30 ms already exceeds the
+  full-frame budget. The owner requested an optimization architecture review
+  and a stop to new experiments/integration. Evaluate a shared authoritative
+  water surface and conservative GPU intersection hierarchy against the
+  complete residual frame budget before more micro-optimizations. See the
+  journal audit. Hardware remains opt-in. The 30 FPS gate is open.
+  Actual-fixture attribution now gives material/radiance-query bypass 3.754 ms
+  versus its adjacent full 12.891 ms, while wave bypass gives 9.767/14.971 ms.
+  These output-changing ceilings put transport material evaluation ahead of
+  a wave-only rewrite. Native primary seed repair costs about 24 ms in the
+  full-river 1.2 view before spatial bounds. The ordered seed now checks a
+  GPU-built wave interval and rejects whole quads proven behind opaque depth.
+  Covered pixels matched bitwise in the same-frame seed comparison. The
+  sampled seed is about 16–17 ms full and 6 ms behind the road. Primary
+  intersection still needs less work per ray to reach the full-frame budget.
+  The exact tap-address optimization is in the shared sampler. An opt-in DXR
+  facet path retained every result of the full-size city fixture while cutting
+  transport from 18.856 to 12.665 ms with the sampler change. Check native
+  frame time, cross-build stability, and grazing-edge and motion parity before
+  considering the facet path for normal use.
+  Native tests show 11.27–11.64 FPS on the full-river 1.2 DXVK view and
+  7.48 FPS on 1.0's 9Ex path. Temporary 1.0 DXVK GPU ordering reached
+  14.60 FPS at the same 1440x810 with four samples. Exact revision matching
+  reuses the whole facet acceleration structure while its inputs are stable.
+  With spatial bounds on the same native setup the full-river medians are
+  74.31 ms in 1.2 and 123.71 ms in 1.0. Holding source behind the road raises
+  1.2 from about 17 to 36 FPS, while the full view remains GPU-limited.
+  The compact facet worker now keeps each original sample but schedules the active rays
+  in GPU queues. Paired native frame medians are 67.15 ms in 1.2 and 118.60 ms in 1.0.
+  Staging upward hit selection and opaque shading reduced 1.2 worker trace from 25.81 to
+  18.41 ms. Both labs passed same-frame transport comparisons in motion. The latest
+  serial release medians are 64.61 ms in 1.2 DXVK and 97.56 ms in 1.0 9Ex at native
+  1440x810 with the opt-in hardware facets. Temporary 1.0 DXVK on the preceding host
+  reached 74.71 ms. The 30 FPS gate remains open.
+  Source inventory associates 88 percent of current 1.2 draws with city cache blocks.
+  The host keeps content revisions stable across writes that match the published bytes. The
+  native resource probe reduced false invalidations from hundreds to tens in both builds.
+  The retained source path still needs final membership, binding and material validation.
+  The C++ and Rust offline retained-cache replay agrees on ordered output for both native
+  instance archives. Refreshing only dirty groups is much cheaper after the data is known.
+  Language choice had little effect on that interval. The new cache is being developed
+  in Rust. The same-frame native probe skipped 33 preparation calls and 73 observer
+  draws for one sector block in both builds, with matching effective material and
+  geometry inputs. The subsequent live cross-frame parity probe matched native
+  draw order and effective inputs in both builds through moving, hidden and
+  reappearing props. The integrated trial replayed over 6,600 native rows
+  per warm frame in each build. The SDK consumes Rust's retained material
+  templates with current owned meshes, skipping repeated Add preparation.
+  Packed receipt validation costs about 1.3 ms after capture, and hot reload
+  clears and rebuilds the cache. The 1.0 stream-out diagnostic confirms
+  current-marker rejection and same-frame full fallback on late writes.
+  The branch collector skips complete current subtrees, with exact
+  ordered native parity across moving and hidden props in both builds.
+  An owned mesh batch supplies up to 7,600 warm rows without retaining
+  their normalized host buffers. The Rust ordered delta planner stages
+  2–6 percent of accepted placement/order/material buffer bytes. Both
+  remain trial paths without a repeatable whole-frame gain.
+  A same-phase native comparison confirms that grouped owned allocation
+  revisions reproduce every direct range check. It remains an opt-in
+  proof of ownership with comparable postflight cost.
+  The Rust ordered topology tape also matches current native traversal
+  and draw publication, including partial repair after a local topology
+  change. Its in-place repair removes some repeated native traversal,
+  but the current proof offsets most of that saving. The tape remains
+  isolated while the larger source and GPU costs are addressed.
+  The x86 Rust planner reproduces current ordered mesh and material
+  IDs and primitive ranges. Live same-frame audits match the prior
+  publication in both builds, with lower sampled worker staging time.
+  A temporary 1.0 DXVK run removes the 9Ex CPU handoff wait and reaches
+  60–66 ms at native size. Current source and worker join are still
+  expensive. The planner and bridge comparison remain isolated.
+  The opaque waterline cache matches the full current model in both
+  builds, but its frame timing does not improve reliably. Native source
+  attribution points to per-marker proof and consumer replay plus the
+  remaining ordinary native preparation as the larger CPU targets.
+  Live owned GPU pages and consistent full-frame savings remain open.
+  Rust's spatial DXR probe preserves all four-sample output bytes while
+  reusing 837 previous bottom-level GPU addresses in an archived transition.
+  Serial moving-view tests in both labs do not establish a full-frame gain
+  because the existing flat structure already avoids most builds there.
+  The probe stays isolated. Primary wave intersections, current shadow
+  work and native collection remain the larger timing targets.
+  Native 1.0 rigid source preparation now batches the pool publication boundary.
+  The matched probe reduced both buffer-tree scans from about 13–14 to 4 ms
+  per collection. Both labs passed source and device state checks.
+  A retained native texture bank would move the original trilinear taps to
+  hardware. The fixture saved about 1.9 ms with one-byte final differences
+  at 123 water pixels. See the frame architecture review in WATER_REFLECTION_PLAN.md.
+  The matched native frame has about 19.10 ms outside water, so a 20 ms
+  water-only result would still exceed the full GPU budget.
+  Source replay, the synchronous same-frame shadow receiver readback,
+  late caster submission and GPU transport remain above the 30 FPS budget.
+  The water shadow replay preserves full native transport with only 9.57%
+  of the original map's tiles. Live conservative receiver tiles and
+  native stencil preserve the sampled water view, but do not improve
+  frame time while caster traversal/submission stays complete.
+  The x64 Vulkan capability and shared-texture probes preserved complete
+  RGBA32F seed and result texels and directly accessed both R32F shadow
+  extents. A standalone x86/x64 GPU roundtrip preserves all four slices,
+  and the full transport shader compiles with ray queries. The original
+  native material fixture passes on Vulkan, including mip-aware alpha,
+  compact attributes and coplanar order. Next gates are complete frame
+  publication and transport, native motion parity and end-to-end frame
+  time with all four samples.
+  Ordered water seed raster already passed native visual comparison in 1.2.
+  See WATER_REFLECTION_PLAN.md for the quality gate and JOURNAL.md for measured progress.
   Finite receiver triangles and tighter light-camera box steps reduce unrelated caster draws without reducing
   range or quality; both builds passed integrated tests. The initial mid-frame attempt exposed missing native
   IGraph render-property and viewport restoration; both are now preserved, validated against both binaries.
@@ -1402,9 +2015,24 @@ merged, sorted by importance):
   font (a Czech or Russian edition) keeps DirectInput's names whenever they are in its code page. Not yet seen on
   the tester's machine. The empty traffic slot (C_traffic_car::AI, a policeman asking for a car): the stub is in both
   labs' memory, the crash's condition was not made again.
-- **The exit crash writes a dump at every quit** (seen in the tester's crashes of 2026-10-25: four of five at the
+- **Stale index owners at exit: guarded in 1.2; lifetime origin unassigned** (seen in the tester's crashes of 2026-10-25: four of five at the
   menu's Quit, LS3DF+0x5AC2E in C_IBManager::m_FreeAllIBuffers from IGraph::Close; knowledge/notes/game.md "The exit
-  crash"): the game is closing anyway, but each leaves a dump of hundreds of MB that a player then sends. Not fixed.
+  crash"): the game is closing anyway, but each leaves a dump of hundreds of MB that a player then sends.
+  The 2026-11-03 tester dump, inspected 2026-11-06, confirms a single stale index-slice owner slot in reserved
+  memory at shutdown. Custom river_water was absent. On November 6, host/fixes.cpp added a final-driver-cleanup-only
+  guard: validate all three owner words and writable memory before clearing, while retaining native buffer cleanup.
+  Two native 1.2 tests deliberately decommitted an allocated slice owner's page; both hit the guard without a dump,
+  and the second's process handle confirmed exit code 0. Unit tests and both builds' address checks pass.
+  The configured tester copy exited cleanly without this patch after city -> menu -> Quit, so the original trigger
+  remains intermittent. Creation/free attribution is still required to fix the earlier lifetime violation.
+  Candidate is installed in lab 1.2 only; the tester copy and 1.0 are unchanged (1.0 lacks these owner stores).
+- **AI detour with node index -1 fixed in both labs** (tester crashlogs.zip, October 29):
+  gameplay crash at Game+1007B2 in ai_path::GetSpecNodeC during mise18-mesto. The captured one-waypoint route
+  has node index FFFFFFFF; native code reads table base 569CF00C minus 30 bytes, hitting PAGE_NOACCESS.
+  Both builds now send that one-waypoint case through the existing plane-based detour arm. Native tests
+  generated a detour around a parked car with index -1 and exercised the original solver with a valid index.
+  The tests reproduce the route state from the dump in freeride. The original mission sequence remains
+  a separate reproduction case. See knowledge/notes/game.md.
 - **ASI mods that write Game.exe without VirtualProtect: only the pages they write are opened** (2026-10-26,
   host/asi_compat.cpp): libMafiaCountrysideMap 2.0's countryside map works in 1.2 (seen in the lab: Tab in the
   countryside freeride). The page stays writable for the run (such a plugin writes again later); a plugin that
@@ -1420,9 +2048,11 @@ merged, sorted by importance):
   managed textures in video memory), while the same file showed in the tester's copy on DXVK and the .bmp showed
   in the lab. Suspect: MmlManaged (third_party/dxwrapper/patch.py) with how LS3D fills a presaved texture. Not
   isolated: an A/B in the lab with the presave (MmlManaged on and off), then the texture's levels read back.
-- **A gamepad plugged in while the game runs: not seen with a real pad** (2026-10-24, host/joyplug.cpp): the
-  opening again is seen in both labs (`joy.drop`, `joy.rescan`), the device's arrival with real hardware and the poll
-  thread (no CM_Register_Notification: Windows 7, Wine) are not. The running mission's force feedback effects stay on
+- **Gamepad hotplug** (host/joyplug.cpp). A physical Keychron controller arrived after native enumeration and
+  before notification registration in Mafia10Fixes on 2026-11-10. The startup check and its retry cover that gap.
+  Both labs reopened real attached devices after a synthetic drop with zero notifications. A physical reconnect
+  after registration and the fallback poll thread (no CM_Register_Notification: Windows 7, Wine) still need
+  direct verification. The running mission's force feedback effects stay on
   the old IJoys until the next mission's load. `input.actions` shows a joystick's button names (IJoy's, in the
   system's code page) as the game's language's (a Russian system's "Button 0" came out as "Êíîïêà 0"): converted with the wrong
   code page.
@@ -1441,7 +2071,7 @@ merged, sorted by importance):
   (XYZRHW) between the world's start and stage 1 is not scaled with the viewport. None was seen in the freeride's
   picture in either lab (the lens flares and the 2D come after stage 1), but the world's draws were not surveyed by
   their vertex format: a mission's effect drawn so would sit at the frame's size in the render size's corner.
-- **Fusion Fix's mod: not ported, not seen** (2026-10-25, mods/fusion_fix). Not ported: WriteSettingsToFile (the
+- **Fusion Fix's remaining omissions** (2026-10-25, mods/fusion_fix). Not ported: WriteSettingsToFile (the
   registry's settings in savegame\settings.bin: with an empty file the game started at 800x600, the tester's case),
   ConsoleGamma and SMAA (shaders on d3d8to9's device at LS3D's render's end: for the loader, graphics passes to be).
   Seen in both labs at 1920x1080 and 2560x1080 (`game_launch` resolution): the HUD and radar round and in the
@@ -1485,6 +2115,10 @@ merged, sorted by importance):
 - **MCP tools take an unknown parameter without a word** (2026-10-23): `mem_write {"type": "f32", "values": [2, 2,
   2]}` wrote three u32 2s (the parameter is `as`): a taxi's scale became denormals and it vanished. The tools should
   refuse a parameter they do not know.
+- **High x86 dump memory-map addresses are sign-extended** (2026-11-06, mcp/src/crash.rs). The tester's
+  92CA3CF4 owner slot is in a MEM_RESERVE region with base FFFFFFFF92C6D000. `crash_inspect` looks up the
+  unsigned 32-bit address and reports it missing. Normalize x86 MemoryInfoList bases before lookup. The
+  triage above used a separate read-only dump parser to verify the actual region. Tool code remains unchanged.
 - **A far actor is filmed in an empty world** (2026-10-23): `camera.set {follow}` on a tram 580 m from the player
   showed a ground plane and a few props: the city's sectors are drawn around the player. Not looked into.
 
@@ -1585,7 +2219,8 @@ merged, sorted by importance):
   versions start again after a reload of both. A shared texture has no lock or fence between the processes: the halves
   keep to the rule of two textures written in turn (docs/MODDING.md). Textures can be made only once the graphics
   bridge runs (a mod with `"gfx": true` on at the start); the formats are the ones measured on one GPU (an RTX 3070).
-- **PhysX 5** (2026-10-18): CPU only (no CUDA Toolkit on the build machine: item 19a); its Vehicle and
+- **PhysX 5 CPU crate example** (2026-10-18 baseline): `PhysX5` remains the CPU target; the later
+  `physx_gpu` example already builds/uses GPU PhysX via pinned CUDA components (item19a). Vehicle and
   CharacterKinematic libraries are in the source but not built (a line of `CMakeLists.txt` each). `physx_crates` is one
   way: the crates do not push the game's people and cars back (they are kinematic to PhysX), and the people and cars
   are the game's collision shapes, not their models (item 19b). A crate flung farther than the widest region of
@@ -1600,7 +2235,8 @@ merged, sorted by importance):
     in front of the gas narrower than two pixels (a wire, a lamp post far away) takes the gas's colour of what is
     behind it at its edge. Measured on one scene only (the freeride's start, a fire and a smoke); the ray march's
     cost did not fall to a quarter (0.56 to 0.25..0.33 ms: Flow's per-block work does not scale with the pixels).
-  - People are capsules along their bones (the host gives no skinned meshes): their clothes' shapes are not there.
+  - This Flow consumer uses bone capsules rather than the native posed-skin source interface; clothes' shapes
+    are not part of its current collision representation. Host scene-source support does not change it automatically.
   - The meshes' collision (`flow_smoke.collision {"mode": "meshes"}`) is off by default: the owner found it still
     behaving strangely after the bodies were made solid behind their faces; what is wrong was not found yet.
 - **An actor made over the open river sleeps** (seen 2026-10-18, 1.2): a car spawned there is drawn but its model
@@ -1658,6 +2294,20 @@ merged, sorted by importance):
   chase's scripted part or a race was not tried; neither were the extreme freeride and the racing. A point is of its
   build (1.2's will not load in 1.0) and is loaded into the profile selected. 1.0's slot 599 is known free only
   because its missions are 1.2's (its texts do not name the freerides' saves): a save found there stops the points.
+- **Mafia10Fixes garage incidents** (2026-11-09 and 2026-11-10). The prior guard covers one vehicle-shadow
+  receiver during save cleanup. A later live hang stayed in heap validation while closing an enemy shadow
+  in the mission tick. The next day's dump records a separate failure in the loader's per-mod profiling
+  after a garage blast. A later load crashed in `C_actor::ResetPlacement` under `C_game::Done`.
+  Another blast was followed by a software shadow rasterizer crash. Comparison with intact geometry
+  identified a rotation and flag write into the shadow's index array. The SDK pose writer now checks the
+  frame's layout before writing. In three live garage replays the check rejected a non-frame pose target
+  after the second blast and the game kept running. An owner replay then logged that rejection and
+  crashed about 1.5 seconds later while rasterizing another shadow with an out-of-range vertex index.
+  Both game builds now reject the affected shadow before rasterization and log the first rejection.
+  The writer behind the later corruption and its relationship to the other crash signatures remain open.
+- **Vehicle orientation through the bridge** (2026-11-11). `vehicle.body` documents `forward` and
+  `up`, but its JSON handler consumes only `pos`, `velocity` and `turn`. The SDK body API has axes.
+  A rollover fixture must verify the resulting native orientation. The bridge gap remains open.
 - **Crash triage** (host/stack.cpp, host/crash.cpp, `crash_triage`): the stack is the sampler's walk and check
   (2026-10-21), not an unwind. A call through an object or a register loaded otherwise than from a fixed place (a
   vtable's) cannot be checked: kept, so a leftover of such a call stays when no checked frame above it takes it out.
@@ -1855,8 +2505,8 @@ merged, sorted by importance):
 - **Statistics** (host/stats.cpp): "cars stolen" is not counted: the game keeps no such count, and its theft's own
   path (the police's C_shvestky::CarSteal, a driver thrown out: Do_ThrowCocotFromCar) was not reached in a test (the
   player only opened a spawned car's door); `cars_driven` counts every car he gets into. Only the player's deeds are
-  counted. The profile's totals of the last 10 s are lost when the game is killed (it has no exit the loader hears).
-  The saves of a story game carrying the game's counts were not loaded in a test (the freeride's start was: 0). The
+  counted. The old ten-second host persistence is removed as of 2026-11-15. Collection is opt-in and in memory;
+  consumers must persist their own counters with save_put. Legacy host records remain readable. The
   freeride level word's values (3 in both labs' profiles) are not decoded beyond "3 and up: the freeride's settings
   count"; the garages of both test profiles were empty.
 - **A mod's own items** (host/items.cpp): a save holding a mod's item was not loaded in a test (the ids are kept for
@@ -1989,9 +2639,11 @@ merged, sorted by importance):
 - **Screenshots** need the game to present frames (not while it loads or is minimised). On plain Direct3D 8 a
   multisampled back buffer cannot be read (the lab runs through dxwrapper's Direct3D 9, where it is resolved).
   Every shot goes through a raw file on disk (5 MB at 1280x960; the MCP server deletes it).
-- **Drawing for mods**: nothing is drawn while the game loads or plays its videos (no 2D pass, no loader frames).
-  Text only in the game's three fonts and its encoding, about 100 characters a call; no pictures, no clipping, no
-  rotation; always on top of the HUD and the menus. A cutscene's black bars are not known to it. Under plain
+- **Basic 2D primitives for mods**: nothing is drawn while the game loads or plays its native videos without
+  the ordinary 2D callback. draw_text uses the game's three fonts and its encoding, about 100 characters a call;
+  draw_rect/draw_line have no general clip/rotation API. Pictures are available separately through draw.picture/
+  HUD SDK helpers; graphics passes and world meshes have their own contracts. The basic overlay is drawn over
+  the HUD and menus. A cutscene's black bars are not known to it. Under plain
   Direct3D 8 it is the same code (the game's own drawing), but it was only run under the lab's dxwrapper.
 - **Keys for mods**: the mouse (buttons, axes) is not given by itself, only through the game's actions. The keys
   were tested with injected ones (agents never touch the owner's keyboard): a real key goes through the same
@@ -2045,11 +2697,13 @@ merged, sorted by importance):
   signatures (`GM_Menu::ExecuteMenu@<eax>`); names of ours for menus (`GM_MainMenu::OnCommand`...) are ours, not the
   game's. LS3DF.dll has few names (64 of 1599).
 - **`game_build.h` has diverged from mafia-ragdoll's copy** (the start's, the menus', the world's and 1.0's
-  fields): the two are kept apart (mafia-ragdoll is not ported; its copy is changed only with the owner's
-  go-ahead). An address found in one is checked in the other before use.
+  fields): the original standalone game's table and this loader's table have separate ownership. The loader
+  port is a different repository; changing either sibling still requires the owner's authorized scope.
+  An address found in one is checked in the other build before use; do not copy unrelated local edits wholesale.
 - **`tap`**: at most 16 taps, 8 stack arguments, 4 snapshots of up to 64 bytes each; a function whose first bytes
   MinHook cannot relocate cannot be tapped.
-- **The exit crash** seen in mafia-ragdoll (LS3DF's index buffer manager at exit, `knowledge/notes/game.md`) is not
-  solved; it has not been seen with the loader alone yet.
+- **The exit index-owner crash** (`knowledge/notes/game.md`): later reproduced in a loader tester's 1.2 copy.
+  Final driver cleanup now guards stale owner clearing in that build. The source of the stale lifetime is still
+  unresolved; this guard is not a claim that every exit failure has the same cause.
 - **32-bit address space**: the game and every mod share 4 GB (2 GB without the large-address flag); hot reloads
   leak a little address space each (seen in mafia-ragdoll: restart after very many).

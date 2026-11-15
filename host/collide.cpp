@@ -218,6 +218,9 @@ int NearActors(const V3 &at, float radius, int type, std::vector<Near> *out) {
         std::vector<void *> all;
         game::ListActors(&all);
         game::ListTrafficCars(&all);   // (actors too, kept out of the game's lists)
+        // A traffic car taken by the player can leave both lists while remaining his current vehicle.
+        if (void *car = game::PlayerCar()) all.push_back(car);
+        if (void *car = game::LastCar()) all.push_back(car);
         std::sort(all.begin(), all.end());
         all.erase(std::unique(all.begin(), all.end()), all.end());
         for (void *a : all) {

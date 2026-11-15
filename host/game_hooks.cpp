@@ -50,6 +50,7 @@ MmlEvent Event(MmlEventType type) {
 double g_timeScale = 1, g_timeCarry;
 int g_lastStep, g_lastRealStep;
 int __stdcall hkFrameLimit(void *driver, int a, int b) {
+    FixesFrame();
     int r = oFrameLimit(driver, a, b);
     g_lastRealStep = r;
     if (g_timeScale != 1) {
@@ -107,7 +108,9 @@ int __fastcall hkMissionTick(void *self, void *edx, int ms) {
     // at all, as in the game's pause: a car's physics takes 0 ms as 1 (C_Vehicle::Tick), so the traffic would roll on
     // at 1 ms a frame. Its time comes with the next step (the fraction carried). The game's loop reads no result.
     if (ms == 0 && g_timeScale != 1) return 0;
+    unsigned trace = CarTraceBegin(ms);
     int r = oMissionTick(self, edx, ms);
+    CarTraceNative(trace);
     g_ticks++;
     if (!g_missionLoaded && !g_missionName.empty()) {
         g_missionLoaded = true;
@@ -115,6 +118,7 @@ int __fastcall hkMissionTick(void *self, void *edx, int ms) {
         SendNamed(MML_EVENT_MISSION_LOADED);
     }
     SetPaused(false);
+    AnimsTick(ms);
     MmlEvent ev = Event(MML_EVENT_MISSION_TICK);
     ev.dt = ms > 0 && ms < 200 ? ms / 1000.0f : 1.0f / 60.0f;
     Dispatch(ev);
@@ -122,6 +126,7 @@ int __fastcall hkMissionTick(void *self, void *edx, int ms) {
     ScriptTick(ms);   // the programs of agents and mods, after the mission's own
     OrdersTick(ms);   // the people's orders done: ORDER_ENDED (a retry's wait in the mission's time)
     InteractTick(ms);   // the timers on the mission's clock
+    CarTraceEnd(trace);
     return r;
 }
 int __fastcall hkMissionClose(void *self, void *edx) {
@@ -147,7 +152,7 @@ int __fastcall hkMissionClose(void *self, void *edx) {
     g_missionLoaded = false;
     g_missionName.clear();
     int r = oMissionClose(self, edx);
-    HumansMissionClosed();   // (its people went with it)
+    HumansMissionClosed();   // (discard scene caches after native actor destruction)
     LightsMissionClosed();   // (its lights too)
     RenderMissionClosed();   // (the old scene's original camera range)
     EffectsMissionClosed();
@@ -197,7 +202,7 @@ int __fastcall hkHumanHit(void *self, void *edx, int type, MmlVec3 *dir, MmlVec3
     hit.damage = dmg;
     hit.attacker = attacker;
     hit.part = static_cast<int>(part);
-    hit.shape = HitsShapeOf(self);   // (a bullet the mods' shapes gave him: hits.cpp)
+    hit.shape = HitsShapeOf(self, &hit);   // (a bullet the mods' shapes gave him: hits.cpp)
     hit.was_alive = hit.alive = before != 0;
     // the mods' filters first (hits.cpp): one may take the hit (the game's Hit then does not run) or change it
     if (HitsFilter(self, 0, &hit)) {
@@ -245,6 +250,7 @@ void Frame() {
     }
     DrawFrame();
     BridgeFrame();
+    WindowFrame();   // a client-size change: native device reset and layout, outside any scene render
     RunPosted();
     StartFrame();
     MenusFrame();
@@ -279,6 +285,7 @@ void Frame() {
 const char *GameBuild() { return g_build; }
 const char *MissionName() { return g_missionName.c_str(); }
 int MissionState() {
+    if (SavesLoading()) return MML_MISSION_LOADING;
     if (g_missionName.empty()) return MML_MISSION_NONE;
     if (!g_missionLoaded) return MML_MISSION_LOADING;
     return g_paused ? MML_MISSION_PAUSED : MML_MISSION_RUNNING;

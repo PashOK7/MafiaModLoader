@@ -10,6 +10,7 @@
 // its unload is not freed (that would crash the game) until the thread has left it.
 #include "host.h"
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
@@ -19,6 +20,7 @@
 #include <memory>
 #include <mutex>
 #include <sstream>
+#include <xmmintrin.h>
 #include "json.hpp"
 
 using json = nlohmann::json;
@@ -142,6 +144,75 @@ DWORD SafePosted(void (*fn)(void *), void *user) {
     __try { fn(user); } __except (NoteFault(GetExceptionInformation())) { r = GetExceptionCode(); }
     FpuRestore(fpu);
     return r;
+}
+
+struct SceneOwnedJob {
+    PTP_WORK work=nullptr;
+    std::atomic<bool> claimed{true};
+    uint64_t ticket=0;
+    void (*fn)(void *)=nullptr;
+    void *user=nullptr;
+    DWORD exception=0;
+    uintptr_t faultAt=0,faultData=0,faultStack[16]{};
+    int faultDepth=0;
+    ~SceneOwnedJob(){if(work)CloseThreadpoolWork(work);}
+    bool RunIfWaiting(){
+        if(claimed.exchange(true,std::memory_order_acq_rel))return false;
+        const unsigned sse=_mm_getcsr();
+        exception=SafePosted(fn,user);
+        _mm_setcsr(sse);
+        if(exception){
+            faultAt=t_faultAt;faultData=t_faultData;faultDepth=t_faultDepth;
+            std::copy_n(t_faultStack,faultDepth,faultStack);
+        }
+        return true;
+    }
+    static void CALLBACK Run(PTP_CALLBACK_INSTANCE,void *context,PTP_WORK){
+        static_cast<SceneOwnedJob *>(context)->RunIfWaiting();
+    }
+};
+std::map<MmlMod *,std::unique_ptr<SceneOwnedJob>> g_sceneOwnedJobs;
+uint64_t g_sceneOwnedTicket;
+
+uint64_t SceneOwnedSubmit(MmlMod *m,void (*fn)(void *),void *user){
+    if(GetCurrentThreadId()!=MainThread()||!Alive(m)||m->entry->faulted||!fn)return 0;
+    try{
+        auto &slot=g_sceneOwnedJobs[m];
+        if(!slot){
+            auto job=std::make_unique<SceneOwnedJob>();
+            job->work=CreateThreadpoolWork(SceneOwnedJob::Run,job.get(),nullptr);
+            if(!job->work)return 0;
+            slot=std::move(job);
+        }
+        if(slot->ticket)return 0;
+        if(++g_sceneOwnedTicket==0)++g_sceneOwnedTicket;
+        slot->ticket=g_sceneOwnedTicket;slot->fn=fn;slot->user=user;slot->exception=0;
+        slot->claimed.store(false,std::memory_order_release);SubmitThreadpoolWork(slot->work);
+        return slot->ticket;
+    }catch(...){return 0;}
+}
+void FinishSceneOwnedJob(SceneOwnedJob &job,bool cancel){
+    const bool claimed=cancel?!job.claimed.exchange(true,std::memory_order_acq_rel):job.RunIfWaiting();
+    WaitForThreadpoolWorkCallbacks(job.work,claimed?TRUE:FALSE);
+    job.ticket=0;job.fn=nullptr;job.user=nullptr;
+}
+int SceneOwnedJoin(MmlMod *m,uint64_t ticket,int cancel){
+    if(GetCurrentThreadId()!=MainThread()||!ticket)return 0;
+    const auto found=g_sceneOwnedJobs.find(m);
+    if(found==g_sceneOwnedJobs.end()||!found->second||found->second->ticket!=ticket)return 0;
+    auto &job=*found->second;
+    FinishSceneOwnedJob(job,cancel!=0);
+    if(!cancel&&job.exception){
+        t_faultAt=job.faultAt;t_faultData=job.faultData;t_faultDepth=job.faultDepth;
+        std::copy_n(job.faultStack,job.faultDepth,t_faultStack);
+        Faulted(m,"owned scene preparation",job.exception);
+    }
+    return !cancel&&!job.exception;
+}
+void SceneOwnedRemove(MmlMod *m){
+    const auto found=g_sceneOwnedJobs.find(m);if(found==g_sceneOwnedJobs.end())return;
+    if(found->second&&found->second->ticket)FinishSceneOwnedJob(*found->second,true);
+    g_sceneOwnedJobs.erase(found);
 }
 
 void ServicesChanged(const std::string &name) {
@@ -746,13 +817,13 @@ int H_ItemDefine(MmlMod *m, const MmlItemDef *def) {
     return id;
 }
 int H_ItemFind(MmlMod *m, const char *name) { return Alive(m) && name ? ItemFind(ModIdOf(m), name) : 0; }
-int H_StatsGet(MmlMod *m, int scope, MmlStats *out) { return Alive(m) ? StatsGet(scope, out) : 0; }
+int H_StatsGet(MmlMod *m, int scope, MmlStats *out) { return Alive(m) ? StatsGet(m, scope, out) : 0; }
 int H_ProfileProgress(MmlMod *m, MmlProgress *out) { return Alive(m) ? ProfileProgress(out) : 0; }
 int H_ProfileSaves(MmlMod *m, int *slots, int max) { return Alive(m) ? ProfileSaves(slots, slots ? max : 0) : 0; }
 int H_HumanGetUp(MmlMod *m, void *human, int blend_ms) {
     if (!Alive(m)) return 0;
     std::string err;
-    int r = HumanGetUp(human, blend_ms, &err);
+    int r = HumanGetUp(human, blend_ms, &err, m);
     if (!r) Log(MML_LOG_WARN, Who(m), "human_get_up: %s", err.c_str());
     return r ? 1 : 0;
 }
@@ -973,6 +1044,7 @@ bool LoadModDll(ModEntry *e, std::string *err) {
 bool UnloadMod(ModEntry *e, const char *why) {
     MmlMod *m = e->current;
     if (!m) return false;
+    SceneOwnedRemove(m);
     if (!e->entry64.empty()) SidecarModUnload(e->id, why);
     if (e->unload && !e->faulted) {
         DWORD ex;
@@ -997,6 +1069,7 @@ bool UnloadMod(ModEntry *e, const char *why) {
     PropsModGone(m);
     ModelsModGone(m);
     MeshesModGone(m);
+    SceneResidencyModGone(m);
     ShadersModGone(m);
     SkinModGone(m);
     ShadowsModGone(m);
@@ -1021,6 +1094,7 @@ bool UnloadMod(ModEntry *e, const char *why) {
         if (it->second.mod == m) { gone.push_back(it->first); it = g_services.erase(it); }
         else ++it;
     }
+    StatsModGone(m);
     {
         std::lock_guard<std::mutex> lk(g_postMx);
         g_posted.erase(std::remove_if(g_posted.begin(), g_posted.end(), [&](const Posted &p) { return p.mod == m; }), g_posted.end());
@@ -1240,6 +1314,49 @@ void ModsInit() {
     g_host.scene_atmosphere_state = [](MmlMod *m, MmlAtmosphereState *out) -> int {
         return Alive(m) && AtmosphereState(m,out) ? 1 : 0;
     };
+    g_host.camera_projection_state = [](MmlMod *m, const void *camera) -> int {
+        return Alive(m) ? GameCameraProjection(camera) : 0;
+    };
+    g_host.scene_view_features = [](MmlMod *m) -> uint32_t {
+        return Alive(m) ? MML_VIEW_CLIP | MML_VIEW_OWN_SECTOR | MML_VIEW_SKY_ONLY : 0;
+    };
+    g_host.scene_draw_observe = [](MmlMod *m,MmlSceneDrawFn fn,void *user) -> int {
+        return Alive(m) && SceneDrawObserve(m,fn,user);
+    };
+    g_host.scene_draw_geometry = [](MmlMod *m,const MmlSceneDraw *draw,MmlSceneGeometry *out) -> int {
+        return Alive(m) && SceneDrawGeometry(m,draw,out);
+    };
+    g_host.scene_draw_collect = [](MmlMod *m,const float lo[3],const float hi[3],MmlSceneCollection *out) -> int {
+        return Alive(m) && SceneDrawCollect(m,lo,hi,out);
+    };
+    g_host.scene_draw_collect_ex = [](MmlMod *m,const float lo[3],const float hi[3],uint32_t flags,MmlSceneCollection *out) -> int {
+        return Alive(m) && SceneDrawCollect(m,lo,hi,out,flags);
+    };
+    g_host.scene_draw_billboard = [](MmlMod *m,const MmlSceneDraw *draw,MmlSceneBillboard *out) -> int {
+        return Alive(m) && SceneDrawBillboard(m,draw,out);
+    };
+    g_host.scene_residency = [](MmlMod *m,const float lo[3],const float hi[3]) -> int {return Alive(m)&&SceneResidencySet(m,lo,hi);};
+    g_host.scene_residency_state = [](MmlMod *m,MmlSceneResidencyState *out) -> int {return Alive(m)&&SceneResidencyState(m,out);};
+    g_host.scene_residency_camera = [](MmlMod *m,float radius) -> int {return Alive(m)&&SceneResidencyCameraSet(m,radius);};
+    g_host.scene_draw_collect_features = [](MmlMod *m) -> uint32_t {
+        return Alive(m)?MML_SCENE_COLLECT_BILLBOARDS|MML_SCENE_COLLECT_XZ_DISK:0;
+    };
+    g_host.scene_owned_submit=SceneOwnedSubmit;
+    g_host.scene_owned_join=SceneOwnedJoin;
+    g_host.human_get_up_cancel = [](MmlMod *m, void *human) -> int { return Alive(m) && HumanGetUpCancel(m, human); };
+    g_host.vehicle_support_hook = [](MmlMod *m, MmlVehicleSupportFn fn, void *user) -> int {
+        return Alive(m) && VehicleSupportHook(m, fn, user);
+    };
+    g_host.human_vehicle_contact = [](MmlMod *m, void *human, void *vehicle, const float *v, const float *at) -> int {
+        return Alive(m) && HumanVehicleContact(human, vehicle, v, at);
+    };
+    g_host.human_get_up_pose = [](MmlMod *m, void *human, const MmlBone *pose, int count, int blend_ms) -> int {
+        if (!Alive(m) || !pose) return 0;
+        std::string err;
+        int result = HumanGetUp(human, blend_ms, &err, m, pose, count);
+        if (!result) Log(MML_LOG_WARN, Who(m), "human_get_up_pose: %s", err.c_str());
+        return result != 0;
+    };
     g_host.subscribe = H_Subscribe;
     g_host.command = H_Command;
     g_host.reply_append = H_ReplyAppend;
@@ -1391,6 +1508,9 @@ void ModsInit() {
     g_host.scene_focus = H_SceneFocus;
     g_host.scene_pieces = H_ScenePieces;
     g_host.actor_meshes = H_ActorMeshes;
+    g_host.actor_meshes_ex = [](MmlMod *m, void *actor, uint32_t flags, MmlMeshPiece *out, int max) -> int {
+        return Alive(m) && actor ? ActorMeshes(actor, out, max, flags) : -1;
+    };
     g_host.shader_add = H_ShaderAdd;
     g_host.shader_remove = H_ShaderRemove;
     g_host.shader_shadows = H_ShaderShadows;
@@ -1461,17 +1581,21 @@ bool Subscribed(MmlEventType type) {
 }
 
 void Dispatch(const MmlEvent &ev) {
+    CarTraceEvent(ev);
     EventsFromDispatch(ev);   // (events.cpp: kept for agents)
     StatsEvent(ev);           // (stats.cpp: what the player did)
     if (g_subs.empty()) return;
     std::vector<Sub> subs = g_subs;   // a handler may subscribe; a faulted mod is unloaded only at the next frame
     for (const Sub &s : subs) {
         if (s.type != ev.type || !Alive(s.mod) || s.mod->entry->faulted) continue;
+        CarTraceMotion before{};
+        if (ev.type == MML_EVENT_MISSION_TICK) before = CarTraceBeforeMod();
         DWORD ex;
         {
             ProfScope ps(s.mod, ProfEventSite(ev.type));
             ex = SafeEvent(s.fn, &ev, s.user);
         }
+        if (before.tick && Alive(s.mod)) CarTraceAfterMod(before, ModIdOf(s.mod));
         if (ex) Faulted(s.mod, ("its handler of event " + std::to_string(ev.type)).c_str(), ex);
     }
 }
@@ -1517,6 +1641,7 @@ bool ExecCommand(const std::string &method, const std::string &paramsJson, std::
     auto idParam = [&]() -> std::string { return params.is_object() ? params.value("id", "") : std::string(); };
     bool ok;
     if (StartMethod(method, paramsJson, reply, &ok)) return ok;
+    if (WindowMethod(method, paramsJson, reply, &ok)) return ok;
     if (InputMethod(method, paramsJson, reply, &ok)) return ok;
     if (ScreenshotMethod(method, paramsJson, reply, &ok)) return ok;
     if (DrawWorldMethod(method, paramsJson, reply, &ok)) return ok;

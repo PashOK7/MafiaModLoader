@@ -283,6 +283,39 @@ unsafe extern "C-unwind" fn on_upscale<F: Fn(&GfxFrame) -> bool>(frame: *const s
 unsafe extern "C-unwind" fn on_view<F: Fn(&mut ViewCamera) -> bool>(cam: *mut sys::MmlViewCamera, user: *mut c_void) -> c_int {
     guard("a camera", || (*(user as *const F))(&mut *cam) as c_int)
 }
+
+/// One actual native face-group draw, borrowed only for its observer callback. This is source geometry/material
+/// data, not a claim that the entire world was captured or that unsupported deformation has been evaluated.
+pub struct SceneDraw<'a> { host: Host, draw: &'a sys::MmlSceneDraw }
+pub struct SceneGeometry { pub vertices: Vec<sys::MmlSceneVertex>, pub triangles: Vec<[u32; 3]>, pub source_fvf: u32 }
+/// Owned result of bounded native mesh preparation. Missing boxes must be included as unknown ray coverage.
+pub struct SceneCollection { pub frame:u64, pub visited:u32, pub selected:u32, pub draws:u32, pub missing:Vec<sys::MmlSceneMissing> }
+impl<'a> SceneDraw<'a> {
+    pub fn raw(&self) -> &'a sys::MmlSceneDraw { self.draw }
+    /// Original procedural source transform/rotation parameters, copied during the current draw callback.
+    pub fn billboard(&self) -> Option<sys::MmlSceneBillboard> {
+        let host=self.host;let query=host_fn!(host,scene_draw_billboard)?;
+        let mut value=sys::MmlSceneBillboard { size:core::mem::size_of::<sys::MmlSceneBillboard>() as u32,..Default::default() };
+        if unsafe { query(host.module,self.draw,&mut value) }==0 { None } else { Some(value) }
+    }
+    /// Copy geometry now. Unreadable/GPU-posed/custom-shader sources remain unavailable, never rest-pose geometry.
+    pub fn geometry(&self) -> Option<SceneGeometry> {
+        let host=self.host;
+        let query=host_fn!(host, scene_draw_geometry)?;
+        let mut geometry=sys::MmlSceneGeometry { size: core::mem::size_of::<sys::MmlSceneGeometry>() as u32, ..Default::default() };
+        if unsafe { query(self.host.module,self.draw,&mut geometry) }==0 { return None; }
+        if geometry.vertex_stride < core::mem::size_of::<sys::MmlSceneVertex>() as u32 || geometry.vertices>1_000_000 || geometry.triangles>1_000_000 ||
+            (geometry.vertices>0&&geometry.vertex.is_null()) || (geometry.triangles>0&&geometry.index.is_null()) { return None; }
+        let vertices=(0..geometry.vertices as usize).map(|i| unsafe {
+            core::ptr::read_unaligned(geometry.vertex.cast::<u8>().add(i*geometry.vertex_stride as usize).cast::<sys::MmlSceneVertex>())
+        }).collect();
+        let triangles=if geometry.triangles==0 { Vec::new() } else { unsafe { core::slice::from_raw_parts(geometry.index.cast::<[u32;3]>(),geometry.triangles as usize) }.to_vec() };
+        Some(SceneGeometry { vertices,triangles,source_fvf:geometry.source_fvf })
+    }
+}
+unsafe extern "C-unwind" fn on_scene_draw<F: for<'a> Fn(SceneDraw<'a>)>(draw:*const sys::MmlSceneDraw,user:*mut c_void) {
+    guard("a native scene-draw observer", || { let (host,callback)=unsafe { &*(user as *const (Host,F)) };callback(SceneDraw { host:*host,draw:unsafe { &*draw } }); });
+}
 unsafe extern "C-unwind" fn on_geom<F: FnOnce(&GeomCapture) + 'static>(cap: *const sys::MmlGeomCapture, user: *mut c_void) {
     guard("a geometry capture", || {
         if let Some(Ok(f)) = take(user).map(|b| b.downcast::<F>()) {
@@ -425,6 +458,79 @@ impl Host {
     }
 
     // ---- the scene from another camera
+    /// Supported scene-view flags; None on hosts predating the feature query.
+    pub fn scene_view_features(&self) -> Option<u32> {
+        let query = host_fn!(self, scene_view_features)?;
+        Some(unsafe { query(self.module) })
+    }
+    /// Observe actual buffered scene draws. One callback per owner; native batching is bypassed while active.
+    /// Do not draw recursively or mutate the game inside the callback. None on an older host is reported as false.
+    pub fn scene_draw_observe<F: for<'a> Fn(SceneDraw<'a>) + 'static>(&self, callback:F) -> bool {
+        let Some(register)=host_fn!(self,scene_draw_observe) else { return false; };
+        let user=keep((*self,callback));
+        let ok=unsafe { register(self.module,as_c!(on_scene_draw::<F>, *const sys::MmlSceneDraw, *mut c_void),user) }!=0;
+        if ok { slot("scene_draw",user); } else { release(user); }ok
+    }
+    pub fn scene_draw_unobserve(&self) -> bool {
+        let Some(register)=host_fn!(self,scene_draw_observe) else { return false; };
+        let ok=unsafe { register(self.module,None,ptr::null_mut()) }!=0;
+        if ok { slot("scene_draw",ptr::null_mut()); }ok
+    }
+    /// Explicit unculled mesh preparation without rasterization. Only in main RENDER_WORLD with this owner's
+    /// observer registered. Source callbacks are emitted synchronously; returned missing boxes are copied now.
+    pub fn scene_draw_collect(&self,lo:[f32;3],hi:[f32;3]) -> Option<SceneCollection> {
+        self.scene_draw_collect_flags(lo,hi,0)
+    }
+    /// Keep native city blocks for a bounded source region; None releases this owner's request.
+    pub fn scene_residency(&self,bounds:Option<([f32;3],[f32;3])>) -> bool {
+        let Some(set)=host_fn!(self,scene_residency) else { return false; };
+        match bounds {
+            Some((lo,hi))=>unsafe { set(self.module,lo.as_ptr(),hi.as_ptr())!=0 },
+            None=>unsafe { set(self.module,ptr::null(),ptr::null())!=0 },
+        }
+    }
+    /// Follow the current resolved main camera with a native source-region cube; None releases the request.
+    pub fn scene_residency_camera(&self,radius:Option<f32>) -> bool {
+        let Some(set)=host_fn!(self,scene_residency_camera) else { return false; };
+        unsafe { set(self.module,radius.unwrap_or(0.0))!=0 }
+    }
+    pub fn scene_residency_state(&self) -> Option<sys::MmlSceneResidencyState> {
+        let get=host_fn!(self,scene_residency_state)?;
+        let mut state=sys::MmlSceneResidencyState { size:core::mem::size_of::<sys::MmlSceneResidencyState>() as u32,..Default::default() };
+        if unsafe { get(self.module,&mut state) }==0 { None } else { Some(state) }
+    }
+    /// Supported collection flags. Older hosts with the extended collector support billboards.
+    pub fn scene_draw_collect_features(&self) -> u32 {
+        if let Some(features)=host_fn!(self,scene_draw_collect_features) {
+            unsafe { features(self.module) }
+        } else if host_fn!(self,scene_draw_collect_ex).is_some() { sys::MML_SCENE_COLLECT_BILLBOARDS } else { 0 }
+    }
+    /// Submit CPU-only scene preparation.
+    /// # Safety
+    /// The callback cannot panic or call game/host/D3D APIs. `user` must be safe on a worker
+    /// thread and remain valid until this ticket is joined or the mod is unloaded.
+    pub unsafe fn scene_owned_submit(&self,callback:unsafe extern "C" fn(*mut c_void),user:*mut c_void) -> Option<u64> {
+        let submit=host_fn!(self,scene_owned_submit)?;
+        let ticket=unsafe { submit(self.module,Some(callback),user) };
+        (ticket!=0).then_some(ticket)
+    }
+    /// Drain a submitted scene job on the game thread. Cancelling never publishes its result.
+    pub fn scene_owned_join(&self,ticket:u64,cancel:bool) -> bool {
+        let Some(join)=host_fn!(self,scene_owned_join) else { return false; };
+        unsafe { join(self.module,ticket,cancel as i32)!=0 }
+    }
+    /// Opt into supported procedural sources or a bounded query domain.
+    /// Queries and filter support must stay inside any requested clipped domain.
+    pub fn scene_draw_collect_flags(&self,lo:[f32;3],hi:[f32;3],flags:u32) -> Option<SceneCollection> {
+        if (0..3).any(|a| !lo[a].is_finite() || !hi[a].is_finite() || lo[a]>hi[a]) { return None; }
+        let mut result=sys::MmlSceneCollection { size:core::mem::size_of::<sys::MmlSceneCollection>() as u32,..Default::default() };
+        let accepted=if flags==0 { unsafe { host_fn!(self,scene_draw_collect)?(self.module,lo.as_ptr(),hi.as_ptr(),&mut result) } }
+            else { unsafe { host_fn!(self,scene_draw_collect_ex)?(self.module,lo.as_ptr(),hi.as_ptr(),flags,&mut result) } };
+        if accepted==0 { return None; }
+        if result.missing_count>1_000_000 || (result.missing_count>0&&result.missing.is_null()) { return None; }
+        let missing=if result.missing_count==0 { Vec::new() } else { unsafe { core::slice::from_raw_parts(result.missing,result.missing_count as usize) }.to_vec() };
+        Some(SceneCollection { frame:result.frame,visited:result.visited,selected:result.selected,draws:result.draws,missing })
+    }
     /// A view of the mission's scene (0, 0: the frame's size): f places its camera each frame (false: left out
     /// this frame); its picture reaches the passes (GfxFrame::views). Its handle.
     pub fn scene_view<F: Fn(&mut ViewCamera) -> bool + 'static>(&self, width: i32, height: i32, f: F) -> Option<i32> {
@@ -473,6 +579,11 @@ impl Host {
     /// radians across, held (0: the game's back)
     pub fn game_camera_fov(&self, fov: f32) -> bool {
         unsafe { f!(self, game_camera_fov)(self.module, fov) != 0 }
+    }
+    /// Projection ownership flags (sys::MML_CAMERA_PROJECTION_*). Null selects the game's camera.
+    /// Native projection hooks must preserve an EXACT frustum and not multiply an absolute FOV.
+    pub fn camera_projection_state(&self, camera: *const c_void) -> i32 {
+        unsafe { f!(self, camera_projection_state)(self.module, camera) }
     }
 
     // ---- the frame's measures
@@ -607,6 +718,19 @@ impl Host {
         }
         let mut v = vec![sys::MmlMeshPiece::default(); n as usize];
         let n = (unsafe { get(self.module, actor.as_ptr(), v.as_mut_ptr(), v.len() as c_int) }.max(0) as usize).min(v.len());
+        let pieces: Vec<MeshPiece> = v[..n].iter().map(MeshPiece).collect();
+        Some(f(&pieces))
+    }
+}
+
+impl Host {
+    /// Actor meshes with optional hidden-root traversal for physical geometry. Child visibility is respected.
+    pub fn actor_meshes_ex<R>(&self, actor: Actor, flags: u32, f: impl FnOnce(&[MeshPiece]) -> R) -> Option<R> {
+        let get = f!(self, actor_meshes_ex);
+        let n = unsafe { get(self.module, actor.as_ptr(), flags, ptr::null_mut(), 0) };
+        if n < 0 { return None; }
+        let mut v = vec![sys::MmlMeshPiece::default(); n as usize];
+        let n = (unsafe { get(self.module, actor.as_ptr(), flags, v.as_mut_ptr(), v.len() as c_int) }.max(0) as usize).min(v.len());
         let pieces: Vec<MeshPiece> = v[..n].iter().map(MeshPiece).collect();
         Some(f(&pieces))
     }

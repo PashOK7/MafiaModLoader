@@ -1,0 +1,11 @@
+{
+  "id": "draw_probe",
+  "name": "Native pedestrian draw incident capture",
+  "version": "0.1.0",
+  "type": "native",
+  "entry": "draw_probe.dll",
+  "enabled": false,
+  "builds": ["1.0", "1.2"],
+  "load_order": 190,
+  "depends": []
+}

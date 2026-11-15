@@ -109,12 +109,14 @@ void Part(const char *name, bool on, const char *why = nullptr);
 
 // ---- the modules (each Init* as in Fusion Fix; Reset* puts a module's own state back before the next Apply)
 bool InitWidescreenFix();        // WidescreenFix.ixx: the resolution (false: not known), then the parts below
+bool ReadScreenSize(int &width, int &height); // native IGraph size, including a resized rendering child
 void ResetWidescreen();
 HCURSOR WINAPI LoadCursorHook(HINSTANCE instance, LPCSTR name);
 void InitCutscenes();            // Cutscene.ixx
 float GetCameraFovScale();
 void InitFOV();                  // LS3DF.ixx
 void ResetFOV();
+void RefreshSceneFOV(void *scene); // before SDK cameras/views take their snapshot
 void InitMovie();
 void InitHUD();                  // HUD.ixx
 void InitMap();

@@ -4,28 +4,33 @@
   "texture": "00test*",        // the game's water by its texture's name (geom.survey lists what the game draws)
   "shade": "frame:water*.stin*",   // the game's shade on its water under the bridges, hidden with it (frames' names)
   "reflection": true,          // the scene reflected (a second drawing of the scene, only while water is on the screen)
-  "wind": 1,                   // m/s: the ripples' size and roughness (0: a mirror)
-  "wind_from": 200,            // degrees from +z towards +x
+  "wind": 5,                   // m/s: the reference daytime river preset (0: a mirror)
+  "wind_from": 210,            // degrees from +z towards +x
   "fetch": 800,                // metres of open water the wind blows over (a river's is short: short waves)
+  "wave_width": 4.75,          // gravity-wave wavelength multiplier; fine wind ripples keep their own scale
+  "wave_speed": 1,             // artistic animation rate; 0 freezes waves, 1 gravity/capillary dispersion
   "waves": 1,                  // the ripples' slopes times this
+  "small_ripples": 0.65,       // advanced fine wind-ripple amplitude; independent of gravity-wave width/height
+  "reflection_softness": 0.25, // artistic unresolved-facet deviation; narrowed for the reference, 1 full statistical variance
+  "reflection_strength": 1,    // artistic multiplier of the Fresnel reflection share; 0 body only, 1 physical share
   "geometry": true,            // tessellated 3D surface: height and horizontal displacement from the same FFT
-  "wave_height": 1,            // multiplier for the waves' physical height and slopes (0..8)
-  "clarity": 2.5,              // metres of water after which white light has become `tint`
+  "wave_height": 6.5,          // gravity-wave height multiplier (0..8); fine ripples retain their energy
+  "clarity": 2,                // advanced absorption distance: white light becomes `tint` after this many metres
   "tint": "#6e9c80",           // ... the water's absorption (a silty river: green, red and blue taken first)
-  "colour": "#2c4740",         // the light the water's body scatters back, of white light
-  "scattering": 0.6,           // per metre: the particles' scattering (0.05 clear water, 0.3 to 1 a river, 3 muddy)
+  "colour": "#343531",         // the light the water's body scatters back, of white light
+  "scattering": 0.4,           // per metre: the particles' scattering (0.05 clear water, 0.3 to 1 a river, 3 muddy)
   "phase": 0.75,               // their phase's forward asymmetry (Henyey-Greenstein g, 0..0.95): the glow against the sun
   "crests": 1,                 // the sun through the waves' crests (1 as the optics give it)
   "chop": 1,                   // the waves moved towards their crests (Tessendorf's choppy waves; 1 a Gerstner wave's)
   "depth": 10,                 // uniform virtual depth (m); the opaque body never transmits the scene behind it
-  "glitter": 1,                // the sun on the ripples
+  "glitter": 0.2,              // the sun on the ripples
   "sun_radius": 18,            // degrees: soft angular limit of the painted sky's solar glow, not a clear disc
-  "foam": 0.5,                 // whitecaps on breaking crests; no fake shallow band from submerged geometry
+  "foam": 1.1,                 // whitecaps on compressed crests; no fake shallow band from submerged geometry
   "shadows": true,             // the sun's shadow map asked for (the glitter and the body in shadows)
   "shadow_source": 0,          // 0: visible sky sun (default); 1: scene light, matching the game's baked shadows
   "shadow_softness": 1,        // solar angular radius multiplier; farther from the caster means a wider penumbra
   "debug": 0                   // 1 the reflection, 2 the normal, 3 the body, 4 Fresnel, 5 roughness, 6 the reflection
                                // unblurred, 7 the sun scattered in the water and through the crests (x8), 8 the
                                // shadows, 9 the Jacobian (red: squeezed crests), 10 the flat reflection, 11 the reflected
-                               // ray's way, 12 the reflection's depth, 13 the slopes
+                               // ray's way, 12 depth, 13 slopes, 14 wireframe, 15 geometry/sky reflection weights
 }

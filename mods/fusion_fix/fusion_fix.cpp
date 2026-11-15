@@ -132,6 +132,12 @@ void OnConfig(const MmlEvent *, void *) {
     Apply();
 }
 
+void OnFrame(const MmlEvent *, void *) {
+    int width = 0, height = 0;
+    if (g_applied && ReadScreenSize(width, height) && (width != Screen.fWidth || height != Screen.fHeight))
+        Apply(); // the same owned patch/HUD lifecycle as a live setting change, after the host's native reset
+}
+
 int Status(const char *, MmlReply *reply, void *) {
     std::string out = "{\"applied\":" + std::string(g_applied ? "true" : "false");
     if (!g_refused.empty()) out += ",\"refused\":\"" + g_refused + "\"";
@@ -162,6 +168,10 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     ff::ReadSettings();
     ff::Apply();
     host->subscribe(mod, MML_EVENT_CONFIG_CHANGED, ff::OnConfig, nullptr);
+    host->subscribe(mod, MML_EVENT_FRAME, ff::OnFrame, nullptr);
+    host->subscribe(mod, MML_EVENT_RENDER_BEGIN, [](const MmlEvent *ev, void *) {
+        ff::RefreshSceneFOV(ev->scene);
+    }, nullptr);
     host->command(mod, "status", "what is applied: the screen, the parts on, the patches and hooks", ff::Status, nullptr);
     return 0;
 }

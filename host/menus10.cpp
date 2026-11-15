@@ -510,24 +510,8 @@ int __fastcall PageTick(uintptr_t screen, void *edx, uint32_t keyFlags, uint32_t
     return 0;
 }
 
-bool PushNow(Page *p) {
+bool BuildPage(Page *p, uintptr_t s) {
     const game::ExeBuild &e = E();
-    uintptr_t top = m10::Top(), s = 0;
-    if (top) Seen(top);   // (its items in before the page covers it)
-    auto make = [&] {
-        s = reinterpret_cast<uintptr_t>(reinterpret_cast<NewFn>(e.gameNew)(kPageSize));
-        if (!s) return;
-        memset(reinterpret_cast<void *>(s), 0, kPageSize);
-        reinterpret_cast<CtorFn>(e.m10Ctor)(s, nullptr, top, kPageScreenId);
-        W32(s, reinterpret_cast<uintptr_t>(&g_pageVt[1]));
-    };
-    if (Guarded(make) || !s) { HWARN("menu: the page %s could not be made", p->name.c_str()); return false; }
-    Live &live = g_live[s];
-    live.seen = true;
-    live.name = p->name;
-    live.page = p;
-    p->screen = s;
-    p->waiting = false;
     std::vector<uint8_t> design = p->design;   // (the builder adds a "base" record's offsets into the records)
     auto build = [&] { reinterpret_cast<BuildFn>(e.m10Build)(s, nullptr, design.data(), 0, 0); };
     if (DWORD ex = Guarded(build)) {
@@ -576,6 +560,24 @@ bool PushNow(Page *p) {
     W32(s + kScrMouse + 4, static_cast<uint32_t>(static_cast<int>(cy)));
     W32(e.menuTop, s);
     return true;
+}
+
+bool PushNow(Page *p) {
+    const game::ExeBuild &e = E();
+    uintptr_t top = m10::Top(), s = 0;
+    if (top) Seen(top);
+    auto make = [&] {
+        s = reinterpret_cast<uintptr_t>(reinterpret_cast<NewFn>(e.gameNew)(kPageSize));
+        if (!s) return;
+        memset(reinterpret_cast<void *>(s), 0, kPageSize);
+        reinterpret_cast<CtorFn>(e.m10Ctor)(s, nullptr, top, kPageScreenId);
+        W32(s, reinterpret_cast<uintptr_t>(&g_pageVt[1]));
+    };
+    if (Guarded(make) || !s) { HWARN("menu: the page %s could not be made", p->name.c_str()); return false; }
+    Live &live = g_live[s];
+    live.seen = true; live.name = p->name; live.page = p;
+    p->screen = s; p->waiting = false;
+    return BuildPage(p, s);
 }
 
 // 1.2's kinds asked for on 1.0: the 1.0 kind that does the same.
@@ -1060,6 +1062,31 @@ bool Method(const std::string &method, const std::string &paramsJson, std::strin
         *reply = e.what();
     }
     return true;
+}
+
+void ResolutionChanged() {
+    uintptr_t top = Top();
+    if (!top) return;
+    // Native OnExchange recursively forwards to the underlying screen, preserving each screen's own state.
+    auto exchange = [&] { reinterpret_cast<ThisFn>(R32(R32(top) + 4))(top, nullptr); };
+    if (DWORD ex = Guarded(exchange)) { HWARN("menu: 1.0 resolution exchange faulted (%08X)", unsigned(ex)); return; }
+    std::vector<uintptr_t> screens;
+    for (const auto &kv : g_live) screens.push_back(kv.first);
+    for (uintptr_t screen : screens) {
+        auto found = g_live.find(screen);
+        if (found == g_live.end()) continue;
+        Live &live = found->second;
+        if (live.page) {
+            Page *p = live.page;
+            for (const PageCtl &pc : p->ctls)
+                if (uintptr_t c = Find(screen, pc.id)) { float v=0; if (ValueOf(c,&v)) p->values[pc.id]=v; }
+            auto free = [&] { reinterpret_cast<ThisFn>(E().menuFreeComps)(screen, nullptr); };
+            if (!Guarded(free)) { W32(screen+kScrFocus,0); BuildPage(p,screen); }
+        } else if (std::any_of(live.items.begin(), live.items.end(), [&](const auto &item) { return !Find(screen,item.id); })) {
+            live.items.clear(); AddItems(screen,&live);
+        }
+    }
+    W32(E().menuTop,top);
 }
 
 } // namespace m10

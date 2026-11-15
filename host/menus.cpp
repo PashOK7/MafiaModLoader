@@ -1252,4 +1252,29 @@ bool MenusMethod(const std::string &method, const std::string &paramsJson, std::
     return true;
 }
 
+void MenusResolutionChanged() {
+    if (m10::Known()) { m10::ResolutionChanged(); return; }
+    if (!g_ok || !game::Exe().menuExchange) return;
+    std::vector<uintptr_t> stack;
+    for (uintptr_t s = R32(game::Exe().menuTop); s && stack.size() < 32; s = R32(s + kMenuUnder)) stack.push_back(s);
+    for (auto it = stack.rbegin(); it != stack.rend(); ++it) {
+        uintptr_t menu = *it;
+        auto before = g_live.find(menu);
+        Page *page = before != g_live.end() ? before->second.page : nullptr;
+        if (page) for (uintptr_t control : Controls(menu)) {
+            float value=0;
+            if (GetValue(control,&value)) page->values[int(R32(control+kCtlId))]=value;
+        }
+        // The virtual definition is answered only while this particular page is being built, as on first open.
+        Page *previous = g_creating;
+        g_creating = page;
+        auto exchange = [&] { reinterpret_cast<This0Fn>(game::Exe().menuExchange)(menu, nullptr); };
+        DWORD ex = Guarded(exchange);
+        g_creating = previous;
+        if (ex) { HWARN("menu: resolution exchange faulted (%08X)", unsigned(ex)); break; }
+        auto live = g_live.find(menu);
+        if (live != g_live.end() && !live->second.page) { live->second.items.clear(); AddItems(menu, &live->second); }
+    }
+}
+
 } // namespace host

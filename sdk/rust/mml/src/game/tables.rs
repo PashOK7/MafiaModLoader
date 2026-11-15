@@ -274,6 +274,14 @@ pub struct Exe {
     pub missionFinishFades: usize,
     pub cacheInRange: usize,
     pub cacheDeactivate: usize,
+    pub menuExchange: usize,
+    pub menuFreeComps: usize,
+    pub pathSingleDetour: usize,
+    pub pathGeneralDetour: usize,
+    pub pathNormalBegin: i32,
+    pub animRecompileMatrix: usize,
+    pub doneVehicleShadowUpdate: usize,
+    pub carIsUsable: usize,
 }
 
 /// LS3DF.dll's, as RVAs (add the module's base; the int members are offsets): game_build.h Ls3dBuild.
@@ -300,6 +308,8 @@ pub struct Ls3d {
     pub ibManager: usize,
     pub ibNil: usize,
     pub drvClose: usize,
+    pub ibShutdownClear: usize,
+    pub ibShutdownReturn: usize,
     pub camRecompute: usize,
     pub frameUpdateWMatrix: usize,
     pub keyboardUpdate: usize,
@@ -382,6 +392,18 @@ pub struct Ls3d {
     pub propVertexFormat: usize,
     pub setFog: usize,
     pub fogProcess: usize,
+    pub graphResetDevice: usize,
+    pub graphScreenSize: usize,
+    pub graphPresentParams: usize,
+    pub sceneSetViewport: usize,
+    pub sourceVbUnlock: usize,
+    pub sourceVbManager: usize,
+    pub sourceIbUnlock: usize,
+    pub sourceIbManager: usize,
+    pub updateShadowTexture: usize,
+    pub soundDriverInit: usize,
+    pub oggThreadProc: usize,
+    pub oggFillBuffer: usize,
 }
 
 /// The race of mission 6: racing.h RacingLayout.
@@ -669,6 +691,14 @@ pub static EXE_12: Exe = Exe {
     missionFinishFades: 0x5459B0,
     cacheInRange: 0x402F90,
     cacheDeactivate: 0x402A50,
+    menuExchange: 0x5EAD80,
+    menuFreeComps: 0,
+    pathSingleDetour: 0x50117E,
+    pathGeneralDetour: 0x501287,
+    pathNormalBegin: 0x1C,
+    animRecompileMatrix: 0x40E900,
+    doneVehicleShadowUpdate: 0x5A42CC,
+    carIsUsable: 0x429850,
 };
 
 pub static EXE_10: Exe = Exe {
@@ -940,6 +970,14 @@ pub static EXE_10: Exe = Exe {
     missionFinishFades: 0x604EF0,
     cacheInRange: 0x5A93C0,
     cacheDeactivate: 0x5A8E80,
+    menuExchange: 0,
+    menuFreeComps: 0x56E850,
+    pathSingleDetour: 0x40B486,
+    pathGeneralDetour: 0x40B58C,
+    pathNormalBegin: 0x04,
+    animRecompileMatrix: 0x5AB410,
+    doneVehicleShadowUpdate: 0x5DFD16,
+    carIsUsable: 0x470D30,
 };
 
 pub static LS3D_12: Ls3d = Ls3d {
@@ -964,6 +1002,8 @@ pub static LS3D_12: Ls3d = Ls3d {
     ibManager: 0x1B50F8,
     ibNil: 0x1B5124,
     drvClose: 0x701A0,
+    ibShutdownClear: 0x5AC2E,
+    ibShutdownReturn: 0x70264,
     camRecompute: 0xA93F0,
     frameUpdateWMatrix: 0x1C7D0,
     keyboardUpdate: 0x717F0,
@@ -1046,6 +1086,18 @@ pub static LS3D_12: Ls3d = Ls3d {
     propVertexFormat: 0x1C5480,
     setFog: 0x4E390,
     fogProcess: 0x685D0,
+    graphResetDevice: 0x6E1A0,
+    graphScreenSize: 0x1C55CC,
+    graphPresentParams: 0x1C52C0,
+    sceneSetViewport: 0x4A9C0,
+    sourceVbUnlock: 0x697E0,
+    sourceVbManager: 0x1C5014,
+    sourceIbUnlock: 0x5B960,
+    sourceIbManager: 0x1B50F8,
+    updateShadowTexture: 0x529C0,
+    soundDriverInit: 0x7C1F0,
+    oggThreadProc: 0x73FE0,
+    oggFillBuffer: 0x735D0,
 };
 
 pub static LS3D_10: Ls3d = Ls3d {
@@ -1070,6 +1122,8 @@ pub static LS3D_10: Ls3d = Ls3d {
     ibManager: 0,
     ibNil: 0,
     drvClose: 0,
+    ibShutdownClear: 0,
+    ibShutdownReturn: 0,
     camRecompute: 0xA5628,
     frameUpdateWMatrix: 0x1C570,
     keyboardUpdate: 0x6DD40,
@@ -1152,6 +1206,18 @@ pub static LS3D_10: Ls3d = Ls3d {
     propVertexFormat: 0x1C141C,
     setFog: 0x4BE00,
     fogProcess: 0x65180,
+    graphResetDevice: 0x6A8A0,
+    graphScreenSize: 0x1C156C,
+    graphPresentParams: 0x1C1260,
+    sceneSetViewport: 0x48520,
+    sourceVbUnlock: 0x66250,
+    sourceVbManager: 0x1C0FC4,
+    sourceIbUnlock: 0x58960,
+    sourceIbManager: 0x1B10B8,
+    updateShadowTexture: 0x502B0,
+    soundDriverInit: 0x77E30,
+    oggThreadProc: 0x6FF40,
+    oggFillBuffer: 0x6FA10,
 };
 
 pub static RACING_12: Racing = Racing {
@@ -1264,6 +1330,10 @@ pub const kHumanHealthMax: i32 = 0x604;
 pub const kHumanInventory: i32 = 0x480;
 pub const kHumanFallSpeed: i32 = 0x418;
 pub const kHumanStateAir: i32 = 3;
+pub const kHumanTrackLift: i32 = 0x1DC;
+pub const kAnimTrack: i32 = 0x2C;
+pub const kAnimPreviousTrack: i32 = 0x80;
+pub const kAnimTrackOffset: i32 = 0x114;
 pub const kMissionGame: i32 = 0x24;
 pub const kMissionRoads: i32 = 0x30;
 pub const kRoadsNodes: i32 = 0x18;

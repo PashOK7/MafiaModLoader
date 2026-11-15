@@ -3,6 +3,10 @@
 The loader and its stdio MCP server do not depend on Claude Code. Client configuration and hooks do.
 Read all of `AGENTS.md` from disk before working: an automatically injected prefix is not the whole guide.
 
+For an existing connection after updating the checkout, read [STATUS.md](STATUS.md) and the
+[update notes](PATCHNOTES_2026-11-15.md). Rebuild and reconnect the MCP server as well as replacing the host;
+old sessions can retain the old tool schema. Machine-specific registration receipts below are dated evidence.
+
 ## Codex
 
 Codex reads `AGENTS.md`. `CLAUDE.md` contains only Claude Code's `@AGENTS.md` import; there is no separate set of
@@ -92,7 +96,9 @@ new binary and reconnect the native client afterwards.
 
 ## Rules easy to miss during handoff
 
-- The user's game and the labs are distinct. Use only configured folders; never close a game outside the labs.
+- The user's game and the labs are distinct. Use only configured folders; verify the exact folder and PID before
+  closing a process. An owner's request to develop/fix a copy authorizes its necessary close/install/restart
+  cycles, including that configured player copy (AGENTS.md, owner clarification 2026-11-08).
   Reproduce a tester's report in their configured player copy, not a clean lab. Restore the original default lab
   and lab mode after changes. Drive the game through its bridge, never the user's mouse or keyboard.
 - Shared loader, SDK, MCP and shipped-mod changes finish with tests in both 1.2 and 1.0. Read both builds' code

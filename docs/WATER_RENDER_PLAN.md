@@ -1,5 +1,9 @@
 # Water rendering: correctness and performance plan
 
+This records the earlier rendering/atmosphere work and its dated acceptance. The active order and remaining
+gates are in [WATER_REFLECTION_PLAN.md](WATER_REFLECTION_PLAN.md); [STATUS.md](STATUS.md) summarizes the
+current handoff. Historical installed hashes and performance figures below are not today's deployment state.
+
 ## SDK-owned atmosphere (2026-10-31)
 
 - Shared mechanism extracted to host/atmosphere.cpp and append-only C ABI; safe Rust methods and neutral

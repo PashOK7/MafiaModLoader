@@ -30,6 +30,10 @@ bool Gpu();
 // texture of the same size and format (render target and shader resource), imported into DXVK's device. Null and why
 // when it cannot be.
 Link *Make(IDirect3DTexture9 *t9, ID3D11Device *dev11, ID3D11Texture2D **t11, std::string *why);
+// A single R32F allocation written by DXVK and read by Direct3D 11. Only available with GPU fences.
+Link *MakeShadowAlias(IDirect3DDevice9 *dev9, ID3D11Device *dev11, unsigned size,
+                      IDirect3DTexture9 **t9, ID3D11Texture2D **t11, std::string *why);
+bool AliasExternal(const Link *link);
 void Free(Link *&link);
 
 // The hand-overs. With the shared fences (Gpu()): To11 queues the copies after everything Direct3D 9 has drawn so far
@@ -44,6 +48,15 @@ bool To9(Link *const *links, int n, std::string *why);
 bool Busy();                                   // a late copy still runs on DXVK's queue (CPU-waited hand-overs only)
 void WaitLimit(double ms);                     // how long a copy is waited for (250 ms; gfx.cpp's MML_GFX_WAIT_MS)
 double TakeMs();                               // the game thread's time in the hand-overs since the last call (ms)
+
+struct HandoffTiming {
+    unsigned links = 0, largestWidth = 0, largestHeight = 0;
+    double total = 0, flush9 = 0, ringWait = 0, queueLock = 0, queueSubmit = 0, completionWait = 0;
+    bool valid = false;
+};
+void SetHandoffTiming(bool enabled, bool reset);
+HandoffTiming ReadHandoffTiming(bool to11, bool slowest);
+HandoffTiming ReadHandoffGpuTiming(bool to11, bool slowest);
 
 std::string Describe();                        // for gfx.state: the device, the copies, their time
 } // namespace gfxvk

@@ -1,8 +1,12 @@
 # Game.exe and LS3DF.dll: findings
 
-Facts about the 1.2 game that took work to find. Each says how it is known: **game** (seen in the running game),
+Facts about both builds that took work to find. Early unqualified addresses refer to 1.2; later paired/1.0
+entries state their own build. Each says how it is known: **game** (seen in the running game),
 **code** (read in the decompile or disassembly only). Function names are the decompile's where it has them; look
 any of them up with `kb_function`.
+
+Current host behavior, cumulative fixes and unresolved attribution are summarized in
+[STATUS.md](../../docs/STATUS.md). Dated measurements here do not identify today's installed binary.
 
 ## Starting, menus, missions, saves
 
@@ -51,6 +55,11 @@ any of them up with `kb_function`.
   `+0x68` its name, a `char*` (`"freeitaly"`). `C_mission::Open` (`ret 0x10`) calls `C_mission::Close` itself
   before it loads; the loading is over at the mission's next `Tick` (2.6 s after the open for the freeride). The
   loader's `MISSION_OPEN` / `MISSION_LOADED` events hang on these two.
+- **game** `CHANGE_MISSION` can detach Tommy before `C_mission::Close` and reattach the same `C_human`
+  in the next scene. In 1.0 the handler `0x5BC75C` calls `C_mission::UnloadActor` (`0x5FF5E0`) at `0x5BC859`.
+  A carry from `mise10-saliery` to `mise10-mesto` kept the exact player actor across both close events, with
+  neither a destructor nor another constructor. The loader's constructor registry follows actor lifetime.
+  Clear cached frames and poses at scene close and remove registry entries through the native destructor hook.
 - **game** The pause: `GM_Menu::ExecuteMenu`'s loop calls `C_mission::Tick` (the call at 0x5EBC1E) only when its
   caller asked for it (a byte argument); otherwise it calls 0x5ED4C0 on `C_game + 0x4C`. The main menu's loop
   ticks (its mission `00menu` runs under it); the pause menu's (vtable 0x625E58, made in the game's loop on Esc)
@@ -332,6 +341,27 @@ autosplitter; kept outside it, not ported). Checked against the above:
   actually steering": in the code `+0x74` is what HumanMoveTo walks to and `+0x80` only the arrival test's centre.
   His container offsets are 1.0's; 1.2's differ (above). Reported to him:
   https://github.com/st0rm94/mafia-reverse-engineering-export/issues/2
+- **crash, inspected 2026-11-06** Tester archive crashlogs.zip contains a separate gameplay failure from
+  2026-10-29 15:09:15 in `mise18-mesto`, after about 61 minutes of play. GetSpecNodeC faults at 005007B2
+  (`fld dword ptr [eax+edx*2]`), called by UpdateSpec, Update and C_entity's AI. Captured native bytes match
+  the original code: it reads the first normal waypoint's node index and multiplies it by the 30-byte web-node
+  stride without checking for a negative index. Path 568D1D70 has one waypoint at 3C9109F0; waypoint+34 is
+  FFFFFFFF. EDX is consequently -15, EAX is table base 569CF00C, and the effective read is 569CEFEE (base-30),
+  inside committed PAGE_NOACCESS memory at 569CE000. This is a concrete out-of-bounds lookup, not evidence
+  of exhausted address space (2309 MiB free, largest 2044 MiB) or a graphics-driver failure.
+  Actor 3C546208 is a C_entity and appears in recent vehicle-exit/fall events; that sequence alone is not proof
+  of why its route has this index. The 1.0 twin at 40A0C0 contains the same unchecked lookup (waypoint vector
+  at +04 instead of +1C).
+  The shutdown-only index-buffer guard does not cover this path. The archive's mml.prev.log separately ends
+  in the known LS3DF+5AC2E shutdown crash. Preserve old host offsets without trusting current PDB names.
+- **fix, 2026-11-07** UpdateSpec already uses GetSpecNodeB for a route with several waypoints when the cursor
+  is zero or the selected waypoint has node index -1. That solver checks obstacles against a plane and uses
+  no web checkpoint. The one-waypoint arm selected GetSpecNodeC unconditionally. The host checks the node
+  index as that arm is entered and redirects -1 to the existing general arm. In 1.2 the hook and destination
+  are 50117E and 501287. In 1.0 they are 40B486 and 40B58C. The native general arm builds the plane, tests
+  collision, and owns detour storage and state. The hook preserves the register context and passes all
+  other indices through the original one-waypoint arm. Native tests in both labs measured a generated
+  detour around the parked starting car for index -1 and for a real web node, using different solvers.
 
 ## A car's path: C_driver (read 2026-10-17 in both builds' code, seen in both labs; mods/examples/debug_views, routes)
 
@@ -594,6 +624,30 @@ Four things, each the game's own, all needed for the whole city in one frame:
 
 ## The game's own bugs (host/fixes.cpp, always fixed; read and seen 2026-10-25, both labs)
 
+- **code/game** Vehicle fake-shadow teardown (2026-11-09). `C_game::Done` walks the 0x1C-byte records in the
+  vector at +0x2A0. After unlinking, closing and releasing the shadow at record +4, it calls I3D_frame::Update
+  on the receiver at +0, then frees the shadow name. The 1.0 garage dump's receiver held a vtable address
+  in reserved memory. The loader checks the receiver's Update slot at 0x5DFD16 / 0x5A42CC and bypasses
+  only an invalid virtual call. The rest of teardown and valid calls stay native.
+
+- **code/game** Native periodic frame hitches (2026-11-08). IGraph::GetTimer
+  at LS3DF 10072100 / 1006E580 calls the clock reset, sleeps the remainder
+  of the requested 16 ms and advances its internal timer by the requested
+  wait. Neither build requests a multimedia timer period for gameplay.
+  Its winmm period imports belong to DirectShow StartStreaming/StopStreaming.
+  On current Windows a system-wide 0.5 ms query does not prove this process
+  owns a precision request. Fresh native 1.0 has p95 30.753 ms and 84/499
+  intervals over 20 ms. timeBeginPeriod(1) gives p95 16.863 ms and 0/499
+  over 20 ms. timeEndPeriod(1) returns p95 30.749 ms and 48/299 over 20 ms.
+  The host now owns one matched request before its first native limiter
+  invocation, outside DllMain. Fresh corrected 1.0 gameplay and both lab
+  checks preserve every sampled 16 ms step and have no intervals over
+  20 ms. Evidence is in build/native-frametime-20261108. Native D3D8
+  prof.frames has no records, so the measurements use exact-PDB QPC
+  snapshots at the original limiter entry. Tap's coarse tick is not
+  used as a frametime measurement.
+  [Microsoft timer contract](https://learn.microsoft.com/en-us/windows/win32/api/timeapi/nf-timeapi-timebeginperiod).
+
 - **code** **1.2's options are not kept after a restart** (the owner's report: the level of details, the shadows).
   The video options of Options > Audio & Video are the mission's settings (`missionPtr + 0x90`: +0x90 the details'
   scale, +0x94 the draw distance's, +0x9C effects, +0xA0 sounds, +0xA4 shadows through a table {0, 1, 3, 6, 9, 15},
@@ -656,11 +710,33 @@ Four things, each the game's own, all needed for the whole city in one frame:
   game then writes its own presave) showed. In W:/MafiaDLSS (DXVK's Direct3D 9) the same presave showed. Suspect:
   MmlManaged with the way LS3D fills a presaved texture; not measured yet (ROADMAP Known gaps).
 
-## The exit crash (seen in mafia-ragdoll, not solved)
+## The exit crash (1.2 index-owner shutdown guarded; lifetime origin unresolved)
 
 - **game** At exit the first fault is in `Game.exe+0x7AD00`, a name comparator (0x46D954's code) reading an object
   already freed (memory reserved, not committed). Then `LS3DF.dll+0x5AC2E`: the index buffer manager's `FreeAll`
   writing to owners already gone (24 stale slices made before anything of ours ran).
+- **dump, inspected 2026-11-06** The tester's `Game_23992_20261103_205542` repeats this exact exit path.
+  `C_IBuffer::~C_IBuffer` at `1005AC2E` executes `mov [edx],eax`, clearing the first of three owner-slot
+  dwords. `ESI=71951A68` is the live buffer, its `+24` array is `718D0B28`, and `+2C` holds one live slice.
+  That slice is `96F4D6E0`, whose first dword points to owner slot `92CA3CF4`. The slot's region is
+  MEM_RESERVE without access, inside allocation `91FE0000`. The buffer and slice metadata remain committed.
+  The stack is destructor -> `C_IBManager::m_FreeAllIBuffers` -> `drvClose` -> `CloseSystem`, after returning
+  to `00menu` and closing it. This establishes a stale owner reference at shutdown. The dump does not record
+  which component originally failed to retire that slice. The custom `river_water` mod is absent, while the
+  unrelated `scripts/MafiaWaterShaderMod.asi` is mapped, alongside the tester's other ASIs.
+- **shutdown recovery, 2026-11-06** `host/fixes.cpp` hooks the three stores at LS3DF+5AC2E only when the
+  destructor's stack at ESP+44 contains IGraph::Close's return from FreeAllIBuffers (LS3DF+70264).
+  Runtime instruction checks reject incompatible code. A committed, writable 12-byte owner slot is cleared
+  only when its buffer, D3D buffer and first index still identify this slice. Reserved/protected/reused slots
+  are left alone; native slice deletion and buffer release continue. Ordinary destruction is unchanged.
+  1.0's destructor at LS3DF+57D40 lacks this store loop; its hook addresses remain zero.
+  Two native 1.2 runs allocated a 65,538-index slice with the engine's ibAlloc, decommitted its owner's page,
+  then quit through the menu. Both logged the matching stale owner; the second's process handle confirmed
+  exit code 0. The unchanged tester copy loaded city, returned to menu and quit normally, so this is a tested
+  shutdown recovery for the observed invalid state, not attribution or repair of its earlier lifetime cause.
+- **tool limit** This x86 dump sign-extends high MemoryInfoList addresses to 64 bits. `crash_inspect` reports
+  the high owner address as absent because it looks up the unsigned 32-bit value. Normalize bases to 32 bits
+  when inspecting this dump. The actual region above is reserved, rather than missing from the map.
 
 ## The water (seen 2026-10-16, both labs; host/collide.cpp world_water)
 
@@ -709,6 +785,14 @@ Four things, each the game's own, all needed for the whole city in one frame:
   returns at 0x5A935C) only for the moving objects on the frame's stretch (it returned 0 for a wall 1.5 m away);
   people (types 2, 27) get the parts test (`humanBoneRayTest`) and their Hit, others their Hit (vtable +0x7C); at the
   end of the way (`|now - from|^2 + 1 > |way|^2`) it makes the static impact's sparks and particles.
+- **Dead-body bullet shapes (2026-11-09).** The native human branch rejects hits within 1 m of a terminal
+  stretch at 1.0 `5E56AF` / 1.2 `5A9D5F`. It calls `humanBoneRayTest` at 1.0 `5E576C` / 1.2 `5A9E1C`.
+  Both checks used to discard valid hits on registered corpses. The loader skips the terminal branch and
+  supplies a nonzero part-test result only for an already selected replacement capsule on a dead actor.
+  The position and capsule index survive through Hit. The native part field is 0 for this contact. The
+  engine still controls native hit filters, bullet termination and the nearest static or moving obstacle.
+  A dead C_human can retain moving collision primitives. The bullet ray retries past those primitives only
+  for an actor with registered replacement capsules and then restores the engine's exclusion list.
 - **code** `C_car::Was_Collision` (0x4259E0; 1.0 0x46CC40, the same code), fastcall(car, impulse*, impulse copy*,
   pos*, float, S_vector*, C_actor* struck, prim*, int), ret 0x1C: called by `C_Vehicle::BodyCollision` and
   `DoWheelsCollision` for each contact, every frame of a car pressed on a wall (about 65 N s against a wall at

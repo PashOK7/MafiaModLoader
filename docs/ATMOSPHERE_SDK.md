@@ -99,9 +99,13 @@ The bridge fogs the COMPLETE camera-to-surface pixel after negative-order replac
 Supply actual replacement depth through `MmlGfxFrame.temporal_target`, including without an upscaler. Water
 already does so with its displaced wave depth. Its body, foam, glitter and reflection then attenuate together.
 
-For a reflected ray, call `ApplyAtmosphere(linearColor, origin, unitDirection, distance, false, isSky)` in the
+For a reflected ray, call `ApplyAtmosphereAfterTravel(linearColor, origin, unitDirection, distance, travelled, isSky)` in the
 material using the traced hit distance (or `g_atmosphereInfo.y` for sky). The bridge handles the incoming camera
-leg once; do not apply that leg again in the material. Main and reflection share the same b0 constants and HLSL.
+leg once; do not apply that leg again in the material. `travelled` is the camera-to-surface path length: any
+remaining near-clear distance continues along the reflected ray instead of being lost at the surface. A 200 m
+clear range with the water at 50 m clears another 150 m on the outgoing leg; a surface beyond 200 m clears none.
+The low-level ApplyAtmosphere helper remains available with explicit per-leg clearing policy.
+Main and reflection share the same b0 constants and HLSL.
 
 This is analytic single-scattering aerial perspective, not shadowed volumetric ray marching. Transparent surfaces
 without their own depth inherit opaque depth behind them; rough reflection filtering uses its representative hit.

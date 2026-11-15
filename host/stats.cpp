@@ -6,9 +6,9 @@
 // he gave, SHOT, VEHICLE_ENTERED, CAR_CRASH of 5 m/s and more, HUMAN_FELL that hurt, ITEM_GAINED, MONEY_CHANGED)
 // and from his place every frame (StatsFrame: the distance on foot and in vehicles, a move faster than 15 m/s on
 // foot or 80 in a vehicle left out as a teleport; the time the mission's world runs). Two sets: the game being
-// played (its saves keep it under the owner "mml", key "stats": put at GAME_SAVING, read back at GAME_LOADED, zero
-// at a new game or a freeride) and the profile's totals (beside its .sav, written at GAME_SAVING, at the mission's
-// close and every 10 s of play: the game has no exit the loader hears).
+// played and the profile's totals. Collection starts with a mod's first valid stats_get and stops when the last
+// consumer unloads. These counters live in memory. A mod needing durable statistics writes its own save_put
+// record. Legacy "mml" / "stats" snapshots remain readable for compatibility.
 //
 // The progress is the game's own: the profile manager (game_build.h loadSave, G_LoadSaveClass; the same layout in
 // both builds) keeps the selected profile's header at +0x20 (its number +0x28, its name +0x30), the race-unlock
@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <unordered_set>
 #include "json.hpp"
 #include "mml/game/game_build.h"
 #include "mml/game/game.h"
@@ -44,7 +45,7 @@ struct Counts {
 };
 Counts g_game, g_profile;
 int g_profileNumber = -2;    // whose totals g_profile holds (-2: not read yet)
-double g_sinceWrite;
+std::unordered_set<MmlMod *> g_consumers;
 bool g_havePos;
 V3 g_lastPos{};
 
@@ -70,11 +71,6 @@ Counts Read(int scope) {
     SaveGetAs(kOwner, scope, kKey, &s[0], n);
     return FromJson(json::parse(s, nullptr, false));
 }
-void Write(int scope, const Counts &c) {
-    std::string s = ToJson(c).dump(-1, ' ', false, json::error_handler_t::replace), err;
-    if (!SavePutAs(kOwner, scope, kKey, s.data(), s.size(), &err) && scope == MML_SAVE_PROFILE && err != "no profile selected yet")
-        HWARN("stats: %s", err.c_str());
-}
 // The profile's totals of the profile selected now (read when it changes).
 Counts &Profile() {
     int p = SaveProfileNumber();
@@ -84,11 +80,6 @@ Counts &Profile() {
     }
     return g_profile;
 }
-void WriteProfile() {
-    if (g_profileNumber >= 0 && g_profileNumber == SaveProfileNumber()) Write(MML_SAVE_PROFILE, g_profile);
-    g_sinceWrite = 0;
-}
-
 template <class F> void Both(F f) { f(g_game); f(Profile()); }
 
 void *Player() { return game::g_exe && game::Mission() ? game::Player() : nullptr; }
@@ -116,18 +107,21 @@ int ChapterOf(const std::string &name) {
 } // namespace
 
 void StatsEvent(const MmlEvent &ev) {
+    if (ev.type == MML_EVENT_GAME_LOADED) {
+        g_game = !g_consumers.empty() && ev.slot >= 0 ? Read(MML_SAVE_SLOT) : Counts{};
+        g_havePos = false;
+        return;
+    }
+    if (g_consumers.empty()) return;
     switch (ev.type) {   // (every frame's events go by at once)
     case MML_EVENT_HUMAN_DIED: case MML_EVENT_HUMAN_HIT: case MML_EVENT_PEDESTRIAN_HIT: case MML_EVENT_SHOT:
     case MML_EVENT_VEHICLE_ENTERED: case MML_EVENT_CAR_CRASH: case MML_EVENT_HUMAN_FELL: case MML_EVENT_ITEM_GAINED:
-    case MML_EVENT_MONEY_CHANGED: case MML_EVENT_GAME_SAVING: case MML_EVENT_GAME_LOADED: case MML_EVENT_MISSION_CLOSE:
+    case MML_EVENT_MONEY_CHANGED: case MML_EVENT_MISSION_CLOSE:
         break;
     default:
         return;
     }
-    if (ev.type == MML_EVENT_GAME_LOADED || ev.type == MML_EVENT_MISSION_CLOSE || ev.type == MML_EVENT_GAME_SAVING) {
-        if (ev.type == MML_EVENT_GAME_SAVING) { Write(MML_SAVE_SLOT, g_game); Profile(); WriteProfile(); }
-        else if (ev.type == MML_EVENT_GAME_LOADED) g_game = ev.slot >= 0 ? Read(MML_SAVE_SLOT) : Counts{};
-        else WriteProfile();
+    if (ev.type == MML_EVENT_MISSION_CLOSE) {
         g_havePos = false;
         return;
     }
@@ -168,11 +162,11 @@ void StatsEvent(const MmlEvent &ev) {
 }
 
 void StatsFrame(float dt, bool ticking) {
+    if (g_consumers.empty()) return;
     void *p = Player();
     if (!p) { g_havePos = false; return; }
     if (ticking && dt > 0 && dt < 1) {
         Both([&](Counts &c) { c.played += dt; });
-        g_sinceWrite += dt;
     }
     V3 pos{};
     bool ok = false;
@@ -190,12 +184,24 @@ void StatsFrame(float dt, bool ticking) {
     }
     g_lastPos = pos;
     g_havePos = true;
-    if (g_sinceWrite >= 10) WriteProfile();
 }
 
-int StatsGet(int scope, MmlStats *out) {
+void StatsModGone(MmlMod *mod) {
+    g_consumers.erase(mod);
+    if (!g_consumers.empty()) return;
+    g_havePos = false;
+    g_game = {};
+    g_profile = {};
+    g_profileNumber = -2;
+}
+
+int StatsGet(MmlMod *mod, int scope, MmlStats *out) {
     if (!out || out->size < offsetof(MmlStats, money_spent) || (scope != MML_SAVE_SLOT && scope != MML_SAVE_PROFILE)) return 0;
     if (scope == MML_SAVE_PROFILE && SaveProfileNumber() < 0) return 0;
+    if (g_consumers.insert(mod).second && g_consumers.size() == 1) {
+        g_game = Read(MML_SAVE_SLOT);
+        g_havePos = false;
+    }
     const Counts &c = scope == MML_SAVE_SLOT ? g_game : Profile();
     MmlStats s{};
     s.size = out->size;
@@ -261,8 +267,8 @@ bool StatsMethod(const std::string &method, const std::string &paramsJson, std::
         return s;
     };
     if (method == "stats.state") {
-        json out = {{"game", ToJson(g_game)}, {"profile_number", SaveProfileNumber()}};
-        if (SaveProfileNumber() >= 0) out["profile"] = ToJson(Profile());
+        json out = {{"game", ToJson(g_game)}, {"profile_number", SaveProfileNumber()}, {"collecting", !g_consumers.empty()}};
+        if (SaveProfileNumber() >= 0) out["profile"] = ToJson(g_consumers.empty() ? Counts{} : Profile());
         *reply = dump(out);
     } else {
         MmlProgress g{};

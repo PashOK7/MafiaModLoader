@@ -30,12 +30,14 @@
 // was), written from the memory copy at the Unlock and drawn: the A of an A/B; `vb.state`; `vb.selftest` (a device of
 // its own: the offline tests).
 #include "host.h"
+#include "d3dmirror.h"
 #include <windows.h>
 #include <d3d9.h>
 #include <intrin.h>
 #include <algorithm>
 #include <atomic>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include "json.hpp"
 
@@ -54,6 +56,7 @@ constexpr int kMaxCopies = 64;                   // a buffer written many times 
 constexpr UINT kCopiesBytes = 8u << 20;          // each person's shadow) gets more, up to 8 MB of them
 constexpr UINT kMinBytes = 0x10000;              // LS3D's pools are 128 KB and more; smaller buffers left alone
 constexpr uint64_t kCopyBudget = 192ull << 20;   // the copies' bytes, every buffer's (a 32-bit process's address space)
+constexpr uint64_t kPublishedBudget = 32ull << 20;
 constexpr size_t kPage = 4096;
 constexpr DWORD kPlain = 1;              // a lock with neither NOOVERWRITE nor DISCARD: the one that waits for the GPU
 constexpr int kRingGiveBack = 8;         // a buffer written only so this many times, never renamed: the game's again
@@ -73,6 +76,10 @@ struct Entry {
     UINT bytes = 0;
     DWORD usage = 0, format = 0;        // (a vertex buffer's FVF, an index buffer's format)
     uint8_t *shadow = nullptr;
+    uint8_t *published = nullptr;      // exact bytes of the last successfully uploaded plain lock
+    bool publishedValid = false, publishedAttempted = false;
+    Entry *sourceNext = nullptr;
+    bool sourcePending = false;
     size_t pages = 0;
     std::vector<uint32_t> ever;         // the pages ever written: a new copy's first contents
     std::vector<Copy> copies;
@@ -83,6 +90,8 @@ struct Entry {
     bool plainEver = false;             // a lock that waits seen once: the buffer is kept
     int ringCommits = 0;                // unlocks after NOOVERWRITE or DISCARD alone
     std::vector<void *> watch;          // GetWriteWatch's answer
+    std::vector<uint64_t> revisions;   // one monotonic write stamp per shadow page
+    bool revisionsReliable = true;
 };
 struct Slot { std::atomic<void *> key{nullptr}; Entry *e = nullptr; int copy = 0; };
 void *const kGone = reinterpret_cast<void *>(1);
@@ -120,17 +129,37 @@ std::vector<Entry *> g_graveyard;       // entries taken out, freed on the game'
 IDirect3DDevice9 *g_dev;                // the device hooked
 void **g_devVt;
 bool g_installed, g_rename = true, g_test;
+std::atomic<IDirect3DDevice9 *> g_sourceDevice{nullptr};
+std::atomic<bool> g_sourceBindings{false};
+Entry *g_sourcePending;
+std::atomic<uint64_t> g_contentRevision{0};
 std::string g_why = "not installed (no Direct3D 9 device made by the game yet)";
 uintptr_t g_hostBase, g_hostEnd;
 
-struct Bound { Entry *e = nullptr; UINT offset = 0, stride = 0; };
+struct Bound { Entry *e = nullptr; UINT offset = 0, stride = 0; IDirect3DVertexBuffer9 *actual = nullptr; };
 Bound g_bound[kStreams];                // what the game bound (its buffers), the game's thread's
 Entry *g_boundIb;
+IDirect3DIndexBuffer9 *g_boundActualIb;
+
+// Unrenamed buffers keep only the identity and whole-buffer revision. The
+// scene cache already owns the decoded indices, so no second shadow is needed.
+struct NativeIndex {
+    IDirect3DDevice9 *device;
+    uint64_t lifetime, revision;
+    UINT bytes, stride, locks = 0;
+};
+constexpr size_t kNativeIndexLimit = 4096;
+SRWLOCK g_nativeIndexLock = SRWLOCK_INIT;
+std::unordered_map<void *, NativeIndex> g_nativeIndices;
+void *g_nativeLockSite, *g_nativeUnlockSite, *g_nativeReleaseSite;
+bool g_nativeLockShared, g_nativeUnlockShared, g_nativeReleaseShared;
 
 struct Stats {
     uint64_t adopted = 0, adoptedBytes = 0, released = 0, copiesMade = 0, copyBytes = 0, refusedBudget = 0,
              locks = 0, commits = 0, renames = 0, inPlace = 0, appends = 0, discards = 0, givenBack = 0, refusedSpace = 0, waits = 0, failures = 0,
-             pagesWritten = 0, bytesWritten = 0;
+             pagesWritten = 0, bytesWritten = 0, readOnlyUnlocks = 0,
+             unchangedUnlocks = 0, unchangedPages = 0, publishedBytes = 0,
+             sourceUnlocks = 0, sourceFlushes = 0, busyDiscards = 0, sourceStreamKept = 0, sourceIndicesKept = 0;
     double waitMs = 0, commitMs = 0;
 } g_st;
 uint64_t g_tsc;                         // rdtsc ticks a millisecond
@@ -225,6 +254,7 @@ void Adopt(IDirect3DDevice9 *d, int kind, void *buf, UINT bytes, DWORD usage, DW
     }
     e->ever.assign((e->pages + 31) / 32, 0);
     e->watch.resize(e->pages);
+    e->revisions.assign(e->pages,1+g_contentRevision.fetch_add(1,std::memory_order_relaxed));
     Copy c;
     c.buf = static_cast<IUnknown *>(buf);
     c.done = q;
@@ -294,10 +324,16 @@ bool Idle(Copy &c) {
 void Rebind(Entry &e) {
     IUnknown *now = e.copies[e.current].buf;
     if (e.kind == 0) {
-        for (int s = 0; s < kStreams; s++)
-            if (g_bound[s].e == &e) oSetStream(e.dev, s, static_cast<IDirect3DVertexBuffer9 *>(static_cast<void *>(now)), g_bound[s].offset, g_bound[s].stride);
+        auto *vb = static_cast<IDirect3DVertexBuffer9 *>(static_cast<void *>(now));
+        for (int s = 0; s < kStreams; s++) if (g_bound[s].e == &e) {
+            Bound &bound = g_bound[s];
+            if (SUCCEEDED(oSetStream(e.dev, s, vb, bound.offset, bound.stride))) bound.actual = vb;
+            else if (!s) VbRenameInvalidateSourceBindings(e.dev);
+        }
     } else if (g_boundIb == &e) {
-        oSetIndices(e.dev, static_cast<IDirect3DIndexBuffer9 *>(static_cast<void *>(now)));
+        auto *ib = static_cast<IDirect3DIndexBuffer9 *>(static_cast<void *>(now));
+        if (SUCCEEDED(oSetIndices(e.dev, ib))) g_boundActualIb = ib;
+        else VbRenameInvalidateSourceBindings(e.dev);
     }
 }
 
@@ -332,35 +368,36 @@ void SwitchTo(Entry &e, int t) {
 void Forget(void *buf);
 void Unadopt(Entry &e);
 
-// The game's Unlock: the pages it wrote into a copy the GPU does not read, drawn from then on
-void Commit(Entry &e) {
-    ULONG_PTR n = e.watch.size();
-    DWORD gran = 0;
-    if (GetWriteWatch(WRITE_WATCH_FLAG_RESET, e.shadow, e.pages * kPage, e.watch.data(), &n, &gran) != 0) n = 0;
-    const uint64_t t0 = __rdtsc();
-    for (ULONG_PTR i = 0; i < n; i++) {
-        const size_t page = (static_cast<uint8_t *>(e.watch[i]) - e.shadow) / kPage;
-        if (page >= e.pages) continue;
-        SetBit(e.ever, page);
-        for (Copy &c : e.copies) SetBit(c.pending, page);
+void ReleasePublished(Entry &e) {
+    if(e.published){VirtualFree(e.published,0,MEM_RELEASE);g_st.publishedBytes-=e.bytes;e.published=nullptr;}
+    e.publishedValid=false;
+}
+
+void RememberPublished(Entry &e,ULONG_PTR count) {
+    if(!e.published&&!e.publishedAttempted){
+        e.publishedAttempted=true;
+        if(g_st.publishedBytes+e.bytes<=kPublishedBudget&&FreeVa()>=kMinFreeVa+e.bytes){
+            e.published=static_cast<uint8_t *>(VirtualAlloc(nullptr,e.bytes,MEM_RESERVE|MEM_COMMIT,PAGE_READWRITE));
+            if(e.published)g_st.publishedBytes+=e.bytes;
+        }
     }
-    if (e.direct) {   // (renaming off: the game's own buffer, locked at the game's Lock, written and drawn)
-        e.seen = 0;
-        if (n) g_st.commits++;
-        WriteInto(e, e.copies[0], e.direct);
-        oUnlock[e.kind](e.game);
-        e.direct = nullptr;
-        SwitchTo(e, 0);
-        g_st.commitMs += static_cast<double>(__rdtsc() - t0) / g_tsc;
-        return;
+    if(!e.published)return;
+    if(!e.publishedValid)memcpy(e.published,e.shadow,e.bytes);
+    else for(ULONG_PTR i=0;i<count;i++){
+        const size_t offset=static_cast<uint8_t *>(e.watch[i])-e.shadow;
+        if(offset<e.bytes)memcpy(e.published+offset,e.shadow+offset,std::min<size_t>(kPage,e.bytes-offset));
     }
-    if (!n) return;
+    e.publishedValid=true;
+}
+
+void Publish(Entry &e, ULONG_PTR n, uint64_t t0) {
     g_st.commits++;
     // The game's own promises kept: appended with NOOVERWRITE (the GPU reads none of what it wrote; LS3D's rings, the
     // shadows' and the particles' buffers) or rewritten after a DISCARD: into the copy drawn now, with the same flag
     // (the driver renames a discarded one). Whole pages are written: the bytes of a page the game did not write are
     // the ones the copy already holds.
     if (!(e.seen & kPlain) && (e.seen & (D3DLOCK_NOOVERWRITE | D3DLOCK_DISCARD))) {
+        e.publishedValid=false;
         Copy &c = e.copies[e.current];
         const DWORD how = e.seen & D3DLOCK_DISCARD && c.dynamic ? D3DLOCK_DISCARD : c.dynamic ? D3DLOCK_NOOVERWRITE : 0;
         void *p = nullptr;
@@ -391,18 +428,97 @@ void Commit(Entry &e) {
     Copy &c = e.copies[t];
     void *p = nullptr;
     const uint64_t w0 = __rdtsc();
-    if (FAILED(oLock[e.kind](c.buf, 0, 0, &p, wait || !c.dynamic ? 0 : D3DLOCK_NOOVERWRITE)) || !p) {
+    const bool discard = wait && g_rename && c.dynamic &&
+        SUCCEEDED(oLock[e.kind](c.buf, 0, 0, &p, D3DLOCK_DISCARD));
+    if (discard) {
+        c.pending = e.ever;
+        g_st.busyDiscards++;
+    }
+    if ((!discard && FAILED(oLock[e.kind](c.buf, 0, 0, &p, wait || !c.dynamic ? 0 : D3DLOCK_NOOVERWRITE))) || !p) {
+        if(discard) oUnlock[e.kind](c.buf);
         g_st.failures++;   // (its pages stay pending: written at its next turn)
+        e.publishedValid=false;
         return;
     }
-    if (wait) {
+    if (wait && !discard) {
         g_st.waits++;
         g_st.waitMs += static_cast<double>(__rdtsc() - w0) / g_tsc;
     }
     WriteInto(e, c, p);
-    oUnlock[e.kind](c.buf);
+    if(SUCCEEDED(oUnlock[e.kind](c.buf)))RememberPublished(e,n);
+    else {ReleasePublished(e);e.publishedAttempted=true;}
     SwitchTo(e, t);
     g_st.commitMs += static_cast<double>(__rdtsc() - t0) / g_tsc;
+}
+
+// The source traversal reads the CPU shadow and suppresses its indexed draws.
+// Publish its dirty pages together before the device state is restored.
+void FinishSourceWrites() {
+    g_sourceBindings.store(false,std::memory_order_relaxed);
+    g_sourceDevice.store(nullptr,std::memory_order_relaxed);
+    while (g_sourcePending) {
+        Entry &e = *g_sourcePending;
+        g_sourcePending = e.sourceNext;
+        e.sourceNext = nullptr;
+        e.sourcePending = false;
+        if (!e.shadow) continue;
+        g_st.sourceFlushes++;
+        Publish(e, 0, __rdtsc());
+    }
+}
+
+void Commit(Entry &e) {
+    ULONG_PTR n = e.watch.size();
+    DWORD gran = 0;
+    if(GetWriteWatch(WRITE_WATCH_FLAG_RESET,e.shadow,e.pages*kPage,e.watch.data(),&n,&gran)!=0){
+        n=0;ReleasePublished(e);e.publishedAttempted=true;e.revisionsReliable=false;
+    }
+    if(n&&gran!=kPage)e.revisionsReliable=false;
+    const uint64_t revision=n&&e.revisionsReliable?1+g_contentRevision.fetch_add(1,std::memory_order_relaxed):0;
+    const uint64_t t0 = __rdtsc();
+    const bool compare=e.publishedValid&&g_rename&&!e.direct&&e.seen==kPlain;
+    bool changed=false;
+    for (ULONG_PTR i = 0; i < n; i++) {
+        const size_t page = (static_cast<uint8_t *>(e.watch[i]) - e.shadow) / kPage;
+        if (page >= e.pages) continue;
+        const size_t offset=page*kPage;
+        if(compare&&Bit(e.ever,page)&&
+           memcmp(e.shadow+offset,e.published+offset,std::min<size_t>(kPage,e.bytes-offset))==0){
+            // The shadow still has the last published bytes for this page.
+            // A repeated write of those bytes keeps its content revision.
+            g_st.unchangedPages++;
+            continue;
+        }
+        if(revision)e.revisions[page]=revision;
+        changed=true;
+        SetBit(e.ever, page);
+        for (Copy &c : e.copies) SetBit(c.pending, page);
+    }
+    if (e.direct) {
+        e.publishedValid=false;
+        e.seen = 0;
+        if (n) g_st.commits++;
+        WriteInto(e, e.copies[0], e.direct);
+        oUnlock[e.kind](e.game);
+        e.direct = nullptr;
+        SwitchTo(e, 0);
+        g_st.commitMs += static_cast<double>(__rdtsc() - t0) / g_tsc;
+        return;
+    }
+    if (!n) { e.seen = 0; return; }
+    if(compare&&!changed){g_st.unchangedUnlocks++;e.seen=0;return;}
+    if (g_rename && e.dev == g_sourceDevice && GameThread() && (e.sourcePending || e.seen == kPlain)) {
+        if (!e.sourcePending) {
+            e.sourceNext = g_sourcePending;
+            g_sourcePending = &e;
+            e.sourcePending = true;
+        }
+        e.publishedValid = false;
+        e.seen = 0;
+        g_st.sourceUnlocks++;
+        return;
+    }
+    Publish(e, n, t0);
 }
 
 // The game's buffer gone: its copies, its memory
@@ -414,6 +530,7 @@ void Forget(void *buf) {
     for (Copy &c : e->copies) Remove(c.buf);
     g_graveyard.push_back(e);
     ReleaseSRWLockExclusive(&g_srw);
+    VbRenameInvalidateSourceBindings(e->dev);
     for (int s = 0; s < kStreams; s++) if (g_bound[s].e == e) g_bound[s] = Bound{};
     if (g_boundIb == e) g_boundIb = nullptr;
     for (size_t i = 0; i < e->copies.size(); i++) {
@@ -425,6 +542,7 @@ void Forget(void *buf) {
         if (c.done) c.done->Release();
         c.buf = nullptr, c.done = nullptr;
     }
+    ReleasePublished(*e);
     VirtualFree(e->shadow, 0, MEM_RELEASE);
     e->shadow = nullptr;
     g_st.released++;
@@ -439,10 +557,12 @@ void Unadopt(Entry &e) {
     Remove(e.game);
     g_graveyard.push_back(&e);
     ReleaseSRWLockExclusive(&g_srw);
+    VbRenameInvalidateSourceBindings(e.dev);
     for (int s = 0; s < kStreams; s++) if (g_bound[s].e == &e) g_bound[s] = Bound{};
     if (g_boundIb == &e) g_boundIb = nullptr;
     if (e.copies[0].done) e.copies[0].done->Release();
     e.copies[0].done = nullptr;
+    ReleasePublished(e);
     VirtualFree(e.shadow, 0, MEM_RELEASE);
     e.shadow = nullptr;
     g_st.givenBack++;
@@ -453,16 +573,62 @@ void Unadopt(Entry &e) {
 void Sweep() {
     if (g_graveyard.empty() && g_gone * 8 < kSlots) return;
     AcquireSRWLockExclusive(&g_srw);
-    for (Entry *e : g_graveyard) delete e;
-    g_graveyard.clear();
+    g_graveyard.erase(std::remove_if(g_graveyard.begin(), g_graveyard.end(), [](Entry *e) {
+        if (e->sourcePending) return false;
+        delete e;
+        return true;
+    }), g_graveyard.end());
     if (g_gone * 8 >= kSlots) Rehash();
     ReleaseSRWLockExclusive(&g_srw);
 }
 
 // ---- the hooks
+void TrackNativeIndex(IDirect3DDevice9 *d, IDirect3DIndexBuffer9 *b, UINT bytes, DWORD format, bool candidate) {
+    const UINT stride = format == D3DFMT_INDEX16 ? 2 : format == D3DFMT_INDEX32 ? 4 : 0;
+    void **vt = *reinterpret_cast<void ***>(b);
+    const bool track = candidate && bytes && stride && vt[kVtLock] == g_nativeLockSite &&
+        vt[kVtUnlock] == g_nativeUnlockSite && vt[kVtRelease] == g_nativeReleaseSite && !Find(b).e;
+    AcquireSRWLockExclusive(&g_nativeIndexLock);
+    // A wrapper may have reclaimed its previous object internally.
+    g_nativeIndices.erase(b);
+    if (track && g_nativeIndices.size() < kNativeIndexLimit) try {
+        const uint64_t revision = 1 + g_contentRevision.fetch_add(1, std::memory_order_relaxed);
+        g_nativeIndices.insert_or_assign(b, NativeIndex{d, revision, revision, bytes, stride});
+    } catch (const std::bad_alloc &) {
+        // Collection can still read this buffer from the driver.
+    }
+    ReleaseSRWLockExclusive(&g_nativeIndexLock);
+}
+
+void FinishNativeIndexLock(void *b, bool success) {
+    AcquireSRWLockExclusive(&g_nativeIndexLock);
+    auto it = g_nativeIndices.find(b);
+    if (it != g_nativeIndices.end()) {
+        if (success && it->second.locks) --it->second.locks;
+        else g_nativeIndices.erase(it);
+    }
+    ReleaseSRWLockExclusive(&g_nativeIndexLock);
+}
+
 template <int K> HRESULT __stdcall hkLock(void *b, UINT off, UINT size, void **pp, DWORD flags) {
     Hit h = Find(b);
-    if (!h.e || h.copy != 0 || !pp) return oLock[K](b, off, size, pp, flags);   // (a copy: the host's own lock)
+    if (!h.e || h.copy != 0 || !pp) {
+        if (h.e || (!K && !g_nativeLockShared)) return oLock[K](b, off, size, pp, flags);
+        bool tracked = false;
+        AcquireSRWLockExclusive(&g_nativeIndexLock);
+        auto it = g_nativeIndices.find(b);
+        if (it != g_nativeIndices.end()) {
+            NativeIndex &native = it->second;
+            tracked = true;
+            ++native.locks;
+            if (!(flags & D3DLOCK_READONLY))
+                native.revision = 1 + g_contentRevision.fetch_add(1, std::memory_order_relaxed);
+        }
+        ReleaseSRWLockExclusive(&g_nativeIndexLock);
+        const HRESULT hr = oLock[K](b, off, size, pp, flags);
+        if (tracked && FAILED(hr)) FinishNativeIndexLock(b, true);
+        return hr;
+    }
     Entry &e = *h.e;
     if (off >= e.bytes) return D3DERR_INVALIDCALL;
     if (!(flags & D3DLOCK_READONLY)) e.seen |= flags & (D3DLOCK_NOOVERWRITE | D3DLOCK_DISCARD) ? flags & (D3DLOCK_NOOVERWRITE | D3DLOCK_DISCARD) : kPlain;
@@ -482,15 +648,37 @@ template <int K> HRESULT __stdcall hkLock(void *b, UINT off, UINT size, void **p
 }
 template <int K> HRESULT __stdcall hkUnlock(void *b) {
     Hit h = Find(b);
-    if (!h.e || h.copy != 0) return oUnlock[K](b);
+    if (!h.e || h.copy != 0) {
+        const HRESULT hr = oUnlock[K](b);
+        if (!h.e && (K || g_nativeUnlockShared)) FinishNativeIndexLock(b, SUCCEEDED(hr));
+        return hr;
+    }
     Entry &e = *h.e;
-    if (e.locks > 0 && --e.locks > 0) return D3D_OK;
+    if(e.locks>0){
+        if(--e.locks>0)return D3D_OK;
+        // The scene collector reads the already published shadow. Only a
+        // writable lock in this batch can have dirtied any of its pages.
+        if(!e.seen){g_st.readOnlyUnlocks++;return D3D_OK;}
+    }
     Commit(e);
     return D3D_OK;
 }
 template <int K> ULONG __stdcall hkRelease(void *b) {
+    uint64_t lifetime = 0;
+    if (K || g_nativeReleaseShared) {
+        AcquireSRWLockShared(&g_nativeIndexLock);
+        auto it = g_nativeIndices.find(b);
+        if (it != g_nativeIndices.end()) lifetime = it->second.lifetime;
+        ReleaseSRWLockShared(&g_nativeIndexLock);
+    }
     const ULONG r = oRelease[K](b);
     if (!r && g_used) Forget(b);   // (only the pointer is used: the object is gone)
+    if (!r && lifetime) {
+        AcquireSRWLockExclusive(&g_nativeIndexLock);
+        auto it = g_nativeIndices.find(b);
+        if (it != g_nativeIndices.end() && it->second.lifetime == lifetime) g_nativeIndices.erase(it);
+        ReleaseSRWLockExclusive(&g_nativeIndexLock);
+    }
     return r;
 }
 
@@ -502,16 +690,32 @@ HRESULT __stdcall hkCreateVb(IDirect3DDevice9 *d, UINT len, DWORD usage, DWORD f
 }
 HRESULT __stdcall hkCreateIb(IDirect3DDevice9 *d, UINT len, DWORD usage, D3DFORMAT fmt, D3DPOOL pool, IDirect3DIndexBuffer9 **pp, HANDLE *shared) {
     const HRESULT hr = oCreateIb(d, len, usage, fmt, pool, pp, shared);
-    if (SUCCEEDED(hr) && pp && *pp && pool == D3DPOOL_DEFAULT && !shared && len >= kMinBytes && (g_test || !OursCaller(_ReturnAddress())))
-        Adopt(d, 1, *pp, len, usage, fmt);
+    if (SUCCEEDED(hr) && pp && *pp) {
+        const bool candidate = !shared && (g_test || !OursCaller(_ReturnAddress()));
+        if (candidate && pool == D3DPOOL_DEFAULT && len >= kMinBytes) Adopt(d, 1, *pp, len, usage, fmt);
+        TrackNativeIndex(d, *pp, len, fmt, candidate);
+    }
     return hr;
 }
 
 HRESULT __stdcall hkSetStream(IDirect3DDevice9 *d, UINT s, IDirect3DVertexBuffer9 *b, UINT off, UINT stride) {
+    const bool main = GameThread();
+    if (!main && s == 0) VbRenameInvalidateSourceBindings(d);
     const Hit h = Find(b);
-    if (s < kStreams && GameThread()) g_bound[s] = Bound{h.e, off, stride};
     if (h.e) b = static_cast<IDirect3DVertexBuffer9 *>(static_cast<void *>(h.e->copies[h.e->current].buf));
-    return oSetStream(d, s, b, off, stride);
+    if (main && !s && d == g_sourceDevice && g_sourceBindings.load(std::memory_order_relaxed)) {
+        const Bound &current = g_bound[0];
+        if (current.actual == b && current.e == h.e && current.offset == off && current.stride == stride) {
+            ++g_st.sourceStreamKept;
+            return D3D_OK;
+        }
+    }
+    const HRESULT hr=oSetStream(d,s,b,off,stride);
+    if(s<kStreams){
+        if(main&&SUCCEEDED(hr)&&d==g_dev)g_bound[s]={h.e,off,stride,b};
+        else if(s==0)VbRenameInvalidateSourceBindings(d);
+    }
+    return hr;
 }
 HRESULT __stdcall hkGetStream(IDirect3DDevice9 *d, UINT s, IDirect3DVertexBuffer9 **pp, UINT *off, UINT *stride) {
     const HRESULT hr = oGetStream(d, s, pp, off, stride);
@@ -526,10 +730,19 @@ HRESULT __stdcall hkGetStream(IDirect3DDevice9 *d, UINT s, IDirect3DVertexBuffer
     return hr;
 }
 HRESULT __stdcall hkSetIndices(IDirect3DDevice9 *d, IDirect3DIndexBuffer9 *b) {
+    const bool main = GameThread();
+    if (!main) VbRenameInvalidateSourceBindings(d);
     const Hit h = Find(b);
-    if (GameThread()) g_boundIb = h.e;
     if (h.e) b = static_cast<IDirect3DIndexBuffer9 *>(static_cast<void *>(h.e->copies[h.e->current].buf));
-    return oSetIndices(d, b);
+    if (main && d == g_sourceDevice && g_sourceBindings.load(std::memory_order_relaxed) &&
+        g_boundActualIb == b && g_boundIb == h.e) {
+        ++g_st.sourceIndicesKept;
+        return D3D_OK;
+    }
+    const HRESULT hr=oSetIndices(d,b);
+    if(main&&SUCCEEDED(hr)&&d==g_dev){g_boundIb=h.e;g_boundActualIb=b;}
+    else VbRenameInvalidateSourceBindings(d);
+    return hr;
 }
 HRESULT __stdcall hkGetIndices(IDirect3DDevice9 *d, IDirect3DIndexBuffer9 **pp) {
     const HRESULT hr = oGetIndices(d, pp);
@@ -545,12 +758,15 @@ HRESULT __stdcall hkGetIndices(IDirect3DDevice9 *d, IDirect3DIndexBuffer9 **pp) 
 }
 // A state block's Apply may bind a copy no longer drawn (it kept the one bound when it was captured): the one drawn now
 HRESULT __stdcall hkApply(IDirect3DStateBlock9 *sb) {
+    if(MirrorRasterBlock(sb))return oApply(sb);
+    g_sourceBindings.store(false, std::memory_order_relaxed);
     const HRESULT hr = oApply(sb);
     if (FAILED(hr) || !g_used || !g_dev || !GameThread()) return hr;
     IDirect3DDevice9 *d = nullptr;
     if (FAILED(sb->GetDevice(&d)) || !d) return hr;
     d->Release();
     if (d != g_dev) return hr;
+    VbRenameInvalidateSourceBindings(d);
     for (UINT s = 0; s < kStreams; s++) {
         IDirect3DVertexBuffer9 *b = nullptr;
         UINT off = 0, stride = 0;
@@ -565,6 +781,7 @@ HRESULT __stdcall hkApply(IDirect3DStateBlock9 *sb) {
     if (SUCCEEDED(oGetIndices(d, &ib))) {
         const Hit h = Find(ib);
         g_boundIb = h.e;
+        g_boundActualIb = ib;
         if (h.e && ib != static_cast<void *>(h.e->copies[h.e->current].buf))
             oSetIndices(d, static_cast<IDirect3DIndexBuffer9 *>(static_cast<void *>(h.e->copies[h.e->current].buf)));
         if (ib) ib->Release();
@@ -572,7 +789,11 @@ HRESULT __stdcall hkApply(IDirect3DStateBlock9 *sb) {
     return hr;
 }
 HRESULT __stdcall hkReset(IDirect3DDevice9 *d, D3DPRESENT_PARAMETERS *pp) {
-    if (d == g_dev) { for (Bound &b : g_bound) b = Bound{}; g_boundIb = nullptr; }
+    VbRenameInvalidateSourceBindings(d);
+    if (d == g_dev) { for (Bound &b : g_bound) b = Bound{}; g_boundIb = nullptr; g_boundActualIb = nullptr; }
+    AcquireSRWLockExclusive(&g_nativeIndexLock);
+    std::erase_if(g_nativeIndices, [d](const auto &item) { return item.second.device == d; });
+    ReleaseSRWLockExclusive(&g_nativeIndexLock);
     return oReset(d, pp);
 }
 HRESULT __stdcall hkPresent(IDirect3DDevice9 *d, const RECT *src, const RECT *dst, HWND wnd, const RGNDATA *dirty) {
@@ -640,6 +861,9 @@ bool Install(IDirect3DDevice9 *d, std::string *why) {
                          {kVtUnlock, reinterpret_cast<void **>(&oUnlock[0]), reinterpret_cast<void **>(&oUnlock[1]), reinterpret_cast<void *>(&hkUnlock<1>)},
                          {kVtRelease, reinterpret_cast<void **>(&oRelease[0]), reinterpret_cast<void **>(&oRelease[1]), reinterpret_cast<void *>(&hkRelease<1>)}};
     std::vector<std::pair<int, int>> shared;   // (index buffer slot, index into both)
+    g_nativeLockSite = iv[kVtLock]; g_nativeLockShared = g_nativeLockSite == vv[kVtLock];
+    g_nativeUnlockSite = iv[kVtUnlock]; g_nativeUnlockShared = g_nativeUnlockSite == vv[kVtUnlock];
+    g_nativeReleaseSite = iv[kVtRelease]; g_nativeReleaseShared = g_nativeReleaseSite == vv[kVtRelease];
     for (int i = 0; i < 3; i++) {
         if (iv[both[i].slot] == vv[both[i].slot]) shared.push_back({both[i].slot, i});
         else sites.push_back({iv[both[i].slot], both[i].detour1, both[i].orig1});
@@ -674,6 +898,11 @@ json StateJson() {
               {"copies_budget_mb", kCopyBudget >> 20}, {"refused_budget", g_st.refusedBudget}, {"released", g_st.released},
               {"locks", g_st.locks}, {"commits", g_st.commits}, {"renames", g_st.renames}, {"in_place", g_st.inPlace}, {"appends", g_st.appends}, {"discards", g_st.discards}, {"given_back", g_st.givenBack},
               {"waits", g_st.waits}, {"wait_ms", g_st.waitMs}, {"commit_ms", g_st.commitMs}, {"pages_written", g_st.pagesWritten},
+              {"readonly_unlocks", g_st.readOnlyUnlocks},
+              {"unchanged_unlocks",g_st.unchangedUnlocks},{"unchanged_pages",g_st.unchangedPages},
+              {"source_unlocks",g_st.sourceUnlocks},{"source_flushes",g_st.sourceFlushes},{"busy_discards",g_st.busyDiscards},
+              {"source_stream_kept",g_st.sourceStreamKept},{"source_indices_kept",g_st.sourceIndicesKept},
+              {"published_mb",g_st.publishedBytes/1048576.0},
               {"mb_written", g_st.bytesWritten / 1048576.0}, {"failures", g_st.failures}, {"slots_used", g_used}, {"refused_space", g_st.refusedSpace},
               {"address_space_free_mb", FreeVa() / 1048576.0}, {"address_space_min_mb", kMinFreeVa >> 20}};
     return j;
@@ -711,6 +940,55 @@ json Check() {
 }
 
 // ---- vb.selftest: a device of its own (a hidden window), buffers made as the game's, written, drawn, checked
+void CheckNativeIndexRevision(IDirect3DDevice9 *d, std::vector<std::string> &bad, D3DPOOL pool, DWORD usage,
+                              bool requireObserved, json &profiles) {
+    IDirect3DIndexBuffer9 *ib = nullptr;
+    if (FAILED(d->CreateIndexBuffer(64, usage, D3DFMT_INDEX16, pool, &ib, nullptr)) || !ib) {
+        bad.push_back("the native revision test could not create an index buffer");
+        return;
+    }
+    // Only classes whose writers are hooked may prove unchanged content. Managed D3D9 buffers can
+    // have different Lock/Unlock entries from the default-pool class used to install the hooks.
+    void **vt = *reinterpret_cast<void ***>(ib);
+    const bool observed = vt[kVtLock] == g_nativeLockSite && vt[kVtUnlock] == g_nativeUnlockSite &&
+                          vt[kVtRelease] == g_nativeReleaseSite;
+    if (requireObserved && !observed) bad.push_back("the default index-buffer class was not observed");
+    d->SetIndices(ib);
+    VbRenameBeginSourceWrites(d);
+    auto read = [&](void *explicitBuffer = nullptr) {
+        VbSourceStreams streams{};
+        VbRenameSourceStreams(d, nullptr, explicitBuffer, &streams);
+        return streams;
+    };
+    const VbSourceStreams first = read();
+    if ((observed && (!first.nativeIndexRevision || first.indices || first.indexStride != 2 || first.indexBytes != 64)) ||
+        (!observed && first.nativeIndexRevision) ||
+        read(ib).nativeIndexRevision != first.nativeIndexRevision)
+        bad.push_back("the native revision did not describe the bound index buffer");
+    const auto kept = g_st.sourceIndicesKept;
+    if (FAILED(d->SetIndices(ib)) || g_st.sourceIndicesKept != kept + 1)
+        bad.push_back("an identical source index binding was forwarded");
+    void *data = nullptr;
+    if (SUCCEEDED(ib->Lock(0, 0, &data, 0)) && data) {
+        if (read().nativeIndexRevision) bad.push_back("a writable index lock retained a usable revision");
+        memset(data, 0, 64);
+        ib->Unlock();
+    } else bad.push_back("the native revision test could not write indices");
+    const uint64_t written = read().nativeIndexRevision;
+    if (observed && (!written || written == first.nativeIndexRevision)) bad.push_back("writing indices did not publish a new revision");
+    if (!observed && written) bad.push_back("an unobserved index writer published a usable revision");
+    if (SUCCEEDED(ib->Lock(0, 0, &data, D3DLOCK_READONLY)) && data) ib->Unlock();
+    else bad.push_back("the native revision test could not read indices");
+    if (read().nativeIndexRevision != written) bad.push_back("a read-only index lock changed the revision");
+    d->SetIndices(nullptr);
+    if (read().nativeIndexRevision) bad.push_back("the native revision survived an index unbind");
+    ib->Release();
+    if (read(ib).nativeIndexRevision) bad.push_back("a released index buffer retained a usable revision");
+    VbRenameFinishSourceWrites();
+    profiles.push_back({{"pool", static_cast<int>(pool)}, {"observed", observed},
+                        {"before", first.nativeIndexRevision}, {"after_write", written}});
+}
+
 std::string SelfTest() {
     json r = json::object();
     auto fail = [&](const std::string &why) { r["ok"] = false; r["error"] = why; return r.dump(-1, ' ', false, json::error_handler_t::replace); };
@@ -803,14 +1081,87 @@ std::string SelfTest() {
     }
     // a state block captured with an older copy bound: its Apply binds the one drawn now
     if (h.e) {
+        const auto beforeRead=g_st.readOnlyUnlocks;
+        const auto beforeCommits=g_st.commits;
+        void *read=nullptr;
+        if(FAILED(vb->Lock(0,0,&read,D3DLOCK_READONLY))||!read)bad.push_back("the read-only shadow lock failed");
+        else{
+            if(memcmp(read,want.data(),bytes)!=0)bad.push_back("the read-only shadow bytes differ");
+            vb->Unlock();
+        }
+        if(g_st.readOnlyUnlocks!=beforeRead+1||g_st.commits!=beforeCommits)
+            bad.push_back("the read-only shadow lock went through the write path");
+        const auto beforeUnchanged=g_st.unchangedUnlocks;
+        const auto *revisions=h.e->revisions.data();
+        const auto sameBefore=VbRenameSourceRevision(revisions,0,kPage);
+        void *same=nullptr;
+        if(SUCCEEDED(vb->Lock(0,0,&same,0))&&same){
+            memcpy(same,want.data(),kPage);
+            vb->Unlock();
+        }
+        if(g_st.unchangedUnlocks!=beforeUnchanged+1||g_st.commits!=beforeCommits)
+            bad.push_back("a byte-identical plain write went through the driver");
+        if(VbRenameSourceRevision(revisions,0,kPage)!=sameBefore)
+            bad.push_back("a byte-identical plain write changed the source page revision");
+        const auto beforeFlush=g_st.sourceFlushes;
+        const auto changedBefore=VbRenameSourceRevision(revisions,0,kPage*2);
+        const auto untouchedBefore=VbRenameSourceRevision(revisions,static_cast<UINT>(2*kPage),kPage);
+        VbRenameBeginSourceWrites(d);
+        VbSourceStreams binding{};
+        VbRenameSourceStreams(d,nullptr,nullptr,&binding);
+        if(binding.vertices!=h.e->shadow||binding.stride!=stride)
+            bad.push_back("the source binding did not match the current vertex stream");
+        const auto kept = g_st.sourceStreamKept;
+        if(FAILED(d->SetStreamSource(0,vb,0,stride))||g_st.sourceStreamKept!=kept+1)
+            bad.push_back("an identical source vertex binding was forwarded");
+        d->SetStreamSource(0,nullptr,0,0);
+        binding={};VbRenameSourceStreams(d,nullptr,nullptr,&binding);
+        if(binding.vertices)bad.push_back("the source binding survived a stream unbind");
+        d->SetStreamSource(0,vb,0,stride);
+        binding={};VbRenameSourceStreams(d,nullptr,nullptr,&binding);
+        if(binding.vertices!=h.e->shadow||binding.stride!=stride)
+            bad.push_back("the source binding missed a stream rebind");
+        for (UINT offset : {0u, static_cast<UINT>(kPage)}) {
+            void *write=nullptr;
+            if(FAILED(vb->Lock(offset,1,&write,0))||!write){
+                bad.push_back("a deferred source write could not lock the shadow");
+                continue;
+            }
+            want[offset]^=1;
+            *static_cast<uint8_t *>(write)=want[offset];
+            vb->Unlock();
+        }
+        read=nullptr;
+        if(SUCCEEDED(vb->Lock(0,0,&read,D3DLOCK_READONLY))&&read){
+            if(memcmp(read,want.data(),bytes)!=0)bad.push_back("a deferred source write was hidden from the collector");
+            vb->Unlock();
+        }else bad.push_back("the deferred source shadow could not be read");
+        if(g_st.commits!=beforeCommits)bad.push_back("a source write reached the device before the end of collection");
+        if(!h.e->revisionsReliable||VbRenameSourceRevision(revisions,0,kPage*2)<=changedBefore||
+            VbRenameSourceRevision(revisions,static_cast<UINT>(2*kPage),kPage)!=untouchedBefore)
+            bad.push_back("source page revisions missed a write or changed an untouched range");
+        VbRenameFinishSourceWrites();
+        if(g_st.sourceFlushes!=beforeFlush+1||g_st.commits!=beforeCommits+1)
+            bad.push_back("source writes were not flushed together");
+        auto *published=h.e->copies[h.e->current].buf;
+        read=nullptr;
+        if(SUCCEEDED(oLock[0](published,0,0,&read,D3DLOCK_READONLY))&&read){
+            if(memcmp(read,want.data(),bytes)!=0)bad.push_back("the coalesced source upload lost bytes");
+            oUnlock[0](published);
+        }else bad.push_back("the coalesced source upload could not be read");
         d->SetStreamSource(0, vb, 0, stride);
         IDirect3DStateBlock9 *sb = nullptr;
         d->CreateStateBlock(D3DSBT_ALL, &sb);
         void *p = nullptr;
         vb->Lock(0, 0, &p, 0);
+        const auto beforeNested=g_st.commits;
+        void *nested=nullptr;
+        if(SUCCEEDED(vb->Lock(0,0,&nested,D3DLOCK_READONLY)))vb->Unlock();
+        else bad.push_back("the nested read-only shadow lock failed");
         static_cast<uint8_t *>(p)[0] ^= 1;
         want[0] ^= 1;
         vb->Unlock();
+        if(g_st.commits!=beforeNested+1)bad.push_back("the nested read hid a writable shadow lock");
         d->SetStreamSource(0, nullptr, 0, 0);
         if (sb) { sb->Apply(); sb->Release(); }
         IDirect3DVertexBuffer9 *raw = nullptr;
@@ -864,6 +1215,9 @@ std::string SelfTest() {
     if (vb) vb->Release();
     r["forgotten"] = !Find(vb).e;
     r["released"] = g_st.released - before.released;
+    r["native_index_profiles"] = json::array();
+    CheckNativeIndexRevision(d, bad, D3DPOOL_DEFAULT, D3DUSAGE_DYNAMIC, true, r["native_index_profiles"]);
+    CheckNativeIndexRevision(d, bad, D3DPOOL_MANAGED, 0, false, r["native_index_profiles"]);
     Sweep();
     g_test = false;
     g_rename = rename;
@@ -877,6 +1231,71 @@ std::string SelfTest() {
     return r.dump(-1, ' ', false, json::error_handler_t::replace);
 }
 } // namespace
+
+void VbRenameBeginSourceWrites(void *device9) {
+    auto *d=static_cast<IDirect3DDevice9 *>(device9);
+    g_sourceDevice.store(d,std::memory_order_relaxed);
+    g_sourceBindings.store(d&&d==g_dev&&g_installed,std::memory_order_relaxed);
+    if(!g_sourceBindings.load(std::memory_order_relaxed))return;
+    IDirect3DVertexBuffer9 *vb=nullptr;
+    IDirect3DIndexBuffer9 *ib=nullptr;
+    UINT offset=0,stride=0;
+    if(FAILED(oGetStream(d,0,&vb,&offset,&stride))||FAILED(oGetIndices(d,&ib)))
+        g_sourceBindings.store(false,std::memory_order_relaxed);
+    g_bound[0]={Find(vb).e,offset,stride,vb};
+    g_boundIb=Find(ib).e;
+    g_boundActualIb=ib;
+    if(vb)vb->Release();
+    if(ib)ib->Release();
+}
+
+void VbRenameFinishSourceWrites() {
+    FinishSourceWrites();
+}
+
+void VbRenameInvalidateSourceBindings(void *device9) {
+    if(device9==g_sourceDevice.load(std::memory_order_relaxed))
+        g_sourceBindings.store(false,std::memory_order_relaxed);
+}
+
+void VbRenameSourceStreams(void *device9, void *vb9, void *ib9, VbSourceStreams *out) {
+    if (device9 != g_sourceDevice || device9 != g_dev || !GameThread()) return;
+    const bool bound=!vb9&&!ib9;
+    if(bound&&!g_sourceBindings.load(std::memory_order_relaxed))return;
+    const Hit vb=bound?Hit{g_bound[0].e,0}:Find(vb9),ib=bound?Hit{g_boundIb,0}:Find(ib9);
+    if (vb.e && vb.copy==0 && vb.e->dev==device9 && vb.e->kind==0 && !vb.e->locks && vb.e->shadow) {
+        out->vertices=vb.e->shadow;
+        out->vertexBytes=vb.e->bytes;
+        if(bound){out->vertexOffset=g_bound[0].offset;out->stride=g_bound[0].stride;}
+        if(vb.e->revisionsReliable)out->vertexRevisions=vb.e->revisions.data();
+    }
+    if (ib.e && ib.copy==0 && ib.e->dev==device9 && ib.e->kind==1 && !ib.e->locks && ib.e->shadow) {
+        out->indexStride=ib.e->format==D3DFMT_INDEX16?2:ib.e->format==D3DFMT_INDEX32?4:0;
+        if(out->indexStride){
+            out->indices=ib.e->shadow;out->indexBytes=ib.e->bytes;
+            if(ib.e->revisionsReliable)out->indexRevisions=ib.e->revisions.data();
+        }
+    }
+    void *native = bound ? g_boundActualIb : ib9;
+    if (!ib.e && native) {
+        AcquireSRWLockShared(&g_nativeIndexLock);
+        auto it = g_nativeIndices.find(native);
+        if (it != g_nativeIndices.end() && it->second.device == device9 && !it->second.locks) {
+            out->nativeIndexRevision = it->second.revision;
+            out->indexBytes = it->second.bytes;
+            out->indexStride = it->second.stride;
+        }
+        ReleaseSRWLockShared(&g_nativeIndexLock);
+    }
+}
+
+uint64_t VbRenameSourceRevision(const uint64_t *pages, uint32_t offset, size_t bytes) {
+    if(!pages||!bytes)return 0;
+    const size_t first=offset/kPage,last=(offset+bytes-1)/kPage;
+    uint64_t revision=pages[first];
+    for(size_t page=first+1;page<=last;page++)revision=(std::max)(revision,pages[page]);
+    return revision;
+}
 
 void VbRenameInstall(void *device9) {
     auto *d = static_cast<IDirect3DDevice9 *>(device9);

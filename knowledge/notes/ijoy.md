@@ -72,3 +72,9 @@ back), `input_release_all`, `joy_devices_done`, `joy_devices_init` (its fault on
 `input_init_devices`, `loadsave_apply_key_bindings`. An unplugged controller is no reason to open them again: its
 IJoy stays where it is, so no index moves. The running mission's force feedback effects stay on the old IJoys
 until the next mission's load makes them again.
+
+The first controls update can be several seconds after joyInit. The notification registration sees future
+interfaces only, so a controller that arrives in between can be in DirectInput's attached list with zero
+notifications and no IJoy. The loader now compares the lists once after subscribing and again three seconds
+later for a driver still starting. These startup checks open missing devices without probing already opened
+ones. A device-interface notification still takes the debounced check and retry path.

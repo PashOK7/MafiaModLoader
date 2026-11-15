@@ -13,3 +13,6 @@ __pycache__/
 # made on this machine: other projects' names (kb_external.py), the game's strings (kb_strings.py)
 /knowledge/*/*.local.csv
 /tools/rust_sys/target/
+# standalone checks of the SDK library (consumer crates keep their own lockfiles)
+/sdk/rust/mml/target/
+/sdk/rust/mml/Cargo.lock

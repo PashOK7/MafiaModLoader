@@ -118,6 +118,9 @@ typedef enum MmlEventType {
                                         him, item */
     MML_EVENT_MONEY_CHANGED = 34,    /* the freeride's money changed (money_set, the scripts, the game): value the
                                         money now, change by how much */
+    MML_EVENT_DEVICE_RESET_BEGIN = 35, /* before device Reset: device is the game's D3D8 device; release default-pool
+                                         resources and state blocks; no rendering or nested resets */
+    MML_EVENT_DEVICE_RESET_END = 36,   /* after Reset: same device; value 1 success, 0 failure. Recreate lazily */
     MML_EVENT_COUNT_
 } MmlEventType;
 
@@ -566,6 +569,9 @@ typedef struct MmlChannel MmlChannel;   /* shared memory with the mod's 64-bit h
 #define MML_VIEW_OWN_SECTOR 0x2     /* the room (LS3D's sector) the view sees from is looked up at its own eye; without
                                        it the game camera's is kept (a mirrored eye is under the water, outside every
                                        room: what is seen in the water is what the game camera's room sees) */
+#define MML_VIEW_SKY_ONLY 0x4       /* native backdrop only, no foreground or lens flares. No VIEW_WORLD callbacks or
+                                       view graphics passes. Query scene_view_features before using on older hosts.
+                                       The direction/frustum is explicit, independent of the main camera. */
 typedef struct MmlViewCamera {
     uint32_t size;
     float world[16];        /* the camera's pose as LS3D keeps a frame's (row vectors): row 0 right, 1 up, 2 forward
@@ -641,6 +647,94 @@ typedef struct MmlGeomCapture {
     unsigned unreadable;    /* face groups whose buffers could not be read (not in tris) */
 } MmlGeomCapture;
 typedef void (*MmlGeomFn)(const MmlGeomCapture *capture, void *user);
+
+/* Native scene-draw source for geometry/material snapshot builders. Observes actual buffered LS3D face-group
+ * draws before shader substitution, not a rendered image. All pointers are borrowed ONLY for the callback.
+ * Observation alone says nothing about unseen scene completeness. Do not mutate the game or draw recursively
+ * from the callback. GPU-posed/custom-shader geometry needs its explicit deformation provider, not rest vertices. */
+#define MML_SCENE_DRAW_BACKDROP 0x1u
+#define MML_SCENE_DRAW_GPU_SKIN 0x2u
+#define MML_SCENE_DRAW_SHADER_RULES 0x4u
+#define MML_SCENE_DRAW_FIXED_LIGHTING 0x8u
+#define MML_SCENE_DRAW_COLLECTION 0x10u /* explicit unculled native preparation, not an ordinary camera draw */
+typedef struct MmlSceneTextureStage {
+    void *texture;          /* IDirect3DBaseTexture9*, borrowed; AddRef to retain, release on owner unload/reset */
+    uint32_t color_op, color_arg0, color_arg1, color_arg2;
+    uint32_t alpha_op, alpha_arg0, alpha_arg1, alpha_arg2;
+    uint32_t coordinate, transform_flags;
+    uint32_t address_u, address_v, min_filter, mag_filter, mip_filter;
+} MmlSceneTextureStage;
+typedef struct MmlSceneSamplerDetail {
+    uint32_t srgb, result_arg, max_anisotropy, max_mip_level, lod_bias_bits;
+} MmlSceneSamplerDetail;
+typedef struct MmlSceneMaterialDetail {
+    uint32_t stage2_color_op, blend_op, color_write;
+    MmlSceneSamplerDetail stages[2];
+} MmlSceneMaterialDetail;
+typedef struct MmlSceneDraw {
+    uint32_t size, flags;
+    uint64_t frame;
+    const void *visual, *group;
+    int32_t view;           /* 0 main world, scene-view handle otherwise; shadow-map draws are excluded */
+    uint32_t kind, pass;    /* 1 object, 2 lightmapped, 3 billboard; pass 0 is the face group's first draw */
+    uint32_t primitive_type, primitive_count;
+    int32_t base_vertex;
+    uint32_t min_vertex, vertex_count, start_index;
+    float world[16];        /* exact current native draw transform; row vectors, metres */
+    uint32_t alpha_test, alpha_reference, alpha_function, cull, blend, source_blend, destination_blend, texture_factor;
+    uint32_t stage_stride; /* bytes between stage records; never assume a future array element size */
+    const MmlSceneTextureStage *stages; /* exactly two, native numeric Direct3D 9 state values */
+} MmlSceneDraw;
+typedef struct MmlSceneVertex {
+    float pos[3];          /* native draw's local coordinates, before MmlSceneDraw.world */
+    uint32_t color;        /* native prelit ARGB, display-referred; 0xffffffff if DIFFUSE absent */
+    float uv0[2], uv1[2]; /* plain two-component source coordinates; no generated/texture-transformed UVs */
+} MmlSceneVertex;
+typedef struct MmlSceneGeometry {
+    uint32_t size;
+    uint32_t vertices, vertex_stride;
+    const MmlSceneVertex *vertex;
+    uint32_t triangles;
+    const uint32_t *index; /* normalized to vertex[0]; exactly 3*triangles indices */
+    uint32_t source_fvf;   /* original native FVF; non-XYZ/non-2D UV formats are refused */
+    uint64_t content_revision; /* optional host token for identical normalized vertex/index bytes; 0 if unverified */
+    const MmlSceneMaterialDetail *material_detail; /* optional borrowed native state, valid within the callback */
+} MmlSceneGeometry;
+typedef void (*MmlSceneDrawFn)(const MmlSceneDraw *draw, void *user);
+
+/* Conservative unavailability in a collected native mesh scene. These boxes must participate in ray queries;
+ * a missing block/material is not a confirmed miss. Collection excludes backdrop/near-sector/effect visuals. */
+#define MML_SCENE_MISSING_STREAM 1u
+#define MML_SCENE_MISSING_PREPARE 2u
+#define MML_SCENE_MISSING_DEFORMATION 3u
+typedef struct MmlSceneMissing {
+    const void *visual;
+    float lo[3], hi[3];
+    uint32_t reason;
+} MmlSceneMissing;
+typedef struct MmlSceneCollection {
+    uint32_t size;
+    uint64_t frame;
+    uint32_t visited, selected, draws, missing_count;
+    const MmlSceneMissing *missing; /* owned by host until this owner's next collection or unload */
+} MmlSceneCollection;
+
+#define MML_SCENE_COLLECT_BILLBOARDS 0x1u
+#define MML_SCENE_COLLECT_XZ_DISK 0x2u
+/* Procedural source metadata, copied ONLY during this owner's current kind3 draw callback. Geometry stays
+ * in original local coordinates; evaluate the facing rotation for each reflected ray's observer. No image. */
+typedef struct MmlSceneBillboard {
+    uint32_t size, axis, mode;
+    float world[16]; /* original affine world matrix, BEFORE native camera-facing rotation */
+} MmlSceneBillboard;
+/* Owner-scoped native city residency. It supplies loaded source data, not a visibility/culling override.
+ * readiness is established before main rendering; bounds/requests are cleared on mission close/unload/fault. */
+typedef struct MmlSceneResidencyState {
+    uint32_t size, requested, ready, owners;
+    uint32_t blocks, active, required, available;
+    uint64_t scene_generation;
+    float lo[3], hi[3];
+} MmlSceneResidencyState;
 
 /* A person's skeleton (human_skeleton below): the bones in this order, each an LS3D frame. */
 enum {
@@ -1037,6 +1131,9 @@ typedef struct MmlVehicleStep {
  * follows the body; the speed it is given is |velocity|, its facing the velocity's direction); given back (0), it
  * turns back to its route from where it is. */
 typedef int (*MmlVehicleFn)(MmlVehicleStep *step, void *user);
+/* Additional wheel support from a mod's completed physics step. Bit i is native wheel i.
+ * Return only load-bearing contacts with bodies, not hull/side/sensor touches. Game thread. */
+typedef uint32_t (*MmlVehicleSupportFn)(void *car, void *user);
 
 /* Interaction (zone_add, use_point_add, timer_add below). inside: 1 entered, 0 left; actor: who crossed (the player,
  * or one zone_watch watches). */
@@ -1318,7 +1415,8 @@ typedef struct MmlHost {
      * drawn each frame of the mission's world before the frame itself, in the order views were made; fn(camera,
      * user) places it. Its colour and depth reach the passes (MmlGfxFrame::views; a mod with views has a pass and
      * says "gfx": true in its mod.json). Each view is a whole second drawing of the scene by LS3D: about the frame's
-     * own cost. Returns a handle (> 0), 0 refused (no fn, a size over 8192, eight views already; the log says why).
+     * own cost. Returns a handle (> 0), 0 refused (no fn, a size over 8192, eight views for this owner or 64 total;
+     * the log says why). SKY_ONLY views draw only the native backdrop and skip VIEW_WORLD and view passes.
      * scene_view_remove takes one back; a mod's views go with its unload. MML_EVENT_VIEW_WORLD is sent inside each
      * view's drawing. */
     int (*scene_view)(MmlMod *mod, int width, int height, MmlViewFn fn, void *user);
@@ -1561,7 +1659,7 @@ typedef struct MmlHost {
      * own again (also at the mod's unload). human_anim_state: what he plays. human_get_up: a body a mod posed handed
      * back to the game: he is put where it lies and turned the way it lies, and plays the game's own get-up from the
      * back or the front (his action queue, as a knock-down queues it); the host draws from the body's pose into the
-     * animation over blend_ms (0: at once); 0 for the dead and for someone seated in a car (the game holds him in his
+     * animation over blend_ms after holding/fitting the actual animation (0: no blend); 0 for the dead and for someone seated in a car (the game holds him in his
      * seat). A mod stops posing him before. Game thread. */
     int (*human_anim_play)(MmlMod *mod, void *human, const char *anim, int flags);
     int (*human_anim_stop)(MmlMod *mod, void *human);
@@ -1583,8 +1681,10 @@ typedef struct MmlHost {
 
     /* ---- statistics and the profile's progress (both builds; docs/MODDING.md "Statistics, the profile's progress").
      * stats_get: what the player did, counted by the loader from the events (the game keeps no statistics):
-     * MML_SAVE_SLOT the game being played (kept in its saves, read back with them; a new game and a freeride start
-     * at 0), MML_SAVE_PROFILE the profile's totals (kept beside its .sav). profile_progress: the game's own progress
+     * A valid call starts collection for this mod's lifetime; collection stops when all consumers unload.
+     * MML_SAVE_SLOT the current game (reset on load), MML_SAVE_PROFILE the current profile's session totals.
+     * Counters stay in memory. Persist required values with save_put under your mod's own key. Legacy loader
+     * snapshots remain readable. profile_progress: the game's own progress
      * of the profile selected (its .sav: the freeride's level, the car groups unlocked, the garage), and the chapter
      * its newest save reached. profile_saves: the slots of its saves on disk (savegame\mafia<p>.<slot>; slot 0..599,
      * named by the game's text 5000 + slot), ascending; returns how many there are. Game thread. */
@@ -1925,7 +2025,90 @@ typedef struct MmlHost {
     /* Query live ownership and the selected copied settings. ready refers to the last frame's bridge readiness;
      * a late request update takes effect at the next frame boundary. 0: invalid output size. Game thread only. */
     int (*scene_atmosphere_state)(MmlMod *mod, MmlAtmosphereState *out);
+    /* Camera projection interop for native projection hooks. Game thread, including camera setters/render.
+     * camera: an I3D_camera, or NULL for the game's current camera. Bitmask below; 0: native projection.
+     * FOV: game_camera_fov owns the absolute horizontal angle; do not apply an aspect/FOV multiplier.
+     * EXACT: the host is preparing/drawing an explicit scene_view/camera_override/camera.set frustum;
+     * do not rebuild or modify its projection. Nested views restore the previous ownership automatically.
+     * A query only, with no game addresses or example-mod dependencies. Check MML_HAS on older hosts. */
+    int (*camera_projection_state)(MmlMod *mod, const void *camera);
+    /* Supported MML_VIEW_* flags. Game thread; MML_HAS before calling on older hosts. A scene view requesting
+     * unknown flags is skipped, rather than silently drawing a different kind of picture. No ownership change. */
+    uint32_t (*scene_view_features)(MmlMod *mod);
+    /* One observer per owner, NULL releases. Main world + scene views, excluding shadows/hidden groups.
+     * Native batching is bypassed while observed so every source face group is available. No observation with
+     * no registered consumer. Registration is removed automatically on unload/fault. Game/render thread only. */
+    int (*scene_draw_observe)(MmlMod *mod, MmlSceneDrawFn fn, void *user);
+    /* On-demand copy of this callback's CURRENT draw. 0 on invalid size/context/format/GPU deformation or unreadable
+     * buffers. Arrays are host-owned until callback return. Never retain draw or call later; copy data now. */
+    int (*scene_draw_geometry)(MmlMod *mod, const MmlSceneDraw *draw, MmlSceneGeometry *out);
+    /* Explicit native mesh preparation, without frustum/occluder culling or rasterization. Native camera fog
+     * (including its overlay passes/vertex factors) is suppressed and restored; collected materials contain
+     * native prelighting, NOT camera-path fog. Consumers apply atmosphere for their own path. ONLY inside this
+     * owner's main RENDER_WORLD callback and with its draw observer registered. Emits COLLECTION draws solely
+     * to that observer; local buffers/materials use native preparation and current poses, finest object LOD.
+     * Bounds are world metres; inactive city blocks and unsupported/failed mesh sources become missing boxes.
+     * A false result invalidates this collection, never a current complete snapshot. Check MML_HAS. */
+    int (*scene_draw_collect)(MmlMod *mod, const float lo[3], const float hi[3], MmlSceneCollection *out);
+    /* Opt-in procedural providers and bounded domains. Unknown flags refuse the request. Billboard collection
+     * supports native full-facing axis2/mode0 and Y axis1/mode1; other modes remain explicit missing data.
+     * XZ_DISK keeps only sources whose bounds intersect the horizontal disk and the box. The disk is centered
+     * on the box, with a radius of half the longer X/Z side. The caller must keep all queries and their filter
+     * support inside that domain. Same context/ownership/restoration as scene_draw_collect. */
+    int (*scene_draw_collect_ex)(MmlMod *mod, const float lo[3], const float hi[3], uint32_t flags, MmlSceneCollection *out);
+    /* Context/size guarded; returns0 for an old draw, another owner or unsupported procedural source. */
+    int (*scene_draw_billboard)(MmlMod *mod, const MmlSceneDraw *draw, MmlSceneBillboard *out);
+    /* Copy a finite world box (max20000m per axis); both bounds NULL release. The native cache still streams
+     * normally and other owner requests combine. Applied before main-world drawing, never in a source callback.
+     * Does not change main FOV/far/LOD/occluder settings or finish unrelated native fade animations. */
+    int (*scene_residency)(MmlMod *mod, const float lo[3], const float hi[3]);
+    int (*scene_residency_state)(MmlMod *mod, MmlSceneResidencyState *out);
+    /* A cube centered on the CURRENT resolved main camera, including camera_override/camera.set, applied
+     * before auxiliary views and main drawing. Radius in metres [0.1,10000]; 0 releases the owner's request.
+     * Replaces this owner's absolute region. Read applied world bounds/readiness from scene_residency_state.
+     * An unavailable camera leaves readiness false; no preceding-frame center is substituted. */
+    int (*scene_residency_camera)(MmlMod *mod, float radius);
+    /* Supported MML_SCENE_COLLECT_* flags. Check MML_HAS before querying an older host. */
+    uint32_t (*scene_draw_collect_features)(MmlMod *mod);
+    /* One CPU-only owned scene job per mod. Submit/join on the game thread. The worker may read/write only
+     * its own data and must never call game, host or immediate D3D APIs. Keep user data alive until join
+     * or unload. The host cancels/drains work before normal and fault unload. 0 means submit refused. */
+    uint64_t (*scene_owned_submit)(MmlMod *mod, void (*fn)(void *user), void *user);
+    /* Cancel pending work or finish it now. An already-running job is drained in either case. Returns 1
+     * only when the requested non-cancelled job ran successfully. An expired ticket is refused. */
+    int (*scene_owned_join)(MmlMod *mod, uint64_t ticket, int cancel);
+    /* Cancel only this mod's pending get-up handover before taking over a body again. Does not stop or replace
+     * the game's animation. Returns 1 if a handover was cancelled, 0 if none belongs to this mod. Game thread.
+     * Pending handovers also end on mod unload/fault, actor destruction and mission close. */
+    int (*human_get_up_cancel)(MmlMod *mod, void *human);
+    /* As human_get_up, but copy the physics pose supplied now instead of the previous rendered frame.
+     * Exactly MML_BONE_COUNT entries in SDK bone order; frame identities must match human_skeleton and all
+     * present world matrices must be finite with nondegenerate rotation axes. No name/rot/pos pointer is kept.
+     * Returns 1 on success, 0 on invalid pose, dead/seated target or unavailable skeleton. Game thread. */
+    int (*human_get_up_pose)(MmlMod *mod, void *human, const MmlBone *pose, int count, int blend_ms);
+    /* Report a measured vehicle/body contact through the game's own car-hit path (including ending taxi waving,
+     * native damage/police reaction and normal hit events). The target is a living person or spawned pedestrian;
+     * vehicle is a current car actor; relative_velocity is metres/second in world space; point is world space.
+     * Refuses invalid/nonfinite input and occupants of that car. Call only after the physics step, never from
+     * a solver callback. No contact detection/radius policy here. Game thread, 1 accepted, 0 refused. */
+    int (*human_vehicle_contact)(MmlMod *mod, void *human, void *vehicle, const float relative_velocity[3], const float point[3]);
+    /* Extend the native IsCarUsable/ISCARUSABLE wheel-support checks with measured external contacts.
+     * Native damage, missing wheels, speed and side checks still run. Temporary on-ground bits are
+     * restored before returning; the native tyre solver keeps its own contact and suspension state.
+     * One provider at a time, cleared on its unload/fault. NULL unregisters this mod's provider.
+     * Callback must return 0 after support ends, on world reset, or when its physics is disabled.
+     * 1 installed/removed, 0 unavailable. Game thread. */
+    int (*vehicle_support_hook)(MmlMod *mod, MmlVehicleSupportFn fn, void *user);
+    /* As actor_meshes, with explicit visibility selection. HIDDEN_ROOT traverses an actor model whose root
+     * is switched off (the player car can be hidden by its camera). Child visibility and nested model
+     * exclusions still apply. No visibility state is changed. Unknown flags return -1. Game thread. */
+    int (*actor_meshes_ex)(MmlMod *mod, void *actor, uint32_t flags, MmlMeshPiece *out, int max);
 } MmlHost;
+
+#define MML_ACTOR_MESH_HIDDEN_ROOT 0x1u
+
+#define MML_CAMERA_PROJECTION_FOV 1
+#define MML_CAMERA_PROJECTION_EXACT 2
 
 #define MML_ZONE_PLAYER 0x1u
 #define MML_ZONE_PEOPLE 0x2u

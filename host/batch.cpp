@@ -716,6 +716,7 @@ int SafeGroup(const void *visual, const uint8_t *entry) {
 } // namespace
 int BatchGroup(const void *visual, const uint8_t *entry, bool inFrame) {
     if (!g_on) return 0;
+    if (SceneDrawsWanted()) return 0;
     if (!inFrame) { g_left[kLeftNotFrame]++; return 0; }
     if (ViewDrawingNow() || ShadowViewNow()) { g_left[kLeftView]++; return 0; }
     if (ShadersWanted() || MotionWanted()) { g_left[kLeftShaders]++; return 0; }
@@ -896,7 +897,7 @@ bool SafeSkip(const void *v) {
     __try { return Skip(v); } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
 }
 void __fastcall hkAddObject(void *visual, void *edx) {
-    if (g_on && g_skip && GeomInFrame() && !ViewDrawingNow() && !ShadowViewNow() && !ShadersWanted() && !MotionWanted() &&
+    if (g_on && g_skip && !SceneDrawsWanted() && GeomInFrame() && !ViewDrawingNow() && !ShadowViewNow() && !ShadersWanted() && !MotionWanted() &&
         MainPass() && SafeSkip(visual))
         return;
     oAddObject(visual, edx);

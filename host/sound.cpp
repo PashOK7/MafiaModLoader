@@ -552,7 +552,7 @@ bool Where(const json &p, void **follow, float *pos, bool *havePos, std::string 
 } // namespace
 
 bool SoundMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok) {
-    static const char *kMethods[] = {"sounds.list", "sound.play", "sound.set", "sound.stop", "music.play", "music.set", "music.stop", "music.game"};
+    static const char *kMethods[] = {"sounds.list", "sound.compat", "sound.play", "sound.set", "sound.stop", "music.play", "music.set", "music.stop", "music.game"};
     if (std::none_of(std::begin(kMethods), std::end(kMethods), [&](const char *m) { return method == m; })) return false;
     *ok = false;
     json p = json::parse(paramsJson.empty() ? "null" : paramsJson, nullptr, false);
@@ -560,7 +560,13 @@ bool SoundMethod(const std::string &method, const std::string &paramsJson, std::
     auto dump = [](const json &j) { return j.dump(-1, ' ', false, json::error_handler_t::replace); };
     std::string err;
     try {
-        if (method == "sounds.list") {
+        if (method == "sound.compat") {
+            if (!p.empty()) {
+                *reply = "sound.compat is read-only; the gain workaround was removed, allocation follows device capabilities at initialization";
+                return true;
+            }
+            *reply = SoundAllocationState();
+        } else if (method == "sounds.list") {
             json sounds = json::array(), music = json::array();
             for (const Sound &s : g_sounds) sounds.push_back(SoundJson(s));
             for (const Music &m : g_music)

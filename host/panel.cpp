@@ -15,7 +15,8 @@
 //     ]
 //   }
 // or, for a mod of several parts, "sections": [{"title": "Routes", "controls": [...]}, ...] in place of "controls".
-// "kind" ("slider", "check", "choice") may be given; else it follows the default's type and "options".
+// "kind" ("slider", "check", "choice", "key", "color") may be given; else it follows the default's type and "options".
+// "color" expands one #RRGGBB string into three native sliders, preserving the other channels on each change.
 // A label of more than 20 characters takes a second line (40 at most: the label column is 160 px wide). A slider's
 // value is shown as a percentage of its range, or as the value itself with "show": "value" (a number the mod reads).
 //
@@ -61,6 +62,8 @@ struct Control {
     Kind kind = kSlider;
     double min = 0, max = 1, step = 0;
     bool percent = true;              // a slider's value shown as % of its range (else the value, with its unit)
+    int colorChannel = -1;            // a #RRGGBB string shown as three sliders; -1: an ordinary control
+    unsigned colorDefault = 0;
     std::vector<json> values;         // a choice's values
     std::vector<std::string> labels;  // and what is shown for them
 };
@@ -165,6 +168,21 @@ int g_item;              // the Mods row's handle in Options
 
 using DefaultOf = std::function<std::string(const std::string &key)>;   // a setting's default, as JSON text ("": none)
 
+bool HexColor(const json &j, unsigned *out) {
+    if (!j.is_string()) return false;
+    const std::string s = j.get<std::string>();
+    if (s.size() != 7 || s[0] != '#') return false;
+    unsigned v = 0;
+    for (size_t i = 1; i < s.size(); i++) {
+        const char c = s[i];
+        int digit = c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1;
+        if (digit < 0) return false;
+        v = (v << 4) | static_cast<unsigned>(digit);
+    }
+    *out = v;
+    return true;
+}
+
 void ParseControls(const DefaultOf &defaultOf, const json &list, std::vector<Control> *out, std::string *why) {
     for (const json &c : list) {
         if (!c.is_object() || !c.contains("key") || !c["key"].is_string()) continue;
@@ -176,7 +194,18 @@ void ParseControls(const DefaultOf &defaultOf, const json &list, std::vector<Con
         json d = def.empty() ? json() : json::parse(def, nullptr, false);
         std::string kind = c.value("kind", "");
         if (kind.empty()) kind = c.contains("options") ? "choice" : d.is_boolean() ? "check" : "slider";
-        if (kind == "key") {
+        if (kind == "color") {
+            if (!HexColor(d, &k.colorDefault)) { *why = k.key + ": a color needs a #RRGGBB string default"; continue; }
+            k.min = 0; k.max = 255; k.step = 1; k.percent = false;
+            const char *channels[] = {"red", "green", "blue"};
+            const std::string label = k.label;
+            for (int channel = 0; channel < 3; channel++) {
+                k.colorChannel = channel;
+                k.label = label + " " + channels[channel];
+                out->push_back(k);
+            }
+            continue;
+        } else if (kind == "key") {
             k.kind = kKey;   // (a hotkey's combo: "F7", "Ctrl+Shift+R")
         } else if (kind == "check") {
             k.kind = kCheck;
@@ -278,6 +307,17 @@ double Number(const std::string &j, double def) {
     return v.is_number() ? v.get<double>() : def;
 }
 
+unsigned ControlColor(const Control &k, const std::string &mod) {
+    unsigned color = k.colorDefault;
+    const std::string j = ConfigValueJson(mod, k.key.c_str());
+    HexColor(json::parse(j, nullptr, false), &color);
+    return color;
+}
+std::string ControlValue(const Control &k, const std::string &mod) {
+    if (k.colorChannel < 0) return ConfigValueJson(mod, k.key.c_str());
+    return std::to_string((ControlColor(k, mod) >> (16 - 8 * k.colorChannel)) & 255);
+}
+
 // A slider's 0..1 for a value, and back (snapped to its step; a whole step and whole ends: a whole number).
 float ToSlider(const Control &k, double v) { return static_cast<float>(std::clamp((v - k.min) / (k.max - k.min), 0.0, 1.0)); }
 json FromSlider(const Control &k, float s) {
@@ -289,7 +329,7 @@ json FromSlider(const Control &k, float s) {
 }
 
 std::string Shown(const Control &k, const std::string &id) {
-    std::string j = ConfigValueJson(id, k.key.c_str());
+    std::string j = ControlValue(k, id);
     char b[64];
     if (k.kind == kCheck) return "";
     if (k.kind == kKey) {
@@ -376,7 +416,7 @@ void ShowValues(const Settings &s, const std::vector<Part> &parts, size_t part, 
     for (size_t i = 0; i < parts[part].count; i++) {
         const Control &k = *PartControl(s, parts[part], i);
         int id = kInput + static_cast<int>(i);
-        std::string j = ConfigValueJson(mod, k.key.c_str());
+        std::string j = ControlValue(k, mod);
         if (k.kind == kKey) {
             MenuPageText(kLoaderPage, id, Shown(k, mod).c_str());
         } else if (k.kind == kCheck) {
@@ -432,6 +472,13 @@ void OnModPage(int id, void *) {
     if (k.kind == kCheck) value = v > 0.5f;
     else if (k.kind == kChoice) value = k.values[std::min(k.values.size() - 1, static_cast<size_t>(std::max(0.0f, v)))];
     else value = FromSlider(k, v);
+    if (k.colorChannel >= 0) {
+        const int shift = 16 - 8 * k.colorChannel;
+        unsigned color = (ControlColor(k, mod) & ~(255u << shift)) | (value.get<unsigned>() << shift);
+        char hex[8];
+        snprintf(hex, sizeof hex, "#%06x", color);
+        value = hex;
+    }
     ConfigSetLive(mod, k.key.c_str(), value.dump(-1, ' ', false, json::error_handler_t::replace));
     if (k.kind == kSlider) MenuPageText(kLoaderPage, kValue + i, Shown(k, mod).c_str());
 }
@@ -725,10 +772,11 @@ bool PanelMethod(const std::string &method, const std::string &paramsJson, std::
         return true;
     }
     auto controlJson = [](const Control &k, const std::string &mod) {
-        std::string v = ConfigValueJson(mod, k.key.c_str());
+        std::string v = ControlValue(k, mod);
         json c = {{"key", k.key}, {"label", k.label}, {"kind", k.kind == kCheck ? "check" : k.kind == kChoice ? "choice" : k.kind == kKey ? "key" : "slider"},
                   {"value", v.empty() ? json() : json::parse(v, nullptr, false)}, {"shown", Shown(k, mod)}};
         if (k.kind == kSlider) { c["min"] = k.min; c["max"] = k.max; if (k.step > 0) c["step"] = k.step; }
+        if (k.colorChannel >= 0) c["color_channel"] = k.colorChannel;
         return c;
     };
     json mods = json::array();

@@ -1,5 +1,11 @@
 # The game's script machine: agents' and mods' hands in the world
 
+This documents the native mission language. For agent installation/update state use
+[STATUS.md](STATUS.md) and [PROTOCOL.md](PROTOCOL.md). Programs step on mission ticks and therefore wait
+while the native pause menu is open. A tool timeout alone does not prove the program or game crashed.
+Use the host `restore` service for a full experiment checkpoint; a raw AUTOSAVEGAME/SaveGameSave call is
+not an equivalent whole-state restore point. See AGENTS.md and MODDING for that lifecycle.
+
 The missions of Mafia are programs in a small language of the game's own (the scripts in each mission's
 `scene2.bin`), compiled and run by the game's interpreter, `C_program`: about 390 commands that move actors, give
 weapons, kill, spawn copies, drive cars, change the weather, the traffic, the camera, the HUD. The loader gives that

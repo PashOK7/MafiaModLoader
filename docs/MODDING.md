@@ -1,5 +1,9 @@
 # Writing a mod
 
+Updating an existing mod: read [the November migration notes](PATCHNOTES_2026-11-15.md) and
+[current limitations](STATUS.md). Check `MML_HAS` for optional host suffixes; API version 1 alone does not
+identify which capabilities are installed. The SDK source and an installed game binary are separate artifacts.
+
 The whole way from nothing to a mod running in the game, for an agent (or a person) who has this repository built
 (`AGENTS.md`, "The loop") and the MCP server `mafia` connected. A mod here needs no thread, no window, no hook on
 Windows and no memory scanner of its own: the host gives it the frame, the keys, the screen, the game's objects and
@@ -181,6 +185,10 @@ Everything below is a member of `MmlHost` (`H->...`); `M` is the mod. Calls into
 
 A mod loaded in the middle of a mission (every hot reload) gets no `MISSION_OPEN`: ask `H->mission_name()` and
 `H->mission_state()` (`MML_MISSION_NONE`, `_LOADING`, `_RUNNING`, `_PAUSED`) in `mml_mod_load`.
+Native save loads and new games report `MML_MISSION_LOADING` throughout the load, even when the mission is
+reused and no mission close or open event is sent. A render callback can still run during that interval.
+Mods that write actor poses should defer those writes while loading and discard transient simulation state on
+`MML_EVENT_GAME_LOADED`, including when actor and frame addresses stay the same.
 
 ### Drawing in the game's frame
 
@@ -227,8 +235,10 @@ around it, on the game thread, in both builds:
 | `MML_EVENT_RENDER_WORLD` | its 3D world is drawn, its 2D (HUD, menus) not yet | draw with the game's device into the scene: depth-tested against the world, under the HUD |
 | `MML_EVENT_RENDER_END` | the scene is drawn | put back what BEGIN changed |
 | `MML_EVENT_PRESENT` | the frame is complete, about to be shown | draw over everything (it is in `screenshot`'s picture) |
+| `MML_EVENT_DEVICE_RESET_BEGIN` | immediately before the game's D3D8 Reset (including live window resize) | release your D3D9 default-pool resources/state blocks; do not render or initiate another reset |
+| `MML_EVENT_DEVICE_RESET_END` | Reset returned; `device` unchanged, `value` 1 success / 0 failure | recreate lazily at the next rendering callback, using its current dimensions; the bridge's D3D11 device is retained |
 
-The event carries `scene` (the I3D_scene), `world` (1: the mission's world; the main menu's `00menu` is a world
+The rendering event carries `scene` (the I3D_scene), `world` (1: the mission's world; the main menu's `00menu` is a world
 too: check `mission_name()`), `device` (the game's `IDirect3DDevice8`); ask `MML_EVENT_HAS(ev, world)` first.
 
 ```c
@@ -411,13 +421,157 @@ int view = H->scene_view(M, 640, 200, PlaceMirror, NULL);   /* 0, 0: the frame's
   world subscribes to both, so its things are seen in mirrors and reflections (`world_marker` does).
 - **Costs**: each view is a whole second drawing of the scene: in the 1.2 lab at 1280x960, a 640x200 mirror about
   1.5..1.7 ms of CPU, a reflection of the frame's size about 2.9 ms (`call view.state`: each view's CPU time, times
-  drawn, skipped and why, the camera). At most eight views. `call view.show {"handle", "rect": [x, y, w, h]}` copies
+  drawn, skipped and why, the camera). At most eight views per owner, 64 total. `call view.show {"handle", "rect": [x, y, w, h]}` copies
   a view onto the frame (800x600 units; no rect: off), to look at one without a pass.
+- **Directional sky capture**: optional `scene_view_features(mod)` returns the supported `MML_VIEW_*` flags;
+  guard it with `MML_HAS` (Rust: `host.scene_view_features()`). `MML_VIEW_SKY_ONLY` draws the native backdrop
+  while omitting foreground geometry, `MML_EVENT_VIEW_WORLD` and auxiliary graphics passes. Unsupported flags
+  are rejected. `mml/environment.h` provides the noncopyable C++ `environment::SkyCapture`: `Create(host, mod,
+  resolution)`, `Update(frame)` in a graphics pass and `View()` for a linear-light cube SRV. It owns six 90-degree
+  world-oriented views; all six must be fresh together before publishing a cube. Native LDR pixels are decoded
+  with an sRGB view; this does not recover HDR lighting. A completed capture is cached, avoiding six scene
+  traversals every frame. Call `Invalidate()` when an animated/changed backdrop needs refreshing, `Reset()` on
+  mission load/device-reset-begin and `Release()` at unload; `Active(false)` suspends capture. GPU generation
+  changes also invalidate it. This is infinitely distant background only, not an object reflection probe or a
+  substitute for hidden geometry. Both native builds and actual GPU cube-direction/lifecycle tests cover it.
 - `mods/examples/rear_mirror` (not enabled by default; `rear_mirror.mode`): `"mirror"` (a rear-view mirror),
   `"stereo"` (two eyes of a headset, asymmetric), `"reflect"` (a puddle around the player: a planar reflection with
   its clip plane), `"spin"` (a mirror standing in the world, turning; `rear_mirror.spin {"at": [x, y, z]}`),
   `"check"` (the left half of the frame drawn again and compared: black when equal). `depth_pulse` runs its pass in
   the views: its wave is seen in the mirror.
+
+### Native draw sources and world-ray queries
+
+`scene_draw_observe(mod, callback, user)` is an optional owner-scoped source-data interface; check
+`MML_HAS(host, scene_draw_geometry)`. NULL unregisters; unload/fault removes the observer. No callbacks/copies
+are performed without consumers. Native batching is bypassed while observed so the source face groups remain
+available. Register for the intervals in which your consumer needs source data, and keep explicit
+moving-source/lifetime handling in the snapshot builder; do not assume observer cost is free or that a single
+observation is a complete future scene.
+
+The callback's `MmlSceneDraw` contains the exact native world transform, frame, visual/group identity, view,
+face-group pass and native alpha/culling/blending/two-texture-stage state. Resource pointers are borrowed D3D9
+objects; AddRef/release any retained textures, including on reset/unload. Stage arrays have an explicit byte
+stride. `scene_draw_geometry(mod, draw, &out)` optionally reads the CURRENT buffered triangle-list draw into
+normalized indices and vertices with local XYZ, native prelit ARGB and UV0/UV1. Initialize `out.size` first.
+Copy the host-owned arrays during this callback; their vertex stride is explicit. No transformed/generated UV
+is silently baked into ordinary coordinates. Undersized outputs, stale draw handles, unreadable/non-XYZ formats
+and GPU-posed/custom-shader geometry are refused. Do not use a rest mesh as a posed render snapshot.
+
+Rust: `host.scene_draw_observe(|draw| { let owned = draw.geometry(); ... })` and
+`host.scene_draw_unobserve()`. The safe wrapper ties metadata to the callback and copies geometry into owned
+vectors. It does not extend borrowed texture lifetimes. Callbacks cannot mutate the game or render recursively.
+Shadow-map draws and hidden groups are excluded; backdrop draws are flagged. Camera-facing billboards and
+unsupported shader/material/deformation cases require explicit support in a scene consumer.
+
+`mml/native_texture.h` copies original native 2D texture mip texels/BC blocks into owned CPU storage and uploads
+them as typed D3D11 resources. Read during a valid texture borrow or while holding its COM reference. Supported
+native RGBA/BGRA, 565/1555/4444 and BC1/2/3 formats retain every mip; unsupported/unlockable sources return an
+explicit unavailable result, never a replacement color. No implicit sRGB conversion is applied: native fixed
+stages combine encoded colors, and their final radiance must be decoded by the material consumer. Animated
+textures require refresh; release uploaded resources on reset/unload. This helper does not evaluate materials.
+
+Observation of draws alone is NOT a complete world snapshot. A snapshot builder must collect off-camera and
+occluded geometry, define its coverage, update moving transforms/poses in the same frame, remove dead instances,
+retain materials/UV/alpha semantics and report unavailable data. The finite old reflection image is not such a
+snapshot. The reference contracts and acceptance tests are in SCENE_RADIANCE_SNAPSHOT.md and
+WATER_REFLECTION_PLAN.md. The water consumer has a world-source path, while its full
+visual/lifecycle/performance acceptance is open.
+
+`scene_draw_collect(mod, lo, hi, &result)` is explicit bounded native mesh preparation. It suppresses/restores
+native camera fog, including software vertex fog and separate fog overlay passes.
+Collected vertex/texture colors already contain native prelighting; do not light them again. Evaluate the native
+encoded fixed stages, convert their final color to linear, then apply atmosphere for the consumer's ray path.
+Call it only in the main `RENDER_WORLD` callback with that owner's draw observer registered. It walks current active world-sector frames
+and prepares their finest native object LOD with their sector lights, current transforms and native face-group
+renderer. No frustum/occluder test or scene-camera color lookup selects those triangles; no rasterization or
+motion output is executed. `MML_SCENE_DRAW_COLLECTION` draws go ONLY to the requesting owner, which copies the
+needed source data during its observer. A false return invalidates the whole candidate snapshot.
+
+`MmlSceneCollection` reports the current frame and conservative missing boxes (inactive streamed city blocks,
+failed sources, camera-facing billboards without an independent deformation provider). Its array is borrowed
+until that owner's next collection/unload. The consumer must additionally mark any unavailable per-draw
+geometry/material, and must not claim a complete sky miss across such boxes or beyond declared coverage. The
+backdrop, first-person near sector and non-mesh effects are outside this mesh contract. Source preparation
+restores device/native render caches, queue contents, native LOD choices and FPU precision. It calls the original
+LOD selector with a scoped distance, retaining its required buffer-selection side effects while suppressing
+gameplay LOD callbacks. It does not change persistent renderer
+settings or activate unloaded blocks. Rust `host.scene_draw_collect(lo,hi)` copies result metadata/missing boxes
+into owned storage. Full native preparation is currently expensive; cache immutable geometry separately from
+same-frame instance publication. The river-water normal path uses this source service following reflection
+plan step18; later filtering, lighting, lifecycle, old-capture removal and performance gates remain open.
+
+Procedural billboards are an explicit opt-in: check `MML_HAS(host,scene_draw_collect_ex)` and call it with
+`MML_SCENE_COLLECT_BILLBOARDS`. Legacy collection retains its missing-box behavior. During a kind3 source
+callback, `scene_draw_billboard(mod,draw,&descriptor)` copies its original world matrix and verified native
+rotation axis/mode. Size/context/owner guards reject stale or unrelated draws. Evaluate the facing rotation
+for each ray observer using `mml/billboard.h` / `mml/gfx/billboard.hlsli`; never freeze draw.world's main-camera
+rotation. Conservative rotation bounds must reach the broad phase. Unsupported modes remain missing boxes.
+The required modes (full facing axis2/mode0, Y axis1/mode1) are checked against24 native engine matrices from
+both builds and an actual WARP shader. Native source/material/camera-invariance/fault acceptance passes both
+builds (native-billboard-provider-v3.json, native-billboard-rays-v2.json). Current SMMR skin/morph preparation
+is included alongside SNGM; off-camera changed/returned skeletal poses are tested with actual GPU rays.
+Rust offers `scene_draw_collect_flags` and callback-scoped `SceneDraw::billboard`; all added host calls are
+suffix capabilities, leaving existing ABI structs unchanged. SDK `SnapshotBuilder` opts in when available.
+
+`scene_draw_collect_features` advertises optional collection flags. `MML_SCENE_COLLECT_XZ_DISK` keeps
+the box's vertical limits and clips source selection to a horizontal disk centered on the box. Its
+radius is half the longer X/Z side, rounded out conservatively for source bounds. Choose it only
+if all ray segments and any nearby filtering stay inside the intersection of that disk and the box.
+The existing box and missing-box paths remain the fallback on older hosts. In Rust, use
+`scene_draw_collect_features` before passing the flag to `scene_draw_collect_flags`.
+
+The optional `scene_owned_submit` / `scene_owned_join` pair lets a mod overlap one CPU-only job with
+the native frame. Submit and join from the game thread. The worker uses only owned data and cannot
+call game functions, host functions or the immediate D3D context. Keep its argument alive until
+join. The host cancels an unclaimed job or drains a running one before normal and fault unload.
+Joining an expired ticket fails. The Rust submit wrapper is unsafe because its caller owns the
+argument and the callback's thread-safety contract.
+
+For source coverage independent of main-camera streaming, `scene_residency(mod,lo,hi)` copies an owner box;
+NULL/NULL releases. Register before main-world rendering (for example RENDER_BEGIN), then check the sized
+`scene_residency_state` before collecting. Requests combine across owners and clear on unload/fault/mission/
+same-mission save load. The host activates/protects native cache blocks for that region; release returns them
+to native range/hysteresis. It does not set whole-city/far/FOV/LOD/occluder controls or complete unrelated fades.
+Rust provides `scene_residency(Some((lo,hi)))` / `None` and `scene_residency_state()`. Readiness is native block
+availability, not a guarantee of every material/provider: retain missing boxes and bounded query semantics.
+Both-build native12/lab and full offline checks pass; details/limits are in docs/SCENE_RESIDENCY.md.
+
+`mml/ray_scene.h` and `mml/gfx/ray_scene.hlsli` provide the independent query core: immutable local triangle BVHs,
+current instance transforms/TLAS and a D3D11 traversal. Triangle ids/material ids and barycentrics survive the
+query. `Scene::Place` replaces the whole current instance set, validates affine transforms and stamps a frame;
+its failure preserves the preceding snapshot, which callers must not label current. Missing-material/scene
+boxes are UNKNOWN, not transparent sky. Shader status 0 is a confirmed miss of a COMPLETE bounded segment,
+1 a hit, 2 unknown, 3 invalid input. A ray leaving its declared coverage is unknown. Geometry buffers and
+constants must be a coherent current-frame publication owned/released by the consumer. The material hook
+`MML_RAY_ACCEPT(index,bary)` distinguishes transparent/opaque/unknown hits; no screen position or camera matrix
+participates. This core is tested on WARP but is not yet the production water's reflection source.
+
+`mml/scene_snapshot.h` supplies owned native collection and bounded immutable CPU caches. A mesh hash only
+selects a candidate; all CURRENT borrowed vertices/indices/FVF/cull compare exactly before its local BVH and
+attributes are reused. Instance transforms/material bindings remain current. Texture provenance likewise
+only selects an owned candidate: every current native mip's metadata/useful bytes are verified before sharing
+immutable `TextureRef` payloads. Failed reads remain unavailable; there are no retained native COM pointers.
+`Begin` invalidates current publication; `DropSnapshot` discards that publication but retains validated cache
+storage for the next collection; `Release` frees both. Reset, scene changes and unload call Release. The
+helper still prepares/reads native source data and assembles packed tables; GPU per-frame reuse is separate.
+
+Use `SnapshotBuilder::Lease(cycle)` with `RadianceGpu::UploadOwned` for continuous publication; the reference
+Upload overload makes an owned copy for stand-alone callers. `Begin` releases the preceding builder owner;
+retained const leases remain valid CPU data but cannot be relabeled as the current frame. GPU sharing checks
+exact current bytes and binds one coherent current cycle/generation. Shared resources take the NEW CPU lease
+to avoid accumulating whole old scenes. Verified immutable texel identities allow page reuse without another
+large staging array. Source copy/build/texture/TLAS/upload timings and actual upload bytes are diagnostic
+data; they do not bypass current native validation or imply a final rendering performance guarantee.
+
+`mml/environment_light.h` + `gfx/environment_emitter.hlsl` calibrate a distant image-shaped source from a coherent
+sky cube. An angular cap limits support; actual local image contrast gives the profile and its integral, and 16
+importance-sampled light packets serve medium transport. The caller supplies perpendicular irradiance to set
+its radiometric scale. The helper caches GPU statistics by image revision/direction/support; no readback or
+observer camera is involved. This is an explicit LDR-light estimation approximation, not HDR recovery. A uniform
+sky adds no emitter; clouds outside the cap add nothing. Release/recreate resources with the consumer's GPU
+generation. Painted-sky water uses this cloud opening instead of assuming a visible .266-degree solar disc;
+the explicit scene-light mode retains the separate direct-sun BRDF.
 
 ### Motion vectors
 
@@ -568,6 +722,15 @@ H->game_camera_fov(M, 1.6f);                /* held: put back whenever the game 
 - **The field of view** is set through the camera's own setters (the near pass' too) and held: the game changes it
   only at a few moments (a mode pushed and popped, a dialogue, the scope), and the held value is put back at the
   next frame. The game's own value (70 degrees in the city) comes back with 0, or when the holder unloads.
+  The request survives mission changes, taking a fresh native baseline for the new camera. This is an absolute
+  horizontal angle, also with Fusion Fix enabled; 0 restores its native Hor+ behavior.
+- **Projection interop** for mods hooking native camera setters/rendering: ask
+  `H->camera_projection_state(M, camera)` (`NULL`: the game's camera). `MML_CAMERA_PROJECTION_FOV` means an
+  absolute SDK FOV: use no aspect/FOV multiplier. `MML_CAMERA_PROJECTION_EXACT` means the host is preparing or
+  drawing an exact view/override frustum: do not rebuild it. Protection starts before native setters and follows
+  nested views/restoration. Check `MML_HAS`; Rust: `host.camera_projection_state(camera)` and `mml::sys` flags.
+  Refresh native projection policy at RENDER_BEGIN, before other cameras inherit it. See
+  `knowledge/notes/camera-projection.md` for the Fusion Fix/water failure and actual-matrix regression tests.
 - **Another car** (the bridge's `camera.game {"follow": car}`, a car or a person sitting in one): the game's own
   `G_Camera::SetCar`, what getting into a car does for the player, so the game's camera goes behind that car in its
   last vehicle mode, with its sway and collisions: a driven car watched as the player would see his own (a car the
@@ -633,6 +796,10 @@ n = H->actor_meshes(M, car, pieces, 512);            /* the car's body, doors, w
   skinned and morphed meshes, mirrors are not pieces.
 - **`actor_meshes`**: every shown visual under the actor's model, posed by their frames now (a door open, the
   wheels turned), without another model hung on it (a person sitting in the car).
+- **`actor_meshes_ex`** adds explicit visibility selection. With `MML_ACTOR_MESH_HIDDEN_ROOT`, it traverses
+  a hidden actor-model root while respecting child visibility and nested-model exclusions. Physical car
+  geometry uses this option because a bumper camera hides the rendered model. The original service keeps
+  its visibility behavior. The Rust `actor_meshes_ex` method accepts the same flags. Unknown flags return -1.
 - The arrays are the host's until the next frame: copy what is kept.
 - `call scene.focus {"at": "player", "radius": 30}`, `scene.pieces {"limit"}` (with the scan's numbers),
   `actor.meshes {"actor": "car"}`.
@@ -769,7 +936,7 @@ H->give_item(M, H->human_player(M), id, 0, 0);   /* given, held, dropped, picked
 
 ```c
 MmlStats s = {sizeof s};
-H->stats_get(M, MML_SAVE_PROFILE, &s);          /* the profile's totals; MML_SAVE_SLOT: the game being played */
+H->stats_get(M, MML_SAVE_PROFILE, &s);          /* starts collection for this mod's lifetime */
 MmlProgress p = {sizeof p};
 H->profile_progress(M, &p);                      /* chapter 20, freeride_cars "A".."T" as bits, the garage... */
 int slots[600], n = H->profile_saves(M, slots, 600);   /* its saves on disk, by slot */
@@ -779,9 +946,11 @@ int slots[600], n = H->profile_saves(M, slots, 600);   /* its saves on disk, by 
   (his weapons, his car), his deaths, his shots, the hits he gave, the cars he got into, his car's crashes of 5 m/s
   and more, the falls that hurt him, the items that came to him, the distance on foot (on the ground) and in
   vehicles (a move faster than a runner or a car is a teleport, not counted), the seconds the mission's world ran,
-  the freeride's money gained and lost. Two sets: the game being played (kept in its saves, read back with them; a
-  new game and a freeride start at 0) and the profile's totals (beside its `.sav`, written at each save, at the
-  mission's close and every 10 s of play).
+  the freeride's money gained and lost. The first valid stats_get opts the mod into collection. Collection stops
+  when all consumers unload. Slot counters reset on load; profile counters cover the collection session.
+  The loader keeps these values in memory. A mod that needs durable counters stores its own records with
+  save_put and reads them with save_get. Old loader snapshots can be imported, but new saves contain only
+  explicit mod state. Reading stats.state reports collecting and does not start collection.
 - **The profile's progress** is the game's own, as its `.sav` keeps it: the chapter of its newest story save, its
   saves (slot `n` named by the game's text 5000 + `n`, "05-03 Fairplay - The Racing Circuit"), the freeride's level
   word, the car groups unlocked for racing, for stealing and as the freeride's bonus cars (bit `n`: the letter
@@ -990,6 +1159,15 @@ H->vehicle_hook(M, OnStep, NULL);
   (placed as the game's Move places it), the car kept awake (Tick's rest counters started again, so it falls
   under the game's physics at once when the mod lets it go). One mod at a time. `vehicle_body` reads or writes a
   car's body at any time.
+- **Additional wheel support**. A physics mod can register
+  `H->vehicle_support_hook(M, OnSupport, user)`, where
+  `uint32_t OnSupport(void *car, void *user)` returns a native wheel-index mask. The host adds this
+  measured support while the original `C_car::IsCarUsable` runs, including the missions'
+  `ISCARUSABLE` command. The original damage, missing-wheel, low-speed and left/right support checks
+  remain in that call. Added on-ground bits are restored on return, including exceptional exits.
+  The mod's solver owns the external contact forces. Report only supporting contacts from its completed
+  step, clear them on support loss or world reset, and return zero while that physics is disabled.
+  One provider at a time. Pass NULL to unregister. Unload and fault remove the provider.
 - **An airplane flown by a mod**: the game's airplane (`C_airplane`: the freeride Extreme's plane over the city and
   its flying saucer, the planes of two missions) has no rigid body: its AI flies a route. `H->vehicle_kinds(M,
   MML_VEHICLES_CARS | MML_VEHICLES_AIRPLANES)` and the same function is told of each airplane's AI step too
@@ -1100,6 +1278,8 @@ H->save_put(M, MML_SAVE_PROFILE, "record", &best, sizeof best);   /* the profile
 - Keys are the mod's own (kept under its id: a reload keeps them); `save_put` with no data removes a key. The
   game's own files are never changed: a save made without mods has no state, a `.mml` is never read without its save.
   The game deleting a profile deletes its `.mml` files too.
+- An empty state produces no companion file. Automatic loader statistics are no longer written. Legacy
+  mml/stats records can be read, while subsequent saves retain explicit mod records only.
 - `call save.state` (the profile, the slot, every key), `save.get {"mod", "key", "scope"}`, `save.put {"key",
   "value", "scope"}` (the bridge's own keys); `GAME_SAVING` and `GAME_LOADED` go to `events.since` and MCP `wait`.
 
@@ -1147,7 +1327,9 @@ if (H->human_skeleton(M, H->human_player(M), b, MML_BONE_COUNT)) {
 - **Poses**: the game's animation sets the bones in its tick (`C_human::Update` runs LS3D's animation, found with
   `watch`), so a pose written in `RENDER_BEGIN` is what this frame draws, the screen and the scene views alike;
   the next tick sets the animation again (write it every frame). The loader updates each posed model once after
-  `RENDER_BEGIN`'s mods. The game's logic, collision and aim stay the animation's.
+  `RENDER_BEGIN`'s mods. The game's logic, collision and aim stay the animation's. `bone_set` returns 0
+  before writing if the pointer lacks the native frame's Release slot or has no positive reference count.
+  Use `frame_watch` when caching frames. The layout check cannot distinguish an address recycled for another frame.
 - `call humans.list` (actor, model, position, health, alive, the player, a vehicle), `human.skeleton {"actor"}`,
   `human.pose {"actor", "bones": {"r_arm": {"rot": [w, x, y, z], "pos": [x, y, z]}}, "ms"}` (held for `ms`, drawn
   every frame: an agent's test of a pose).
@@ -1176,13 +1358,26 @@ H->human_get_up(M, paulie, 600);          /* a body the mod posed handed back to
   own); `lying` 1 on the back, -1 on the front (his front from his shoulders, hips and spine, as last drawn);
   `state` 1 his own life, 6 his action queue (a knock-down, a get-up).
 - **Getting up**: a mod that posed a body (a ragdoll) stops posing it and calls `human_get_up`. The loader takes
-  the pose last drawn, puts the person where the body lies (the pelvis over the ground) and turned the way it lies,
-  and queues the game's own get-up from the back or the front, as a knock-down queues it; for `blend_ms` the host
-  draws each bone from the body's pose into the animation's. He then lives on as the game's again.
+  the pose last drawn, places the real root under the pelvis at the posed root's height, and queues the native
+  back/front get-up. It holds the physical pose for 250 mission ms while the animation starts, verifies its side,
+  fits its actual pelvis horizontally and in yaw onto the body, then blends joint-local rotations over `blend_ms`.
+  A paused mission pauses the handover. The back get-up cannot lift the body towards a remote track-end ground
+  sample; a pedestrian's collision-grid cell follows until the get-up finishes. `human_get_up_cancel` (check
+  `MML_HAS` on older hosts) cancels only this mod's handover before another knockdown; it leaves the native
+  animation running. Owner unload/fault, actor destruction and mission close also release the handover.
+  `human_get_up_pose` accepts the current physics skeleton as `MmlBone[MML_BONE_COUNT]` in SDK order, copied
+  before the body is destroyed, avoiding a one-render-frame delay. Frames must match the current skeleton;
+  nonfinite/degenerate matrices are refused before changing the actor. C++, C and Rust share this contract.
 - `call human.anim {"actor", "play" | "stop" | "replace" with "with"}`, `human.anim_state {"actor"}`,
   `human.get_up {"actor", "blend_ms"}`.
 
 ### Hits before the game
+
+`human_vehicle_contact` reports a measured car/body contact after a physics step through the game's original
+car-hit handling. Pedestrians stop waving for a taxi and receive native damage/police reactions; C_human uses
+the native type-8 hit. Supply relative world velocity (m/s) and world contact point. The service validates the
+living target/current car and refuses that car's occupants; it owns no collision radius/detection policy.
+`call human.vehicle_contact {actor | pedestrian, car, velocity, pos}` exposes the same operation to agents.
 
 ```c
 static int OnHit(void *person, int pedestrian, MmlHumanHit *hit, void *user) {
@@ -1220,13 +1415,12 @@ H->human_hit(M, peds[0].element, &push);
   RENDER_BEGIN), `human_get_up` and `human_anim_state` take it as they take a person. Its get-up is its own (its
   sequence at the game's get-up, its collision back in the grid where the body lies, out of the wait by a car it
   left); `human_anim_state` gives its sequence's `state` (2 to 1 while getting up, 0 walking again) and `playing`.
-- **Bullets on a body the mod moves**: a dead person is no longer in the game's collision world, so the game's
-  bullets pass a body lying where a ragdoll put it. `bullet_shape` gives a person's body as capsules in the world's
-  space (`MmlCapsule`: a, b, radius; up to 64), given again as it moves (each tick). Each stretch a bullet flies is
-  then tested against them too, and the nearest capsule nearer than what the game found strikes that person there
-  as the game strikes a living one: a person's part by the game's own part test (no hit where it finds none), the
-  blood, the Hit, so the hit filter sees it with `shape` (1 + the capsule's index) and may take it. 0 capsules takes
-  the mod's set away (its unload, the person's destruction and the mission's close do too).
+- **Bullets on a body the mod moves.** `bullet_shape` gives a person's body as world-space capsules (`MmlCapsule`,
+  up to 64). Publish the shapes again as the body moves. A dead person's registered capsules replace its native
+  bullet volumes. The game still clips the shot against the scene and calls the native Hit with the contact
+  position and normal. The hit filter receives `shape` (1 + the capsule index) and can take the hit. For a
+  registered dead C_human, `part` is 0 and `shape` identifies the actual hit. Living actors retain their native
+  part test. Use zero capsules to remove the set. Unload, actor destruction and mission close also remove it.
 
   ```c
   MmlCapsule parts[15];                              /* the ragdoll's parts where they are this tick */
@@ -1575,6 +1769,22 @@ void OnWater(const MmlGeomCapture *c, void *user) {
   unblurred). Historical flat-water cost at the embankment, 1280x960, the world held still: 1.2 8.0 to 16.1 ms, of which the
   reflection 7.1 (a second drawing of the scene, its GPU mostly) and the water itself 0.9; 1.0 2.4 to 5.0 ms.
 
+### Native source-region residency
+
+Before unculled source collection, an owner can retain the required native city blocks without changing the
+main camera's FOV/far plane, LOD or occluders. Check `MML_HAS(host,scene_residency_camera)` on older hosts.
+`host->scene_residency(mod,lo,hi)` copies an absolute finite world box; both pointers NULL release it.
+`host->scene_residency_camera(mod,radius)` instead follows the CURRENT resolved main camera (including a
+camera override), with a cube of finite radius0.1..10000 metres; radius0 releases. These replace each other
+for the same owner. Set during main RENDER_BEGIN or earlier; read `scene_residency_state` during main
+RENDER_WORLD for applied absolute bounds/readiness before collection. Unavailable current camera means not
+ready, never a preceding-frame substitute. Other owners combine; unload/fault/load/reset lifecycle remains
+host-owned. Readiness proves native block activation, not support for every material or deformation.
+
+Safe Rust uses `host.scene_residency(Some((lo,hi)))`, `host.scene_residency_camera(Some(radius))`, and
+`host.scene_residency_state()`; None releases. `docs/SCENE_RESIDENCY.md` records native verification and
+ownership semantics. `scene_draw_collect_ex` and `scene_snapshot.h` still diagnose missing source packets.
+
 ### The game's own menus: an item, a page
 
 Not an overlay: a mod's item and page are controls of the game's own menu system, made by the game's own code, in
@@ -1849,9 +2059,13 @@ seen while it is dragged; the file in the data folder is written once the change
 }
 ```
 
-- **The kinds** follow the default in `config.json` (or `"kind"`: `slider`, `check`, `choice`, `key`): a boolean is a
+- **The kinds** follow the default in `config.json` (or `"kind"`: `slider`, `check`, `choice`, `key`, `color`): a boolean is a
   check box; a number a slider, `min` to `max` (both needed), snapped to `step`, a whole number when the step and the
   ends are whole; `options` a selector of those values (`{"value", "label"}`, or plain values shown as they are).
+- **A color** (`"kind": "color"`, default a `"#RRGGBB"` string): three native red/green/blue sliders, 0..255,
+  storing the same hex string. Changing a channel preserves the other two. Invalid live strings fall back to the
+  declared default; malformed defaults are rejected. `panel.state` identifies each expanded slider by its common
+  `key` and `color_channel` (0 red, 1 green, 2 blue), with a numeric channel `value`. No mod-specific host code.
 - **A key** (`"kind": "key"`, the setting a hotkey's combo: `"F7"`, `"Ctrl+Shift+R"`): its row shows the combo; a
   click waits for the next key pressed, with the modifiers held, and makes it the setting (Esc keeps the one there);
   meanwhile the game gets no key, and the key taken is kept from it until it is let go. Bind the hotkey in the
@@ -2151,8 +2365,20 @@ if (MML_HAS(H, frame_stats) && H->frame_stats(M, &fs) && fs.p95_ms > 11.1f)
   include `<windows.h>`, then
   `#include "shaders/VsMain.h"`, and give `kVsMain, sizeof kVsMain` to `CreateVertexShader`. Shader model 5 and lower
   (Direct3D 9 to 11) go through the Windows SDK's `fxc`, 6 and up (Direct3D 12) through its `dxc`; optimised, a
-  warning fails the build, an `.hlsli` beside the file compiles it again when it changes. The bytecode is in your
-  DLL, so a shader's change is one build and one `deploy` away.
+  warning fails the build. CMake uses `tools/compile_shader.py`: preprocessing (10 s limit) discovers the actual
+  active include graph for its depfile; unrelated HLSL/SDK files no longer invalidate every shader. Compilation
+  retains O3/WX and has a 60 s default limit per entry (`MML_SHADER_TIMEOUT`, finite and positive). A timeout
+  terminates/reaps that exact compiler, fails the build and records `<header>.timeout.json`. Identical inputs
+  fail before optimization on the next attempt; change the shader before retrying. Do not automatically raise
+  the timeout, retry a stalled build or substitute Od/lower quality. For a deliberate diagnostic retry only,
+  remove that entry's timeout record. `<header>.log` records commands, compiler output, phases and timings.
+  Output locks refuse duplicate writers immediately; temporary output replaces the last good header only on
+  success with unchanged inputs. A failed shader blocks its consuming target even if an old header exists.
+  Compile the changed heavy entry first, for example
+  `cmake --build --preset x86-release --target mod_river_water_shader_PsWaterWorld`, then the mod after it passes.
+  Every `mml_shaders` entry has a `<target>_shader_<name>` target; sibling entries and C++/link are not run by it.
+  The bytecode is in your DLL, so a shader's change is one build and one `deploy` away. This bounded wrapper
+  currently covers CMake shader entries; standalone Rust `mml-build` remains a separate compiler path.
 - **A Direct3D 11 device of your own** (until the loader's graphics bridge gives one shared device beside the game's:
   `docs/ROADMAP.md`, Tier 1, item 3): make it in `mml_mod_load` (`D3D11CreateDevice`; WARP when the hardware refuses),
   use it in `MML_EVENT_FRAME`, release it in `mml_mod_unload`: `ClearState`, `Flush`, every object made from it, the
@@ -2445,8 +2671,13 @@ high-resolution timer if asked, and shows the frame rate and the game's clock st
   member; `mml_mod_load` returning non-zero says "not for this loader".
 - Everything in the repository is English.
 
-## Not there yet
+## Remaining limits and supported mod languages
 
-PhysX 5's GPU part (particles, cloth, deformable bodies: CUDA) for the 64-bit halves: `docs/ROADMAP.md`. Mods are native (a DLL through the C ABI: C, C++, Rust through
-`sdk/rust/mml`, or anything that exports C functions); there are no script mods (Lua was considered and dropped,
-2026-10-17).
+PhysX GPU particles, cloth and deformable-body examples already exist in `physx_gpu` through a 64-bit half
+(the GPU section above); they are not future sidecar infrastructure. Their visual/physics limitations and the
+remaining integration work are recorded in ROADMAP. Current loader/tooling/water acceptance gaps are in
+[STATUS.md](STATUS.md); a successful example build does not establish acceptance of every scene/provider.
+
+Mods are native (a DLL through the C ABI: C, C++, Rust through `sdk/rust/mml`, or another language exporting
+C functions). There are no Lua/script-runtime mods; Lua was considered and dropped on 2026-10-17.
+The game's own mission scripts remain available through the separate native script service.

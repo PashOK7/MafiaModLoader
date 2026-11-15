@@ -67,9 +67,9 @@ uint32_t __stdcall DrawUI(void* graph, int type, int count, const UIVertex* vert
 HCURSOR WINAPI LoadCursorHook(HINSTANCE instance, LPCSTR name)
 {
     auto cursor = LoadCursorA(instance, name);
-    if (!instance && name == MAKEINTRESOURCEA(32512) && pResolutionHeight && *pResolutionHeight > 0)
+    if (!instance && name == MAKEINTRESOURCEA(32512) && Screen.fHeight > 0)
     {
-        float scale = static_cast<float>(*pResolutionHeight) / 600.0f;
+        float scale = Screen.fHeight / 600.0f;
         int width = std::max(1, static_cast<int>(std::lround(GetSystemMetrics(SM_CXCURSOR) * scale)));
         int height = std::max(1, static_cast<int>(std::lround(GetSystemMetrics(SM_CYCURSOR) * scale)));
         // Shared stock cursors ignore requested sizes once cached. Copy the

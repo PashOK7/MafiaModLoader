@@ -222,22 +222,37 @@ void GameCamera(uint8_t *cam, MmlViewCamera *c) {
 // What the camera's change touches, kept to be put back: its world matrix, flags, serial and everything from its
 // field of view to its end (the projections, the view, the frustum's planes, the sector).
 struct CamSaved {
+    const void *previousProjection;
+    bool projectionActive = false;
     uint8_t world[64];
     uint32_t flags, serial;
     uint8_t params[kCamEnd - kCamParams];
 };
+const void *g_exactProjection;
 void SaveCam(uint8_t *cam, CamSaved *s) {
     memcpy(s->world, cam + kCamWorld, sizeof s->world);
     s->flags = At<uint32_t>(cam, kCamFlags);
     s->serial = At<uint32_t>(cam, kCamSerial);
     memcpy(s->params, cam + kCamParams, sizeof s->params);
+    s->previousProjection = g_exactProjection;
+    s->projectionActive = true;
+    g_exactProjection = cam; // protect native setters too, before the explicit matrices are installed
 }
-void RestoreCam(uint8_t *cam, const CamSaved &s) {
+void RestoreCam(uint8_t *cam, CamSaved &s) {
+    g_exactProjection = s.previousProjection;
+    s.projectionActive = false;
     memcpy(cam + kCamWorld, s.world, sizeof s.world);
     At<uint32_t>(cam, kCamFlags) = s.flags;
     At<uint32_t>(cam, kCamSerial) = s.serial;
     memcpy(cam + kCamParams, s.params, sizeof s.params);
     *reinterpret_cast<uint8_t *>(g_ls3d + game::Ls3d().camRecompute) = 1;   // the camera's lights, sectors again
+}
+void RestorePartialCamera(uint8_t *cam, CamSaved *saved) {
+    if (!saved->projectionActive) return;
+    __try { RestoreCam(cam, *saved); } __except (EXCEPTION_EXECUTE_HANDLER) {
+        g_exactProjection = saved->previousProjection;
+        saved->projectionActive = false;
+    }
 }
 
 // The camera turned into `c` (made orthonormal; the frustum LS3D culls with, the projections' sides, the sector held
@@ -344,6 +359,7 @@ DWORD SafePut(void *scene, uint8_t *cam, const MmlViewCamera &c, int w, int h, s
         *ok = false;
         DWORD code = GetExceptionCode();
         SafeRestore();
+        RestorePartialCamera(cam, &g_saved.cam);
         return code;
     }
 }
@@ -356,7 +372,7 @@ DWORD SafeCamera(void *scene, uint8_t **cam) {
 
 int __stdcall ViewStage(int stage, int, int) {
     if (stage == 1 && !g_shadowDrawing) {
-        RenderViewWorld(g_stageHandle);
+        if (!GfxViewSkyOnly()) RenderViewWorld(g_stageHandle);
         GfxViewStage1();
     }
     return 0;
@@ -376,12 +392,15 @@ void DrawOne(View &v, void *driver, void *scene, uint8_t *cam, RenderFn render) 
     PlaceCall pc{&v, &c, 0};
     if (!ModCall(v.mod, CallPlace, &pc, "its scene view's function")) return;
     if (!pc.r) { v.skipped++; v.last = "skipped: its function said 0"; return; }
+    if (c.flags & ~(MML_VIEW_CLIP | MML_VIEW_OWN_SECTOR | MML_VIEW_SKY_ONLY)) {
+        v.skipped++; v.last = "skipped: unsupported scene-view flags"; return;
+    }
     c.size = sizeof c;
     double t0 = NowMs();
     std::string why;
     const float *clip = (c.flags & MML_VIEW_CLIP) ? c.clip : nullptr;
     unsigned w = static_cast<unsigned>(v.w), h = static_cast<unsigned>(v.h);   // (0, 0: the bridge gives the frame's)
-    if (!GfxViewBegin(v.handle, &w, &h, clip, &why)) {
+    if (!GfxViewBegin(v.handle, &w, &h, clip, c.flags, &why)) {
         v.skipped++;
         v.last = "skipped: " + why;
         return;
@@ -467,6 +486,7 @@ DWORD SafePutShadow(void *scene, uint8_t *cam, const float world[16], float half
         *ok = false;
         DWORD code = GetExceptionCode();
         SafeRestore();
+        RestorePartialCamera(cam, &g_saved.cam);
         return code;
     }
 }
@@ -474,6 +494,15 @@ DWORD SafePutShadow(void *scene, uint8_t *cam, const float world[16], float half
 } // namespace
 
 int ViewDrawingNow() { return g_drawing && !g_shadowDrawing ? g_stageHandle : 0; }
+bool ViewBackdropNow() {
+    if (!g_drawing || g_shadowDrawing || !g_ls3d) return false;
+    const auto &l=game::Ls3d();
+    const auto *camera=*reinterpret_cast<const uint8_t *const *>(g_ls3d+l.currentCamera);
+    // Render selects camera+0x324 for the backdrop and +0x1E4 for world geometry in BOTH builds. Pointer identity
+    // remains unambiguous at the world origin, where the numerical view matrices would otherwise be identical.
+    return camera && *reinterpret_cast<const void *const *>(g_ls3d+l.viewProj)==camera+kCamBackViewProj;
+}
+bool ViewProjectionOwned(const void *camera) { return camera == g_exactProjection; }
 bool ShadowViewNow() { return g_shadowDrawing; }
 bool ViewAllowsLateShadow(void *scene) {
     // Render rebuilds/consumes a separate near-sector queue after stage 1. Its visibility stamps are mutable
@@ -612,7 +641,12 @@ void ApplyHeld(MmlViewCamera *c) {
     if (g_heldCam.farZ > c->near_z + 0.01f) c->far_z = g_heldCam.farZ;
 }
 DWORD SafePutFrame(uint8_t *cam, const MmlViewCamera &c, std::string *why, bool *ok) {
-    __try { *ok = PutCamera(cam, c, &g_frameSaved, why); return 0; } __except (EXCEPTION_EXECUTE_HANDLER) { *ok = false; return GetExceptionCode(); }
+    __try { *ok = PutCamera(cam, c, &g_frameSaved, why); return 0; } __except (EXCEPTION_EXECUTE_HANDLER) {
+        *ok = false;
+        DWORD code = GetExceptionCode();
+        RestorePartialCamera(cam, &g_frameSaved);
+        return code;
+    }
 }
 DWORD SafeRestoreFrame() {
     __try { RestoreCam(g_frameCam, g_frameSaved); return 0; } __except (EXCEPTION_EXECUTE_HANDLER) { return GetExceptionCode(); }
@@ -659,6 +693,15 @@ void FrameCameraBegin(void *scene) {
     g_ovEyeAt = GetTickCount();
     CityFollowsCamera();   // (render.cpp: the city's blocks streamed around this eye, not the game camera's)
     g_ovLast = "drawn";
+}
+
+bool FrameCameraState(void *scene,MmlViewCamera *out) {
+    if(!out||!scene||!game::g_ls3d)return false;
+    if(!g_ls3d)g_ls3d=ModuleBase("LS3DF.dll");
+    __try {
+        uint8_t *cam=CameraOf(scene);if(!cam)return false;
+        GameCamera(cam,out);return true;
+    } __except(EXCEPTION_EXECUTE_HANDLER) {return false;}
 }
 
 bool FrameCameraEye(float eye[3]) {
@@ -739,7 +782,10 @@ bool CameraMethod(const std::string &method, const std::string &paramsJson, std:
 int ViewAdd(MmlMod *mod, int w, int h, MmlViewFn fn, void *user, std::string *err) {
     if (!fn) { *err = "no function"; return 0; }
     if (w < 0 || h < 0 || w > 8192 || h > 8192 || (!w) != (!h)) { *err = "a size of 1..8192 each, or 0, 0 (the frame's)"; return 0; }
-    if (static_cast<int>(g_views.size()) >= kMaxViews) { *err = "eight views already"; return 0; }
+    if (std::count_if(g_views.begin(),g_views.end(),[&](const View &v) { return v.mod==mod; }) >= kMaxViews) {
+        *err = "eight views already for this owner"; return 0;
+    }
+    if (g_views.size()>=64) { *err="64 scene views already";return 0; }
     View v{mod, g_nextHandle++, w, h, fn, user};
     g_views.push_back(v);
     return v.handle;

@@ -92,8 +92,34 @@ bool ReadBone(void *frame, MmlBone *b) {
     }
 }
 
+bool g_reportedNonFramePose;
+
+bool CanWriteBone(void *frame) {
+    if (!frame || !game::g_ls3d) return false;
+    static uintptr_t release;   // Pose writes run on the game thread.
+    if (!release) {
+        uintptr_t base = ModuleBase("LS3DF.dll");
+        if (!base) return false;
+        release = base + game::Ls3d().frameRelease;
+    }
+    __try {
+        const auto *vtable = game::at<const uintptr_t *>(frame, 0);
+        return vtable && vtable[0] == release && game::at<int32_t>(frame, 4) > 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 // The bone's local rotation and position (its frame marked to be built again); the model is updated after (Flush).
 bool WriteBone(void *frame, const float *rot, const float *pos) {
+    // Committed memory can hold a different allocation after the original frame was freed.
+    if (!CanWriteBone(frame)) {
+        if (!g_reportedNonFramePose) {
+            g_reportedNonFramePose = true;
+            HWARN("pose: refused a write to an object without a live LS3D frame layout");
+        }
+        return false;
+    }
     __try {
         if (rot) {
             float n = std::sqrt(rot[0] * rot[0] + rot[1] * rot[1] + rot[2] * rot[2] + rot[3] * rot[3]);
@@ -215,7 +241,15 @@ void HumansGone(void *actor) {
     g_held.erase(std::remove_if(g_held.begin(), g_held.end(), [&](const Held &x) { return x.human == actor; }), g_held.end());
     g_lastPoses.erase(std::remove_if(g_lastPoses.begin(), g_lastPoses.end(), [&](const LastPose &x) { return x.human == actor; }), g_lastPoses.end());
 }
-void HumansMissionClosed() { g_humans.clear(); g_held.clear(); g_dirty.clear(); g_lastPoses.clear(); g_modelsKnown = false; }
+void HumansMissionClosed() {
+    // CHANGE_MISSION detaches the player and attaches the same C_human to the next scene. The constructor
+    // registry follows actor lifetime through HumansGone. Only cached frames and poses belong to the scene.
+    g_held.clear();
+    g_dirty.clear();
+    g_lastPoses.clear();
+    g_modelsKnown = false;
+    g_reportedNonFramePose = false;
+}
 
 void *HumanPlayer() {
     if (!game::g_exe) return nullptr;

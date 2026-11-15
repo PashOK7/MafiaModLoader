@@ -15,6 +15,8 @@
 // as before for those, which the measured games hold little of. Cube and volume textures, and textures with
 // AUTOGENMIPMAP, keep dxwrapper's DYNAMIC conversion.
 #pragma once
+#include "MmlTextureRevision.h"
+#include <cstdint>
 #include <list>
 #include <mutex>
 #include <unordered_map>
@@ -40,6 +42,7 @@ struct Level {
 	IDirect3DTexture9* copy = nullptr;    // the system-memory copy (one level), or null
 	IDirect3DSurface9* copySurface = nullptr;
 	bool gpuHasData = false;   // something was written to the video memory's level
+	bool revisionReady = false; // a complete, successful upload established the texels
 	bool copyStale = false;    // the video memory was written past the copy (UpdateSurface, StretchRect, ColorFill)
 	bool locked = false, readOnly = false, whole = true, dc = false;
 	RECT rect = {};
@@ -49,6 +52,8 @@ struct Level {
 struct Texture {
 	IDirect3DDevice9* device = nullptr;   // the real device (not held: the texture holds it)
 	D3DFORMAT format = D3DFMT_UNKNOWN;
+	bool emulated = true;
+	bool revisionReliable = true;
 	bool readable = false;     // its levels can be read back from the video memory
 	std::vector<Level> levels;
 	std::vector<IDirect3DSurface9*> surfaces;   // its levels' surfaces seen (keys of g_surfaces)
@@ -63,6 +68,33 @@ inline std::unordered_map<UINT, IDirect3DSurface9*> g_readbackTargets;   // rend
 inline std::unordered_map<DWORD, bool> g_formatReadable;
 inline unsigned long long g_readBacks = 0, g_letGo = 0, g_lostContent = 0;
 inline DWORD g_lastReport = 0;
+inline uint64_t g_nextRevision = 0;
+inline size_t g_nativeTextures = 0;
+
+// Called under g_lock. Never leave an old stamp after a failed publication.
+inline void SetRevision(IDirect3DTexture9* texture, uint64_t revision)
+{
+	if (FAILED(texture->SetPrivateData(mml::scene::NativeTextureRevision, &revision, sizeof revision, 0)))
+		texture->FreePrivateData(mml::scene::NativeTextureRevision);
+}
+
+inline void PublishRevision(IDirect3DTexture9* texture, const Texture& state)
+{
+	if (!state.revisionReliable)
+	{
+		SetRevision(texture, 0);
+		return;
+	}
+	for (const Level& level : state.levels)
+	{
+		if (!level.revisionReady || (level.locked && !level.readOnly))
+		{
+			SetRevision(texture, 0);
+			return;
+		}
+	}
+	SetRevision(texture, ++g_nextRevision);
+}
 
 inline size_t LevelBytes(D3DFORMAT f, UINT w, UINT h)
 {
@@ -108,20 +140,29 @@ inline void Report()
 	DWORD now = GetTickCount();
 	if (now - g_lastReport < 30000) return;
 	g_lastReport = now;
-	Logging::Log() << "MML managed textures: " << g_textures.size() << " in video memory only; copies " << (g_copyBytes >> 20)
+	Logging::Log() << "MML managed textures: " << g_textures.size() - g_nativeTextures << " in video memory only, "
+		<< g_nativeTextures << " native textures with revision tracking; copies " << (g_copyBytes >> 20)
 		<< " MB (budget " << (Budget() >> 20) << " MB) and " << (g_keptBytes >> 20) << " MB kept (unreadable formats); "
 		<< g_readBacks << " levels read back, " << g_letGo << " copies let go, " << g_lostContent << " contents lost";
 }
 
-inline void Register(IDirect3DTexture9* texture, D3DFORMAT format)
+inline void Forget(IDirect3DTexture9* texture);
+
+inline void Register(IDirect3DTexture9* texture, D3DFORMAT format, bool emulated = true)
 {
 	if (!texture) return;
 	std::lock_guard<std::recursive_mutex> lock(g_lock);
+	if (g_textures.find(texture) != g_textures.end()) Forget(texture);
+	if (!emulated && g_nativeTextures >= 4096) return;
 	Texture t;
-	texture->GetDevice(&t.device);
-	if (t.device) t.device->Release();   // (the texture holds it)
+	t.emulated = emulated;
+	if (emulated)
+	{
+		texture->GetDevice(&t.device);
+		if (t.device) t.device->Release();   // (the texture holds it)
+		t.readable = t.device && FormatReadable(t.device, format);
+	}
 	t.format = format;
-	t.readable = t.device && FormatReadable(t.device, format);
 	t.levels.resize(texture->GetLevelCount());
 	for (UINT i = 0; i < t.levels.size(); i++)
 	{
@@ -131,14 +172,21 @@ inline void Register(IDirect3DTexture9* texture, D3DFORMAT format)
 		t.levels[i].height = d.Height;
 		t.levels[i].bytes = LevelBytes(format, d.Width, d.Height);
 	}
-	if (g_textures.empty()) Logging::Log() << "MML managed textures: on (Direct3D 9Ex: managed textures in video memory, "
+	if (emulated && g_textures.size() == g_nativeTextures) Logging::Log() << "MML managed textures: on (Direct3D 9Ex: managed textures in video memory, "
 		"copies in system memory only while used)";
 	g_textures[texture] = std::move(t);
+	if (!emulated) ++g_nativeTextures;
+	SetRevision(texture, 0);
+}
+
+inline void RegisterNative(IDirect3DTexture9* texture, D3DFORMAT format)
+{
+	try { Register(texture, format, false); }
+	catch (const std::bad_alloc&) { /* The native texture still works without a revision. */ }
 }
 
 inline bool Has(IDirect3DTexture9* texture)
 {
-	if (g_textures.empty()) return false;
 	std::lock_guard<std::recursive_mutex> lock(g_lock);
 	return g_textures.count(texture) != 0;
 }
@@ -218,11 +266,30 @@ inline HRESULT LockLevel(IDirect3DTexture9* texture, UINT level, D3DLOCKED_RECT*
 	if (it == g_textures.end() || level >= it->second.levels.size() || !out) return D3DERR_INVALIDCALL;
 	Texture& t = it->second;
 	Level& l = t.levels[level];
+	if (!t.emulated)
+	{
+		const bool readOnly = (flags & D3DLOCK_READONLY) != 0;
+		if (!readOnly) SetRevision(texture, 0);
+		const HRESULT hr = texture->LockRect(level, out, rect, flags);
+		if (SUCCEEDED(hr))
+		{
+			if (l.locked)
+			{
+				t.revisionReliable = false;
+				SetRevision(texture, 0);
+			}
+			l.locked = true;
+			l.readOnly = readOnly;
+			l.whole = !rect || (rect->left == 0 && rect->top == 0 && rect->right == LONG(l.width) && rect->bottom == LONG(l.height));
+		}
+		else if (!readOnly) PublishRevision(texture, t);
+		return hr;
+	}
 	if (l.locked) return D3DERR_INVALIDCALL;
 	bool discard = (flags & D3DLOCK_DISCARD) && !rect;
 	if (l.copy && l.copyStale && !discard)
 	{
-		if (!ReadBack(t, l, texture, level)) { g_lostContent++; LOG_LIMIT(20, "MML managed textures: a level written by the GPU could not be read back"); }
+		if (!ReadBack(t, l, texture, level)) { l.revisionReady=false; SetRevision(texture,0); g_lostContent++; LOG_LIMIT(20, "MML managed textures: a level written by the GPU could not be read back"); }
 		l.copyStale = false;
 	}
 	if (!l.copy)
@@ -236,6 +303,8 @@ inline HRESULT LockLevel(IDirect3DTexture9* texture, UINT level, D3DLOCKED_RECT*
 		if (!t.readable) g_keptBytes += l.bytes;
 		if (l.gpuHasData && !discard && !ReadBack(t, l, texture, level))
 		{
+			l.revisionReady=false;
+			SetRevision(texture,0);
 			g_lostContent++;
 			LOG_LIMIT(20, "MML managed textures: a level's content could not be read back (format " << (DWORD)t.format << ")");
 		}
@@ -245,6 +314,7 @@ inline HRESULT LockLevel(IDirect3DTexture9* texture, UINT level, D3DLOCKED_RECT*
 	if (FAILED(hr)) return hr;
 	l.locked = true;
 	l.readOnly = (flags & D3DLOCK_READONLY) != 0;
+	if (!l.readOnly) SetRevision(texture, 0);
 	l.whole = rect == nullptr;
 	if (rect) l.rect = *rect;
 	Touch(t, l, texture, level);
@@ -254,14 +324,18 @@ inline HRESULT LockLevel(IDirect3DTexture9* texture, UINT level, D3DLOCKED_RECT*
 // The copy's written part to the video memory
 inline void Send(Texture& t, Level& l, IDirect3DTexture9* texture, UINT level, bool whole, const RECT& rect)
 {
+	bool sent = false;
 	IDirect3DSurface9* dst = nullptr;
 	if (SUCCEEDED(texture->GetSurfaceLevel(level, &dst)) && dst)
 	{
 		POINT at = { rect.left, rect.top };
-		t.device->UpdateSurface(l.copySurface, whole ? nullptr : &rect, dst, whole ? nullptr : &at);
+		sent = SUCCEEDED(t.device->UpdateSurface(l.copySurface, whole ? nullptr : &rect, dst, whole ? nullptr : &at));
 		dst->Release();
 	}
 	l.gpuHasData = true;
+	if (sent && whole) l.copyStale = false;
+	l.revisionReady = sent && (whole || l.revisionReady);
+	PublishRevision(texture, t);
 }
 
 inline HRESULT UnlockLevel(IDirect3DTexture9* texture, UINT level)
@@ -271,50 +345,97 @@ inline HRESULT UnlockLevel(IDirect3DTexture9* texture, UINT level)
 	if (it == g_textures.end() || level >= it->second.levels.size()) return D3DERR_INVALIDCALL;
 	Texture& t = it->second;
 	Level& l = t.levels[level];
+	if (!t.emulated)
+	{
+		const HRESULT hr = texture->UnlockRect(level);
+		if (FAILED(hr) || !l.locked || l.dc)
+		{
+			l.revisionReady = false;
+			SetRevision(texture, 0);
+			return hr;
+		}
+		l.locked = false;
+		if (!l.readOnly)
+		{
+			l.revisionReady = l.whole || l.revisionReady;
+			PublishRevision(texture, t);
+			Report();
+		}
+		return hr;
+	}
 	if (!l.locked || !l.copySurface) return D3DERR_INVALIDCALL;
 	HRESULT hr = l.copySurface->UnlockRect();
 	l.locked = false;
-	if (!l.readOnly) Send(t, l, texture, level, l.whole, l.rect);
+	if (!l.readOnly) {
+		Send(t, l, texture, level, l.whole, l.rect);
+		if (FAILED(hr)) { l.revisionReady = false; SetRevision(texture, 0); }
+	}
 	Enforce();
 	Report();
 	return hr;
 }
 
 // A device context on a level (fonts drawn by GDI): the copy's, sent back at its release
-inline HRESULT GetLevelDC(IDirect3DTexture9* texture, UINT level, HDC* dc)
+inline HRESULT GetLevelDC(IDirect3DTexture9* texture, UINT level, HDC* dc, IDirect3DSurface9* surface)
 {
 	D3DLOCKED_RECT unused = {};
 	std::lock_guard<std::recursive_mutex> lock(g_lock);
+	auto it = g_textures.find(texture);
+	if (it == g_textures.end() || level >= it->second.levels.size()) return D3DERR_INVALIDCALL;
+	Texture& t = it->second;
+	Level& l = t.levels[level];
+	if (!t.emulated)
+	{
+		SetRevision(texture, 0);
+		const HRESULT hr = surface->GetDC(dc);
+		if (SUCCEEDED(hr))
+		{
+			if (l.locked) t.revisionReliable = false;
+			l.locked = l.dc = true;
+			l.readOnly = false;
+		}
+		else PublishRevision(texture, t);
+		return hr;
+	}
 	HRESULT hr = LockLevel(texture, level, &unused, nullptr, 0);
 	if (FAILED(hr)) return hr;
-	Level& l = g_textures[texture].levels[level];
 	l.copySurface->UnlockRect();
 	hr = l.copySurface->GetDC(dc);
 	if (FAILED(hr)) { l.locked = false; return hr; }
 	l.dc = true;
 	return hr;
 }
-inline HRESULT ReleaseLevelDC(IDirect3DTexture9* texture, UINT level, HDC dc)
+inline HRESULT ReleaseLevelDC(IDirect3DTexture9* texture, UINT level, HDC dc, IDirect3DSurface9* surface)
 {
 	std::lock_guard<std::recursive_mutex> lock(g_lock);
 	auto it = g_textures.find(texture);
 	if (it == g_textures.end() || level >= it->second.levels.size()) return D3DERR_INVALIDCALL;
 	Texture& t = it->second;
 	Level& l = t.levels[level];
+	if (!t.emulated)
+	{
+		const HRESULT hr = surface->ReleaseDC(dc);
+		if (FAILED(hr) || !l.dc) l.revisionReady = false;
+		if (SUCCEEDED(hr)) l.locked = l.dc = false;
+		PublishRevision(texture, t);
+		return hr;
+	}
 	if (!l.dc || !l.copySurface) return D3DERR_INVALIDCALL;
 	HRESULT hr = l.copySurface->ReleaseDC(dc);
 	l.dc = false;
 	l.locked = false;
 	Send(t, l, texture, level, true, l.rect);
+	if (FAILED(hr)) { l.revisionReady = false; SetRevision(texture, 0); }
 	Enforce();
 	return hr;
 }
 
-// Which emulated texture's level a real surface is (null when none)
+// Which tracked texture's level a real surface is (null when none)
 inline bool LevelOf(IDirect3DSurface9* surface, IDirect3DTexture9** texture, UINT* level)
 {
-	if (g_textures.empty() || !surface) return false;
+	if (!surface) return false;
 	std::lock_guard<std::recursive_mutex> lock(g_lock);
+	if (g_textures.empty()) return false;
 	auto it = g_surfaces.find(surface);
 	if (it != g_surfaces.end()) { *texture = it->second.first; *level = it->second.second; return true; }
 	IDirect3DTexture9* container = nullptr;
@@ -328,8 +449,11 @@ inline bool LevelOf(IDirect3DSurface9* surface, IDirect3DTexture9** texture, UIN
 		if (FAILED(container->GetSurfaceLevel(i, &s)) || !s) continue;
 		s->Release();
 		if (s != surface) continue;
-		g_surfaces[surface] = { container, i };
-		tex->second.surfaces.push_back(surface);
+		if (tex->second.emulated)
+		{
+			g_surfaces[surface] = { container, i };
+			tex->second.surfaces.push_back(surface);
+		}
 		*texture = container;
 		*level = i;
 		return true;
@@ -346,7 +470,10 @@ inline void GpuWrote(IDirect3DTexture9* texture, UINT level)
 	if (it == g_textures.end() || level >= it->second.levels.size()) return;
 	Level& l = it->second.levels[level];
 	l.gpuHasData = true;
-	if (l.copy && !l.locked) l.copyStale = true;
+	if (l.copy) l.copyStale = true;
+	// A device write may cover only a rectangle. Keep the existing full-level
+	// readiness, and advance the stamp even when no system-memory copy exists.
+	PublishRevision(texture, it->second);
 }
 inline void GpuWroteSurface(IDirect3DSurface9* surface)
 {
@@ -356,7 +483,7 @@ inline void GpuWroteSurface(IDirect3DSurface9* surface)
 }
 inline void GpuWroteTexture(IDirect3DBaseTexture9* base)
 {
-	if (g_textures.empty() || !base || base->GetType() != D3DRTYPE_TEXTURE) return;
+	if (!base || base->GetType() != D3DRTYPE_TEXTURE) return;
 	std::lock_guard<std::recursive_mutex> lock(g_lock);
 	IDirect3DTexture9* texture = static_cast<IDirect3DTexture9*>(base);
 	auto it = g_textures.find(texture);
@@ -367,12 +494,12 @@ inline void GpuWroteTexture(IDirect3DBaseTexture9* base)
 // The texture's last reference went: its copies with it
 inline void Forget(IDirect3DTexture9* texture)
 {
-	if (g_textures.empty()) return;
 	std::lock_guard<std::recursive_mutex> lock(g_lock);
 	auto it = g_textures.find(texture);
 	if (it == g_textures.end()) return;
 	for (Level& l : it->second.levels) DropCopy(it->second, l);
 	for (IDirect3DSurface9* s : it->second.surfaces) g_surfaces.erase(s);
+	if (!it->second.emulated) --g_nativeTextures;
 	g_textures.erase(it);
 	if (g_textures.empty()) ReleaseTargets();   // (nothing of ours keeps the device then)
 }

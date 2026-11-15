@@ -39,3 +39,11 @@ float3 AtmosphereLight(float3 direction) {
 float3 ApplyAtmosphere(float3 color, float3 origin, float3 direction, float distance, bool clearNear, bool sky) {
     return lerp(color, AtmosphereLight(direction), AtmosphereOpacity(origin, direction, distance, clearNear, sky));
 }
+
+// A reflected leg after `travelled` metres from the camera. Near clearing is a path-length budget: if the first
+// surface lies inside that range, the remaining clear distance belongs to this leg, not lost at the bounce.
+// The renderer still fogs the camera-to-surface leg once. Does not clear a second full near range at each bounce.
+float3 ApplyAtmosphereAfterTravel(float3 color, float3 origin, float3 direction, float distance, float travelled, bool sky) {
+    float begin=min(max(g_atmosphere.x-max(travelled,0),0),distance);
+    return ApplyAtmosphere(color,origin+direction*begin,direction,max(distance-begin,0),false,sky);
+}

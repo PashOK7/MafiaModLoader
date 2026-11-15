@@ -1,5 +1,9 @@
 # The game's builds: 1.2 and 1.0
 
+Current validation and open defects are in [STATUS.md](STATUS.md); [the patch notes](PATCHNOTES_2026-11-15.md)
+cover the November update. Tables below retain their stated test dates; they are not a complete acceptance
+matrix for every later feature, wrapper or optional mod.
+
 The loader runs on both builds of `Game.exe` / `LS3DF.dll` that `game_build.h` knows (`game::Detect` picks one by
 its code). 1.2 is the last patch and the Steam/GOG release (the 1.2 lab). 1.0 is the first retail build (the 1.0 lab:
 the same files as mafia-ragdoll's `re/v10`, a French game).
@@ -11,8 +15,9 @@ builds (the loader, the SDK, the shipped mods) is tested in both labs, a mod for
 
 ## What runs on 1.0 (seen in the 1.0 lab, 2026-10-14)
 
-Everything the loader offers on 1.2 runs on 1.0; where 1.0's code differs, the loader has a layer of its own for it
-(below).
+The shared host/SDK services target both builds. Where 1.0's code differs, the loader has a build-specific
+layer (below). The following table records the original baseline checks; newer blocks need their own
+both-build evidence and must retain explicit unsupported/capability checks.
 
 | Part | 1.0 | How it was seen |
 |---|---|---|

@@ -38,7 +38,23 @@ unsafe extern "C-unwind" fn on_vehicle<F: Fn(&mut VehicleStep) -> bool>(s: *mut 
     guard("a vehicle hook", || (*(user as *const F))(&mut VehicleStep(&mut *s)) as c_int)
 }
 
+unsafe extern "C-unwind" fn on_support<F: Fn(Actor) -> u32>(car: *mut c_void, user: *mut c_void) -> u32 {
+    guard("a vehicle support query", || Actor::from_ptr(car).map(|car| (*(user as *const F))(car)).unwrap_or(0))
+}
+
 impl Host {
+    /// Additional measured wheel support for native car usability. Bit i is native wheel i.
+    pub fn vehicle_support_hook<F: Fn(Actor) -> u32 + 'static>(&self, f: F) -> bool {
+        let user = keep(f);
+        let ok = unsafe { f!(self, vehicle_support_hook)(self.module, as_c!(on_support::<F>, *mut c_void, *mut c_void; u32), user) != 0 };
+        if ok { slot("vehicle_support", user) } else { release(user) }
+        ok
+    }
+    pub fn vehicle_support_unhook(&self) -> bool {
+        let ok = unsafe { f!(self, vehicle_support_hook)(self.module, None, ptr::null_mut()) != 0 };
+        slot("vehicle_support", ptr::null_mut());
+        ok
+    }
     /// The key kept from the game while on (the mod still sees it); let go at the unload
     pub fn key_capture(&self, key: i32, on: bool) -> bool {
         unsafe { f!(self, key_capture)(self.module, key, on as c_int) != 0 }

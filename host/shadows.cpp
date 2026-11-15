@@ -61,6 +61,7 @@ IDirect3DPixelShader9 *g_ps;
 IDirect3DVertexDeclaration9 *g_decl;
 IDirect3DStateBlock9 *g_block;
 HANDLE g_shared;         // the map's handle for the graphics bridge's Direct3D 11 (gfx.cpp), when the device is 9Ex
+bool g_mapAlias, g_aliasAttempted;
 unsigned g_mapMade;      // counts the maps made: a new one is a new handle
 int g_size;
 bool g_valid;            // drawn this frame: the rules' shaders may sample it
@@ -85,75 +86,79 @@ double g_depthReduceMs;
 struct Buffers { IDirect3DVertexBuffer9 *vb = nullptr; IDirect3DIndexBuffer9 *ib = nullptr; int verts = 0, tris = 0; unsigned used = 0; };
 std::unordered_map<const float *, Buffers> g_buffers;   // by the mesh's positions (meshes.cpp keeps them while cached)
 
+void ReleaseMap() {
+    if (g_map) GfxRetireShadowMap();
+    if (g_mapSurface) g_mapSurface->Release();
+    if (g_map) g_map->Release();
+    if (g_mapDepth) g_mapDepth->Release();
+    g_mapSurface = g_mapDepth = nullptr;
+    g_map = nullptr;
+    g_size = 0;
+    g_shared = nullptr;
+    g_mapAlias = g_aliasAttempted = false;
+}
+
 void ReleaseAll() {
+    ReleaseMap();
     for (auto &kv : g_buffers) {
         if (kv.second.vb) kv.second.vb->Release();
         if (kv.second.ib) kv.second.ib->Release();
     }
     g_buffers.clear();
-    if (g_mapSurface) g_mapSurface->Release();
-    if (g_map) g_map->Release();
-    if (g_mapDepth) g_mapDepth->Release();
     if (g_vs) g_vs->Release();
     if (g_ps) g_ps->Release();
     if (g_decl) g_decl->Release();
     if (g_block) g_block->Release();
-    g_mapSurface = g_mapDepth = nullptr;
-    g_map = nullptr;
     g_vs = nullptr;
     g_ps = nullptr;
     g_decl = nullptr;
     g_block = nullptr;
     g_dev = nullptr;
-    g_size = 0;
-    g_shared = nullptr;
 }
 
 bool Make(IDirect3DDevice9 *d, int size) {
-    if (g_dev == d && g_size == size && g_map) return true;
-    if (g_dev && g_dev != d) {   // (another device: the old one's objects went with it)
-        g_buffers.clear();
-        g_mapSurface = g_mapDepth = nullptr;
-        g_map = nullptr;
-        g_vs = nullptr;
-        g_ps = nullptr;
-        g_decl = nullptr;
-        g_block = nullptr;
-    } else {
-        ReleaseAll();
-    }
+    const bool sameMap = g_dev == d && g_size == size && g_map && g_mapDepth && g_block;
+    const bool aliasAvailable = GfxShadowAliasAvailable(d);
+    if (sameMap && (g_mapAlias ? GfxShadowAliasWritable(g_map) : (!aliasAvailable || g_aliasAttempted))) return true;
+    const bool tryAlias = aliasAvailable && !(sameMap && g_mapAlias);
+    if (g_dev != d) ReleaseAll();
+    else ReleaseMap();
     g_dev = d;
-    g_size = size;
-    g_shared = nullptr;
-    g_mapMade++;
-    // shared when the device is 9Ex (the labs' dxwrapper): the graphics bridge's passes read it in Direct3D 11. Not on
-    // DXVK (its handles are Vulkan's own): the bridge copies the map there (gfx_vk.cpp)
+    auto fail = [](const char *why) {
+        ReleaseAll();
+        g_why = why;
+        return false;
+    };
+    // Use the native 9Ex handle or a D3D11-owned alias on compatible DXVK devices. The existing copy path
+    // can still consume the ordinary DXVK map if the driver does not import the alias.
+    g_aliasAttempted = aliasAvailable;
+    g_mapAlias = tryAlias && GfxCreateShadowAlias(d, static_cast<unsigned>(size), &g_map);
     IDirect3DDevice9Ex *ex = nullptr;
     bool canShare = SUCCEEDED(d->QueryInterface(__uuidof(IDirect3DDevice9Ex), reinterpret_cast<void **>(&ex))) && ex &&
                     !gfxvk::IsDxvk(d);
     if (ex) ex->Release();
     HANDLE shared = nullptr;
-    HRESULT hr = d->CreateTexture(size, size, 1, D3DUSAGE_RENDERTARGET, D3DFMT_R32F, D3DPOOL_DEFAULT, &g_map, canShare ? &shared : nullptr);
+    HRESULT hr = g_mapAlias ? D3D_OK : d->CreateTexture(size, size, 1, D3DUSAGE_RENDERTARGET, D3DFMT_R32F,
+                                                      D3DPOOL_DEFAULT, &g_map, canShare ? &shared : nullptr);
     if (FAILED(hr) && canShare) {   // (a device that shares nothing: the rules' shaders still get the map)
         shared = nullptr;
         hr = d->CreateTexture(size, size, 1, D3DUSAGE_RENDERTARGET, D3DFMT_R32F, D3DPOOL_DEFAULT, &g_map, nullptr);
     }
-    if (FAILED(hr) || !g_map) {
-        g_why = "the device makes no R32F render target";
-        return false;
+    if (FAILED(hr) || !g_map) return fail("the device makes no R32F render target");
+    if (FAILED(g_map->GetSurfaceLevel(0, &g_mapSurface))) return fail("the device makes no shadow target surface");
+    if (FAILED(d->CreateDepthStencilSurface(size, size, D3DFMT_D24X8, D3DMULTISAMPLE_NONE, 0, TRUE, &g_mapDepth, nullptr)))
+        return fail("the device makes no depth buffer for the map");
+    if (!g_block) {
+        if (FAILED(d->CreateVertexShader(reinterpret_cast<const DWORD *>(kVsMeshShadow), &g_vs)) ||
+            FAILED(d->CreatePixelShader(reinterpret_cast<const DWORD *>(kPsMeshShadow), &g_ps)))
+            return fail("the depth shaders were not made");
+        D3DVERTEXELEMENT9 el[] = {{0, 0, D3DDECLTYPE_FLOAT3, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_POSITION, 0}, D3DDECL_END()};
+        if (FAILED(d->CreateVertexDeclaration(el, &g_decl))) return fail("no vertex declaration");
+        if (FAILED(d->CreateStateBlock(D3DSBT_ALL, &g_block))) return fail("no state block");
     }
     g_shared = shared;
-    g_map->GetSurfaceLevel(0, &g_mapSurface);
-    if (FAILED(d->CreateDepthStencilSurface(size, size, D3DFMT_D24X8, D3DMULTISAMPLE_NONE, 0, TRUE, &g_mapDepth, nullptr))) {
-        g_why = "the device makes no depth buffer for the map";
-        return false;
-    }
-    bool ok = SUCCEEDED(d->CreateVertexShader(reinterpret_cast<const DWORD *>(kVsMeshShadow), &g_vs)) &&
-              SUCCEEDED(d->CreatePixelShader(reinterpret_cast<const DWORD *>(kPsMeshShadow), &g_ps));
-    if (!ok) { g_why = "the depth shaders were not made"; return false; }
-    D3DVERTEXELEMENT9 el[] = {{0, 0, D3DDECLTYPE_FLOAT3, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_POSITION, 0}, D3DDECL_END()};
-    if (FAILED(d->CreateVertexDeclaration(el, &g_decl))) { g_why = "no vertex declaration"; return false; }
-    if (FAILED(d->CreateStateBlock(D3DSBT_ALL, &g_block))) { g_why = "no state block"; return false; }
+    g_size = size;
+    g_mapMade++;
     g_why.clear();
     return true;
 }
@@ -543,7 +548,6 @@ bool ShaderShadows(MmlMod *mod, const MmlShadowSettings *s, int source, const fl
     g_valid = false;   // the next world frame redraws the map with the current request
     if (g_wants.empty()) {
         SceneFocus(kLoaderOwner, nullptr, nullptr);
-        g_valid = false;
     }
     return true;
 }
@@ -570,7 +574,10 @@ void ShadowsModGone(MmlMod *mod) {
 void ShadowsBeforeWorld(void *driver, void *scene, RenderFn render) {   // (render.cpp: before the mission's world is drawn)
     g_valid = false;
     g_depthPending = g_depthUsed = false;
-    if (g_wants.empty()) return;
+    if (g_wants.empty()) {
+        if (g_dev) ReleaseAll();
+        return;
+    }
     MmlRenderCamera camera{};
     if (g_depthEnabled && g_castersGame && !ShadersNeedEarlyShadow() && GfxShadowDepthAvailable() && ViewAllowsLateShadow(scene) &&
         std::all_of(g_wants.begin(),g_wants.end(),[](const Want &w){return w.fit;}) &&
@@ -636,13 +643,11 @@ void ShadowsDepthFinish(const float *bounds, unsigned samples, double reduceMs) 
     }
     g_depthActive=false;
 }
+void ShadowsBeforeReset() { ReleaseAll(); g_valid = false; g_depthPending = false; }
+
 void ShadowsMissionClose() {   // (the meshes' buffers keyed by pointers meshes.cpp lets go)
     g_depthPending=false;g_depthDriver=g_depthScene=nullptr;g_depthRender=nullptr;
-    for (auto &kv : g_buffers) {
-        if (kv.second.vb) kv.second.vb->Release();
-        if (kv.second.ib) kv.second.ib->Release();
-    }
-    g_buffers.clear();
+    ReleaseAll();
     g_valid = false;
 }
 
@@ -693,8 +698,9 @@ void ShadowsConstants(const void *visual, float *c, bool nearLights) {
 IDirect3DBaseTexture9 *ShadowsTexture() { return g_valid ? g_map : nullptr; }
 
 bool ShadowsShared(void **handle, unsigned *made, float viewProj[16], float info[4]) {
-    if (!g_valid) return false;
-    *handle = g_shared;   // (null: not shared; DXVK's device, whose map the bridge copies)
+    // An empty map has full visibility. DXVK can defer a clear until the first actual draw.
+    if (!g_valid || (g_mapAlias && !g_casters)) return false;
+    *handle = g_shared;   // (null for a DXVK alias or the copy path)
     *made = g_mapMade;
     memcpy(viewProj, g_lightVP, 64);
     info[0] = 1;

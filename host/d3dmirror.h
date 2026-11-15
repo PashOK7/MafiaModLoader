@@ -14,6 +14,7 @@ struct D3dMirror {
     DWORD rs[256];                       // render states (every D3DRS_* is below 256)
     DWORD tss[8][33];                    // texture stage states, stages 0..7
     DWORD samp[4][14];                   // sampler states, samplers 0..3
+    bool nativeMaterialKnown;
     IDirect3DBaseTexture9 *tex[8];       // the textures set (not referenced: compared and set back only)
     D3DMATERIAL9 material;
     D3DLIGHT9 light[8];
@@ -34,6 +35,12 @@ void MirrorUse(bool on);
 // block applied, a Reset, a call from another thread); null when the mirror is not in use or `d` is not the device
 // it follows (then ask the device). Game thread.
 const D3dMirror *MirrorOf(IDirect3DDevice9 *d);
+HRESULT MirrorSourceFvf(IDirect3DDevice9 *d, DWORD *fvf);
+// Apply an internally recorded block containing only the listed raster states
+// and viewport. Exact pre-draw values come from the device, not cached guesses.
+HRESULT MirrorApplyRasterBlock(IDirect3DDevice9 *d, IDirect3DStateBlock9 *block, const D3DRENDERSTATETYPE *states,
+                              const DWORD *values, size_t count, const D3DVIEWPORT9 &viewport);
+bool MirrorRasterBlock(IDirect3DStateBlock9 *block);
 // Shader constants written where they differ from what the device holds (runs of changed registers, each one call);
 // without the mirror, written whole. `pixel`: the pixel shader's. `reads`: the registers the shader reads (a bit a
 // register, c0..c255): the others are not written (null: all of them).

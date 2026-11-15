@@ -27,20 +27,17 @@
 // the collision world what the stretch meets (collRayTest, thiscall(g_collision, from, delta, out hit, out normal,
 // int) -> primitive, its +0x44 the owner; game_build.h bulletRay its call's return), with the objects it has gone
 // through already in the world's exclusion list (g_collision +0x2B8 the array, +0x2BC the count, both builds:
-// DynSetNextCollOwnerMult). A dead person is not in that world any more, so a body a mod moves (a ragdoll) is missed.
-// While any mod has given a person's body as capsules, collRayTest is hooked (outermost: the return address is the
-// game's caller's) and, for the bullets' call alone, the stretch is also tested against them: the nearest capsule
-// nearer than what the game found is given back as a hit on that person, his own collision object (a C_human's first of
-// humanColl, its owner him; a pedestrian's the element's +0xC4, its owner the pedestrian system) with the point and the
-// normal on the capsule. The game then goes on as for a living person: a C_human's part by its own part test (asked
-// first here, so the game never gets a hit it would not take), the blood, the Hit (and the mods' filters: the hit's
-// `shape` says which capsule). An object already in the exclusion list is not given (the tick tests the same stretch
-// again after each hit, and a body given again for ever hung the game in mafia-ragdoll), and the same stretch giving
-// the same object more than 4 times is left to the game. Mafia-ragdoll's hits.cpp, both builds' bulletsTick read.
+// DynSetNextCollOwnerMult). Registered capsules replace a dead person's native bullet volumes, some of which
+// may still be in the moving grid. For living actors the capsules supplement the native test. The nearest
+// valid hit supplies its point, normal and native collision object, so the game still handles the shot and Hit.
+// `shape` identifies the selected capsule. A dead C_human's hit skips the native part and terminal-distance
+// gates once that capsule has won. Native obstacles and the end of the flight still bound the ray.
+// The original exclusion list prevents repeat hits as the bullet continues through the scene.
 //
 // Bridge methods (game thread): human.hit {actor | pedestrian, type, dir, pos, damage, attacker, part}, hits.take
 // {actor | pedestrian | all, ms, clear}, hits.shape {actor | pedestrian, capsules, clear}, hits.state.
 #include "host.h"
+#include "bullet_events.h"
 #include <intrin.h>
 #include <algorithm>
 #include <cmath>
@@ -75,6 +72,7 @@ void *g_inBullet;            // the element pedBulletHit filtered, while the gam
 bool g_bulletToPedHit;       // ... and the game's code went on to pedHit (its PEDESTRIAN_HIT told there)
 V3 g_inBulletPos;            // ... and the point the bullet struck (pedHit is given no place: the event tells this one)
 bool g_inBulletHasPos;
+int g_inBulletShape;
 unsigned g_seen, g_taken, g_faults, g_called;
 bool g_bulletHooked;
 std::string g_bulletWhy = "not tried";
@@ -84,7 +82,7 @@ using PedBulletFn = int(__fastcall *)(void *sys, void *edx, int type, V3 *dir, V
 PedBulletFn oPedBullet;
 
 // ---- bullets on the mods' shapes
-constexpr int kExclArray = 0x2B8, kExclCount = 0x2BC, kObjFlags = 0x08, kObjOwner = 0x44, kPedColl = 0xC4;
+constexpr int kExclArray = 0x2B8, kExclCount = 0x2BC, kExclThird = 0x2B0, kObjFlags = 0x08, kObjOwner = 0x44, kPedColl = 0xC4;
 constexpr uint32_t kObjPerson = 0x100;
 struct Shape { MmlMod *mod; void *person; bool pedestrian; std::vector<MmlCapsule> parts; V3 centre; float radius; };
 std::vector<Shape> g_shapes;
@@ -92,11 +90,20 @@ using RayFn = void *(__fastcall *)(void *coll, void *edx, const V3 *from, const 
 RayFn oRay;
 bool g_rayHooked;
 std::string g_rayWhy = "not needed yet (no shapes)";
-struct Last { void *person; int shape; };
+using BoneRayFn = int(__fastcall *)(void *, void *, const V3 *, const V3 *, float);
+BoneRayFn oBoneRay;
+uintptr_t g_boneRayReturn;
+struct Last { void *person; int shape; bool authoritative; V3 at; };
 Last g_last;                 // the capsule the last bullet stretch was given (the Hit that follows tells it)
 struct Repeat { V3 from, delta; void *obj; int n; };
 Repeat g_repeat;
-unsigned g_stretches, g_shapeHits, g_partMisses, g_excluded, g_repeats, g_rayFaults;
+unsigned g_stretches, g_shapeHits, g_partMisses, g_excluded, g_repeats, g_rayFaults, g_nativeCorpseSkips;
+
+bool AliveFlag(void *human);
+
+bool ReplacesNative(const Shape &s) {
+    return s.pedestrian ? PedestrianHealth(s.person) <= 0 : !AliveFlag(s.person);
+}
 
 V3 At(const float *p) { return {p[0], p[1], p[2]}; }
 
@@ -105,6 +112,9 @@ V3 At(const float *p) { return {p[0], p[1], p[2]}; }
 float RayCapsule(const V3 &o, const V3 &d, const V3 &a, const V3 &e, float r) {
     V3 ba = e - a, oa = o - a;
     float baba = Dot(ba, ba), bard = Dot(ba, d), baoa = Dot(ba, oa), rdoa = Dot(d, oa), oaoa = Dot(oa, oa);
+    float along = baba > 0 ? std::clamp(baoa / baba, 0.f, 1.f) : 0.f;
+    V3 offset = oa - ba * along;
+    if (Dot(offset, offset) <= r * r) return 0.f;
     float A = baba - bard * bard, B = baba * rdoa - baoa * bard, C = baba * oaoa - baoa * baoa - r * r * baba;
     if (A > 1e-9f) {
         float h = B * B - A * C;
@@ -153,10 +163,49 @@ bool Excluded(void *coll, const void *obj) {
     return false;
 }
 
-void *Bullet(void *coll, void *r, const V3 *from, const V3 *delta, V3 *hit, V3 *normal) {
+bool NativeCorpseObject(void *obj) {
+    void *owner = game::at<void *>(obj, kObjOwner);
+    for (const Shape &s : g_shapes)
+        if ((s.pedestrian ? ObjectOf(s) == obj : s.person == owner) && ReplacesNative(s)) return true;
+    return false;
+}
+
+// A registered dead body's original volumes must not hide its real limbs or other objects farther down the ray.
+// Retry only when the native winner is such a volume, preserving the shooter's own exclusions and restoring them
+// before the bullet code continues. The native ray is still responsible for all other moving objects.
+void *NativePastCorpses(void *coll, void *r, void *edx, const V3 *from, const V3 *delta, V3 *hit, V3 *normal, int flag) {
+    if (!r || !NativeCorpseObject(r)) return r;
+    auto &array = game::at<void **>(coll, kExclArray);
+    auto &count = game::at<int>(coll, kExclCount);
+    auto &third = game::at<int>(coll, kExclThird);
+    void **saved = array;
+    int savedCount = count, savedThird = third;
+    void *excluded[256];
+    if (savedCount < 0 || savedCount >= 256 || (savedCount && !saved)) return r;
+    if (savedCount) memcpy(excluded, saved, savedCount * sizeof(void *));
+    int n = savedCount;
+    __try {
+        do {
+            if (n == 256 || std::find(excluded, excluded + n, r) != excluded + n) { r = nullptr; break; }
+            excluded[n++] = r;
+            array = excluded;
+            count = n;
+            g_nativeCorpseSkips++;
+            r = oRay(coll, edx, from, delta, hit, normal, flag);
+        } while (r && NativeCorpseObject(r));
+    } __finally {
+        array = saved;
+        count = savedCount;
+        third = savedThird;
+    }
+    return r;
+}
+
+void *Bullet(void *coll, void *r, void *edx, const V3 *from, const V3 *delta, V3 *hit, V3 *normal, int flag) {
     g_stretches++;
     float len = Len(*delta);
     if (len < 1e-5f) return r;
+    r = NativePastCorpses(coll, r, edx, from, delta, hit, normal, flag);
     V3 dir = *delta * (1.0f / len);
     float bestT = r ? std::min(len, Dot(*hit - *from, dir)) : len;
     const Shape *best = nullptr;
@@ -181,11 +230,13 @@ void *Bullet(void *coll, void *r, const V3 *from, const V3 *delta, V3 *hit, V3 *
         }
     }
     if (!best) return r;
+    bool authoritative = ReplacesNative(*best);
+    // For living actors preserve the native part test. Move its limit inside the capsule, never beyond the blocker.
     // The point given is the ray's nearest to the capsule's axis (inside the body, not its skin): the bullets' tick
     // asks the person's part test again with the length to the point it is given (bulletsTick's humanBoneRayTest
     // call: |hit - from|^2), and a capsule fatter than the part's own volume put the skin's point before the part,
     // so the game dropped the hit (seen 2026-10-21: a shape hit and no Hit). Never past what the game found.
-    {
+    if (!authoritative) {
         const MmlCapsule &c = best->parts[bestPart];
         V3 a = At(c.a), u = At(c.b) - a, w = *from - a;
         float uu = Dot(u, u), du = Dot(dir, u), dw = Dot(dir, w), uw = Dot(u, w), den = uu - du * du;
@@ -196,10 +247,9 @@ void *Bullet(void *coll, void *r, const V3 *from, const V3 *delta, V3 *hit, V3 *
     bool same = g_repeat.obj == bestObj && !memcmp(&g_repeat.from, from, sizeof *from) && !memcmp(&g_repeat.delta, delta, sizeof *delta);
     g_repeat = {*from, *delta, bestObj, same ? g_repeat.n + 1 : 1};
     if (g_repeat.n > 4) { g_repeats++; return r; }
-    if (!best->pedestrian && E().humanBoneRayTest) {
+    if (!authoritative && !best->pedestrian && E().humanBoneRayTest) {
         // the game's own part test, as the bullets' tick asks it after a hit (to the point given): no part, no hit
-        using BoneFn = int(__fastcall *)(void *, void *, const V3 *, const V3 *, float);
-        if (!reinterpret_cast<BoneFn>(E().humanBoneRayTest)(static_cast<uint8_t *>(best->person) + E().humanParts, nullptr, from,
+        if (!oBoneRay(static_cast<uint8_t *>(best->person) + E().humanParts, nullptr, from,
                                                               delta, bestT * bestT)) {
             g_partMisses++;
             return r;
@@ -207,15 +257,15 @@ void *Bullet(void *coll, void *r, const V3 *from, const V3 *delta, V3 *hit, V3 *
     }
     *hit = *from + dir * bestT;
     *normal = bestN;
-    g_last = {best->person, bestPart + 1};
+    g_last = {best->person, bestPart + 1, authoritative, *hit};
     g_shapeHits++;
     return bestObj;
 }
 
-void *SafeBullet(void *coll, void *r, const V3 *from, const V3 *delta, V3 *hit, V3 *normal) {
+void *SafeBullet(void *coll, void *r, void *edx, const V3 *from, const V3 *delta, V3 *hit, V3 *normal, int flag) {
     V3 h0 = *hit, n0 = *normal;
     __try {
-        return Bullet(coll, r, from, delta, hit, normal);
+        return Bullet(coll, r, edx, from, delta, hit, normal, flag);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         *hit = h0;
         *normal = n0;
@@ -226,16 +276,56 @@ void *SafeBullet(void *coll, void *r, const V3 *from, const V3 *delta, V3 *hit, 
 
 void *__fastcall hkRay(void *coll, void *edx, const V3 *from, const V3 *delta, V3 *hit, V3 *normal, int flag) {
     void *r = oRay(coll, edx, from, delta, hit, normal, flag);
-    if (g_shapes.empty() || reinterpret_cast<uintptr_t>(_ReturnAddress()) != E().bulletRay || !from || !delta || !hit || !normal)
-        return r;
+    if (reinterpret_cast<uintptr_t>(_ReturnAddress()) != E().bulletRay) return r;
     g_last = {};
-    return SafeBullet(coll, r, from, delta, hit, normal);
+    if (!g_shapes.empty() && from && delta && hit && normal) r = SafeBullet(coll, r, edx, from, delta, hit, normal, flag);
+    // The inner event hook returns to us, so it cannot see the game's bullet return address.
+    ReportBulletRay(r, from, delta, hit, normal);
+    return r;
+}
+
+// The native final-stretch check discards human hits within 1 m of the endpoint, including hands on the ground.
+// Our dead-body hit is already clipped to that endpoint and to the nearest native obstacle. Skip only this branch.
+void TerminalHumanHit(MmlMidContext *ctx, void *) {
+    if (g_last.authoritative && reinterpret_cast<void *>(ctx->edi) == g_last.person) ctx->eflags |= 0x40; // ZF
+}
+
+int __fastcall hkBoneRay(void *skeleton, void *edx, const V3 *from, const V3 *delta, float lengthSq) {
+    if (g_last.authoritative && reinterpret_cast<uintptr_t>(_ReturnAddress()) == g_boneRayReturn &&
+        skeleton == static_cast<uint8_t *>(g_last.person) + E().humanParts)
+        return 1; // Native nonzero gate. The hit event reports the real capsule, not this sentinel.
+    return oBoneRay(skeleton, edx, from, delta, lengthSq);
 }
 
 bool EnsureRay(std::string *err) {
     if (g_rayHooked) return true;
-    if (!game::g_exe || !E().collRayTest || !E().bulletRay || !E().humanColl) { *err = g_rayWhy = "bullets not known for this build"; return false; }
+    if (!game::g_exe || !E().collRayTest || !E().bulletRay || !E().humanColl || !E().humanBoneRayTest) {
+        *err = g_rayWhy = "bullets not known for this build";
+        return false;
+    }
+    bool oldBuild = E().bulletRay == 0x5E4CAC;
+    uintptr_t terminal = oldBuild ? 0x5E56AF : 0x5A9D5F;
+    g_boneRayReturn = oldBuild ? 0x5E5771 : 0x5A9E21;
+    uint8_t branch[6]{}, boneCall[5]{};
+    int32_t rel = 0;
+    if (MemRead(g_boneRayReturn - 5, boneCall, sizeof boneCall)) memcpy(&rel, boneCall + 1, sizeof rel);
+    constexpr uint8_t terminalBranch[] = {0x0f, 0x85, 0x81, 0x02, 0, 0};
+    if (!MemRead(terminal, branch, sizeof branch) || memcmp(branch, terminalBranch, sizeof branch) != 0 ||
+        boneCall[0] != 0xe8 || g_boneRayReturn + rel != E().humanBoneRayTest) {
+        *err = g_rayWhy = "the bullet terminal/part call sites do not match";
+        return false;
+    }
+    if (!HookMid(nullptr, terminal, TerminalHumanHit, nullptr, err)) { g_rayWhy = *err; return false; }
+    if (!HookAddOuter(E().humanBoneRayTest, reinterpret_cast<void *>(&hkBoneRay), reinterpret_cast<void **>(&oBoneRay), err)) {
+        HookRemove(nullptr, terminal);
+        g_rayWhy = *err;
+        return false;
+    }
     g_rayHooked = HookAddOuter(E().collRayTest, reinterpret_cast<void *>(&hkRay), reinterpret_cast<void **>(&oRay), err);
+    if (!g_rayHooked) {
+        HookRemoveLink(nullptr, E().humanBoneRayTest, reinterpret_cast<void *>(&hkBoneRay));
+        HookRemove(nullptr, terminal);
+    }
     g_rayWhy = g_rayHooked ? "hooked" : *err;
     return g_rayHooked;
 }
@@ -283,7 +373,7 @@ int __fastcall hkPedBullet(void *sys, void *edx, int type, V3 *dir, V3 *from, V3
     h.damage = damage;
     h.attacker = attacker;
     h.was_alive = h.alive = PedestrianHealth(element) > 0;
-    h.shape = HitsShapeOf(element);
+    h.shape = HitsShapeOf(element, &h);
     auto tell = [&] {
         MmlEvent ev{};
         ev.size = sizeof ev;
@@ -302,6 +392,7 @@ int __fastcall hkPedBullet(void *sys, void *edx, int type, V3 *dir, V3 *from, V3
     g_bulletToPedHit = false;
     g_inBulletHasPos = pos != nullptr;
     g_inBulletPos = at;
+    g_inBulletShape = h.shape;
     int r = oPedBullet(sys, edx, h.type, dir ? &d : nullptr, from, pos ? &at : nullptr, h.damage, h.attacker, a7, frame);
     g_inBullet = nullptr;
     // 1.2's system Hit goes no further for a dead element (1.0's calls pedHit, which returns at once): the bullet is
@@ -387,14 +478,22 @@ bool HitsFilter(void *person, int ped, MmlHumanHit *hit) {
     return taken;
 }
 
-bool HitsInPedBullet(void *element, MmlVec3 *pos) {
+bool HitsInPedBullet(void *element, MmlHumanHit *hit) {
     if (!element || element != g_inBullet) return false;
     g_bulletToPedHit = true;
-    if (pos && g_inBulletHasPos) *pos = {g_inBulletPos.x, g_inBulletPos.y, g_inBulletPos.z};
+    if (g_inBulletHasPos) hit->pos = {g_inBulletPos.x, g_inBulletPos.y, g_inBulletPos.z};
+    hit->shape = g_inBulletShape;
     return true;
 }
 
-int HitsShapeOf(void *person) { return person && g_last.person == person ? g_last.shape : 0; }
+int HitsShapeOf(void *person, MmlHumanHit *hit) {
+    if (!person || g_last.person != person || hit->type != 0 ||
+        Len(V3{hit->pos.x, hit->pos.y, hit->pos.z} - g_last.at) > 0.002f) return 0;
+    int shape = g_last.shape;
+    if (g_last.authoritative) hit->part = 0;
+    g_last = {};
+    return shape;
+}
 
 int BulletShapeSet(MmlMod *mod, void *person, const MmlCapsule *parts, int count, std::string *err) {
     if (!game::g_exe) { *err = "no game"; return 0; }
@@ -473,6 +572,7 @@ bool HitsMethod(const std::string &method, const std::string &paramsJson, std::s
                 shapes.push_back({{"who", Hex(s.person)}, {"pedestrian", s.pedestrian}, {"mod", ModIdOf(s.mod)}, {"capsules", s.parts.size()},
                                   {"object", ObjectOf(s) != nullptr}});
             json bullets = {{"ray", g_rayWhy}, {"stretches", g_stretches}, {"shape_hits", g_shapeHits}, {"part_misses", g_partMisses},
+                            {"native_corpse_skips", g_nativeCorpseSkips},
                             {"excluded", g_excluded}, {"repeats", g_repeats}, {"faults", g_rayFaults}};
             *reply = dump({{"filters", filters}, {"bridge_takes", takes}, {"shapes", shapes}, {"bullets", bullets}, {"seen", g_seen}, {"taken", g_taken}, {"faults", g_faults}, {"human_hit_calls", g_called},
                            {"pedestrian_bullets", g_bulletWhy}});

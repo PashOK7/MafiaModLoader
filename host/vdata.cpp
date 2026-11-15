@@ -389,6 +389,8 @@ int VdataSet(MmlMod *mod, const char *visual, int lod, const float *attr, int ve
 void VdataModGone(MmlMod *mod) {
     g_attrs.erase(std::remove_if(g_attrs.begin(), g_attrs.end(), [&](const Attr &a) { return a.mod == mod; }), g_attrs.end());
 }
+void VdataBeforeReset() { ReleaseAll(); g_levels.clear(); }
+
 void VdataMissionClose() {
     g_levels.clear();
     for (auto &kv : g_mirrors) kv.second.owners.clear();   // (the pools' places are given anew)

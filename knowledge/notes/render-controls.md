@@ -6,7 +6,7 @@
 |---|---|---|---|
 | C_cache_base_block::IsBlockInRange | 0x402F90 | 0x5A93C0 | thiscall(cache, block, x, z, radius), ret 16 |
 | C_cache_base_block::DeactivateBlock | 0x402A50 | 0x5A8E80 | thiscall(cache, block), ret 4 |
-| setNewFogState | LS3DF+0x4E390 | LS3DF+0x4BE00 | fastcall(state, type, start, end, color), ret 12 |
+| Native fog setter | LS3DF+0x4E390 | LS3DF+0x4BE00 | fastcall(state, type, start, end, color), ret 12 |
 | FogProcess | LS3DF+0x685D0 | LS3DF+0x65180 | fastcall(alpha, vertices, stride, count, light, mode), ret 16 |
 
 CacheTick's activation radius is 200 m (550 m in 1.2's larger-distance mission mode), deactivation 230/580 m.

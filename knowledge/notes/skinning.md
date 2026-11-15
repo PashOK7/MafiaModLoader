@@ -1,8 +1,12 @@
 # People's skinning in LS3D
 
 How LS3D skins, lights and draws a single mesh (`SNGM`) and a single morph (`SMMR`: the people, their faces morphed),
-read in both builds' LS3DF.dll (2026-10-20). The names are the demo's `LS3D.dll` CodeView publics (re/demo, a build
-of 2002-07-04 with the same code; knowledge/notes/external.md). Offsets are the same in both builds unless said.
+read in both builds' LS3DF.dll (2026-10-20). Local demo symbols were one lookup source; restricted names stay
+in ignored local CSVs. Repository labels use the independently available vocabulary described in
+knowledge/notes/external.md. Offsets are the same in both builds unless said.
+
+For current prepared/posed scene sources, see [MODDING.md](../../docs/MODDING.md) and
+[the snapshot contract](../../docs/SCENE_RADIANCE_SNAPSHOT.md). A rest mesh is not a current posed snapshot.
 
 ## The objects
 

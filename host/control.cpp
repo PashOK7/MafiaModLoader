@@ -66,6 +66,68 @@ bool g_engineHooked;
 std::string g_engineWhy = "not asked for";
 unsigned g_steps, g_skipped, g_vfaults;
 
+using CarUsableFn = bool(__fastcall *)(void *car, void *edx, unsigned checks);
+CarUsableFn oCarUsable;
+struct SupportHook { MmlMod *mod; MmlVehicleSupportFn fn; void *user; };
+SupportHook g_support;
+unsigned g_supportCalls, g_supportFaults;
+struct SupportCall { SupportHook hook; void *car; uint32_t mask; };
+void CallSupport(void *data) {
+    auto *call = static_cast<SupportCall *>(data);
+    call->mask = call->hook.fn(call->car, call->hook.user);
+}
+
+bool WithWheelSupport(void *car, void *edx, unsigned checks, uint32_t mask) {
+    if (!mask) return oCarUsable(car, edx, checks);
+    game::Car vehicle(car);
+    const int count = std::clamp(vehicle.WheelCount(), 0, 32);
+    uint32_t *changed[32]{}, previous[32]{};
+    unsigned written = 0;
+    // The native query only reads wheel flags. Restore the added bits even if another hook faults.
+    __try {
+        for (int i = 0; i < count; ++i) {
+            if (!(mask & (1u << i))) continue;
+            void *wheel = vehicle.Wheel(i);
+            if (!wheel) continue;
+            auto &flags = game::at<uint32_t>(wheel, game::kWheelFlags);
+            if (flags & 0x40000000u) continue; // A detached wheel cannot support the car.
+            changed[written] = &flags;
+            previous[written++] = flags & game::kWheelOnGround;
+            flags |= game::kWheelOnGround;
+        }
+        return oCarUsable(car, edx, checks);
+    } __finally {
+        for (unsigned i = 0; i < written; ++i)
+            *changed[i] = (*changed[i] & ~game::kWheelOnGround) | previous[i];
+    }
+}
+
+bool __fastcall hkCarUsable(void *car, void *edx, unsigned checks) {
+    uint32_t mask = 0;
+    if ((checks & 6) && g_support.fn && ModAlive(g_support.mod)) {
+        SupportCall call{g_support, car, 0};
+        ++g_supportCalls;
+        if (ModCall(call.hook.mod, CallSupport, &call, "its vehicle support query")) mask = call.mask;
+        else ++g_supportFaults;
+    }
+    return WithWheelSupport(car, edx, checks, mask);
+}
+
+bool EnsureSupportHook() {
+    if (oCarUsable) return true;
+    if (!game::g_exe || !E().carIsUsable || !BodyKnown()) return false;
+    constexpr uint8_t expected[] = {0x53,0x8A,0x5C,0x24,0x08,0x55,0x56,0xF6,0xC3,0x01,0x0F,0x84,0xA0,0,0,0};
+    uint8_t bytes[sizeof expected];
+    if (!MemRead(E().carIsUsable, bytes, sizeof bytes) || memcmp(bytes, expected, sizeof bytes)) return false;
+    std::string error;
+    if (!HookAdd(nullptr, E().carIsUsable, reinterpret_cast<void *>(&hkCarUsable),
+                 reinterpret_cast<void **>(&oCarUsable), &error)) {
+        HWARN("vehicle support: native usability query not hooked (%s)", error.c_str());
+        return false;
+    }
+    return true;
+}
+
 bool PlaneKnown() { return game::g_exe && E().planeAI && E().planeUpdate; }
 
 // The vehicle's kind (MML_VEHICLE_CAR, MML_VEHICLE_AIRPLANE), 0: not a vehicle the loader drives.
@@ -389,7 +451,20 @@ int VehicleBody(void *car, MmlVehicleBody *read, const MmlVehicleBody *write) {
     return Guarded(f) ? 0 : 1;
 }
 
+int VehicleSupportHook(MmlMod *mod, MmlVehicleSupportFn fn, void *user) {
+    if (!fn) {
+        if (g_support.mod == mod) g_support = {};
+        return 1;
+    }
+    if (!EnsureSupportHook()) return 0;
+    if (g_support.fn && g_support.mod != mod)
+        Log(MML_LOG_WARN, ModIdOf(mod), "vehicle_support_hook: replaces %s's", ModIdOf(g_support.mod));
+    g_support = {mod, fn, user};
+    return 1;
+}
+
 void ControlModGone(MmlMod *mod) {
+    if (g_support.mod == mod) g_support = {};
     if (g_vhook.mod == mod) { g_vhook = VHook{}; g_kinds = MML_VEHICLES_CARS; }
     if (mod && g_lockedBy == mod && g_locked) { SetLock(false); g_lockedBy = nullptr; }
 }
@@ -403,6 +478,7 @@ void ControlMissionClose() {   // (the player goes with the mission: the next on
 }
 
 bool ControlMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok) {
+    if (method == "vehicle.trace") return CarTraceMethod(paramsJson, reply, ok);
     if (method != "player.lock" && method != "vehicle.body" && method != "vehicle.move" && method != "control.state") return false;
     *ok = false;
     json p = json::parse(paramsJson.empty() ? "null" : paramsJson, nullptr, false);
@@ -415,7 +491,9 @@ bool ControlMethod(const std::string &method, const std::string &paramsJson, std
                            {"vehicle_hook", g_vhook.fn ? ModIdOf(g_vhook.mod) : "none"}, {"engine", g_engineWhy}, {"steps", g_steps},
                            {"skipped", g_skipped}, {"faults", g_vfaults}, {"airplanes", (g_kinds & MML_VEHICLES_AIRPLANES) != 0},
                            {"airplane", g_planeWhy}, {"airplane_steps", g_planeSteps}, {"airplane_skipped", g_planeSkipped},
-                           {"flown", g_flown.size()}, {"moving", g_moves.size()}});
+                           {"flown", g_flown.size()}, {"moving", g_moves.size()},
+                           {"wheel_support", g_support.fn ? ModIdOf(g_support.mod) : "none"},
+                           {"support_queries", g_supportCalls}, {"support_faults", g_supportFaults}});
         } else if (method == "player.lock") {
             if (!LockKnown()) { *reply = "player.lock: not known for this build"; return true; }
             if (!game::Player()) { *reply = "player.lock: no player (no mission)"; return true; }

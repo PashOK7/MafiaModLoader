@@ -31,6 +31,16 @@ pub fn repo_root() -> Option<PathBuf> {
 tokio::task_local! {
     /// The game a tool call is for (its `game` argument: main.rs sets it around the call).
     static GAME: PathBuf;
+    static BUILD: &'static str;
+}
+
+/// Resolve symbols against the crashed image, even when the active game's log is missing or newer.
+pub fn with_build<R>(build: Option<&str>, f: impl FnOnce() -> R) -> R {
+    match build {
+        Some("1.0") => BUILD.sync_scope("1.0", f),
+        Some("1.2") => BUILD.sync_scope("1.2", f),
+        _ => f(),
+    }
 }
 
 /// Runs `f` for the game in `dir` (None: the default game).
@@ -178,6 +188,7 @@ pub async fn close(pid: u32, force: bool) -> Result<String, String> {
 /// The game's build as the loader last told it ("game: Mafia 1.0" in its log; "1.2" when not told): the knowledge
 /// base names addresses for 1.2 only, so 1.0's are named through their twins.
 pub fn current_build() -> String {
+    if let Ok(build) = BUILD.try_with(|b| *b) { return build.into(); }
     for prev in [false, true] {
         let Ok(dir) = game_dir() else { break };
         let p = dir.join("mml").join("logs").join(if prev { "mml.prev.log" } else { "mml.log" });

@@ -24,14 +24,14 @@ extern "C" __declspec(dllexport) __declspec(noinline) int harness_add(int a, int
     return x + y;
 }
 
-// harness_mid(a, f): (a + 1) + (int)(f * 2), with a place in its middle for a hook (hook_mid at harness_mid + 8,
-// its exported offset harness_mid_at): EAX holds a there and the x87 stack holds f, live across the hook (a mod's
-// code that uses the x87 must not lose it). The 5 bytes from there are whole instructions (add eax, 1; nop; nop).
+// harness_mid(a, f): (a + 1) + (int)(f * 2). At the hook site EAX holds a, ZF tells whether a equals 2,
+// and the x87 stack holds f. The first five bytes at the site are add eax, 1; nop; nop.
 extern "C" __declspec(dllexport) __declspec(naked) int harness_mid(int, float) {
     __asm {
         mov eax, [esp + 4]        ; 8B 44 24 04
         fld dword ptr [esp + 8]   ; D9 44 24 08
-        add eax, 1                ; 83 C0 01 (harness_mid + 8: the hook's place)
+        cmp eax, 2                ; 83 F8 02
+        add eax, 1                ; 83 C0 01 (harness_mid + 11: the hook's place)
         nop
         nop
         fadd st(0), st(0)
@@ -40,7 +40,7 @@ extern "C" __declspec(dllexport) __declspec(naked) int harness_mid(int, float) {
         ret
     }
 }
-extern "C" __declspec(dllexport) const unsigned harness_mid_at = 8;
+extern "C" __declspec(dllexport) const unsigned harness_mid_at = 11;
 // harness_seven(): 7, its byte at harness_seven + 1 the one a test patches (mov eax, 7: B8 07 00 00 00)
 extern "C" __declspec(dllexport) __declspec(naked) int harness_seven() {
     __asm {

@@ -228,6 +228,7 @@ DWORD SafePlace(void *actor, V3 *out) {
 }
 
 HRESULT __stdcall PresentHook(void *dev, const RECT *src, const RECT *dst, HWND wnd, const void *dirty) {
+    if (!WindowRenderReady()) return D3D_OK; // retry the failed native reset between frames before touching graphics again
     RenderPresent(dev);   // (mods' drawing over the whole frame first: it is in the shot)
     GammaPresent(dev);    // (gamma.cpp: the game's brightness in a window, before the shot and the showing)
     int id = 0;

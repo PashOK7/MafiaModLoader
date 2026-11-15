@@ -87,6 +87,13 @@ EDITS = [
      '\t\tLogging::Log() << "Starting DxWrapper v" << APP_VERSION\n'
      '\t\t\t<< " (MafiaModLoader\'s build: hooks safe on threads without TLS, managed textures in video memory, '
      'third_party/dxwrapper/patch.py)";\n'),
+    # 4. A windowed ResetEx takes no fullscreen display mode. Passing a fullscreen descriptor made from
+    # windowed parameters (format UNKNOWN / refresh 0) returns INVALIDCALL, including rollback to the old size.
+    ('d3d9/IDirect3DDevice9Ex.h',
+     '{ return (ProxyInterfaceEx) ? ProxyInterfaceEx->ResetEx(pPresentationParameters, pFullscreenDisplayMode) : D3DERR_INVALIDCALL; }',
+     '{ return (ProxyInterfaceEx) ? ProxyInterfaceEx->ResetEx(pPresentationParameters, '
+     '(pPresentationParameters && pPresentationParameters->Windowed) ? nullptr : pFullscreenDisplayMode) : D3DERR_INVALIDCALL; } '
+     '// (MML: windowed ResetEx has no fullscreen display mode)'),
     # 3. managed textures on 9Ex in video memory only (MmlManaged.h, written beside these files)
     ('d3d9/d3d9.h',
      '#include "IDirect3DVolumeTexture9.h"\n',
@@ -123,6 +130,10 @@ EDITS = [
      '\t\tif (MmlEmulated)\n'
      '\t\t{\n'
      '\t\t\tMmlManaged::Register(*ppTexture, Format);\n'
+     '\t\t}\n'
+     '\t\telse if (Pool == D3DPOOL_MANAGED && !pSharedHandle && !(Usage & (D3DUSAGE_AUTOGENMIPMAP | D3DUSAGE_RENDERTARGET | D3DUSAGE_DEPTHSTENCIL)))\n'
+     '\t\t{\n'
+     '\t\t\tMmlManaged::RegisterNative(*ppTexture, Format);\n'
      '\t\t}\n'),
     # the GPU's writes into a texture: its copy out of date
     ('d3d9/IDirect3DDevice9Ex.cpp',
@@ -212,7 +223,7 @@ EDITS = [
      '\tUINT MmlLevel = 0;\n'
      '\tif (MmlManaged::LevelOf(ProxyInterface, &MmlTexture, &MmlLevel))\n'
      '\t{\n'
-     '\t\treturn MmlManaged::GetLevelDC(MmlTexture, MmlLevel, phdc);\n'
+     '\t\treturn MmlManaged::GetLevelDC(MmlTexture, MmlLevel, phdc, ProxyInterface);\n'
      '\t}\n'
      '\n'
      '\treturn GetNonMultiSampledSurface(0)->GetDC(phdc);\n'),
@@ -227,7 +238,7 @@ EDITS = [
      '\tUINT MmlLevel = 0;\n'
      '\tif (MmlManaged::LevelOf(ProxyInterface, &MmlTexture, &MmlLevel))\n'
      '\t{\n'
-     '\t\treturn MmlManaged::ReleaseLevelDC(MmlTexture, MmlLevel, hdc);\n'
+     '\t\treturn MmlManaged::ReleaseLevelDC(MmlTexture, MmlLevel, hdc, ProxyInterface);\n'
      '\t}\n'
      '\n'
      '\tHRESULT hr = D3DERR_INVALIDCALL;\n'
@@ -282,7 +293,9 @@ def main():
     # the managed textures' emulation (3.), included by d3d9.h
     written += write_if_changed(os.path.join(DXW, 'd3d9', 'MmlManaged.h'),
                                 open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'MmlManaged.h'), encoding='utf-8').read())
-    print('dxwrapper patch: %d of %d files written (%d changes)' % (written, len(names) + 3, len(EDITS)))
+    written += write_if_changed(os.path.join(DXW, 'd3d9', 'MmlTextureRevision.h'),
+                                open(os.path.join(ROOT, 'sdk', 'include', 'mml', 'native_texture_revision.h'), encoding='utf-8').read())
+    print('dxwrapper patch: %d of %d files written (%d changes)' % (written, len(names) + 4, len(EDITS)))
 
 
 main()

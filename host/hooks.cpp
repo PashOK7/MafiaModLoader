@@ -139,7 +139,8 @@ void __stdcall MidDispatch(MidEntry *e, MmlMidContext *c, uintptr_t at) {
     c->eip = c->eip != at ? c->eip : static_cast<uint32_t>(reinterpret_cast<uintptr_t>(e->next));
 }
 
-// sub esp, 4 (the slot it returns through); pushfd; pushad; mov ebx, esp (the context); sub esp, 0x210; and esp, -16;
+// lea esp, [esp - 4] (reserve the return slot without changing the game's flags); pushfd; pushad;
+// mov ebx, esp (the context); sub esp, 0x210; and esp, -16;
 // fxsave [esp]; fninit (an empty x87 stack for the mod's code, whatever the game left on it); push at; push ebx; push
 // entry; call MidDispatch (stdcall: it pops all three); fxrstor [esp]; mov esp, ebx; popad; popfd; ret (to the slot)
 void WriteMidStub(MidEntry *e, uintptr_t at) {
@@ -147,7 +148,7 @@ void WriteMidStub(MidEntry *e, uintptr_t at) {
     size_t i = 0;
     auto put = [&](std::initializer_list<uint8_t> bytes) { for (uint8_t b : bytes) p[i++] = b; };
     auto dword = [&](uint32_t v) { memcpy(p + i, &v, 4); i += 4; };
-    put({0x83, 0xEC, 0x04, 0x9C, 0x60, 0x8B, 0xDC, 0x81, 0xEC});
+    put({0x8D, 0x64, 0x24, 0xFC, 0x9C, 0x60, 0x8B, 0xDC, 0x81, 0xEC});
     dword(0x210);
     put({0x83, 0xE4, 0xF0, 0x0F, 0xAE, 0x04, 0x24, 0xDB, 0xE3, 0x68});
     dword(static_cast<uint32_t>(at));
@@ -196,10 +197,15 @@ bool AddLink(MmlMod *owner, uintptr_t target, void *detour, void **original, Pla
         c->target = target;
         c->thunk = NewThunk();
         if (!c->thunk) { delete c; if (err) *err = "no memory for the thunk"; return false; }
-        c->thunk[0] = 0xFF;   // jmp dword ptr [abs32]
-        c->thunk[1] = 0x25;
-        *reinterpret_cast<void *volatile **>(c->thunk + 2) = &c->head;
-        FlushInstructionCache(GetCurrentProcess(), c->thunk, 6);
+        // Same x86 absolute indirect jump, with a no-base/no-index SIB. The recorded RTSS hook scanner treats
+        // FF 25 abs32 as a 64-bit RIP-relative jump and dereferences thunk+6+abs32 when focus returns.
+        // FF 24 25 abs32 retains the pointer-only relink and changes no register, flags or stack state.
+        c->thunk[0] = 0xFF;
+        c->thunk[1] = 0x24;
+        c->thunk[2] = 0x25;
+        void *volatile *head = &c->head;
+        memcpy(c->thunk + 3, &head, sizeof head);
+        FlushInstructionCache(GetCurrentProcess(), c->thunk, 7);
         MH_STATUS s = MH_CreateHook(reinterpret_cast<void *>(target), c->thunk, &c->trampoline);
         if (s != MH_OK) {
             g_freeThunks.push_back(c->thunk);

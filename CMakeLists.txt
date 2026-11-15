@@ -15,6 +15,83 @@ add_link_options(/DEBUG /OPT:REF /OPT:ICF)
 
 set(MML_OUT ${CMAKE_BINARY_DIR}/out)   # the layout of <game>: MafiaModLoader.asi, mml/mods/<id>/...
 
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+# ---- shaders compiled in a mod's build: fxc (shader model 5 and lower: Direct3D 9 to 11) or dxc (6 and up:
+# Direct3D 12), both from the Windows SDK this build uses
+cmake_host_system_information(RESULT kits QUERY WINDOWS_REGISTRY
+    "HKLM/SOFTWARE/Microsoft/Windows Kits/Installed Roots" VALUE KitsRoot10 VIEW BOTH)
+if(NOT kits)
+    set(kits "C:/Program Files (x86)/Windows Kits/10")
+endif()
+set(MML_SDK_BIN "${kits}/bin/${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}/x64")
+find_program(MML_FXC fxc HINTS ${MML_SDK_BIN} NO_DEFAULT_PATH)
+find_program(MML_FXC fxc)
+find_program(MML_DXC dxc HINTS ${MML_SDK_BIN} NO_DEFAULT_PATH)
+find_program(MML_DXC dxc)
+
+# mml_shaders(<target> <tag> <dir> <file>:<entry>:<profile>[:<name>] ...): each entry point compiled at build time
+# (optimised, warnings as errors) into a header `shaders/<name>.h` of the target's, its bytecode as `k<name>[]`
+# (fxc: const BYTE, so <windows.h> first; dxc: const unsigned char). <file> is relative to <dir>; the SDK's
+# sdk/include is on the include path (`#include "mml/gfx/frame.hlsli"`); a change to the file or to any .hlsli
+# in its active preprocessor include graph compiles it again. Optimization is bounded;
+# a repeated timeout with identical inputs fails before starting the optimizer again.
+set(MML_SHADER_TIMEOUT 60 CACHE STRING "Maximum seconds per optimized shader (positive, never unlimited)")
+function(mml_shaders target tag dir)
+    set(gen ${CMAKE_BINARY_DIR}/shaders/${tag})
+    set(headers)
+    foreach(spec ${ARGN})
+        string(REPLACE ":" ";" parts "${spec}")
+        list(LENGTH parts n)
+        if(n LESS 3)
+            message(FATAL_ERROR "${tag} SHADERS ${spec}: <file>:<entry>:<profile>[:<name>]")
+        endif()
+        list(GET parts 0 file)
+        list(GET parts 1 entry)
+        list(GET parts 2 profile)
+        set(language_args)
+        if(n GREATER 4)
+            list(GET parts 4 language_version)
+            list(APPEND language_args --hlsl-version ${language_version})
+        endif()
+        set(name ${entry})
+        if(n GREATER 3)
+            list(GET parts 3 name)
+        endif()
+        cmake_path(ABSOLUTE_PATH file BASE_DIRECTORY ${dir} NORMALIZE OUTPUT_VARIABLE src)
+        cmake_path(GET src PARENT_PATH srcdir)
+        set(out ${gen}/shaders/${name}.h)
+        set(depfile ${out}.d)
+        set(sdkinc ${CMAKE_SOURCE_DIR}/sdk/include)
+        if(profile MATCHES "_6_")
+            if(NOT MML_DXC)
+                message(FATAL_ERROR "${tag}: ${profile} needs dxc (the Windows SDK's), not found")
+            endif()
+            set(compiler ${MML_DXC})
+            set(kind dxc)
+        else()
+            if(NOT MML_FXC)
+                message(FATAL_ERROR "${tag}: ${profile} needs fxc (the Windows SDK's), not found")
+            endif()
+            set(compiler ${MML_FXC})
+            set(kind fxc)
+        endif()
+        add_custom_command(OUTPUT ${out}
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/compile_shader.py
+                --compiler ${compiler} --kind ${kind} --source ${src} --entry ${entry}
+                --profile ${profile} --name ${name} --output ${out} --depfile ${depfile}
+                --include ${srcdir} --include ${sdkinc} --timeout ${MML_SHADER_TIMEOUT} ${language_args}
+            DEPENDS ${src} ${CMAKE_SOURCE_DIR}/tools/compile_shader.py DEPFILE ${depfile}
+            COMMENT "${tag}: ${file} ${entry} (${profile}; limit ${MML_SHADER_TIMEOUT}s)" VERBATIM)
+        # Compile one entry explicitly before requesting the whole mod. This target
+        # neither builds unrelated shader entries nor runs the mod's C++/link steps.
+        add_custom_target(${target}_shader_${name} DEPENDS ${out})
+        list(APPEND headers ${out})
+    endforeach()
+    target_sources(${target} PRIVATE ${headers})
+    target_include_directories(${target} PRIVATE ${gen})
+endfunction()
+
+
 if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     # ---- MinHook (third_party/minhook: upstream but for its threads' walk, third_party/README.md)
     add_library(minhook STATIC
@@ -33,6 +110,7 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     add_library(MafiaModLoader SHARED
         host/main.cpp host/paths.cpp host/log.cpp host/memory.cpp host/crash.cpp host/stack.cpp host/hooks.cpp host/mods.cpp host/game_hooks.cpp
         host/bridge.cpp host/tap.cpp host/start.cpp host/input.cpp host/joyplug.cpp host/fixes.cpp host/asi_compat.cpp host/screenshot.cpp host/draw.cpp host/config.cpp host/menus.cpp host/menus10.cpp host/script.cpp host/orders.cpp host/world.cpp host/lifecycle.cpp host/files.cpp host/render.cpp host/atmosphere.cpp host/gfx.cpp host/gfx_vk.cpp host/gamma.cpp host/fullscreen.cpp host/gather.cpp host/motion.cpp host/view.cpp host/geom.cpp host/prof.cpp host/d3dstats.cpp host/d3dmirror.cpp host/vbrename.cpp host/settings.cpp host/batch.cpp host/events.cpp host/native.cpp host/humans.cpp host/watch.cpp host/happen.cpp host/collide.cpp host/state.cpp host/lights.cpp host/effects.cpp host/props.cpp host/sound.cpp host/control.cpp host/interact.cpp host/hud.cpp host/saves.cpp host/anims.cpp host/hits.cpp host/pedestrians.cpp host/framelife.cpp host/worlddraw.cpp host/scale.cpp host/items.cpp host/stats.cpp host/models.cpp host/meshes.cpp host/shaders.cpp host/skin.cpp host/vdata.cpp host/shadows.cpp host/panel.cpp host/fpu.cpp host/gamecam.cpp host/sidecar.cpp host/video.cpp host/video_hw.cpp)
+    target_sources(MafiaModLoader PRIVATE host/car_trace.cpp host/ogg.cpp)
     # ($<0:> keeps Visual Studio from adding a per-configuration folder)
     set_target_properties(MafiaModLoader PROPERTIES SUFFIX ".asi" RUNTIME_OUTPUT_DIRECTORY ${MML_OUT}/$<0:>)
     target_include_directories(MafiaModLoader PRIVATE third_party/json host ${CMAKE_BINARY_DIR}/gen)
@@ -48,7 +126,6 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
 
     # ---- third-party libraries for mods: pinned by tools/deps.py (downloaded at the first configure, hash checked),
     # built here for x86 with the mods' runtime (/MT). A mod links the target: target_link_libraries(mod_<id> PRIVATE Jolt)
-    find_package(Python3 REQUIRED COMPONENTS Interpreter)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tools/deps.py)   # a new pin: fetched
     function(mml_dep name)
         execute_process(COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/deps.py ${name} RESULT_VARIABLE rc)
@@ -106,65 +183,6 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
         add_subdirectory(${CMAKE_SOURCE_DIR}/third_party/_deps/jolt/Build ${CMAKE_BINARY_DIR}/jolt EXCLUDE_FROM_ALL)
         target_compile_options(Jolt PUBLIC /Zc:__cplusplus)   # (Jolt's headers read __cplusplus)
     endif()
-
-    # ---- shaders compiled in a mod's build: fxc (shader model 5 and lower: Direct3D 9 to 11) or dxc (6 and up:
-    # Direct3D 12), both from the Windows SDK this build uses
-    cmake_host_system_information(RESULT kits QUERY WINDOWS_REGISTRY
-        "HKLM/SOFTWARE/Microsoft/Windows Kits/Installed Roots" VALUE KitsRoot10 VIEW BOTH)
-    if(NOT kits)
-        set(kits "C:/Program Files (x86)/Windows Kits/10")
-    endif()
-    set(MML_SDK_BIN "${kits}/bin/${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}/x64")
-    find_program(MML_FXC fxc HINTS ${MML_SDK_BIN} NO_DEFAULT_PATH)
-    find_program(MML_FXC fxc)
-    find_program(MML_DXC dxc HINTS ${MML_SDK_BIN} NO_DEFAULT_PATH)
-    find_program(MML_DXC dxc)
-
-    # mml_shaders(<target> <tag> <dir> <file>:<entry>:<profile>[:<name>] ...): each entry point compiled at build time
-    # (optimised, warnings as errors) into a header `shaders/<name>.h` of the target's, its bytecode as `k<name>[]`
-    # (fxc: const BYTE, so <windows.h> first; dxc: const unsigned char). <file> is relative to <dir>; the SDK's
-    # sdk/include is on the include path (`#include "mml/gfx/frame.hlsli"`); a change to the file or to any .hlsli
-    # beside it compiles it again.
-    function(mml_shaders target tag dir)
-        set(gen ${CMAKE_BINARY_DIR}/shaders/${tag})
-        set(headers)
-        foreach(spec ${ARGN})
-            string(REPLACE ":" ";" parts "${spec}")
-            list(LENGTH parts n)
-            if(n LESS 3)
-                message(FATAL_ERROR "${tag} SHADERS ${spec}: <file>:<entry>:<profile>[:<name>]")
-            endif()
-            list(GET parts 0 file)
-            list(GET parts 1 entry)
-            list(GET parts 2 profile)
-            set(name ${entry})
-            if(n GREATER 3)
-                list(GET parts 3 name)
-            endif()
-            cmake_path(ABSOLUTE_PATH file BASE_DIRECTORY ${dir} NORMALIZE OUTPUT_VARIABLE src)
-            cmake_path(GET src PARENT_PATH srcdir)
-            file(GLOB includes CONFIGURE_DEPENDS ${srcdir}/*.hlsli ${CMAKE_SOURCE_DIR}/sdk/include/mml/gfx/*.hlsli
-                 ${CMAKE_SOURCE_DIR}/sdk/include/mml/shaders/*.hlsli ${CMAKE_SOURCE_DIR}/sdk/include/mml/shaders/*.hlsl)
-            set(out ${gen}/shaders/${name}.h)
-            set(sdkinc ${CMAKE_SOURCE_DIR}/sdk/include)
-            if(profile MATCHES "_6_")
-                if(NOT MML_DXC)
-                    message(FATAL_ERROR "${tag}: ${profile} needs dxc (the Windows SDK's), not found")
-                endif()
-                set(cmd ${MML_DXC} -nologo -O3 -WX -T ${profile} -E ${entry} -I ${srcdir} -I ${sdkinc} -Vn k${name} -Fh ${out} ${src})
-            else()
-                if(NOT MML_FXC)
-                    message(FATAL_ERROR "${tag}: ${profile} needs fxc (the Windows SDK's), not found")
-                endif()
-                set(cmd ${MML_FXC} /nologo /O3 /WX /T ${profile} /E ${entry} /I ${srcdir} /I ${sdkinc} /Vn k${name} /Fh ${out} ${src})
-            endif()
-            add_custom_command(OUTPUT ${out} COMMAND ${CMAKE_COMMAND} -E make_directory ${gen}/shaders
-                COMMAND ${cmd} DEPENDS ${src} ${includes} COMMENT "${tag}: ${file} ${entry} (${profile})" VERBATIM)
-            list(APPEND headers ${out})
-        endforeach()
-        target_sources(${target} PRIVATE ${headers})
-        target_include_directories(${target} PRIVATE ${gen})
-    endfunction()
 
     # the loader's own shaders (host/gfx.cpp: the graphics bridge)
     mml_shaders(MafiaModLoader host ${CMAKE_SOURCE_DIR}/host/shaders
@@ -293,9 +311,21 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     mml_add_mod(rear_mirror ${CMAKE_SOURCE_DIR}/mods/examples/rear_mirror mods/examples/rear_mirror/rear_mirror.cpp
         SHADERS rear_mirror.hlsl:PsMirror:ps_5_0)
     mml_add_mod(river_water ${CMAKE_SOURCE_DIR}/mods/examples/river_water mods/examples/river_water/river_water.cpp
-        SHADERS river_water.hlsl:VsWater:vs_5_0 river_water.hlsl:HsWater:hs_5_0 river_water.hlsl:DsWater:ds_5_0
-                river_water.hlsl:PsWater:ps_5_0 river_water.hlsl:CsPaintedSky:cs_5_0 river_waves.hlsl:CsSpectrum:cs_5_0
-                river_waves.hlsl:CsFftRows:cs_5_0 river_waves.hlsl:CsFftCols:cs_5_0 river_waves.hlsl:CsResolve:cs_5_0)
+        SHADERS river_water.hlsl:VsWater:vs_5_0 river_water.hlsl:HsWater:hs_5_0 river_water.hlsl:DsWater:ds_5_0 river_world_geometry.hlsl:DsWaterWorld:ds_5_0
+                river_world_geometry.hlsl:DsWaterSeed:ds_5_0
+                river_water.hlsl:PsWater:ps_5_0 river_world.hlsl:PsWaterWorld:ps_5_0 river_world.hlsl:PsWaterResolve:ps_5_0
+                river_world_transport.hlsl:PsWaterSeed:ps_5_0 river_world_transport.hlsl:CsWaterTransport:cs_5_0
+                river_world_seed_ordered.hlsl:PsWaterSeedOrdered:ps_5_0
+                ../../../sdk/include/mml/gfx/water_bounds_build.hlsl:CsWaterBoundsTiles:cs_5_0
+                ../../../sdk/include/mml/gfx/water_bounds_build.hlsl:CsWaterBoundsHierarchy:cs_5_0
+                ../../../sdk/include/mml/gfx/water_bounds_build.hlsl:CsWaterBoundsShore:cs_5_0
+                river_world_diagnostic.hlsl:PsWaterGeometry:ps_5_0 river_world_diagnostic.hlsl:PsWaterRadiance:ps_5_0
+                river_world_diagnostic.hlsl:CsWaterWorldRay:cs_5_0 river_world_diagnostic.hlsl:CsWaterWorldBlend:cs_5_0
+                river_water.hlsl:CsPaintedSky:cs_5_0 river_water.hlsl:CsWaterOptics:cs_5_0 river_waves.hlsl:CsSpectrum:cs_5_0
+                river_waves.hlsl:CsFftRows:cs_5_0 river_waves.hlsl:CsFftCols:cs_5_0 river_waves.hlsl:CsResolve:cs_5_0
+                  river_environment.hlsl:CsEnvironmentEmitter:cs_5_0
+                  ../../../sdk/include/mml/gfx/gpu_transfer.hlsl:CsTransferWords:cs_5_0
+                  ../../../sdk/include/mml/gfx/gpu_transfer_output.hlsl:CsTransferOutput:cs_5_0)
     mml_add_mod(sun_shafts ${CMAKE_SOURCE_DIR}/mods/examples/sun_shafts mods/examples/sun_shafts/sun_shafts.cpp
         SHADERS sun_shafts.hlsl:PsMarch:ps_5_0 sun_shafts.hlsl:PsBlurX:ps_5_0 sun_shafts.hlsl:PsBlurY:ps_5_0
         sun_shafts.hlsl:PsComposite:ps_5_0)
@@ -341,6 +371,11 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     mml_add_mod(storm ${CMAKE_SOURCE_DIR}/mods/examples/storm mods/examples/storm/storm.cpp)
     mml_add_mod(props_demo ${CMAKE_SOURCE_DIR}/mods/examples/props_demo mods/examples/props_demo/props_demo.cpp)
     mml_add_mod(engine_note ${CMAKE_SOURCE_DIR}/mods/examples/engine_note mods/examples/engine_note/engine_note.cpp)
+    mml_add_mod(soundscape ${CMAKE_SOURCE_DIR}/mods/examples/soundscape mods/examples/soundscape/soundscape.cpp)
+    mml_add_mod(draw_probe ${CMAKE_SOURCE_DIR}/mods/examples/draw_probe mods/examples/draw_probe/draw_probe.cpp)
+    target_include_directories(mod_draw_probe PRIVATE third_party/json)
+    add_executable(soundscape_math_test tests/harness/soundscape_math.cpp)
+    target_link_libraries(soundscape_math_test PRIVATE mml_sdk)
     mml_add_mod(hover ${CMAKE_SOURCE_DIR}/mods/examples/hover mods/examples/hover/hover.cpp)
     mml_add_mod(debug_views ${CMAKE_SOURCE_DIR}/mods/examples/debug_views mods/examples/debug_views/debug_views.cpp
         mods/examples/debug_views/routes.cpp mods/examples/debug_views/triggers.cpp mods/examples/debug_views/race.cpp
@@ -382,6 +417,14 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
             ${CMAKE_BINARY_DIR}/harness/)   # (its PDB beside it, as deploy puts it: crash_triage names its frames)
     set_target_properties(mml_harness PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/harness/$<0:>)
     add_executable(water_mesh_test tests/harness/water_mesh.cpp)
+    add_executable(index_owner_test tests/harness/index_owner.cpp)
+    target_include_directories(index_owner_test PRIVATE host)
+    target_compile_options(index_owner_test PRIVATE /UNDEBUG)
+    set_target_properties(index_owner_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/harness/$<0:>)
+    add_executable(shadow_frame_test tests/harness/shadow_frame.cpp)
+    target_include_directories(shadow_frame_test PRIVATE host)
+    target_compile_options(shadow_frame_test PRIVATE /UNDEBUG)
+    set_target_properties(shadow_frame_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/harness/$<0:>)
     add_executable(receiver_fit_test tests/harness/receiver_fit.cpp)
     add_executable(shadow_receivers_test tests/harness/shadow_receivers.cpp)
     target_link_libraries(shadow_receivers_test PRIVATE mml_sdk d3d11)
@@ -395,6 +438,11 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     target_link_libraries(water_mesh_test PRIVATE mml_sdk)
     target_compile_options(water_mesh_test PRIVATE /UNDEBUG)  # keep assertions in release test builds
     set_target_properties(water_mesh_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/harness/$<0:>)
+    add_executable(scene_waterline_test tests/harness/scene_waterline.cpp)
+    target_link_libraries(scene_waterline_test PRIVATE mml_sdk d3d11)
+    mml_shaders(scene_waterline_test waterline ${CMAKE_SOURCE_DIR}/tests/harness scene_waterline.hlsl:CsWaterlineTest:cs_5_0)
+    target_compile_options(scene_waterline_test PRIVATE /UNDEBUG)
+    set_target_properties(scene_waterline_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/harness/$<0:>)
     if(TARGET mod_river_water)
         add_executable(atmosphere_test tests/harness/atmosphere.cpp)
         target_link_libraries(atmosphere_test PRIVATE mml_sdk d3d11)
@@ -403,6 +451,38 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
         target_compile_options(atmosphere_test PRIVATE /UNDEBUG)
         mml_shaders(atmosphere_test atmosphere ${CMAKE_SOURCE_DIR}/tests/harness atmosphere.hlsl:CsAtmosphereTest:cs_5_0)
         set_target_properties(atmosphere_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/harness/$<0:>)
+        add_executable(environment_test tests/harness/environment.cpp)
+        target_link_libraries(environment_test PRIVATE mml_sdk d3d11)
+        target_include_directories(environment_test PRIVATE ${CMAKE_BINARY_DIR}/shaders/river_water)
+        add_dependencies(environment_test mod_river_water)
+        target_compile_options(environment_test PRIVATE /UNDEBUG)
+        mml_shaders(environment_test environment ${CMAKE_SOURCE_DIR}/tests/harness environment.hlsl:CsEnvironmentTest:cs_5_0)
+        set_target_properties(environment_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/harness/$<0:>)
+        add_executable(water_lighting_test tests/harness/water_lighting.cpp)
+        target_link_libraries(water_lighting_test PRIVATE mml_sdk d3d11)
+        target_compile_options(water_lighting_test PRIVATE /UNDEBUG)
+        mml_shaders(water_lighting_test water_lighting ${CMAKE_SOURCE_DIR}/tests/harness water_lighting.hlsl:CsWaterLightingTest:cs_5_0)
+        set_target_properties(water_lighting_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/harness/$<0:>)
+        add_executable(ray_scene_test tests/harness/ray_scene.cpp)
+        add_executable(native_material_test tests/harness/native_material.cpp)
+        add_executable(scene_blend_test tests/harness/scene_blend.cpp)
+        target_link_libraries(scene_blend_test PRIVATE mml_sdk d3d11)
+        target_compile_options(scene_blend_test PRIVATE /UNDEBUG)
+        mml_shaders(scene_blend_test scene_blend ${CMAKE_SOURCE_DIR}/tests/harness scene_blend.hlsl:CsSceneBlend:cs_5_0)
+        set_target_properties(scene_blend_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/harness/$<0:>)
+        add_executable(billboard_test tests/harness/billboard.cpp)
+        target_link_libraries(billboard_test PRIVATE mml_sdk d3d11)
+        target_compile_options(billboard_test PRIVATE /UNDEBUG)
+        mml_shaders(billboard_test billboard ${CMAKE_SOURCE_DIR}/tests/harness billboard.hlsl:CsBillboard:cs_5_0)
+        set_target_properties(billboard_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/harness/$<0:>)
+        target_link_libraries(native_material_test PRIVATE mml_sdk d3d9 d3d11)
+        target_compile_options(native_material_test PRIVATE /UNDEBUG)
+        mml_shaders(native_material_test native_material ${CMAKE_SOURCE_DIR}/tests/harness native_material.hlsl:CsNativeMaterial:cs_5_0 native_texture_pages.hlsl:CsNativeTexture:cs_5_0)
+        set_target_properties(native_material_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/harness/$<0:>)
+        target_link_libraries(ray_scene_test PRIVATE mml_sdk d3d11)
+        target_compile_options(ray_scene_test PRIVATE /UNDEBUG)
+        mml_shaders(ray_scene_test ray_scene ${CMAKE_SOURCE_DIR}/tests/harness ray_scene.hlsl:CsRaySceneTest:cs_5_0 ray_scene.hlsl:CsRayAttributes:cs_5_0 ray_scene.hlsl:CsRayMaterials:cs_5_0)
+        set_target_properties(ray_scene_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/harness/$<0:>)
         add_executable(water_sky_test tests/harness/water_sky.cpp)
         target_link_libraries(water_sky_test PRIVATE mml_sdk d3d11)
         target_include_directories(water_sky_test PRIVATE ${CMAKE_BINARY_DIR}/shaders/river_water)
@@ -433,6 +513,8 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     mml_add_test_mod(hook_b)
     mml_add_test_mod(kit)
     target_sources(testmod_kit PRIVATE tests/mods/kit/atmosphere_c.c)
+    target_sources(testmod_kit PRIVATE tests/mods/kit/environment.cpp tests/mods/kit/environment_c.c)
+    target_sources(testmod_kit PRIVATE tests/mods/kit/scene_source.cpp tests/mods/kit/scene_collect.cpp)
     mml_add_test_mod(heavy)
     mml_add_test_mod(files_b)   # (its files\ folder and files_a, a mod of files alone, are copied by run_tests.py)
     mml_add_test_mod(side_test) # its 32-bit half (the 64-bit one: the x64 preset; run_tests.py copies it into x64\)
@@ -457,7 +539,10 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     if(MML_DXWRAPPER)
         include(ExternalProject)
         mml_dep(dxwrapper)
-        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/third_party/dxwrapper/patch.py)
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+            ${CMAKE_SOURCE_DIR}/third_party/dxwrapper/patch.py
+            ${CMAKE_SOURCE_DIR}/third_party/dxwrapper/MmlManaged.h
+            ${CMAKE_SOURCE_DIR}/sdk/include/mml/native_texture_revision.h)
         execute_process(COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/third_party/dxwrapper/patch.py RESULT_VARIABLE rc)
         if(NOT rc EQUAL 0)
             message(FATAL_ERROR "third_party/dxwrapper/patch.py failed: dxwrapper's sources are not the ones it knows")
@@ -509,6 +594,22 @@ else()
     mml_mod64(hello_side mods/examples/hello_side/hello_side64.cpp)
     mml_mod64(side_picture mods/examples/side_picture/side_picture64.cpp)
     target_link_libraries(mod64_side_picture PRIVATE d3d12)
+    mml_mod64(river_water mods/examples/river_water/river_water64.cpp)
+    target_link_libraries(mod64_river_water PRIVATE d3d12)
+    mml_shaders(mod64_river_water river_water64 ${CMAKE_SOURCE_DIR}/mods/examples/river_water
+        river_world_transport_dxr.hlsl:CsWaterTransport:cs_6_5:CsWaterTransportDxr:2018
+        river_world_transport_facets.hlsl:CsWaterTransport:cs_6_5:CsWaterTransportFacets:2018
+        river_world_transport_queue.hlsl:CsWaterTransport:cs_6_5:CsWaterQueueTrace:2018
+        river_world_transport_queue.hlsl:CsWaterQueueReset:cs_6_5:CsWaterQueueReset:2018
+        river_world_transport_queue.hlsl:CsWaterQueueBuild:cs_6_5:CsWaterQueueBuild:2018
+        river_world_transport_queue.hlsl:CsWaterQueueDispatch:cs_6_5:CsWaterQueueDispatch:2018
+        river_world_transport_queue.hlsl:CsWaterFirstHit:cs_6_5:CsWaterFirstHit:2018
+        river_world_transport_queue.hlsl:CsWaterQueueLayeredDispatch:cs_6_5:CsWaterQueueLayeredDispatch:2018
+        river_world_transport_opaque.hlsl:CsWaterTransport:cs_6_5:CsWaterQueueOpaque:2018
+        ../../../sdk/include/mml/gfx/gpu_transfer_unpack.hlsl:CsTransferWords:cs_6_0:CsTransferUnpack:2018
+        ../../../sdk/include/mml/gfx/ray_scene_bounds.hlsl:CsSceneBounds:cs_6_0:CsSceneBounds:2018
+        ../../../sdk/include/mml/gfx/ray_scene_facets.hlsl:CsSceneFacets:cs_6_0:CsSceneFacets:2018
+        ../../../sdk/include/mml/gfx/gpu_transfer_pack_output.hlsl:CsTransferPackOutput:cs_6_0:CsTransferPackOutput:2018)
 
     # ---- PhysX 5 for the 64-bit halves: pinned by tools/deps.py (downloaded at the first configure, hash checked).
     # Its CMake makes the whole build's configurations its own (debug, checked, profile, release: CMAKE_CONFIGURATION_TYPES

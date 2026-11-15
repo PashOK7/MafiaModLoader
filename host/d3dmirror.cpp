@@ -39,8 +39,9 @@ enum : int {
     kVtSetMaterial = 49, kVtSetLight = 51, kVtLightEnable = 53, kVtSetRenderState = 57, kVtBeginStateBlock = 60,
     kVtEndStateBlock = 61, kVtSetTexture = 65, kVtSetTextureStageState = 67, kVtSetSamplerState = 69,
     kVtSetVertexShader = 92, kVtSetVertexShaderConstantF = 94, kVtSetPixelShader = 107, kVtSetPixelShaderConstantF = 109,
-    kVtPresent = 17, kVtCreateStateBlock = 59, kVtDrawPrimitive = 81, kVtDrawPrimitiveUP = 83, kVtDrawIndexedPrimitiveUP = 84,
+    kVtPresent = 17, kVtCreateStateBlock = 59, kVtDrawPrimitive = 81, kVtDrawPrimitiveUP = 83, kVtDrawIndexedPrimitiveUP = 84, kVtProcessVertices = 85,
     kVtGetVertexShader = 93, kVtGetPixelShader = 108, kVtGetTransform = 45,
+    kVtSetVertexDeclaration = 87, kVtSetFvf = 89,
 };
 constexpr int kVtSbCapture = 4, kVtSbApply = 5;
 
@@ -55,6 +56,8 @@ int g_users;
 std::string g_hookWhy;
 uint64_t g_reads, g_why[5];     // reads from the device; why: frame, apply, reset, thread, device
 enum { kWhyFrame, kWhyApply, kWhyReset, kWhyThread, kWhyDevice };
+IDirect3DStateBlock9 *g_rasterBlock;
+uint64_t g_rasterApplies;
 int g_checkLeft;
 uint64_t g_checked, g_mismatchDraws;
 std::vector<std::string> g_mismatches;
@@ -63,7 +66,11 @@ std::vector<std::string> g_mismatches;
 bool g_lentVs, g_lentPs, g_lending;
 IDirect3DVertexShader9 *g_gameVs, *g_lendVs;
 IDirect3DPixelShader9 *g_gamePs, *g_lendPs;
-uint64_t g_lends, g_returns, g_shaderSets, g_xfKept;
+uint64_t g_lends, g_returns, g_shaderSets, g_xfKept, g_sourceWorldKept;
+void **g_fvfVtable;
+bool g_fvfSupported, g_fvfKnown;
+DWORD g_fvf;
+uint64_t g_sourceFvfKept;
 unsigned g_xfPending;   // the transforms kept, not yet on the device: 1 the world, 2 the view, 4 the projection
 
 inline void Invalidate(int why) { if (g_valid) g_why[why]++; g_valid = false; }
@@ -93,6 +100,8 @@ ORIG(SetRenderState, D3DRENDERSTATETYPE, DWORD)
 ORIG(SetTexture, DWORD, IDirect3DBaseTexture9 *)
 ORIG(SetTextureStageState, DWORD, D3DTEXTURESTAGESTATETYPE, DWORD)
 ORIG(SetSamplerState, DWORD, D3DSAMPLERSTATETYPE, DWORD)
+ORIG(SetVertexDeclaration, IDirect3DVertexDeclaration9 *)
+ORIG(SetFvf, DWORD)
 ORIG(SetVertexShader, IDirect3DVertexShader9 *)
 ORIG(SetPixelShader, IDirect3DPixelShader9 *)
 ORIG(SetVertexShaderConstantF, UINT, const float *, UINT)
@@ -129,12 +138,14 @@ HRESULT STDMETHODCALLTYPE hkSetRenderTarget(IDirect3DDevice9 *d, DWORD i, IDirec
 }
 unsigned XfBit(D3DTRANSFORMSTATETYPE t) { return t == D3DTS_WORLD ? 1 : t == D3DTS_VIEW ? 2 : t == D3DTS_PROJECTION ? 4 : 0; }
 HRESULT STDMETHODCALLTYPE hkSetTransform(IDirect3DDevice9 *d, D3DTRANSFORMSTATETYPE t, const D3DMATRIX *m) {
-    if (g_lentVs && m && Keep(d)) {
+    const bool sourceWorld = t == D3DTS_WORLD && SceneCollecting();
+    if ((g_lentVs || sourceWorld) && m && Keep(d)) {
         if (const unsigned bit = XfBit(t)) {   // (kept: the lent shader reads it from its constants)
             *TransformOf(t) = *m;
             if (bit != 1) Changed();
             g_xfPending |= bit;
-            g_xfKept++;
+            if (sourceWorld) ++g_sourceWorldKept;
+            else ++g_xfKept;
             return D3D_OK;
         }
     }
@@ -190,6 +201,16 @@ HRESULT STDMETHODCALLTYPE hkSetSamplerState(IDirect3DDevice9 *d, DWORD i, D3DSAM
     if (SUCCEEDED(hr) && i < 4 && static_cast<unsigned>(s) < 14 && Keep(d)) g_m.samp[i][s] = v;
     return hr;
 }
+HRESULT STDMETHODCALLTYPE hkSetVertexDeclaration(IDirect3DDevice9 *d, IDirect3DVertexDeclaration9 *decl) {
+    const HRESULT hr = oSetVertexDeclaration(d, decl);
+    if (SUCCEEDED(hr) && Keep(d)) g_fvfKnown = false;
+    return hr;
+}
+HRESULT STDMETHODCALLTYPE hkSetFvf(IDirect3DDevice9 *d, DWORD fvf) {
+    const HRESULT hr = oSetFvf(d, fvf);
+    if (SUCCEEDED(hr) && Keep(d)) { g_fvf = fvf; g_fvfKnown = true; }
+    return hr;
+}
 HRESULT STDMETHODCALLTYPE hkSetVertexShader(IDirect3DDevice9 *d, IDirect3DVertexShader9 *s) {
     HRESULT hr = oSetVertexShader(d, s);
     if (SUCCEEDED(hr) && Live(d)) {
@@ -210,6 +231,7 @@ HRESULT STDMETHODCALLTYPE hkSetPixelShader(IDirect3DDevice9 *d, IDirect3DPixelSh
 using DpFn = HRESULT(STDMETHODCALLTYPE *)(IDirect3DDevice9 *, D3DPRIMITIVETYPE, UINT, UINT);
 using DpUpFn = HRESULT(STDMETHODCALLTYPE *)(IDirect3DDevice9 *, D3DPRIMITIVETYPE, UINT, const void *, UINT);
 using DipUpFn = HRESULT(STDMETHODCALLTYPE *)(IDirect3DDevice9 *, D3DPRIMITIVETYPE, UINT, UINT, UINT, const void *, D3DFORMAT, const void *, UINT);
+using ProcessVerticesFn = HRESULT(STDMETHODCALLTYPE *)(IDirect3DDevice9 *, UINT, UINT, UINT, IDirect3DVertexBuffer9 *, IDirect3DVertexDeclaration9 *, DWORD);
 using PresentFn = HRESULT(STDMETHODCALLTYPE *)(IDirect3DDevice9 *, const RECT *, const RECT *, HWND, const RGNDATA *);
 using CreateSbFn = HRESULT(STDMETHODCALLTYPE *)(IDirect3DDevice9 *, D3DSTATEBLOCKTYPE, IDirect3DStateBlock9 **);
 using GetVsFn = HRESULT(STDMETHODCALLTYPE *)(IDirect3DDevice9 *, IDirect3DVertexShader9 **);
@@ -220,17 +242,30 @@ GetXfFn oGetXf;
 DpFn oDp;
 DpUpFn oDpUp;
 DipUpFn oDipUp;
+ProcessVerticesFn oProcessVertices;
 PresentFn oPresent;
 CreateSbFn oCreateSb;
 GetVsFn oGetVs;
 GetPsFn oGetPs;
 SbCaptureFn oSbCapture;
-inline void BackFirst(IDirect3DDevice9 *d) { if ((g_lentVs || g_lentPs) && Live(d)) GiveBack(d); }
+inline void BackFirst(IDirect3DDevice9 *d) {
+    if (!(g_lentVs || g_lentPs || g_xfPending) || !Live(d)) return;
+    if (g_lentVs || g_lentPs) GiveBack(d);
+    else SendKept(d);
+}
 HRESULT STDMETHODCALLTYPE hkDp(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, UINT a, UINT b) { BackFirst(d); return oDp(d, t, a, b); }
-HRESULT STDMETHODCALLTYPE hkDpUp(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, UINT a, const void *v, UINT s) { BackFirst(d); return oDpUp(d, t, a, v, s); }
+HRESULT STDMETHODCALLTYPE hkDpUp(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, UINT a, const void *v, UINT s) {
+    VbRenameInvalidateSourceBindings(d);BackFirst(d);return oDpUp(d,t,a,v,s);
+}
 HRESULT STDMETHODCALLTYPE hkDipUp(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, UINT a, UINT b, UINT c, const void *i, D3DFORMAT f, const void *v, UINT s) {
+    VbRenameInvalidateSourceBindings(d);
     BackFirst(d);
     return oDipUp(d, t, a, b, c, i, f, v, s);
+}
+HRESULT STDMETHODCALLTYPE hkProcessVertices(IDirect3DDevice9 *d, UINT first, UINT dest, UINT count, IDirect3DVertexBuffer9 *buffer,
+                                           IDirect3DVertexDeclaration9 *decl, DWORD flags) {
+    if (g_xfPending && d == g_dev) SendKept(d);
+    return oProcessVertices(d, first, dest, count, buffer, decl, flags);
 }
 HRESULT STDMETHODCALLTYPE hkPresent(IDirect3DDevice9 *d, const RECT *a, const RECT *b, HWND w, const RGNDATA *r) { BackFirst(d); return oPresent(d, a, b, w, r); }
 HRESULT STDMETHODCALLTYPE hkCreateSb(IDirect3DDevice9 *d, D3DSTATEBLOCKTYPE t, IDirect3DStateBlock9 **sb) { BackFirst(d); return oCreateSb(d, t, sb); }
@@ -242,7 +277,7 @@ HRESULT STDMETHODCALLTYPE hkGetXf(IDirect3DDevice9 *d, D3DTRANSFORMSTATETYPE t, 
 }
 HRESULT STDMETHODCALLTYPE hkSbCapture(IDirect3DStateBlock9 *sb) {
     IDirect3DDevice9 *d = nullptr;
-    if (g_dev && (g_lentVs || g_lentPs) && SUCCEEDED(sb->GetDevice(&d)) && d) { BackFirst(d); d->Release(); }
+    if (g_dev && (g_lentVs || g_lentPs || g_xfPending) && SUCCEEDED(sb->GetDevice(&d)) && d) { BackFirst(d); d->Release(); }
     return oSbCapture(sb);
 }
 HRESULT STDMETHODCALLTYPE hkSetVertexShaderConstantF(IDirect3DDevice9 *d, UINT start, const float *v, UINT n) {
@@ -262,6 +297,7 @@ HRESULT STDMETHODCALLTYPE hkSetPixelShaderConstantF(IDirect3DDevice9 *d, UINT st
     return hr;
 }
 HRESULT STDMETHODCALLTYPE hkBeginStateBlock(IDirect3DDevice9 *d) {
+    VbRenameInvalidateSourceBindings(d);
     BackFirst(d);
     HRESULT hr = oBeginStateBlock(d);
     if (SUCCEEDED(hr) && d == g_dev) g_recording = true;
@@ -275,6 +311,7 @@ HRESULT STDMETHODCALLTYPE hkEndStateBlock(IDirect3DDevice9 *d, IDirect3DStateBlo
 HRESULT STDMETHODCALLTYPE hkSbApply(IDirect3DStateBlock9 *sb) {
     if (g_xfPending && g_dev && GetCurrentThreadId() == MainThread()) SendKept(g_dev);   // (before what the block sets)
     HRESULT hr = oSbApply(sb);
+    if (MirrorRasterBlock(sb) && SUCCEEDED(hr)) return hr;
     Invalidate(kWhyApply);   // (whichever device's: the next use reads ours again)
     // a block of the shaders' state put the game's own back: the loan of that stage ends (no block holds a lent one)
     if ((g_lentVs || g_lentPs) && g_dev && GetCurrentThreadId() == MainThread()) {
@@ -298,16 +335,27 @@ void Read(IDirect3DDevice9 *d) {
     d->GetTransform(D3DTS_WORLD, &m.world);
     d->GetTransform(D3DTS_VIEW, &m.view);
     d->GetTransform(D3DTS_PROJECTION, &m.proj);
-    for (DWORD s = 1; s < 256; s++) d->GetRenderState(static_cast<D3DRENDERSTATETYPE>(s), &m.rs[s]);   // (an unknown one stays 0)
+    m.nativeMaterialKnown = true;
+    for (DWORD s = 1; s < 256; s++) {
+        if (FAILED(d->GetRenderState(static_cast<D3DRENDERSTATETYPE>(s), &m.rs[s])) &&
+            (s == D3DRS_BLENDOP || s == D3DRS_COLORWRITEENABLE)) m.nativeMaterialKnown = false;
+    }
     for (DWORD i = 0; i < 8; i++) {
-        for (DWORD s = 1; s < 33; s++) d->GetTextureStageState(i, static_cast<D3DTEXTURESTAGESTATETYPE>(s), &m.tss[i][s]);
+        for (DWORD s = 1; s < 33; s++) {
+            if (FAILED(d->GetTextureStageState(i, static_cast<D3DTEXTURESTAGESTATETYPE>(s), &m.tss[i][s])) &&
+                ((i == 2 && s == D3DTSS_COLOROP) || (i < 2 && s == D3DTSS_RESULTARG))) m.nativeMaterialKnown = false;
+        }
         IDirect3DBaseTexture9 *t = nullptr;
         d->GetTexture(i, &t);
         m.tex[i] = t;
         if (t) t->Release();   // (the device keeps it: compared and set back only)
     }
     for (DWORD i = 0; i < 4; i++)
-        for (DWORD s = 1; s < 14; s++) d->GetSamplerState(i, static_cast<D3DSAMPLERSTATETYPE>(s), &m.samp[i][s]);
+        for (DWORD s = 1; s < 14; s++) {
+            if (FAILED(d->GetSamplerState(i, static_cast<D3DSAMPLERSTATETYPE>(s), &m.samp[i][s])) && i < 2 &&
+                (s == D3DSAMP_SRGBTEXTURE || s == D3DSAMP_MAXANISOTROPY || s == D3DSAMP_MAXMIPLEVEL || s == D3DSAMP_MIPMAPLODBIAS))
+                m.nativeMaterialKnown = false;
+        }
     d->GetMaterial(&m.material);
     for (DWORD i = 0; i < 8; i++) {
         d->GetLightEnable(i, &m.lightOn[i]);
@@ -328,6 +376,8 @@ void Read(IDirect3DDevice9 *d) {
     d->GetVertexShaderConstantF(0, &m.vsc[0][0], 256);
     d->GetPixelShaderConstantF(0, &m.psc[0][0], 224);
     g_dev = d;
+    g_fvfSupported = g_fvfVtable == *reinterpret_cast<void ***>(d);
+    g_fvfKnown = false;
     g_valid = true;
     g_vpStale = false;
     g_reads++;
@@ -365,6 +415,7 @@ bool Hook(IDirect3DDevice9 *d) {
         {kVtGetVertexShader, reinterpret_cast<void *>(&hkGetVs), reinterpret_cast<void **>(&oGetVs)},
         {kVtGetPixelShader, reinterpret_cast<void *>(&hkGetPs), reinterpret_cast<void **>(&oGetPs)},
         {kVtGetTransform, reinterpret_cast<void *>(&hkGetXf), reinterpret_cast<void **>(&oGetXf)},
+        {kVtProcessVertices, reinterpret_cast<void *>(&hkProcessVertices), reinterpret_cast<void **>(&oProcessVertices)},
     };
     std::vector<std::pair<uintptr_t, void *>> done;   // (taken away again, our links alone, if one fails)
     auto undo = [&] { for (auto &[a, h] : done) HookRemoveLink(nullptr, a, h); };
@@ -396,6 +447,15 @@ bool Hook(IDirect3DDevice9 *d) {
         g_hookWhy = "no state block made: a state block's Apply not followed";
         undo();
         return false;
+    }
+    // Source geometry can fall back to GetFVF if either optional hook is unavailable.
+    std::string ignored;
+    const auto fvf = reinterpret_cast<uintptr_t>(vt[kVtSetFvf]);
+    const auto decl = reinterpret_cast<uintptr_t>(vt[kVtSetVertexDeclaration]);
+    if (HookAdd(nullptr, fvf, reinterpret_cast<void *>(&hkSetFvf), reinterpret_cast<void **>(&oSetFvf), &ignored)) {
+        if (HookAdd(nullptr, decl, reinterpret_cast<void *>(&hkSetVertexDeclaration),
+                    reinterpret_cast<void **>(&oSetVertexDeclaration), &ignored)) g_fvfVtable = vt;
+        else HookRemoveLink(nullptr, fvf, reinterpret_cast<void *>(&hkSetFvf));
     }
     return true;
 }
@@ -465,6 +525,39 @@ const D3dMirror *MirrorOf(IDirect3DDevice9 *d) {
     return &g_m;
 }
 
+HRESULT MirrorSourceFvf(IDirect3DDevice9 *d, DWORD *fvf) {
+    if (!g_fvfSupported || !Keep(d)) return d->GetFVF(fvf);
+    if (g_fvfKnown) {
+        *fvf = g_fvf;
+        ++g_sourceFvfKept;
+        return D3D_OK;
+    }
+    const HRESULT hr = d->GetFVF(fvf);
+    if (SUCCEEDED(hr)) { g_fvf = *fvf; g_fvfKnown = true; }
+    return hr;
+}
+
+bool MirrorRasterBlock(IDirect3DStateBlock9 *block) {
+    return GetCurrentThreadId()==MainThread()&&block==g_rasterBlock&&block;
+}
+
+HRESULT MirrorApplyRasterBlock(IDirect3DDevice9 *d, IDirect3DStateBlock9 *block, const D3DRENDERSTATETYPE *states,
+                              const DWORD *values, size_t count, const D3DVIEWPORT9 &viewport) {
+    if(!g_valid||!Live(d)||g_rasterBlock)return block->Apply();
+    HRESULT hr=E_FAIL;
+    g_rasterBlock=block;
+    __try { hr=block->Apply(); }
+    __finally {
+        g_rasterBlock=nullptr;
+        if(AbnormalTermination()||FAILED(hr))Invalidate(kWhyApply);
+    }
+    if(SUCCEEDED(hr)&&g_valid){
+        for(size_t i=0;i<count;i++)g_m.rs[states[i]]=values[i];
+        g_m.viewport=viewport;g_vpStale=false;Changed();++g_rasterApplies;
+    }
+    return hr;
+}
+
 void MirrorConstants(IDirect3DDevice9 *d, bool pixel, UINT start, const float *v, UINT count, const uint32_t *reads) {
     const D3dMirror *m = MirrorOf(d);
     const UINT regs = pixel ? 224 : 256;
@@ -528,6 +621,8 @@ void MirrorCheckDraw(IDirect3DDevice9 *d) {
             g_mismatches.push_back(what);
     };
     D3DMATRIX t{};
+    DWORD fvf = 0;
+    if (g_fvfSupported && g_fvfKnown && SUCCEEDED(d->GetFVF(&fvf)) && fvf != g_fvf) miss("vertex format");
     d->GetTransform(D3DTS_WORLD, &t); if (memcmp(&t, &m->world, sizeof t)) miss("world");
     d->GetTransform(D3DTS_VIEW, &t); if (memcmp(&t, &m->view, sizeof t)) miss("view");
     d->GetTransform(D3DTS_PROJECTION, &t); if (memcmp(&t, &m->proj, sizeof t)) miss("projection");
@@ -586,7 +681,8 @@ std::string MirrorStateJson() {
     for (int i = 0; i < 5; i++) why[kWhyNames[i]] = g_why[i];
     json out = {{"users", g_users}, {"hooked", g_hooked}, {"valid", g_valid}, {"reads", g_reads}, {"invalidated", why},
                 {"checked", g_checked}, {"check_left", g_checkLeft}, {"mismatch_draws", g_mismatchDraws},
-                {"mismatches", g_mismatches},
+                {"mismatches", g_mismatches}, {"source_world_transforms_kept", g_sourceWorldKept}, {"raster_applies",g_rasterApplies},
+                {"source_fvf_kept", g_sourceFvfKept}, {"source_fvf_available", g_fvfSupported},
                 {"lent", {{"draws", g_lends}, {"given_back", g_returns}, {"shaders_set", g_shaderSets}, {"transforms_kept", g_xfKept},
                           {"now", g_lentVs || g_lentPs}}}};
     if (g_hookFailed) out["why"] = g_hookWhy;

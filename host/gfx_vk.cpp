@@ -36,7 +36,9 @@
 #include <vulkan/vulkan.h>
 #include <dxgi1_2.h>
 #include <d3d11_4.h>
+#include <wrl/client.h>
 #include <cstdio>
+#include <new>
 #include <vector>
 #include "gfx_vk.h"
 
@@ -74,6 +76,11 @@ struct Vk {
     PFN_vkGetPhysicalDeviceImageFormatProperties2 vkGetPhysicalDeviceImageFormatProperties2 = nullptr;
     PFN_vkGetPhysicalDeviceExternalSemaphoreProperties vkGetPhysicalDeviceExternalSemaphoreProperties = nullptr;
     PFN_vkGetPhysicalDeviceProperties2 vkGetPhysicalDeviceProperties2 = nullptr;
+    PFN_vkCreateQueryPool vkCreateQueryPool = nullptr;
+    PFN_vkDestroyQueryPool vkDestroyQueryPool = nullptr;
+    PFN_vkCmdResetQueryPool vkCmdResetQueryPool = nullptr;
+    PFN_vkCmdWriteTimestamp vkCmdWriteTimestamp = nullptr;
+    PFN_vkGetQueryPoolResults vkGetQueryPoolResults = nullptr;
 } vk;
 
 uint64_t g_waitNs = 250ull * 1000 * 1000;   // a copy not done in this time: the frame goes on without it (Busy)
@@ -90,7 +97,13 @@ VkCommandPool g_pool;
 
 // the command buffers, round a ring: each reused once its fence says the GPU is done with it
 constexpr int kRing = 8;
-struct Slot { VkCommandBuffer cmd = VK_NULL_HANDLE; VkFence fence = VK_NULL_HANDLE; bool inFlight = false; };
+struct Slot {
+    VkCommandBuffer cmd = VK_NULL_HANDLE;
+    VkFence fence = VK_NULL_HANDLE;
+    bool inFlight = false, to11 = false;
+    uint64_t timingEpoch = 0, timingSerial = 0;
+    HandoffTiming timing;
+};
 Slot g_ring[kRing];
 int g_next;          // the slot the next submission takes
 int g_last = -1;     // the last submission's (the CPU-waited hand-overs wait for it)
@@ -109,6 +122,29 @@ int g_links;
 unsigned g_copies;
 double g_ms, g_takeMs;
 LARGE_INTEGER g_freq;
+bool g_handoffTimingOn;
+HandoffTiming g_handoffLatest[2], g_handoffSlowest[2];
+HandoffTiming g_handoffGpuLatest[2], g_handoffGpuSlowest[2];
+uint64_t g_handoffEpoch = 1, g_handoffSerial, g_handoffGpuSerial[2], g_timestampMask;
+double g_timestampMs;
+VkQueryPool g_handoffQueries = VK_NULL_HANDLE;
+
+void ReadGpuTiming(const Slot &slot) {
+    if (!g_handoffTimingOn || !g_handoffQueries || slot.timingEpoch != g_handoffEpoch) return;
+    uint64_t ticks[2]{};
+    const uint32_t query = 2 * static_cast<uint32_t>(&slot - g_ring);
+    if (vk.vkGetQueryPoolResults(g_dev, g_handoffQueries, query, 2, sizeof ticks, ticks, sizeof ticks[0],
+                                 VK_QUERY_RESULT_64_BIT) != VK_SUCCESS) return;
+    HandoffTiming sample = slot.timing;
+    sample.total = static_cast<double>((ticks[1] - ticks[0]) & g_timestampMask) * g_timestampMs;
+    sample.valid = true;
+    if (slot.timingSerial > g_handoffGpuSerial[slot.to11]) {
+        g_handoffGpuSerial[slot.to11] = slot.timingSerial;
+        g_handoffGpuLatest[slot.to11] = sample;
+    }
+    if (!g_handoffGpuSlowest[slot.to11].valid || sample.total > g_handoffGpuSlowest[slot.to11].total)
+        g_handoffGpuSlowest[slot.to11] = sample;
+}
 
 double NowMs() { LARGE_INTEGER t; QueryPerformanceCounter(&t); return 1000.0 * t.QuadPart / g_freq.QuadPart; }
 
@@ -155,6 +191,7 @@ bool Settle(Slot &s, uint64_t ns, std::string *why) {
     VkResult r = vk.vkWaitForFences(g_dev, 1, &s.fence, VK_TRUE, ns);
     if (r == VK_TIMEOUT) { *why = "the copy on DXVK's queue did not finish in time"; return false; }
     s.inFlight = false;
+    if (r == VK_SUCCESS) ReadGpuTiming(s);
     vk.vkResetFences(g_dev, 1, &s.fence);
     if (r != VK_SUCCESS) { *why = VkErr("vkWaitForFences", r); return false; }
     return true;
@@ -169,18 +206,33 @@ bool SettleAll(uint64_t ns, std::string *why) {
 
 // One command buffer on DXVK's queue, record() filling it: behind a wait for "to 9" (wait9, 0 none), signalling "to 11"
 // (signal11, 0 none). cpuWait: waited for (the hand-overs without the fences), else it runs on its own.
-template <class F> bool Submit(F record, std::string *why, uint64_t wait9 = 0, uint64_t signal11 = 0, bool cpuWait = true) {
+template <class F> bool Submit(F record, std::string *why, uint64_t wait9 = 0, uint64_t signal11 = 0,
+                               bool cpuWait = true, HandoffTiming *timing = nullptr, bool to11 = false,
+                               VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_TRANSFER_BIT) {
+    double start = timing ? NowMs() : 0;
     if (cpuWait && !g_gpu && g_last >= 0 && !Settle(g_ring[g_last], 0, why)) return false;   // (the caller waits for a late copy first: Busy)
     Slot &s = g_ring[g_next];
-    if (!Settle(s, g_waitNs, why)) return false;   // (its use kRing submissions ago: long done but on a hung GPU)
+    const bool ready = Settle(s, g_waitNs, why);
+    if (timing) timing->ringWait = NowMs() - start;
+    if (!ready) return false;   // (its use kRing submissions ago: long done but on a hung GPU)
     vk.vkResetCommandBuffer(s.cmd, 0);
     VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     VkResult r = vk.vkBeginCommandBuffer(s.cmd, &bi);
     if (r != VK_SUCCESS) { *why = VkErr("vkBeginCommandBuffer", r); return false; }
+    const uint32_t query = 2 * static_cast<uint32_t>(g_next);
+    s.timingEpoch = 0;
+    if (timing && g_handoffQueries) {
+        s.timingEpoch = g_handoffEpoch;
+        s.timingSerial = ++g_handoffSerial;
+        s.timing = *timing;
+        s.to11 = to11;
+        vk.vkCmdResetQueryPool(s.cmd, g_handoffQueries, query, 2);
+        vk.vkCmdWriteTimestamp(s.cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, g_handoffQueries, query);
+    }
     record(s.cmd);
+    if (s.timingEpoch) vk.vkCmdWriteTimestamp(s.cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, g_handoffQueries, query + 1);
     if ((r = vk.vkEndCommandBuffer(s.cmd)) != VK_SUCCESS) { *why = VkErr("vkEndCommandBuffer", r); return false; }
-    const VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_TRANSFER_BIT;   // (the copies and the anchor's fill)
     VkTimelineSemaphoreSubmitInfo tl{VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO};
     VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
     si.commandBufferCount = 1;
@@ -199,14 +251,21 @@ template <class F> bool Submit(F record, std::string *why, uint64_t wait9 = 0, u
         si.pSignalSemaphores = &g_s11;
     }
     if (wait9 || signal11) si.pNext = &tl;
+    if (timing) start = NowMs();
     g_interop->LockSubmissionQueue();   // (no Direct3D 9 call while it is held)
+    if (timing) { const double now = NowMs(); timing->queueLock = now - start; start = now; }
     r = vk.vkQueueSubmit(g_queue, 1, &si, s.fence);
     g_interop->ReleaseSubmissionQueue();
+    if (timing) timing->queueSubmit = NowMs() - start;
     if (r != VK_SUCCESS) { *why = VkErr("vkQueueSubmit on DXVK's queue", r); return false; }
     s.inFlight = true;
     g_last = g_next;
     g_next = (g_next + 1) % kRing;
-    return !cpuWait || Settle(s, g_waitNs, why);
+    if (!cpuWait) return true;
+    if (timing) start = NowMs();
+    const bool complete = Settle(s, g_waitNs, why);
+    if (timing) timing->completionWait = NowMs() - start;
+    return complete;
 }
 
 VkImageMemoryBarrier Barrier(VkImage image, VkImageLayout from, VkImageLayout to, VkAccessFlags src, VkAccessFlags dst,
@@ -285,6 +344,7 @@ struct Link {
     VkDeviceMemory memory = VK_NULL_HANDLE;
     VkExtent3D extent{};
     bool counted = false;              // (in g_links)
+    bool alias = false, external = false;
 };
 
 bool IsDxvk(IDirect3DDevice9 *dev9) {
@@ -341,6 +401,24 @@ bool Start(IDirect3DDevice9 *dev9, std::string *why) {
         return fail("its Vulkan device lacks " + missing + (vk.vkGetMemoryWin32HandlePropertiesKHR ? "" :
                     " (VK_KHR_external_memory_win32 not enabled: a DXVK older than 2.0, or a driver without it)"));
     vk.vkImportSemaphoreWin32HandleKHR = reinterpret_cast<PFN_vkImportSemaphoreWin32HandleKHR>(gdpa(g_dev, "vkImportSemaphoreWin32HandleKHR"));
+    auto queueProperties = reinterpret_cast<PFN_vkGetPhysicalDeviceQueueFamilyProperties>(gipa(g_inst, "vkGetPhysicalDeviceQueueFamilyProperties"));
+#define X(f) vk.f = reinterpret_cast<PFN_##f>(gdpa(g_dev, #f));
+    X(vkCreateQueryPool) X(vkDestroyQueryPool) X(vkCmdResetQueryPool) X(vkCmdWriteTimestamp) X(vkGetQueryPoolResults)
+#undef X
+    if (queueProperties && vk.vkGetPhysicalDeviceProperties2 && vk.vkCreateQueryPool && vk.vkDestroyQueryPool &&
+        vk.vkCmdResetQueryPool && vk.vkCmdWriteTimestamp && vk.vkGetQueryPoolResults) {
+        uint32_t count = 0;
+        queueProperties(g_pd, &count, nullptr);
+        std::vector<VkQueueFamilyProperties> families(count);
+        queueProperties(g_pd, &count, families.data());
+        const uint32_t bits = g_family < count ? families[g_family].timestampValidBits : 0;
+        if (bits) {
+            VkPhysicalDeviceProperties2 props{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+            vk.vkGetPhysicalDeviceProperties2(g_pd, &props);
+            g_timestampMs = props.properties.limits.timestampPeriod * 1e-6;
+            g_timestampMask = bits >= 64 ? UINT64_MAX : (uint64_t{1} << bits) - 1;
+        }
+    }
     vk.vkGetPhysicalDeviceMemoryProperties(g_pd, &g_mem);
     // the kind of handle the driver imports a Direct3D 11 texture by: the legacy (KMT) one, else an NT handle
     if (Importable(VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D11_TEXTURE_KMT_BIT, VK_FORMAT_B8G8R8A8_UNORM))
@@ -427,6 +505,7 @@ void Stop() {
     bool late = g_dev && !SettleAll(2000ull * 1000 * 1000, &why);
     if (late) HWARN("gfx: a copy on DXVK's queue still runs after 2 s: its command buffers and fences are left to it");
     if (g_dev && !late) {
+        if (g_handoffQueries) vk.vkDestroyQueryPool(g_dev, g_handoffQueries, nullptr);
         for (Slot &s : g_ring) if (s.fence) vk.vkDestroyFence(g_dev, s.fence, nullptr);
         if (g_pool) vk.vkDestroyCommandPool(g_dev, g_pool, nullptr);   // (its command buffers with it)
     }
@@ -434,6 +513,8 @@ void Stop() {
     g_next = 0;
     g_last = -1;
     g_pool = VK_NULL_HANDLE;
+    g_handoffQueries = VK_NULL_HANDLE;
+    g_timestampMs = 0;
     g_inst = VK_NULL_HANDLE;
     g_pd = VK_NULL_HANDLE;
     g_dev = VK_NULL_HANDLE;
@@ -540,12 +621,67 @@ Link *Make(IDirect3DTexture9 *t9, ID3D11Device *dev11, ID3D11Texture2D **t11, st
     return l;
 }
 
+Link *MakeShadowAlias(IDirect3DDevice9 *dev9, ID3D11Device *dev11, unsigned size,
+                      IDirect3DTexture9 **t9, ID3D11Texture2D **t11, std::string *why) {
+    using Microsoft::WRL::ComPtr;
+    *t9 = nullptr; *t11 = nullptr;
+    if (!Gpu() || !dev9 || !dev11) { *why = "the shared GPU fences are unavailable"; return nullptr; }
+    D3D11_TEXTURE2D_DESC desc{};
+    desc.Width = desc.Height = size;
+    desc.MipLevels = desc.ArraySize = 1;
+    desc.Format = DXGI_FORMAT_R32_FLOAT;
+    desc.SampleDesc.Count = 1;
+    desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+    desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED;
+    ComPtr<ID3D11Texture2D> tex11;
+    ComPtr<IDXGIResource> share;
+    HANDLE handle = nullptr;
+    HRESULT hr = dev11->CreateTexture2D(&desc, nullptr, &tex11);
+    if (SUCCEEDED(hr)) hr = tex11.As(&share);
+    if (SUCCEEDED(hr)) hr = share->GetSharedHandle(&handle);
+    if (FAILED(hr) || !handle) { *why = "Direct3D 11 could not make the shared R32F target"; return nullptr; }
+    ComPtr<IDirect3DTexture9> tex9;
+    hr = dev9->CreateTexture(size, size, 1, D3DUSAGE_RENDERTARGET, D3DFMT_R32F, D3DPOOL_DEFAULT, &tex9, &handle);
+    if (FAILED(hr)) { *why = "DXVK could not open the Direct3D 11 R32F target"; return nullptr; }
+    ComPtr<ID3D9VkInteropTexture> interop;
+    VkImage image = VK_NULL_HANDLE;
+    VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    VkImageCreateInfo opened{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+    if (FAILED(tex9.As(&interop)) || FAILED(interop->GetVulkanImageInfo(&image, &layout, &opened)) ||
+        !image || layout != VK_IMAGE_LAYOUT_GENERAL || opened.format != VK_FORMAT_R32_SFLOAT ||
+        opened.extent.width != size || opened.extent.height != size || !(opened.usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)) {
+        *why = "DXVK did not expose a GENERAL-layout shared image";
+        return nullptr;
+    }
+    auto *link = new (std::nothrow) Link;
+    if (!link) { *why = "could not allocate the shadow alias record"; return nullptr; }
+    g_interop->FlushRenderingCommands();
+    if (!Submit([&](VkCommandBuffer c) {
+        const auto acquire = Barrier(image, layout, layout, 0, VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+                                     VK_QUEUE_FAMILY_EXTERNAL, g_family);
+        vk.vkCmdPipelineBarrier(c, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                                0, 0, nullptr, 0, nullptr, 1, &acquire);
+    }, why, 0, 0, false)) { delete link; return nullptr; }
+    link->alias = true;
+    link->image9 = image;
+    link->extent = {size, size, 1};
+    link->tex9 = interop.Detach();
+    link->t11 = tex11.Detach();
+    *t9 = tex9.Detach();
+    *t11 = link->t11;
+    (*t11)->AddRef();
+    return link;
+}
+
+bool AliasExternal(const Link *link) { return link && link->alias && link->external; }
+
 void Free(Link *&l) {
     if (!l) return;
     if (g_dev) {
         // (a submission of ours may still copy it: the ring done first, as rarely as textures are made)
         std::string why;
-        if (l->image && !SettleAll(2000ull * 1000 * 1000, &why)) HWARN("gfx: a copy on DXVK's queue still runs while its texture goes");
+        if ((l->image || l->alias) && !SettleAll(2000ull * 1000 * 1000, &why))
+            HWARN("gfx: a hand-over on DXVK's queue still runs while its texture goes");
         if (l->image) vk.vkDestroyImage(g_dev, l->image, nullptr);
         if (l->memory) vk.vkFreeMemory(g_dev, l->memory, nullptr);
     }
@@ -561,23 +697,38 @@ namespace {
 bool Copy(bool to11, Link *const *links, int n, std::string *why) {
     if (!g_interop) { *why = "the Vulkan path is not started"; return false; }
     double t0 = NowMs();
+    HandoffTiming timing;
     const bool gpu = g_gpu;
     uint64_t wait9 = 0, signal11 = 0;
     if (gpu && !to11) {   // (Direct3D 11's work so far, then DXVK's copies behind it)
         wait9 = ++g_v9;
-        g_ctx4->Signal(g_f9, wait9);
+        if (FAILED(g_ctx4->Signal(g_f9, wait9))) { *why = "could not signal the Direct3D 11 hand-over fence"; return false; }
         g_ctx4->Flush();
     }
+    const double beforeFlush = g_handoffTimingOn ? NowMs() : 0;
     g_interop->FlushRenderingCommands();   // (DXVK's command stream recorded and handed to its queue: its layouts final)
+    if (g_handoffTimingOn) timing.flush9 = NowMs() - beforeFlush;
     struct Item { Link *l; VkImageLayout layout; };
     std::vector<Item> items;
+    bool acquiringAlias = false;
     for (int i = 0; i < n; i++) {
         Link *l = links[i];
         if (!l) continue;
         VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
+        if (l->alias && (!gpu || l->external == to11)) {
+            *why = "the shared shadow image does not have the expected queue owner";
+            return false;
+        }
         if (FAILED(l->tex9->GetVulkanImageInfo(nullptr, &layout, nullptr))) { *why = "DXVK did not say its image's layout"; return false; }
+        if (l->alias && layout != VK_IMAGE_LAYOUT_GENERAL) { *why = "the shared shadow image left GENERAL layout"; return false; }
         if (layout == VK_IMAGE_LAYOUT_UNDEFINED) continue;   // (never drawn into: nothing to hand over)
         items.push_back({l, layout});
+        acquiringAlias |= l->alias && !to11;
+        if (g_handoffTimingOn && !l->alias && uint64_t(l->extent.width) * l->extent.height >
+            uint64_t(timing.largestWidth) * timing.largestHeight) {
+            timing.largestWidth = l->extent.width;
+            timing.largestHeight = l->extent.height;
+        }
     }
     if (items.empty() && !gpu) return true;
     if (gpu && to11) signal11 = ++g_v11;
@@ -587,15 +738,35 @@ bool Copy(bool to11, Link *const *links, int n, std::string *why) {
     const VkAccessFlags theirsAccess = to11 ? VK_ACCESS_TRANSFER_WRITE_BIT : VK_ACCESS_TRANSFER_READ_BIT;
     const VkAccessFlags any = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
     const uint32_t family = g_family;
+    timing.links = static_cast<unsigned>(items.size());
+    if (g_handoffTimingOn && g_timestampMs > 0 && !g_handoffQueries) {
+        VkQueryPoolCreateInfo info{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
+        info.queryType = VK_QUERY_TYPE_TIMESTAMP;
+        info.queryCount = 2 * kRing;
+        if (vk.vkCreateQueryPool(g_dev, &info, nullptr, &g_handoffQueries) != VK_SUCCESS) g_timestampMs = 0;
+    }
     bool ok = Submit([&](VkCommandBuffer c) {
-        std::vector<VkImageMemoryBarrier> pre, post;
+        std::vector<VkImageMemoryBarrier> pre, post, aliasRelease, aliasAcquire;
         for (const Item &it : items) {
+            if (it.l->alias) {
+                if (to11) aliasRelease.push_back(Barrier(it.l->image9, it.layout, VK_IMAGE_LAYOUT_GENERAL,
+                    VK_ACCESS_MEMORY_WRITE_BIT, 0, family, VK_QUEUE_FAMILY_EXTERNAL));
+                else aliasAcquire.push_back(Barrier(it.l->image9, VK_IMAGE_LAYOUT_GENERAL, it.layout, 0, any,
+                    VK_QUEUE_FAMILY_EXTERNAL, family));
+                continue;
+            }
             // DXVK's image from the layout it keeps it in; the imported one taken from Direct3D 11
             pre.push_back(Barrier(it.l->image9, it.layout, mine, any, mineAccess));
             pre.push_back(Barrier(it.l->image, VK_IMAGE_LAYOUT_GENERAL, theirs, 0, theirsAccess, VK_QUEUE_FAMILY_EXTERNAL, family));
             post.push_back(Barrier(it.l->image9, mine, it.layout, mineAccess, any));
             post.push_back(Barrier(it.l->image, theirs, VK_IMAGE_LAYOUT_GENERAL, theirsAccess, 0, family, VK_QUEUE_FAMILY_EXTERNAL));
         }
+        if (!aliasRelease.empty()) vk.vkCmdPipelineBarrier(c, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr,
+            static_cast<uint32_t>(aliasRelease.size()), aliasRelease.data());
+        if (!aliasAcquire.empty()) vk.vkCmdPipelineBarrier(c, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr,
+            static_cast<uint32_t>(aliasAcquire.size()), aliasAcquire.data());
         VkMemoryBarrier mem{VK_STRUCTURE_TYPE_MEMORY_BARRIER};   // (what came before in the queue, done)
         mem.srcAccessMask = any;
         mem.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -603,6 +774,7 @@ bool Copy(bool to11, Link *const *links, int n, std::string *why) {
                                 static_cast<uint32_t>(pre.size()), pre.empty() ? nullptr : pre.data());
         if (wait9) vk.vkCmdFillBuffer(c, g_anchor, 0, 4, 0);   // (a command the wait holds: the barrier below then holds DXVK's next)
         for (const Item &it : items) {
+            if (it.l->alias) continue;
             VkImageCopy region{};
             region.srcSubresource = region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
             region.extent = it.l->extent;
@@ -613,9 +785,23 @@ bool Copy(bool to11, Link *const *links, int n, std::string *why) {
         mem.dstAccessMask = any;
         vk.vkCmdPipelineBarrier(c, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &mem, 0, nullptr,
                                 static_cast<uint32_t>(post.size()), post.empty() ? nullptr : post.data());
-    }, why, wait9, signal11, !gpu);
-    if (ok && signal11) g_ctx4->Wait(g_f11, signal11);   // (Direct3D 11's next work waits for the copies, on its GPU)
+    }, why, wait9, signal11, !gpu, g_handoffTimingOn ? &timing : nullptr, to11,
+        acquiringAlias ? VK_PIPELINE_STAGE_ALL_COMMANDS_BIT : VK_PIPELINE_STAGE_TRANSFER_BIT);
+    if (ok) {
+        for (const Item &it : items) if (it.l->alias) it.l->external = to11;
+        if (signal11 && FAILED(g_ctx4->Wait(g_f11, signal11))) {
+            *why = "could not queue the Direct3D 11 wait for the hand-over";
+            ok = false;
+        }
+    }
     double ms = NowMs() - t0;
+    if (g_handoffTimingOn) {
+        timing.total = ms;
+        timing.valid = true;
+        g_handoffLatest[to11] = timing;
+        if (!g_handoffSlowest[to11].valid || timing.total > g_handoffSlowest[to11].total)
+            g_handoffSlowest[to11] = timing;
+    }
     g_copies++;
     g_ms = g_copies == 1 ? ms : g_ms * 0.95 + ms * 0.05;
     g_takeMs += ms;
@@ -638,6 +824,25 @@ double TakeMs() {
     double ms = g_takeMs;
     g_takeMs = 0;
     return ms;
+}
+
+void SetHandoffTiming(bool enabled, bool reset) {
+    if (enabled != g_handoffTimingOn || reset) {
+        for (auto &sample : g_handoffLatest) sample = {};
+        for (auto &sample : g_handoffSlowest) sample = {};
+        for (auto &sample : g_handoffGpuLatest) sample = {};
+        for (auto &sample : g_handoffGpuSlowest) sample = {};
+        ++g_handoffEpoch;
+    }
+    g_handoffTimingOn = enabled;
+}
+
+HandoffTiming ReadHandoffTiming(bool to11, bool slowest) {
+    return slowest ? g_handoffSlowest[to11] : g_handoffLatest[to11];
+}
+
+HandoffTiming ReadHandoffGpuTiming(bool to11, bool slowest) {
+    return slowest ? g_handoffGpuSlowest[to11] : g_handoffGpuLatest[to11];
 }
 
 std::string Describe() {

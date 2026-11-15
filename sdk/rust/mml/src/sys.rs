@@ -41,6 +41,7 @@ pub const MML_GFX_UI_HIDE: u32 = 2;
 pub const MML_GFX_SHOW_MAX: u32 = 3;
 pub const MML_VIEW_CLIP: u32 = 1;
 pub const MML_VIEW_OWN_SECTOR: u32 = 2;
+pub const MML_VIEW_SKY_ONLY: u32 = 4;
 pub const MML_GAMECAM_BEHIND: u32 = 1;
 pub const MML_GAMECAM_EYES: u32 = 3;
 pub const MML_GAMECAM_CAR_BEHIND: u32 = 7;
@@ -51,6 +52,16 @@ pub const MML_GAMECAM_CAR_IN: u32 = 13;
 pub const MML_GAMECAM_CAR_OVER: u32 = 14;
 pub const MML_GEOM_FRAME: u32 = 1;
 pub const MML_GEOM_VIEWS: u32 = 2;
+pub const MML_SCENE_DRAW_BACKDROP: u32 = 1;
+pub const MML_SCENE_DRAW_GPU_SKIN: u32 = 2;
+pub const MML_SCENE_DRAW_SHADER_RULES: u32 = 4;
+pub const MML_SCENE_DRAW_FIXED_LIGHTING: u32 = 8;
+pub const MML_SCENE_DRAW_COLLECTION: u32 = 16;
+pub const MML_SCENE_MISSING_STREAM: u32 = 1;
+pub const MML_SCENE_MISSING_PREPARE: u32 = 2;
+pub const MML_SCENE_MISSING_DEFORMATION: u32 = 3;
+pub const MML_SCENE_COLLECT_BILLBOARDS: u32 = 1;
+pub const MML_SCENE_COLLECT_XZ_DISK: u32 = 2;
 pub const MML_WORLD_STATIC: u32 = 1;
 pub const MML_WORLD_MOVING: u32 = 2;
 pub const MML_WORLD_ALL: u32 = 3;
@@ -84,6 +95,9 @@ pub const MML_MARKER_DISTANCE: u32 = 2;
 pub const MML_MARKER_EDGE: u32 = 4;
 pub const MML_MARKER_RADAR: u32 = 8;
 pub const MML_MARKER_COMPASS: u32 = 16;
+pub const MML_ACTOR_MESH_HIDDEN_ROOT: u32 = 1;
+pub const MML_CAMERA_PROJECTION_FOV: u32 = 1;
+pub const MML_CAMERA_PROJECTION_EXACT: u32 = 2;
 pub const MML_ZONE_PLAYER: u32 = 1;
 pub const MML_ZONE_PEOPLE: u32 = 2;
 pub const MML_ZONE_CARS: u32 = 4;
@@ -247,7 +261,13 @@ impl MmlEventType {
     pub const MONEY_CHANGED: MmlEventType = MmlEventType(34);
 }
 impl MmlEventType {
-    pub const COUNT_: MmlEventType = MmlEventType(35);
+    pub const DEVICE_RESET_BEGIN: MmlEventType = MmlEventType(35);
+}
+impl MmlEventType {
+    pub const DEVICE_RESET_END: MmlEventType = MmlEventType(36);
+}
+impl MmlEventType {
+    pub const COUNT_: MmlEventType = MmlEventType(37);
 }
 #[repr(transparent)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -1423,6 +1443,405 @@ impl Default for MmlGeomCapture {
 pub type MmlGeomFn = ::core::option::Option<
     unsafe extern "C" fn(capture: *const MmlGeomCapture, user: *mut ::core::ffi::c_void),
 >;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct MmlSceneTextureStage {
+    pub texture: *mut ::core::ffi::c_void,
+    pub color_op: u32,
+    pub color_arg0: u32,
+    pub color_arg1: u32,
+    pub color_arg2: u32,
+    pub alpha_op: u32,
+    pub alpha_arg0: u32,
+    pub alpha_arg1: u32,
+    pub alpha_arg2: u32,
+    pub coordinate: u32,
+    pub transform_flags: u32,
+    pub address_u: u32,
+    pub address_v: u32,
+    pub min_filter: u32,
+    pub mag_filter: u32,
+    pub mip_filter: u32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of MmlSceneTextureStage"][::core::mem::size_of::<MmlSceneTextureStage>() - 64usize];
+    ["Alignment of MmlSceneTextureStage"][::core::mem::align_of::<MmlSceneTextureStage>() - 4usize];
+    ["Offset of field: MmlSceneTextureStage::texture"]
+        [::core::mem::offset_of!(MmlSceneTextureStage, texture) - 0usize];
+    ["Offset of field: MmlSceneTextureStage::color_op"]
+        [::core::mem::offset_of!(MmlSceneTextureStage, color_op) - 4usize];
+    ["Offset of field: MmlSceneTextureStage::color_arg0"]
+        [::core::mem::offset_of!(MmlSceneTextureStage, color_arg0) - 8usize];
+    ["Offset of field: MmlSceneTextureStage::color_arg1"]
+        [::core::mem::offset_of!(MmlSceneTextureStage, color_arg1) - 12usize];
+    ["Offset of field: MmlSceneTextureStage::color_arg2"]
+        [::core::mem::offset_of!(MmlSceneTextureStage, color_arg2) - 16usize];
+    ["Offset of field: MmlSceneTextureStage::alpha_op"]
+        [::core::mem::offset_of!(MmlSceneTextureStage, alpha_op) - 20usize];
+    ["Offset of field: MmlSceneTextureStage::alpha_arg0"]
+        [::core::mem::offset_of!(MmlSceneTextureStage, alpha_arg0) - 24usize];
+    ["Offset of field: MmlSceneTextureStage::alpha_arg1"]
+        [::core::mem::offset_of!(MmlSceneTextureStage, alpha_arg1) - 28usize];
+    ["Offset of field: MmlSceneTextureStage::alpha_arg2"]
+        [::core::mem::offset_of!(MmlSceneTextureStage, alpha_arg2) - 32usize];
+    ["Offset of field: MmlSceneTextureStage::coordinate"]
+        [::core::mem::offset_of!(MmlSceneTextureStage, coordinate) - 36usize];
+    ["Offset of field: MmlSceneTextureStage::transform_flags"]
+        [::core::mem::offset_of!(MmlSceneTextureStage, transform_flags) - 40usize];
+    ["Offset of field: MmlSceneTextureStage::address_u"]
+        [::core::mem::offset_of!(MmlSceneTextureStage, address_u) - 44usize];
+    ["Offset of field: MmlSceneTextureStage::address_v"]
+        [::core::mem::offset_of!(MmlSceneTextureStage, address_v) - 48usize];
+    ["Offset of field: MmlSceneTextureStage::min_filter"]
+        [::core::mem::offset_of!(MmlSceneTextureStage, min_filter) - 52usize];
+    ["Offset of field: MmlSceneTextureStage::mag_filter"]
+        [::core::mem::offset_of!(MmlSceneTextureStage, mag_filter) - 56usize];
+    ["Offset of field: MmlSceneTextureStage::mip_filter"]
+        [::core::mem::offset_of!(MmlSceneTextureStage, mip_filter) - 60usize];
+};
+impl Default for MmlSceneTextureStage {
+    fn default() -> Self {
+        let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::core::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct MmlSceneSamplerDetail {
+    pub srgb: u32,
+    pub result_arg: u32,
+    pub max_anisotropy: u32,
+    pub max_mip_level: u32,
+    pub lod_bias_bits: u32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of MmlSceneSamplerDetail"][::core::mem::size_of::<MmlSceneSamplerDetail>() - 20usize];
+    ["Alignment of MmlSceneSamplerDetail"]
+        [::core::mem::align_of::<MmlSceneSamplerDetail>() - 4usize];
+    ["Offset of field: MmlSceneSamplerDetail::srgb"]
+        [::core::mem::offset_of!(MmlSceneSamplerDetail, srgb) - 0usize];
+    ["Offset of field: MmlSceneSamplerDetail::result_arg"]
+        [::core::mem::offset_of!(MmlSceneSamplerDetail, result_arg) - 4usize];
+    ["Offset of field: MmlSceneSamplerDetail::max_anisotropy"]
+        [::core::mem::offset_of!(MmlSceneSamplerDetail, max_anisotropy) - 8usize];
+    ["Offset of field: MmlSceneSamplerDetail::max_mip_level"]
+        [::core::mem::offset_of!(MmlSceneSamplerDetail, max_mip_level) - 12usize];
+    ["Offset of field: MmlSceneSamplerDetail::lod_bias_bits"]
+        [::core::mem::offset_of!(MmlSceneSamplerDetail, lod_bias_bits) - 16usize];
+};
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct MmlSceneMaterialDetail {
+    pub stage2_color_op: u32,
+    pub blend_op: u32,
+    pub color_write: u32,
+    pub stages: [MmlSceneSamplerDetail; 2usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of MmlSceneMaterialDetail"][::core::mem::size_of::<MmlSceneMaterialDetail>() - 52usize];
+    ["Alignment of MmlSceneMaterialDetail"]
+        [::core::mem::align_of::<MmlSceneMaterialDetail>() - 4usize];
+    ["Offset of field: MmlSceneMaterialDetail::stage2_color_op"]
+        [::core::mem::offset_of!(MmlSceneMaterialDetail, stage2_color_op) - 0usize];
+    ["Offset of field: MmlSceneMaterialDetail::blend_op"]
+        [::core::mem::offset_of!(MmlSceneMaterialDetail, blend_op) - 4usize];
+    ["Offset of field: MmlSceneMaterialDetail::color_write"]
+        [::core::mem::offset_of!(MmlSceneMaterialDetail, color_write) - 8usize];
+    ["Offset of field: MmlSceneMaterialDetail::stages"]
+        [::core::mem::offset_of!(MmlSceneMaterialDetail, stages) - 12usize];
+};
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct MmlSceneDraw {
+    pub size: u32,
+    pub flags: u32,
+    pub frame: u64,
+    pub visual: *const ::core::ffi::c_void,
+    pub group: *const ::core::ffi::c_void,
+    pub view: i32,
+    pub kind: u32,
+    pub pass: u32,
+    pub primitive_type: u32,
+    pub primitive_count: u32,
+    pub base_vertex: i32,
+    pub min_vertex: u32,
+    pub vertex_count: u32,
+    pub start_index: u32,
+    pub world: [f32; 16usize],
+    pub alpha_test: u32,
+    pub alpha_reference: u32,
+    pub alpha_function: u32,
+    pub cull: u32,
+    pub blend: u32,
+    pub source_blend: u32,
+    pub destination_blend: u32,
+    pub texture_factor: u32,
+    pub stage_stride: u32,
+    pub stages: *const MmlSceneTextureStage,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of MmlSceneDraw"][::core::mem::size_of::<MmlSceneDraw>() - 168usize];
+    ["Alignment of MmlSceneDraw"][::core::mem::align_of::<MmlSceneDraw>() - 8usize];
+    ["Offset of field: MmlSceneDraw::size"][::core::mem::offset_of!(MmlSceneDraw, size) - 0usize];
+    ["Offset of field: MmlSceneDraw::flags"][::core::mem::offset_of!(MmlSceneDraw, flags) - 4usize];
+    ["Offset of field: MmlSceneDraw::frame"][::core::mem::offset_of!(MmlSceneDraw, frame) - 8usize];
+    ["Offset of field: MmlSceneDraw::visual"]
+        [::core::mem::offset_of!(MmlSceneDraw, visual) - 16usize];
+    ["Offset of field: MmlSceneDraw::group"]
+        [::core::mem::offset_of!(MmlSceneDraw, group) - 20usize];
+    ["Offset of field: MmlSceneDraw::view"][::core::mem::offset_of!(MmlSceneDraw, view) - 24usize];
+    ["Offset of field: MmlSceneDraw::kind"][::core::mem::offset_of!(MmlSceneDraw, kind) - 28usize];
+    ["Offset of field: MmlSceneDraw::pass"][::core::mem::offset_of!(MmlSceneDraw, pass) - 32usize];
+    ["Offset of field: MmlSceneDraw::primitive_type"]
+        [::core::mem::offset_of!(MmlSceneDraw, primitive_type) - 36usize];
+    ["Offset of field: MmlSceneDraw::primitive_count"]
+        [::core::mem::offset_of!(MmlSceneDraw, primitive_count) - 40usize];
+    ["Offset of field: MmlSceneDraw::base_vertex"]
+        [::core::mem::offset_of!(MmlSceneDraw, base_vertex) - 44usize];
+    ["Offset of field: MmlSceneDraw::min_vertex"]
+        [::core::mem::offset_of!(MmlSceneDraw, min_vertex) - 48usize];
+    ["Offset of field: MmlSceneDraw::vertex_count"]
+        [::core::mem::offset_of!(MmlSceneDraw, vertex_count) - 52usize];
+    ["Offset of field: MmlSceneDraw::start_index"]
+        [::core::mem::offset_of!(MmlSceneDraw, start_index) - 56usize];
+    ["Offset of field: MmlSceneDraw::world"]
+        [::core::mem::offset_of!(MmlSceneDraw, world) - 60usize];
+    ["Offset of field: MmlSceneDraw::alpha_test"]
+        [::core::mem::offset_of!(MmlSceneDraw, alpha_test) - 124usize];
+    ["Offset of field: MmlSceneDraw::alpha_reference"]
+        [::core::mem::offset_of!(MmlSceneDraw, alpha_reference) - 128usize];
+    ["Offset of field: MmlSceneDraw::alpha_function"]
+        [::core::mem::offset_of!(MmlSceneDraw, alpha_function) - 132usize];
+    ["Offset of field: MmlSceneDraw::cull"][::core::mem::offset_of!(MmlSceneDraw, cull) - 136usize];
+    ["Offset of field: MmlSceneDraw::blend"]
+        [::core::mem::offset_of!(MmlSceneDraw, blend) - 140usize];
+    ["Offset of field: MmlSceneDraw::source_blend"]
+        [::core::mem::offset_of!(MmlSceneDraw, source_blend) - 144usize];
+    ["Offset of field: MmlSceneDraw::destination_blend"]
+        [::core::mem::offset_of!(MmlSceneDraw, destination_blend) - 148usize];
+    ["Offset of field: MmlSceneDraw::texture_factor"]
+        [::core::mem::offset_of!(MmlSceneDraw, texture_factor) - 152usize];
+    ["Offset of field: MmlSceneDraw::stage_stride"]
+        [::core::mem::offset_of!(MmlSceneDraw, stage_stride) - 156usize];
+    ["Offset of field: MmlSceneDraw::stages"]
+        [::core::mem::offset_of!(MmlSceneDraw, stages) - 160usize];
+};
+impl Default for MmlSceneDraw {
+    fn default() -> Self {
+        let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::core::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct MmlSceneVertex {
+    pub pos: [f32; 3usize],
+    pub color: u32,
+    pub uv0: [f32; 2usize],
+    pub uv1: [f32; 2usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of MmlSceneVertex"][::core::mem::size_of::<MmlSceneVertex>() - 32usize];
+    ["Alignment of MmlSceneVertex"][::core::mem::align_of::<MmlSceneVertex>() - 4usize];
+    ["Offset of field: MmlSceneVertex::pos"][::core::mem::offset_of!(MmlSceneVertex, pos) - 0usize];
+    ["Offset of field: MmlSceneVertex::color"]
+        [::core::mem::offset_of!(MmlSceneVertex, color) - 12usize];
+    ["Offset of field: MmlSceneVertex::uv0"]
+        [::core::mem::offset_of!(MmlSceneVertex, uv0) - 16usize];
+    ["Offset of field: MmlSceneVertex::uv1"]
+        [::core::mem::offset_of!(MmlSceneVertex, uv1) - 24usize];
+};
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct MmlSceneGeometry {
+    pub size: u32,
+    pub vertices: u32,
+    pub vertex_stride: u32,
+    pub vertex: *const MmlSceneVertex,
+    pub triangles: u32,
+    pub index: *const u32,
+    pub source_fvf: u32,
+    pub content_revision: u64,
+    pub material_detail: *const MmlSceneMaterialDetail,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of MmlSceneGeometry"][::core::mem::size_of::<MmlSceneGeometry>() - 48usize];
+    ["Alignment of MmlSceneGeometry"][::core::mem::align_of::<MmlSceneGeometry>() - 8usize];
+    ["Offset of field: MmlSceneGeometry::size"]
+        [::core::mem::offset_of!(MmlSceneGeometry, size) - 0usize];
+    ["Offset of field: MmlSceneGeometry::vertices"]
+        [::core::mem::offset_of!(MmlSceneGeometry, vertices) - 4usize];
+    ["Offset of field: MmlSceneGeometry::vertex_stride"]
+        [::core::mem::offset_of!(MmlSceneGeometry, vertex_stride) - 8usize];
+    ["Offset of field: MmlSceneGeometry::vertex"]
+        [::core::mem::offset_of!(MmlSceneGeometry, vertex) - 12usize];
+    ["Offset of field: MmlSceneGeometry::triangles"]
+        [::core::mem::offset_of!(MmlSceneGeometry, triangles) - 16usize];
+    ["Offset of field: MmlSceneGeometry::index"]
+        [::core::mem::offset_of!(MmlSceneGeometry, index) - 20usize];
+    ["Offset of field: MmlSceneGeometry::source_fvf"]
+        [::core::mem::offset_of!(MmlSceneGeometry, source_fvf) - 24usize];
+    ["Offset of field: MmlSceneGeometry::content_revision"]
+        [::core::mem::offset_of!(MmlSceneGeometry, content_revision) - 32usize];
+    ["Offset of field: MmlSceneGeometry::material_detail"]
+        [::core::mem::offset_of!(MmlSceneGeometry, material_detail) - 40usize];
+};
+impl Default for MmlSceneGeometry {
+    fn default() -> Self {
+        let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::core::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+pub type MmlSceneDrawFn = ::core::option::Option<
+    unsafe extern "C" fn(draw: *const MmlSceneDraw, user: *mut ::core::ffi::c_void),
+>;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct MmlSceneMissing {
+    pub visual: *const ::core::ffi::c_void,
+    pub lo: [f32; 3usize],
+    pub hi: [f32; 3usize],
+    pub reason: u32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of MmlSceneMissing"][::core::mem::size_of::<MmlSceneMissing>() - 32usize];
+    ["Alignment of MmlSceneMissing"][::core::mem::align_of::<MmlSceneMissing>() - 4usize];
+    ["Offset of field: MmlSceneMissing::visual"]
+        [::core::mem::offset_of!(MmlSceneMissing, visual) - 0usize];
+    ["Offset of field: MmlSceneMissing::lo"][::core::mem::offset_of!(MmlSceneMissing, lo) - 4usize];
+    ["Offset of field: MmlSceneMissing::hi"]
+        [::core::mem::offset_of!(MmlSceneMissing, hi) - 16usize];
+    ["Offset of field: MmlSceneMissing::reason"]
+        [::core::mem::offset_of!(MmlSceneMissing, reason) - 28usize];
+};
+impl Default for MmlSceneMissing {
+    fn default() -> Self {
+        let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::core::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct MmlSceneCollection {
+    pub size: u32,
+    pub frame: u64,
+    pub visited: u32,
+    pub selected: u32,
+    pub draws: u32,
+    pub missing_count: u32,
+    pub missing: *const MmlSceneMissing,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of MmlSceneCollection"][::core::mem::size_of::<MmlSceneCollection>() - 40usize];
+    ["Alignment of MmlSceneCollection"][::core::mem::align_of::<MmlSceneCollection>() - 8usize];
+    ["Offset of field: MmlSceneCollection::size"]
+        [::core::mem::offset_of!(MmlSceneCollection, size) - 0usize];
+    ["Offset of field: MmlSceneCollection::frame"]
+        [::core::mem::offset_of!(MmlSceneCollection, frame) - 8usize];
+    ["Offset of field: MmlSceneCollection::visited"]
+        [::core::mem::offset_of!(MmlSceneCollection, visited) - 16usize];
+    ["Offset of field: MmlSceneCollection::selected"]
+        [::core::mem::offset_of!(MmlSceneCollection, selected) - 20usize];
+    ["Offset of field: MmlSceneCollection::draws"]
+        [::core::mem::offset_of!(MmlSceneCollection, draws) - 24usize];
+    ["Offset of field: MmlSceneCollection::missing_count"]
+        [::core::mem::offset_of!(MmlSceneCollection, missing_count) - 28usize];
+    ["Offset of field: MmlSceneCollection::missing"]
+        [::core::mem::offset_of!(MmlSceneCollection, missing) - 32usize];
+};
+impl Default for MmlSceneCollection {
+    fn default() -> Self {
+        let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::core::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct MmlSceneBillboard {
+    pub size: u32,
+    pub axis: u32,
+    pub mode: u32,
+    pub world: [f32; 16usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of MmlSceneBillboard"][::core::mem::size_of::<MmlSceneBillboard>() - 76usize];
+    ["Alignment of MmlSceneBillboard"][::core::mem::align_of::<MmlSceneBillboard>() - 4usize];
+    ["Offset of field: MmlSceneBillboard::size"]
+        [::core::mem::offset_of!(MmlSceneBillboard, size) - 0usize];
+    ["Offset of field: MmlSceneBillboard::axis"]
+        [::core::mem::offset_of!(MmlSceneBillboard, axis) - 4usize];
+    ["Offset of field: MmlSceneBillboard::mode"]
+        [::core::mem::offset_of!(MmlSceneBillboard, mode) - 8usize];
+    ["Offset of field: MmlSceneBillboard::world"]
+        [::core::mem::offset_of!(MmlSceneBillboard, world) - 12usize];
+};
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct MmlSceneResidencyState {
+    pub size: u32,
+    pub requested: u32,
+    pub ready: u32,
+    pub owners: u32,
+    pub blocks: u32,
+    pub active: u32,
+    pub required: u32,
+    pub available: u32,
+    pub scene_generation: u64,
+    pub lo: [f32; 3usize],
+    pub hi: [f32; 3usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of MmlSceneResidencyState"][::core::mem::size_of::<MmlSceneResidencyState>() - 64usize];
+    ["Alignment of MmlSceneResidencyState"]
+        [::core::mem::align_of::<MmlSceneResidencyState>() - 8usize];
+    ["Offset of field: MmlSceneResidencyState::size"]
+        [::core::mem::offset_of!(MmlSceneResidencyState, size) - 0usize];
+    ["Offset of field: MmlSceneResidencyState::requested"]
+        [::core::mem::offset_of!(MmlSceneResidencyState, requested) - 4usize];
+    ["Offset of field: MmlSceneResidencyState::ready"]
+        [::core::mem::offset_of!(MmlSceneResidencyState, ready) - 8usize];
+    ["Offset of field: MmlSceneResidencyState::owners"]
+        [::core::mem::offset_of!(MmlSceneResidencyState, owners) - 12usize];
+    ["Offset of field: MmlSceneResidencyState::blocks"]
+        [::core::mem::offset_of!(MmlSceneResidencyState, blocks) - 16usize];
+    ["Offset of field: MmlSceneResidencyState::active"]
+        [::core::mem::offset_of!(MmlSceneResidencyState, active) - 20usize];
+    ["Offset of field: MmlSceneResidencyState::required"]
+        [::core::mem::offset_of!(MmlSceneResidencyState, required) - 24usize];
+    ["Offset of field: MmlSceneResidencyState::available"]
+        [::core::mem::offset_of!(MmlSceneResidencyState, available) - 28usize];
+    ["Offset of field: MmlSceneResidencyState::scene_generation"]
+        [::core::mem::offset_of!(MmlSceneResidencyState, scene_generation) - 32usize];
+    ["Offset of field: MmlSceneResidencyState::lo"]
+        [::core::mem::offset_of!(MmlSceneResidencyState, lo) - 40usize];
+    ["Offset of field: MmlSceneResidencyState::hi"]
+        [::core::mem::offset_of!(MmlSceneResidencyState, hi) - 52usize];
+};
 pub const MML_BONE_PELVIS: ::core::ffi::c_int = 0;
 pub const MML_BONE_BACK1: ::core::ffi::c_int = 1;
 pub const MML_BONE_BACK2: ::core::ffi::c_int = 2;
@@ -2462,6 +2881,9 @@ pub type MmlVehicleFn = ::core::option::Option<
         step: *mut MmlVehicleStep,
         user: *mut ::core::ffi::c_void,
     ) -> ::core::ffi::c_int,
+>;
+pub type MmlVehicleSupportFn = ::core::option::Option<
+    unsafe extern "C" fn(car: *mut ::core::ffi::c_void, user: *mut ::core::ffi::c_void) -> u32,
 >;
 pub type MmlZoneFn = ::core::option::Option<
     unsafe extern "C" fn(
@@ -3978,10 +4400,127 @@ pub struct MmlHost {
     pub scene_atmosphere_state: ::core::option::Option<
         unsafe extern "C" fn(mod_: *mut MmlMod, out: *mut MmlAtmosphereState) -> ::core::ffi::c_int,
     >,
+    pub camera_projection_state: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            camera: *const ::core::ffi::c_void,
+        ) -> ::core::ffi::c_int,
+    >,
+    pub scene_view_features: ::core::option::Option<unsafe extern "C" fn(mod_: *mut MmlMod) -> u32>,
+    pub scene_draw_observe: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            fn_: MmlSceneDrawFn,
+            user: *mut ::core::ffi::c_void,
+        ) -> ::core::ffi::c_int,
+    >,
+    pub scene_draw_geometry: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            draw: *const MmlSceneDraw,
+            out: *mut MmlSceneGeometry,
+        ) -> ::core::ffi::c_int,
+    >,
+    pub scene_draw_collect: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            lo: *const f32,
+            hi: *const f32,
+            out: *mut MmlSceneCollection,
+        ) -> ::core::ffi::c_int,
+    >,
+    pub scene_draw_collect_ex: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            lo: *const f32,
+            hi: *const f32,
+            flags: u32,
+            out: *mut MmlSceneCollection,
+        ) -> ::core::ffi::c_int,
+    >,
+    pub scene_draw_billboard: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            draw: *const MmlSceneDraw,
+            out: *mut MmlSceneBillboard,
+        ) -> ::core::ffi::c_int,
+    >,
+    pub scene_residency: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            lo: *const f32,
+            hi: *const f32,
+        ) -> ::core::ffi::c_int,
+    >,
+    pub scene_residency_state: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            out: *mut MmlSceneResidencyState,
+        ) -> ::core::ffi::c_int,
+    >,
+    pub scene_residency_camera: ::core::option::Option<
+        unsafe extern "C" fn(mod_: *mut MmlMod, radius: f32) -> ::core::ffi::c_int,
+    >,
+    pub scene_draw_collect_features:
+        ::core::option::Option<unsafe extern "C" fn(mod_: *mut MmlMod) -> u32>,
+    pub scene_owned_submit: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            fn_: ::core::option::Option<unsafe extern "C" fn(user: *mut ::core::ffi::c_void)>,
+            user: *mut ::core::ffi::c_void,
+        ) -> u64,
+    >,
+    pub scene_owned_join: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            ticket: u64,
+            cancel: ::core::ffi::c_int,
+        ) -> ::core::ffi::c_int,
+    >,
+    pub human_get_up_cancel: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            human: *mut ::core::ffi::c_void,
+        ) -> ::core::ffi::c_int,
+    >,
+    pub human_get_up_pose: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            human: *mut ::core::ffi::c_void,
+            pose: *const MmlBone,
+            count: ::core::ffi::c_int,
+            blend_ms: ::core::ffi::c_int,
+        ) -> ::core::ffi::c_int,
+    >,
+    pub human_vehicle_contact: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            human: *mut ::core::ffi::c_void,
+            vehicle: *mut ::core::ffi::c_void,
+            relative_velocity: *const f32,
+            point: *const f32,
+        ) -> ::core::ffi::c_int,
+    >,
+    pub vehicle_support_hook: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            fn_: MmlVehicleSupportFn,
+            user: *mut ::core::ffi::c_void,
+        ) -> ::core::ffi::c_int,
+    >,
+    pub actor_meshes_ex: ::core::option::Option<
+        unsafe extern "C" fn(
+            mod_: *mut MmlMod,
+            actor: *mut ::core::ffi::c_void,
+            flags: u32,
+            out: *mut MmlMeshPiece,
+            max: ::core::ffi::c_int,
+        ) -> ::core::ffi::c_int,
+    >,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 848usize];
+    ["Size of MmlHost"][::core::mem::size_of::<MmlHost>() - 920usize];
     ["Alignment of MmlHost"][::core::mem::align_of::<MmlHost>() - 4usize];
     ["Offset of field: MmlHost::size"][::core::mem::offset_of!(MmlHost, size) - 0usize];
     ["Offset of field: MmlHost::api_version"]
@@ -4347,6 +4886,42 @@ const _: () = {
         [::core::mem::offset_of!(MmlHost, scene_atmosphere) - 840usize];
     ["Offset of field: MmlHost::scene_atmosphere_state"]
         [::core::mem::offset_of!(MmlHost, scene_atmosphere_state) - 844usize];
+    ["Offset of field: MmlHost::camera_projection_state"]
+        [::core::mem::offset_of!(MmlHost, camera_projection_state) - 848usize];
+    ["Offset of field: MmlHost::scene_view_features"]
+        [::core::mem::offset_of!(MmlHost, scene_view_features) - 852usize];
+    ["Offset of field: MmlHost::scene_draw_observe"]
+        [::core::mem::offset_of!(MmlHost, scene_draw_observe) - 856usize];
+    ["Offset of field: MmlHost::scene_draw_geometry"]
+        [::core::mem::offset_of!(MmlHost, scene_draw_geometry) - 860usize];
+    ["Offset of field: MmlHost::scene_draw_collect"]
+        [::core::mem::offset_of!(MmlHost, scene_draw_collect) - 864usize];
+    ["Offset of field: MmlHost::scene_draw_collect_ex"]
+        [::core::mem::offset_of!(MmlHost, scene_draw_collect_ex) - 868usize];
+    ["Offset of field: MmlHost::scene_draw_billboard"]
+        [::core::mem::offset_of!(MmlHost, scene_draw_billboard) - 872usize];
+    ["Offset of field: MmlHost::scene_residency"]
+        [::core::mem::offset_of!(MmlHost, scene_residency) - 876usize];
+    ["Offset of field: MmlHost::scene_residency_state"]
+        [::core::mem::offset_of!(MmlHost, scene_residency_state) - 880usize];
+    ["Offset of field: MmlHost::scene_residency_camera"]
+        [::core::mem::offset_of!(MmlHost, scene_residency_camera) - 884usize];
+    ["Offset of field: MmlHost::scene_draw_collect_features"]
+        [::core::mem::offset_of!(MmlHost, scene_draw_collect_features) - 888usize];
+    ["Offset of field: MmlHost::scene_owned_submit"]
+        [::core::mem::offset_of!(MmlHost, scene_owned_submit) - 892usize];
+    ["Offset of field: MmlHost::scene_owned_join"]
+        [::core::mem::offset_of!(MmlHost, scene_owned_join) - 896usize];
+    ["Offset of field: MmlHost::human_get_up_cancel"]
+        [::core::mem::offset_of!(MmlHost, human_get_up_cancel) - 900usize];
+    ["Offset of field: MmlHost::human_get_up_pose"]
+        [::core::mem::offset_of!(MmlHost, human_get_up_pose) - 904usize];
+    ["Offset of field: MmlHost::human_vehicle_contact"]
+        [::core::mem::offset_of!(MmlHost, human_vehicle_contact) - 908usize];
+    ["Offset of field: MmlHost::vehicle_support_hook"]
+        [::core::mem::offset_of!(MmlHost, vehicle_support_hook) - 912usize];
+    ["Offset of field: MmlHost::actor_meshes_ex"]
+        [::core::mem::offset_of!(MmlHost, actor_meshes_ex) - 916usize];
 };
 pub type MmlModLoadFn = ::core::option::Option<
     unsafe extern "C" fn(host: *const MmlHost, mod_: *mut MmlMod) -> ::core::ffi::c_int,

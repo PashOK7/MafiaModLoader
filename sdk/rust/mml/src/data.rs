@@ -221,7 +221,8 @@ impl Host {
     }
 
     // ---- statistics and the profile's progress
-    /// What the player did, counted by the loader (scope sys::MML_SAVE_SLOT the game being played, _PROFILE totals)
+    /// Starts in-memory collection for this mod's lifetime. SLOT resets on load, PROFILE covers the session.
+    /// Persist needed values through save_put under this mod's own keys.
     pub fn stats(&self, scope: i32) -> Option<Stats> {
         let mut s = Stats { size: core::mem::size_of::<Stats>() as u32, ..Default::default() };
         if unsafe { f!(self, stats_get)(self.module, scope, &mut s) } != 0 { Some(s) } else { None }

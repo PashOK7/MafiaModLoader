@@ -396,7 +396,12 @@ std::string ModelPath(std::string f) {
     for (char &c : f) if (c == '/') c = '\\';
     size_t slash = f.rfind('\\'), dot = f.rfind('.');
     if (dot == std::string::npos || (slash != std::string::npos && dot < slash)) f += ".4ds";
-    else if (Lower(f.substr(dot)) == ".i3d") f = f.substr(0, dot) + ".4ds";
+    else {
+        // LS3D keeps the original model name, including the pedestrian's .I3d! suffix.
+        // Its hierarchy loader opens the corresponding .4ds in both game builds.
+        const std::string extension = Lower(f.substr(dot));
+        if (extension == ".i3d" || extension == ".i3d!") f.replace(dot, std::string::npos, ".4ds");
+    }
     if (f.find('\\') == std::string::npos) f = "models\\" + f;
     return f;
 }

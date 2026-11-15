@@ -1,5 +1,13 @@
 # Architecture
 
+This describes the current source mechanisms. [STATUS.md](STATUS.md) records validation and open defects;
+[the update notes](PATCHNOTES_2026-11-15.md) describe migration from the October 31 main.
+
+Ordinary game windows resize through `host/fullscreen.cpp`: a sizing frame, root/child window synchronization,
+coalesced between-frame native device reset, scene viewport/camera aspect/HUD/menu rebuild and failure recovery. The graphics bridge
+releases D3D9 resources while retaining its D3D11 device and mod registrations; mods receive reset lifecycle events.
+Details and both builds' native paths: `knowledge/notes/window.md`. Exclusive/bridge-borderless modes are unchanged.
+
 Rendering features follow **host mechanism / public SDK / mod policy**. The atmosphere service in
 `host/atmosphere.cpp` owns copied, validated requests, arbitration and frame snapshots; `render.cpp`/`gfx.cpp`
 own native-state restoration, depth and composition. `mods/examples/atmosphere` owns its settings, palette and
@@ -24,8 +32,8 @@ handles water's outgoing reflected ray and the bridge's incoming camera leg. See
       │                                                         └─ mods: mml\mods\<id>\ (each hot-reloadable)
       │                                                              ├─ core   (the game's live state)
       │                                                              ├─ telemetry, hello_c, hello_rust, your mods (C, C++, Rust...)
-      │                                                              └─ (to come) the sidecar link
-   (to come) mml-sidecar64.exe: 64-bit mods, past the 32-bit address space, shared memory with the game
+      │                                                              └─ sidecar link: shared channels/textures
+   mml-sidecar64.exe: optional 64-bit halves, built with the x64 preset; hosted beside the 32-bit game
 ```
 
 ## The host (`host/`)
@@ -40,8 +48,24 @@ except the intro videos), on the game thread, where `LoadLibrary` is safe.
   `MOD_LOADED`. Addresses come from `sdk/include/mml/game/game_build.h` (per build; `game::Detect` picks the running
   one by its code). An unknown build: no game events, everything else runs. `MISSION_OPEN`, `MISSION_LOADED`,
   `GAME_PAUSED`, `GAME_RESUMED` and `CONFIG_CHANGED` are told below.
+- **Human lifetime** (`humans.cpp`). The constructor registry survives a scene close because CHANGE_MISSION
+  can carry the same player object. Native destruction removes the entry. Scene close drops held/dirty/cached
+  poses; it does not imply destruction of every human. Traffic pedestrian elements have a separate registry.
+- **Saves and statistics** (`saves.cpp`, `stats.cpp`). Only explicit mod-owned save records create companions.
+  Empty state creates no `.mml`; legacy `mml/stats` is readable but omitted from new writes. A valid mod
+  `stats_get` opts that owner into in-memory collection until unload; the last owner leaving stops collection.
+  The diagnostic `stats.state` never starts collection. Durable counters belong to the requesting mod.
+- **Audio compatibility** (`fixes.cpp`, `ogg.cpp`). Devices without hardware 3D capacity and without an EAX
+  provider use LS3D's existing software allocation policy. Hardware/EAX paths remain native. Ogg Close requests
+  a cooperative worker stop and joins it before decoder/archive cleanup. This host does not implement EAX DSP.
+- **Native scene sources** (`geom.cpp`, `render.cpp`, SDK snapshot/ray helpers). Owner-scoped draw observation,
+  bounded draw-free collection and explicit source residency provide prepared native geometry/material inputs.
+  Callback borrows must be copied before return; missing coverage is explicit. CPU-only owned jobs cannot call
+  the game/host/D3D immediate APIs. Contracts: `SCENE_RADIANCE_SNAPSHOT.md`, `SCENE_RESIDENCY.md` and MODDING.
 - **Hook chains** (`hooks.cpp`). MinHook allows one detour per function; mods may want the same function. Each hooked
-  function gets one MinHook hook whose detour is a 6-byte thunk `jmp [head]`; the chain is a list of detours, the last
+  function gets one MinHook hook whose detour is a 7-byte x86 thunk `jmp [head]` (FF 24 25 abs32, SIB absolute);
+  RTSS's scanner misreads the former FF 25 abs32 encoding as RIP-relative on focus return. The shared crash/profile
+  call-target resolver follows both encodings. The chain is a list of detours, the last
   one hooked outermost. Adding or removing a link only rewrites pointers (innermost first), so the game's bytes are
   written once and a running detour always has a valid next step. Tested in every load and unload order
   (`tests/run_tests.py`).
@@ -57,13 +81,19 @@ except the intro videos), on the game thread, where `LoadLibrary` is safe.
   reloads.
 - **Services**: a mod publishes a versioned table of functions under a name; others find it. This is how separate
   mods share features at run time (the ragdoll mod's physics for a VR mod) without linking to each other.
+- **64-bit halves** (`host/sidecar.cpp`, `sidecar/`, `mml/side.h`). A manifest's `entry64` loads in the optional
+  sidecar process; channels and shared textures connect it to the 32-bit owner. Build with the x64 preset.
+  Host ownership/fault/unload handling stays separate from the mod's policy. `sidecar.state` reports the
+  actual process/half state; the full contract is MODDING's "64-bit halves" section.
 - **The bridge** (`bridge.cpp`): see `PROTOCOL.md`. Memory and log methods answer on the bridge's thread (even while
   the game thread hangs); mod commands wait for the game thread's next frame.
 - **Crashes** (`crash.cpp`): an unhandled exception is logged (module+offset, registers, a stack scan) and written as
   a minidump of a few MB (`mml\crash\`: every thread's stack, every region's state, the globals of the game, the
   loader and the mods, and the memory around the faulting thread's registers three pointers deep; the heaps whole
-  with `MML_FULL_DUMP=1` in the game's environment). The game's own filter is chained, and ours is put
-  back in front every frame.
+  with `MML_FULL_DUMP=1` in the game's environment). A paired JSON report preserves recent log lines, events,
+  taps and the checked stack. SetUnhandledExceptionFilter is hooked so later handlers chain after ours;
+  only the fallback reinstalls ours each frame. Five isolated crash regressions cover normal faults,
+  hook chains, later filters and threads without TLS.
 
 - **The start** (`start.cpp`): `<game>\mml\start.json` (`{"skip_logos", "profile", "go":
   "menu"|"freeride"|"load"|"new"|"extreme", "kind", "place", "save", "traffic", "pedestrians", "police",
@@ -208,10 +238,14 @@ report: each with its target, "frame" for the walked ones), logs its rough check
 within 32 KiB below a frame kept), writes the minidump (without the ranges around the registers when it fails) and, on a thread
 of its own with a time limit (the crashing thread may hold a lock), `Game_<pid>_<time>.json` beside it: what dies
 with the process (the stack with the mods named, its calls, the log's last lines, the taps' last calls, the last
-events, the mods, the mission). `crash_triage` reads both and the log, keeps the checked frames and names them (a
-PDB only when its GUID is the one the dump's image names) and writes a verdict: what, where, and the nearest code
-that is not the game's or the system's (a mod, the loader, another ASI). A mod's fault caught by the host's gates
-gets the rough stack in its log line and its `MOD_FAULTED` event.
+events, the mods, the mission). By default `crash_triage` returns the failure site and access kind, the recorded
+call stack, mission, mods and up to 12 event timestamps and types. It matches PDB GUIDs to the dump's images
+before using their symbols. The known Game.exe and LS3DF.dll image stamps identify the build from the dump
+even when the game log is absent. With a dump alone triage reports the fault site and identifies the missing report.
+`crash_triage {"details": true}` includes registers, the accessed address, log excerpts, tap captures and full
+event data. `crash_inspect` reads the dump's raw diagnostic fields and stack scan. A mod's fault caught by the
+host's gates gets the rough stack in its log line and its `MOD_FAULTED` event. The detailed triage view also
+includes those stacks for faults in a running game.
 
 ## Files in the game folder
 

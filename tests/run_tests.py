@@ -663,6 +663,15 @@ def ui_tests(b):
           g['ok'] and g['result']['value'] is True and g['result']['default'] is True and s['ok'] and
           s['result']['value'] is True and u['ok'] and u['result']['value'] is False, [g, s, u])
     # the test sees what it should: a page made to fail is caught
+    colors = {'controls': [{'key': 'water.colour', 'label': 'Body', 'kind': 'color'}]}
+    r = b.call('panel.layout', {'settings': colors, 'defaults': {'water': {'colour': '#aB1234'}}, 'name': 'color'})
+    items = r['result']['mods'][0]['pages'][0]['items'] if r['ok'] else []
+    check('color settings expand a nested #RRGGBB key into three native sliders',
+          len([i for i in items if i['kind']=='slid'])==3 and
+          {'Body red','Body green','Body blue'} <= {i['text'] for i in items}, r)
+    for invalid in ('#12345g', '#123', 0, None):
+        r = b.call('panel.layout', {'settings': colors, 'defaults': {'water': {'colour': invalid}}, 'name': 'invalid'})
+        check('color settings reject an invalid default: %r' % invalid, not r['ok'], r)
     bad = {'sections': [{'title': 'A', 'controls': [
                {'key': 'a', 'label': 'A label far too long to fit into two lines of twenty characters each'},
                {'key': 'b', 'label': 'B', 'min': 0, 'max': 1, 'unit': 'metres per second squared'},
@@ -1783,9 +1792,24 @@ def new_mod_tests(b, built):
 
 
 def main():
+    thunk_result = subprocess.run([sys.executable, os.path.join(ROOT, 'tests', 'test_hook_chain_thunk.py')],
+                                  capture_output=True, text=True)
+    check('x86 chain thunks: RTSS-compatible encoding, load/unload orders and mid-hook state',
+          thunk_result.returncode == 0, thunk_result.stdout + thunk_result.stderr)
+    index_owner = os.path.join(HARNESS, 'index_owner_test.exe')
+    if not os.path.exists(index_owner):
+        raise RuntimeError('build index_owner_test before running the offline suite')
+    owner_result = subprocess.run([index_owner], capture_output=True, text=True)
+    check('shutdown index owners: identity, reserved/protected memory and split pages',
+          owner_result.returncode == 0, owner_result.stdout + owner_result.stderr)
+    shadow_frame_result = subprocess.run([os.path.join(HARNESS, 'shadow_frame_test.exe')], capture_output=True, text=True)
+    check('vehicle shadow cleanup: live dispatch, reserved receiver and invalid vtable',
+          shadow_frame_result.returncode == 0, shadow_frame_result.stdout + shadow_frame_result.stderr)
     water_mesh = os.path.join(HARNESS, 'water_mesh_test.exe')
     if not os.path.exists(water_mesh):
         raise RuntimeError('build water_mesh_test before running the offline suite')
+    waterline_result = subprocess.run([os.path.join(HARNESS, 'scene_waterline_test.exe')], capture_output=True, text=True)
+    check('world geometry waterline: plane/pose/local hull/unknown coverage', waterline_result.returncode == 0, waterline_result.stdout + waterline_result.stderr)
     mesh_result = subprocess.run([water_mesh], capture_output=True, text=True)
     check('water mesh: preserved area, footprint, bounded patches and watertight shared edges',
           mesh_result.returncode == 0, mesh_result.stdout + mesh_result.stderr)
@@ -1795,6 +1819,21 @@ def main():
     sky_result = subprocess.run([sky_test], capture_output=True, text=True)
     check('water sky: real compute shader preserves clouds, angular support, geometry and hue',
           sky_result.returncode == 0, sky_result.stdout + sky_result.stderr)
+    environment_result = subprocess.run([os.path.join(HARNESS, 'environment_test.exe')], capture_output=True, text=True)
+    check('environment: actual GPU cube sampling, coherent native faces and ownership/reset contract',
+          environment_result.returncode == 0, environment_result.stdout + environment_result.stderr)
+    lighting_result = subprocess.run([os.path.join(HARNESS, 'water_lighting_test.exe')], capture_output=True, text=True)
+    check('water lighting: actual GPU localized sun, visible facets/energy, medium and display',
+          lighting_result.returncode == 0, lighting_result.stdout + lighting_result.stderr)
+    ray_result = subprocess.run([os.path.join(HARNESS, 'ray_scene_test.exe')], capture_output=True, text=True)
+    material_result = subprocess.run([os.path.join(HARNESS, 'native_material_test.exe')], capture_output=True, text=True)
+    check('native material encoded stages/alpha agree with actual D3D9 before linear decode',
+          material_result.returncode == 0, material_result.stdout + material_result.stderr)
+    check('world rays: actual GPU geometry/instance queries, hidden background, alpha and unknown coverage',
+          ray_result.returncode == 0, ray_result.stdout + ray_result.stderr)
+    blend_result = subprocess.run([os.path.join(HARNESS, 'scene_blend_test.exe')], capture_output=True, text=True)
+    check('scene radiance: ordered alpha/additive layers, coplanar draws and explicit incomplete bound',
+          blend_result.returncode == 0, blend_result.stdout + blend_result.stderr)
     atmosphere_result = subprocess.run([os.path.join(HARNESS, 'atmosphere_test.exe')], capture_output=True, text=True)
     check('atmosphere: actual GPU height integral and displaced-water/opaque-depth composite',
           atmosphere_result.returncode == 0, atmosphere_result.stdout + atmosphere_result.stderr)
@@ -1913,6 +1952,7 @@ def main():
               r['ok'] and m.get('before') == 6 and m.get('hooked') == 1 and m.get('with') == 106 and m.get('arg') == 2 and
               m.get('unhooked') == 1 and m.get('after') == 6, r)
         check("code_patch inside a hook's 5 bytes: refused", r['ok'] and m.get('patch_over_hook') == 0, r)
+        check('hook_mid: the incoming zero flag is preserved for both outcomes', r['ok'] and m.get('flags_kept'), r)
         check('hook_mid: eip moved past the hooked instructions, the game goes on there: 5', r['ok'] and m.get('skipped') == 5, r)
         r = b.call('kit.patch')
         p = r.get('result') or {}
@@ -2031,6 +2071,12 @@ def main():
               and 'game' in res['phases'], {k: res.get(k) for k in ('done', 'samples', 'by_module')})
         frames_tests(b)
         kit_tests(b)
+        from test_bridge_timeout import exercise as bridge_timeout_exercise
+        try:
+            bridge_timeout_exercise(b)
+            check('bridge timeouts: executing jobs retained, queued jobs cancelled', True)
+        except Exception as error:
+            check('bridge timeouts: executing jobs retained, queued jobs cancelled', False, error)
         native_tests(b)
         # people with no game: none, refused; the bridge says so
         r = b.call('kit.humans')

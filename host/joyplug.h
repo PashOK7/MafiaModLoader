@@ -3,8 +3,6 @@
 #include <string>
 
 namespace host {
-void JoyBeforeControls();      // the controls' update hook, before the game's own: the watch started at the first
-                               // (not in DllMain: the notifications' registration talks to a service), a check
-                               // when the devices changed
+void JoyBeforeControls();      // starts the watch outside DllMain and checks at startup and after device changes
 bool JoyMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 } // namespace host

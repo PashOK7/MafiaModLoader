@@ -4,8 +4,10 @@ A mod loader for **Mafia: The City of Lost Heaven** (2002; Steam/GOG 1.2 and the
 An agent connects over MCP and works with the live game: starts it, plays it, changes it, writes mods for it and
 reloads them while it runs.
 
-Status: in development, before the first release. Everything below works in both builds.
-[docs/ROADMAP.md](docs/ROADMAP.md) has what is next and the known gaps.
+Status: in development, before the first release. The host and SDK target both builds; individual
+validation results and open defects are recorded in [current status](docs/STATUS.md).
+The [November update notes](docs/PATCHNOTES_2026-11-15.md) explain the cumulative changes since the
+October 31 GitHub main. A locally installed build is not evidence that its source has been published.
 
 ## What your AI agent can do with it
 
@@ -69,6 +71,9 @@ For Codex, see [agent client setup](docs/AGENT_SETUP.md); it uses `config.toml`.
 [AGENTS.md](AGENTS.md), read in full (it exceeds Codex's default instruction size limit).
 
 ## Documents
+
+[Documentation index](docs/README.md) · [Current status and update cautions](docs/STATUS.md) ·
+[November patch notes](docs/PATCHNOTES_2026-11-15.md)
 
 [AGENTS.md](AGENTS.md) (for agents) · [MODDING.md](docs/MODDING.md) (writing a mod) ·
 [PROTOCOL.md](docs/PROTOCOL.md) (every bridge method) · [SCRIPTS.md](docs/SCRIPTS.md) (the game's scripts) ·

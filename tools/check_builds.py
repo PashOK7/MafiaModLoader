@@ -1224,6 +1224,21 @@ def main(a):
             call = t - after - 5
             dest = call + 5 + struct.unpack('<i', gexe.at(call + 1 - 0x400000, 4))[0]
             check(dest == 0x607460, f'{name} {f}: the call is loadsave_binding_find_conflict')
+    # Shutdown-only index owner stores and the native ancestor return used by fixes.cpp.
+    for name, (exe, ls, gexe, gls) in builds.items():
+        if not ls['ibShutdownClear']:
+            check(not ls['ibShutdownReturn'], f'{name} has no shutdown owner-clear hook')
+            continue
+        clear, caller = ls['ibShutdownClear'], ls['ibShutdownReturn']
+        check(gls.at(clear - 6, 14) == bytes.fromhex('8b0f8b1133c08902894204894208'),
+              f'{name} index owner stores use esi buffer, ecx block and edx owner')
+        check(gls.at(caller - 5, 5) == bytes.fromhex('e8ccb7feff'),
+              f'{name} shutdown ancestor calls FreeAllIBuffers')
+        check(gls.at(clear - 0x3e, 0x27) == bytes.fromhex(
+            '6aff68269c091064a100000000506489250000000083ec1455568bf157897424108b462c8b7e24'),
+              f'{name} index destructor prologue preserves the shutdown caller at esp+0x44')
+        check(gls.at(clear - 9, 3) == bytes.fromhex('538bd8'),
+              f'{name} index destructor pushes ebx before the owner stores')
     # Each visual class's m_AddFGroups (host/prof.cpp): it calls LightVertices.
     for name, (exe, ls, gexe, gls) in builds.items():
         for f in ('addObject', 'addLitObject', 'addBillboard', 'addMorph', 'addSinglemesh'):
@@ -1240,6 +1255,49 @@ def main(a):
         check(ok and gexe.at(nxt - 0x400000, 4) == b'\x85\xf6\x0f\x85' and
               nxt + 8 + struct.unpack('<i', gexe.at(nxt + 4 - 0x400000, 4))[0] == t - 10,
               f'{name} trafficSlotTest: the slots\' loop, cmp byte ptr [eax], 0; jz to its next turn')
+    # The one-waypoint detour dispatch: preserve native GetSpecNodeC for real nodes, reuse GetSpecNodeB for -1.
+    for name, (exe, ls, gexe, gls) in builds.items():
+        single, general = exe['pathSingleDetour'], exe['pathGeneralDetour']
+        before = gexe.at(single - 9 - 0x400000, 9)
+        arm = '8b461c885e70' if name == '1.2' else '885e7083ec0c'
+        check(before[:5] == bytes.fromhex('83fa010f85') and
+              single + struct.unpack('<i', before[5:])[0] == general and
+              gexe.at(single - 0x400000, 6) == bytes.fromhex(arm) and
+              gexe.at(general - 0x400000, 5) == bytes.fromhex('8b46583bc3'),
+              f'{name} single-waypoint detour and native general dispatch')
+        check(exe['pathNormalBegin'] == (0x1c if name == '1.2' else 4),
+              f'{name} normal waypoint vector offset at the verified dispatch')
+        check(gexe.at(exe['carIsUsable'] - gexe.base, 16) ==
+              bytes.fromhex('538a5c24085556f6c3010f84a0000000') and
+              gexe.at(exe['carIsUsable'] - gexe.base + 0x15c, 8) ==
+              bytes.fromhex('5e5d32c05bc20400'),
+              f'{name} C_car::IsCarUsable entry and bool-in-AL return')
+        shadow = exe['doneVehicleShadowUpdate']
+        check(gexe.at(shadow - 9 - gexe.base, 25) ==
+              bytes.fromhex('8b95a40200008b0416508b08ff51188b95a40200008b443210'),
+              f'{name} C_game::Done vehicle shadow Update and native cleanup continuation')
+        texture = ls['updateShadowTexture']
+        worker, fill = ls['oggThreadProc'], ls['oggFillBuffer']
+        event, flags, count, threshold = (0x64, 0x24, 0x70, 22) if name == '1.0' else (0x68, 0x28, 0x74, 11)
+        check(gls.at(worker + 7, 7) == bytes.fromhex('55568b74241057') and
+              gls.at(worker + 0x14, 3) == bytes([0x8d, 0x6e, event]) and
+              gls.at(worker + 0x2d, 4) == bytes([0x83, 0x7e, count, threshold]) and
+              gls.at(worker + 0x33, 7) == bytes([0xf7, 0x46, flags, 0, 0, 0, 0x40]) and
+              gls.at(worker + 0x67, 4) == bytes.fromhex('6a008bce') and
+              worker + 0x70 + struct.unpack('<i', gls.at(worker + 0x6c, 4))[0] == fill,
+              f'{name} native Ogg worker event/layout/EOF count and thiscall refill(false)')
+        fill_returns = (0x155,) if name == '1.0' else (0xf6, 0x2cc)
+        check(gls.at(ls['showClose'], 13) == bytes.fromhex('5355568b7424108b0656ff5018') and
+              all(gls.at(fill + offset, 3) == bytes.fromhex('c20400') for offset in fill_returns),
+              f'{name} IShow::Close stdcall entry and native refill callee pops bool')
+        sound_init = ls['soundDriverInit']
+        check(gls.at(sound_init, 12) == bytes.fromhex('8b4424188b4c24148b542410') and
+              gls.at(sound_init + 0x31, 3) == bytes.fromhex('c21800') and
+              gls.at(sound_init + 0x49, 3) == bytes.fromhex('c21800'),
+              f'{name} ISND_driver::Init six-word stdcall and both return paths')
+        check(gls.at(texture, 12) == bytes.fromhex('568bf18b8608020000f6c404') and
+              gls.at(texture + 0x21a, 9) == bytes.fromhex('e8e1fdffff84c0752b'),
+              f'{name} native shadow texture rasterization and caller testing its bool return')
     # The city's streaming (host/render.cpp): the game's loop calls CacheTick on the cache (mov ecx, cache; push a
     # register; call), and CacheTick calls ActivateBlock and, with the mission in ecx, FinishTimeTransparentObjects.
     for name, (exe, ls, gexe, gls) in builds.items():
@@ -1282,6 +1340,15 @@ def main(a):
         for f in ('addFgCamera', 'addFgSector', 'renderScene', 'currentCamera', 'viewProj', 'fogOn'):
             check(f'[{gls.base + ls[f]:#x}]' in ren, f'{name} {f}: used by I3D_driver::Render')
         check(f'mov dword ptr [{gls.base + ls["viewProj"]:#x}]' in ren, f'{name} viewProj: Render sets pViewProjMatrix')
+    # Source preparation must finish through the SAME native buffer-manager boundary as Render itself.
+    for name, (_, ls, _, gls) in builds.items():
+        render = list(gls.md.disasm(gls.at(ls['render'], 0x3600), gls.base + ls['render']))
+        for unlock, manager in (('sourceVbUnlock', 'sourceVbManager'), ('sourceIbUnlock', 'sourceIbManager')):
+            target = gls.base + ls[unlock]
+            calls = [i for i, op in enumerate(render) if op.mnemonic == 'call' and op.op_str == hex(target)]
+            check(any(i > 0 and render[i-1].mnemonic == 'mov' and
+                      render[i-1].op_str == f'ecx, {gls.base + ls[manager]:#x}' for i in calls),
+                  f'{name} {unlock}/{manager}: native Render call with manager in ECX')
     # Native fog hooks: setter's cached state and software light percentages/camera far match in both builds.
     for name, (_, ls, _, gls) in builds.items():
         setter = gls.at(ls['setFog'], 439)
@@ -1318,6 +1385,29 @@ def main(a):
         tail = ' '.join(f'{i.mnemonic} {i.op_str}' for i in gls.md.disasm(gls.at(site - 40, 40), gls.base + site - 40))
         check(f'[{gls.base + ls["cullNormals"] + 48:#x}]' in tail,
               f'{name} shadow cull dispatch follows the last plane normal')
+    for name, (exe, ls, gexe, gls) in builds.items():
+        reset = ls['graphResetDevice']
+        viewport = gls.at(ls['sceneSetViewport'], 139)
+        check(viewport.startswith(bytes.fromhex('83ec08')) and
+              all(bytes.fromhex(x) in viewport for x in ('80010000', '08020000', '0c020000', '3c020000', '44020000')),
+              f'{name} scene viewport updates rectangle, center and projection bounds')
+        first = gls.insn(reset)
+        check(first.mnemonic == 'mov' and first.op_str.startswith('eax, dword ptr ['), f'{name} native ResetDevice starts with its state block')
+        check(gls.base + ls['graphPresentParams'] in operands(gls, gls.base + reset, 130),
+              f'{name} native ResetDevice passes the recorded D3D8 parameters')
+        scrn = 0x704E0 if name == '1.2' else 0x6CB20
+        for off in (0, 4):
+            d = operands(gls, gls.base + scrn + off * 8, 22)
+            check(gls.base + ls['graphScreenSize'] + off in d and gls.base + ls['graphScreenSize'] + 0x1C in d,
+                  f'{name} native screen size +{off}: size and child-window flags verified')
+        if exe['menuExchange']:
+            first = gexe.insn(exe['menuExchange']-gexe.base)
+            check(first.mnemonic == 'push' and first.op_str == 'ebx' and b'\xff\x52\x0c' in gexe.at(exe['menuExchange']-gexe.base, 150),
+                  f'{name} menu exchange calls OnBeforeExchange')
+        else:
+            first = gexe.insn(exe['menuFreeComps']-gexe.base)
+            check(first.mnemonic == 'push' and first.op_str == 'esi' and b'\xc3' in gexe.at(exe['menuFreeComps']-gexe.base, 68),
+                  f'{name} menuFreeComps frees controls without deleting the screen')
     print('ALL PASSED' if not fails else f'{fails} FAILED')
     return 1 if fails else 0
 

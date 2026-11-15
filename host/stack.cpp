@@ -94,6 +94,8 @@ uint32_t CallTarget(uint32_t ret) {
             if (q[0] == 0xE9) t = t + 5 + *reinterpret_cast<const int32_t *>(q + 1);
             else if (q[0] == 0xEB) t = t + 2 + static_cast<int8_t>(q[1]);
             else if (q[0] == 0xFF && q[1] == 0x25) t = **reinterpret_cast<uint32_t *const *>(q + 2);
+            else if (q[0] == 0xFF && q[1] == 0x24 && q[2] == 0x25)
+                t = **reinterpret_cast<uint32_t *const *>(q + 3);   // absolute SIB: the RTSS-safe chain thunk
             else break;
         }
         return t;

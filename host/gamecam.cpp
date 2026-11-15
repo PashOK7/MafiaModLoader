@@ -117,9 +117,10 @@ bool SetFov(MmlMod *owner, float fov, std::string *why) {
     void *cam = I3D(Manager());
     if (fov == 0) {   // the game's back
         if (g_fovOwner && g_fovOwner != owner) { *why = "another mod holds the field of view"; return false; }
-        if (g_fovOwner && cam && g_haveGame) PutFov(cam, g_gameFov, g_gameNearFov);
+        const bool restore = g_fovOwner && cam && g_haveGame;
         g_fovOwner = nullptr;
         g_haveGame = false;
+        if (restore) PutFov(cam, g_gameFov, g_gameNearFov); // native correction sees the released ownership
         return true;
     }
     if (!(fov >= 0.1f && fov <= 3.0f)) { *why = "a field of view of 0.1..3.0 radians (0: the game's)"; return false; }
@@ -141,6 +142,11 @@ DWORD SafeSetFov(MmlMod *owner, float fov, std::string *why, bool *ok) {
 void Hold() {
     if (!g_fovOwner) return;
     void *cam = I3D(Manager());
+    if (cam && !g_haveGame) {
+        g_gameFov = At<float>(cam, kI3DFov);
+        g_gameNearFov = At<float>(cam, kI3DNearFov);
+        g_haveGame = true;
+    }
     if (cam && (At<float>(cam, kI3DFov) != g_fov || At<float>(cam, kI3DNearFov) != g_fov)) PutFov(cam, g_fov, g_fov);
 }
 DWORD SafeHold() { __try { Hold(); return 0; } __except (EXCEPTION_EXECUTE_HANDLER) { return GetExceptionCode(); } }
@@ -197,6 +203,15 @@ int GameCameraFov(MmlMod *mod, float fov) {
 
 void GameCameraFrame() { if (g_fovOwner) SafeHold(); }   // (render.cpp: before the world's drawing)
 
+int GameCameraProjection(const void *camera) {
+    __try {
+        const void *native = I3D(Manager());
+        if (!camera) camera = native;
+        return (g_fovOwner && camera && camera == native ? MML_CAMERA_PROJECTION_FOV : 0) |
+               (camera && ViewProjectionOwned(camera) ? MML_CAMERA_PROJECTION_EXACT : 0);
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return 0; }
+}
+
 void GameCameraModGone(MmlMod *mod) {
     if (g_fovOwner != mod) return;
     std::string why;
@@ -204,7 +219,7 @@ void GameCameraModGone(MmlMod *mod) {
     SafeSetFov(mod, 0, &why, &ok);
 }
 
-void GameCameraMissionClose() { g_fovOwner = nullptr; g_haveGame = false; g_followed = nullptr; }   // (the next mission's camera is the game's)
+void GameCameraMissionClose() { g_haveGame = false; g_followed = nullptr; } // retain the live owner's request; capture the next camera's baseline
 
 // A followed car destroyed (its destructor, before it runs): the camera back on the player. Its model may be gone
 // already (world.remove unlinks it first), and End shows the followed car's model again through it (+0x68): the car

@@ -1,7 +1,12 @@
 # The game knowledge base
 
-What is known about Mafia's code (Steam 1.2 `Game.exe` and `LS3DF.dll`), in a form agents query through the MCP
-server (`kb_search`, `kb_function`) and the loader uses to name addresses (`crash_inspect`, `where`).
+What is known about Mafia's 1.2 and 1.0 `Game.exe` and `LS3DF.dll`, in a form agents query through the MCP
+server (`kb_search`, `kb_function`) and the loader uses to name addresses (`crash_inspect`, `where`). The full
+decompile index starts from 1.2; 1.0 has explicit names, checked twins and its own Ghidra project.
+
+[Documentation index](../docs/README.md) maps the topic notes. Their dates, PIDs and binary hashes describe
+particular investigations. Read [current status](../docs/STATUS.md) before treating a pending hypothesis or an
+old installed hash as current. Local `build/` evidence paths in notes are not files distributed by GitHub.
 
 | Path | What | Made by |
 |---|---|---|

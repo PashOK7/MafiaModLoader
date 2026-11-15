@@ -8,6 +8,7 @@
 #include <windows.h>
 #include <cstdio>
 #include <string>
+#include "resize.h"
 
 namespace {
 LONG NTAPI Calls(void *) {
@@ -95,5 +96,6 @@ int main() {
     DWORD w = WaitForSingleObject(t, 20000);
     CloseHandle(t);
     printf("notls: %s\n", w == WAIT_OBJECT_0 ? "done" : "the thread did not end");
-    return w == WAIT_OBJECT_0 ? 0 : 4;
+    if (w != WAIT_OBJECT_0) return 4;
+    return ResizeCheck(d3d8) ? 0 : 5;
 }

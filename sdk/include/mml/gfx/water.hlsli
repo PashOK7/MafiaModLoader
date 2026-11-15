@@ -5,7 +5,7 @@
 // - WaterRipples: the ripples' slopes filtered over a pixel (mml/gfx/water_waves.hlsli makes them; mml/water.h the
 //   spectrum): their mean is the normal, their variance the roughness of what the pixel cannot draw;
 // - WaterFollowReflection: a planar reflection (a scene view mirrored in the water's plane) read where the reflected
-//   ray meets what it reflects, three steps through the reflection's depth;
+//   ray meets what it reflects, front-to-back projected marching with bracket refinement;
 // - WaterStreakedReflection: that reflection blurred by the roughness, up and down whole and sideways by the cosine
 //   (the streaks of real water; the hardware's anisotropy, asked for footprints 8 to 30 times taller than wide,
 //   blurred both ways);
@@ -20,8 +20,34 @@
 // - WaterFoam, WaterSky, WaterFresnel.
 // Light is mixed in linear terms (frame.hlsli Lin, Enc).
 
-// Schlick's Fresnel for water (0.02 head on).
-float WaterFresnel(float cosTheta) { return 0.02 + 0.98 * pow(1 - saturate(cosTheta), 5); }
+// Unpolarized dielectric Fresnel. eta is transmitted / incident IOR; a negative incident cosine reverses the
+// interface. TIR belongs to water -> air, not the ordinary above-water view. Default: air -> water, n=1.333.
+float WaterFresnel(float cosTheta, float eta = 1.333) {
+    if (cosTheta < 0) { cosTheta = -cosTheta; eta = 1 / eta; }
+    float ci = saturate(cosTheta);
+    float sin2t = (1 - ci * ci) / (eta * eta);
+    if (sin2t >= 1) return 1;
+    float ct = sqrt(max(1 - sin2t, 0));
+    float rs = (ci - eta * ct) / max(ci + eta * ct, 1e-6);
+    float rp = (eta * ci - ct) / max(eta * ci + ct, 1e-6);
+    return 0.5 * (rs * rs + rp * rp);
+}
+
+// A deterministic seven-point, degree-five Gaussian cubature over unresolved slopes. It integrates direction,
+// Fresnel AND incoming radiance together, rather than blurring a color and multiplying by a flat mean Fresnel.
+// Half the weight is at the mean, half on a radius-two hexagon: exact mean, covariance and fourth moments,
+// including the cross moment. Seven traced rays instead of a nine-node tensor rule; no per-frame noise.
+float3 WaterFacet(float2 meanSlope, float2 variance, uint sampleIndex, out float weight) {
+    const float2 nodes[7]={float2(0,0),float2(2,0),float2(1,1.732050808),float2(-1,1.732050808),
+                           float2(-2,0),float2(-1,-1.732050808),float2(1,-1.732050808)};
+    float2 node=nodes[min(sampleIndex,6u)];
+    weight=sampleIndex==0 ? .5 : 1.0/12;
+    float2 slope = meanSlope + sqrt(max(variance, 0)) * node;
+    return normalize(float3(-slope.x, 1, -slope.y));
+}
+
+// Projected facet area towards the eye; back-facing facets must not become white mirrors via saturate(n.v)=0.
+float WaterFacetVisibility(float3 n, float3 v) { return max(dot(n, v), 0) / max(n.y, 0.001); }
 
 // The sun the sky shows (its lens flare), else the light's (frame.hlsli g_sunSeen).
 float3 WaterSunSeen() { return g_sunSeen.w > 0.5 ? g_sunSeen.xyz : g_sun.xyz; }
@@ -39,18 +65,8 @@ struct WaterSurface {
     float height;     // the mean height over the pixel above the water's level (m)
     float jacobian;   // 1 flat; under 1 squeezed at a crest; 0 and under folded over (a breaking crest)
 };
-WaterSurface WaterRipples(Texture2DArray<float4> slopes, Texture2DArray<float4> shape, SamplerState wrap, float2 xz,
-                          float3 invSize, float rest, float strength, float chop) {
+WaterSurface WaterSurfaceSamples(float2 sl,float2 var,float4 sh,float rest,float strength,float chop) {
     WaterSurface w;
-    float2 sl = 0, var = 0;
-    float4 sh = 0;
-    [unroll] for (int c = 0; c < 3; c++) {
-        float3 at = float3(xz * invSize[c], c);
-        float4 s = slopes.Sample(wrap, at);
-        sl += s.xy;
-        var += max(s.zw - s.xy * s.xy, 0);
-        sh += shape.Sample(wrap, at);
-    }
     sl *= strength;
     sh *= strength;
     float3 tx = float3(1 - chop * sh.y, sl.x, -chop * sh.w);
@@ -65,6 +81,16 @@ WaterSurface WaterRipples(Texture2DArray<float4> slopes, Texture2DArray<float4> 
     w.var = (var + rest) * strength * strength * squeeze * squeeze;
     w.height = sh.x;
     return w;
+}
+WaterSurface WaterRipples(Texture2DArray<float4> slopes, Texture2DArray<float4> shape, SamplerState wrap, float2 xz,
+                          float3 invSize, float rest, float strength, float chop) {
+    float2 sl=0,var=0;float4 sh=0;
+    [unroll]for(int c=0;c<3;c++) {
+        float3 at=float3(xz*invSize[c],c);
+        float4 s=slopes.Sample(wrap,at);
+        sl+=s.xy;var+=max(s.zw-s.xy*s.xy,0);sh+=shape.Sample(wrap,at);
+    }
+    return WaterSurfaceSamples(sl,var,sh,rest,strength,chop);
 }
 
 // Pixels a radian about the screen's centre (the frame's projection).
@@ -114,19 +140,26 @@ struct WaterHit {
     bool sky;
     bool contact;    // a surface within the cut's pixel footprint: do not filter its colour with the sky beside it
 };
+// Legacy projected shore estimate, retained only until the geometry query supplies a world-space distance.
+// An occluder in FRONT of the water point is not the bank at that point and cannot suppress its waves.
+float WaterProjectedShoreWeight(float waterDepth,float objectDepth,float worldDistance){
+    if(waterDepth<=.05 || objectDepth<waterDepth)return 1;
+    float gap=(objectDepth-waterDepth)*worldDistance/waterDepth;
+    return smoothstep(.1,1,gap);
+}
 float2 WaterAwayFromCut(float2 uv, float2 up, float4x4 invViewProj) {
     return WaterReflectionRise(uv + up, invViewProj) >= WaterReflectionRise(uv, invViewProj) ? up : -up;
 }
 // uv, or the foot beside it when uv is a hole at a thing's cut foot (see WaterFollowReflection); d its depth
 float2 WaterFillFoot(float2 uv, float2 away, Texture2D<float> depth, float zp, float rz, float tNear, out float d) {
     d = depth.SampleLevel(g_point, saturate(uv), 0);
-    if (!IsSky(d) && (d - zp) / rz <= tNear) return uv;
+    if (!IsSky(d) && d >= zp && (d - zp) / rz <= tNear) return uv;
     // Raster coverage and the colour filter's footprint need not cross the cut at the same texel centre. The
     // old single 1.5-texel probe missed holes as the camera rose, and accepted background geometry as a valid foot.
     [unroll] for (int j = 1; j <= 3; j++) {
         float2 beside = uv + away * j;
         float d2 = depth.SampleLevel(g_point, saturate(beside), 0);
-        if (!IsSky(d2) && (d2 - zp) / rz <= tNear) {
+        if (!IsSky(d2) && d2 >= zp && (d2 - zp) / rz <= tNear) {
             d = d2;
             return beside;
         }
@@ -142,19 +175,51 @@ WaterHit WaterFollowReflection(float3 p, float3 r, float2 uvFlat, float4x4 viewP
     // how far along r a thing may stand and still be within a few pixels of the cut: a pixel at the water point is
     // zp / pxPerRadian metres high, and the ray rises r.y a metre
     float tNear = 3 * kWaterLineMargin * zp / (pxPerRadian * max(r.y, 0.01)) + 0.05;
-    h.uv = uvFlat;
     float d = 0;
-    h.t = 0;
-    [unroll] for (int k = 0; k < 3; k++) {
-        float2 at = WaterFillFoot(h.uv, away, depth, zp, rz, tNear, d);
-        h.t = IsSky(d) ? 3000 : max((d - zp) / rz, 0);
-        // (a foot found beside a hole: stay on it; the ray's point would lead back into the hole)
-        h.uv = any(at != h.uv) ? at : WaterReflectionUv(p + r * h.t, viewProj);
-    }
-    h.uv = WaterFillFoot(h.uv, away, depth, zp, rz, tNear, d);
+    float2 foot = WaterFillFoot(uvFlat,away,depth,zp,rz,tNear,d);
+    h.uv = foot;
+    h.t = IsSky(d) ? 3000 : max((d-zp)/rz,0);
     h.sky = IsSky(d);
-    h.t = h.sky ? 3000 : max((d - zp) / rz, 0);
-    h.contact = !h.sky && h.t <= tNear;
+    h.contact = !h.sky && d >= zp && h.t <= tNear;
+    if (h.contact) return h;
+
+    // The old three fixed-point jumps could alternate between a bank and sky without ever finding the bank.
+    // Walk front-to-back in projected ray space instead. Perspective gives z=zp/(1-q), t=zp*q/(rz*(1-q));
+    // q interpolates from the surface pixel to the vanishing point. Bracket a crossing, then refine it.
+    float4 clipRay = mul(float4(r,0),viewProj);
+    float2 infinityUv = clipRay.xy / max(clipRay.w,1e-4) * float2(.5,-.5) + .5;
+    float2 delta = infinityUv-uvFlat;
+    float limit = .999;
+    if (abs(delta.x)>1e-6) limit=min(limit,(delta.x>0 ? 1-uvFlat.x : -uvFlat.x)/delta.x);
+    if (abs(delta.y)>1e-6) limit=min(limit,(delta.y>0 ? 1-uvFlat.y : -uvFlat.y)/delta.y);
+    limit=max(limit,0);
+    uint width,height;
+    depth.GetDimensions(width,height);
+    uint steps=(uint)clamp(ceil(length(delta*limit*float2(width,height))/4),8,48);
+    float previous=0;
+    bool found=false;
+    [loop] for(uint step=1;step<=steps;step++) {
+        float q=limit*step/steps;
+        float2 uv=uvFlat+delta*q;
+        float sampleDepth=depth.SampleLevel(g_point,uv,0);
+        float rayDepth=zp/max(1-q,1e-4);
+        if (!IsSky(sampleDepth) && sampleDepth>=zp && rayDepth>=sampleDepth) {
+            float lo=previous,hi=q;
+            [unroll] for(uint refine=0;refine<4;refine++) {
+                float mid=(lo+hi)*.5;
+                float z=depth.SampleLevel(g_point,uvFlat+delta*mid,0);
+                if (!IsSky(z) && z>=zp && zp/max(1-mid,1e-4)>=z) hi=mid; else lo=mid;
+            }
+            h.uv=uvFlat+delta*hi;
+            h.t=zp*hi/(rz*max(1-hi,1e-4));
+            found=true;
+            break;
+        }
+        previous=q;
+    }
+    if (!found) { h.uv=uvFlat+delta*limit; h.t=3000; }
+    h.sky=!found;
+    h.contact=false;
     return h;
 }
 
@@ -176,10 +241,19 @@ float WaterNoise(float2 px) { return frac(52.9829189 * frac(dot(px, float2(0.067
 // it or past it is left out and the mip kept narrower than the way to it. `pxPerRadian`: the reflection's pixels a
 // radian (WaterPixelsPerRadian at the frame's size).
 float3 WaterStreakedReflection(Texture2D<float4> refl, SamplerState clampS, float2 uv, float2 up, float spread,
-                               float cosTheta, float2 px, float4x4 invViewProj, float pxPerRadian) {
+                               float cosTheta, float2 px, float4x4 invViewProj, float pxPerRadian,
+                               float2 pixelDx = float2(0,0), float2 pixelDy = float2(0,0)) {
     uv = WaterOffLine(uv, up, invViewProj, pxPerRadian);
+    // Callers compute the base reflection footprint before divergent tracing/material branches. Keep ordinary
+    // texture minification when the artistic lobe is sharp. These are the planar footprint's derivatives;
+    // they do not replace unresolved-wave filtering under extreme normal distortion.
+    uint width = 1, height = 1;
+    refl.GetDimensions(width, height);
+    float2 dimensions = float2(width, height);
+    float footprint = max(length(pixelDx * dimensions), length(pixelDy * dimensions));
+    float pixelLod = log2(max(footprint, 1));
     float toLine = max(WaterReflectionRise(uv, invViewProj) * pxPerRadian, kWaterLineMargin);   // pixels to the line
-    float lod = log2(clamp(min(spread * cosTheta, toLine - 1), 1, 4096));
+    float lod = max(pixelLod, log2(clamp(min(spread * cosTheta, toLine - 1), 1, 4096)));
     float jitter = WaterNoise(px);
     float3 sum = 0;
     float wsum = 0;
@@ -341,9 +415,9 @@ float WaterFoam(float2 xz, float2 slope, float under, float crest, float time) {
     return saturate((edge - grain * 0.85) * 3) * saturate(crest / 0.05);
 }
 
-// Whitecaps: where the choppy displacement folds the surface over (its Jacobian under 0.3: a breaking crest), broken
-// up by drifting noise. 0..1.
+// Whitecaps form on strongly compressed crests before the numerical surface folds over. Waiting for Jacobian
+// <.3 hid practically all foam on the wind-driven river. Break up the crest coverage into thin irregular patches.
 float WaterWhitecaps(float jacobian, float2 xz, float time) {
     float grain = WaterValueNoise(xz * 2.3 + float2(time * 0.21, time * 0.13));
-    return saturate((0.3 - jacobian) * 3 - grain * 0.5);
+    return smoothstep(.18,.55,1-jacobian) * smoothstep(.3,.7,grain);
 }

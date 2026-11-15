@@ -173,3 +173,20 @@ analysis failed in both: parameters are misnamed and uses of the step are missin
 start, `vehMatrixPrev` `+0x68`; it copies 16 dwords with `rep movsd`). So the two offsets of each name are what each
 build's function reads, not one field: what 1.2's pair holds was not read. Found while carrying st0rm94's fields
 (tools/kb_structs.py leaves both out of knowledge/structs).
+
+## Native usability and external wheel support (2026-11-11)
+
+`C_car::IsCarUsable` is 1.2 `0x429850`, 1.0 `0x470D30`. Both take a byte-sized check mask
+in one stack slot, thiscall, ret 4, and return a bool in AL. The false return at entry +0x15C
+uses `xor al, al`, leaving upper EAX bytes unspecified. Reading the return as a full int can
+report success for a false result. Both entry and return witnesses are checked by check_builds.py.
+
+Mask bit 1 checks damage and detached wheels. Bit 2, when the native scalar speed is below 1,
+requires at least three wheels with `S_wheel+0x120` bit 8. Bit 4 requires supported, attached wheels
+in both native index-parity groups, left and right on the starter car. ISCARUSABLE passes 255.
+
+Jolt's car/body response changes the car's motion after native physics. Its contacts were absent
+from that gameplay predicate. The optional owner-scoped `vehicle_support_hook` supplies a measured
+native wheel-index mask while the original predicate runs. The temporary additions to bit 8 are
+restored before returning. The native suspension state and Jolt contact forces retain their
+respective ownership. Providers must clear support when it ends or their world is reset.

@@ -21,15 +21,20 @@ struct FovSite
 };
 std::array<FovSite, 16> fovSites;
 
+int ProjectionState(uintptr_t camera) {
+    return H->camera_projection_state(M, reinterpret_cast<const void *>(camera));
+}
+
 template<size_t I> void CorrectFov(MmlMidContext& regs)
 {
     auto& site = fovSites[I];
     uintptr_t camera = site.cameraRegister == 5 ? regs.ebp : site.cameraRegister == 3 ? regs.ebx : regs.edx;
     double angle = Field<float>(camera, site.field);
+    const double scale = ProjectionState(camera) ? 1.0 : GetCameraFovScale();
     // Change the existing half-angle multiplier before the native FLD. This
     // leaves the x87 stack, camera FOV fields, and projection code intact.
     site.multiplier = angle == 0.0 ? 0.5f : static_cast<float>(
-        std::atan(std::tan(angle * 0.5) * GetCameraFovScale()) / angle);
+        std::atan(std::tan(angle * 0.5) * scale) / angle);
 }
 
 template<size_t... I> constexpr auto FovCallbacks(std::index_sequence<I...>)
@@ -40,8 +45,10 @@ template<size_t... I> constexpr auto FovCallbacks(std::index_sequence<I...>)
 void RefreshCameraFov(MmlMidContext& regs)
 {
     auto camera = regs.ecx;
+    int ownership = ProjectionState(camera);
+    if (ownership & MML_CAMERA_PROJECTION_EXACT) return;
     if (Field<uint8_t>(camera, 0x15C)) return; // orthographic camera
-    double scale = GetCameraFovScale();
+    double scale = ownership & MML_CAMERA_PROJECTION_FOV ? 1.0 : GetCameraFovScale();
     for (auto [field, projection] : { std::pair{0x140u, 0x1A4u}, std::pair{0x14Cu, 0x364u} })
     {
         double angle = Field<float>(camera, field);
@@ -65,8 +72,23 @@ void RefreshCameraFov(MmlMidContext& regs)
     }
 }
 
+void RefreshSceneFOV(void *scene)
+{
+    if (!scene || !MML_HAS(H, camera_projection_state)) return;
+    uintptr_t camera = 0, table = 0;
+    if (!H->mem_read(reinterpret_cast<uintptr_t>(scene)+0x17C, &camera, sizeof camera) || !camera ||
+        !H->mem_read(camera, &table, sizeof table) || table != Ls3dBase()+game::Ls3d().cameraVtable) return;
+    MmlMidContext regs{};
+    regs.ecx = static_cast<uint32_t>(camera);
+    RefreshCameraFov(regs);
+}
+
 void InitFOV()
 {
+    if (!MML_HAS(H, camera_projection_state)) {
+        Log(MML_LOG_WARN, "FOV correction needs the SDK camera projection interop service");
+        return;
+    }
     auto module = Ls3dBase();
     if (!module) return;
     std::vector<std::pair<uintptr_t, uintptr_t>> matches;

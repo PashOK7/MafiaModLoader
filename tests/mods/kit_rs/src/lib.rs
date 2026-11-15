@@ -14,6 +14,12 @@ use mml::{EventType, Host};
 use serde::{Deserialize, Serialize};
 
 static POSTED: AtomicU32 = AtomicU32::new(0);
+static SCENE_DRAWS: AtomicU32 = AtomicU32::new(0);
+static SCENE_COPIES: AtomicU32 = AtomicU32::new(0);
+static COLLECT_PENDING: AtomicU32 = AtomicU32::new(0);
+static COLLECT_DRAWS: AtomicU32 = AtomicU32::new(0);
+static COLLECT_SUCCESS: AtomicU32 = AtomicU32::new(0);
+static COLLECT_MISSING: AtomicU32 = AtomicU32::new(0);
 
 /// Held by a call posted at the unload, which never runs: its drop is logged when the unload frees it
 struct PostedAtUnload;
@@ -93,6 +99,73 @@ fn load(host: Host) -> Result<(), String> {
     });
 
     host.command("offline", "the safe layer's checks with no game (run_tests.py)", move |_| Ok(checks::offline(host).to_string()));
+    host.command("view_features", "supported scene-view flags through the safe Rust API", move |_| {
+        Ok(host.scene_view_features().map_or("null".to_owned(), |f| f.to_string()))
+    });
+    host.subscribe(EventType::RENDER_WORLD,move |ev| {
+        if !ev.world() { return; }
+        let pending=COLLECT_PENDING.swap(0,Ordering::Relaxed);if pending==0 { return; }
+        let flags=match pending {
+            2=>mml::sys::MML_SCENE_COLLECT_BILLBOARDS,
+            3=>mml::sys::MML_SCENE_COLLECT_XZ_DISK,
+            _=>0,
+        };
+        if flags&!host.scene_draw_collect_features()!=0 { return; }
+        if let Some(collection)=host.scene_draw_collect_flags([-2000.0,-50.0,-500.0],[-1000.0,300.0,700.0],flags) {
+            assert!(collection.missing.iter().all(|m| (0..3).all(|a|m.lo[a].is_finite()&&m.hi[a].is_finite()&&m.lo[a]<=m.hi[a])));
+            COLLECT_DRAWS.store(collection.draws,Ordering::Relaxed);
+            COLLECT_MISSING.store(collection.missing.len() as u32,Ordering::Relaxed);
+            COLLECT_SUCCESS.store(1,Ordering::Relaxed);
+        }
+    });
+    host.command("scene_collect","one-shot native scene preparation through safe Rust",move |args| {
+        if args.contains("true") {
+            COLLECT_SUCCESS.store(0,Ordering::Relaxed);COLLECT_DRAWS.store(0,Ordering::Relaxed);
+            let kind=if args.contains("disk") { 3 } else if args.contains("billboards") { 2 } else { 1 };
+            COLLECT_PENDING.store(kind,Ordering::Relaxed);
+        }
+        let outside_refused=host.scene_draw_collect([-2000.0,-50.0,-500.0],[-1000.0,300.0,700.0]).is_none();
+        Ok(format!("{{\"pending\":{},\"success\":{},\"draws\":{},\"missing\":{},\"outside_refused\":{}}}",COLLECT_PENDING.load(Ordering::Relaxed)!=0,COLLECT_SUCCESS.load(Ordering::Relaxed)!=0,COLLECT_DRAWS.load(Ordering::Relaxed),COLLECT_MISSING.load(Ordering::Relaxed),outside_refused))
+    });
+    host.command("scene_owned","test the Rust scene job API",move |_| {
+        unsafe extern "C" fn increment(user:*mut core::ffi::c_void) {
+            unsafe { *(user as *mut u32)+=1; }
+        }
+        let mut count=0u32;
+        let ticket=unsafe { host.scene_owned_submit(increment,core::ptr::addr_of_mut!(count).cast()) }
+            .ok_or("scene job was refused")?;
+        let ran=host.scene_owned_join(ticket,false);
+        Ok((ran&&count==1&&!host.scene_owned_join(ticket,false)).to_string())
+    });
+    host.command("residency","owner-scoped native city residency through safe Rust",move |args| {
+        let accepted=if args.contains("camera") { Some(host.scene_residency_camera(Some(608.0))) }
+            else if args.contains("true") { Some(host.scene_residency(Some(([-2000.0,-30.0,-500.0],[-1000.0,240.0,700.0])))) }
+            else if args.contains("false") { Some(host.scene_residency(None)) } else { None };
+        let s=host.scene_residency_state().ok_or("no residency query")?;
+        Ok(format!("{{\"accepted\":{},\"requested\":{},\"ready\":{},\"owners\":{},\"required\":{},\"available\":{}}}",
+            accepted.map_or("null",|v|if v {"true"} else {"false"}),s.requested,s.ready,s.owners,s.required,s.available))
+    });
+    host.command("scene_source", "native source through the safe Rust callback and owned geometry copy; on true/false", move |args| {
+        let mut registered=false;
+        if args.contains("true") {
+            SCENE_DRAWS.store(0,Ordering::Relaxed);SCENE_COPIES.store(0,Ordering::Relaxed);
+            registered=host.scene_draw_observe(|draw| {
+                if draw.raw().kind==3 && draw.raw().flags&mml::sys::MML_SCENE_DRAW_COLLECTION!=0 {
+                    let descriptor=draw.billboard().expect("current native billboard descriptor");
+                    assert!(descriptor.world.iter().all(|v|v.is_finite()));
+                }
+                let index=SCENE_DRAWS.fetch_add(1,Ordering::Relaxed);
+                if index<32 && draw.raw().flags&mml::sys::MML_SCENE_DRAW_BACKDROP==0 {
+                    if let Some(geometry)=draw.geometry() {
+                        assert!(geometry.triangles.iter().flatten().all(|&i| (i as usize)<geometry.vertices.len()));
+                        assert!(geometry.vertices.iter().all(|v| v.pos.iter().all(|p|p.is_finite())));
+                        SCENE_COPIES.fetch_add(1,Ordering::Relaxed);
+                    }
+                }
+            });
+        }else if args.contains("false"){host.scene_draw_unobserve();}
+        Ok(format!("{{\"registered\":{},\"draws\":{},\"copies\":{}}}",registered,SCENE_DRAWS.load(Ordering::Relaxed),SCENE_COPIES.load(Ordering::Relaxed)))
+    });
     host.command("atmosphere", "safe SDK atmosphere request/query/release", move |args| {
         let mut s=mml::AtmosphereSettings::neutral();
         s.extinction=0.002;

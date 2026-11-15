@@ -548,6 +548,15 @@ json MenuState() {
 
 } // namespace
 
+bool StartActivateWindow(HWND window) {
+    // Explicit bridge action. Ordinary game calls remain subject to KeepInBackground, whose
+    // SetForegroundWindow detour intentionally returns TRUE without forwarding an own-window request.
+    // Use the original entry here, then let the caller verify the real foreground window.
+    if (!Own(window)) return false;
+    if (IsIconic(window)) (oShowWindow ? oShowWindow : ShowWindow)(window, SW_RESTORE);
+    return (oSetForeground ? oSetForeground : SetForegroundWindow)(window) != FALSE;
+}
+
 void StartInit() {
     if (!game::g_exe || !game::Exe().menuTop || !game::Exe().menuProfileVt) return;
     g_menuOk = true;

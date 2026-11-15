@@ -22,6 +22,8 @@
 #include "mml/mml.h"
 
 struct IDirect3DBaseTexture9;   // (d3d9.h's: shadows.cpp's map)
+struct IDirect3DDevice9;
+struct IDirect3DTexture9;
 
 namespace host {
 
@@ -43,6 +45,16 @@ void FullscreenReset(DWORD *pp);                                          // ...
 const RECT *FullscreenDest();   // the picture's place in the window (Present's destination), or null: the game's own
 void FullscreenPresent();       // (screenshot.cpp) at the game's Present: the bars beside the picture
 std::string FullscreenState();  // for gfx.state
+void WindowDevice(void *dev8, HWND focus, DWORD *pp); // after CreateDevice; window resize is applied between frames
+void WindowFrame();
+bool WindowRenderReady(); // a failed reset must recover native buffers before any more scene draws
+void WindowScene(void *scene); // root scene viewport and camera aspect, before auxiliary views and DLSS
+bool WindowMethod(const std::string &method, const std::string &params, std::string *reply, bool *ok);
+void RenderBeforeReset();
+void ShadowsBeforeReset();
+void SkinBeforeReset();
+void VdataBeforeReset();
+void MenusResolutionChanged();
 std::wstring Wide(const std::string &utf8);
 std::string Utf8Of(const wchar_t *wide, int n = -1);   // n: characters, -1: up to the terminator
 std::string AcpToUtf8(const char *acp);
@@ -217,6 +229,7 @@ std::string Command(const std::string &line);   // "5409D0 n=4 ptr=1:32 log", "s
 // ---- the start and the menus (start.cpp): <game>\mml\start.json; menu.state, menu.command, start.state
 void StartInit();                         // after the game's hooks (the build known): reads and deletes start.json
 void StartFrame();                        // every frame (game thread): the next step of the start
+bool StartActivateWindow(HWND window);    // explicit bridge activation bypasses only our background-launch guard
 bool StartMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 
 // ---- input (input.cpp): actions and keys injected inside the game; input.*, text.* methods
@@ -314,6 +327,8 @@ bool FpuMethod(const std::string &method, const std::string &paramsJson, std::st
 int GameCamera(MmlGameCamera *out);
 int GameCameraMode(MmlMod *mod, int mode);
 int GameCameraFov(MmlMod *mod, float fov);
+int GameCameraProjection(const void *camera);
+bool ViewProjectionOwned(const void *camera);
 void GameCameraFrame();                    // (render.cpp) a held field of view put back on the game's camera
 void GameCameraModGone(MmlMod *mod);
 void GameCameraMissionClose();
@@ -501,7 +516,7 @@ bool ModelSkin(const char *file, const char *mesh, std::vector<ModelSkinLod> *ou
 bool SceneFocus(MmlMod *mod, const float *lo, const float *hi);   // null lo: none
 bool SceneReady(MmlMod *mod, const float *lo, const float *hi);   // every visual of the box is among the pieces
 int ScenePieces(MmlMod *mod, MmlMeshPiece *out, int max);
-int ActorMeshes(void *actor, MmlMeshPiece *out, int max);         // -1: no model
+int ActorMeshes(void *actor, MmlMeshPiece *out, int max, uint32_t flags = 0); // -1: no model/invalid flags
 void MeshesFrame();                       // every frame of a loaded mission: the walk, the scans
 void MeshesMissionClose();
 void MeshesModGone(MmlMod *mod);
@@ -566,6 +581,10 @@ void ShadowsDepthFinish(const float *bounds, unsigned samples, double reduceMs);
 void ShadowsDepthEnable(bool on);
 bool ShadersNeedEarlyShadow();
 bool GfxShadowDepthAvailable();
+bool GfxShadowAliasAvailable(::IDirect3DDevice9 *device);
+bool GfxCreateShadowAlias(::IDirect3DDevice9 *device, unsigned size, ::IDirect3DTexture9 **texture);
+bool GfxShadowAliasWritable(::IDirect3DTexture9 *texture);
+void GfxRetireShadowMap();
 bool ViewAllowsLateShadow(void *scene);
 void ShadowsSurfaceEnable(bool on);
 void ShadowsTune(float sunDistance, int casters);   // (shader.shadows) sun_distance; casters 1 LS3D's drawing, 0 the meshes, -1 as it is
@@ -598,6 +617,9 @@ void SoundFrame();                        // every frame: sounds that follow fra
 void SoundModGone(MmlMod *mod);           // (its unload) its sounds and music stopped, the city's music given back
 void SoundMissionClose();                 // (before the mission closes) the 3D sounds released
 bool SoundMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+std::string SoundAllocationState(); // native capability-based allocation policy; read-only, no playback edits
+void OggFixInit(); // cooperative native Ogg shutdown; never terminate a live archive reader
+std::string OggFixState();
 
 // ---- the game's videos played with FFmpeg (video.cpp): IShow's Open, Close and full-screen loop hooked
 void VideoInit();                         // after the game's hooks and the start's
@@ -618,9 +640,21 @@ int PlayerLock(MmlMod *mod, int on);
 int VehicleHook(MmlMod *mod, MmlVehicleFn fn, void *user);
 int VehicleBody(void *car, MmlVehicleBody *read, const MmlVehicleBody *write);
 int VehicleKinds(MmlMod *mod, unsigned kinds);   // which vehicles the hook is told of (MML_VEHICLES_*)
+int VehicleSupportHook(MmlMod *mod, MmlVehicleSupportFn fn, void *user);
 void ControlModGone(MmlMod *mod);         // (its unload) its vehicle hook dropped, its lock let go
 void ControlMissionClose();               // (the mission closes) the lock forgotten
 bool ControlMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
+// car_trace.cpp: a bounded history of the occupied car, retained on a rapid speed gain.
+struct CarTraceMotion { unsigned tick; MmlVec3 velocity, turn; };
+unsigned CarTraceBegin(int ms);
+void CarTraceNative(unsigned tick);
+void CarTraceEnd(unsigned tick);
+CarTraceMotion CarTraceBeforeMod();
+void CarTraceAfterMod(const CarTraceMotion &before, const char *mod);
+bool CarTraceWantsContact(const void *car);
+void CarTraceContact(const MmlCarCrash &contact, const void *struck, const void *caller);
+void CarTraceEvent(const MmlEvent &ev);
+bool CarTraceMethod(const std::string &params, std::string *reply, bool *ok);
 // interaction (interact.cpp): zones, use-points in the game's own using objects (its Action's choice menu), timers
 uint32_t GameTextId(const std::string &utf8);   // (menus.cpp) a text of the loader's own in the game's database; 0: none
 int HudHelpLine(const std::string &utf8);       // the game's help line shown (MissionHelpAdd): the ms it stays, 0 not
@@ -657,6 +691,7 @@ void HudActorGone(void *actor);
 bool HudMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 // a mod's state in the game's saves (saves.cpp): beside each save of the game, and the profile's
 void SavesInit();                         // (after the game's hooks) SaveGameSave, SaveGameLoad, SaveGameNewGame, ProfileDelete
+bool SavesLoading();                      // the game thread is inside a native save load or new game
 int SavePut(MmlMod *mod, int scope, const char *key, const void *data, size_t n, std::string *err);   // null mod: the bridge's
 size_t SaveGet(MmlMod *mod, int scope, const char *key, void *data, size_t cap);
 bool SavesMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
@@ -666,7 +701,8 @@ int SaveProfileNumber();                  // the profile selected (savegame\mafi
 // the statistics and the profile's progress (stats.cpp)
 void StatsEvent(const MmlEvent &ev);      // (mods.cpp Dispatch) every event: what the player did
 void StatsFrame(float dt, bool ticking);  // (game_hooks.cpp) every frame of a loaded mission: time, distances
-int StatsGet(int scope, MmlStats *out);
+int StatsGet(MmlMod *mod, int scope, MmlStats *out);
+void StatsModGone(MmlMod *mod);
 int ProfileProgress(MmlProgress *out);
 int ProfileSaves(int *slots, int max);
 bool StatsMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
@@ -689,14 +725,14 @@ bool HumanLastPose(void *human, float world[][16], unsigned maxAgeMs);   // the 
 // bullet Hit hooked; hits.state, human.hit
 void HitsInit();                          // (after AnimsInit) the pedestrian system's bullet Hit
 bool HitsFilter(void *person, int pedestrian, MmlHumanHit *hit);   // true: a mod took it (the game's Hit must not run)
-bool HitsInPedBullet(void *element, MmlVec3 *pos = nullptr);   // pedBulletHit filtered this element and runs (pedHit's filter
+bool HitsInPedBullet(void *element, MmlHumanHit *hit);       // pedBulletHit filtered this element and runs (pedHit's filter
                                                                // passes it by); pos: the point the bullet struck
 int HitFilterSet(MmlMod *mod, MmlHitFilterFn fn, void *user);
 int HumanHitCall(void *person, const MmlHumanHit *hit, std::string *err);
 void HitsModGone(MmlMod *mod);
 void HitsActorGone(void *actor);
 void HitsMissionClose();
-int HitsShapeOf(void *person);            // 1 + the capsule the last bullet stretch gave him (0 none)
+int HitsShapeOf(void *person, MmlHumanHit *hit); // consumes the matching bullet contact, 1 + capsule index
 int BulletShapeSet(MmlMod *mod, void *person, const MmlCapsule *parts, int count, std::string *err);
 bool HitsMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 // the traffic's pedestrians (pedestrians.cpp): their elements, from the managers' arrays and the game's list
@@ -709,6 +745,7 @@ bool PedestriansMethod(const std::string &method, const std::string &paramsJson,
 // a frame's release told (framelife.cpp): LS3D's frames' and meshes' Release hooked once something is watched
 void FrameLifeInit();
 void FixesInit();
+void FixesFrame();   // lazy process timer request before the native frame limiter's first wait
 // ---- ASI mods that write Game.exe's or LS3DF.dll's code or constants without VirtualProtect (asi_compat.cpp): the
 // write let through (the page made writable, the instruction run again), logged once a page; any other fault as before
 void AsiCompatStart();   // at start: the vectored handler, first in the process's list
@@ -751,7 +788,12 @@ int HumanAnimPlay(void *human, const char *anim, int flags, std::string *err);  
 int HumanAnimStop(void *human, std::string *err);
 int HumanAnimReplace(MmlMod *mod, void *human, const char *own, const char *with, std::string *err);
 int HumanAnimState(void *human, MmlHumanAnim *out);
-int HumanGetUp(void *human, int blendMs, std::string *err);   // 1 from the back, 2 from the front, 0 refused
+int HumanGetUp(void *human, int blendMs, std::string *err, MmlMod *owner = nullptr,
+               const MmlBone *pose = nullptr, int count = 0);   // 1 back, 2 front, 0 refused
+int HumanGetUpCancel(MmlMod *owner, void *human);   // cancel only this owner's handover, not the native animation
+int HumanVehicleContact(void *human, void *vehicle, const float velocity[3], const float point[3]);
+void AnimsTick(int ms);
+void AnimsBeforeLoad();
 void AnimsBeforeRender();                 // (humans.cpp, RENDER_BEGIN) the get-ups' blends
 void AnimsModGone(MmlMod *mod);
 void AnimsActorGone(void *actor);
@@ -776,6 +818,17 @@ int RenderCamera(MmlRenderCamera *out);   // mml.h render_camera
 bool RenderMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 // The game's vertex and index buffers renamed (vbrename.cpp): installed on its Direct3D 9 device when it is made
 void VbRenameInstall(void *device9);   // (an IDirect3DDevice9)
+void VbRenameBeginSourceWrites(void *device9);
+void VbRenameFinishSourceWrites();
+void VbRenameInvalidateSourceBindings(void *device9);
+struct VbSourceStreams {
+    const uint8_t *vertices, *indices;
+    const uint64_t *vertexRevisions, *indexRevisions;
+    uint64_t nativeIndexRevision;
+    uint32_t vertexBytes, indexBytes, indexStride, vertexOffset, stride;
+};
+void VbRenameSourceStreams(void *device9, void *vb9, void *ib9, VbSourceStreams *out);
+uint64_t VbRenameSourceRevision(const uint64_t *pages, uint32_t offset, size_t bytes);
 bool VbRenameMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);   // vb.*
 bool Subscribed(MmlEventType type);       // (mods.cpp) a live mod subscribed to it
 
@@ -790,6 +843,8 @@ void GfxRemove(MmlMod *mod);              // its mod unloads: its passes go
 void GfxQuiet(bool on);                   // drawing that is not the game's (not tallied as the world's light)
 void GfxDrawnSize(float out[4]);          // the size this frame's world is drawn at: w, h, 1/w, 1/h (gfx_upscale's, else the frame's)
 void GfxFrameBegin();                     // (render.cpp) a frame's first drawing: its GPU time starts
+enum class GfxTimingMark { ShadowBegin, ShadowEnd, WorldBegin, WorldEnd, BridgeInputs, BridgeEnd, Count };
+void GfxMarkTiming(GfxTimingMark mark);
 int GfxUpscaleSet(MmlMod *mod, unsigned w, unsigned h, MmlGfxUpscaleFn fn, void *user);   // mml.h gfx_upscale
 // ---- motion vectors (motion.cpp; mml.h gfx_motion, MmlGfxFrame motion)
 bool MotionWanted();                      // a mod wants them
@@ -816,7 +871,8 @@ bool GfxMethod(const std::string &method, const std::string &paramsJson, std::st
 // scene views' targets (view.cpp draws into them): Begin binds the view's (*w, *h 0: the frame's size, written back;
 // clip: a world plane or null), Stage1 takes its linear depth, End puts the frame's target back and hands the view
 // to the passes
-bool GfxViewBegin(int handle, unsigned *w, unsigned *h, const float *clip, std::string *why);
+bool GfxViewBegin(int handle, unsigned *w, unsigned *h, const float *clip, uint32_t flags, std::string *why);
+bool GfxViewSkyOnly();                    // current auxiliary target is a native-backdrop capture
 void GfxViewBackdrop(const float m[16]);  // the view's camera's backdrop (sky) view: no clip plane while it is set
 void GfxViewStage1();
 void GfxViewEnd(bool drawn, const float view[16], const float proj[16], const float eye[3]);
@@ -833,6 +889,7 @@ void ViewsDraw(void *driver, void *scene, RenderFn render);   // (render.cpp) be
 void RenderViewWorld(int handle);         // (render.cpp) MML_EVENT_VIEW_WORLD sent, the device's state kept
 bool ViewMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok);
 int ViewDrawingNow();                     // the scene view LS3D is drawing now (its handle), 0: none
+bool ViewBackdropNow();                   // native Render selected the camera's backdrop VP, not a matrix heuristic
 // the scene drawn by LS3D from an orthographic camera at `world` (rows right, up, forward, eye), `half` metres each
 // way, depth nearZ..farZ, into the targets the caller has bound (size x size): its view x projection and the backdrop's
 // view out (shadows.cpp's map); ShadowViewNow: that drawing is under way
@@ -847,6 +904,7 @@ int CameraOverride(MmlMod *mod, MmlViewFn fn, void *user);
 void FrameCameraBegin(void *scene);       // (render.cpp) before the views and the frame's own drawing
 void FrameCameraEnd();                    // ... after the frame's drawing: the game's camera back
 bool FrameCameraEye(float eye[3]);        // the eye a mod's camera (or camera.set's) was drawn from in the last 0.5 s
+bool FrameCameraState(void *scene,MmlViewCamera *out); // current resolved main camera, before auxiliary views
 void CityFollowsCamera();                 // (render.cpp) CacheTick hooked: the city streamed around FrameCameraEye
 void RenderDistanceCamera(MmlViewCamera *camera);   // saved draw distance also governs a mod's main camera
 void RenderMissionClosed();                         // forget only the old scene's original camera range
@@ -902,6 +960,7 @@ void ProfEnter(const MmlMod *mod, const char *site);
 void ProfLeave(const MmlMod *mod, const char *site, double ms);
 double ProfNow();
 const char *ProfEventSite(int type);      // an event's name ("RENDER_WORLD")
+inline constexpr char kSceneDrawObserverSite[] = "its native scene-draw observer";
 void ProfPhase(int phase);                // what the game thread does now, for the sampler (1 drawing the frame, 2 the
                                           // scene views, 3 the graphics bridge); 0: back to the one before
 // A frame is from one return of the game's own Present to the next (screenshot.cpp's Present hook calls these around
@@ -980,6 +1039,24 @@ struct ProfPhaseScope {
 int GeomHide(MmlMod *mod, const char *pattern, int where, std::string *err);   // mml.h geom_hide
 void GeomShow(MmlMod *mod, int handle);   // handle 0: all the mod's
 bool GeomCapture(MmlMod *mod, const char *pattern, MmlGeomFn fn, void *user, std::string *err);
+bool SceneDrawObserve(MmlMod *mod, MmlSceneDrawFn fn, void *user);
+bool SceneDrawGeometry(MmlMod *mod, const MmlSceneDraw *draw, MmlSceneGeometry *out);
+bool SceneDrawsWanted();
+bool SceneDrawCollect(MmlMod *mod, const float lo[3], const float hi[3], MmlSceneCollection *out, uint32_t flags=0);
+bool SceneDrawBillboard(MmlMod *mod,const MmlSceneDraw *draw,MmlSceneBillboard *out);
+bool SceneResidencySet(MmlMod *mod,const float lo[3],const float hi[3]);
+bool SceneResidencyCameraSet(MmlMod *mod,float radius);
+bool SceneResidencyState(MmlMod *mod,MmlSceneResidencyState *out);
+void SceneResidencyModGone(MmlMod *mod);
+void SceneResidencySceneChanged();
+void SceneCollectStage(bool on);
+bool SceneCollecting();
+bool RenderSourceLod(std::string *why);
+bool RenderSourceRadiance(std::string *why);
+void RenderSourceRadianceBegin();
+void RenderSourceRadianceEnd();
+void RenderSourceLodBegin();
+void RenderSourceLodEnd();
 void GeomRemove(MmlMod *mod);             // its mod unloads
 void GeomFrameBegin();                    // (render.cpp) a frame of the mission's world: before its scene views
 void GeomFrameDrawing(bool on);           // ... the frame's own Render drawing

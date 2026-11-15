@@ -11,9 +11,10 @@
 // The loader watches the system's HID device interfaces (CM_Register_Notification: no window, no thread of its own;
 // the callback, on a pool thread, only notes the time). Where that is missing (Windows 7, a Wine without it), a thread
 // of its own enumerates DirectInput's game controllers every kPollMs instead. On the game thread, before the
-// controls' update, once the devices have been quiet for kQuietMs (a plug-in is a burst of arrivals), and again
-// kRetryMs later (a driver still starting), it compares DirectInput's attached game controllers (a DirectInput 7 of
-// its own, enumerated as IJoy does) with the base's. A controller the base does not have, or one it has whose device
+// controls' update, it compares DirectInput's attached game controllers (enumerated as IJoy does) with the base's.
+// It checks once after subscribing and again kRetryMs later to find arrivals between joyInit and the subscription.
+// An actual device change is checked after kQuietMs of quiet and retried kRetryMs later. A controller the base
+// does not have, or after an actual change one it has whose device
 // can neither be polled nor acquired again, has the game's joysticks opened again by the game's own functions, in the
 // order InitSystem and the profile use them: the old IJoys' devices let go (force feedback effects may keep an IJoy
 // alive, and its exclusive acquisition would keep the device from the new one), the controls' list and bindings
@@ -56,7 +57,8 @@ constexpr uintptr_t kBaseDevices = 0x10, kBaseCount = 0x24, kRecNext = 0x38, kJo
 std::atomic<unsigned> g_events{0};   // devices changed (the notification's callback, or the poll thread)
 std::atomic<DWORD> g_eventAt{0};
 unsigned g_seen;                     // the last change the game thread acted on
-bool g_retry;
+enum class Retry { None, Startup, DeviceChange };
+Retry g_retry;
 DWORD g_retryAt;
 bool g_on = true;
 std::string g_watch = "none", g_watchWhy;
@@ -204,8 +206,8 @@ json Reopen(const std::string &why, bool open = true) {
 }
 
 // Compares DirectInput's attached game controllers with the game's; opens them again when one is new, or back and
-// not readable (or when forced).
-json Check(bool force, const char *when) {
+// not readable (or when forced). The startup check only looks for devices missing from the initial enumeration.
+json Check(bool force, const char *when, bool checkReadable = true) {
     g_checks++;
     std::vector<Dev> att, have = Opened();
     std::string err;
@@ -219,7 +221,7 @@ json Check(bool force, const char *when) {
         for (const Dev &d : have)
             if (IsEqualGUID(d.guid, a.guid)) h = &d;
         if (!h) { why = "new: " + a.name; break; }
-        if (!Readable(h->joy)) { why = "back but not readable: " + a.name; break; }
+        if (checkReadable && !Readable(h->joy)) { why = "back but not readable: " + a.name; break; }
     }
     if (why.empty() && force) why = "asked";
     if (why.empty()) return {{"reopened", false}, {"attached", att.size()}, {"opened", have.size()}, {"when", when}};
@@ -305,6 +307,12 @@ void JoyBeforeControls() {
     if (!started) {
         started = true;
         if (Known()) Watch();
+        if (g_on && g_watch != "none") {
+            // Registration only reports future arrivals. joyInit may have missed a device that is present now.
+            Check(false, "watch started", false);
+            g_retry = Retry::Startup;
+            g_retryAt = GetTickCount() + kRetryMs;
+        }
     }
     if (!g_on || g_watch == "none") return;
     unsigned ev = g_events.load();
@@ -312,12 +320,13 @@ void JoyBeforeControls() {
     if (ev != g_seen) {
         if (now - g_eventAt.load() < kQuietMs) return;
         g_seen = ev;
-        g_retry = true;
+        g_retry = Retry::DeviceChange;
         g_retryAt = now + kRetryMs;
         Check(false, "the devices changed");
-    } else if (g_retry && static_cast<int>(now - g_retryAt) >= 0) {
-        g_retry = false;
-        Check(false, "a moment after the devices changed");
+    } else if (g_retry != Retry::None && static_cast<int>(now - g_retryAt) >= 0) {
+        bool startup = g_retry == Retry::Startup;
+        g_retry = Retry::None;
+        Check(false, startup ? "a moment after watch started" : "a moment after the devices changed", !startup);
     }
 }
 

@@ -3,8 +3,13 @@
 A mod loader for **Mafia: The City of Lost Heaven** (2002; builds 1.2 and 1.0) made for agents first: an MCP server
 gives you the live game (its memory, its objects, the loader's log, its crashes), every mod hot-reloads, and the
 game can be started, queried and closed without a human at the keyboard. Read this file, then
-`docs/ARCHITECTURE.md`, `docs/PROTOCOL.md`, `docs/MODDING.md`, `docs/ROADMAP.md` (what is next, what is known to be
+`docs/STATUS.md` (current validation, publication and unresolved defects), `docs/PATCHNOTES_2026-11-15.md`
+(the update/migration guide), `docs/ARCHITECTURE.md`, `docs/PROTOCOL.md`, `docs/MODDING.md`, `docs/ROADMAP.md` (what is next, what is known to be
 missing) and the end of `docs/JOURNAL.md`. Keep the roadmap and the journal current as you work.
+
+`docs/README.md` maps the complete documentation. Dated journals, incident notes and binary hashes are
+historical evidence; check current status and the actual installed files before treating them as today's state.
+The host/SDK source is shared here; the ragdoll implementation lives in its separate repository.
 
 **Client setup and complete instructions:** this file exceeds Codex's default 32 KiB instruction limit. Read the
 whole file from disk even if its injected copy ends mid-sentence; the later rules still apply. See
@@ -39,8 +44,11 @@ alone does not configure the `mafia` server in Codex.
   where it was when the work is done.
 - **The user's own game is no reason to wait**: the loader gives the game's one-at-a-time mutex to each folder, so a
   lab's game starts beside a game the user plays from another folder (with or without the loader). Only a second
-  game of the same folder is refused, as the game refuses it. `game_status` lists every lab's game; a game outside
-  the labs is the user's: never close it. The labs' saves are the agent's to use (the user keeps a backup; 1.2's and
+  game of the same folder is refused, as the game refuses it. **Owner clarification (2026-11-08): a request to
+  develop or fix a game copy authorizes its necessary close/install/restart cycles without another confirmation,
+  including the configured player's copy being worked on. Assume the owner is waiting for the work, not playing
+  that copy, unless they explicitly say otherwise.** Check the exact folder and current PID first. Never close
+  an unrelated game. `game_status` lists every lab's game. The labs' saves are the agent's to use (the user keeps a backup; 1.2's and
   1.0's saves are the same format: one save may be copied to test both labs).
 - **Builds: what the work is for says where it is tested.** The loader, the SDK (`mml.h`, `game_build.h`,
   `game.h`), the MCP server and every shipped mod (`mods/core`, `mods/examples`) are for both builds, 1.2 and 1.0;
@@ -76,7 +84,7 @@ alone does not configure the `mafia` server in Codex.
 ```bat
 cmake --preset x86                       :: once
 cmake --build --preset x86-release       :: the loader (build/x86/out/MafiaModLoader.asi) and the mods (build/x86/out/mml/mods/<id>/)
-python tests/run_tests.py                :: offline: a stand-in game loads the loader; hook chains, faults, reloads... ALL PASSED
+python tests/run_tests.py                :: offline regression; require its actual exit code and final result
 cargo build --release --manifest-path mcp/Cargo.toml   :: the MCP server
 python tests/mcp_smoke.py                :: the MCP server against the stand-in game
 python tools/lab.py mode loader          :: the lab gets the loader (first time: python tools/deps.py)
@@ -180,9 +188,9 @@ facts, callers, callees and its decompiled code (read from a reverse folder of f
 the project and into `knowledge/` at once; `"forget"` takes ours back). The projects are made by `python tools/deps.py
 ghidra` then `python tools/ghidra_cli.py setup` (about 12 minutes, once) and carry the knowledge base's names (1.0's
 through the twins) and the decompile's prototypes: the place for cross-references and for 1.0's code.
-**After a crash, `crash_triage` first**: the verdict (what, where, through whose
-code: a mod, the loader, another ASI), the named stack, the log's last lines, the taps' last calls and the last
-events, from the report the loader writes beside each dump (`crash_inspect` opens a dump alone). `crash_triage` and
+**After a crash, `crash_triage` first**. The summary shows the failure site, the named stack, the mission,
+loaded mods and recent event types. Request `{"details": true}` when the task needs the raw log, taps, event
+payloads or registers. `crash_inspect` opens a dump on its own. `crash_triage` and
 `where` name the functions they show. **An object by its
 structure**: `inspect {"at": "player"}` (or `"car.vehicle"`, `"game.camera"`, `"player.inventory"`, an address) tells
 its class by its vtable and gives every field named, typed and valued for the build running, pointers named and

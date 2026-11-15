@@ -6,8 +6,23 @@
 #include <bit>
 #include <cmath>
 #include <numbers>
+#include "mml/game/game_build.h"
 
 namespace ff {
+
+bool ReadScreenSize(int &width, int &height)
+{
+    uintptr_t base = Ls3dBase();
+    if (!base || !game::g_ls3d) return false;
+    // Same native descriptor as Scrn_sx/sy, whose vtable positions differ between 1.0 and 1.2.
+    // game_build.h/check_builds.py verify the flags and both dimensions in each binary's getter code.
+    uintptr_t desc = base + game::Ls3d().graphScreenSize;
+    unsigned flags = *reinterpret_cast<const unsigned *>(desc+0x1C);
+    const int *size = reinterpret_cast<const int *>(desc+((flags&0x80)?0x10:0));
+    if (size[0]<=0 || size[1]<=0) return false;
+    width = size[0]; height = size[1];
+    return true;
+}
 
 // WidescreenFix.ixx (based on behar's original Mafia widescreen fix). Fusion Fix reads the resolution with a hook in
 // InitSystem, before the game first uses it; the loader's mods load after InitSystem, so it is read here at once,
@@ -50,8 +65,10 @@ bool InitWidescreenFix()
             WriteMemory(pMatroxCamera.get_first(), uint8_t{0xEB});
         }
     }
-    Screen.fWidth = static_cast<float>(*pResolutionWidth);
-    Screen.fHeight = static_cast<float>(*pResolutionHeight);
+    int width = *pResolutionWidth, height = *pResolutionHeight;
+    ReadScreenSize(width, height); // launch globals alone do not change when the native window resizes
+    Screen.fWidth = static_cast<float>(width);
+    Screen.fHeight = static_cast<float>(height);
     Screen.fAspectRatio = Screen.fWidth / Screen.fHeight;
     Screen.fBaseWidth = 600.0f * Screen.fAspectRatio;
     Screen.fInvBaseWidth = 1.0f / Screen.fBaseWidth;

@@ -48,6 +48,7 @@
 #include <dxgi.h>
 #include <dwmapi.h>
 #include <dxgi1_3.h>
+#include <wrl/client.h>
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -163,6 +164,9 @@ gfxvk::Link *g_colorLink, *g_depthLink, *g_fxLink;            // on DXVK: each o
 ID3D11Texture2D *g_sun11;
 ID3D11ShaderResourceView *g_sunSRV;
 gfxvk::Link *g_sunLink;      // on DXVK: the map's Direct3D 11 half, copied each frame
+gfxvk::Link *g_sunAlias;     // a D3D11-owned map imported into DXVK, when available
+IDirect3DTexture9 *g_sunAlias9;
+ID3D11ShaderResourceView *g_sunAliasSRV;
 void *g_sunHandle;           // the handle it was opened from (on DXVK: the map's texture)
 unsigned g_sunMade, g_sunGen;   // shadows.cpp's count of maps and the device generation it was opened on
 std::string g_sunError;
@@ -248,6 +252,7 @@ float g_viewClip[4];
 // the plane would cut them as if they were there. The sky is infinitely far: while the backdrop's view is set the
 // plane is off (SetTransform followed).
 bool g_viewClipWanted;
+bool g_viewSkyOnly;
 float g_viewBackdrop[16];
 unsigned g_viewSkySets;            // the backdrop's view set while a clipped view drew (gfx.state)
 
@@ -316,12 +321,31 @@ struct Timing {
 Timing g_tm, g_tmLogged;
 double g_tmLoggedAt;
 // Direct3D 9's GPU time of a frame: timestamps at its first drawing and at its Present, read a few frames later
-struct Stamp { IDirect3DQuery9 *disjoint = nullptr, *freq = nullptr, *begin = nullptr, *end = nullptr; bool open = false, pending = false; };
+constexpr size_t kLateShadowBegin = static_cast<size_t>(GfxTimingMark::Count);
+constexpr size_t kLateShadowSubmitted = kLateShadowBegin + 1;
+constexpr size_t kLateShadowFence = kLateShadowSubmitted + 1;
+constexpr size_t kStageMarks = kLateShadowFence + 1;
+struct Stamp {
+    IDirect3DQuery9 *disjoint = nullptr, *freq = nullptr, *begin = nullptr, *end = nullptr;
+    IDirect3DQuery9 *marks[kStageMarks]{};
+    uint64_t frame = 0, stageEpoch = 0;
+    uint32_t markMask = 0;
+    bool open = false, pending = false;
+};
+struct StageTiming {
+    uint64_t frame = 0;
+    uint32_t mask = 0;
+    double offsets[kStageMarks]{}, total = 0;
+};
+bool g_stageTimingOn, g_stageQueriesOff;
+uint64_t g_stageEpoch = 1;
+StageTiming g_stageLatest, g_stageSlowest;
 constexpr int kStamps = 6;
 Stamp g_stamps[kStamps];
 int g_stampNext;
 Stamp *g_stampNow;
 double g_gpuFrame;                 // the last read frame's, ms
+void MarkTiming(size_t index);
 
 std::string Fmt(const char *fmt, ...) {
     char b[512];
@@ -553,20 +577,24 @@ HRESULT STDMETHODCALLTYPE hkLightEnable(IDirect3DDevice9 *d, DWORD i, BOOL on) {
     return hr;
 }
 HRESULT STDMETHODCALLTYPE hkDrawPrimitive(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, UINT start, UINT n) {
+    if (g_viewSkyOnly && !g_quiet && !ViewBackdropNow()) return S_OK;
     Tally(n);
     return oDrawPrimitive(d, t, start, n);
 }
 HRESULT STDMETHODCALLTYPE hkDrawIndexedPrimitive(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex, UINT verts,
                                                  UINT start, UINT n) {
+    if (g_viewSkyOnly && !g_quiet && !ViewBackdropNow()) return S_OK;
     Tally(n);
     return oDrawIndexedPrimitive(d, t, base, minIndex, verts, start, n);
 }
 HRESULT STDMETHODCALLTYPE hkDrawPrimitiveUP(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, UINT n, const void *data, UINT stride) {
+    if (g_viewSkyOnly && !g_quiet && !ViewBackdropNow()) return S_OK;
     Tally(n);
     return oDrawPrimitiveUP(d, t, n, data, stride);
 }
 HRESULT STDMETHODCALLTYPE hkDrawIndexedPrimitiveUP(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, UINT minIndex, UINT verts, UINT n,
                                                    const void *idx, D3DFORMAT fmt, const void *data, UINT stride) {
+    if (g_viewSkyOnly && !g_quiet && !ViewBackdropNow()) return S_OK;
     Tally(n);
     return oDrawIndexedPrimitiveUP(d, t, minIndex, verts, n, idx, fmt, data, stride);
 }
@@ -760,6 +788,7 @@ void ReleaseAll() {
     g_lateRun = 0;
     ReleaseShow();
     ReleaseSized();
+    GfxRetireShadowMap();
     for (auto &v : g_views) ReleaseView(*v);
     ReleaseTimers();
     for (auto &t : g_sideTex) ReleaseSideTex(t);
@@ -773,8 +802,15 @@ void ReleaseAll() {
     SafeRelease(g_event11);
     SafeRelease(g_psStretch); SafeRelease(g_psUpDepth); SafeRelease(g_psUpMotion); SafeRelease(g_psPreComposite);
     SafeRelease(g_psPreTemporal); SafeRelease(g_upCB);
-    for (Stamp &s : g_stamps) { SafeRelease(s.disjoint); SafeRelease(s.freq); SafeRelease(s.begin); SafeRelease(s.end); s = Stamp{}; }
+    for (Stamp &s : g_stamps) {
+        SafeRelease(s.disjoint); SafeRelease(s.freq); SafeRelease(s.begin); SafeRelease(s.end);
+        for (auto &mark : s.marks) SafeRelease(mark);
+        s = Stamp{};
+    }
     g_stampNow = nullptr;
+    g_stageQueriesOff = false;
+    g_stageLatest = g_stageSlowest = {};
+    gfxvk::SetHandoffTiming(g_stageTimingOn, true);
     g_scaledNow = false;
     g_lodBias = 0;
     if (g_ctx) { g_ctx->ClearState(); g_ctx->Flush(); }
@@ -1287,7 +1323,7 @@ void CallPass(void *p) {
 // The sun's shadow map for this frame's passes (shadows.cpp drew it before the world, on Direct3D 9: done by the time
 // stage 1 has waited for Direct3D 9), opened again when shadows.cpp made a new one or the device is new; its matrix
 // and size into the constants. Null: none this frame.
-ID3D11ShaderResourceView *SunShadow(MmlGfxConstants &k, bool frame) {
+ID3D11ShaderResourceView *SunShadow(MmlGfxConstants &k, bool frame, bool &copyOk) {
     void *h = nullptr;
     unsigned made = 0;
     bool dxvk = gfxvk::On();
@@ -1298,6 +1334,16 @@ ID3D11ShaderResourceView *SunShadow(MmlGfxConstants &k, bool frame) {
     }
     if (dxvk) {   // DXVK: the map's Direct3D 11 half, made with the map, copied once a frame (the map is redrawn each)
         IDirect3DBaseTexture9 *base = ShadowsTexture();
+        if (base && base == g_sunAlias9 && g_sunAliasSRV) {
+            std::string why;
+            copyOk = gfxvk::To11(&g_sunAlias, 1, &why);
+            if (!copyOk) {
+                g_sunError = g_frameError = "the sun's shared shadow image: " + why;
+                return nullptr;
+            }
+            g_sunError.clear();
+            return g_sunAliasSRV;
+        }
         IDirect3DTexture9 *map = nullptr;
         if (!base || FAILED(base->QueryInterface(__uuidof(IDirect3DTexture9), reinterpret_cast<void **>(&map))) || !map) return nullptr;
         if (!g_sunSRV || map != g_sunHandle || made != g_sunMade || g_sunGen != g_generation) {
@@ -1316,7 +1362,15 @@ ID3D11ShaderResourceView *SunShadow(MmlGfxConstants &k, bool frame) {
         }
         map->Release();
         std::string why;
-        if (g_sunSRV && frame && !gfxvk::To11(&g_sunLink, 1, &why)) g_sunError = "the sun's shadow map's copy: " + why;
+        if (g_sunSRV && frame) {
+            copyOk = gfxvk::To11(&g_sunLink, 1, &why);
+            if (!copyOk) {
+                g_sunError = g_frameError = "the sun's shadow map's copy: " + why;
+                g_frameLate = gfxvk::Busy();
+                return nullptr;
+            }
+            g_sunError.clear();
+        }
         if (!g_sunSRV) k.sun_shadow_info[0] = 0;
         return g_sunSRV;
     }
@@ -1479,7 +1533,9 @@ void RunUpscaler(MmlGfxConstants &k, const PassTarget &t, MmlGfxFrame &f, ID3D11
 bool RunPasses(MmlGfxConstants &k, const PassTarget &t) {
     bool frame = t.view == 0;
     if (frame) ReadTimers();
-    ID3D11ShaderResourceView *sun = SunShadow(k, frame);
+    bool shadowCopied = true;
+    ID3D11ShaderResourceView *sun = SunShadow(k, frame, shadowCopied);
+    if (!shadowCopied) return false;
     const float clear[4] = {0, 0, 0, 0};
     g_ctx->ClearRenderTargetView(t.rtv, clear);
     g_ctx->UpdateSubresource(g_frameCB, 0, nullptr, &k, 0, 0);
@@ -1623,6 +1679,15 @@ bool RunPasses(MmlGfxConstants &k, const PassTarget &t) {
     double w = NowMs() - t0;
     g_wait11 = g_wait11 <= 0 ? w : g_wait11 * 0.9 + w * 0.1;
     return ok && preOk;
+}
+
+bool ReturnPassTextures(bool ok, gfxvk::Link *effects) {
+    // Return the alias even when a pass fails. Its next native shadow draw requires Vulkan ownership.
+    if (gfxvk::AliasExternal(g_sunAlias)) {
+        const bool returned = Hand(false, {ok ? effects : nullptr, g_sunAlias});
+        return ok && returned;
+    }
+    return ok && Hand(false, {effects});
 }
 
 // The bridge's own drawing inside LS3D's frame: what the block does not hold is saved by hand, the block captures
@@ -1783,6 +1848,7 @@ bool DoStage1() {
         memcpy(g_projBefore, &clean, sizeof g_projBefore);
         g_cameraBefore = true;
     }
+    GfxMarkTiming(GfxTimingMark::BridgeInputs);
     ok = ok && (GpuSync() || Wait9());
     if (ok && gfxvk::On()) {   // (on DXVK: the pictures copied to Direct3D 11's halves, the 2D pass's and the views' too)
         std::vector<gfxvk::Link *> to11{g_colorLink, g_depthLink};
@@ -1812,16 +1878,20 @@ bool DoStage1() {
             bool fitted=slabs>0 && cameraOk && ReceiverBounds(g_k,receiver,bounds,samples);
             const double reduceMs=NowMs()-begin;
             Apply9(saved);g_dev9->SetRenderTarget(0,rt);g_dev9->SetDepthStencilSurface(g_intzSurf);g_dev9->SetViewport(&drawn);
+            MarkTiming(kLateShadowBegin);
             ShadowsDepthFinish(fitted?bounds:nullptr,samples,reduceMs);
+            MarkTiming(kLateShadowSubmitted);
             Apply9(saved);
             g_dev9->SetTransform(D3DTS_VIEW,reinterpret_cast<const D3DMATRIX *>(g_viewM));
             g_dev9->SetTransform(D3DTS_PROJECTION,&proj);
             Neutral9();
-            ok=Wait9(); // the new map belongs to this same frame, on both sharing backends
+            // SunShadow queues the new map after the DXVK draw and before D3D11 consumes it.
+            ok=GpuSync()||Wait9();
+            MarkTiming(kLateShadowFence);
         }
         if(ok) ok = RunPasses(g_k, {g_depthSRV, g_colorSRV, g_fxRTV, g_w, g_h, 0, g_viewM, g_projM});
     }
-    ok = ok && Hand(false, {g_fxLink});
+    ok = ReturnPassTextures(ok, g_fxLink);
     double t2 = NowMs();
     // 3. the effects over the frame, then everything back
     g_dev9->SetRenderTarget(0, rt);
@@ -1894,15 +1964,49 @@ void NoMultisampling(DWORD *pp, const char *when) {
 HRESULT STDMETHODCALLTYPE hkReset8(void *dev, DWORD *pp) {
     NoMultisampling(pp, "Reset");
     FullscreenReset(pp);
-    ShowThreadStop();   // (the showing anew after it: the back buffer's size may change)
+    MmlEvent ev{};
+    ev.size = sizeof ev; ev.type = MML_EVENT_DEVICE_RESET_BEGIN; ev.device = dev;
+    Dispatch(ev);
+    // Keep the D3D11 device: mods and the sidecar may still own resources on it. All D3D9 default-pool
+    // resources and state blocks must leave before Reset, including references held by the bridge.
+    ReleaseShow();
+    if (g_swapped && g_dev9 && g_gameDS) g_dev9->SetDepthStencilSurface(g_gameDS);
+    g_swapped = false;
+    SafeRelease(g_gameDS); g_lastGameDS = nullptr;
+    if (g_ctx) { g_ctx->ClearState(); g_ctx->Flush(); }
+    ReleaseSized();
+    for (auto &v : g_views) ReleaseView(*v);
+    SafeRelease(g_vsQuad); SafeRelease(g_psDepth); SafeRelease(g_psComposite);
+    SafeRelease(g_decl); SafeRelease(g_quad); SafeRelease(g_event9); SafeRelease(g_block); SafeRelease(g_psMotionAll);
+    MotionDeviceGone();
+    g_pending9 = g_pending11 = false;
+    g_scaledNow = false; g_cameraBefore = false;
+    g_lateRun = 0;
+    RenderBeforeReset();
+    ShadowsBeforeReset();
+    SkinBeforeReset();
+    VdataBeforeReset();
+    BatchMissionClosed();
     GammaReset();
-    return oReset8(dev, pp);
+    HRESULT hr = oReset8(dev, pp);
+    if (SUCCEEDED(hr) && g_dev9) {
+        g_failed = false;
+        // Recording our state block must not teach the viewport/fog hooks its placeholder values.
+        g_quiet++; MakeFixed9(); g_quiet--;
+        g_rtFrame = false; g_projCleanHave = false; g_jitWorld = false;
+        g_generation++;
+    }
+    ev.type = MML_EVENT_DEVICE_RESET_END; ev.value = SUCCEEDED(hr) ? 1 : 0;
+    Dispatch(ev);
+    HLOG("window: device Reset %ux%u -> %08X", pp ? unsigned(pp[0]) : 0, pp ? unsigned(pp[1]) : 0, unsigned(hr));
+    return hr;
 }
 HRESULT STDMETHODCALLTYPE hkCreateDevice8(void *self, UINT adapter, DWORD type, HWND focus, DWORD flags, DWORD *pp, void **device) {
     NoMultisampling(pp, "CreateDevice");
     FullscreenCreate(self, adapter, focus, pp);   // (fullscreen.cpp: a full screen made a borderless window for the showing)
     HRESULT hr = oCreateDevice8(self, adapter, type, focus, flags, pp, device);
     if (SUCCEEDED(hr) && device && *device) GammaDevice(*device);   // (gamma.cpp: the brightness in a window)
+    if (SUCCEEDED(hr) && device && *device) WindowDevice(*device, focus, pp);
     if (SUCCEEDED(hr) && device && *device) {   // (vbrename.cpp: before LS3D makes its pools; under a Direct3D 9 wrapper only)
         void *d9 = nullptr;
         auto qi = (*reinterpret_cast<HRESULT(STDMETHODCALLTYPE ***)(void *, REFIID, void **)>(*device))[0];
@@ -2382,9 +2486,73 @@ bool ShowFrame() {
 }
 } // namespace
 
+void GfxRetireShadowMap() {
+    gfxvk::Free(g_sunAlias);
+    SafeRelease(g_sunAliasSRV);
+    g_sunAlias9 = nullptr;
+    gfxvk::Free(g_sunLink);
+    SafeRelease(g_sunSRV);
+    SafeRelease(g_sun11);
+    g_sunHandle = nullptr;
+    g_sunError.clear();
+}
+
+bool GfxShadowAliasAvailable(IDirect3DDevice9 *device) {
+    return g_dev11 && device == g_dev9 && !g_failed && GpuSync();
+}
+
+bool GfxCreateShadowAlias(IDirect3DDevice9 *device, unsigned size, IDirect3DTexture9 **texture) {
+    if (!GfxShadowAliasAvailable(device) || g_sunAlias) return false;
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> texture11;
+    Microsoft::WRL::ComPtr<IDirect3DTexture9> texture9;
+    std::string why;
+    g_sunAlias = gfxvk::MakeShadowAlias(device, g_dev11, size, &texture9, &texture11, &why);
+    if (!g_sunAlias || FAILED(g_dev11->CreateShaderResourceView(texture11.Get(), nullptr, &g_sunAliasSRV))) {
+        gfxvk::Free(g_sunAlias);
+        SafeRelease(g_sunAliasSRV);
+        HLOG("gfx: shared DXVK shadow map unavailable at %u: %s", size, why.empty() ? "could not make its view" : why.c_str());
+        return false;
+    }
+    g_sunAlias9 = texture9.Get();
+    *texture = texture9.Detach();
+    HLOG("gfx: %ux%u R32F shadow map shared directly with DXVK", size, size);
+    return true;
+}
+
+bool GfxShadowAliasWritable(IDirect3DTexture9 *texture) {
+    return g_sunAlias && g_sunAlias9 == texture && !gfxvk::AliasExternal(g_sunAlias);
+}
+
 namespace {
 // ---- the frame's times: Direct3D 9's GPU time of each frame (timestamps), the minute's line in the log
 bool g_stampsOff;   // the device has no timestamp queries (made once, refused: not asked again)
+void MarkTiming(size_t index) {
+    if (!g_stageTimingOn || !g_stampNow || g_stampNow->stageEpoch != g_stageEpoch) return;
+    const uint32_t bit = 1u << index;
+    if (!(g_stampNow->markMask & bit) && SUCCEEDED(g_stampNow->marks[index]->Issue(D3DISSUE_END)))
+        g_stampNow->markMask |= bit;
+}
+bool ReadStageTiming(const Stamp &stamp, UINT64 first, UINT64 last, UINT64 frequency) {
+    if (!g_stageTimingOn || stamp.stageEpoch != g_stageEpoch || !stamp.markMask) return true;
+    StageTiming timing{};
+    timing.frame = stamp.frame;
+    const double scale = 1000.0 / static_cast<double>(frequency);
+    timing.total = static_cast<double>(last - first) * scale;
+    for (size_t mark = 0; mark < kStageMarks; ++mark) {
+        if (!(stamp.markMask & (1u << mark))) continue;
+        UINT64 tick = 0;
+        const HRESULT hr = stamp.marks[mark]->GetData(&tick, sizeof tick, 0);
+        if (hr == S_FALSE) return false;
+        if (hr != S_OK || tick < first || tick > last) continue;
+        timing.mask |= 1u << mark;
+        timing.offsets[mark] = static_cast<double>(tick - first) * scale;
+    }
+    if (timing.mask) {
+        if (!g_stageLatest.mask || timing.frame >= g_stageLatest.frame) g_stageLatest = timing;
+        if (!g_stageSlowest.mask || timing.total > g_stageSlowest.total) g_stageSlowest = timing;
+    }
+    return true;
+}
 void ReadStamps() {
     for (Stamp &s : g_stamps) {
         if (!s.pending) continue;
@@ -2393,8 +2561,9 @@ void ReadStamps() {
         if (s.disjoint->GetData(&disjoint, sizeof disjoint, 0) != S_OK || s.freq->GetData(&freq, sizeof freq, 0) != S_OK ||
             s.begin->GetData(&b, sizeof b, 0) != S_OK || s.end->GetData(&e, sizeof e, 0) != S_OK)
             continue;
+        if (disjoint || !freq || e < b) { s.pending = false; continue; }
+        if (!ReadStageTiming(s, b, e, freq)) continue;
         s.pending = false;
-        if (disjoint || !freq || e < b) continue;
         g_gpuFrame = 1000.0 * static_cast<double>(e - b) / static_cast<double>(freq);
         g_tm.gpuMs += g_gpuFrame, g_tm.gpuFrames++;
     }
@@ -2455,10 +2624,25 @@ void GfxFrameBegin() {
             return;
         }
     }
+    s.frame = Frames();
+    s.markMask = 0;
+    s.stageEpoch = 0;
+    if (g_stageTimingOn && !g_stageQueriesOff) {
+        for (auto &mark : s.marks) {
+            if (mark || SUCCEEDED(g_dev9->CreateQuery(D3DQUERYTYPE_TIMESTAMP, &mark))) continue;
+            g_stageQueriesOff = true;
+            break;
+        }
+        if (!g_stageQueriesOff) s.stageEpoch = g_stageEpoch;
+    }
     s.disjoint->Issue(D3DISSUE_BEGIN);
     s.begin->Issue(D3DISSUE_END);
     s.open = true;
     g_stampNow = &s;
+}
+
+void GfxMarkTiming(GfxTimingMark mark) {
+    MarkTiming(static_cast<size_t>(mark));
 }
 
 void GfxDrawnSize(float out[4]) {
@@ -2904,7 +3088,7 @@ bool ViewTargetsFor(ViewTargets &v, UINT w, UINT h, std::string *why) {
 }
 } // namespace
 
-bool GfxViewBegin(int handle, unsigned *pw, unsigned *ph, const float *clip, std::string *why) {
+bool GfxViewBegin(int handle, unsigned *pw, unsigned *ph, const float *clip, uint32_t flags, std::string *why) {
     unsigned w = *pw, h = *ph;
     if (g_viewNow) { *why = "another view is being drawn"; return false; }
     if (!Acquire(Device8())) { *why = "the graphics bridge is " + g_state; return false; }
@@ -2943,6 +3127,7 @@ bool GfxViewBegin(int handle, unsigned *pw, unsigned *ph, const float *clip, std
         g_dev9->SetRenderState(D3DRS_CLIPPLANEENABLE, 0);
     }
     g_viewClipWanted = clip != nullptr;
+    g_viewSkyOnly = (flags & MML_VIEW_SKY_ONLY) != 0;
     memset(g_viewBackdrop, 0, sizeof g_viewBackdrop);
     g_quiet--;
     v->depthDone = false;
@@ -2951,6 +3136,7 @@ bool GfxViewBegin(int handle, unsigned *pw, unsigned *ph, const float *clip, std
 }
 
 void GfxViewBackdrop(const float m[16]) { memcpy(g_viewBackdrop, m, sizeof g_viewBackdrop); }
+bool GfxViewSkyOnly() { return g_viewSkyOnly; }
 
 namespace {
 // The passes that asked (gfx_pass_views) over a view's picture, as over the frame's: its colour and depth to them,
@@ -2978,7 +3164,7 @@ void ViewPasses(ViewTargets &v, const float c[8]) {
         FillConstants(k, v.w, v.h, vm, pm);
         ok = RunPasses(k, {v.depthSRV, v.colorSRV, v.fxRTV, v.w, v.h, v.handle, vm, pm});
     }
-    ok = ok && Hand(false, {v.fxLink});
+    ok = ReturnPassTextures(ok, v.fxLink);
     if (!ok) { v.passFails++; if (g_frameLate) g_lateFrames++; return; }
     g_dev9->SetRenderTarget(0, v.colorSurf);
     g_dev9->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
@@ -3004,7 +3190,7 @@ void GfxViewStage1() {
     g_dev9->SetRenderTarget(0, v->depthSurf);
     g_dev9->SetDepthStencilSurface(nullptr);
     FullScreen9(g_psDepth, v->intz, c);
-    ViewPasses(*v, c);
+    if (!g_viewSkyOnly) ViewPasses(*v, c);
     g_dev9->SetRenderTarget(0, v->colorSurf);
     g_dev9->SetDepthStencilSurface(v->intzSurf);
     Restore9(saved);
@@ -3017,6 +3203,7 @@ void GfxViewEnd(bool drawn, const float view[16], const float proj[16], const fl
     if (!v) return;
     g_viewNow = nullptr;
     g_viewClipWanted = false;
+    g_viewSkyOnly = false;
     g_quiet++;
     g_dev9->SetRenderState(D3DRS_CLIPPLANEENABLE, g_viewClipOn);
     g_dev9->SetClipPlane(0, g_viewClip);
@@ -3093,7 +3280,21 @@ bool GfxMethod(const std::string &method, const std::string &params, std::string
     }
     {   // (the frame's times since the last minute's line, or since {"timing_reset": true})
         json p = json::parse(params.empty() ? "{}" : params, nullptr, false);
-        if (p.is_object() && p.value("timing_reset", false)) g_tmLogged = g_tm, g_tmLoggedAt = NowMs();
+        const bool reset = p.is_object() && p.value("timing_reset", false);
+        if (reset) {
+            g_tmLogged = g_tm; g_tmLoggedAt = NowMs();
+            g_stageLatest = g_stageSlowest = {};
+            ++g_stageEpoch;
+        }
+        if (p.is_object() && p.contains("timing_stages") && p["timing_stages"].is_boolean()) {
+            const bool enabled = p["timing_stages"].get<bool>();
+            if (enabled != g_stageTimingOn) {
+                g_stageTimingOn = enabled;
+                g_stageLatest = g_stageSlowest = {};
+                ++g_stageEpoch;
+            }
+        }
+        gfxvk::SetHandoffTiming(g_stageTimingOn, reset);
         if (p.is_object() && p.contains("mip_bias"))   // (a number: that bias under an upscaler; null: DLSS's own again)
             g_lodAsked = p["mip_bias"].is_number() ? p["mip_bias"].get<float>() : NAN;
         if (p.is_object() && p.contains("show_thread") && p["show_thread"].is_boolean()) g_threadOff = !p["show_thread"].get<bool>();
@@ -3139,6 +3340,45 @@ bool GfxMethod(const std::string &method, const std::string &params, std::string
                          {"gpu_frame_ms", gn > 0 ? r2((a.gpuMs - b.gpuMs) / gn) : 0.0}, {"gpu_frame_last_ms", r2(g_gpuFrame)},
                          {"gpu_passes_ms", pn > 0 ? r2((a.passesMs - b.passesMs) / pn) : 0.0}, {"sync", SyncName()},
                          {"timestamps", !g_stampsOff}};
+        auto stage = [&](const StageTiming &sample) -> json {
+            if (!sample.mask) return nullptr;
+            auto interval = [&](size_t a, size_t b) -> json {
+                const uint32_t mask = (1u << a) | (1u << b);
+                if ((sample.mask & mask) != mask || sample.offsets[b] < sample.offsets[a]) return nullptr;
+                return r2(sample.offsets[b] - sample.offsets[a]);
+            };
+            using Mark = GfxTimingMark;
+            auto at = [](Mark m) { return static_cast<size_t>(m); };
+            const size_t inputs = at(Mark::BridgeInputs), end = at(Mark::BridgeEnd);
+            return {{"frame", sample.frame}, {"span_ms", r2(sample.total)},
+                    {"shadow_ms", interval(at(Mark::ShadowBegin), at(Mark::ShadowEnd))},
+                    {"auxiliary_ms", interval(at(Mark::ShadowEnd), at(Mark::WorldBegin))},
+                    {"world_ms", interval(at(Mark::WorldBegin), at(Mark::WorldEnd))},
+                    {"bridge_inputs_ms", interval(at(Mark::WorldEnd), inputs)},
+                    {"bridge_remainder_ms", interval(inputs, end)},
+                    {"late_shadow_receivers_ms", interval(inputs, kLateShadowBegin)},
+                    {"late_shadow_draw_ms", interval(kLateShadowBegin, kLateShadowSubmitted)},
+                    {"late_shadow_fence_ms", interval(kLateShadowSubmitted, kLateShadowFence)},
+                    {"post_shadow_bridge_ms", interval(kLateShadowFence, end)}};
+        };
+        out["timing"]["stages"] = {{"on", g_stageTimingOn}, {"available", !g_stampsOff && !g_stageQueriesOff},
+                                   {"latest", stage(g_stageLatest)}, {"slowest", stage(g_stageSlowest)}};
+        if (g_stageTimingOn && gfxvk::On()) {
+            auto handoff = [&](bool to11, bool slowest, bool gpu) -> json {
+                const auto s = gpu ? gfxvk::ReadHandoffGpuTiming(to11, slowest) : gfxvk::ReadHandoffTiming(to11, slowest);
+                if (!s.valid) return nullptr;
+                json sample = {{"ms", r2(s.total)}, {"links", s.links}, {"largest", {s.largestWidth, s.largestHeight}}};
+                if (!gpu) sample.update({{"flush9_ms", r2(s.flush9)}, {"ring_wait_ms", r2(s.ringWait)},
+                    {"queue_lock_ms", r2(s.queueLock)}, {"queue_submit_ms", r2(s.queueSubmit)},
+                    {"completion_wait_ms", r2(s.completionWait)}});
+                return sample;
+            };
+            out["timing"]["stages"]["dxvk_handoffs"] = {
+                {"to11", {{"latest", handoff(true, false, false)}, {"slowest", handoff(true, true, false)}}},
+                {"to9", {{"latest", handoff(false, false, false)}, {"slowest", handoff(false, true, false)}}},
+                {"to11_gpu", {{"latest", handoff(true, false, true)}, {"slowest", handoff(true, true, true)}}},
+                {"to9_gpu", {{"latest", handoff(false, false, true)}, {"slowest", handoff(false, true, true)}}}};
+        }
         out["upscale"] = {{"mod", g_up.fn && ModAlive(g_up.mod) ? ModIdOf(g_up.mod) : std::string()}, {"asked", {g_up.w, g_up.h}},
                           {"drawn", {g_dw, g_dh}}, {"frames_drawn", g_upDrawn}, {"frames_stretched", g_upStretched},
                           {"cpu_ms", r2(g_upCpuMs)}, {"gpu_ms", r2(g_upGpuMs)}, {"frame_at_its_size", g_upMade},
@@ -3154,7 +3394,8 @@ bool GfxMethod(const std::string &method, const std::string &params, std::string
         }
     }
     out["d3d9"] = gfxvk::On() ? gfxvk::Describe() : g_dev9 ? "Direct3D 9Ex: textures shared by handle" : "";
-    out["sun_shadow"] = {{"bound", g_sunSRV != nullptr && g_k.sun_shadow_info[0] > 0.5f}, {"size", g_k.sun_shadow_info[3]}};
+    out["sun_shadow"] = {{"bound", (g_sunSRV || g_sunAliasSRV) && g_k.sun_shadow_info[0] > 0.5f},
+                         {"size", g_k.sun_shadow_info[3]}, {"zero_copy", g_sunAliasSRV != nullptr}};
     out["surface_temporal"] = {{"frames", g_surfaceFrames}, {"ready", g_surfaceInputs.tex != nullptr}};
     if (!g_sunError.empty()) out["sun_shadow"]["error"] = g_sunError;
     if (g_frames) {

@@ -65,6 +65,12 @@ constexpr int kHumanInventory = 0x480;
 // air; each frame the fall's speed +0x418 (m/s, down) grows by 9.81 t; on landing the state turns 1 and a speed of 8
 // or more hurts him (a hit of type 6, (speed - 2) * 10).
 constexpr int kHumanFallSpeed = 0x418, kHumanStateAir = 3;
+// PersonAnim (1.2 0x573E50, 1.0 0x4942C0) stores the sampled end-of-track lift at this +0x1DC.
+// Disassembly: EBP=this+0xBC, FSTP [EBP+0x120]. A physical body's get-up must not climb that remote sample.
+constexpr int kHumanTrackLift = 0x1DC;
+// C_animations_machine_de_luxe: verified SetAnim/Tick/Reset in both builds, 2026-11-08.
+// Root-motion track indices are separate from the model's skeletal cross-fade.
+constexpr int kAnimTrack = 0x2C, kAnimPreviousTrack = 0x80, kAnimTrackOffset = 0x114;
 
 // C_mission / C_game
 constexpr int kMissionGame = 0x24;

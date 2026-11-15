@@ -24,6 +24,7 @@
 // A compromise, said plainly: billboards (sprites that turn to the camera) move with the camera's motion. Only the
 // frame's world drawing: scene views get none.
 #include "host.h"
+#include "d3dmirror.h"
 #include <d3d9.h>
 #include <algorithm>
 #include <cmath>
@@ -126,6 +127,12 @@ IDirect3DPixelShader9 *g_ps;
 IDirect3DVertexDeclaration9 *g_declSkin;
 IDirect3DStateBlock9 *g_block;
 IDirect3DDevice9 *g_madeOn;
+bool g_blockRasterOnly;
+constexpr D3DRENDERSTATETYPE kMotionStates[] = {
+    D3DRS_ZENABLE, D3DRS_ZWRITEENABLE, D3DRS_ZFUNC, D3DRS_ALPHABLENDENABLE, D3DRS_ALPHATESTENABLE,
+    D3DRS_COLORWRITEENABLE, D3DRS_SRGBWRITEENABLE, D3DRS_FOGENABLE, D3DRS_STENCILENABLE,
+    D3DRS_SCISSORTESTENABLE, D3DRS_CLIPPLANEENABLE, D3DRS_FILLMODE, D3DRS_SEPARATEALPHABLENDENABLE
+};
 // the skinned draws' vertices, this frame's position and the last frame's (24 bytes), appended through the frames
 IDirect3DVertexBuffer9 *g_ring;
 constexpr UINT kRingVerts = 1u << 17, kRingStride = 24;
@@ -166,12 +173,15 @@ bool Make(IDirect3DDevice9 *d) {
     }
     // the states this drawing changes (their values while recording do not matter)
     if (FAILED(d->BeginStateBlock())) { Release(); return false; }
-    const D3DRENDERSTATETYPE rs[] = {D3DRS_ZENABLE, D3DRS_ZWRITEENABLE, D3DRS_ZFUNC, D3DRS_ALPHABLENDENABLE, D3DRS_ALPHATESTENABLE,
-                                     D3DRS_COLORWRITEENABLE, D3DRS_SRGBWRITEENABLE, D3DRS_FOGENABLE, D3DRS_STENCILENABLE,
-                                     D3DRS_SCISSORTESTENABLE, D3DRS_CLIPPLANEENABLE, D3DRS_FILLMODE, D3DRS_SEPARATEALPHABLENDENABLE};
-    for (D3DRENDERSTATETYPE s : rs) d->SetRenderState(s, 0);
+    g_blockRasterOnly=true;
+    for (D3DRENDERSTATETYPE s : kMotionStates) {
+        DWORD value=0;
+        if(s==D3DRS_ZFUNC)value=D3DCMP_LESSEQUAL;
+        if(s==D3DRS_FILLMODE)value=D3DFILL_SOLID;
+        if(FAILED(d->SetRenderState(s,value)))g_blockRasterOnly=false;
+    }
     D3DVIEWPORT9 vp{0, 0, 1, 1, 0, 1};
-    d->SetViewport(&vp);
+    if(FAILED(d->SetViewport(&vp)))g_blockRasterOnly=false;
     if (FAILED(d->EndStateBlock(&g_block)) || !g_block) { Release(); return false; }
     g_madeOn = d;
     return true;
@@ -439,12 +449,18 @@ void DrawAgain(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex,
     D3DVIEWPORT9 vp{};
     if (skin) d->GetStreamSource(0, &vb, &vbOff, &vbStride);
     d->GetRenderTarget(0, &rt);
-    d->GetViewport(&vp);
+    const bool viewportKnown=SUCCEEDED(d->GetViewport(&vp));
     d->GetVertexShader(&vs);
     d->GetPixelShader(&ps);
     d->GetVertexDeclaration(&decl);
     d->GetFVF(&fvf);
-    g_block->Capture();
+    DWORD savedStates[std::size(kMotionStates)]{};
+    bool rasterKnown=viewportKnown&&g_blockRasterOnly&&MirrorOf(d);
+    for(size_t i=0;i<std::size(kMotionStates);i++)
+        if(FAILED(d->GetRenderState(kMotionStates[i],&savedStates[i])))rasterKnown=false;
+    if(FAILED(g_block->Capture())){
+        SafeRelease(rt);SafeRelease(vs);SafeRelease(ps);SafeRelease(decl);SafeRelease(vb);g_skipped++;return;
+    }
     d->SetRenderTarget(0, g_target);
     d->SetViewport(&vp);
     d->SetRenderState(D3DRS_ZENABLE, D3DZB_TRUE);
@@ -494,7 +510,8 @@ void DrawAgain(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, INT base, UINT minIndex,
     if (skin) g_skinnedAgain++;
     d->SetRenderTarget(0, rt);
     d->SetViewport(&vp);
-    g_block->Apply();
+    if(rasterKnown)MirrorApplyRasterBlock(d,g_block,kMotionStates,savedStates,std::size(kMotionStates),vp);
+    else g_block->Apply();
     d->SetVertexShader(vs);
     d->SetPixelShader(ps);
     if (fvf) d->SetFVF(fvf);
@@ -510,8 +527,10 @@ bool MotionWanted() {
 }
 
 int MotionAsk(MmlMod *mod, bool on) {
+    const bool had=!g_asks.empty();
     g_asks.erase(std::remove(g_asks.begin(), g_asks.end(), mod), g_asks.end());
     if (on) g_asks.push_back(mod);
+    if(had!=!g_asks.empty())MirrorUse(!g_asks.empty());
     std::string why;   // (LS3D's face groups and the device's draws: geom.cpp; again at each frame while they are not)
     if (on) EnsureSkinHook();
     return on && !(GeomEnsureHooks(&why) && GeomEnsureDip(&why)) ? 0 : 1;

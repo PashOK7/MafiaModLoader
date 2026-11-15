@@ -21,6 +21,7 @@
 #include "host.h"
 #include <d3d9.h>
 #include <cmath>
+#include <map>
 #include "json.hpp"
 #include "mml/game/game_build.h"
 #include "mml/game/game.h"
@@ -41,6 +42,7 @@ void *g_lastScene;
 bool g_lastWorld;
 void DistanceBeforeFrame();
 bool SyncFogHooks(std::string *err);
+void ResidencyBeforeFrame();
 
 // Direct3D 8 by its vtable (no headers): the slots used here.
 enum { kDev8GetTransform = 38, kDev8GetViewport = 41 };
@@ -125,6 +127,7 @@ void DispatchDrawing(MmlEventType type, void *dev8) {
 }
 
 int __stdcall hkRender(void *driver, void *scene) {
+    if (!WindowRenderReady()) return 0; // native ResetDevice has freed its global vertex/index buffers
     if (++g_depth != 1) {
         int r = oRender(driver, scene);
         g_depth--;
@@ -132,6 +135,7 @@ int __stdcall hkRender(void *driver, void *scene) {
     }
     g_scene = scene;
     g_world = IsWorld(scene);
+    WindowScene(scene);
     g_stage1ThisRender = false;
     g_renders++;
     if (g_world) g_worldRenders++;
@@ -147,8 +151,11 @@ int __stdcall hkRender(void *driver, void *scene) {
         GameCameraFrame();   // (gamecam.cpp: a mod's field of view held on the game's camera)
         DistanceBeforeFrame();
         FrameCameraBegin(scene);   // (view.cpp: the frame drawn from a mod's camera; the views start from it)
+        ResidencyBeforeFrame();   // resolve camera-relative regions AFTER the current override, before any view
         ScaleBeforeRender();   // (scale.cpp: the actors drawn at the mods' sizes: the shadows and the views too)
+        GfxMarkTiming(GfxTimingMark::ShadowBegin);
         ShadowsBeforeWorld(driver, scene, oRender);   // (shadows.cpp: the map from the sun, LS3D drawing it, before the views)
+        GfxMarkTiming(GfxTimingMark::ShadowEnd);
         GfxViewsNewFrame();
         {
             ProfScope ps(nullptr, "scene views");
@@ -157,6 +164,7 @@ int __stdcall hkRender(void *driver, void *scene) {
         }
         GfxBeforeWorld();   // (gfx.cpp: the readable depth buffer, when a mod has a pass)
         GeomFrameDrawing(true);
+        GfxMarkTiming(GfxTimingMark::WorldBegin);
     }
     int r;
     {
@@ -262,10 +270,13 @@ void RenderStage(int stage) {
     if (stage != 1 || g_depth != 1 || g_stage1ThisRender) return;   // the outermost scene's, once
     g_stage1ThisRender = true;
     g_stage1++;
+    if (g_world) GfxMarkTiming(GfxTimingMark::WorldEnd);
     if (g_world) GfxTakeWorldLight();   // the world's fog and sun: what was drawn up to here
     if (g_world) { bool ok = false; SafeCamera(Device8(), &g_frameCamera, &ok); g_haveFrameCamera = g_haveFrameCamera || ok; }
     GfxQuiet(true);                     // (the mods' drawing is not the world's light)
+    SceneCollectStage(g_world);
     DispatchDrawing(MML_EVENT_RENDER_WORLD, Device8());
+    SceneCollectStage(false);
     if (g_world && DrawWorldWanted()) {   // (worlddraw.cpp: the mods' and the bridge's shapes, after the mods' drawing)
         IDirect3DDevice9 *d9 = Device9(Device8());
         Kept k = Keep(d9);
@@ -277,6 +288,7 @@ void RenderStage(int stage) {
         ProfScope ps(nullptr, "graphics bridge");
         ProfPhaseScope ph(3);
         GfxStage1();
+        GfxMarkTiming(GfxTimingMark::BridgeEnd);
     }
     if (g_world) GfxViewsShowNow();     // view.show: views copied onto the frame
 }
@@ -355,6 +367,10 @@ DeactivateFn oDeactivate;
 float g_streamRadius = 1000.0f;
 int g_occlusionBefore = 1;
 uint64_t g_blocksActivated;
+struct ResidencyBox {float lo[3]{},hi[3]{};bool camera=false,applied=true;float radius=0;};
+std::map<MmlMod *,ResidencyBox> g_residency;
+uint64_t g_residencyScene=1;
+bool g_nativeCacheTick=false,g_residencyFailed=false;
 
 struct Blocks { uint8_t *begin; int count; };
 Blocks CityBlocks() {
@@ -372,6 +388,56 @@ int ActiveBlocks(const Blocks &b) {
     int n = 0;
     for (int i = 0; i < b.count; i++) n += b.begin[i * kBlockSize + 4] != 0;
     return n;
+}
+bool ResidencyTouches(const uint8_t *block,const ResidencyBox &box){
+    if(!box.applied)return false;
+    const float x=*reinterpret_cast<const float *>(block+0x18),z=*reinterpret_cast<const float *>(block+0x1C),r=*reinterpret_cast<const float *>(block+0x20);
+    return std::isfinite(x)&&std::isfinite(z)&&std::isfinite(r)&&r>=0&&
+        x+r>=box.lo[0]&&x-r<=box.hi[0]&&z+r>=box.lo[2]&&z-r<=box.hi[2];
+}
+bool ResidencyWanted(int block){
+    if(g_residency.empty())return false;const Blocks b=CityBlocks();if(block<0||block>=b.count)return false;
+    for(const auto &owner:g_residency)if(ResidencyTouches(b.begin+block*kBlockSize,owner.second))return true;
+    return false;
+}
+// Finish ONLY fade records appended by this native ActivateBlock. Native FinishTimeTransparentObjects would
+// also finish unrelated mission fades. Layout and setter/release calls verified in BOTH native functions.
+bool ActivateResidentBlock(void *cache,int block){
+    __try{
+        const auto &e=game::Exe();void *mission=*reinterpret_cast<void **>(e.missionPtr);if(!mission)return false;
+        const uintptr_t before=game::at<uintptr_t>(mission,0x84),end=game::at<uintptr_t>(mission,0x88);
+        if(end<before||(end-before)%8||(end-before)>8u*1000000)return false;const size_t count=(end-before)/8;
+        reinterpret_cast<ActivateFn>(e.cacheActivate)(cache,block);
+        const uintptr_t startNow=game::at<uintptr_t>(mission,0x84),endNow=game::at<uintptr_t>(mission,0x88);
+        if(endNow<startNow||(endNow-startNow)%8||(endNow-startNow)/8<count||(endNow-startNow)>8u*1000000)return false;
+        // Remove each appended record before its native virtual calls, exactly as the native reverse loop.
+        while(game::at<uintptr_t>(mission,0x88)>startNow+count*8){
+            uintptr_t &tail=game::at<uintptr_t>(mission,0x88);tail-=8;void *visual=*reinterpret_cast<void **>(tail);
+            if(!visual)return false;
+            using Alpha=int(__stdcall *)(void *,float);Slot<Alpha>(visual,0x84/4)(visual,1.0f);
+            using Release=unsigned(__stdcall *)(void *);Slot<Release>(visual,0)(visual);
+        }
+        return true;
+    }__except(EXCEPTION_EXECUTE_HANDLER){return false;}
+}
+void ResidencyBeforeFrame(){
+    g_residencyFailed=false;if(g_residency.empty()||!game::g_exe)return;
+    MmlViewCamera camera{};const bool haveCamera=FrameCameraState(g_scene,&camera);
+    for(auto &owner:g_residency)if(owner.second.camera){
+        auto &box=owner.second;box.applied=haveCamera;
+        if(haveCamera)for(unsigned a=0;a<3;a++){
+            box.lo[a]=camera.world[12+a]-box.radius;box.hi[a]=camera.world[12+a]+box.radius;
+            box.applied=box.applied&&std::isfinite(box.lo[a])&&std::isfinite(box.hi[a]);
+        }
+    }
+    const Blocks b=CityBlocks();void *cache=reinterpret_cast<void *>(game::Exe().cityCache);
+    for(int i=0;i<b.count;i++)if(!b.begin[i*kBlockSize+4]&&ResidencyWanted(i)){
+        if(!ActivateResidentBlock(cache,i)||!b.begin[i*kBlockSize+4]){g_residencyFailed=true;return;}
+    }
+}
+void ResidencyReconcileLater(){
+    // Let the native cache remove now-unowned blocks using its own range/hysteresis, even with time held.
+    if(game::g_exe&&CityBlocks().count)game::at<int>(reinterpret_cast<void *>(game::Exe().cityCache),0x28)=100;
 }
 // Every block active, their fade-ins ended: the count made active now.
 int ActivateAll() {
@@ -427,7 +493,7 @@ char __fastcall hkInRange(void *cache, void *edx, int block, float x, float z, f
     return oInRange(cache, edx, block, x, z, radius);
 }
 void __fastcall hkDeactivate(void *cache, void *edx, int block) {
-    if (!g_distanceTick) oDeactivate(cache, edx, block);
+    if (!g_distanceTick&&!(g_nativeCacheTick&&ResidencyWanted(block)))oDeactivate(cache, edx, block);
 }
 // While a mod's camera (or camera.set's) is drawn, the city's blocks are streamed around it, not around the game's
 // camera it stands in for: CacheTick reads the scene camera frame's world position (its matrix's translation, +0x40,
@@ -448,13 +514,14 @@ char __fastcall hkCacheTick(void *cache, void *edx, int dtMs) {
     if (!g_wholeCity) {
         g_cacheUpdated = false;
         g_distanceTick = g_customDistance;
-        char r = CacheTickAround(cache, edx, dtMs);
+        char r;g_nativeCacheTick=true;
+        __try{r=CacheTickAround(cache,edx,dtMs);}__finally{g_nativeCacheTick=false;}
         g_distanceTick = false;
         if (g_customDistance && g_cacheUpdated) {
             const Blocks b = CityBlocks();
             const float x = game::at<float>(cache, 0x2C), z = game::at<float>(cache, 0x34);
             for (int i = 0; i < b.count; i++)
-                if (b.begin[i * kBlockSize + 4] && !oInRange(cache, nullptr, i, x, z, g_streamRadius + 30.0f))
+                if (b.begin[i * kBlockSize + 4] && !ResidencyWanted(i) && !oInRange(cache, nullptr, i, x, z, g_streamRadius + 30.0f))
                     oDeactivate(cache, nullptr, i);
         }
         HoldFar(g_customDistance);
@@ -473,7 +540,20 @@ GetLodFn oGetLod;
 bool g_lodHooked;
 const float *g_lodQuality;   // LS3D's RSLodQuality
 uint64_t g_lodKept;   // visuals drawn past their last LOD's distance (or its fade), all frames
+struct SourceLodState { void *visual;int lod;uint32_t changed; };
+std::vector<SourceLodState> g_sourceLods;
+int SourceLod(void *visual,float *dist2){
+    // GetObjectLOD is not pure: it writes cur_lod (+20C), which RenderFGroup uses to select its buffer/count.
+    // Returning a bare zero prepares one level but consumes a previously camera-selected level instead.
+    g_sourceLods.push_back({visual,game::at<int>(visual,0x20C),game::at<uint32_t>(visual,0x1D8)&0x2000000u});
+    const uint32_t callback=game::at<uint32_t>(visual,kFrameFlagsAt)&0x400u;
+    game::at<uint32_t>(visual,kFrameFlagsAt)&=~0x400u; // source preparation must not send gameplay LOD callbacks
+    *dist2=0;int result;
+    __try{result=oGetLod(visual,dist2);}__finally{game::at<uint32_t>(visual,kFrameFlagsAt)|=callback;}
+    return result;
+}
 int __fastcall hkGetLod(void *visual, float *dist2) {
+    if(SceneCollecting())return SourceLod(visual,dist2);
     if (g_wholeCity || g_customDistance) {
         const uint8_t *mesh = game::at<uint8_t *>(visual, 0x1E0);
         const int n = mesh ? *reinterpret_cast<const int *>(mesh + 8) : 0;
@@ -517,10 +597,12 @@ using FogProcessFn = void(__fastcall *)(uint8_t *alpha, float *vertices, unsigne
 FogFn oFog;
 FogProcessFn oFogProcess;
 bool g_fogHooked;
+bool g_sourceRadiance;
 int g_fogMode;
 float g_fogStart = 100.0f, g_fogEnd = 1000.0f;
 uint64_t g_fogCalls, g_fogVertexCalls;
 void __fastcall hkFog(int state, int type, float start, float end, uint32_t color) {
+    if(g_sourceRadiance && state==1)state=0;
     if (g_depth && g_world && (g_fogMode || AtmosphereReady()) && state == 1) {
         g_fogCalls++;
         if (g_fogMode == 1 || AtmosphereReady()) state = 0;
@@ -529,6 +611,10 @@ void __fastcall hkFog(int state, int type, float start, float end, uint32_t colo
     oFog(state, type, start, end, color);
 }
 void __fastcall hkFogProcess(uint8_t *alpha, float *vertices, unsigned stride, unsigned count, void *light, int mode) {
+    if(g_sourceRadiance && light && (mode==0 || mode==1)){
+        for(unsigned i=0;i<count;i++)alpha[i*stride]=mode==0?255:0;
+        return;
+    }
     if (!g_depth || !g_world || (!g_fogMode && !AtmosphereReady()) || !light || (mode != 0 && mode != 1)) {
         oFogProcess(alpha, vertices, stride, count, light, mode);
         return;
@@ -568,7 +654,7 @@ bool HookFog(std::string *err) {
     return true;
 }
 bool SyncFogHooks(std::string *err) {
-    if (g_fogMode || AtmosphereActive() || AtmosphereReady()) return HookFog(err);
+    if (g_sourceRadiance || g_fogMode || AtmosphereActive() || AtmosphereReady()) return HookFog(err);
     if (g_fogHooked) {
         const uintptr_t ls = ModuleBase("LS3DF.dll");
         HookRemoveLink(nullptr, ls + game::Ls3d().setFog, reinterpret_cast<void *>(&hkFog));
@@ -579,7 +665,48 @@ bool SyncFogHooks(std::string *err) {
 }
 } // namespace
 
-void RenderMissionClosed() { g_farCamera = nullptr; g_gameFar = 0; AtmosphereSceneClosed(); }
+void RenderMissionClosed() { g_farCamera = nullptr; g_gameFar = 0; AtmosphereSceneClosed();SceneResidencySceneChanged(); }
+
+bool SceneResidencySet(MmlMod *mod,const float lo[3],const float hi[3]){
+    if(!mod||SceneCollecting())return false;
+    if(!lo&&!hi){if(g_residency.erase(mod))ResidencyReconcileLater();return true;}
+    if(!lo||!hi)return false;
+    for(unsigned a=0;a<3;a++)if(!std::isfinite(lo[a])||!std::isfinite(hi[a])||lo[a]>hi[a]||hi[a]-lo[a]>20000)return false;
+    if(game::g_exe){std::string error;const auto &e=game::Exe();
+        if(!e.cacheActivate||!e.cacheDeactivate||!HookCacheTick(&error))return false;
+        if(!oDeactivate&&!HookAdd(nullptr,e.cacheDeactivate,reinterpret_cast<void *>(&hkDeactivate),reinterpret_cast<void **>(&oDeactivate),&error))return false;
+    }
+    ResidencyBox box;std::copy_n(lo,3,box.lo);std::copy_n(hi,3,box.hi);
+    auto found=g_residency.find(mod);if(found!=g_residency.end()&&!found->second.camera&&
+        !memcmp(found->second.lo,box.lo,sizeof box.lo)&&!memcmp(found->second.hi,box.hi,sizeof box.hi))return true;
+    const bool replacing=found!=g_residency.end();g_residency[mod]=box;if(replacing)ResidencyReconcileLater();return true;
+}
+bool SceneResidencyCameraSet(MmlMod *mod,float radius){
+    if(!mod||SceneCollecting()||!std::isfinite(radius)||radius<0||radius>10000)return false;
+    if(radius==0)return SceneResidencySet(mod,nullptr,nullptr);
+    if(radius<0.1f)return false;
+    const auto found=g_residency.find(mod);
+    if(found!=g_residency.end()&&found->second.camera&&found->second.radius==radius)return true;
+    const float lo[3]={-radius,-radius,-radius},hi[3]={radius,radius,radius};
+    if(!SceneResidencySet(mod,lo,hi))return false;
+    auto &box=g_residency[mod];box.camera=true;box.applied=false;box.radius=radius;return true;
+}
+bool SceneResidencyState(MmlMod *mod,MmlSceneResidencyState *out){
+    if(!out||out->size<sizeof(MmlSceneResidencyState))return false;
+    MmlSceneResidencyState result{};result.size=sizeof result;result.scene_generation=g_residencyScene;result.owners=unsigned(g_residency.size());
+    const Blocks blocks=CityBlocks();result.blocks=blocks.count;result.active=ActiveBlocks(blocks);
+    const auto found=g_residency.find(mod);
+    if(found!=g_residency.end()){
+        result.requested=1;std::copy_n(found->second.lo,3,result.lo);std::copy_n(found->second.hi,3,result.hi);
+        for(int i=0;i<blocks.count;i++)if(ResidencyTouches(blocks.begin+i*kBlockSize,found->second)){
+            result.required++;result.available+=blocks.begin[i*kBlockSize+4]!=0;
+        }
+        result.ready=found->second.applied&&game::g_exe&&*reinterpret_cast<void **>(game::Exe().missionPtr)&&!g_residencyFailed&&result.available==result.required;
+    }
+    *out=result;return true;
+}
+void SceneResidencyModGone(MmlMod *mod){if(g_residency.erase(mod))ResidencyReconcileLater();}
+void SceneResidencySceneChanged(){g_residency.clear();g_residencyFailed=false;++g_residencyScene;ResidencyReconcileLater();}
 
 void RenderDistanceCamera(MmlViewCamera *c) {
     if (!c || (!g_customDistance && !g_wholeCity)) return;
@@ -598,6 +725,37 @@ void CityFollowsCamera() {
     if (!HookCacheTick(&err)) Log(MML_LOG_WARN, "render", "the city streamed around a mod's camera: off (%s)", err.c_str());
 }
 
+void RenderBeforeReset() {
+    if (g_block) g_block->Release();
+    g_block = nullptr;
+    g_blockFor = nullptr;
+}
+
+bool RenderSourceLod(std::string *why) {
+    if(g_lodHooked)return true;
+    const uintptr_t ls=ModuleBase("LS3DF.dll");const auto &l=game::Ls3d();
+    if(!ls||!l.getObjectLod){*why="no native object LOD provider";return false;}
+    g_lodQuality=reinterpret_cast<const float *>(ls+l.rsLodQuality);
+    if(!HookAdd(nullptr,ls+l.getObjectLod,reinterpret_cast<void *>(&hkGetLod),reinterpret_cast<void **>(&oGetLod),why))return false;
+    g_lodHooked=true;return true;
+}
+void RenderSourceLodBegin(){g_sourceLods.clear();}
+bool RenderSourceRadiance(std::string *why){return HookFog(why);}
+void RenderSourceRadianceBegin(){
+    g_sourceRadiance=true;
+    // The collector saved the device AND native property cache before entering this scope.
+    // Disable camera fog and its separate overlay passes; outgoing path atmosphere belongs to the consumer.
+    oFog(0,0,0,0,0);
+}
+void RenderSourceRadianceEnd(){g_sourceRadiance=false;std::string ignored;SyncFogHooks(&ignored);}
+void RenderSourceLodEnd(){
+    // Reverse replay also handles proxy/delegated visuals queried more than once in this transaction.
+    for(auto i=g_sourceLods.rbegin();i!=g_sourceLods.rend();++i){
+        game::at<int>(i->visual,0x20C)=i->lod;
+        auto &flags=game::at<uint32_t>(i->visual,0x1D8);flags=(flags&~0x2000000u)|i->changed;
+    }
+    g_sourceLods.clear();
+}
 bool RenderMethod(const std::string &method, const std::string &paramsJson, std::string *reply, bool *ok) {
     if (method == "render.set") {
         json p = json::parse(paramsJson.empty() ? "null" : paramsJson, nullptr, false);
@@ -652,8 +810,8 @@ bool RenderMethod(const std::string &method, const std::string &paramsJson, std:
                 g_lodHooked = true;
             }
             if (mode == 1 && !g_streamHooked) {
-                if (!HookAdd(nullptr, e.cacheInRange, reinterpret_cast<void *>(&hkInRange), reinterpret_cast<void **>(&oInRange), &err) ||
-                    !HookAdd(nullptr, e.cacheDeactivate, reinterpret_cast<void *>(&hkDeactivate), reinterpret_cast<void **>(&oDeactivate), &err)) {
+                if ((!oInRange&&!HookAdd(nullptr, e.cacheInRange, reinterpret_cast<void *>(&hkInRange), reinterpret_cast<void **>(&oInRange), &err)) ||
+                    (!oDeactivate&&!HookAdd(nullptr, e.cacheDeactivate, reinterpret_cast<void *>(&hkDeactivate), reinterpret_cast<void **>(&oDeactivate), &err))) {
                     *ok = false; *reply = "render.set: native distance streaming: " + err; return true;
                 }
                 g_streamHooked = true;
@@ -696,6 +854,13 @@ bool RenderMethod(const std::string &method, const std::string &paramsJson, std:
     char b[32];
     snprintf(b, sizeof b, "0x%08X", static_cast<unsigned>(reinterpret_cast<uintptr_t>(g_lastScene)));
     out["last_scene"] = b;
+    int rect[4];
+    if (g_lastScene && MemRead(reinterpret_cast<uintptr_t>(g_lastScene)+0x23C,rect,sizeof rect)) {
+        out["scene_viewport"] = {rect[0],rect[1],rect[2],rect[3]};
+        uintptr_t camera = 0; float aspect = 0;
+        if (MemRead(reinterpret_cast<uintptr_t>(g_lastScene)+0x17C,&camera,sizeof camera) && camera &&
+            MemRead(camera+0x158,&aspect,sizeof aspect)) out["scene_aspect"] = aspect;
+    }
     snprintf(b, sizeof b, "0x%08X", static_cast<unsigned>(reinterpret_cast<uintptr_t>(dev)));
     out["device8"] = dev ? json(b) : json(nullptr);
     out["direct3d9"] = Device9(dev) != nullptr;

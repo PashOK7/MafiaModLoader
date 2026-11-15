@@ -10,8 +10,13 @@
 #include <cstring>
 #include <string>
 #include "mml/mml.h"
+#include "mml/game/game.h"
 #include "mml/atmosphere.h"
 extern "C" int kit_atmosphere_c(const MmlHost *, MmlMod *, const MmlAtmosphereSettings *);
+void kit_environment_init(const MmlHost *, MmlMod *);
+void kit_environment_shutdown();
+void kit_scene_source_init(const MmlHost *,MmlMod *);
+void kit_scene_source_shutdown();
 #include "mml/path.h"
 
 namespace {
@@ -21,6 +26,149 @@ int g_keyF5;
 unsigned g_frames, g_f5Down, g_f5Pressed, g_hotCtrlF6, g_hotSetting, g_configEvents, g_missionEvents;
 std::string g_configEventName;
 int g_menuItem;
+unsigned g_slowCalls;
+int SlowReply(const char *json, MmlReply *reply, void *) {
+    if (strstr(json, "status")) {
+        const std::string out = "{\"calls\":" + std::to_string(g_slowCalls) + "}";
+        H->reply_append(reply, out.c_str(), out.size());
+        return 0;
+    }
+    ++g_slowCalls;
+    Sleep(250);
+    // The request buffer itself must still exist after the caller has timed out.
+    H->reply_append(reply, json, static_cast<size_t>(-1));
+    return 0;
+}
+int CursorDisplayCount() { int count=ShowCursor(TRUE);ShowCursor(FALSE);return count-1; }
+int ResizeCursor(const char *, MmlReply *reply, void *) {
+    HWND window = nullptr;
+    EnumThreadWindows(GetCurrentThreadId(),[](HWND w, LPARAM p) -> BOOL {
+        if (IsWindowVisible(w) && (GetWindowLongPtrW(w,GWL_STYLE)&WS_THICKFRAME)) {
+            *reinterpret_cast<HWND *>(p)=w; return FALSE;
+        }
+        return TRUE;
+    },reinterpret_cast<LPARAM>(&window));
+    if (!window) { H->reply_error(reply,"no ordinary resizable window on the game thread"); return 1; }
+    RECT r{}; GetWindowRect(window,&r);
+    const int x=(r.left+r.right)/2, y=(r.top+r.bottom)/2;
+    const POINT points[]={{r.left+1,y},{r.right-2,y},{x,r.top+1},{x,r.bottom-2},
+                          {r.left+1,r.top+1},{r.right-2,r.top+1},{r.left+1,r.bottom-2},{r.right-2,r.bottom-2}};
+    const int hits[]={HTLEFT,HTRIGHT,HTTOP,HTBOTTOM,HTTOPLEFT,HTTOPRIGHT,HTBOTTOMLEFT,HTBOTTOMRIGHT};
+    const int shapes[]={32644,32644,32645,32645,32642,32643,32643,32642};
+    const HCURSOR old=GetCursor();
+    const int initialCount=CursorDisplayCount();
+    unsigned hidden=0;
+    while (CursorDisplayCount()>=0) { ShowCursor(FALSE);++hidden; }
+    const int hiddenCount=CursorDisplayCount();
+    POINT before{},after{}; GetCursorPos(&before);
+    HWND focus=GetForegroundWindow();
+    std::string out="{\"edges\":[";
+    for (int i=0;i<8;i++) {
+        int hit=int(SendMessageW(window,WM_NCHITTEST,0,MAKELPARAM(points[i].x,points[i].y)));
+        LRESULT result=SendMessageW(window,WM_SETCURSOR,reinterpret_cast<WPARAM>(window),MAKELPARAM(hit,WM_MOUSEMOVE));
+        bool matches=GetCursor()==LoadCursorW(nullptr,MAKEINTRESOURCEW(shapes[i]));
+        char row[190];snprintf(row,sizeof row,"%s{\"expected_hit\":%d,\"hit\":%d,\"shape\":%s,\"handled\":%s,\"visible\":%s}",
+            i?",":"",hits[i],hit,matches?"true":"false",result?"true":"false",CursorDisplayCount()>=0?"true":"false");
+        out+=row;
+    }
+    SendMessageW(window,WM_NCMOUSELEAVE,0,0);
+    const bool restored=CursorDisplayCount()==hiddenCount;
+    SendMessageW(window,WM_SETCURSOR,reinterpret_cast<WPARAM>(window),MAKELPARAM(HTBOTTOMRIGHT,WM_MOUSEMOVE));
+    SendMessageW(window,WM_SETCURSOR,reinterpret_cast<WPARAM>(window),MAKELPARAM(HTCLIENT,WM_MOUSEMOVE));
+    const bool clientRestored=CursorDisplayCount()==hiddenCount;
+    while (hidden) { ShowCursor(TRUE);--hidden; }
+    SetCursor(old);
+    GetCursorPos(&after);
+    out+="],\"initial_display_count\":"+std::to_string(initialCount)+",\"visibility_restored\":"+std::string(restored?"true":"false")+
+         ",\"client_restored\":"+std::string(clientRestored?"true":"false")+
+         ",\"input_untouched\":"+std::string(before.x==after.x && before.y==after.y && focus==GetForegroundWindow()?"true":"false")+"}";
+    H->reply_append(reply,out.c_str(),out.size());
+    return 0;
+}
+int ClientCursor(const char *, MmlReply *reply, void *) {
+    HWND window = nullptr;
+    EnumThreadWindows(GetCurrentThreadId(), [](HWND w, LPARAM p) -> BOOL {
+        if (IsWindowVisible(w) && (GetWindowLongPtrW(w, GWL_STYLE) & WS_THICKFRAME)) {
+            *reinterpret_cast<HWND *>(p) = w; return FALSE;
+        }
+        return TRUE;
+    }, reinterpret_cast<LPARAM>(&window));
+    if (!window) { H->reply_error(reply, "no ordinary game window"); return 1; }
+    const HWND foreground = GetForegroundWindow();
+    const bool active = foreground == window;
+    POINT before{}, after{}; GetCursorPos(&before);
+    const HCURSOR old = GetCursor(), arrow = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));
+    const int initial = CursorDisplayCount();
+    unsigned shown = 0;
+    while (CursorDisplayCount() < 0) { ShowCursor(TRUE); ++shown; }
+    const int visibleCount = CursorDisplayCount();
+    unsigned hidden = 0, preserved = 0;
+    for (unsigned i = 0; i < 30; ++i) {
+        // Simulate a system/overlay cursor selection after activation, with no count assumption.
+        SetCursor(arrow);
+        SendMessageW(window, WM_SETCURSOR, reinterpret_cast<WPARAM>(window), MAKELPARAM(HTCLIENT, WM_MOUSEMOVE));
+        if (GetCursor() == nullptr) ++hidden;
+        if (GetCursor() == arrow) ++preserved;
+    }
+    const bool balanced = CursorDisplayCount() == visibleCount;
+    while (shown) { ShowCursor(FALSE); --shown; }
+    SetCursor(old);
+    GetCursorPos(&after);
+    char out[384];
+    snprintf(out, sizeof out, "{\"foreground\":%s,\"cycles\":30,\"hidden\":%u,\"preserved\":%u,"
+             "\"initial_count\":%d,\"count_balanced\":%s,\"count_restored\":%s,\"input_untouched\":%s}",
+             active ? "true" : "false", hidden, preserved, initial, balanced ? "true" : "false",
+             CursorDisplayCount() == initial ? "true" : "false",
+             before.x == after.x && before.y == after.y && foreground == GetForegroundWindow() ? "true" : "false");
+    H->reply_append(reply, out, static_cast<size_t>(-1));
+    return 0;
+}
+
+struct ProjectionSample { float p[16]{}; unsigned frames = 0; int ownership = -1; } g_mainProjection, g_viewProjection;
+void ProjectionFrame(const MmlEvent *ev, void *) {
+    if (!ev->scene || !ev->world) return;
+    void *camera = nullptr;
+    if (!H->mem_read(reinterpret_cast<uintptr_t>(ev->scene)+0x17C, &camera, sizeof camera) || !camera) return;
+    auto &s = ev->type == MML_EVENT_VIEW_WORLD ? g_viewProjection : g_mainProjection;
+    if (!H->mem_read(reinterpret_cast<uintptr_t>(camera)+0x1A4, s.p, sizeof s.p)) return;
+    s.ownership = MML_HAS(H, camera_projection_state) ? H->camera_projection_state(M,camera) : -1;
+    ++s.frames;
+}
+int Projection(const char *, MmlReply *reply, void *) {
+    std::string out = "{";
+    int i = 0;
+    for (auto *s : {&g_mainProjection, &g_viewProjection}) {
+        char head[128];
+        snprintf(head,sizeof head,"%s\"%s\":{\"frames\":%u,\"ownership\":%d,\"matrix\":[",i?",":"",i?"view":"main",s->frames,s->ownership);
+        out += head;
+        for (int k=0;k<16;k++) { char n[48];snprintf(n,sizeof n,"%s%.9g",k?",":"",s->p[k]);out+=n; }
+        out += "]}";
+        ++i;
+    }
+    out += "}";
+    H->reply_append(reply,out.c_str(),out.size());
+    return 0;
+}
+using DeviceResetFn = HRESULT(__stdcall *)(void *, DWORD *);
+DeviceResetFn g_deviceResetNext;
+uintptr_t g_deviceResetSite;
+int g_deviceResetFailures;
+HRESULT __stdcall FailDeviceReset(void *device, DWORD *params) {
+    if (g_deviceResetFailures>0) { g_deviceResetFailures--; return HRESULT(0x8876086C); }
+    return g_deviceResetNext(device,params);
+}
+int DeviceResetFailure(const char *params, MmlReply *reply, void *) {
+    void *device=H->render_device(8);
+    if (!device) { H->reply_error(reply,"no device"); return 1; }
+    if (!g_deviceResetSite) {
+        uintptr_t site=uintptr_t((*static_cast<void ***>(device))[14]);
+        if (!H->hook(M,site,reinterpret_cast<void *>(&FailDeviceReset),reinterpret_cast<void **>(&g_deviceResetNext))) return 1;
+        g_deviceResetSite=site;
+    }
+    g_deviceResetFailures=params && strstr(params,"true") ? 2 : 1;
+    H->reply_append(reply,"{\"armed\":true}",static_cast<size_t>(-1));
+    return 0;
+}
 
 void OnCtrlF6(void *) { g_hotCtrlF6++; }
 void OnSetting(void *) { g_hotSetting++; }
@@ -289,6 +437,246 @@ int Sound(const char *, MmlReply *r, void *) {
              H->sound_set(M, 1, 0.5f, 1), H->sound_move(M, 1, nullptr, pos), H->sound_stop(M, 1), H->sound_state(M, 1, &st),
              H->music_play(M, "x.ogg", 1, 0), H->music_set(M, 1, 1), H->music_stop(M, 1), H->music_game(M, 0));
     H->reply_append(r, out, static_cast<size_t>(-1));
+    return 0;
+}
+
+// Move a visible pelvis and invoke native car contact in the same tick: no animation tick may intervene.
+int PedestrianHandover(const char *json, MmlReply *reply, void *) {
+    if (!game::g_exe && !game::Detect(H->module_base("LS3DF.dll"))) {
+        H->reply_error(reply, "no native game"); return 1;
+    }
+    const char *address = strstr(json, "0x");
+    void *ped = address ? reinterpret_cast<void *>(strtoul(address, nullptr, 16)) : nullptr;
+    void *car = game::PlayerCar();
+    MmlBone bones[MML_BONE_COUNT]{};
+    if (!ped || !car || H->human_skeleton(M, ped, bones, MML_BONE_COUNT) != MML_BONE_COUNT) {
+        H->reply_error(reply, "requires a pedestrian and an occupied car"); return 1;
+    }
+    if (strstr(json, "probe")) {
+        void *mission = game::Mission();
+        void *scene = mission ? game::at<void *>(mission, game::kMissionScene) : nullptr;
+        void *camera = scene ? game::at<void *>(scene, 0x17C) : nullptr;
+        void *model = game::at<void *>(ped, 0x40);
+        if (!camera || !model) { H->reply_error(reply,"missing native camera/model"); return 1; }
+        const float *a = game::WorldMatrix(camera), *b = game::WorldMatrix(model);
+        const float dx=a[12]-b[12],dy=a[13]-b[13],dz=a[14]-b[14];
+        const float distance = std::sqrt(dx*dx+dy*dy+dz*dz);
+        const bool bypass = game::at<unsigned char>(ped,0x50) != 0;
+        char out[130];
+        snprintf(out,sizeof out,"{\"distance_m\":%.4f,\"distance_check_bypassed\":%s,\"eligible\":%s}",
+                 distance,bypass ? "true" : "false",bypass || distance < 19 ? "true" : "false");
+        H->reply_append(reply,out,static_cast<size_t>(-1));
+        return 0;
+    }
+    const bool shift = strstr(json, "true") != nullptr;
+    if (shift) {
+        bones[MML_BONE_PELVIS].pos[0] += 1.5f;
+        if (!H->bone_set(M, bones[MML_BONE_PELVIS].frame, nullptr, bones[MML_BONE_PELVIS].pos)) {
+            H->reply_error(reply, "pelvis write refused"); return 1;
+        }
+    }
+    H->human_skeleton(M, ped, bones, MML_BONE_COUNT);
+    float before[3];
+    memcpy(before, bones[MML_BONE_PELVIS].world + 12, sizeof before);
+    const float velocity[3] = {6, 0, 0};
+    const int accepted = H->human_vehicle_contact(M, ped, car, velocity, before);
+    char out[256];
+    snprintf(out, sizeof out, "{\"accepted\":%s,\"shifted\":%s,\"pelvis_before\":[%.5f,%.5f,%.5f]}",
+             accepted ? "true" : "false", shift ? "true" : "false", before[0], before[1], before[2]);
+    H->reply_append(reply, out, static_cast<size_t>(-1));
+    return 0;
+}
+
+// Advance a real traffic dodge in isolation, then put a native car in its already travelled path.
+int PedestrianDodge(const char *json, MmlReply *reply, void *) {
+    if (!game::g_exe && !game::Detect(H->module_base("LS3DF.dll"))) {
+        H->reply_error(reply, "no native game"); return 1;
+    }
+    const char *address = strstr(json, "0x");
+    void *ped = address ? reinterpret_cast<void *>(strtoul(address, nullptr, 16)) : nullptr;
+    MmlBone bones[MML_BONE_COUNT]{};
+    if (!ped || H->human_skeleton(M, ped, bones, MML_BONE_COUNT) != MML_BONE_COUNT ||
+        game::at<float>(ped, 0x15C) <= 0 || !game::at<void *>(ped, 8)) {
+        H->reply_error(reply, "requires a living traffic pedestrian"); return 1;
+    }
+    const bool ahead = strstr(json, "ahead") != nullptr;
+    const bool behind = strstr(json, "behind") != nullptr;
+    // C_traffic_element::Tick in the two builds. Drive the full native tick, including its final model update.
+    const uintptr_t tickAddress = game::Exe().pedStepReturn1 - 0x949;
+    using TickFn = void(__thiscall *)(void *, int);
+    const auto tick = reinterpret_cast<TickFn>(tickAddress);
+    auto &pos = game::at<V3>(ped, 0x10);
+    const V3 origin = pos;
+    game::at<int>(ped, 0x164) = 0x143;
+    reinterpret_cast<void(__thiscall *)(void *)>(game::Exe().pedAnimStart)(ped);
+    const float travelled = ahead ? 1.65f : 2.05f;
+    int elapsed = 0;
+    for (; elapsed < 1200 && Len(pos - origin) < travelled && game::at<int>(ped, 0x160) == 0x143; elapsed += 16)
+        tick(ped, 16);
+    const V3 before = pos;
+    if (Len(before - origin) < travelled || game::at<int>(ped, 0x160) != 0x143) {
+        H->reply_append(reply, "{\"eligible\":false}", static_cast<size_t>(-1));
+        return 0;
+    }
+    const V3 along = Norm({before.x - origin.x, 0, before.z - origin.z}, {1, 0, 0});
+    const V3 barrier = ahead ? before + along * 1.49f : origin + along * 1.1f;
+    const MmlVec3 at{barrier.x, barrier.y + .15f, barrier.z};
+    const MmlVec3 dir{-along.z, 0, along.x};
+    void *car = ahead || behind ? H->actor_spawn(M, MML_ACTOR_CAR, "Bolt-Thrower", &at, &dir) : nullptr;
+    if ((ahead || behind) && !car) { H->reply_error(reply, "could not make the obstacle car"); return 1; }
+    using SweepFn = void *(__stdcall *)(const V3 *, const V3 *, float, V3 *, V3 *, int, int);
+    const auto sweep = reinterpret_cast<SweepFn>(game::Exe().sphereSweep);
+    const V3 start = (ahead ? before : origin) + V3{0, .6f, 0};
+    const V3 delta = ahead ? along * .6f : before - origin;
+    V3 hit{}, normal{};
+    const void *shape = sweep(&start, &delta, .5f, &hit, &normal, 2, 0);
+    const unsigned shapeKind = shape ? *static_cast<const uint8_t *>(shape) : 0;
+    const bool hitCar = shapeKind == 0x40 && game::at<void *>(const_cast<void *>(shape), 0x44) == car;
+    for (int i = 0; i < (ahead ? 6 : 1); ++i) tick(ped, 16);
+    const V3 after = pos;
+    const float *root = game::WorldMatrix(game::at<void *>(ped, 0x40));
+    const V3 model{root[12], root[13], root[14]};
+    if (car) H->actor_remove(M, car);
+    char out[500];
+    snprintf(out, sizeof out,
+             "{\"eligible\":true,\"elapsed\":%d,\"animation\":%d,\"travel\":%.5f,\"advance\":%.5f,\"step\":%.5f,\"model_error\":%.5f,"
+             "\"hit_car\":%s,\"stop\":%.5f,\"origin\":[%.5f,%.5f,%.5f],\"before\":[%.5f,%.5f,%.5f],\"after\":[%.5f,%.5f,%.5f]}",
+             elapsed, game::at<int>(ped, 0x160), Len(before - origin), Dot(after - before, along), Len(after - before),
+             Len(model - after), hitCar ? "true" : "false", shape ? Dot(hit - start, along) : 0.0f,
+             origin.x, origin.y, origin.z,
+             before.x, before.y, before.z, after.x, after.y, after.z);
+    H->reply_append(reply, out, static_cast<size_t>(-1));
+    return 0;
+}
+
+int DetachedPlayerCar(const char *json, MmlReply *reply, void *) {
+    if (!game::g_exe && !game::Detect(H->module_base("LS3DF.dll"))) {
+        H->reply_error(reply, "no native game"); return 1;
+    }
+    void *car = game::PlayerCar();
+    if (!car) { H->reply_error(reply, "requires an occupied car"); return 1; }
+    struct Swap { uint32_t *slot; uint32_t before; } swaps[4096];
+    int count = 0, listed = 0, contact = 0;
+    const char *address = strstr(json, "0x");
+    void *target = address ? reinterpret_cast<void *>(strtoul(address, nullptr, 16)) : nullptr;
+    MmlBone bones[MML_BONE_COUNT]{};
+    if (target && H->human_skeleton(M, target, bones, MML_BONE_COUNT) != MML_BONE_COUNT) {
+        H->reply_error(reply, "target has no skeleton"); return 1;
+    }
+    const V3 pos = game::ActorWorldPos(car);
+    const float at[3] = {pos.x, pos.y, pos.z};
+    void *found[512];
+    __try {
+        // Hide just this car's references, as happens when traffic transfers ownership to Tommy.
+        for (void *vector : {static_cast<uint8_t *>(game::Mission()) + 0x38,
+                             static_cast<uint8_t *>(game::Game()) + 0x124}) {
+            void **begin = game::at<void **>(vector, 0), **end = game::at<void **>(vector, 4);
+            if (!begin || end < begin || end - begin > 20000) continue;
+            for (void **entry = begin; entry != end && count < 4096; ++entry) if (*entry == car) {
+                swaps[count++] = {reinterpret_cast<uint32_t *>(entry), static_cast<uint32_t>(reinterpret_cast<uintptr_t>(*entry))};
+                *entry = nullptr;
+            }
+        }
+        const auto address = game::Exe().trafficElements;
+        if (address) {
+            auto begin = *reinterpret_cast<uint8_t ***>(address), end = *reinterpret_cast<uint8_t ***>(address + 4);
+            if (begin && end >= begin && end - begin <= 1024)
+                for (auto entry = begin; entry != end && count < 4096; ++entry)
+                    if (*entry && game::at<void *>(*entry, game::kTrafficElemCar) == car) {
+                        auto *flags = reinterpret_cast<uint32_t *>(*entry);
+                        swaps[count++] = {flags, *flags};
+                        *flags &= ~0xFFu;
+                    }
+        }
+        const int n = H->world_near(M, at, 5, MML_ACTOR_CAR, found, 512);
+        for (int i = 0; i < n && i < 512; ++i) if (found[i] == car) ++listed;
+        if (target) {
+            const float velocity[3] = {12, 0, 0};
+            contact = H->human_vehicle_contact(M, target, car, velocity, bones[MML_BONE_PELVIS].world + 12);
+        }
+    } __finally {
+        for (int i = count; i > 0; --i) *swaps[i-1].slot = swaps[i-1].before;
+    }
+    char out[100];
+    snprintf(out, sizeof out, "{\"hidden_references\":%d,\"listed\":%d,\"contact\":%s}", count, listed, contact ? "true" : "false");
+    H->reply_append(reply, out, static_cast<size_t>(-1));
+    return 0;
+}
+
+int HiddenRootMeshes(const char *, MmlReply *reply, void *) {
+    if (!game::g_exe && !game::Detect(H->module_base("LS3DF.dll"))) {
+        H->reply_error(reply, "requires a native game"); return 1;
+    }
+    void *car = game::PlayerCar();
+    void *root = car ? game::at<void *>(car, game::kActorFrame) : nullptr;
+    if (!root || !MML_HAS(H, actor_meshes_ex) || !H->actor_meshes_ex) {
+        H->reply_error(reply, "requires the new mesh service and an occupied car"); return 1;
+    }
+    uint32_t &flags = game::at<uint32_t>(root, game::kFrameFlags);
+    const uint32_t before = flags;
+    int shown = 0, hidden = 0, physical = 0, invalid = 0;
+    // A single game-thread command: restore the native flag before any rendering can run.
+    __try {
+        flags |= 1u;
+        shown = H->actor_meshes(M, car, nullptr, 0);
+        flags &= ~1u;
+        hidden = H->actor_meshes(M, car, nullptr, 0);
+        physical = H->actor_meshes_ex(M, car, MML_ACTOR_MESH_HIDDEN_ROOT, nullptr, 0);
+        invalid = H->actor_meshes_ex(M, car, 0x80000000u, nullptr, 0);
+    } __finally { flags = before; }
+    char out[220];
+    snprintf(out, sizeof out, "{\"shown\":%d,\"hidden\":%d,\"physical\":%d,\"invalid\":%d,\"restored\":%s}",
+             shown, hidden, physical, invalid, flags == before ? "true" : "false");
+    H->reply_append(reply, out, static_cast<size_t>(-1));
+    return 0;
+}
+
+// Snapshot flags and call the native predicate in one game-thread command.
+int VehicleUsable(const char *, MmlReply *reply, void *) {
+    if (!game::g_exe && !game::Detect(H->module_base("LS3DF.dll"))) {
+        H->reply_error(reply, "no native game");
+        return 1;
+    }
+    void *car = game::PlayerCar();
+    if (!car) { H->reply_error(reply, "the player must be in a car"); return 1; }
+    game::Car vehicle(car);
+    uint32_t before[32]{}, nativeMask = 0;
+    const int count = vehicle.WheelCount();
+    if (count < 1 || count > 32) { H->reply_error(reply, "unsupported wheel count"); return 1; }
+    for (int i = 0; i < count; ++i) {
+        before[i] = game::at<uint32_t>(vehicle.Wheel(i), game::kWheelFlags);
+        if (before[i] & game::kWheelOnGround) nativeMask |= 1u << i;
+    }
+    const float speed = vehicle.Speed();
+    using NativeFn = bool(__fastcall *)(void *, void *, unsigned);
+    const bool usable = reinterpret_cast<NativeFn>(game::Exe().carIsUsable)(car, nullptr, 255);
+    bool unchanged = true;
+    for (int i = 0; i < count; ++i)
+        unchanged &= before[i] == game::at<uint32_t>(vehicle.Wheel(i), game::kWheelFlags);
+    char out[180];
+    snprintf(out, sizeof out, "{\"native_mask\":%u,\"speed\":%.5f,\"usable\":%s,\"flags_unchanged\":%s}",
+             nativeMask, speed, usable ? "true" : "false", unchanged ? "true" : "false");
+    H->reply_append(reply, out, static_cast<size_t>(-1));
+    return 0;
+}
+
+uint32_t g_supportMask;
+bool g_supportFault;
+uint32_t WheelSupport(void *, void *) {
+    if (g_supportFault) RaiseException(EXCEPTION_ACCESS_VIOLATION, 0, 0, nullptr);
+    return g_supportMask;
+}
+int Support(const char *args, MmlReply *reply, void *) {
+    if (!MML_HAS(H, vehicle_support_hook)) { H->reply_error(reply, "no vehicle support service"); return 1; }
+    const char *mask = args ? strstr(args, "\"mask\"") : nullptr;
+    const char *value = mask ? strchr(mask, ':') : nullptr;
+    g_supportMask = value ? static_cast<uint32_t>(strtoul(value + 1, nullptr, 0)) : 0;
+    g_supportFault = args && strstr(args, "\"fault\"");
+    const bool off = args && strstr(args, "\"off\"");
+    const int result = H->vehicle_support_hook(M, off ? nullptr : WheelSupport, nullptr);
+    char out[96];
+    snprintf(out, sizeof out, "{\"accepted\":%s,\"mask\":%u}", result ? "true" : "false", g_supportMask);
+    H->reply_append(reply, out, static_cast<size_t>(-1));
     return 0;
 }
 
@@ -616,9 +1004,11 @@ int Write(const char *, MmlReply *r, void *) {
 using MidTestFn = int(__cdecl *)(int, float);
 using SevenFn = int(__cdecl *)();
 int g_midArg;           // what the hook read at esp + 4 (the first argument)
+bool g_midZero;
 double g_midSum;        // its own x87 work (sines on the x87 stack), kept so the compiler keeps it
 void OnMid(MmlMidContext *c, void *) {
     g_midArg = *reinterpret_cast<int *>(c->esp + 4);
+    g_midZero = (c->eflags & 0x40) != 0;
     volatile double x = 0.5;
     for (int i = 0; i < 12; i++) x = std::sin(x) + std::sqrt(x + 1.0);   // (fills the x87 stack the game had f on)
     g_midSum += x;
@@ -634,6 +1024,10 @@ int MidHook(const char *, MmlReply *r, void *) {
     g_midArg = 0;
     const int hooked = H->hook_mid(M, at, OnMid, nullptr);
     const int with = fn(2, 1.5f);
+    const int arg = g_midArg;
+    const bool zero = g_midZero;
+    fn(3, 1.5f);
+    const bool nonzero = !g_midZero;
     const uint8_t nop[2] = {0x90, 0x90};
     const int patchOver = H->code_patch(M, at + 3, nullptr, nop, 2);   // (inside the hook's 5 bytes: refused)
     const int unhooked = H->unhook(M, at);
@@ -643,8 +1037,8 @@ int MidHook(const char *, MmlReply *r, void *) {
     const int skipped = fn(2, 1.5f);
     H->unhook(M, at);
     char out[224];
-    snprintf(out, sizeof out, "{\"before\":%d,\"hooked\":%d,\"with\":%d,\"arg\":%d,\"patch_over_hook\":%d,\"unhooked\":%d,\"after\":%d,\"skipped\":%d}",
-             before, hooked, with, g_midArg, patchOver, unhooked, after, skipped);
+    snprintf(out, sizeof out, "{\"before\":%d,\"hooked\":%d,\"with\":%d,\"arg\":%d,\"patch_over_hook\":%d,\"unhooked\":%d,\"after\":%d,\"skipped\":%d,\"flags_kept\":%s}",
+             before, hooked, with, arg, patchOver, unhooked, after, skipped, zero && nonzero ? "true" : "false");
     H->reply_append(r, out, (size_t)-1);
     return 0;
 }
@@ -683,6 +1077,14 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     H = host;
     M = mod;
     if (!MML_HAS(host, config_set)) return 1;   // a loader older than the kit
+    kit_environment_init(host,mod);
+    kit_scene_source_init(host,mod);
+    host->subscribe(mod,MML_EVENT_RENDER_WORLD,ProjectionFrame,nullptr);
+    host->subscribe(mod,MML_EVENT_VIEW_WORLD,ProjectionFrame,nullptr);
+    host->command(mod,"projection","actual native main/view projections during drawing",Projection,nullptr);
+    host->command(mod,"resize_cursor","native border hit tests/cursor shapes without moving input or changing focus",ResizeCursor,nullptr);
+    host->command(mod,"client_cursor","30 client-cursor selections with a visible system cursor; no input/focus changes",ClientCursor,nullptr);
+    host->command(mod,"slow_reply","250 ms reply for bridge timeout ownership; {status:true} counts executions",SlowReply,nullptr);
     g_keyF5 = host->key_code("F5");
     for (MmlEventType t : {MML_EVENT_FRAME, MML_EVENT_CONFIG_CHANGED, MML_EVENT_MISSION_OPEN, MML_EVENT_MISSION_LOADED,
                            MML_EVENT_GAME_PAUSED, MML_EVENT_GAME_RESUMED})
@@ -714,10 +1116,17 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     host->command(mod, "models", "the game's files and models with no game", Models, nullptr);
     host->command(mod, "shadow_source", "shared shadow direction request: sun, scene, invalid or off", ShadowSource, nullptr);
     host->command(mod, "atmosphere", "SDK atmosphere ownership, invalid/worker/future-size requests and release", Atmosphere, nullptr);
+    host->command(mod, "device_reset_failure", "fail the next device Reset once (or twice) to verify native recovery", DeviceResetFailure, nullptr);
     host->command(mod, "fpu", "the x87's precision in a mod's callback: 1/3 divided on the x87", Fpu, nullptr);
     host->command(mod, "gamecam", "the game's camera with no game: none, refused", GameCam, nullptr);
     host->command(mod, "hits", "hit_filter ({\"off\": true}: taken away), human_hit, pedestrians_list with no game", Hits, nullptr);
     host->command(mod, "control","key_capture, action_capture, player_lock, vehicle_hook, vehicle_body with no game", Control, nullptr);
+    host->command(mod, "vehicle_support", "native wheel-support fixture: {mask}, {mode: off | fault}", Support, nullptr);
+    host->command(mod, "vehicle_usable", "native support flags, speed and usability in one game-thread snapshot", VehicleUsable, nullptr);
+    host->command(mod, "pedestrian_handover", "same-tick visible pelvis shift and native contact: {pedestrian, shift}", PedestrianHandover, nullptr);
+    host->command(mod, "pedestrian_dodge", "native traffic dodge: {pedestrian, placement: none | behind | ahead}", PedestrianDodge, nullptr);
+    host->command(mod, "hidden_root_meshes", "same-command visible/hidden-root mesh counts and flag restoration", HiddenRootMeshes, nullptr);
+    host->command(mod, "detached_player_car", "current car discoverable with its general-list entries temporarily absent", DetachedPlayerCar, nullptr);
     host->command(mod, "sound", "sound_play and the rest, music_play and the rest with no game", Sound, nullptr);
     host->command(mod, "effects","car_exhaust, exhaust_hook, particle_def(_set) with no game", Effects, nullptr);
     host->command(mod, "lights","scene_lights, light_set, scene_sun with no game", Lights, nullptr);
@@ -732,4 +1141,4 @@ MML_EXPORT int mml_mod_load(const MmlHost *host, MmlMod *mod) {
     return 0;
 }
 
-MML_EXPORT void mml_mod_unload(MmlMod *) {}
+MML_EXPORT void mml_mod_unload(MmlMod *) { kit_scene_source_shutdown();kit_environment_shutdown(); }

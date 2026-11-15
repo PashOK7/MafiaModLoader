@@ -1,0 +1,29 @@
+{
+  "id": "soundscape",
+  "name": "Soundscape: sound waves and acoustic spaces",
+  "version": "0.3.0",
+  "type": "native",
+  "entry": "soundscape.dll",
+  "enabled": false,
+  "builds": ["1.2", "1.0"],
+  "load_order": 110,
+  "depends": [],
+  "settings": {
+    "title": "Soundscape",
+    "sections": [{"title": "Acoustic light", "controls": [
+      {"key": "show", "label": "Shown"},
+      {"key": "hotkey", "label": "Show and hide", "kind": "key"},
+      {"key": "waves", "label": "Source waves"},
+      {"key": "reverb", "label": "EAX decay trails"},
+      {"key": "reflections", "label": "Geometric reflection paths"},
+      {"key": "room", "label": "Nearby static boundaries"},
+      {"key": "xray", "label": "Room visible through walls"},
+      {"key": "hologram", "label": "3D room hologram"},
+      {"key": "panel", "label": "Acoustic card"},
+      {"key": "labels", "label": "Source names"},
+      {"key": "range", "label": "Sources within", "min": 10, "max": 120, "step": 5, "unit": "m"},
+      {"key": "intensity", "label": "Light intensity", "min": 0.2, "max": 2, "step": 0.1},
+      {"key": "speed", "label": "Visual wave speed", "min": 3, "max": 40, "step": 1, "unit": "m/s"}
+    ]}]
+  }
+}

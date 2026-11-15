@@ -83,6 +83,7 @@ constexpr int kCascades = 3;
 constexpr float kPatch[kCascades] = {37.3f, 9.17f, 2.31f};   /* metres (no two in a whole ratio: no common repeat) */
 
 struct Spectrum {
+    float patch[kCascades] = {kPatch[0], kPatch[1], kPatch[2]}; /* world lengths, shared by FFT and surface sampling */
     std::vector<float> h0;          /* kCascades x kN x kN x 4: h0(k), conj(h0(-k)) (CsSpectrum's t0) */
     float drawn = 0;                /* the slope variance the cascades draw (both axes) */
     float rest = 0;                 /* the slope variance no cascade draws, an axis (water.hlsli WaterRipples' rest) */
@@ -90,25 +91,69 @@ struct Spectrum {
     float heightVar = 0;            /* the height's variance the cascades draw (m^2): its deviation is a crest's scale */
 };
 
+/* Stretch an existing spectrum horizontally, retaining its heights. The FFT uses these lengths for dispersion
+ * and derivatives too: slopes scale by 1/factor, variances by 1/factor^2. This is an artistic scale, not wind. */
+inline void ScaleWavelength(Spectrum &s, float factor) {
+    if (!std::isfinite(factor) || !(factor > 0)) return;
+    for (float &p : s.patch) p *= factor;
+    s.peak *= factor;
+    s.drawn /= factor * factor;
+    s.rest /= factor * factor;
+}
+
+/* Integrate a changing speed instead of multiplying absolute time (which jumps the wave phase on adjustment).
+ * Caller advances with the OLD speed before changing it; an arbitrary monotonic clock in seconds is accepted. */
+struct WaveClock {
+    double time = 0, last = 0;
+    bool started = false;
+    double Advance(double now, double speed) {
+        if (!std::isfinite(now)) return time;
+        if (started && now >= last && std::isfinite(speed) && speed >= 0) time += (now - last) * speed;
+        last = now;
+        started = true;
+        return time;
+    }
+};
+
 /* JONSWAP for a wind of `wind` m/s over `fetch` m of open water (a river is narrow: its waves are short), spread about
  * the direction the wind comes `from` (degrees from +z towards +x; cos^8 of half the angle). The whole slope variance
- * (both axes) is `variancePerMs` a m/s of wind, 85 % drawn by the cascades and the rest the capillaries' roughness.
+ * (both axes) defaults to `variancePerMs` a m/s of wind, 85 % drawn and the rest capillary roughness. Set the final
+ * normalizeSlopes=false to retain JONSWAP's gravity-wave height energy instead; residual roughness stays independent.
  * Cox and Munk's grows by 0.00084 a m/s on a sea covered by slicks, 0.00512 on a clean one, from 0.003 that a sea's
  * swell gives at no wind; a city's river has no swell and a filmed surface: 0.0012 (JONSWAP's open-sea slopes, 0.0275
  * at 3 m/s, turned a river's far bank's reflection into the sky). A wind over `filmBreaks` m/s tears the film up (slicks
  * are seen to go between 4 and 7 m/s): past it the variance grows by `cleanPerMs` more a m/s, a clean sea's growth less
  * the slick's (0.0043), so a strong wind's river is rough and its crests steep (8 m/s: 0.025, against 0.0096). h0 in Tessendorf's convention (its variance half the
  * spectrum's share of the cell: the field's variance is the spectrum's integral). Seeded: the same water each time. */
+/* Independent short-wave amplitude. Wavelengths >= 2*cutoff are unchanged; <= cutoff/2 use strength,
+ * with a smooth transition in log wavelength. Suppressing short waves must NOT redistribute their energy
+ * into the retained long waves. strength=1 preserves the previous spectrum exactly; 0 is a smooth-facet swell. */
+inline double SmallWaveGain(double k, double cutoff, double strength) {
+    if (!(cutoff > 0) || !(k > 0) || strength == 1) return 1;
+    double q = 0.5 + 0.5 * std::log2(k * cutoff / 6.283185307179586);
+    q = q < 0 ? 0 : q > 1 ? 1 : q;
+    return 1 + q * q * (3 - 2 * q) * (strength - 1);
+}
+/* Artistic dimensions of gravity waves only. Fine wind ripples retain their physical wavelength/energy.
+ * The transition is 0.375..1.5 m, not a hard frequency seam; cascades always cover adjacent world bands. */
+struct GravityWaves { float width = 1, height = 1; };
 inline Spectrum MakeSpectrum(float wind, float from, float fetch, float variancePerMs = 0.0012f, float filmBreaks = 4,
-                             float cleanPerMs = 0.0043f) {
+                             float cleanPerMs = 0.0043f, float smallRipples = 1, float smallWavelength = 0.25f,
+                             bool normalizeSlopes = true, GravityWaves gravity = {}) {
     Spectrum out;
+    if (!std::isfinite(gravity.width)) gravity.width=1;
+    if (!std::isfinite(gravity.height)) gravity.height=1;
+    gravity.width=gravity.width<.25f?.25f:gravity.width>8?8:gravity.width;
+    gravity.height=gravity.height<0?0:gravity.height>8?8:gravity.height;
+    out.patch[0]*=gravity.width;
+    out.patch[1]*=std::sqrt(gravity.width);
     out.h0.assign(static_cast<size_t>(kCascades) * kN * kN * 4, 0.0f);
     const double U = wind, F = fetch > 10 ? fetch : 10, g = 9.81, T = 7.4e-5, pi = 3.14159265358979;
     if (U < 0.1) return out;   // no wind: a mirror
     const double wp = 22 * std::pow(g * g / (U * F), 1 / 3.0);   // the peak's frequency
     const double alpha = 0.076 * std::pow(U * U / (F * g), 0.22);
     const double dir = from * pi / 180;
-    out.peak = static_cast<float>(2 * pi * g / (wp * wp));
+    out.peak = static_cast<float>(2 * pi * g / (wp * wp)) * gravity.width;
     const int s = 4;
     double norm = 0;
     for (int i = 0; i < 3600; i++) norm += std::pow(std::cos((-pi + (i + 0.5) * 2 * pi / 3600) / 2), 2 * s) * 2 * pi / 3600;
@@ -125,10 +170,12 @@ inline Spectrum MakeSpectrum(float wind, float from, float fetch, float variance
     };
     std::mt19937 rng(20261028);
     std::normal_distribution<float> gauss;
-    double resolved = 0, heights = 0;
+    double resolved = 0, filteredResolved = 0, heights = 0;
+    if (!std::isfinite(smallRipples)) smallRipples = 1;
+    smallRipples = smallRipples < 0 ? 0 : smallRipples > 2 ? 2 : smallRipples;
     for (int c = 0; c < kCascades; c++) {
-        const double dk = 2 * pi / kPatch[c];
-        const double lo = c ? pi * kN / (2 * kPatch[c - 1]) : 0, hi = pi * kN / (2 * kPatch[c]);   // 4 texels a wave
+        const double dk = 2 * pi / out.patch[c];
+        const double lo = c ? pi * kN / (2 * out.patch[c - 1]) : 0, hi = pi * kN / (2 * out.patch[c]);   // 4 texels a wave
         float *h = &out.h0[static_cast<size_t>(c) * kN * kN * 4];
         for (int y = 0; y < kN; y++)
             for (int x = 0; x < kN; x++) {
@@ -136,10 +183,19 @@ inline Spectrum MakeSpectrum(float wind, float from, float fetch, float variance
                 float *o = h + (static_cast<size_t>(y) * kN + x) * 4;
                 float a = gauss(rng), b = gauss(rng);
                 if (k <= 0 || k < lo || k >= hi) continue;
-                double p = psi(kx, kz) * dk * dk;
+                double density=psi(kx,kz);
+                if (gravity.width!=1 || gravity.height!=1) {
+                    double large=SmallWaveGain(k,.75,0);
+                    double transformed=gravity.width*gravity.width*gravity.height*gravity.height *
+                        psi(kx*gravity.width,kz*gravity.width);
+                    density=large*transformed+(1-large)*density;
+                }
+                double p = density * dk * dk;
                 resolved += k * k * p;
-                heights += p;
-                double amp = std::sqrt(p / 2) / std::sqrt(2.0);
+                double gain = SmallWaveGain(k, smallWavelength, smallRipples);
+                filteredResolved += k * k * p * gain * gain;
+                heights += p * gain * gain;
+                double amp = std::sqrt(p / 2) / std::sqrt(2.0) * gain;
                 o[0] = static_cast<float>(a * amp);
                 o[1] = static_cast<float>(b * amp);
             }
@@ -152,10 +208,13 @@ inline Spectrum MakeSpectrum(float wind, float from, float fetch, float variance
             }
     }
     const double total = variancePerMs * U + cleanPerMs * (U > filmBreaks ? U - filmBreaks : 0);
-    const double scale = resolved > 0 ? std::sqrt(0.85 * total / resolved) : 0;
+    // Optional legacy river-slick normalization rescales EVERY wavelength to a prescribed total slope energy.
+    // It also removed 44..72% of the gravity-wave amplitude, making wind mostly a change in fine normal noise.
+    // A fetch-driven surface retains JONSWAP's height energy; short-wave filtering still acts independently.
+    const double scale = normalizeSlopes ? (resolved > 0 ? std::sqrt(0.85 * total / resolved) : 0) : 1;
     for (float &a : out.h0) a = static_cast<float>(a * scale);
-    out.drawn = static_cast<float>(0.85 * total);
-    out.rest = static_cast<float>(0.15 * total / 2);
+    out.drawn = static_cast<float>(filteredResolved * scale * scale);
+    out.rest = static_cast<float>(0.15 * total / 2 * smallRipples * smallRipples);
     out.heightVar = static_cast<float>(heights * scale * scale);
     return out;
 }
@@ -196,7 +255,7 @@ public:
             if (!Grid(d, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, &h0_.tex, &h0_.srv, nullptr, s.h0.data())) return;
             h0Version_ = spectrumVersion;
         }
-        float k[4] = {kPatch[0], kPatch[1], kPatch[2], time};
+        float k[4] = {s.patch[0], s.patch[1], s.patch[2], time};
         ctx->UpdateSubresource(cb_, 0, nullptr, k, 0, 0);
         ctx->CSSetConstantBuffers(0, 1, &cb_);
         // field 0 (the slopes, the height and dDx/dx) and field 2 (dDz/dz, dDx/dz), each through its pair's other

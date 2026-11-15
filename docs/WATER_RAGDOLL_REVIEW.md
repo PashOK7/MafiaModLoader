@@ -1,5 +1,9 @@
 # Review of mafia-ragdoll water work
 
+Historical source comparison. Later implementations supersede parts of the "current loader" column;
+use [WATER_REFLECTION_PLAN.md](WATER_REFLECTION_PLAN.md) for the active work and [STATUS.md](STATUS.md)
+for acceptance limits. Proposed mechanisms below are not a completed feature list or a new work order.
+
 2026-10-31. Read-only review requested by the owner of `W:/github/mafia-ragdoll`, compared with the current
 MafiaModLoader river renderer. Sources are the current working files, not a released or benchmarked package.
 The sibling repository has no commits; its WATER document describes an evolving prototype, including disabled

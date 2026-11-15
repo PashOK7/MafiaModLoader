@@ -219,6 +219,23 @@ impl Host {
     pub fn human_get_up(&self, human: Actor, blend_ms: i32) -> bool {
         unsafe { f!(self, human_get_up)(self.module, human.as_ptr(), blend_ms) > 0 }
     }
+    /// Cancel this mod's get-up blend before posing the body again; leave the game's animation running.
+    pub fn human_get_up_cancel(&self, human: Actor) -> bool {
+        unsafe { f!(self, human_get_up_cancel)(self.module, human.as_ptr()) > 0 }
+    }
+    /// A measured vehicle contact handled by the native game; call after the solver has returned.
+    pub fn human_vehicle_contact(&self, human: Actor, vehicle: Actor, velocity: [f32; 3], point: [f32; 3]) -> bool {
+        unsafe { f!(self, human_vehicle_contact)(self.module, human.as_ptr(), vehicle.as_ptr(), velocity.as_ptr(), point.as_ptr()) > 0 }
+    }
+    /// Hand over the current physics pose, in SDK bone order, without waiting for a rendered frame.
+    pub fn human_get_up_pose(&self, human: Actor, pose: &[Bone], blend_ms: i32) -> bool {
+        if pose.len() != sys::MML_BONE_COUNT as usize { return false; }
+        let raw: Vec<sys::MmlBone> = pose.iter().map(|b| sys::MmlBone {
+            name: ptr::null(), frame: b.frame.map_or(ptr::null_mut(), |f| f.as_ptr()),
+            world: b.world, rot: b.rot, pos: b.pos,
+        }).collect();
+        unsafe { f!(self, human_get_up_pose)(self.module, human.as_ptr(), raw.as_ptr(), raw.len() as i32, blend_ms) > 0 }
+    }
 
     // ---- what strikes people, before the game (docs/MODDING.md "Hits before the game")
     /// Every hit a person or a traffic pedestrian (the bool) takes, before the game reacts: the closure may change it

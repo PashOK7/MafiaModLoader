@@ -520,6 +520,17 @@ struct ExeBuild {
     uintptr_t cityCache, cacheTick, cacheActivate, missionFinishFades;
     // Native cache quad/radius test and release (thiscall(cache, block[, x, z, radius]), ret 16 / ret 4).
     uintptr_t cacheInRange, cacheDeactivate;
+    // Native menu exchange (1.2) / free only the controls (1.0), for a resolution change without losing screens.
+    uintptr_t menuExchange, menuFreeComps;
+    // UpdateSpec's single-waypoint arm and existing general arm. A node index -1 must use the native
+    // plane-based GetSpecNodeB detour, not GetSpecNodeC's unchecked web-node lookup. ESI holds ai_path.
+    uintptr_t pathSingleDetour, pathGeneralDetour;
+    int pathNormalBegin;   // normal waypoint vector's begin pointer (60-byte records, node index at +0x34)
+    // Rebase a live root-motion track after placing its model: thiscall(machine, const S_matrix *), ret 4.
+    uintptr_t animRecompileMatrix;
+    // C_game::Done: push eax; mov ecx,[eax]; call [ecx+0x18] after releasing the car's fake shadow.
+    uintptr_t doneVehicleShadowUpdate;
+    uintptr_t carIsUsable; // thiscall(C_car*, uint8_t checks) -> bool in AL, ret 4
 };
 
 // LS3DF.dll (relocated: RVAs).
@@ -543,6 +554,9 @@ struct Ls3dBuild {
     // tree of chunks: header node at +0x14, nil node ibNil); drvClose: I3D_driver::Close, stdcall(driver), which
     // zeroes the handle of every slice still held.
     uintptr_t ibAlloc, ibFree, ibManager, ibNil, drvClose;
+    // 1.2's three owner-slot stores in C_IBuffer destruction, and IGraph::Close's return from FreeAllIBuffers.
+    // 1.0 has no equivalent owner-slot clearing loop. The caller stack is checked before shutdown recovery.
+    uintptr_t ibShutdownClear, ibShutdownReturn;
     // The scene's camera put somewhere else for a frame (scene_camera): camRecompute, a byte Render reads as "the
     // camera moved" (its lights, sectors worked out once); frameUpdateWMatrix: I3D_frame::UpdateWMatrixProc, thiscall.
     uintptr_t camRecompute, frameUpdateWMatrix;
@@ -696,6 +710,20 @@ struct Ls3dBuild {
     uintptr_t propZBias, propZCompare, propAddressU, propAddressV, propVertexFormat;
     // Native hardware fog and software vertex fog. Both fastcall, read in both builds (2026-10-31).
     uintptr_t setFog, fogProcess;
+    // Native ResetDevice(bool), and the size returned by Scrn_sx/sy. The flags are size+0x1C;
+    // D3D8 presentation parameters are the exact pointer passed to ResetDevice's device Reset.
+    // Both builds read/checked in Ghidra (2026-10-31); used by the between-frame window resize.
+    uintptr_t graphResetDevice, graphScreenSize, graphPresentParams;
+    uintptr_t sceneSetViewport; // stdcall(scene, left, top, right, bottom), also updates projection bounds
+    // Native producer/consumer boundary: Render unlocks both pooled-buffer managers after preparing groups and
+    // BEFORE consuming their draw buffers. thiscall(manager), no arguments. Verified call/ECX pairs in BOTH
+    // Render functions (2026-11-01). Distinct from ibManager: that older allocation contract is absent in 1.0.
+    uintptr_t sourceVbUnlock, sourceVbManager, sourceIbUnlock, sourceIbManager;
+    uintptr_t updateShadowTexture; // native shadow texture rasterization, thiscall(shadow) -> bool
+    uintptr_t soundDriverInit; // ISND_driver::Init, stdcall(driver, hwnd, frequency, channels, bits, flags), ret 0x18
+    // Native Ogg worker (DWORD WINAPI(show)) and its original decoder/refill (thiscall(show, bool), ret 4).
+    // Worker flags/event/buffer/count are +0x24/64/6C/70 in 1.0, +0x28/68/70/74 in 1.2.
+    uintptr_t oggThreadProc, oggFillBuffer;
 };
 
 inline const ExeBuild kExe12 = {
@@ -821,6 +849,11 @@ inline const ExeBuild kExe12 = {
     // 0x402521)
     0x63D268, 0x4020B0, 0x4025D0, 0x5459B0,
     0x402F90, 0x402A50,
+    0x5EAD80, 0,
+    0x50117E, 0x501287, 0x1C,
+    0x40E900,
+    0x5A42CC,
+    0x429850,
 };
 
 inline const ExeBuild kExe10 = {
@@ -965,11 +998,17 @@ inline const ExeBuild kExe10 = {
     // the city's streaming (2026-10-26: 1.2's twins, the same code; CacheTick's calls at 0x5A89EE and 0x5A8A05)
     0x6EFD80, 0x5A85C0, 0x5A8A20, 0x604EF0,
     0x5A93C0, 0x5A8E80,
+    0, 0x56E850,
+    0x40B486, 0x40B58C, 0x04,
+    0x5AB410,
+    0x5DFD16,
+    0x470D30,
 };
 
 inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1C5B0, 0x72100, 0x9C538, 0x3DFF0,
                                   0x1B040, 0x1BFD0, 0x1C2A0, 0x2C000, 0x08, 0x18, 0x1C,
                                   0x5B6C0, 0x5B940, 0x1B50F8, 0x1B5124, 0x701A0,
+                                  0x5AC2E, 0x70264,
                                   0xA93F0, 0x1C7D0,
                                   0x717F0, 0x1C5300, 0x1C597C,
                                   0x71E20, 0x1C56F0,
@@ -1000,11 +1039,15 @@ inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1
                                   0x6CCA0, 0x1C558C, 0x1C5944, 0x1C5930, 0x1C55F4, 0x1C55A8, 0x1C5968, 0x1C52F8,
                                   0x1C5934, 0x1C5704, 0x1C5474, 0x1C545C, 0x1C5974, 0x1C5960, 0x1C5964,
                                   0x1C52FC, 0xA9950, 0x1C5980, 0x1C5984, 0x1C5480,
-                                  0x4E390, 0x685D0};
+                                  0x4E390, 0x685D0,
+                                  0x6E1A0, 0x1C55CC, 0x1C52C0, 0x4A9C0,
+                                  0x697E0, 0x1C5014, 0x5B960, 0x1B50F8,
+                                  0x529C0, 0x7C1F0, 0x73FE0, 0x735D0};
 // LS3D 3.84.5 (31.7.2002): the vertex buffer has no flags word, everything after +0x04 sits 4 bytes lower.
 inline const Ls3dBuild kLs3d10 = {"1.0", 0x5ED80, 0x1A8A0, 0x305B0, 0x5D070, 0x1C350, 0x6E580, 0, 0,
                                   0x1AE00, 0x1BD60, 0x1C030, 0x2B540, 0x04, 0x14, 0x18,
                                   0, 0, 0, 0, 0,
+                                  0, 0,
                                   0xA5628, 0x1C570,   // (2026-10-15: Render's test of the camera's serial, its calls)
                                   0x6DD40, 0x1C12A0, 0x1C167C,    // (twins by code; not run in a 1.0 game yet)
                                   0x6E2A0, 0x1C160C,
@@ -1038,7 +1081,10 @@ inline const Ls3dBuild kLs3d10 = {"1.0", 0x5ED80, 0x1A8A0, 0x305B0, 0x5D070, 0x1
                                   0x69580, 0x1C152C, 0x1C1648, 0x1C1634, 0x1C1594, 0x1C1548, 0x1C166C, 0x1C1298,
                                   0x1C1638, 0x1C1620, 0x1C1410, 0x1C13F8, 0x1C1678, 0x1C1664, 0x1C1668,
                                   0x1C129C, 0xA5B48, 0x1C1680, 0x1C1684, 0x1C141C,
-                                  0x4BE00, 0x65180};
+                                  0x4BE00, 0x65180,
+                                  0x6A8A0, 0x1C156C, 0x1C1260, 0x48520,
+                                  0x66250, 0x1C0FC4, 0x58960, 0x1B10B8,
+                                  0x502B0, 0x77E30, 0x6FF40, 0x6FA10};
 
 // The builds found (null until Detect succeeds).
 inline const ExeBuild *g_exe;

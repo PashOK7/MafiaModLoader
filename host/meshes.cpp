@@ -45,6 +45,9 @@ namespace {
 
 constexpr int kVisualType = 0x1D4, kVisualMesh = 0x1E0, kBoundCentre = 0x19C, kBoundRadius = 0x1A8;
 constexpr uint32_t kTypeObject = 0x5F4A424F /*OBJ_*/, kTypeLightmapped = 0x50414D4C /*LMAP*/;
+// I3D_object::m_RenderFGroup (1.0: ls3d+37940, 1.2: ls3d+39280) selects identity for this bit.
+constexpr int kObjectFlags = 0x1D8;
+constexpr uint8_t kObjectWorldVertices = 0x40;
 constexpr int kMeshLods = 0x08, kMeshLod0 = 0x0C;
 constexpr int kLodVerts = 0x08, kLodVb = 0x0C, kLodFirstVert = 0x14, kLodGroups = 0x18, kLodFirstGroup = 0x1C;
 constexpr int kGroupMat = 0x04, kGroupFaces = 0x08, kGroupNext = 0x0C, kGroupD3dIb = 0x14, kGroupFirstIndex = 0x18;
@@ -274,6 +277,38 @@ struct Piece {
     uintptr_t vtable = 0;
 };
 std::unordered_map<void *, Piece> g_pieces;
+std::unordered_map<void *, Piece> g_actorLitPieces;
+// A failed placement is a result too. Retry it when the inputs to SpaceOf change.
+struct PlacementInput {
+    const void *mesh = nullptr, *parent = nullptr;
+    uint32_t nv = 0, first = 0;
+    float bounds[4] = {}, world[16] = {}, parentWorld[16] = {};
+    bool operator==(const PlacementInput &other) const {
+        return mesh == other.mesh && parent == other.parent && nv == other.nv && first == other.first &&
+            std::memcmp(bounds, other.bounds, sizeof bounds) == 0 &&
+            std::memcmp(world, other.world, sizeof world) == 0 &&
+            std::memcmp(parentWorld, other.parentWorld, sizeof parentWorld) == 0;
+    }
+};
+struct RejectedPlacement { PlacementInput input; unsigned seen; };
+std::unordered_map<void *, RejectedPlacement> g_rejectedPlacement;
+std::vector<void *> g_newPieces;
+size_t g_newPieceStart;
+
+PlacementInput PlacementOf(void *visual, const void *mesh) {
+    PlacementInput input;
+    input.mesh = mesh;
+    const auto *lod = At<uint32_t>(mesh, kMeshLods) ? At<const void *>(mesh, kMeshLod0) : nullptr;
+    if (lod) {
+        input.nv = At<uint32_t>(lod, kLodVerts);
+        input.first = At<uint32_t>(lod, kLodFirstVert);
+    }
+    std::memcpy(input.bounds, static_cast<const uint8_t *>(visual) + kBoundCentre, sizeof input.bounds);
+    std::memcpy(input.world, game::WorldMatrix(visual), sizeof input.world);
+    input.parent = At<const void *>(visual, game::kFrameParent);
+    if (input.parent) std::memcpy(input.parentWorld, game::WorldMatrix(const_cast<void *>(input.parent)), sizeof input.parentWorld);
+    return input;
+}
 uint64_t g_nextScan;
 bool g_first = true;
 unsigned g_deferred, g_unreadable, g_misplaced, g_hidden, g_ofActors;
@@ -290,7 +325,7 @@ bool Touches(const float *c, float r, const Focus &f) {
 }
 
 void Scan() {
-    double t0 = NowMs(), budget = g_first ? 200.0 : 3.0;
+    const double t0 = NowMs(), budget = g_first ? 200.0 : 3.0;
     g_scans++;
     g_deferred = g_unreadable = g_misplaced = g_hidden = g_ofActors = 0;
     // the actors near the boxes: their models' frames are not the scene's
@@ -303,6 +338,7 @@ void Scan() {
         for (int i = 0; i < n && i < 256; i++) if (void *m = ActorFrame(nearby[i])) roots.insert(m);
     }
     g_types.clear();
+    g_newPieces.clear();
     for (void *f : g_walked) {
         if (At<uint32_t>(f, game::kFrameType) != 1) continue;
         uint32_t type = At<uint32_t>(f, kVisualType);
@@ -324,28 +360,60 @@ void Scan() {
         if (!mesh) continue;
         auto known = g_pieces.find(f);
         bool fresh = known == g_pieces.end() || known->second.mesh != mesh;
-        if (fresh && NowMs() - t0 > budget) { g_deferred++; continue; }
+        if (fresh) {
+            auto rejected = g_rejectedPlacement.find(f);
+            if (rejected != g_rejectedPlacement.end()) {
+                if (rejected->second.input == PlacementOf(f, mesh)) {
+                    rejected->second.seen = g_scans;
+                    g_misplaced++;
+                    continue;
+                }
+                g_rejectedPlacement.erase(rejected);
+            }
+            g_newPieces.push_back(f);
+            continue;
+        }
         const MeshData *md = MeshFor(mesh);
         if (!md->ok) { g_unreadable++; g_lastErr = md->err; continue; }
-        Piece &p = g_pieces[f];
-        if (fresh) {
-            float m[16];
-            int space;
-            if (!SpaceOf(f, *md, &space, m)) { g_misplaced++; g_pieces.erase(f); continue; }
-            p.mesh = mesh;
-            p.space = space;
-            memcpy(p.world, m, 64);
-            p.version++;
-            p.vtable = At<uintptr_t>(f, 0);
-        } else {
-            float m[16];
-            MatrixOf(f, p.space, m);
-            bool moved = false;
-            for (int i = 0; i < 16 && !moved; i++) moved = std::fabs(m[i] - p.world[i]) > (i >= 12 ? 1e-3f : 1e-4f);
-            if (moved) { memcpy(p.world, m, 64); p.version++; p.movedAt = NowMs(); }
-        }
+        Piece &p = known->second;
+        float m[16];
+        MatrixOf(f, p.space, m);
+        bool moved = false;
+        for (int i = 0; i < 16 && !moved; i++) moved = std::fabs(m[i] - p.world[i]) > (i >= 12 ? 1e-3f : 1e-4f);
+        if (moved) { memcpy(p.world, m, 64); p.version++; p.movedAt = NowMs(); }
         p.seen = g_scans;
     }
+    // Walking and updating the known pieces can consume the whole frame budget. Give imports
+    // their own budget and advance the cursor even when the current imports cannot be placed.
+    const double importStart = NowMs();
+    const size_t count = g_newPieces.size();
+    if (count) g_newPieceStart %= count;
+    size_t processed = 0;
+    for (; processed < count; ++processed) {
+        if (processed && NowMs() - importStart > budget) break;
+        void *f = g_newPieces[(g_newPieceStart + processed) % count];
+        const void *mesh = At<const void *>(f, kVisualMesh);
+        const MeshData *md = MeshFor(mesh);
+        if (!md->ok) { g_unreadable++; g_lastErr = md->err; continue; }
+        int space;
+        float world[16];
+        if (!SpaceOf(f, *md, &space, world)) {
+            g_rejectedPlacement[f] = {PlacementOf(f, mesh), g_scans};
+            g_misplaced++;
+            continue;
+        }
+        Piece &piece = g_pieces[f];
+        piece.mesh = mesh;
+        piece.space = space;
+        std::memcpy(piece.world, world, sizeof world);
+        piece.version++;
+        piece.vtable = At<uintptr_t>(f, 0);
+        piece.seen = g_scans;
+    }
+    if (count) g_newPieceStart = (g_newPieceStart + processed) % count;
+    g_deferred = static_cast<unsigned>(count - processed);
+    for (auto it = g_rejectedPlacement.begin(); it != g_rejectedPlacement.end();)
+        it = it->second.seen == g_scans ? std::next(it) : g_rejectedPlacement.erase(it);
     for (auto it = g_pieces.begin(); it != g_pieces.end();) it = it->second.seen == g_scans ? std::next(it) : g_pieces.erase(it);
     if (g_scans % 40 == 0)
         for (auto it = g_meshes.begin(); it != g_meshes.end();) it = it->second.used + kKeepScans >= g_scans ? std::next(it) : g_meshes.erase(it);
@@ -417,7 +485,8 @@ int ScenePieces(MmlMod *mod, MmlMeshPiece *out, int max) {
     return n;
 }
 
-int ActorMeshes(void *actor, MmlMeshPiece *out, int max) {
+int ActorMeshes(void *actor, MmlMeshPiece *out, int max, uint32_t flags) {
+    if (flags & ~MML_ACTOR_MESH_HIDDEN_ROOT) return -1;
     void *model = ActorFrame(actor);
     if (!model) return -1;
     std::vector<void *> frames;
@@ -427,7 +496,8 @@ int ActorMeshes(void *actor, MmlMeshPiece *out, int max) {
         while (!stack.empty() && frames.size() < 4096) {
             void *f = stack.back();
             stack.pop_back();
-            if (!(At<uint32_t>(f, game::kFrameFlags) & 1u)) continue;
+            if (!(At<uint32_t>(f, game::kFrameFlags) & 1u) &&
+                !(f == model && (flags & MML_ACTOR_MESH_HIDDEN_ROOT))) continue;
             if (f != model && At<uint32_t>(f, game::kFrameType) == 9) continue;
             frames.push_back(f);
             kids.clear();
@@ -436,7 +506,6 @@ int ActorMeshes(void *actor, MmlMeshPiece *out, int max) {
         }
     };
     if (!Guarded(w)) return -1;
-    static std::unordered_map<void *, Piece> s_actorPieces;   // (their spaces, kept)
     int n = 0;
     for (void *f : frames) {
         bool got = false;
@@ -448,13 +517,16 @@ int ActorMeshes(void *actor, MmlMeshPiece *out, int max) {
             if (!mesh) return;
             const MeshData *md = MeshFor(mesh);
             if (!md->ok) return;
-            Piece &p = s_actorPieces[f];
-            if (p.mesh != mesh || p.vtable != At<uintptr_t>(f, 0)) {
+            Piece object;
+            Piece &p = type == kTypeObject ? object : g_actorLitPieces[f];
+            if (type == kTypeObject) {
+                // A moving object's bounds can still be at the origin before its first draw.
+                // Pose its vertices with the same transform the engine selects when drawing it.
+                p.space = (At<uint8_t>(f, kObjectFlags) & kObjectWorldVertices) ? 1 : 0;
+            } else if (p.mesh != mesh || p.vtable != At<uintptr_t>(f, 0)) {
                 float m[16];
-                int space;
-                if (!SpaceOf(f, *md, &space, m)) space = 0;
+                if (!SpaceOf(f, *md, &p.space, m)) p.space = 0;
                 p.mesh = mesh;
-                p.space = space;
                 p.vtable = At<uintptr_t>(f, 0);
             }
             MatrixOf(f, p.space, p.world);
@@ -476,7 +548,12 @@ void MeshesFrame() {
     if (g_walking || g_walked.empty() || due) Walk(0.75);
     if (g_walked.empty() || !due || (g_walking && !urgent)) return;
     g_nextScan = now + kScanEveryMs;
-    if (!SafeScan()) g_pieces.clear();   // (a frame went: the next scan starts over)
+    if (!SafeScan()) {
+        // A frame went away during the walk. No focus can rely on this discarded scan.
+        g_pieces.clear();
+        g_ready.clear();
+        g_rejectedPlacement.clear();
+    }
 }
 
 void MeshesMissionClose() {
@@ -485,6 +562,10 @@ void MeshesMissionClose() {
     g_stack.clear();
     g_walking = false;
     g_pieces.clear();
+    g_actorLitPieces.clear();
+    g_rejectedPlacement.clear();
+    g_newPieces.clear();
+    g_newPieceStart = 0;
     g_meshes.clear();
     g_ready.clear();
     g_first = true;
@@ -563,10 +644,11 @@ bool MeshesMethod(const std::string &method, const std::string &paramsJson, std:
         } else {
             void *actor = nullptr;
             if (!ParseActor(p.value("actor", "car"), &actor, &err)) { *reply = "actor.meshes: actor: " + err; return true; }
-            int n = ActorMeshes(actor, nullptr, 0);
+            const uint32_t flags = p.value("hidden_root", false) ? MML_ACTOR_MESH_HIDDEN_ROOT : 0;
+            int n = ActorMeshes(actor, nullptr, 0, flags);
             if (n < 0) { *reply = "actor.meshes: the actor has no model"; return true; }
             std::vector<MmlMeshPiece> pieces(static_cast<size_t>(n));
-            if (n) ActorMeshes(actor, pieces.data(), n);
+            if (n) ActorMeshes(actor, pieces.data(), n, flags);
             json list = json::array();
             size_t tris = 0;
             for (const MmlMeshPiece &m : pieces) {

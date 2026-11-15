@@ -39,12 +39,12 @@ inline void WaterPatches(const float *tris, unsigned count, std::vector<float> &
         float z0 = std::min({t[2], t[5], t[8]}), z1 = std::max({t[2], t[5], t[8]});
         for (int z = int(std::floor(z0 / cell)); z < int(std::ceil(z1 / cell)); z++)
             for (int x = int(std::floor(x0 / cell)); x < int(std::ceil(x1 / cell)); x++) {
-                auto poly = ClipWaterCell(tri, 0, x * cell, true);
-                poly = ClipWaterCell(poly, 0, (x + 1) * cell, false);
-                poly = ClipWaterCell(poly, 2, z * cell, true);
-                poly = ClipWaterCell(poly, 2, (z + 1) * cell, false);
-                for (size_t n = 1; n + 1 < poly.size(); n++) {
-                    const auto &a = poly[0], &b = poly[n], &c = poly[n + 1];
+                auto clipped = ClipWaterCell(tri, 0, x * cell, true);
+                clipped = ClipWaterCell(clipped, 0, (x + 1) * cell, false);
+                clipped = ClipWaterCell(clipped, 2, z * cell, true);
+                clipped = ClipWaterCell(clipped, 2, (z + 1) * cell, false);
+                for (size_t n = 1; n + 1 < clipped.size(); n++) {
+                    const auto &a = clipped[0], &b = clipped[n], &c = clipped[n + 1];
                     float area = (b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x);
                     if (std::fabs(area) < 1e-6f) continue;
                     for (const auto &p : {a, b, c}) out.insert(out.end(), {p.x, p.y, p.z});

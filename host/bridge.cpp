@@ -18,6 +18,7 @@
 #include <deque>
 #include <fstream>
 #include <mutex>
+#include <memory>
 #include <random>
 #include "json.hpp"
 
@@ -35,7 +36,7 @@ struct Job {
 };
 std::mutex g_mx;
 std::condition_variable g_cv;
-std::deque<Job *> g_jobs;
+std::deque<std::shared_ptr<Job>> g_jobs;
 std::atomic<uint64_t> g_frames{0};
 std::string g_token;
 int g_port = 47100;
@@ -192,21 +193,23 @@ json Handle(const json &req, bool *authed) {
     std::string err;
     if (Immediate(method, params, &result, &err)) return err.empty() ? json{{"id", id}, {"result", result}} : fail(err);
     // the game thread's
-    Job job;
-    job.method = method;
-    job.params = params.dump(-1, ' ', false, json::error_handler_t::replace);
+    auto job = std::make_shared<Job>();
+    job->method = method;
+    job->params = params.dump(-1, ' ', false, json::error_handler_t::replace);
     int timeout = params.is_object() ? params.value("timeout_ms", 5000) : 5000;
     {
         std::unique_lock<std::mutex> lk(g_mx);
-        g_jobs.push_back(&job);
-        if (!g_cv.wait_for(lk, std::chrono::milliseconds(timeout), [&] { return job.done; })) {
-            g_jobs.erase(std::remove(g_jobs.begin(), g_jobs.end(), &job), g_jobs.end());
+        g_jobs.push_back(job);
+        if (!g_cv.wait_for(lk, std::chrono::milliseconds(timeout), [&] { return job->done; })) {
+            // Cancel a queued command. An executing command owns its job until it returns:
+            // the caller's timeout must not invalidate its strings/reply while the game uses them.
+            g_jobs.erase(std::remove(g_jobs.begin(), g_jobs.end(), job), g_jobs.end());
             return fail("the game thread did not answer in " + std::to_string(timeout) + " ms (paused, minimized, loading or hung? `where` shows what it does)");
         }
     }
-    if (!job.ok) return fail(job.reply);
-    try { return {{"id", id}, {"result", json::parse(job.reply)}}; }
-    catch (...) { return {{"id", id}, {"result", job.reply}}; }   // a mod answered plain text
+    if (!job->ok) return fail(job->reply);
+    try { return {{"id", id}, {"result", json::parse(job->reply)}}; }
+    catch (...) { return {{"id", id}, {"result", job->reply}}; }   // a mod answered plain text
 }
 
 void Serve(SOCKET s) {
@@ -317,7 +320,7 @@ void BridgeFrame() {
     g_frames++;
     std::unique_lock<std::mutex> lk(g_mx);
     while (!g_jobs.empty()) {
-        Job *j = g_jobs.front();
+        auto j = g_jobs.front();
         g_jobs.pop_front();
         lk.unlock();
         try { j->ok = ExecCommand(j->method, j->params, &j->reply); }

@@ -35,6 +35,7 @@ namespace m10 {
 bool Known();                                   // 1.0's screens are known (the build is 1.0 and the hooks are in)
 void Init();
 void Frame();
+void ResolutionChanged();
 uintptr_t Top();                                // the active screen, 0: none
 uintptr_t Under(uintptr_t screen);              // the screen it was opened over
 std::string Name(uintptr_t screen);             // its name (1.2's definition name of the same screen where there is one)

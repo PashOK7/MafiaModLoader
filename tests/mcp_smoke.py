@@ -329,7 +329,13 @@ def main():
               ok and 'no mod faulted in this run' in text and '"crash"' in text, text[:400])
         c.tool('call', {'method': 'hook_b.crash'})
         ok, text = c.tool('crash_triage')
-        check('crash_triage: a mod\'s fault in this run, with its stack', ok and '"MOD_FAULTED"' in text and '(mod hook_b)' in text, text[:600])
+        faults = json.loads(text)['running']['faults'] if ok else []
+        check("crash_triage summarizes a live mod fault",
+              any(f['type'] == 'MOD_FAULTED' and f['data']['name'] == 'hook_b'
+                  and 'stack' not in f['data'] and 'touched' not in f['data'] for f in faults), text[:600])
+        ok, text = c.tool('crash_triage', {'details': True})
+        check("crash_triage details includes the live mod fault's stack",
+              ok and '"MOD_FAULTED"' in text and '(mod hook_b)' in text, text[:600])
         # (hook_b is unloaded now: the crash under the hooks goes through hook_a's detour alone)
         open(os.path.join(HARNESS, 'crash_hooked'), 'w').close()
         harness.wait(timeout=20)
@@ -338,9 +344,9 @@ def main():
             harness.kill()
     time.sleep(0.3)
     ok, text = c.tool('crash_triage')
-    check('crash_triage after a crash: the verdict (a write of address 0 in the game\'s own code), the stack, the log, the mods',
-          ok and 'an access violation (C0000005) at mml_harness.exe+0x' in text and 'a write of 0x00000000' in text
-          and 'a null pointer' in text and '"stack"' in text and 'exception C0000005' in text and 'hook_b' in text, text[:900])
+    check('crash_triage after a crash summarizes the failure, stack and mods',
+          ok and 'an access violation (C0000005) at mml_harness.exe+0x' in text and 'during a memory write' in text
+          and 'a null pointer' in text and '"stack"' in text and 'hook_b' in text, text[:900])
     try:
         crash = json.loads(text)['crash']
     except (ValueError, KeyError, TypeError):
@@ -352,6 +358,14 @@ def main():
           len(st) >= 4 and all(w in s for w, s in zip(want, st)) and 'Detour+0x' in st[2]
           and not any('MafiaModLoader.asi' in s for s in st) and isinstance(crash.get('stack_dropped'), int)
           and 'dropped' in crash.get('stack_note', ''), {k: crash.get(k) for k in ('stack', 'stack_dropped', 'stack_note')})
+    check('crash_triage summary has bounded event metadata and omits raw context',
+          crash.get('access') == {'kind': 'write'} and not {'log', 'taps', 'registers', 'stack_scan'}.intersection(crash)
+          and len(crash.get('events', [])) <= 12 and all(set(e) == {'t', 'type'} for e in crash.get('events', [])), crash.keys())
+    ok, text = c.tool('crash_triage', {'details': True})
+    detail = json.loads(text)['crash'] if ok else {}
+    check('crash_triage details retains the original diagnostic fields',
+          detail.get('stack') == st and detail.get('access', {}).get('address') == '0x00000000'
+          and all(k in detail for k in ('log', 'taps', 'registers', 'events')), detail.keys())
     ok, text = c.tool('crash_inspect')
     check('crash_inspect: the same checked stack beside the dump\'s scan', ok and '"stack_scan"' in text and '(harness_add+0x' in text
           and '"stack_dropped"' in text, text[:600])

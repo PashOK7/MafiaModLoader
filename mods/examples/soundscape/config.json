@@ -1,0 +1,15 @@
+{
+  "show": true,
+  "hotkey": "Shift+F10",
+  "waves": true,
+  "reverb": true,
+  "reflections": true,
+  "room": true,
+  "xray": false,
+  "hologram": true,
+  "panel": true,
+  "labels": false,
+  "range": 55,
+  "intensity": 1,
+  "speed": 14
+}

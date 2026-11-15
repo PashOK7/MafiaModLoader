@@ -127,13 +127,35 @@ int NameIndex(const std::string &id) {
     return static_cast<int>(g_names.size() - 1);
 }
 
+Stat &ProfileStat(const char *mod, const char *site) {
+    Stat &stat = g_stats[{mod, site}];
+    if (stat.site.empty()) { stat.mod = mod; stat.site = site; }
+    return stat;
+}
+
+bool g_cacheSceneObserver = true;
+struct ObserverProfile {
+    const MmlMod *owner = nullptr;
+    Stat *stat = nullptr;
+    int sampleMod = -1;
+} g_observerProfile;
+ObserverProfile *CachedObserverProfile(const MmlMod *mod, const char *site) {
+    // Only this known, static site is cached. Command sites may be temporary strings.
+    if (site != kSceneDrawObserverSite || !g_cacheSceneObserver) return nullptr;
+    if (!g_observerProfile.stat || g_observerProfile.owner != mod) {
+        const char *id = ModIdOf(mod);
+        g_observerProfile = {mod, &ProfileStat(id, site), NameIndex(id)};
+    }
+    return &g_observerProfile;
+}
+
 const char *EventName(int type) {
     static const char *names[] = {"?", "FRAME", "MISSION_TICK", "MISSION_CLOSE", "ACTOR_DESTROYED", "HUMAN_CREATED", "HUMAN_HIT",
                                   "SERVICES_CHANGED", "MOD_LOADED", "MISSION_OPEN", "MISSION_LOADED", "GAME_PAUSED", "GAME_RESUMED",
                                   "CONFIG_CHANGED", "FILE_CHANGED", "RENDER_BEGIN", "RENDER_WORLD", "RENDER_END", "PRESENT", "VIEW_WORLD",
                                   "SHOT", "EXPLOSION", "HUMAN_DIED", "VEHICLE_ENTERED", "VEHICLE_LEFT", "CAR_EXPLODED",
                                   "GAME_SAVING", "GAME_LOADED", "PEDESTRIAN_HIT", "BULLET_HIT", "CAR_CRASH", "HUMAN_FELL",
-                                  "ITEM_GAINED", "ITEM_LOST", "MONEY_CHANGED"};
+                                  "ITEM_GAINED", "ITEM_LOST", "MONEY_CHANGED", "DEVICE_RESET_BEGIN", "DEVICE_RESET_END"};
     static_assert(sizeof names / sizeof names[0] == MML_EVENT_COUNT_, "a name for every MML_EVENT_*");
     return type >= 0 && type < static_cast<int>(sizeof names / sizeof names[0]) ? names[type] : "event";
 }
@@ -350,17 +372,21 @@ void Run(HANDLE target, uintptr_t stackBase, double seconds, double intervalMs) 
 // ---- the host's calls into mods (mods.cpp and the rest) and its own parts
 void ProfEnter(const MmlMod *mod, const char *site) {
     if (g_depth < 16) {
-        g_stack[g_depth] = g_curMod.load();
-        g_curMod = mod ? NameIndex(ModIdOf(mod)) : g_curMod.load();
+        const int previous = g_curMod.load();
+        g_stack[g_depth] = previous;
+        const auto *observer = CachedObserverProfile(mod, site);
+        if (observer) {
+            if (observer->sampleMod != previous) g_curMod = observer->sampleMod;
+        } else g_curMod = mod ? NameIndex(ModIdOf(mod)) : previous;
     }
     g_depth++;
-    (void)site;
 }
 void ProfLeave(const MmlMod *mod, const char *site, double ms) {
     g_depth--;
-    if (g_depth < 16 && g_depth >= 0) g_curMod = g_stack[g_depth];
-    Stat &s = g_stats[{ModIdOf(mod), site}];
-    if (s.site.empty()) { s.mod = ModIdOf(mod); s.site = site; }
+    const auto *observer = CachedObserverProfile(mod, site);
+    if (g_depth < 16 && g_depth >= 0 && (!observer || g_curMod.load() != g_stack[g_depth]))
+        g_curMod = g_stack[g_depth];
+    Stat &s = observer ? *observer->stat : ProfileStat(ModIdOf(mod), site);
     s.frameMs += ms;
     s.frameCalls++;
 }
@@ -551,6 +577,7 @@ bool ProfMethod(const std::string &method, const std::string &paramsJson, std::s
     if (!p.is_object()) p = json::object();
     auto r2 = [](double v) { return std::round(v * 1000) / 1000; };
     if (method == "prof.reset") {
+        g_observerProfile = {};
         g_stats.clear();
         g_frames = 0;
         g_ringN = g_ringAt = 0;
@@ -560,6 +587,8 @@ bool ProfMethod(const std::string &method, const std::string &paramsJson, std::s
         return true;
     }
     if (method == "prof.state") {
+        if (p.contains("cache_scene_observer") && p["cache_scene_observer"].is_boolean())
+            g_cacheSceneObserver = p["cache_scene_observer"].get<bool>();
         json frame = nullptr;
         if (g_ringN) {
             std::vector<float> v(g_ring, g_ring + g_ringN);
@@ -599,6 +628,7 @@ bool ProfMethod(const std::string &method, const std::string &paramsJson, std::s
         HWND fg = GetForegroundWindow();
         const bool inFront = fg && GetWindowThreadProcessId(fg, &fgPid) && fgPid == GetCurrentProcessId();
         json res = {{"frame", frame}, {"since_reset_s", r2((NowMs() - g_resetAt) / 1000)}, {"mods", out}, {"hitches", hitches},
+                    {"cache_scene_observer", g_cacheSceneObserver},
                     {"sampling", g_sampling.load()}, {"seq", g_seq}, {"label", g_labels[g_label]}, {"settling", g_settleLeft},
                     {"counters", D3dStatsOn()}, {"gpu", D3dStatsWhyGpu().empty() ? json("measured") : json(D3dStatsWhyGpu())},
                     {"tsc_per_ms", r2(g_tscPerMs)}, {"in_front", inFront}};

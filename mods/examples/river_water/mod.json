@@ -4,6 +4,7 @@
   "version": "0.2.0",
   "type": "native",
   "entry": "river_water.dll",
+  "entry64": "x64/river_water.dll",
   "enabled": false,
   "builds": ["1.2", "1.0"],
   "gfx": true,
@@ -11,25 +12,21 @@
   "depends": [],
   "settings": {
     "title": "Water",
-    "controls": [
+    "sections": [
+    {"title": "Waves", "controls": [
       {"key": "on", "label": "On"},
-      {"key": "reflection", "label": "Reflection"},
-      {"key": "shadows", "label": "Shadows"},
-      {"key": "shadow_source", "label": "Shadows from", "options": [{"value": 0, "label": "Sun"}, {"value": 1, "label": "Scene light"}]},
-      {"key": "shadow_softness", "label": "Shadow softness", "min": 0, "max": 8, "step": 0.25, "show": "value"},
       {"key": "wind", "label": "Wind", "min": 0, "max": 10, "step": 0.5, "unit": "m/s"},
       {"key": "wind_from", "label": "Wind from", "min": 0, "max": 345, "step": 15, "unit": "deg"},
-      {"key": "waves", "label": "Ripples", "min": 0, "max": 2},
-      {"key": "geometry", "label": "3D waves"},
-      {"key": "wave_height", "label": "Wave height", "min": 0, "max": 8, "step": 0.25, "show": "value"},
-      {"key": "clarity", "label": "Clarity", "min": 0.5, "max": 8, "step": 0.5, "unit": "m"},
-      {"key": "scattering", "label": "Turbidity", "min": 0, "max": 3, "step": 0.1, "unit": "1/m"},
-      {"key": "crests", "label": "Light through crests", "min": 0, "max": 3},
-      {"key": "chop", "label": "Sharp crests", "min": 0, "max": 2},
-      {"key": "depth", "label": "Depth", "min": 0.5, "max": 50, "step": 0.5, "unit": "m"},
-      {"key": "glitter", "label": "Sun glitter", "min": 0, "max": 2},
-      {"key": "sun_radius", "label": "Sun glow radius", "min": 0.5, "max": 60, "step": 0.5, "unit": "deg"},
-      {"key": "foam", "label": "Foam", "min": 0, "max": 2}
+      {"key": "wave_width", "label": "Wave width", "min": 0.25, "max": 8, "step": 0.25, "unit": "x"},
+      {"key": "wave_speed", "label": "Wave speed", "min": 0, "max": 4, "step": 0.1, "unit": "x"},
+      {"key": "wave_height", "label": "Wave height", "min": 0, "max": 8, "step": 0.25, "unit": "x"}
+    ]},
+    {"title": "Material", "controls": [
+      {"key": "reflection", "label": "Reflection"},
+      {"key": "reflection_strength", "label": "Reflection strength", "min": 0, "max": 1, "step": 0.05},
+      {"key": "colour", "label": "Color", "kind": "color"},
+      {"key": "scattering", "label": "Turbidity", "min": 0, "max": 3, "step": 0.1, "unit": "1/m"}
+    ]}
     ]
   }
 }

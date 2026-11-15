@@ -24,6 +24,7 @@
 //   freeride's money (C_game +0x3640) the same way. Read, not hooked: every way into a car, out of life or into the
 //   inventory is seen alike, a frame late at most.
 #include "host.h"
+#include "bullet_events.h"
 #include <intrin.h>
 #include <algorithm>
 #include <climits>
@@ -158,24 +159,16 @@ bool ReadBullet(const uint32_t *prim, const V3 &from, const V3 &delta, const V3 
 
 void *__fastcall hkRay(void *coll, void *edx, const V3 *from, const V3 *delta, V3 *hit, V3 *normal, int flag) {
     void *r = oRay(coll, edx, from, delta, hit, normal, flag);
-    if (reinterpret_cast<uintptr_t>(_ReturnAddress()) == g_bulletRay) {
-        MmlBulletHit b{};
-        if (ReadBullet(static_cast<const uint32_t *>(r), *from, *delta, *hit, *normal, &b)) {
-            MmlEvent ev = Ev(MML_EVENT_BULLET_HIT);
-            ev.actor = b.shooter;
-            ev.bullet = &b;
-            Dispatch(ev);
-        }
-    }
+    if (reinterpret_cast<uintptr_t>(_ReturnAddress()) == g_bulletRay) ReportBulletRay(r, from, delta, hit, normal);
     return r;
 }
 
-bool ReadCrash(void *car, const V3 *impulse, const V3 *pos, const uint32_t *prim, MmlCarCrash *c) {
+bool ReadCrash(void *car, const V3 *impulse, const V3 *pos, const uint32_t *prim, float threshold, MmlCarCrash *c) {
     __try {
         const game::ExeBuild &x = game::Exe();
         float mass = game::at<float>(car, x.vehicle + x.vehMass);
         float j = std::sqrt(Dot(*impulse, *impulse));
-        if (!(mass > 0) || j / mass < kCrashSpeed) return false;
+        if (!(mass > 0) || j / mass < threshold) return false;
         *c = MmlCarCrash{{pos->x, pos->y, pos->z}, {impulse->x, impulse->y, impulse->z}, j / mass, prim ? prim[0] : 0u};
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
@@ -187,7 +180,10 @@ char __fastcall hkCarCrash(void *car, const V3 *impulse, const V3 *a3, const V3 
                            const uint32_t *prim, int a9) {
     char r = oCarCrash(car, impulse, a3, pos, a5, a6, struck, prim, a9);
     MmlCarCrash c{};
-    if (impulse && pos && ReadCrash(car, impulse, pos, prim, &c)) {
+    bool trace = CarTraceWantsContact(car);
+    if (!impulse || !pos || !ReadCrash(car, impulse, pos, prim, trace ? 0.25f : kCrashSpeed, &c)) return r;
+    if (trace) CarTraceContact(c, struck, _ReturnAddress());
+    if (c.speed >= kCrashSpeed) {
         MmlEvent ev = Ev(MML_EVENT_CAR_CRASH);
         ev.actor = car;
         ev.other = struck;
@@ -264,6 +260,16 @@ bool SameItems(const Inv &a, const Inv &b) {
 }
 
 } // namespace
+
+void ReportBulletRay(const void *primitive, const V3 *from, const V3 *delta, const V3 *hit, const V3 *normal) {
+    if (!from || !delta || !hit || !normal) return;
+    MmlBulletHit b{};
+    if (!ReadBullet(static_cast<const uint32_t *>(primitive), *from, *delta, *hit, *normal, &b)) return;
+    MmlEvent ev = Ev(MML_EVENT_BULLET_HIT);
+    ev.actor = b.shooter;
+    ev.bullet = &b;
+    Dispatch(ev);
+}
 
 void HappenInit() {
     if (g_hooked || !game::g_exe) return;

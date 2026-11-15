@@ -65,6 +65,13 @@ LoadFn oLoad;
 NewFn oNew;
 DeleteFn oDelete;
 bool g_hooked;
+thread_local unsigned g_loadingDepth;
+
+template <class F> auto LoadWorld(F &load) -> decltype(load()) {
+    ++g_loadingDepth;
+    __try { return load(); }
+    __finally { --g_loadingDepth; }
+}
 
 const game::ExeBuild &E() { return game::Exe(); }
 
@@ -140,9 +147,12 @@ bool ReadBlobs(const std::string &path, Blobs *out) {
 
 bool WriteBlobs(const std::string &path, const Blobs &b) {
     uint32_t count = 0;
-    for (const auto &m : b) count += static_cast<uint32_t>(m.second.size());
+    // Old loaders saved their own counters without a mod asking. Read them for compatibility,
+    // but only mod-authored state belongs in new save files.
+    auto legacyStats = [](const auto &m, const auto &k) { return m.first == "mml" && k.first == "stats"; };
+    for (const auto &m : b) for (const auto &k : m.second) if (!legacyStats(m, k)) ++count;
     if (!count) {   // nothing to keep: no file
-        PathDelete(path);
+        if (PathExists(path)) PathDelete(path);
         return true;
     }
     std::string tmp = path + ".tmp";
@@ -152,6 +162,7 @@ bool WriteBlobs(const std::string &path, const Blobs &b) {
     bool ok = fwrite(head, 4, 3, f) == 3;
     for (const auto &m : b)
         for (const auto &k : m.second) {
+            if (legacyStats(m, k)) continue;
             uint16_t ml = static_cast<uint16_t>(m.first.size()), kl = static_cast<uint16_t>(k.first.size());
             uint32_t size = static_cast<uint32_t>(k.second.size());
             ok = ok && fwrite(&ml, 2, 1, f) == 1 && fwrite(m.first.data(), 1, ml, f) == ml && fwrite(&kl, 2, 1, f) == 1 &&
@@ -211,7 +222,10 @@ int __fastcall hkLoad(void *mgr, void *edx) {
         g_slotNow = slot;
         g_loads++;
     }
-    int r = oLoad(mgr, edx);
+    SceneResidencySceneChanged(); // same-mission loads need not close/open the native mission
+    AnimsBeforeLoad();
+    auto load = [&] { return oLoad(mgr, edx); };
+    int r = LoadWorld(load);
     if (g_restoring.active && slot == kRestoreSlot) {
         // a restore point loaded: the game's slot, its next script save and the files as they were
         Restoring done = g_restoring;
@@ -235,7 +249,10 @@ int __fastcall hkLoad(void *mgr, void *edx) {
 }
 
 void __fastcall hkNew(void *mgr, void *edx) {
-    oNew(mgr, edx);
+    SceneResidencySceneChanged();
+    AnimsBeforeLoad();
+    auto load = [&] { oNew(mgr, edx); };
+    LoadWorld(load);
     {
         std::lock_guard<std::recursive_mutex> g(g_lock);
         g_slot.clear();
@@ -422,6 +439,8 @@ json RestoreList() {
 }
 
 } // namespace
+
+bool SavesLoading() { return g_loadingDepth != 0; }
 
 int SaveProfileNumber() { return ProfileNow(); }
 
