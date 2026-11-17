@@ -433,12 +433,17 @@ void HudModGone(MmlMod *mod) {
 }
 
 void HudMissionClose() {
+    // CHANGE_MISSION can detach and carry the exact driver/car into the next scene.
+    // Keep that live native radar binding. HudActorGone invalidates it before the
+    // actual car's destructor callbacks, including cars destroyed by mission teardown.
     while (!g_markers.empty()) Drop(g_markers.size() - 1);
     g_compassBy = 0;
     g_compassOurs = nullptr;
 }
 
 void HudActorGone(void *actor) {
+    if (game::g_exe && E().hudCar && game::LastCar() == actor)
+        game::at<void *>(reinterpret_cast<void *>(E().hud), E().hudCar) = nullptr;
     void *model = actor ? game::at<void *>(actor, game::kActorFrame) : nullptr;
     if (!model) return;
     for (size_t i = 0; i < g_markers.size();) {

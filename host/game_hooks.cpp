@@ -162,6 +162,7 @@ int __fastcall hkMissionClose(void *self, void *edx) {
     return r;
 }
 void __fastcall hkActorDtor(void *self, void *edx) {
+    HudActorGone(self);   // invalidate the borrowed last-car pointer before mod callbacks can query it
     MmlEvent ev = Event(MML_EVENT_ACTOR_DESTROYED);
     ev.actor = self;
     Dispatch(ev);
@@ -172,7 +173,6 @@ void __fastcall hkActorDtor(void *self, void *edx) {
     WorldActorGone(self);
     PropsActorGone(self);
     InteractActorGone(self);
-    HudActorGone(self);
     StateActorGone(self);
     AnimsActorGone(self);
     HitsActorGone(self);

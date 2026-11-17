@@ -31,6 +31,7 @@ Do not infer installed capabilities or publication from a document date or API v
 | [Third-party dependencies](../third_party/README.md) | Pinned sources, build layout and licences |
 | [Soundscape](../mods/examples/soundscape/README.md) | Optional visualization and its measurement/model limits |
 | [Draw probe](../mods/examples/draw_probe/README.md) | Optional bounded CPU draw-submission telemetry; not a pixel proof |
+| [Radar car lifetime](HUD_CAR_LIFETIME.md) | Native car carry across missions, borrowed HUD references and both-build regression |
 | [DirectSound regression](../tests/dsound/README.md) | Opt-in synthetic playback/capture, separate from silent background tests |
 
 ## Reference notes
