@@ -31,6 +31,7 @@ constexpr int kFrameLocal  = 0x50;   // float[16]
 constexpr int kFrameScale  = 0x90;   // float[3]
 constexpr int kFrameRot    = 0x9C;   // quat w,x,y,z
 constexpr int kFrameFlags  = 0xAC;
+constexpr int kFrameWorldScale = 0x114; // cached mean world scale, UpdateWMatrixProc writes it in both builds
 constexpr int kFrameName   = 0x100;
 constexpr int kFrameParent = 0x120;
 constexpr int kFrameType   = 0x110;

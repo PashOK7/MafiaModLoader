@@ -624,7 +624,7 @@ def main(a):
                 break
         return out
     for f in ('collRayTest', 'humanBoneRayTest', 'pedBulletHit', 'pedAnimStart', 'collGridAdd', 'collGridMove', 'humanPlatform',
-              'tramCarOf', 'pedHit', 'humanPlayAnim', 'humanStopAnim', 'humanChangeAnim'):
+              'tramCarOf', 'testLineInVehicle', 'pedHit', 'humanPlayAnim', 'humanStopAnim', 'humanChangeAnim'):
         check(first14(g12, e12[f]) == first14(g10, e10[f]), f'{f}: the same first instructions in both builds')
     for name, (exe, ls, gexe, gls) in builds.items():
         before = list(gexe.md.disasm(gexe.at(exe['bulletRay'] - 5 - 0x400000, 5), exe['bulletRay'] - 5))

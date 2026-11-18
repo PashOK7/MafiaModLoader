@@ -81,10 +81,14 @@ std::vector<Spawned> g_spawned;
 std::vector<void *> g_removing;   // taken out by actor_remove, destroyed at the game's next tick
 int g_spawnCount;
 
-// A name of the game's (a fixed-size field) as UTF-8: the game's strings are in its language's code page.
+// A bounded name of the game's as UTF-8, read only through its terminator.
 std::string Str(uintptr_t at, size_t n) {
+    if (!at) return "";
     std::string s(n, '\0');
-    if (!MemRead(at, &s[0], n)) return "";
+    for (size_t i = 0; i < n; ++i) {
+        if (!MemRead(at + i, &s[i], 1)) return "";
+        if (!s[i]) break;
+    }
     s.resize(strnlen(s.c_str(), n));
     wchar_t w[128];
     char out[384];

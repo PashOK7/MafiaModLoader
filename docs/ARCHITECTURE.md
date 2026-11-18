@@ -77,7 +77,9 @@ except the intro videos), on the game thread, where `LoadLibrary` is safe.
   freed, every other thread is suspended in turn and looked at (its EIP, the return addresses along its chain of
   saved EBPs, where it began): one still in the load's code keeps the load mapped until it has left. Each unload
   measures the process against the load (address space, handles, threads). Every call into a mod is behind `__try`: a fault
-  marks it, it is unloaded at the next frame, the game goes on. `state_put`/`state_get` keep blobs across a mod's own
+  marks it for unloading at the next frame. This isolates recoverable callback faults, not arbitrary process
+  corruption: the November15 owner capture shows heap-internal failure blocking Faulted's own allocations
+  before that next frame. See knowledge/notes/hang-20261115.md. `state_put`/`state_get` keep blobs across a mod's own
   reloads.
 - **Services**: a mod publishes a versioned table of functions under a name; others find it. This is how separate
   mods share features at run time (the ragdoll mod's physics for a VR mod) without linking to each other.

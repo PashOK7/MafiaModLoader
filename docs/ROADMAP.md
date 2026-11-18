@@ -48,6 +48,20 @@ Historical owner PIDs and installed hashes are receipts, not instructions to con
 
 ## Done
 
+- **Railway ragdoll recovery (2026-11-18).** The port uses the carriage's native walkable floor for
+  the get-up and the engine's railway exit for a stranded falling passenger. Both labs exercised
+  first person, open-air falls and surface recovery. The owner's paused incident was recovered live.
+
+- **Ragdoll player distribution (2026-11-18).** Removed the temporary J testing bind for the
+  player release. The mod-only ZIP writes to the ragdoll directory. For a clean game, one extraction
+  places both the pinned base and ragdoll beside Game.exe. The full MML runtime and FFmpeg video add-on ship separately. Both game builds
+  passed the ragdoll checks on the base. The full runtime also ran a second mod with a 64-bit half.
+
+- **Ragdoll audit and Clark's Motel (2026-11-18).** The port now leaves mission characters' vehicle hits
+  to the game, follows moving car parts, releases disabled physics, and uses consistent time and water
+  classification. Both labs passed the 04-03 opening and the settings and driving regressions.
+  [Audit and before/after measurements](../knowledge/notes/ragdoll-audit-20261118.md).
+
 - **Final cumulative-update regression (2026-11-15):** fixed SIB absolute-jump call-target traversal
   in the shared crash/profile reader. Corrected the native-index self-test to require proofs only for
   observed writers, with positive default-pool and conservative managed-pool cases. A separate native
@@ -60,8 +74,9 @@ Historical owner PIDs and installed hashes are receipts, not instructions to con
   port's upwards/forwards fallback impulse and its setting. Car-hit bodies use native-mesh collision
   with animation-driven muscle targets disabled. Nearby discovery and native-contact validation now
   include the player's current/last vehicle outside the general lists. A striking car is registered
-  immediately. Both builds pass 29 checks including real hidden-root truck contacts. Installed host
-  34B23E81... / port 5505A21D... in the owner copy. See knowledge/notes/car-impact-20261115.md.
+  immediately. Both builds pass 29 checks including real hidden-root truck contacts. The initial owner
+  installation used host34B23E81... / port5505A21D... . The later lifetime/read follow-up updates its host
+  to A795A2FA... with the same port. See knowledge/notes/car-impact-20261115.md and STATUS.md.
 
 - **Unrequested statistics companion files (2026-11-15, fixed):** collection is scoped to requesting
   mods and does no automatic persistence. Explicit save_put records determine whether a .mml exists.
@@ -1126,7 +1141,8 @@ V VR, F fishing, K skateboard, P airplane, C achievements, A the agents themselv
 
 ## Next, by importance
 
-The current November work is publication/validation preparation and the explicitly open issues in STATUS.md.
+The November cumulative update is published. Active follow-up covers the captured allocator hang,
+the local lifetime/read repairs and the explicitly open issues in STATUS.md.
 The original service roadmap below retains its completed markers and longer-term dependencies.
 
 **The order of work** (the owner, 2026-10-16; one block at a time, each seen in both labs): the functions themselves
@@ -1589,6 +1605,31 @@ merged, sorted by importance):
   `fn load(host) -> Result<(), E>`.
 
 ## Known gaps
+
+- **Vehicle skid-model cleanup crash (2026-11-16):** owner PID22132 on validated host A795A2FA...
+  faults at native1.0 Game+111AA4 while closing mise19-pauli. Wheel index1 retains a shlaif01.i3d
+  model whose vtable is zero; its virtual Release reads address zero. Dump, log and matching binaries
+  are preserved. A disposable-buffer experiment exactly matches the corrupted fields/header to native
+  local-matrix calculation with a receiver 0x68 before the damaged model. UpdateWMatrixProc inlines
+  that same writer. A stale HUD car was then observed after taxi-to-Pauli loading: world_near uses it
+  after native deletion, and a disposable SDK-call fixture produces the exact damaged words. Both
+  pre-fix labs fail the native deletion/mission-close lifetime tests. The host repair clears the borrowed
+  reference and passes4 checks per build, full offline/MCP regression, and the owner's taxi-to-Pauli
+  lifecycle check. Host BD3BD3C4... is installed in both labs and Mafia10Fixes; diagnostic removed.
+  The original occurrence's writer stack remains absent.
+  Normal replay success is not attribution evidence. See [evidence](../knowledge/notes/crash-20261116.md).
+
+- **Live allocator/recovery hang (2026-11-15, captured):** owner PID32624 stopped after a guarded
+  Jolt-step failure. Retained TLS fault stack shows constraint destruction/Clear faulting in the native
+  heap SList helper; Faulted then blocks allocating JSON from the affected allocator. Three x86 snapshots,
+  including full memory, confirm the unchanged wait. The first guarded exception and earlier heap writer
+  remain unknown. Lab ASan caught a separate stale read in `Ragdoll::Apply`. A focused fixture verifies
+  the pending destructor-notification fix on both builds. After repairing stale scene-frame reads and
+  bounded name overreads, combined host/port-ASan completes100 car/body cycles with zero reports and
+  zero guarded native errors. Focused native regression passes22 assertions per build. The validated
+  host is now installed in the owner copy, with startup/lifetime checks and a verified backup. The first
+  guarded exception and the relation of these defects to the owner incident remain open. See
+  [incident evidence](../knowledge/notes/hang-20261115.md).
 
 - **Pedestrian teleport at impact, 2026-11-14**: the second trace records a 2.4 m intermediate
   native model rewrite and at most 0.185 m between consecutive post-world pelvis samples.

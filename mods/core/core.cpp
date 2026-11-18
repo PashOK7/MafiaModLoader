@@ -30,7 +30,11 @@ json Vec(const float *v) { return json::array({v[0], v[1], v[2]}); }
 std::string Str(uintptr_t p, size_t max = 128) {
     if (!p) return "";
     char buf[256] = {};
-    if (!H->mem_read(p, buf, max < sizeof buf - 1 ? max : sizeof buf - 1)) return "";
+    const size_t limit = max < sizeof buf - 1 ? max : sizeof buf - 1;
+    for (size_t i = 0; i < limit; ++i) {
+        if (!H->mem_read(p + i, buf + i, 1)) return "";
+        if (!buf[i]) break;
+    }
     return buf;
 }
 

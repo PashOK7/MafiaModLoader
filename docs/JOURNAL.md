@@ -9632,3 +9632,261 @@ water-only gain that still leaves the full frame above 33.3 ms is insufficient.
   this verified source identity. This follow-up changes documentation only; no binary release/tag was created.
 - Runtime validation remains the passing complete offline suite, MCP smoke and 55 native checks per build
   on host B5FD1DE0... . Test labs are closed; owner game/settings and configured default are unchanged.
+
+### 2026-11-15 — Capture a live allocator/recovery hang in the owner game
+
+- Owner reported a nonresponsive game. Exact image verification identifies W:/Mafia10Fixes PID32624,
+  still alive with both labs stopped. The bridge timed out; crash_triage returned a stale November10 dump,
+  which was explicitly excluded from this event. Current host34B23E81... and port5505A21D... are retained.
+- Normal memory access was denied by the elevated game. Used the already-authorized standard RunAs
+  mechanism for a read-only external collector, with no activation/input/termination or game-memory writes.
+  Initial64-bit Python dumps had unsuitable WOW64 native contexts; a native x86 collector then saved two
+  small dumps and a567,742,506-byte full dump. All three usable snapshots have identical main wait/fault state.
+- Loaded exact game/host/port PDBs and Microsoft's matching x86 ntdll symbols, downloaded via tools/fetch.py.
+  The saved16-entry TLS fault stack shows Jolt Clear destroying a SwingTwistConstraint through aligned_free/
+  RtlFreeHeap and faulting in the heap SList link read. Faulted then waits allocating its JSON array; other
+  threads also wait on allocator operations. This locates the immediate hang, not the earlier memory writer.
+- SafeJoltStep's earlier exception was swallowed without its context. A residual exception-shaped record
+  has an overwritten context and is not accepted as the primary fault. Owner was winding up a grenade,
+  after earlier shooting/car explosions/ragdolls; this does not establish the gesture as the trigger.
+- Evidence/limits: knowledge/notes/hang-20261115.md; ignored build/hang-20261115-120151 contains snapshots,
+  checksums, binary identities, copied logs/trace, collectors and debugger output. Updated current gaps and
+  fault-isolation documentation. No production edit/install, speculative fix or user-process closure.
+
+### 2026-11-15 — Investigate the first corrupting write in a separate lab
+
+- Added ignored lab-only ASan builds and repeated native hit/blast/teardown fixtures. Preserved
+  lab1.0 binary and water-manifest preimages; owner binaries are untouched. Early ASan preload
+  is necessary for the x86 shadow range. Runtime heap ownership walks and debug heap overhead
+  required separate diagnosis before the fixture could reach body creation.
+- Do not accept the initial MSVC ASan stack reports as the owner's heap writer: the GJK report
+  reproduces without the game in a small executable, on a scalar initialization with overlapping
+  frame metadata. `/Od` and an experimental SEH shadow cleanup do not resolve it; the source
+  experiment was reverted. Preparing independent Clang instrumentation. Details and lab cleanup
+  requirements are in knowledge/notes/hang-20261115.md. The crash remains open.
+- Clang21 passes the isolated GJK test and catches a deliberate heap overflow at its write.
+  Its heap/stack diagnostic port completes100 cycles (800 bodies/100 blasts) without a heap
+  report. A second fixture adds moving native cars and destruction; host instrumentation is
+  being built to cover SDK writes. Global-string checking is disabled in this diagnostic build
+  after a separate false report on a valid empty literal. No production fix is inferred.
+
+### 2026-11-15 — Verify native frame destruction on both builds
+
+- Retained lab ASan evidence reports a heap-use-after-free read in `Ragdoll::Apply` after LS3D freed
+  the allocation. This is a separate observation from the original allocator hang. The restarted
+  stress fixture recorded cycle states 0–67, then reported that PID 19592 was gone. The matching
+  debugger log has guarded `MeshesFrame` access violations and no terminal exception or exit reason.
+- The pending host hooks native base-frame destruction because it can bypass virtual `Release`.
+  The direct empty-model fixture passed all four checks on 1.2 and 1.0 with host `17A4061E...`.
+  On the published validation host `B5FD1DE0...`, 1.0 passed the two `Release` checks and failed
+  both destructor checks: no notification and a stale watch. Restored and hash-verified the pending
+  ASI/PDB in the lab after the comparison.
+- An ordinary lab 1.0 launch encountered ASI Loader error 126. The temporary `00_asan.asi` imports
+  `clang_rt.asan_dynamic-i386.dll`, which the earlier debugger launch provided and the current shell
+  did not resolve on PATH. Renamed the preload to `00_asan.asi.diagnostic-disabled` in lab 1.0 and
+  hash-verified it. The direct test then launched normally. Both labs are stopped. The owner copy was
+  outside this test. The original heap writer, first Jolt exception and stress termination remain open.
+
+### 2026-11-15 — Complete the repeated car/body teardown fixture
+
+- Ordinary ASan launch now supplies its x86 runtime through the child environment. An initial
+  attempt exited before host startup because the unquoted drive-letter path in ASAN_OPTIONS
+  was parsed as another option. The isolated collision probe reproduces that exact parser error
+  and accepts the quoted path. The earlier error 126 is resolved by supplying the runtime too.
+- Lab1.0 PID30356 then completed100 cycles with800 ragdoll activations,200 native cars,100
+  blasts and ten unload/reload pairs. The fixture exits0 and the game remains alive afterwards.
+  The ASan runtime and preload were verified loaded. No ASan report, Jolt reset or ragdoll fault
+  was recorded. This run uses the instrumented port45F4F121... and regular host17A4061E...;
+  host code still needs its own instrumented run. Global-string instrumentation remains disabled.
+- dxwrapper records326 guarded reads at one host site, all to the same low address. The earlier
+  named stack identifies this incremental scene-walk path. Completion supplies no explanation
+  of the old stress termination or the owner's original allocator failure.
+- Closed the exact test PID. A process-enumeration check raced its exit and initially reported
+  cleanup pending. Rechecking confirmed both labs stopped; restored the hash-verified disabled
+  preload and copied the complete logs. Evidence is in build/hang-20261115-120151/repeat-20261115-200329-208.
+
+### 2026-11-15 — Instrument host reads and track scene frame lifetimes
+
+- Separate host-ASan runs expose bounded name overreads in core's player query and the world's
+  car description. Both readers now stop at the native string terminator and retain their bounds.
+  Core51287E34... is installed in both labs, with preimages under the incident evidence directory.
+- After the first string repair, ASan reports an actual use-after-free in the scene mesh scan,
+  reading a frame's type after LS3D frees it. The pending walk registers the existing frame_watch
+  service for the host, queues lifetime ids with each frame, and skips expired ids. Reused native
+  addresses receive fresh ids; native destruction removes cached placement/transforms.
+- Rechecked the native frame destructor and enumeration in both builds. Host callbacks use the
+  loader owner through the existing watch table. Mission close removes those host watches.
+  Separate host-ASan build/restore cycles retain exact ASI/PDB preimages and disable the preload
+  afterwards. The focused host rerun is still in progress; the owner's original hang remains open.
+- The diagnostic host's stack walker needs an ASan exclusion because it intentionally scans
+  raw stack slots. Clang also emits an invalid ESI-based local access around native.call's manual
+  assembly. Read the object code; the diagnostic native.cpp now uses MSVC-ASan and matching STL
+  annotations. A retained rebuild script reapplies that object after Ninja builds. The combined
+  host fixture passes its first30 cycles and remains in progress.
+- Added a focused linked-model scene test. It waits for host lifetime registration, invokes native
+  destruction and verifies the watch is gone and a subsequent scene scan progresses. It will run
+  with the existing direct-release/destructor checks in both labs after the instrumented fixture.
+
+### 2026-11-15 — Validate the host lifetime/read repairs
+
+- Combined diagnostic host 6DB95D74... / port 45F4F121... completes 100 cycles with 800 ragdolls, 200 cars,
+  100 native blasts and ten reload pairs. Fixture exit 0 and the game remains responsive. No ASan report,
+  guarded native error, Jolt reset or ragdoll fault. The same fixture previously recorded 326 guarded
+  host reads. Retained evidence is host-asan-20261115-203246-655 under the incident directory.
+- Restored lab1.0's original ragdoll DLL/PDB and enabled water manifest with hash checks. Kept the
+  diagnostic files for reproduction and disabled the preload. Installed ordinary hostA795A2FA...
+  with core51287E34... in both labs. All preimages remain in the ignored incident directory.
+- Native regression passes 22 assertions in each build, exit 0. It covers direct frame release and
+  destruction, three linked-frame lifetime cycles per build, native vehicle geometry, model-name
+  aliases and camera restoration after vehicle removal. Closed exact test PIDs29420/24492.
+- Generated Rust game tables, UTF-8 path checks and both-build native address checks pass. Complete
+  offline regression and MCP smoke both finish ALL PASSED, exit 0. Their final logs are retained in
+  the incident directory. Fresh ordinary lab logs contain zero native exception or mod-fault lines.
+  The original guarded Jolt exception and heap writer remain unknown. Changes remain local on main.
+
+### 2026-11-15 — Install the validated loader in the owner copy
+
+- Owner explicitly requested transferring the tested build. Verified the configured target
+  W:/Mafia10Fixes, stopped state and matching1.0 executable. Replaced only MafiaModLoader.asi and
+  its matching PDB with validated A795A2FA... / 938D69BC... . The existing ragdoll5505A21D... remains
+  the regular port. Core is absent from this installation, so its separate string-reader DLL is
+  not an installed component of this copy.
+- Hash-verified old ASI34B23E81... / PDB8ADADD9F... preimages, a complete save backup and old logs
+  are under build/owner-loader-install-20261115-205541-128. Inventoried607 existing save/mod/data
+  files before replacing the pair, then rechecked every hash after the verification run.
+- Ordinary CreateProcess returns Windows error740. The game's existing elevated launch through
+  Shell RunAs starts PID9192. Profile1 reaches the main menu, with soundscape, draw_probe and ragdoll
+  loaded. Native Release and deleting-destructor fixtures each notify once, leave no stale watch
+  and report a balanced stack. No mod fault or Jolt reset appears in the fresh log.
+- Closed the game through its own Quit/Yes controls and confirmed the exact PID exited. All607
+  inventoried files retain their hashes and all182 saves match. The installed ASI/PDB hashes match
+  the tested pair. Retained verification.json and after-mml.log. This check covers startup and
+  the lifetime mechanism in the owner copy. The original allocator-corrupting writer remains unknown.
+
+### 2026-11-16 — Inspect the owner's vehicle cleanup crash
+
+- Latest owner dump is Game_22132_20261116_180803.dmp, Mafia10Fixes1.0. Native vehicle GameDone
+  faults at Game+111AA4 while closing mise19-pauli (profile0, save510). Owner and both labs are stopped.
+- Detailed triage, x86 dump inspection and both builds' native cleanup code identify wheel index1's
+  skid-mark model, Models/shlaif01.i3d. Its retained pointer is172B2D40, refcount1, vtable0; the virtual
+  Release reads address0. This is an invalid object/reference, with no captured earlier writer.
+- Installed host A795A2FA... / PDB938D69BC... still match the tested installation; the dump loads
+  matching private symbols. Port5505A21D... and soundscape/draw_probe are loaded. No preceding
+  Jolt reset or mod-fault log establishes a link to the November15 allocator/recovery incident.
+- Preserved dump/JSON/log/host/port with hash checks under build/crash-20261116-180803, plus CDB
+  output and documentation preimages. Added knowledge/notes/crash-20261116.md and updated current
+  status/roadmap/index. No game launch, source fix, binary/config replacement or save modification.
+  Further attribution requires tracking skid-model creation, writes and destruction before close.
+
+### 2026-11-16 — Match the skid corruption to native matrix writes
+
+- Owner sequence: enter car, change camera, return to menu. The dumped car is pontfor01.i3d.
+  Preserved/hash-verified the current 92 save files before controlled testing. An initial different-car
+  run without camera change and a same-model forced-seat/camera/menu run do not reproduce the crash;
+  their success does not rule out a rare failure or cover native traffic takeover.
+- The three changed model dwords plus two damaged allocation-header words exactly match native
+  UpdateMatrix with a receiver 0x68 before the damaged model. Verified the matching instructions in
+  both builds and executed them on a disposable captured buffer in 1.0: every output byte matches,
+  including both negative-zero words; stack balanced. This identifies a write pattern, not its caller.
+- UpdateWMatrixProc inlines the same local-matrix writes before reading its parent. A later guarded
+  failure there could leave exactly these partial changes. Added a temporary, disabled-by-default
+  diagnostic mod under the ignored incident directory, hot-loaded in owner PID25244, to record bad
+  receivers/callers before both native matrix paths write. Production host/mod binaries unchanged.
+  Source attribution and a deterministic regression remain open; no crash fix is claimed.
+
+### 2026-11-16 — Isolate the stale HUD car producer
+
+- After a taxi-to-Pauli load, owner PID25244's HUD retained unreadable car0FEB6A88. world_near
+  included it, caught the fault and erased all results, including the live player. Clearing only
+  the stale HUD slot through the native setter restored13 traffic cars. Earlier empty queries
+  did not establish missing traffic; the bridge result was wrong.
+- A synchronous disposable-buffer SDK world_near fixture reproduces the dump's three exact
+  damaged model words, then catches the invalid parent's read. Its HUD substitution is restored
+  in a finally block. This confirms a producer of the matching writes, not PID22132's original stack.
+- Native deletion and mission-close tests both fail the HUD lifetime assertion on both pre-fix
+  labs. The host now clears that borrowed reference at exact actor destruction and mission close,
+  before mod callbacks. A different live last car remains. New build/validation are in progress;
+  preimages and the isolated diagnostic remain in build/crash-20261116-180803.
+
+- Final validation: native HUD lifetime tests pass4 assertions per build, offline regression and
+  MCP smoke both end ALL PASSED, exit0; full x86 build passes. The menu-close fixture restarts
+  Free Ride before the harness's next restore (the first combined pre-fix attempt also exposed
+  that fixture requirement). Native destruction and mission-close lifetime failures before the
+  source change remain the baseline, not random crash-frequency measurements.
+- Installed host BD3BD3C4... / PDB FDDF77F3... by hash in both labs and Mafia10Fixes, retaining
+  preimages. Owner PID13852 runs the ordinary three mods without matrix_probe; taxi-to-menu-to-Pauli
+  leaves HUD car null and world_near finds6 traffic cars. Pauli close also clears it. Native Quit/Yes
+  exits normally; no fresh crash/mod fault. Both labs and owner are stopped, all92 save hashes match.
+  The temporary diagnostic is archived outside the owner's mod directory. PID25244 had required
+  forced termination after a10-second close timeout. No commit/push. PID22132's exact writer stack
+  is still absent; the confirmed matching producer is fixed without claiming exhaustive attribution.
+
+### 2026-11-18 — Ragdoll audit in the two native labs
+
+The same port DLL (5505A21D...) in 1.0 and 1.2 reproduced stale open-door geometry and two settings
+that continued to affect existing bodies. All 61 native regression assertions per build and three
+local geometry/motion programs passed. Both labs were closed and their ragdoll overrides restored.
+The [audit note](../knowledge/notes/ragdoll-audit-20261118.md) records the experiments, source findings
+and limits. Production fixes remain open in the sibling port.
+
+### 2026-11-18 — Ragdoll fixes and Clark's Motel
+
+Replayed the 04-03 opening with both DLLs on each game build. The former port delivered vehicle
+hits to four cinematic doubles at around 7.5 seconds. The fixed port left all four alive with zero
+ragdolls during the first 15 seconds. The port keeps the extra contact check for traffic pedestrians.
+Both native builds passed 70 freeride assertions and 13 pedestrian assertions. Four standalone physics
+and pose programs passed. The two labs have DLL EB850044… and the packaged DLL matches them.
+The [audit note](../knowledge/notes/ragdoll-audit-20261118.md) records the artifacts and timings.
+
+On the owner's request, hot-reloaded the tested ragdoll in Mafia10Fixes PID 29072, generation 2.
+Both installed and live DLLs match EB850044…. The current 04-03 session was paused after the four
+contacts from generation 1. Prior DLL and symbols are in `build/owner-ragdoll-20261118-201637-054203/`.
+
+### 2026-11-18 — Player ragdoll hotkey
+
+The port's Bodies tab now exposes Fall / get up (J). Both labs passed 15 ragdoll audit assertions
+each and the settings page layout checks. Hot-reloaded in Mafia10Fixes PID 29072, generation 3.
+The live DLL matches the tested 8286544B… and input.state reports the ragdoll binding J.
+
+### 2026-11-18 — Railway doorway and first-person recovery
+
+The port now tests the actual carriage's walking geometry at get-up. It releases a descending
+passenger below the deck through the game's railway exit and restores the first-person model
+visibility on the native transitions. Both labs covered street and elevated railways, including a
+trailing carriage and a fall over open air. The SDK's generated Rust table and the offline
+native address checks agree for both game builds.
+
+Mafia10Fixes hot-loaded DLL 3ADCB929… in PID 29072, generation 4. While paused, the mod recovered
+the recorded player from 17.69 m below the street to 3 cm above it, preserving X/Z and health.
+Camera mode returned from 17 to 1. See the [incident measurements and native addresses](../knowledge/notes/ragdoll-audit-20261118.md).
+
+### 2026-11-18 — Ragdoll player bundle
+
+The port now packages the regular loader with its core, graphics wrapper, FFmpeg and x64 sidecar.
+Ragdoll (A20F181B…) has no manual fall binding and ignores old player_hotkey preferences. Both labs
+ran from the extracted ZIP with their former installations set aside. Each passed 38 assertions.
+A newly installed hello_side then reported 64-bit frames and the same live player alongside ragdoll.
+The original lab installations were restored and received the release DLL, as did Mafia10Fixes.
+The port's build/dist with-loader ZIP SHA-256 is
+`fbea080e54cae79c1f205bbb20b4e917254e2ee03493485f788cc907b41560f8`.
+
+### 2026-11-18 — Shared base and optional video
+
+The ragdoll release now has two downloads. Mod-only owns only mml/mods/ragdoll, including its
+licence. The clean-game download adds a nested base ZIP and installation instructions. The
+port packer verifies the contents of the tested base before bundling it. Host 71d2377a… is the
+same binary in the base and full distributions. The base ships no video libraries, graphics
+wrapper or sidecar. The video add-on includes FFmpeg 9.0.2 and an optional d3d8to9 wrapper.
+
+Both labs passed 38 ragdoll assertions on the minimal runtime. Without the add-on, video.state
+recorded native fallback for logo1.bik (1.2) and Logo3.bik (1.0). With the add-on and wrapper
+on 1.2, and with the full runtime on 1.0, the same H.264 fixture played all eight frames.
+Lab files were restored. Evidence: build/ragdoll-modular-20261118-211951/.
+
+The clean-install ZIP now places the pinned base and mod at their final game-relative paths in
+one extraction. Verified its base byte-for-byte against the previously tested base and checked
+both ZIPs in fresh directories. The mod-only overlay preserved an existing host.
+
+### 2026-11-18 - Public ragdoll release
+
+The [ragdoll v0.1.0 release](https://github.com/PashOK7/mafia-ragdoll-mml/releases/tag/v0.1.0) provides a mod-only archive and a single-extraction bundle with the tested MML base. The public loader retains the original telemetry example.

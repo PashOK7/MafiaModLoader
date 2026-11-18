@@ -794,6 +794,8 @@ n = H->actor_meshes(M, car, pieces, 512);            /* the car's body, doors, w
   the terrain's and some large pieces in the world's: the host finds which by the engine's bounding sphere);
   `version` changes when it moves (a door), `moving` says it moved within the last second. Billboards, particles,
   skinned and morphed meshes, mirrors are not pieces.
+- The incremental walk watches native frame lifetimes. Destruction removes cached placement and invalidates
+  queued references. A replacement at the same address receives a new lifetime id before it can be scanned.
 - **`actor_meshes`**: every shown visual under the actor's model, posed by their frames now (a door open, the
   wheels turned), without another model hung on it (a person sitting in the car).
 - **`actor_meshes_ex`** adds explicit visibility selection. With `MML_ACTOR_MESH_HIDDEN_ROOT`, it traverses
@@ -1464,9 +1466,10 @@ H->frame_watch(M, model, NULL, NULL);                               /* no longer
 
 - LS3D frees a frame (a model, a bone, a car's part) when its last reference goes: a mission's close, a pedestrian's
   element given to a new pedestrian, a car destroyed, the game's own clean-up. A mod that keeps pointers to frames
-  (a ragdoll to a body's model and bones) watches each one: `fn` is called in the Release that frees it, before the
-  memory goes, on the thread that releases it (the game's), and the watch ends there. A model's bones go with it: a
-  mod watching the model and its bones is told of each.
+  (a ragdoll to a body's model and bones) watches each one. Final `Release` and native frame destruction that
+  bypasses `Release` both call `fn` before the memory is freed. The callback runs on the releasing thread and
+  consumes the watch, so `Release` followed by destruction gives one notification. References held by the game
+  may keep a frame alive after its actor is removed.
 - `call frame.watch {"frame": "0x..."}` does the same for an agent: the release comes as the event `FRAME_RELEASED`;
   `frames.watched` lists what is watched.
 
@@ -2157,6 +2160,11 @@ if (H->file_source("maps\\crate.bmp", who, sizeof who)) { /* a mod's file answer
 
 ### Videos: the logos and the intro replaced
 
+The base player package uses the game's video player. Custom video playback requires the
+FFmpeg add-on or the full player runtime, plus a Direct3D 9 graphics path. The add-on includes
+a separate wrapper for a stock Direct3D 8 installation. Its decoder DLLs are loaded on demand
+from `mml/ffmpeg` after restarting the game. [Video add-on installation](VIDEO_INSTALL.txt).
+
 The loader plays the game's videos itself, with FFmpeg (`host/video.cpp`, `knowledge/notes/videos.md`), in both
 builds: the three logos before the profile menu (`logo1`, `logo3` (1.2 only), `logo2`) and the new game's intro
 (`intro`). A mod replaces one by shipping a file of that base name in its `files\` folder; nothing else is needed (a
@@ -2666,6 +2674,10 @@ high-resolution timer if asked, and shows the frame rate and the game's clock st
   inside a game function you called may leave the game in a bad state: check what you pass. A hook's detour is not
   guarded (the game calls it, not the loader): a fault there crashes the game, and `crash_triage` names your function
   in its stack by your mod's `.pdb` (deployed beside its DLL; one built since the crash, of another GUID, is not used).
+- Callback isolation assumes the process remains usable. Heap corruption or an exception leaving a native
+  allocator lock held can prevent diagnostics and the next-frame unload from running. The captured
+  [November15 hang](../knowledge/notes/hang-20261115.md) demonstrates this limit; catching more exceptions
+  is not a memory-lifetime repair.
 - Never keep a pointer into another mod's code or data across `MML_EVENT_SERVICES_CHANGED` / `MML_EVENT_MOD_LOADED`.
 - `MmlHost` only grows. A mod that must run on an older loader asks `MML_HAS(host, member)` before using a newer
   member; `mml_mod_load` returning non-zero says "not for this loader".

@@ -1,0 +1,13 @@
+MafiaModLoader player runtime for Mafia: The City of Lost Heaven (2002), 1.0 and 1.2
+
+For a clean installation, extract the full ZIP beside Game.exe and start the game.
+The full runtime includes the stock core mod, the graphics wrapper, the optional
+FFmpeg player and the x64 sidecar. Basic game fixes are in MafiaModLoader.asi.
+Install individual mods into their own folders under mml/mods.
+
+Use mml/base-version.txt to identify the supplied host build. When a mod offers a
+mod-only ZIP, use it with your existing compatible loader. Upgrade the shared
+runtime separately when required. Preserve any custom graphics wrapper settings
+when upgrading. FFmpeg and dav1d licences and build details are in mml/ffmpeg;
+the other runtime notices are under licenses. The dxwrapper build carries the
+MafiaModLoader compatibility patches.

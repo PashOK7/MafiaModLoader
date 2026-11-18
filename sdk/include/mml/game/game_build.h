@@ -71,7 +71,8 @@ struct ExeBuild {
     // (0: its own frame, n: its frame list +0xC4's n-th). humanPlatform: thiscall(human, bool in): in (+0x9C -> +0x98,
     // position and facing into its space, the model given to it) or out (into the world, the model to the primary
     // sector; the player's camera out of first person). tramCarOf: thiscall(tram, float pos[3]) -> int, the car nearest.
-    uintptr_t humanPlatform, tramCarOf;
+    // TestLineInVehicle: thiscall(collision, cabin grid, local origin, delta, point, normal, exclude mask).
+    uintptr_t humanPlatform, tramCarOf, testLineInVehicle;
     // Starting the game (the loader's start, host/start.cpp; 0: not known for this build). playVideo:
     // thiscall(const char *name, float w, float h) -> bool, ret 8; InitSystem plays logo1, logo3 and logo2 with it
     // before the profile menu. The menus (GM_Menu): menuTop, the active one (each menu's +4: the one under it); a
@@ -724,6 +725,9 @@ struct Ls3dBuild {
     // Native Ogg worker (DWORD WINAPI(show)) and its original decoder/refill (thiscall(show, bool), ret 4).
     // Worker flags/event/buffer/count are +0x24/64/6C/70 in 1.0, +0x28/68/70/74 in 1.2.
     uintptr_t oggThreadProc, oggFillBuffer;
+    // I3D_frame's base destructor, thiscall(frame), plain ret. Native destruction can inline Release and
+    // bypass frameRelease; this is the common pre-free boundary (1.2: 1A9A0, 1.0: 1A760).
+    uintptr_t frameDestroy;
 };
 
 inline const ExeBuild kExe12 = {
@@ -741,7 +745,7 @@ inline const ExeBuild kExe12 = {
     0x688, 0x690, 0x2DC,
     0x459450, 0x5C36C0, 0x23C, 0x2A0, 0x40C,
     0x5C3AC0,
-    0x571B90, 0x492D60,
+    0x571B90, 0x492D60, 0x5C9B80,
     0x55D460, 0x6BD890, 0x6D4628, 0x6279DC, 0x625EB8, 0x62736C,
     0x647C30, 0x4F0620, 0x4F1830, 0x6D8714, 0x60FBA0,
     0x60FB40,
@@ -876,7 +880,7 @@ inline const ExeBuild kExe10 = {
     0x688, 0x690, 0x2DC,
     0x4BDC50, 0x57E7F0, 0x23C, 0x2A0, 0x40C,
     0x57EBF0,
-    0x492000, 0x4E3FB0,
+    0x492000, 0x4E3FB0, 0x584CB0,
     // the start (2026-10-14, read in 1.0's code): no Bink logos (the AVI ones: m10CdFind); the active screen; the
     // profile manager (+4/+8 the profiles, 0x54 bytes each, as in 1.2); the profile, main and freeride screens'
     // vtables (their Ticks take the same ids as 1.2's handlers: 100 + i, 990105, 201)
@@ -1042,7 +1046,7 @@ inline const Ls3dBuild kLs3d12 = {"1.2", 0x62030, 0x1AAE0, 0x313A0, 0x603E0, 0x1
                                   0x4E390, 0x685D0,
                                   0x6E1A0, 0x1C55CC, 0x1C52C0, 0x4A9C0,
                                   0x697E0, 0x1C5014, 0x5B960, 0x1B50F8,
-                                  0x529C0, 0x7C1F0, 0x73FE0, 0x735D0};
+                                  0x529C0, 0x7C1F0, 0x73FE0, 0x735D0, 0x1A9A0};
 // LS3D 3.84.5 (31.7.2002): the vertex buffer has no flags word, everything after +0x04 sits 4 bytes lower.
 inline const Ls3dBuild kLs3d10 = {"1.0", 0x5ED80, 0x1A8A0, 0x305B0, 0x5D070, 0x1C350, 0x6E580, 0, 0,
                                   0x1AE00, 0x1BD60, 0x1C030, 0x2B540, 0x04, 0x14, 0x18,
@@ -1084,7 +1088,7 @@ inline const Ls3dBuild kLs3d10 = {"1.0", 0x5ED80, 0x1A8A0, 0x305B0, 0x5D070, 0x1
                                   0x4BE00, 0x65180,
                                   0x6A8A0, 0x1C156C, 0x1C1260, 0x48520,
                                   0x66250, 0x1C0FC4, 0x58960, 0x1B10B8,
-                                  0x502B0, 0x77E30, 0x6FF40, 0x6FA10};
+                                  0x502B0, 0x77E30, 0x6FF40, 0x6FA10, 0x1A760};
 
 // The builds found (null until Detect succeeds).
 inline const ExeBuild *g_exe;

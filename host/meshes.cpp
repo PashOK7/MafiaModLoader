@@ -211,10 +211,32 @@ void MatrixOf(void *visual, int space, float out[16]) {
 }
 
 // ---- the scene's frames, walked a little each frame
-std::vector<void *> g_walked, g_next, g_stack;
+struct FrameRef { void *frame; uint64_t lifetime; };
+std::vector<FrameRef> g_walked, g_next, g_stack;
+std::unordered_map<void *, uint64_t> g_frameLives;
+uint64_t g_nextLifetime;
+bool g_watchFailed;
 bool g_walking;
 unsigned g_walks;
 double g_walkMs, g_lastWalkMs;
+
+void FrameGone(void *frame, void *);
+FrameRef TrackFrame(void *frame) {
+    auto found = g_frameLives.find(frame);
+    if (found != g_frameLives.end()) return {frame, found->second};
+    std::string err;
+    if (!FrameWatch(kLoaderOwner, frame, FrameGone, nullptr, false, &err)) {
+        g_watchFailed = true;
+        return {frame, 0};
+    }
+    const uint64_t lifetime = ++g_nextLifetime;
+    g_frameLives.emplace(frame, lifetime);
+    return {frame, lifetime};
+}
+bool LiveFrame(const FrameRef &ref) {
+    auto found = g_frameLives.find(ref.frame);
+    return found != g_frameLives.end() && found->second == ref.lifetime;
+}
 
 void *SceneRoot() {
     void *pl = game::Player();
@@ -227,12 +249,14 @@ void WalkSteps(double until, bool *finished) {
     while (!g_stack.empty()) {
         if (NowMs() > until) { *finished = false; return; }
         for (int i = 0; i < 64 && !g_stack.empty(); i++) {
-            void *f = g_stack.back();
+            const FrameRef ref = g_stack.back();
             g_stack.pop_back();
-            g_next.push_back(f);
+            if (!LiveFrame(ref)) continue;
+            void *f = ref.frame;
+            g_next.push_back(ref);
             g_kids.clear();
             game::EnumFrames(f, &g_kids);
-            for (size_t k = g_kids.size(); k-- > 0;) g_stack.push_back(g_kids[k]);
+            for (size_t k = g_kids.size(); k-- > 0;) g_stack.push_back(TrackFrame(g_kids[k]));
         }
     }
     *finished = true;
@@ -245,11 +269,12 @@ void Walk(double budgetMs) {
     if (!g_walking) {
         void *root = SceneRoot();
         if (!root) return;
+        g_watchFailed = false;
         g_next.clear();
         g_stack.clear();
         std::vector<void *> kids;
         game::EnumFrames(root, &kids);
-        for (size_t k = kids.size(); k-- > 0;) g_stack.push_back(kids[k]);
+        for (size_t k = kids.size(); k-- > 0;) g_stack.push_back(TrackFrame(kids[k]));
         g_walking = true;
         g_walkMs = 0;
     }
@@ -316,6 +341,15 @@ std::string g_lastErr;
 double g_scanMs;
 std::map<uint32_t, unsigned> g_types;   // the visuals in the boxes by their kind (the scan's diagnostics)
 
+void FrameGone(void *frame, void *) {
+    g_frameLives.erase(frame);
+    // A reused address gets another lifetime when next discovered. Cached native transforms belong
+    // to the destroyed object, even when its replacement has the same mesh and vtable.
+    if (g_pieces.erase(frame)) g_ready.clear();
+    g_actorLitPieces.erase(frame);
+    g_rejectedPlacement.erase(frame);
+}
+
 bool Touches(const float *c, float r, const Focus &f) {
     for (int k = 0; k < 3; k++) {
         float lo = (&f.lo.x)[k] - 2, hi = (&f.hi.x)[k] + 2;
@@ -339,7 +373,9 @@ void Scan() {
     }
     g_types.clear();
     g_newPieces.clear();
-    for (void *f : g_walked) {
+    for (const FrameRef &ref : g_walked) {
+        if (!LiveFrame(ref)) continue;
+        void *f = ref.frame;
         if (At<uint32_t>(f, game::kFrameType) != 1) continue;
         uint32_t type = At<uint32_t>(f, kVisualType);
         const float *bc = reinterpret_cast<const float *>(static_cast<const uint8_t *>(f) + kBoundCentre);
@@ -546,6 +582,12 @@ void MeshesFrame() {
     uint64_t now = GetTickCount64();
     bool due = now >= g_nextScan, urgent = g_nextScan == 0;
     if (g_walking || g_walked.empty() || due) Walk(0.75);
+    if (g_watchFailed) {
+        g_walked.clear();
+        g_pieces.clear();
+        g_ready.clear();
+        return;
+    }
     if (g_walked.empty() || !due || (g_walking && !urgent)) return;
     g_nextScan = now + kScanEveryMs;
     if (!SafeScan()) {
@@ -557,6 +599,8 @@ void MeshesFrame() {
 }
 
 void MeshesMissionClose() {
+    FrameLifeModGone(kLoaderOwner);
+    g_frameLives.clear();
     g_walked.clear();
     g_next.clear();
     g_stack.clear();

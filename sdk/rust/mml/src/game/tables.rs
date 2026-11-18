@@ -71,6 +71,7 @@ pub struct Exe {
     pub collGridMove: usize,
     pub humanPlatform: usize,
     pub tramCarOf: usize,
+    pub testLineInVehicle: usize,
     pub playVideo: usize,
     pub menuTop: usize,
     pub loadSave: usize,
@@ -404,6 +405,7 @@ pub struct Ls3d {
     pub soundDriverInit: usize,
     pub oggThreadProc: usize,
     pub oggFillBuffer: usize,
+    pub frameDestroy: usize,
 }
 
 /// The race of mission 6: racing.h RacingLayout.
@@ -488,6 +490,7 @@ pub static EXE_12: Exe = Exe {
     collGridMove: 0x5C3AC0,
     humanPlatform: 0x571B90,
     tramCarOf: 0x492D60,
+    testLineInVehicle: 0x5C9B80,
     playVideo: 0x55D460,
     menuTop: 0x6BD890,
     loadSave: 0x6D4628,
@@ -767,6 +770,7 @@ pub static EXE_10: Exe = Exe {
     collGridMove: 0x57EBF0,
     humanPlatform: 0x492000,
     tramCarOf: 0x4E3FB0,
+    testLineInVehicle: 0x584CB0,
     playVideo: 0,
     menuTop: 0x67A4D8,
     loadSave: 0x671FB0,
@@ -1098,6 +1102,7 @@ pub static LS3D_12: Ls3d = Ls3d {
     soundDriverInit: 0x7C1F0,
     oggThreadProc: 0x73FE0,
     oggFillBuffer: 0x735D0,
+    frameDestroy: 0x1A9A0,
 };
 
 pub static LS3D_10: Ls3d = Ls3d {
@@ -1218,6 +1223,7 @@ pub static LS3D_10: Ls3d = Ls3d {
     soundDriverInit: 0x77E30,
     oggThreadProc: 0x6FF40,
     oggFillBuffer: 0x6FA10,
+    frameDestroy: 0x1A760,
 };
 
 pub static RACING_12: Racing = Racing {
@@ -1301,6 +1307,7 @@ pub const kFrameLocal: i32 = 0x50;
 pub const kFrameScale: i32 = 0x90;
 pub const kFrameRot: i32 = 0x9C;
 pub const kFrameFlags: i32 = 0xAC;
+pub const kFrameWorldScale: i32 = 0x114;
 pub const kFrameName: i32 = 0x100;
 pub const kFrameParent: i32 = 0x120;
 pub const kFrameType: i32 = 0x110;

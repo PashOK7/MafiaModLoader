@@ -4,7 +4,7 @@ A mod loader for **Mafia: The City of Lost Heaven** (2002; Steam/GOG 1.2 and the
 An agent connects over MCP and works with the live game: starts it, plays it, changes it, writes mods for it and
 reloads them while it runs.
 
-Status: in development, before the first release. The host and SDK target both builds; individual
+The host and SDK target both game builds. Download the [player runtime](https://github.com/PashOK7/MafiaModLoader/releases/latest). Individual
 validation results and open defects are recorded in [current status](docs/STATUS.md).
 The [November update notes](docs/PATCHNOTES_2026-11-15.md) explain the cumulative changes since the
 October 31 GitHub main. A locally installed build is not evidence that its source has been published.
@@ -69,6 +69,20 @@ python tools/kb_strings.py                            :: the knowledge base's st
 `.mcp.json` registers the server as `mafia` for Claude Code and clients supporting that configuration format.
 For Codex, see [agent client setup](docs/AGENT_SETUP.md); it uses `config.toml`. The agent starts with
 [AGENTS.md](AGENTS.md), read in full (it exceeds Codex's default instruction size limit).
+
+## Example mod
+
+Mafia Ragdolls uses the loader's human poses, collision queries and game camera to
+give characters physical reactions to bullets, vehicle impacts and explosions. It
+supports Mafia 1.0 and 1.2. [Source and installation](https://github.com/PashOK7/mafia-ragdoll-mml) · [Download](https://github.com/PashOK7/mafia-ragdoll-mml/releases/latest).
+
+## Player packages
+
+With the x86 and x64 release outputs available, `python tools/player_release.py` builds the
+base, the full player runtime, and the FFmpeg video add-on under `build/dist/`. The base
+contains the ASI bootstrap, the regular host with its game fixes, and the stock core mod.
+The full runtime adds dxwrapper, FFmpeg and the 64-bit sidecar. An individual mod can ship
+separately in its own `mml/mods/<id>/` directory. [Player installation](docs/PLAYER_INSTALL.txt).
 
 ## Documents
 

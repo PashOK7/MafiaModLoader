@@ -1,11 +1,12 @@
 // A frame's release told (mml.h frame_watch; docs/MODDING.md "A frame's release").
 //
-// LS3D's frames and meshes are counted references (the count at +4 in both builds); every frame's Release is one
-// shared function (game_build.h frameRelease, stdcall(this) -> the count), the meshes' another (meshRelease). A mod
+// LS3D's frames and meshes are counted references (the count at +4 in both builds). Virtual Release has a shared
+// function, but native destruction can inline its decrement/delete and bypass that entry. The base frame
+// destructor is also hooked, before unlinking and freeing its fields. A mod
 // that keeps a frame (a model, its bones: a ragdoll's) asks to be told before it goes: both are hooked once a mod
 // watches anything, and a Release that finds the count at 1 (the last reference: its memory goes in it) calls the
 // watchers of that frame first, on the thread that releases it (the game's), behind each mod's fault guard; the watch
-// ends there. mafia-ragdoll's frame_life.cpp kept the freed ones for a purge at its next tick; told before the free,
+// ends there, so Release followed by destruction still notifies only once. Told before the free,
 // a mod forgets the frame while it is still valid.
 //
 // Bridge methods (game thread): frame.watch {frame, clear} (the release recorded as the event FRAME_RELEASED),
@@ -36,6 +37,8 @@ unsigned g_told, g_faults;
 
 using ReleaseFn = unsigned long(__stdcall *)(void *self);
 ReleaseFn oFrameRelease, oMeshRelease;
+using DestroyFn = void(__thiscall *)(void *self);
+DestroyFn oFrameDestroy;
 
 struct Lock {
     Lock() { EnterCriticalSection(&g_lock); }
@@ -55,8 +58,9 @@ std::string Hex(const void *p) {
 }
 
 // the last reference going: the frame's watchers told (and forgotten) before LS3D frees it
-void Going(void *self) {
-    if (!g_count || !self || *reinterpret_cast<volatile LONG *>(static_cast<uint8_t *>(self) + kRefCount) != 1) return;
+void Going(void *self, bool destroying = false) {
+    if (!g_count || !self) return;
+    if (!destroying && *reinterpret_cast<volatile LONG *>(static_cast<uint8_t *>(self) + kRefCount) != 1) return;
     std::vector<Watch> ws;
     {
         Lock l;
@@ -70,6 +74,10 @@ void Going(void *self) {
         g_told++;
         if (!w.fn) {
             EventsRecord("FRAME_RELEASED", json({{"frame", Hex(self)}}).dump(-1, ' ', false, json::error_handler_t::replace));
+            continue;
+        }
+        if (LoaderOwned(w.mod)) {
+            w.fn(self, w.user);
             continue;
         }
         if (!ModAlive(w.mod)) continue;
@@ -86,11 +94,15 @@ unsigned long __stdcall hkMeshRelease(void *self) {
     Going(self);
     return oMeshRelease(self);
 }
+void __fastcall hkFrameDestroy(void *self, void *) {
+    Going(self, true);
+    oFrameDestroy(self);
+}
 
 bool Ensure(std::string *err) {
     if (g_hooked) return true;
     uintptr_t ls3d = ModuleBase("LS3DF.dll");
-    if (!game::g_ls3d || !ls3d || !game::Ls3d().frameRelease || !game::Ls3d().meshRelease) {
+    if (!game::g_ls3d || !ls3d || !game::Ls3d().frameRelease || !game::Ls3d().meshRelease || !game::Ls3d().frameDestroy) {
         *err = g_why = "the frames' Release is not known for this build";
         return false;
     }
@@ -99,7 +111,14 @@ bool Ensure(std::string *err) {
                      reinterpret_cast<void **>(&oFrameRelease), &e);
     bool b = a && HookAdd(nullptr, ls3d + game::Ls3d().meshRelease, reinterpret_cast<void *>(&hkMeshRelease),
                           reinterpret_cast<void **>(&oMeshRelease), &e);
-    if (!a || !b) { *err = g_why = "the frames' Release not hooked: " + e; return false; }
+    bool c = b && HookAdd(nullptr, ls3d + game::Ls3d().frameDestroy, reinterpret_cast<void *>(&hkFrameDestroy),
+                          reinterpret_cast<void **>(&oFrameDestroy), &e);
+    if (!c) {
+        if (b) HookRemoveLink(nullptr, ls3d + game::Ls3d().meshRelease, reinterpret_cast<void *>(&hkMeshRelease));
+        if (a) HookRemoveLink(nullptr, ls3d + game::Ls3d().frameRelease, reinterpret_cast<void *>(&hkFrameRelease));
+        *err = g_why = "the frames' release/destruction not hooked: " + e;
+        return false;
+    }
     g_hooked = true;
     g_why = "hooked";
     return true;

@@ -1,10 +1,20 @@
 # Current project status
 
-Snapshot: 2026-11-15. This handoff describes the cumulative source update. Read [AGENTS.md](../AGENTS.md)
+Snapshot: 2026-11-18. This handoff describes the cumulative source update and local incident follow-up. Read [AGENTS.md](../AGENTS.md)
 for project instructions and [the documentation map](README.md) for the complete set of guides/notes.
 Historical test counts and installed hashes elsewhere are dated receipts, not the status of a fresh checkout.
 
+The separate ragdoll mod's player release (`A20F181B…`) includes the railway fix and registers no manual
+fall hotkey. Both labs and the owner's Mafia10Fixes have this DLL. The two [player downloads](https://github.com/PashOK7/mafia-ragdoll-mml/releases/tag/v0.1.0) are
+mod-only for existing loaders and a single-extraction ZIP with MML 2026.11.18-71d2377a for clean games. The clean base passed 38 assertions
+per game build without FFmpeg, a graphics wrapper or the x64 sidecar. MML also has a full player
+runtime and a separately installable FFmpeg package. The full and add-on installations both played
+the same H.264 test clip in game.
+[Ragdoll audit and incident notes](../knowledge/notes/ragdoll-audit-20261118.md).
+
 ## Publication and artifacts
+
+- [MML player runtime 2026.11.18](https://github.com/PashOK7/MafiaModLoader/releases/tag/2026.11.18) provides the tested base, the full runtime, and the optional video add-on. The public SDK example retains its original telemetry implementation.
 
 - Before the November 15 publication, the directly queried GitHub `main` and local HEAD were both
   `294814bf8f6f72437c443c2c8c430929a9c2141e` (commit dated 2026-10-31). GitHub listed no releases.
@@ -15,9 +25,14 @@ Historical test counts and installed hashes elsewhere are dated receipts, not th
   [PashOK7/MafiaModLoader main](https://github.com/PashOK7/MafiaModLoader/tree/main) was verified directly
   against the remote. This receipt is a documentation-only follow-up to that source commit.
   No binary release/tag was created; installed ASI/MCP binaries still require the documented update cycle.
+- Radar car lifetime fix published on2026-11-17 as
+  [01317cb](https://github.com/PashOK7/MafiaModLoader/commit/01317cb17266945cd04fc6b83a314789b2525df6),
+  normal fast-forward to origin/main verified by git ls-remote. Six paths only: HUD/actor hook,
+  two native tests and their standalone documentation/map entry. Telemetry and other cumulative
+  local experiments remain unpublished. No binary release/tag created. Installed owner runtime
+  below is a cumulative local build, not a claim that this narrow source commit reproduces it.
 - Host, SDK, MCP server and shipped examples live here. The ragdoll port lives in the separate
-  `mafia-ragdoll-mml` checkout, which had no configured Git remote at this audit. Publishing this repository
-  cannot deliver that separate mod's implementation or DLL.
+  [mafia-ragdoll-mml repository](https://github.com/PashOK7/mafia-ragdoll-mml).
 - Keep ASI/PDB, mod DLL/PDB, optional sidecar and MCP executable identities distinct. A correct new file on
   disk does not replace an already loaded module. Reconnect MCP clients after rebuilding the server.
 
@@ -63,6 +78,8 @@ Historical test counts and installed hashes elsewhere are dated receipts, not th
 
 | Item | What is established / what remains |
 |---|---|
+| Vehicle skid-model cleanup crash, November 16 | Owner PID22132 faults on a zero skid-model vtable. A confirmed stale HUD car can make SDK world_near invoke the matching matrix writer on recycled memory; a disposable fixture reproduces the exact three damaged words. Actual actor destruction still invalidates the borrowed car before callbacks. November17 corrected the overbroad mission-close clear: CHANGE_MISSION carries live cars and needs their radar binding preserved. Carry/destruction/menu tests pass8 checks/build. Host71D2377A... is now in both labs AND the owner copy, running in owner PID31464 after restore to the saved airport moment. Fix published in01317cb. Original dump attribution remains open. See [dump investigation](../knowledge/notes/crash-20261116.md). |
+| Allocator/recovery hang, November15 | Owner PID32624: a guarded Jolt step failed; cleanup faulted freeing a constraint; host diagnostics then blocked allocating from that heap. Three x86 snapshots/full memory retained. The first exception and earlier corrupting writer remain unassigned. Local follow-up repairs missing destruction notifications, stale scene-frame reads and two bounded name overreads. The combined host/port-ASan fixture completes100 cycles without a report; native regression passes22 checks per build. The relation to the original hang remains open. See [incident evidence](../knowledge/notes/hang-20261115.md). |
 | Intermittent pedestrian teleports | Several concrete handover/dodge/discovery defects were fixed. Earlier unmatched and post-handover reports remain open. Preserve native, physical and rendered identities/timestamps. |
 | Historical mission-load hang | Windows ended a nonresponsive load without an exception dump. A controlled Ogg archive-lock deadlock was reproduced and fixed separately; the original event's exact cause is unestablished. |
 | EAX rumble/echo fidelity | Native sectors author EAX3 parameters; DSOAL/OpenAL Soft processes them in the owner configuration. The owner later heard decay and deferred this inquiry. No claim of equivalence to original hardware EAX. |
@@ -87,11 +104,12 @@ receipts remain in `build/publication-prep-20261115/`. These local files are exc
   explicit/empty/legacy saves, native car geometry/contacts/support, model aliases, sound allocation and
   adversarial/immediate Ogg close. Test PIDs 17576/22188 were closed; the owner's game was not driven/updated.
 - Final host SHA-256: `B5FD1DE0A280F86F24F75A27291B5CC59DE29CE36B9BB4C970D1E823706A2003`,
-  installed in both labs. The owner copy retains its previous 34B23E81... host. Source publication does not
+  installed in both labs for that validation. At that point the owner copy retained host34B23E81... . Source publication does not
   replace any running process or install binaries into another person's game.
 - Full x86 build and final MCP smoke pass (`build-all.log`, `mcp-smoke.log`). The unchanged x64/MCP source
   also passed its preparation builds. Method/game generators, path/name and both-build address checks pass.
-- The documentation inventory now covers 52 project Markdown documents. Local links and the complete
+- The publication inventory covered52 project Markdown documents; the subsequent captured-hang note brings
+  the current documentation to53. Local links and the complete
   publication candidate are checked, including new headers/shaders/tests and licence-sensitive identifiers.
   Ignored builds/config/game assets/dumps/local symbols stay outside the staged source set.
 - Prior focused receipts: 29 assertions per build for save ownership, occupied/hidden-car discovery/contact
@@ -102,6 +120,40 @@ receipts remain in `build/publication-prep-20261115/`. These local files are exc
 The earlier preparation's two failures are resolved, not waived. Their causes, native class comparison and
 test scope are recorded in [release-validation-20261115.md](../knowledge/notes/release-validation-20261115.md).
 Open feature/fidelity investigations in the table above remain open despite the passing regression suites.
+
+## Local incident follow-up
+
+The uncommitted November15 follow-up was installed in both labs and, at the owner's later request,
+in `W:/Mafia10Fixes`. Its regular host SHA-256 was
+`A795A2FA961EEDFED4E609300455F15F3E381E2B9D5F836DE69BD9C3494BFA4E`. The labs' core is `51287E34...`.
+The combined instrumented host `6DB95D74...` and port `45F4F121...` completed 100 cycles with 800 bodies,
+200 native cars and 100 blasts. ASan reports, guarded native errors, Jolt resets and ragdoll faults all
+count zero in this run. The diagnostic build excludes global-string checks and intentional raw stack
+scanning. The diagnostic native.cpp uses MSVC-ASan because of Clang's inline-assembly constraint.
+
+The linked-frame lifetime, direct Release/destructor, vehicle geometry, model alias and camera-return
+fixtures pass 22 assertions per build, exit 0. Both labs are stopped. Lab 1.0's original ragdoll DLL/PDB
+and enabled water manifest have been hash-restored, and the diagnostic preload is disabled. The original
+owner allocator hang remains open. The complete offline suite and MCP smoke both finish ALL PASSED,
+exit 0. Receipts are `offline-after-lifetime.log` and `mcp-smoke-after-lifetime.log` in the incident
+evidence directory. Fresh ordinary lab logs also contain zero native exception or mod-fault lines.
+
+The owner installation replaces the host ASI/PDB pair. Its existing mod set has soundscape, draw_probe
+and ragdoll enabled. The fresh process9192 reaches the main menu and passes both native frame-lifetime
+paths, each with one notification and no remaining watch. Windows required its existing elevated launch.
+The game exits through its own menu. All607 inventoried save/mod/data files retain their hashes,
+including all182 saves. Preimages, a save backup and the verification receipt are under
+`build/owner-loader-install-20261115-205541-128/`. This is startup/lifetime verification in the owner copy.
+
+The November16 HUD car lifetime repair supersedes that ASI/PDB pair in both labs and the owner copy:
+host `BD3BD3C4F6C84B8CFB9F624E5D74CDE914656EB6026BA2DDBE8A5B98FE22A098`,
+PDB `FDDF77F351C63105CA4C58C547311D38039703E2AD8CB100B0D741D42EA284C6`.
+Native lifetime tests pass4 checks per build; full x86 build, offline suite and MCP smoke pass, exit0.
+Owner PID13852 verifies taxi-to-menu-to-Pauli with the original three mods: no stale HUD car,
+nearby traffic readable, normal exit. All92 currently backed-up saves retain their hashes. The matrix
+diagnostic is removed from the owner's mods; all games are stopped. Evidence/preimages are in
+`build/crash-20261116-180803/`. This fixes the confirmed matching producer; PID22132 attribution
+and the earlier allocator hang remain open.
 
 ## Updating this handoff
 

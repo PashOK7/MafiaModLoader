@@ -1,0 +1,12 @@
+MafiaModLoader video add-on for Mafia 1.0 and 1.2
+
+Close the game. Extract the archive next to Game.exe. The video decoder and its
+licences live under mml/ffmpeg. The loader discovers the decoder on the next run.
+
+Playback uses a Direct3D 9 device. If you already run d3d8to9 (including the
+wrapper from the full MML package), keep your existing graphics files. For an
+unmodified Direct3D 8 installation, also copy the contents of optional-d3d8to9
+next to Game.exe. This is MML's patched dxwrapper build.
+
+To return to the game's original video player, close Mafia and move mml/ffmpeg
+out of the game folder. Other mods can continue using the same loader and wrapper.

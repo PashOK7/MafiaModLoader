@@ -59,6 +59,8 @@ These explain verified native mechanisms. Their individual dates define the scop
 | [Teleport at 16:04](../knowledge/notes/teleport-20261114-1604.md) | A retained incident, not a general conclusion that all movement is explained |
 | [Teleport at 16:37](../knowledge/notes/teleport-20261114-1637.md) | Intermediate transforms versus visible displacement; later dodge evidence has a distinct identity |
 | [Mission-load hang](../knowledge/notes/hang-20261114.md) | Historical event unassigned; induced native Ogg deadlock separately reproduced and fixed |
+| [Live allocator/recovery hang](../knowledge/notes/hang-20261115.md) | Captured cleanup fault and blocked allocator/diagnostics; earlier memory writer remains unknown |
+| [Vehicle skid-model cleanup crash](../knowledge/notes/crash-20261116.md) | November 16 dump: zero model vtable during tyre-trace cleanup; corrupting writer/lifetime transition unknown |
 | [Final validation fixes](../knowledge/notes/release-validation-20261115.md) | Observed/unobserved index-buffer classes, SIB stack targets and the passing final regression |
 | [Water render plan](WATER_RENDER_PLAN.md) | Earlier rendering/optimization work; active order is in WATER_REFLECTION_PLAN |
 | [Water/ragdoll review](WATER_RAGDOLL_REVIEW.md) | Dated source comparison, not an instruction to port all proposed mechanisms |
