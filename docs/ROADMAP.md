@@ -56,6 +56,7 @@ Historical owner PIDs and installed hashes are receipts, not instructions to con
   player release. The mod-only ZIP writes to the ragdoll directory. For a clean game, one extraction
   places both the pinned base and ragdoll beside Game.exe. The full MML runtime and FFmpeg video add-on ship separately. Both game builds
   passed the ragdoll checks on the base. The full runtime also ran a second mod with a 64-bit half.
+  The public version number for this base is 0.1. The host hash is recorded in mml/base-version.txt.
 
 - **Ragdoll audit and Clark's Motel (2026-11-18).** The port now leaves mission characters' vehicle hits
   to the game, follows moving car parts, releases disabled physics, and uses consistent time and water

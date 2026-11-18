@@ -7,7 +7,7 @@ import tempfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-RELEASE = '2026.11.18'
+RELEASE = '0.1'
 
 
 def digest(path):
@@ -64,9 +64,8 @@ def base_archive(root, expected_content=None):
     content = hashlib.sha256(hashes.encode()).hexdigest()
     if expected_content and content != expected_content:
         raise ValueError(f'Tested MML base content {expected_content} differs from build {content}')
-    label = f'{RELEASE}-{sha[:8]}'
-    files['mml/base-version.txt'] = f'MafiaModLoader {label}\r\nMafiaModLoader.asi SHA-256 {sha}\r\n'.encode()
-    return root / 'build/dist' / f'MafiaModLoader-{label}-base.zip', files
+    files['mml/base-version.txt'] = f'MafiaModLoader {RELEASE}\r\nMafiaModLoader.asi SHA-256 {sha}\r\n'.encode()
+    return root / 'build/dist' / f'MafiaModLoader-{RELEASE}-base.zip', files
 
 
 def wrapper_files(root):

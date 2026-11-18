@@ -9890,3 +9890,5 @@ both ZIPs in fresh directories. The mod-only overlay preserved an existing host.
 ### 2026-11-18 - Public ragdoll release
 
 The [ragdoll v0.1.0 release](https://github.com/PashOK7/mafia-ragdoll-mml/releases/tag/v0.1.0) provides a mod-only archive and a single-extraction bundle with the tested MML base. The public loader retains the original telemetry example.
+
+The first player runtime now uses version 0.1 in the release tag, ZIP names and installed version file. Its host still has the same SHA-256 as the dated release.

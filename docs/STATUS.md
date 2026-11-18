@@ -6,7 +6,7 @@ Historical test counts and installed hashes elsewhere are dated receipts, not th
 
 The separate ragdoll mod's player release (`A20F181B…`) includes the railway fix and registers no manual
 fall hotkey. Both labs and the owner's Mafia10Fixes have this DLL. The two [player downloads](https://github.com/PashOK7/mafia-ragdoll-mml/releases/tag/v0.1.0) are
-mod-only for existing loaders and a single-extraction ZIP with MML 2026.11.18-71d2377a for clean games. The clean base passed 38 assertions
+mod-only for existing loaders and a single-extraction ZIP with MML 0.1 for clean games. The clean base passed 38 assertions
 per game build without FFmpeg, a graphics wrapper or the x64 sidecar. MML also has a full player
 runtime and a separately installable FFmpeg package. The full and add-on installations both played
 the same H.264 test clip in game.
@@ -14,7 +14,7 @@ the same H.264 test clip in game.
 
 ## Publication and artifacts
 
-- [MML player runtime 2026.11.18](https://github.com/PashOK7/MafiaModLoader/releases/tag/2026.11.18) provides the tested base, the full runtime, and the optional video add-on. The public SDK example retains its original telemetry implementation.
+- [MML 0.1](https://github.com/PashOK7/MafiaModLoader/releases/tag/v0.1) provides the tested base, full runtime and optional video add-on. Its host matches the earlier date-labelled release (SHA-256 prefix 71d2377a). The public SDK example retains its original telemetry implementation.
 
 - Before the November 15 publication, the directly queried GitHub `main` and local HEAD were both
   `294814bf8f6f72437c443c2c8c430929a9c2141e` (commit dated 2026-10-31). GitHub listed no releases.
